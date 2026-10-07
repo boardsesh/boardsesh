@@ -968,7 +968,8 @@
       "adjust": "Zuschneiden oder drehen",
       "next": "Weiter",
       "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
-      "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes."
+      "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes.",
+      "tip": "Geh ein Stück zurück, stell dich frontal zur Wand und hol alle 4 Ecken ins Bild."
     },
     "adjust": {
       "title": "Zuschneiden und drehen",
@@ -1002,7 +1003,13 @@
       "cornerBottomLeft": "Ecke unten links",
       "use": "Diese Ecken nehmen",
       "skip": "Erstmal überspringen",
-      "clear": "Ecken neu setzen"
+      "clear": "Ecken neu setzen",
+      "quality": {
+        "good": "Schön frontal. Die Wand lässt sich sauber entzerren.",
+        "soft": "Etwas schräg. Nimm es frontal neu auf, dann wird es schärfer.",
+        "fail": "Zu schräg zum Entzerren. Dein Foto funktioniert trotzdem, oder nimm es frontal neu auf.",
+        "small": "Dieses Foto ist zu klein zum Entzerren. Es funktioniert trotzdem so, wie es ist."
+      }
     },
     "upload": {
       "title": "Dein Foto wird hochgeladen",
@@ -1212,5 +1219,27 @@
     },
     "reportCount_one": "{{count}} Meldung",
     "reportCount_other": "{{count}} Meldungen"
+  },
+  "sprayBackground": {
+    "label": "Wandhintergrund",
+    "photo": "Foto",
+    "wallCrop": "Nur Wand",
+    "holdCutouts": "Nur Griffe",
+    "retake": "Foto neu aufnehmen",
+    "previewLabel": "Vorschau: {{look}}",
+    "saveFailed": "Der Hintergrund konnte nicht gespeichert werden. Versuch es noch mal.",
+    "notAvailable": "Dieses Foto ist zu schräg für diesen Look. Nimm es frontal neu auf.",
+    "note": {
+      "lockedNoPins": "Setz die 4 Ecken, um das freizuschalten.",
+      "lockedRetake": "Nimm das Foto frontal neu auf, um das freizuschalten.",
+      "generating": "Wird erstellt…",
+      "failed": "Dieser Look ließ sich nicht erstellen. Speicher ihn noch mal, um es erneut zu versuchen.",
+      "afterPublish": "Etwa eine Minute nach dem Veröffentlichen fertig. Bis dahin siehst du dein Foto.",
+      "soft": "Nimm das Foto frontal neu auf, dann wird es schärfer.",
+      "volumes": "Volumen werden noch nicht ausgeschnitten."
+    },
+    "notAvailableNoPins": "Setz zuerst die 4 Ecken der Wand, um diesen Look zu nutzen.",
+    "notAvailableSmall": "Dieses Foto ist zu klein zum Entzerren. Nimm es mit der Hauptkamera bei 1x neu auf.",
+    "usePhoto": "Foto nehmen"
   }
 }

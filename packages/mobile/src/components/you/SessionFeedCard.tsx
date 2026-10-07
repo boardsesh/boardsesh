@@ -31,6 +31,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useToast } from '../../providers/toast-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
+import { getSoleBoardType } from '../../lib/grade-label';
 
 type SessionFeedCardProps = {
   session: SessionFeedItem;
@@ -103,7 +104,11 @@ export const SessionFeedCard = memo(function SessionFeedCard({
   ]);
 
   const hardestSend = session.hardestSend ?? null;
-  const displayHardestGrade = session.hardestGrade ? (formatGrade(session.hardestGrade) ?? session.hardestGrade) : null;
+  // The hardest grade belongs to the hardest send, so it reads on that send's board.
+  const hardestGradeBoard = hardestSend?.boardType ?? primaryBoard;
+  const displayHardestGrade = session.hardestGrade
+    ? (formatGrade(session.hardestGrade, hardestGradeBoard) ?? session.hardestGrade)
+    : null;
 
   // Beta video is the more engaging content, so it wins the hero when present —
   // the climb's board art only takes the hero when there's no beta to show.
@@ -215,7 +220,11 @@ export const SessionFeedCard = memo(function SessionFeedCard({
 
         {/* The session's grade SPREAD — the "this is a session" signal the
             single-climb hero can't carry. Self-hides unless there are 2+ grades. */}
-        <SessionGradeStrip distribution={session.gradeDistribution} totalSends={session.totalSends} />
+        <SessionGradeStrip
+          distribution={session.gradeDistribution}
+          totalSends={session.totalSends}
+          boardName={getSoleBoardType(session.boardTypes)}
+        />
 
         {featuredBeta && betaLink ? (
           <PressableSurface
@@ -275,7 +284,9 @@ const BetaHero = memo(function BetaHero({
 
   const platform = detectPlatform(betaLink.link);
   const username = betaLink.foreign_username?.trim();
-  const displayGrade = tick.difficultyName ? (formatGrade(tick.difficultyName) ?? tick.difficultyName) : null;
+  const displayGrade = tick.difficultyName
+    ? (formatGrade(tick.difficultyName, tick.boardType) ?? tick.difficultyName)
+    : null;
 
   return (
     <View style={styles.hero}>
@@ -345,7 +356,9 @@ const HeroSend = memo(function HeroSend({ tick }: { tick: SessionFeedTickHighlig
   const { formatGrade } = useGradeFormat();
 
   const boardConfig = getBoardConfigForPlaylist(tick.boardType, tick.layoutId);
-  const displayGrade = tick.difficultyName ? (formatGrade(tick.difficultyName) ?? tick.difficultyName) : null;
+  const displayGrade = tick.difficultyName
+    ? (formatGrade(tick.difficultyName, tick.boardType) ?? tick.difficultyName)
+    : null;
   const statusLabel = tickStatusLabel(tick.status, t);
   const statusIcon: IconName = tick.status === 'flash' ? 'flash' : 'check.small';
   const attemptLabel = tick.attemptCount > 1 ? t('sessionFeedCard.attempts', { count: tick.attemptCount }) : null;

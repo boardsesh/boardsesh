@@ -20,6 +20,8 @@ type WallStateStripProps = {
   /** What the physical wall actually shows (for the on-wall-now line during preview). */
   liveClimb: BoardPresenceClimb | null;
   typeScale: WallKioskTypeScale;
+  /** The kiosk's board, so the grade reads on its scale (the wall payload names no board). */
+  boardName?: string;
 };
 
 /**
@@ -29,7 +31,14 @@ type WallStateStripProps = {
  * absence-of-amber wash — so it reads across a gym without ever touching the
  * board. In preview it also names what the wall actually shows.
  */
-function WallStateStripComponent({ mode, stepsBack, previewTimestamp, liveClimb, typeScale }: WallStateStripProps) {
+function WallStateStripComponent({
+  mode,
+  stepsBack,
+  previewTimestamp,
+  liveClimb,
+  typeScale,
+  boardName,
+}: WallStateStripProps) {
   const { t } = useTranslation('session');
   const { brandColors, systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -74,7 +83,7 @@ function WallStateStripComponent({ mode, stepsBack, previewTimestamp, liveClimb,
   const liveName = liveClimb?.name?.trim() || null;
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
   // back to the legacy label + colour — lights up once the backend stamps them.
-  const liveResolvedGrade = resolveGrade({ difficulty: liveClimb?.grade ?? '' });
+  const liveResolvedGrade = resolveGrade({ difficulty: liveClimb?.grade ?? '' }, boardName);
   const liveGrade = liveClimb?.grade ? liveResolvedGrade.label : null;
   const liveGradeColor = liveResolvedGrade.color;
 

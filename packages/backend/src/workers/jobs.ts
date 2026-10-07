@@ -337,6 +337,7 @@ export async function executeBackgroundJob(
             signal.throwIfAborted();
             return result;
           }),
+        transactionAfterAbort: (callback) => withBackgroundJobAttempt(database, job.id, token, callback),
       },
       parsed.data,
     );

@@ -70,7 +70,7 @@ function WorkoutPreviewRowComponent({
 
   const climb: ClimbQueueItem['climb'] | null | undefined = item.climb;
   const climbName = climb?.name ?? sessionT('mobile.queue.unknownClimb');
-  const formattedGrade = climb ? (formatGrade(climb.difficulty) ?? climb.difficulty) : null;
+  const formattedGrade = climb ? (formatGrade(climb.difficulty, board.boardName) ?? climb.difficulty) : null;
   const quality = climb ? Number(formatQuality(climb.quality_average)) : 0;
   const qualityStarCount = Math.round(quality);
   const rowAccessibilityLabel = climb

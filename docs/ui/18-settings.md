@@ -168,9 +168,11 @@ credential to `pending` so the daemon picks it up again).
   credential, status chip, or sync flow. It offers two actions: "Request your
   data" opens a pre-filled mailto to `moonboardsupport@moonclimbing.com` (body
   is copied to the clipboard on mobile), and "Import data" opens a CSV picker.
-  The CSV import previews MoonBoard logbook row counts, stores all entries at
-  40°, turns Project/Fail rows into attempts, and streams progress from
-  `/api/moonboard-import`.
+  The CSV import previews MoonBoard logbook row counts and the angles found,
+  stores each entry at its logged angle (25° or 40°, default 40°), turns
+  Project/Fail rows into attempts, and streams progress from
+  `/api/moonboard-import`. Column order doesn't matter; see
+  `docs/integrations.md` for how rows are matched to climbs.
 - Uses backend REST endpoints instead of Next internal routes.
 - Kilter links via the username/password (ROPC) "Sign in to Kilter" card when the
   `kilter-oauth-linking` PostHog flag is on; otherwise only the "Kilter (Aurora)"

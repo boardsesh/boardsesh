@@ -17,14 +17,18 @@ import { getConnectivitySnapshot, subscribeConnectivity } from '../connectivity/
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { QueryClient } from '@tanstack/react-query';
 import {
+  GET_SPRAY_WALL_ART,
   GET_SPRAY_WALL_BY_LAYOUT,
   GET_SPRAY_WALL_LOOK,
   GET_SPRAY_WALL_RENDER_DATA,
 } from '@boardsesh/graphql/operations/spray-walls';
-import type { SprayWall, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
+import type { SprayWall, SprayWallArt, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import {
   REGISTERED_WALL_REVALIDATE_MS,
+  getSprayWall,
+  missingSprayArtVariant,
+  type RegisteredSprayArt,
   refreshSprayWall,
   settleSprayWallDiscoveryMiss,
   registerSprayWall,
@@ -44,18 +48,32 @@ import {
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
 import { sanitizeBoardRenderDefault } from '../board-render-settings';
 import { reportHandledError } from '../error-reporting';
-import { mapCanonicalHoldsToPhoto, type CanonicalSprayHold } from './spray-hold-geometry';
+import { mapCanonicalHoldsToPhoto, scaleCanonicalHoldsToArt, type CanonicalSprayHold } from './spray-hold-geometry';
+import { artVariantForBackground, sprayWallBackgroundOf, type SprayWallBackground } from './spray-wall-background';
+import type { SprayArtVariant } from './spray-photo-keys';
+import { ensureSprayPhotoCached } from './spray-photo-cache';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 type SprayWallByLayoutResponse = { sprayWallByLayout: SprayWall | null };
 type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
+type SprayWallArtResponse = { sprayWallArt: SprayWallArt | null };
 
 export const sprayWallByLayoutQueryKey = (layoutId: number | null) =>
   ['sprayWallByLayout', layoutId, sprayPrivacyGeneration(layoutId ?? undefined)] as const;
 export const sprayWallRenderDataQueryKey = (wallUuid: string | null) =>
   ['sprayWallRenderData', wallUuid, sprayPrivacyGeneration()] as const;
 
+/**
+ * One version's generated looks (`sprayWallArt`). `version` null means the
+ * published one. Keyed like the render payload, privacy generation included,
+ * because the answer carries presigned URLs to a private wall's pixels.
+ */
+export const sprayWallArtQueryKey = (wallUuid: string, version: number | null) =>
+  ['sprayWallArt', wallUuid, sprayPrivacyGeneration(), version] as const;
+
 const privateWallQueryFamilies = new Set([
+  'sprayWallArt',
+  'sprayWallStoredLook',
   'sprayWallByLayout',
   'sprayWall',
   'sprayWallRenderData',
@@ -277,6 +295,10 @@ export function registerRenderData(
   // caller that cannot say whose answer this is does not get to show Edit.
   fetchedUnderViewerGeneration?: number,
   fetchedUnderRemovalGeneration?: number,
+  // The wall's background and, when it is a generated look already on disk,
+  // that look. Left out, the wall keeps the background it had and draws its
+  // photo unless the art it already holds is for this very version.
+  drawing?: { background: SprayWallBackground; art: RegisteredSprayArt | null },
 ): boolean {
   if (
     fetchedUnderRemovalGeneration !== undefined &&
@@ -326,6 +348,7 @@ export function registerRenderData(
     holds,
     homography: renderData.homography,
     renderSettings: look,
+    ...(drawing ? { background: drawing.background, art: drawing.art } : {}),
     // Strictly `true`: a payload from a backend that predates the field, or a
     // cached one missing it, must read as "cannot edit".
     viewerAccess:
@@ -358,10 +381,13 @@ type SprayWallLookResponse = { sprayWall: { uuid: string; renderSettings?: unkno
  */
 export const LOOK_RETRY_AFTER_FAILURE_MS = 30 * 1000;
 
-type KnownLook = { look: SprayWallRenderSettingsValue | null; settledAtMs: number; freshForMs: number };
+/** A wall's stored look, split the way the app uses it: the drawing style, and what it is drawn on. */
+export type SprayWallLookState = { look: SprayWallRenderSettingsValue | null; background: SprayWallBackground };
+
+type KnownLook = SprayWallLookState & { settledAtMs: number; freshForMs: number };
 
 const looks = new Map<string, KnownLook>();
-const looksInFlight = new Map<string, Promise<SprayWallRenderSettingsValue | null>>();
+const looksInFlight = new Map<string, Promise<SprayWallLookState>>();
 /**
  * Bumped, per wall, by every write to `looks` that is not a read's answer. A
  * read that started before one is stale: the look step's save can land while
@@ -382,8 +408,19 @@ let lookEpoch = 0;
  * not once per row.
  */
 export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSettingsValue | null> {
+  return fetchSprayWallLookState(wallUuid).then((state) => state.look);
+}
+
+/**
+ * The look and the background together, from the one `GET_SPRAY_WALL_LOOK`
+ * read. Same caching and failure rules as `fetchSprayWallLook`: a failed read
+ * keeps what this session last knew, or the photo.
+ */
+export function fetchSprayWallLookState(wallUuid: string): Promise<SprayWallLookState> {
   const known = looks.get(wallUuid);
-  if (known && Date.now() - known.settledAtMs < known.freshForMs) return Promise.resolve(known.look);
+  if (known && Date.now() - known.settledAtMs < known.freshForMs) {
+    return Promise.resolve({ look: known.look, background: known.background });
+  }
   const pending = looksInFlight.get(wallUuid);
   if (pending) return pending;
 
@@ -398,16 +435,22 @@ export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSet
       // anything that is not a usable look reads as "no stored look".
       (response) => ({
         look: sanitizeBoardRenderDefault(response?.sprayWall?.renderSettings),
+        background: sprayWallBackgroundOf(response?.sprayWall?.renderSettings),
         freshForMs: REGISTERED_WALL_REVALIDATE_MS,
       }),
-      () => ({ look: known?.look ?? null, freshForMs: LOOK_RETRY_AFTER_FAILURE_MS }),
+      () => ({
+        look: known?.look ?? null,
+        background: known?.background ?? ('photo' as const),
+        freshForMs: LOOK_RETRY_AFTER_FAILURE_MS,
+      }),
     )
-    .then(({ look, freshForMs }) => {
+    .then(({ look, background, freshForMs }): SprayWallLookState => {
       if ((lookWrites.get(wallUuid) ?? 0) !== writesAtStart || lookEpoch !== epochAtStart) {
-        return looks.get(wallUuid)?.look ?? null;
+        const current = looks.get(wallUuid);
+        return { look: current?.look ?? null, background: current?.background ?? 'photo' };
       }
-      looks.set(wallUuid, { look, settledAtMs: Date.now(), freshForMs });
-      return look;
+      looks.set(wallUuid, { look, background, settledAtMs: Date.now(), freshForMs });
+      return { look, background };
     })
     .finally(() => {
       if (looksInFlight.get(wallUuid) === request) looksInFlight.delete(wallUuid);
@@ -418,7 +461,23 @@ export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSet
 
 /** Fetch a wall's look and hand it to the registered wall, if it is still that wall. */
 export async function loadSprayWallLook(layoutId: number, wallUuid: string): Promise<void> {
-  setSprayWallLook(layoutId, wallUuid, await fetchSprayWallLook(wallUuid));
+  const { look, background } = await fetchSprayWallLookState(wallUuid);
+  setSprayWallLook(layoutId, wallUuid, look, background);
+  requestMissingSprayArt(layoutId);
+}
+
+/**
+ * The PUBLISHED wall asks for a generated look it does not hold: reload it,
+ * which fetches the art and swaps it in once it is on disk. Until then it keeps
+ * drawing the photo. A wall already loading reads the new look on its own.
+ *
+ * Only for a registration of the published version. A draft registered by the
+ * add-a-wall flow has no published payload to reload, and a reload that finds
+ * none withdraws the wall from under the flow — so `primeSprayWallLook` never
+ * calls this; the screen that changed a live wall's background does.
+ */
+export function requestMissingSprayArt(layoutId: number): void {
+  if (missingSprayArtVariant(layoutId)) refreshSprayWall(layoutId);
 }
 
 /**
@@ -429,17 +488,25 @@ export async function loadSprayWallLook(layoutId: number, wallUuid: string): Pro
 export function primeSprayWallLook(
   layoutId: number,
   wallUuid: string,
-  look: SprayWallRenderSettingsValue | null,
+  // The settings exactly as stored, `background` included when there is one.
+  look: (SprayWallRenderSettingsValue & { background?: SprayWallBackground }) | null,
 ): void {
   const clean = look === null ? null : sanitizeBoardRenderDefault(look);
+  const background = sprayWallBackgroundOf(look);
   lookWrites.set(wallUuid, (lookWrites.get(wallUuid) ?? 0) + 1);
   looksInFlight.delete(wallUuid);
-  looks.set(wallUuid, { look: clean, settledAtMs: Date.now(), freshForMs: REGISTERED_WALL_REVALIDATE_MS });
-  setSprayWallLook(layoutId, wallUuid, clean);
+  looks.set(wallUuid, {
+    look: clean,
+    background,
+    settledAtMs: Date.now(),
+    freshForMs: REGISTERED_WALL_REVALIDATE_MS,
+  });
+  setSprayWallLook(layoutId, wallUuid, clean, background);
 }
 
 /** Test seam: forget every look this session has read. */
 export function clearSprayWallLooks(): void {
+  clearSprayArtFollowUps();
   lookEpoch += 1;
   looks.clear();
   looksInFlight.clear();
@@ -476,6 +543,145 @@ export function fetchSprayWallRenderData(
       staleTime: RENDER_DATA_STALE_TIME_MS,
     })
     .then((response) => response.sprayWallRenderData ?? null);
+}
+
+/** One version's generated looks, through the shared cache. `version` null = the published one. */
+export function fetchSprayWallArt(
+  queryClient: QueryClient,
+  wallUuid: string,
+  version: number | null,
+): Promise<SprayWallArt | null> {
+  return queryClient
+    .fetchQuery({
+      queryKey: sprayWallArtQueryKey(wallUuid, version),
+      queryFn: () => getHttpClient().request<SprayWallArtResponse>(GET_SPRAY_WALL_ART, { uuid: wallUuid, version }),
+      staleTime: RENDER_DATA_STALE_TIME_MS,
+    })
+    .then((response) => response.sprayWallArt ?? null);
+}
+
+/**
+ * How far the art's aspect ratio may sit from the canonical frame's before it
+ * is refused. The art is the frame scaled and rounded to whole pixels, so a
+ * real one is within a pixel; anything further means holds would slide off
+ * the holds they belong to.
+ */
+const ART_ASPECT_TOLERANCE = 0.01;
+
+/**
+ * The registry entry a READY `sprayWallArt` answer makes for one variant, or
+ * `null` when it cannot be drawn: not ready, another version, no file, no
+ * usable size, or a size that does not match the canonical frame.
+ *
+ * Holds are the payload's canonical holds scaled into the art's pixels — no
+ * homography, because the art is already in the canonical frame.
+ */
+export function artForRenderData(
+  renderData: Pick<SprayWallRenderData, 'versionNumber' | 'boardWidth' | 'boardHeight' | 'holds'>,
+  art: SprayWallArt | null,
+  variant: SprayArtVariant,
+  versionId: number,
+): RegisteredSprayArt | null {
+  if (!art || art.status !== 'READY' || art.versionNumber !== renderData.versionNumber) return null;
+  const file = variant === 'crop' ? art.crop : art.cutout;
+  if (!file?.url) return null;
+  const width = art.width ?? file.width;
+  const height = art.height ?? file.height;
+  if (typeof width !== 'number' || typeof height !== 'number' || !(width > 0) || !(height > 0)) return null;
+  const { boardWidth, boardHeight } = renderData;
+  if (!(boardWidth > 0) || !(boardHeight > 0)) return null;
+  if (Math.abs(width / height - boardWidth / boardHeight) > ART_ASPECT_TOLERANCE * (boardWidth / boardHeight)) {
+    return null;
+  }
+  const scale = width / boardWidth;
+  const holds = scaleCanonicalHoldsToArt(toCanonicalHolds(renderData), scale);
+  if (!holds) return null;
+  return {
+    variant,
+    versionId,
+    version: renderData.versionNumber,
+    width,
+    height,
+    scale,
+    url: file.url,
+    expiresAt: file.expiresAt,
+    holds,
+  };
+}
+
+/** How long after a not-yet-ready art read the wall is asked about again. */
+export const ART_FOLLOW_UP_MS = 20_000;
+/** Follow-ups per (wall, version): about two minutes of asking, then the revalidation window takes over. */
+export const ART_FOLLOW_UP_MAX = 6;
+
+const artFollowUps = new Map<string, { tries: number; timer: ReturnType<typeof setTimeout> | null }>();
+
+/**
+ * The art for a wall's PUBLISHED version is still being made (PENDING, or NONE
+ * while the read that just happened queues it). Ask again shortly, without any
+ * screen having to be open: a wall published from the wizard, a hold edit or a
+ * reset swaps onto its look about a minute later, not after the ten-minute
+ * revalidation window. Bounded per version, so a queue that never runs costs
+ * `ART_FOLLOW_UP_MAX` requests and no more.
+ */
+function scheduleArtFollowUp(layoutId: number, versionId: number): void {
+  const key = `${layoutId}:${versionId}`;
+  const entry = artFollowUps.get(key) ?? { tries: 0, timer: null };
+  if (entry.timer || entry.tries >= ART_FOLLOW_UP_MAX) return;
+  entry.tries += 1;
+  entry.timer = setTimeout(() => {
+    entry.timer = null;
+    if (getSprayWall(layoutId)?.versionId !== versionId) return;
+    requestMissingSprayArt(layoutId);
+  }, ART_FOLLOW_UP_MS);
+  artFollowUps.set(key, entry);
+}
+
+/** Test seam: cancel and forget every scheduled art follow-up. */
+export function clearSprayArtFollowUps(): void {
+  for (const entry of artFollowUps.values()) if (entry.timer) clearTimeout(entry.timer);
+  artFollowUps.clear();
+}
+
+/**
+ * The generated look to register a wall with, on disk, or `null` for the photo.
+ *
+ * Never rejects: art is optional. A failed read keeps the art the wall already
+ * holds for this version, so a dropped connection does not flip a wall back to
+ * its photo; a pending, failed or refused job, a backend without the query, or
+ * a download that did not finish all draw the photo.
+ */
+async function loadArtForRegistration(
+  queryClient: QueryClient,
+  layoutId: number,
+  renderData: SprayWallRenderData,
+  background: SprayWallBackground,
+  force: boolean,
+): Promise<RegisteredSprayArt | null> {
+  const variant = artVariantForBackground(background);
+  const versionId = Number(renderData.wall.currentVersion?.id);
+  if (!variant || !Number.isSafeInteger(versionId) || versionId <= 0) return null;
+  const wallUuid = renderData.wall.uuid;
+  let art: SprayWallArt | null;
+  try {
+    if (force) await queryClient.invalidateQueries({ queryKey: ['sprayWallArt', wallUuid] });
+    art = await fetchSprayWallArt(queryClient, wallUuid, renderData.versionNumber);
+  } catch {
+    const held = getSprayWall(layoutId)?.art;
+    return held && held.versionId === versionId && held.variant === variant ? held : null;
+  }
+  const candidate = artForRenderData(renderData, art, variant, versionId);
+  if (!candidate) {
+    if (art && art.versionNumber === renderData.versionNumber && (art.status === 'PENDING' || art.status === 'NONE')) {
+      scheduleArtFollowUp(layoutId, versionId);
+    }
+    return null;
+  }
+  const path = await ensureSprayPhotoCached(
+    { layoutId, versionId, variant },
+    { url: candidate.url, expiresAt: candidate.expiresAt },
+  ).catch(() => null);
+  return path ? candidate : null;
 }
 
 /**
@@ -527,7 +733,7 @@ async function loadSprayWallOnline(
   // Alongside the render data, not after it: a wall registered without its look
   // draws in the viewer's settings, then draws again when the look lands, which
   // on a cold start doubles every spray surface's renders. Never rejects.
-  const lookRead = fetchSprayWallLook(wallUuid);
+  const lookRead = fetchSprayWallLookState(wallUuid);
   let renderData = await renderDataRead;
   if (!isCurrent()) return;
   if (viewerGeneration !== sprayWallViewerGeneration()) {
@@ -546,9 +752,14 @@ async function loadSprayWallOnline(
     unregisterSprayWall(layoutId);
     return;
   }
-  const look = await lookRead;
+  const { look, background } = await lookRead;
   if (!isCurrent()) return;
-  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration);
+  // Before registering, so the wall that lands is drawn on the right picture
+  // once, and a switch to a generated look is one write: its image is on disk
+  // and its holds are with it.
+  const art = await loadArtForRegistration(queryClient, layoutId, renderData, background, options?.force === true);
+  if (!isCurrent()) return;
+  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration, { background, art });
 }
 
 /** Online authority wins; local mirrors are only a transport-unavailable fallback. */

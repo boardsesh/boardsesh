@@ -2,29 +2,43 @@ import { getGradeColor, getVGradeColor, getFontGradeColor } from '@boardsesh/boa
 // Import via the narrow `/boulder-grade-mapping` deep-path so we don't pull
 // the whole @boardsesh/board-config module graph (board image dimensions,
 // set IDs, moonboard config) into anything that touches the grade helpers.
-import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { getBoulderGradesForBoard, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
 
 // Re-export for convenience
 export { getGradeColor };
 
-// V-grades that map from multiple Font grades. Only these need "+" disambiguation
-// when the source difficulty's Font part ends with "+". Computed once at module
-// load from BOULDER_GRADES so the set stays in sync with config.
-const V_GRADES_WITH_MULTIPLE_FONT_GRADES: Set<string> = (() => {
+type GradeScale = {
+  /**
+   * V-grades that map from multiple Font grades on this board. Only these need
+   * "+" disambiguation when the source difficulty's Font part ends with "+".
+   */
+  vGradesWithMultipleFontGrades: ReadonlySet<string>;
+  gradeByDifficultyId: ReadonlyMap<number, BoulderGrade>;
+};
+
+// Keyed by the grade table itself, so every board sharing the default table
+// shares one entry and the cache can hold at most one per distinct table.
+const GRADE_SCALE_BY_TABLE = new Map<readonly BoulderGrade[], GradeScale>();
+
+function getGradeScale(boardName: string | null | undefined): GradeScale {
+  const grades = getBoulderGradesForBoard(boardName);
+  const cached = GRADE_SCALE_BY_TABLE.get(grades);
+  if (cached) return cached;
   const countByVGrade = new Map<string, number>();
-  for (const grade of BOULDER_GRADES) {
+  for (const grade of grades) {
     countByVGrade.set(grade.v_grade, (countByVGrade.get(grade.v_grade) ?? 0) + 1);
   }
-  const result = new Set<string>();
+  const vGradesWithMultipleFontGrades = new Set<string>();
   for (const [vGrade, count] of countByVGrade) {
-    if (count > 1) result.add(vGrade);
+    if (count > 1) vGradesWithMultipleFontGrades.add(vGrade);
   }
-  return result;
-})();
-
-const GRADE_BY_DIFFICULTY_ID = new Map<number, (typeof BOULDER_GRADES)[number]>(
-  BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]),
-);
+  const scale: GradeScale = {
+    vGradesWithMultipleFontGrades,
+    gradeByDifficultyId: new Map(grades.map((grade) => [grade.difficulty_id, grade])),
+  };
+  GRADE_SCALE_BY_TABLE.set(grades, scale);
+  return scale;
+}
 
 function extractVGrade(difficulty: string | null | undefined): string | null {
   if (!difficulty) return null;
@@ -45,17 +59,19 @@ function extractFontGrade(difficulty: string | null | undefined): string | null 
 /**
  * Format a difficulty string to a V-grade display label.
  * Adds "+" only when the Font grade has "+" AND the V-grade has multiple Font
- * grade mappings (e.g., "6c+/V5" → "V5+" because V5 maps from both 6c and 6c+).
- * V-grades with a single Font mapping (e.g., "7a+/V7") never get a "+".
+ * grade mappings on the climb's board (e.g., "6c+/V5" → "V5+" because V5 maps
+ * from both 6c and 6c+). V-grades with a single Font mapping (e.g., "7a+/V7")
+ * never get a "+". Pass `boardName` so a board with its own conversion gets its
+ * own rule: MoonBoard's 6A is V2, so its "6a+/V3" is the only V3 and reads "V3".
  */
-export function formatVGrade(difficulty: string | null | undefined): string | null {
+export function formatVGrade(difficulty: string | null | undefined, boardName?: string | null): string | null {
   if (!difficulty) return null;
   const vGrade = extractVGrade(difficulty);
   if (!vGrade) return null;
   const slashIndex = difficulty.indexOf('/');
   if (slashIndex > 0) {
     const fontPart = difficulty.substring(0, slashIndex);
-    if (fontPart.endsWith('+') && V_GRADES_WITH_MULTIPLE_FONT_GRADES.has(vGrade)) {
+    if (fontPart.endsWith('+') && getGradeScale(boardName).vGradesWithMultipleFontGrades.has(vGrade)) {
       return `${vGrade}+`;
     }
   }
@@ -78,17 +94,22 @@ const BOTH_FORMAT_SEPARATOR = ' / ';
 /**
  * Format a difficulty string according to the user's preference.
  * `'v-grade'` → V-style label (`"V5"`, `"V5+"`). `'font'` → Font label
- * (`"6A"`). `'both'` → V then Font (`"V5+ / 6C+"`).
+ * (`"6A"`). `'both'` → V then Font (`"V5+ / 6C+"`). `boardName` picks the
+ * board's V-grade "+" rule; see {@link formatVGrade}.
  */
-export function formatGrade(difficulty: string | null | undefined, format: GradeDisplayFormat): string | null {
+export function formatGrade(
+  difficulty: string | null | undefined,
+  format: GradeDisplayFormat,
+  boardName?: string | null,
+): string | null {
   if (format === 'font') return formatFontGrade(difficulty);
   if (format === 'both') {
-    const vGrade = formatVGrade(difficulty);
+    const vGrade = formatVGrade(difficulty, boardName);
     const fontGrade = formatFontGrade(difficulty);
     if (vGrade && fontGrade) return `${vGrade}${BOTH_FORMAT_SEPARATOR}${fontGrade}`;
     return vGrade ?? fontGrade;
   }
-  return formatVGrade(difficulty);
+  return formatVGrade(difficulty, boardName);
 }
 
 /**
@@ -106,16 +127,18 @@ export function splitGradeLabel(label: string | null | undefined): string[] {
 /**
  * Format a numeric Aurora difficulty id according to the user's preference.
  * This keeps mobile feed/logbook rows from depending on whatever preformatted
- * grade label the backend sent alongside the id.
+ * grade label the backend sent alongside the id. `boardName` picks the board's
+ * labels (MoonBoard's 6A is V2).
  */
 export function formatGradeByDifficultyId(
   difficultyId: number | null | undefined,
   format: GradeDisplayFormat,
+  boardName?: string | null,
 ): string | null {
   if (difficultyId == null) return null;
-  const grade = GRADE_BY_DIFFICULTY_ID.get(difficultyId);
+  const grade = getGradeScale(boardName).gradeByDifficultyId.get(difficultyId);
   if (!grade) return null;
-  return formatGrade(grade.difficulty_name, format);
+  return formatGrade(grade.difficulty_name, format, boardName);
 }
 
 /**

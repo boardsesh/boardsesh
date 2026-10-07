@@ -83,10 +83,11 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
           dayLabel={formatLedgerDayLabel(item.session.dayKey, { todayKey, yesterdayKey, todayLabel, yesterdayLabel })}
           showMirrorTag={showMirrorTag}
           showDayTries={item.showDayTries}
+          boardName={boardName}
         />
       );
     },
-    [angle, showMirrorTag, todayKey, yesterdayKey, todayLabel, yesterdayLabel],
+    [angle, showMirrorTag, todayKey, yesterdayKey, todayLabel, yesterdayLabel, boardName],
   );
 
   return (

@@ -159,6 +159,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     onOverlayMounted,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundBaseColor,
     rendererUnavailable,
   } = useNativeClimbRender({
     frames,
@@ -190,6 +191,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         onOverlayError={onOverlayError}
         onOverlayMounted={onOverlayMounted}
         backgroundPaths={backgroundPaths}
+        baseColor={backgroundBaseColor}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={recyclingKey}

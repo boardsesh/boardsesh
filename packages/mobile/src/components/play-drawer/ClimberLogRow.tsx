@@ -34,6 +34,8 @@ type ClimberLogRowProps = {
   group: ClimberLogGroup;
   /** The angle the board is set to. A log at it does not mention its angle. */
   boardAngle: number;
+  /** The climb's board, so a climber's grade reads on that board's scale. */
+  boardName?: string | null;
   noteLines?: number;
   /** Hide the "+N earlier" words. Set when the rows are cut by the server's
    *  cap, where the count behind them would be wrong. */
@@ -67,7 +69,7 @@ function resultWords(result: ClimberLogResult, t: TFunction<'session'>): string 
  * with "at 35°" only when the log is not at the board's angle). `graded` is
  * "graded it V4" for a grade that disagrees with the climb's, or null.
  */
-function useLogWords(boardAngle: number) {
+function useLogWords(boardAngle: number, boardName?: string | null) {
   const { t } = useTranslation('session');
   const { formatGradeByDifficultyId } = useGradeFormat();
   const result = useCallback(
@@ -82,10 +84,11 @@ function useLogWords(boardAngle: number) {
   const graded = useCallback(
     (disagreeingGradeId: number | null | undefined): string | null => {
       if (disagreeingGradeId == null) return null;
-      const grade = formatGradeByDifficultyId(disagreeingGradeId) || getGradeLabel(disagreeingGradeId);
+      const grade =
+        formatGradeByDifficultyId(disagreeingGradeId, boardName) || getGradeLabel(disagreeingGradeId, boardName);
       return grade ? t('mobile.climberLogs.gradedIt', { grade }) : null;
     },
-    [formatGradeByDifficultyId, t],
+    [formatGradeByDifficultyId, boardName, t],
   );
   return { result, graded };
 }
@@ -126,6 +129,7 @@ const EarlierButton = memo(function EarlierButton({
 export const ClimberLogRow = memo(function ClimberLogRow({
   group,
   boardAngle,
+  boardName,
   noteLines = 3,
   hideEarlier = false,
   onPressClimber,
@@ -134,7 +138,7 @@ export const ClimberLogRow = memo(function ClimberLogRow({
 }: ClimberLogRowProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const logWords = useLogWords(boardAngle);
+  const logWords = useLogWords(boardAngle, boardName);
   const { lead, earlier, userId, note } = group;
   const name = group.displayName ?? t('mobile.climberLogs.unknownClimber');
   // How it went and when come from their best log; the note and the grade from
@@ -320,13 +324,15 @@ export const ClimberLogEarlierRow = memo(function ClimberLogEarlierRow({
   log,
   boardAngle,
   climbGradeId,
+  boardName,
 }: {
   log: ClimberLog;
   boardAngle: number;
   climbGradeId: number | null;
+  boardName?: string | null;
 }) {
   const { systemColors } = useTheme();
-  const logWords = useLogWords(boardAngle);
+  const logWords = useLogWords(boardAngle, boardName);
   const note = log.comment.trim();
   const result = logWords.result(log);
   const graded = logWords.graded(gradeDisagrees(log, boardAngle, climbGradeId) ? log.difficulty : null);

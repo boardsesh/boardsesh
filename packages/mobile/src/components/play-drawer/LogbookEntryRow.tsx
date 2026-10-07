@@ -13,6 +13,8 @@ import { spacing } from '../../theme/tokens';
 type LogbookEntryRowProps = {
   entry: LogbookEntry;
   showMirrorTag: boolean;
+  /** The climb's board, so the grade reads on that board's scale (MoonBoard's 6A is V2). */
+  boardName?: string | null;
 };
 
 // Time of day only: the day line above the row already names the day.
@@ -47,7 +49,11 @@ function formatClimbedAt(iso: string): string {
  * mirror tag, the time on the right, and the note under it. The result is text, never a colour
  * or a glyph, so the row reads the same in any theme.
  */
-export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirrorTag }: LogbookEntryRowProps) {
+export const LogbookEntryRow = memo(function LogbookEntryRow({
+  entry,
+  showMirrorTag,
+  boardName,
+}: LogbookEntryRowProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const { formatGradeByDifficultyId } = useGradeFormat();
@@ -69,7 +75,7 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirror
 
   const climbedAtLabel = useMemo(() => formatClimbedAt(entry.climbed_at), [entry.climbed_at]);
 
-  const grade = formatGradeByDifficultyId(entry.difficulty);
+  const grade = formatGradeByDifficultyId(entry.difficulty, boardName);
   // The effective quality, so a Kilter-pulled tick (no per-tick quality)
   // surfaces the climber's own synced star rating. Sends only: a try that did
   // not go carries no rating.

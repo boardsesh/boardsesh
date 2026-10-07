@@ -288,34 +288,39 @@ export function useProfileData(userId: string, initialData?: InitialData) {
 
   // Compute hardest send and hardest flash from filtered ticks
   const { hardestSend, hardestFlash } = useMemo(() => {
-    const allTicks = Object.values(filteredBoardsTicks).flat();
-    const mapping = getDifficultyMapping(gradeFormat);
     let maxSendDifficulty = -1;
     let maxFlashDifficulty = -1;
+    let hardestSendBoard: string | null = null;
+    let hardestFlashBoard: string | null = null;
 
-    for (const tick of allTicks) {
-      // Prefer the server-coalesced consensus value; fall back to the raw
-      // override when absent (test fixtures, transient optimistic writes).
-      const grade = tick.effectiveDifficulty ?? tick.difficulty;
-      if (grade == null) continue;
-      if (tick.status === 'send' || tick.status === 'flash') {
-        if (grade > maxSendDifficulty) maxSendDifficulty = grade;
-      }
-      if (tick.status === 'flash') {
-        if (grade > maxFlashDifficulty) maxFlashDifficulty = grade;
+    for (const [boardType, ticks] of Object.entries(filteredBoardsTicks)) {
+      for (const tick of ticks) {
+        // Prefer the server-coalesced consensus value; fall back to the raw
+        // override when absent (test fixtures, transient optimistic writes).
+        const grade = tick.effectiveDifficulty ?? tick.difficulty;
+        if (grade == null) continue;
+        if ((tick.status === 'send' || tick.status === 'flash') && grade > maxSendDifficulty) {
+          maxSendDifficulty = grade;
+          hardestSendBoard = boardType;
+        }
+        if (tick.status === 'flash' && grade > maxFlashDifficulty) {
+          maxFlashDifficulty = grade;
+          hardestFlashBoard = boardType;
+        }
       }
     }
 
-    const makeHighlight = (difficulty: number, status: 'send' | 'flash') => {
-      const label = mapping[difficulty] ?? `${difficulty}`;
+    // Labelled on the hardest tick's board: MoonBoard's 6A reads V2.
+    const makeHighlight = (difficulty: number, status: 'send' | 'flash', boardType: string | null) => {
+      const label = getDifficultyMapping(gradeFormat, boardType)[difficulty] ?? `${difficulty}`;
       const color = getGradeColor(label) ?? 'var(--neutral-200)';
       const textColor = getGradeTextColor(color);
       return { label, color, textColor, status };
     };
 
     return {
-      hardestSend: maxSendDifficulty >= 0 ? makeHighlight(maxSendDifficulty, 'send') : null,
-      hardestFlash: maxFlashDifficulty >= 0 ? makeHighlight(maxFlashDifficulty, 'flash') : null,
+      hardestSend: maxSendDifficulty >= 0 ? makeHighlight(maxSendDifficulty, 'send', hardestSendBoard) : null,
+      hardestFlash: maxFlashDifficulty >= 0 ? makeHighlight(maxFlashDifficulty, 'flash', hardestFlashBoard) : null,
     };
   }, [filteredBoardsTicks, gradeFormat]);
 
