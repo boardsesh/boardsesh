@@ -211,7 +211,11 @@ export async function recomputeClimbStats(
 
   // Boards whose grade is the climbers' vote (#5971, spray): their own grade
   // rule, ahead of the owned/derive branches. See climber-vote-grade.ts.
-  const singleKeyVoteKey = { boardType: sql`${boardType}::text`, climbUuid: sql`${climbUuid}::text`, angle: sql`${angle}::integer` };
+  const singleKeyVoteKey = {
+    boardType: sql`${boardType}::text`,
+    climbUuid: sql`${climbUuid}::text`,
+    angle: sql`${angle}::integer`,
+  };
   const singleKeyVoteBoard = climberVoteGradeAppliesSql(sql`${boardType}::text`);
   const singleKeyVoteGrade = climberVoteGradeSql(singleKeyVoteKey, 's');
   const singleKeyVoteGradedAt = climberVoteGradedAtSql(singleKeyVoteKey);
