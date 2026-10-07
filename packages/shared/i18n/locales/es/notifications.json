@@ -36,9 +36,7 @@
     "newClimbsSynced": "{{actor}} montó nuevos bloques",
     "gymClaimApproved": "Ahora gestionas {{gym}}",
     "gymClaimApprovedGeneric": "Ya eres el propietario: se aprobó tu reclamación del rocódromo",
-    "default": "Tienes una nueva notificación",
-    "sprayWallReady": "{{wall}} está listo para revisar.",
-    "sprayWallReadyGeneric": "La foto de tu plafón está lista para revisar."
+    "default": "Tienes una nueva notificación"
   },
   "errors": {
     "load": "No se pudieron cargar tus notificaciones"

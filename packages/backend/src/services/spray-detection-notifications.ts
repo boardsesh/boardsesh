@@ -38,6 +38,8 @@ const ticketSchema = z.object({
 const responseSchema = z.object({ data: z.unknown() });
 const copySchema = z.object({ push: z.object({ sprayWallTitle: z.string(), sprayWallBody: z.string() }) });
 
+// i18n-keep notifications.push.sprayWallTitle
+// i18n-keep notifications.push.sprayWallBody
 export function sprayCompletionCopy(locale: string, wallName: string): { title: string; body: string } {
   const catalogs: Record<string, unknown> = { 'en-US': english, es: spanish, fr: french, de: german };
   const { push } = copySchema.parse(catalogs[locale] ?? english);
