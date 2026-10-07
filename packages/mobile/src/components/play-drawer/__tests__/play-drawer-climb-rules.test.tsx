@@ -90,6 +90,7 @@ vi.mock('../../ClimbAttributeIcons', () => ({
 
 // The real chip reads the theme provider, which this suite does not stand up.
 vi.mock('../../DraftChip', () => ({ DraftChip: () => createElement('i', { 'data-chip': 'draft' }) }));
+vi.mock('../../ProjectChip', () => ({ ProjectChip: () => createElement('i', { 'data-chip': 'project' }) }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
