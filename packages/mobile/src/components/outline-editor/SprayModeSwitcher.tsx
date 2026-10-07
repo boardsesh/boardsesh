@@ -62,8 +62,9 @@ type SprayModeSwitcherProps = {
  * Join. The mode that is on sits on a raised neutral pill, never brand colour,
  * so the wall's violet rings stay the only violet in view.
  *
- * Icons only, so the bar fits a 375 pt phone in every language beside the
- * Undo | Redo pill at its widest. A press and hold on a segment shows its name
+ * Icons only, so the bar fits a 360 pt phone in every language beside the
+ * Undo | Redo pill at its widest; narrower still, the segments give up a few
+ * points of width each (see `styles`). A press and hold on a segment shows its name
  * above the capsule while the finger stays down; a screen reader hears the name
  * and what the mode does.
  */
@@ -203,8 +204,14 @@ const ModeSegment = React.memo(function ModeSegment({
 });
 
 const styles = StyleSheet.create({
+  // The wrapper, capsule and segments may all shrink, so on a phone narrower
+  // than the bar's natural 360 pt (a 320 pt screen with Redo showing) the
+  // segments narrow a few points each instead of running off the edge. They
+  // keep their 44 pt height, so every one stays a full-height touch target.
   wrapper: {
     alignItems: 'center',
+    flexShrink: 1,
+    minWidth: 0,
   },
   capsule: {
     flexDirection: 'row',
@@ -212,9 +219,13 @@ const styles = StyleSheet.create({
     height: SPRAY_BAR_HEIGHT,
     padding: CAPSULE_PADDING,
     borderRadius: SPRAY_BAR_HEIGHT / 2,
+    flexShrink: 1,
+    minWidth: 0,
   },
   segment: {
     width: SPRAY_MODE_SEGMENT_SIZE,
+    flexShrink: 1,
+    minWidth: 0,
     height: SPRAY_MODE_SEGMENT_SIZE,
     borderRadius: SPRAY_MODE_SEGMENT_SIZE / 2,
     alignItems: 'center',
