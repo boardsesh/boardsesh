@@ -4,6 +4,18 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-07
+
+### New
+
+- Import your MoonBoard logbook from Moon's newer exports, now matched by problem name ([#6187](https://github.com/boardsesh/boardsesh/pull/6187))
+  Logs from the 25° board keep their angle, and your comments come along too
+
+### Fixed
+
+- Sends synced from Kilter now show the grade you gave them, not the setter's grade ([#6186](https://github.com/boardsesh/boardsesh/pull/6186))
+- MoonBoard grades now match the MoonBoard app: 6A shows as V2, and the easy grades read V1 to V4 ([#6188](https://github.com/boardsesh/boardsesh/pull/6188))
+
 ## 2026-10-06
 
 ### App update
@@ -12,7 +24,7 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
-- Spray wall owners can show their wall straightened out, or just the holds on a clean background, like an LED board. ([#6178](https://github.com/boardsesh/boardsesh/pull/6178))
+- Server half only: the picker ships in the app with #6179, so nobody sees this until then. The climber-facing note lives on #6179. ([#6178](https://github.com/boardsesh/boardsesh/pull/6178))
 - The hold heatmap moved to the hold filter: pick holds with the heat showing where climbs go ([#6144](https://github.com/boardsesh/boardsesh/pull/6144))
 - Get the app straight from a climb page, a climb list or the gym directory on boardsesh.com ([#6083](https://github.com/boardsesh/boardsesh/pull/6083))
   iPhone Safari now offers to open the page you're on in the app

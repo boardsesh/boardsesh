@@ -1,10 +1,32 @@
 {
-  "generatedAt": "2026-10-06T20:50:12.941Z",
+  "generatedAt": "2026-10-07T01:44:16.253Z",
   "entries": [
+    {
+      "prNumber": 6186,
+      "category": "fixed",
+      "title": "Sends synced from Kilter now show the grade you gave them, not the setter's grade",
+      "mergedAt": "2026-10-07T01:17:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6186"
+    },
+    {
+      "prNumber": 6188,
+      "category": "fixed",
+      "title": "MoonBoard grades now match the MoonBoard app: 6A shows as V2, and the easy grades read V1 to V4",
+      "mergedAt": "2026-10-07T01:16:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6188"
+    },
+    {
+      "prNumber": 6187,
+      "category": "new",
+      "title": "Import your MoonBoard logbook from Moon's newer exports, now matched by problem name",
+      "mergedAt": "2026-10-07T01:03:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6187",
+      "body": "Logs from the 25° board keep their angle, and your comments come along too"
+    },
     {
       "prNumber": 6178,
       "category": "new",
-      "title": "Spray wall owners can show their wall straightened out, or just the holds on a clean background, like an LED board.",
+      "title": "Server half only: the picker ships in the app with #6179, so nobody sees this until then. The climber-facing note lives on #6179.",
       "mergedAt": "2026-10-06T20:47:57Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6178"
     },
