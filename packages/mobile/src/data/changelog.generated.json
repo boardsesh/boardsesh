@@ -1,6 +1,29 @@
 {
-  "generatedAt": "2026-10-07T20:36:56.632Z",
+  "generatedAt": "2026-10-07T22:26:57.936Z",
   "entries": [
+    {
+      "prNumber": 4586,
+      "category": "fixed",
+      "title": "An old claim can’t take over a merged gym after ownership changes.",
+      "mergedAt": "2026-10-07T22:14:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/4586"
+    },
+    {
+      "prNumber": 5950,
+      "category": "new",
+      "title": "See your spray wall photo's place in the queue and keep track in My Boards.",
+      "mergedAt": "2026-10-07T22:06:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5950",
+      "body": "Get a notification when your photo is ready to review, including resets."
+    },
+    {
+      "prNumber": 6201,
+      "category": "new",
+      "title": "Set climbs on your spray wall without grading them. The first ascent sets the grade, and the crew's grades move it from there.",
+      "mergedAt": "2026-10-07T22:05:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6201",
+      "body": "Climbs nobody has graded yet show a Project tag."
+    },
     {
       "prNumber": 6204,
       "category": "new",

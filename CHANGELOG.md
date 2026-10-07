@@ -8,6 +8,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- See your spray wall photo's place in the queue and keep track in My Boards. ([#5950](https://github.com/boardsesh/boardsesh/pull/5950))
+  Get a notification when your photo is ready to review, including resets.
+- Set climbs on your spray wall without grading them. The first ascent sets the grade, and the crew's grades move it from there. ([#6201](https://github.com/boardsesh/boardsesh/pull/6201))
+  Climbs nobody has graded yet show a Project tag.
 - Zoom in on your spray wall's holds and the photo fills the whole screen ([#6204](https://github.com/boardsesh/boardsesh/pull/6204))
 - Delete a climb you set on your spray wall, as long as nobody has logged it yet ([#6197](https://github.com/boardsesh/boardsesh/pull/6197))
 - Stripped your spray wall? Reset it: take a new photo, mark the holds, and the old wall is archived with every climb and send. ([#6190](https://github.com/boardsesh/boardsesh/pull/6190))
@@ -22,6 +26,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- An old claim can’t take over a merged gym after ownership changes. ([#4586](https://github.com/boardsesh/boardsesh/pull/4586))
 - Grade pickers no longer show "V0 V0 V0": each chip names the grade it stands for. ([#6203](https://github.com/boardsesh/boardsesh/pull/6203))
 - Hold outlines finish themselves when you draw back to where you started ([#6202](https://github.com/boardsesh/boardsesh/pull/6202))
 - Saving a climb with no name now tells you "Name it to save" instead of just jumping to the field. ([#6194](https://github.com/boardsesh/boardsesh/pull/6194))
