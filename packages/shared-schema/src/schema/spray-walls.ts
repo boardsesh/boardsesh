@@ -387,14 +387,15 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     """
     What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
     The server keeps the highest of this, the stored value and EDITED when the
-    geometry changed, so an omitted value never clears one.
+    geometry changed (against the stored hold, or the movedFromHoldId one), so
+    an omitted value never clears one. An explicit null does clear it.
     """
     autoReview: SprayHoldAutoReview
     """
     The detection run the suggestion came from, with originCandidateIndex. AUTO
     holds only. A run of another wall, an unfinished run or an index out of range
     is stored as null rather than failing the save. Omit both to keep what the
-    hold already records.
+    hold already records; send originDetectionId: null to clear it.
     """
     originDetectionId: ID
     originCandidateIndex: Int

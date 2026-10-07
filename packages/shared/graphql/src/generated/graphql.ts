@@ -9558,9 +9558,21 @@ export type SprayTrainingExportResult = {
   /** Stored exports deleted because a version in them is no longer eligible and approved, or they fell out of the newest two. */
   exportsRetired: Scalars['Int']['output'];
   imagesWritten: Scalars['Int']['output'];
-  /** True when the approved set matched the newest export and nothing was written. */
+  /** True when nothing was written; skippedReason says why. */
   skipped: Scalars['Boolean']['output'];
+  skippedReason?: Maybe<SprayTrainingExportSkipReason>;
+  /** Approved, eligible versions left out of this export: holds that do not project onto the photo, no holds, or an unreadable photo. */
+  versionsSkipped: Scalars['Int']['output'];
 };
+
+/** Why an export run wrote nothing. */
+export type SprayTrainingExportSkipReason =
+  /** Another run holds the export lease. The scheduler job reports this as a failure. */
+  | 'LOCKED'
+  /** Nothing is approved and eligible, or nothing approved could be exported. */
+  | 'NOTHING_TO_EXPORT'
+  /** The approved, eligible set matches the newest export. */
+  | 'UNCHANGED';
 
 /** One saved hold, projected into the version's PHOTO pixels. */
 export type SprayTrainingHold = {
@@ -9603,7 +9615,11 @@ export type SprayTrainingQueueItem = {
   publishedAt?: Maybe<Scalars['String']['output']>;
   review: SprayTrainingReview;
   stats: SprayTrainingStats;
-  /** Holds whose canonical position does not project onto the photo, so they are not in holds. */
+  /**
+   * Holds whose canonical position does not project onto the photo, so they are
+   * not in holds. A version with any is left out of the export even when
+   * approved: a real hold missing from the labels would be learned as background.
+   */
   unmappableHoldCount: Scalars['Int']['output'];
   versionId: Scalars['ID']['output'];
   versionNumber: Scalars['Int']['output'];
@@ -9918,7 +9934,8 @@ export type SprayWallHoldInput = {
   /**
    * What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
    * The server keeps the highest of this, the stored value and EDITED when the
-   * geometry changed, so an omitted value never clears one.
+   * geometry changed (against the stored hold, or the movedFromHoldId one), so
+   * an omitted value never clears one. An explicit null does clear it.
    */
   autoReview?: InputMaybe<SprayHoldAutoReview>;
   confidence?: InputMaybe<Scalars['Float']['input']>;
@@ -9931,7 +9948,7 @@ export type SprayWallHoldInput = {
    * The detection run the suggestion came from, with originCandidateIndex. AUTO
    * holds only. A run of another wall, an unfinished run or an index out of range
    * is stored as null rather than failing the save. Omit both to keep what the
-   * hold already records.
+   * hold already records; send originDetectionId: null to clear it.
    */
   originDetectionId?: InputMaybe<Scalars['ID']['input']>;
   /** Flat implicitly-closed ring in radius units, 3-150 points, every coordinate within 4 radii. */

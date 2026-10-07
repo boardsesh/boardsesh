@@ -68,10 +68,12 @@ export const SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME = {
   edited: 'EDITED',
 } as const;
 
+// Omitted (undefined) and an explicit null mean different things: omitted keeps
+// what the hold records, null clears it. Both survive the transform.
 const SprayHoldAutoReviewSchema = z
   .enum(['ACCEPTED', 'CONFIRMED', 'EDITED'])
   .nullish()
-  .transform((wireName) => (wireName == null ? null : SPRAY_HOLD_AUTO_REVIEW_BY_WIRE_NAME[wireName]));
+  .transform((wireName) => (wireName == null ? wireName : SPRAY_HOLD_AUTO_REVIEW_BY_WIRE_NAME[wireName]));
 
 /** Wire name ↔ stored value for a version's lifecycle, mirroring the pgEnum. */
 export const SPRAY_VERSION_STATUS_WIRE_NAME = {

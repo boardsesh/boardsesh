@@ -2210,12 +2210,13 @@ const originKey = (detectionId: string, candidateIndex: number) => `${detectionI
 
 /**
  * Which `(detection, candidate)` pairs named in this batch are real: a run of THIS
- * wall that finished, and an index inside its candidate list. One query for the
- * whole batch, whatever its size.
+ * wall on THIS draft's photo that finished, and an index inside its candidate
+ * list. One query for the whole batch, whatever its size.
  */
 async function validOriginKeys(
   tx: SprayWriteTransaction,
   wallId: number,
+  photoKey: string | null,
   holds: readonly SprayWallHoldInput[],
 ): Promise<Set<string>> {
   const detectionIds = [
@@ -2223,7 +2224,8 @@ async function validOriginKeys(
       holds.map((hold) => hold.originDetectionId).filter((detectionId): detectionId is string => detectionId != null),
     ),
   ];
-  if (detectionIds.length === 0) return new Set();
+  // A draft with no photo has nothing a suggestion could have been found on.
+  if (detectionIds.length === 0 || photoKey == null) return new Set();
 
   const runs = await tx
     .select({
@@ -2235,6 +2237,7 @@ async function validOriginKeys(
     .where(
       and(
         eq(dbSchema.sprayWallDetections.wallId, wallId),
+        eq(dbSchema.sprayWallDetections.photoKey, photoKey),
         eq(dbSchema.sprayWallDetections.status, 'done'),
         inArray(dbSchema.sprayWallDetections.id, detectionIds),
       ),
@@ -2256,18 +2259,23 @@ async function validOriginKeys(
  * The provenance to store for one written hold.
  *
  * `previous` is the row this write replaces: the stored row for an in-place edit,
- * the superseded original for a correction of an inherited hold, nothing for a
- * genuine addition.
+ * the superseded original for a correction of an inherited hold, the
+ * `movedFromHoldId` predecessor for a moved hold, nothing for a genuine addition.
+ *
+ * Each field distinguishes OMITTED from an explicit null. Omitted keeps what
+ * `previous` records, so an app that predates the fields never wipes them. An
+ * explicit null clears it (the editor merging two holds into one says the
+ * result came from no single suggestion).
  *
  *  - A MANUAL hold records none, whatever was sent: provenance is a fact about a
  *    detector suggestion.
- *  - The origin is the one sent when it validates, NULL when it does not (never a
- *    failed save: provenance is bookkeeping, the holds are the climber's work),
- *    and the previous row's when nothing was sent, so an app that predates the
- *    fields does not wipe it.
- *  - The review is the highest of what was sent, what the previous row had, and
- *    `edited` when an auto hold's geometry moved. The server decides the last on
- *    its own so an older app's nudge still counts as a correction.
+ *  - A sent origin is kept when it validates and stored as NULL when it does not
+ *    (never a failed save: provenance is bookkeeping, the holds are the
+ *    climber's work).
+ *  - The review is the highest of what was sent, what `previous` had, and
+ *    `edited` when an auto hold's geometry moved from `previous`'s. The server
+ *    decides the last on its own so an older app's nudge still counts as a
+ *    correction. An explicit null review clears it and skips that rule.
  */
 function resolveHoldProvenance(
   hold: SprayWallHoldInput,
@@ -2280,25 +2288,30 @@ function resolveHoldProvenance(
   const inherited = previous?.source === 'auto' ? previous : undefined;
   let originDetectionId = inherited?.originDetectionId ?? null;
   let originCandidateIndex = inherited?.originDetectionId == null ? null : (inherited.originCandidateIndex ?? null);
-  if (hold.originDetectionId != null || hold.originCandidateIndex != null) {
+  const originSent = hold.originDetectionId !== undefined || hold.originCandidateIndex !== undefined;
+  if (originSent) {
     const sentValid =
       hold.originDetectionId != null &&
       hold.originCandidateIndex != null &&
       validOrigins.has(originKey(hold.originDetectionId, hold.originCandidateIndex));
+    const explicitClear = hold.originDetectionId === null && hold.originCandidateIndex == null;
     if (sentValid) {
       originDetectionId = hold.originDetectionId!;
       originCandidateIndex = hold.originCandidateIndex!;
     } else {
-      logger.debug('Dropped an invalid spray hold origin', {
-        wallId,
-        originDetectionId: hold.originDetectionId ?? null,
-        originCandidateIndex: hold.originCandidateIndex ?? null,
-      });
+      if (!explicitClear) {
+        logger.debug('Dropped an invalid spray hold origin', {
+          wallId,
+          originDetectionId: hold.originDetectionId ?? null,
+          originCandidateIndex: hold.originCandidateIndex ?? null,
+        });
+      }
       originDetectionId = null;
       originCandidateIndex = null;
     }
   }
 
+  if (hold.autoReview === null) return { autoReview: null, originDetectionId, originCandidateIndex };
   let autoReview = strongerAutoReview(hold.autoReview, inherited?.autoReview);
   if (inherited && holdGeometryChanged(hold, inherited)) autoReview = 'edited';
 
@@ -2955,13 +2968,17 @@ export const sprayWallMutations = {
           validated.holds.map((hold) => hold.movedFromHoldId).filter((holdId): holdId is number => holdId != null),
         ),
       ];
+      // The predecessors themselves, kept: a moved hold inherits its provenance
+      // from the one it replaced (SW-20, #5471).
+      const movedFromById = new Map<number, SprayWallHoldRow>();
       if (movedFromIds.length > 0) {
         const known = await tx
-          .select({ holdId: dbSchema.sprayWallHolds.holdId })
+          .select()
           .from(dbSchema.sprayWallHolds)
           .where(
             and(eq(dbSchema.sprayWallHolds.wallId, wall.id), inArray(dbSchema.sprayWallHolds.holdId, movedFromIds)),
           );
+        for (const row of known) movedFromById.set(row.holdId, row);
         const knownIds = new Set(known.map((row) => row.holdId));
         const strayId = movedFromIds.find((holdId) => !knownIds.has(holdId));
         if (strayId != null) {
@@ -3022,9 +3039,18 @@ export const sprayWallMutations = {
       // Provenance (SW-20, #5471): validated in one query, decided per hold. An
       // addition has no previous row; a supersede inherits from the original it
       // replaces; an in-place edit from its own stored row.
-      const validOrigins = await validOriginKeys(tx, wall.id, validated.holds);
-      const newRowProvenance = newRows.map(({ hold }) =>
-        resolveHoldProvenance(hold, hold.id == null ? undefined : aliveById.get(hold.id), validOrigins, wall.id),
+      const validOrigins = await validOriginKeys(tx, wall.id, version.photoKey, validated.holds);
+      const newRowProvenance = newRows.map(({ hold, predecessorId }) =>
+        resolveHoldProvenance(
+          hold,
+          hold.id != null
+            ? aliveById.get(hold.id)
+            : predecessorId != null
+              ? movedFromById.get(predecessorId)
+              : undefined,
+          validOrigins,
+          wall.id,
+        ),
       );
 
       if (newRows.length > 0) {

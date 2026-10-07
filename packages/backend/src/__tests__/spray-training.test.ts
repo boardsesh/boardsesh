@@ -98,7 +98,9 @@ const {
   trainingRef,
   trainingSplitForRoot,
   SPRAY_TRAINING_EXPORT_PREFIX,
+  SPRAY_TRAINING_EXPORT_LEASE,
 } = await import('../graphql/resolvers/board/spray-training');
+const { buildUserDataArchive } = await import('../services/user-data-export-archive');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { SYSTEM_BOARD_OWNER_ID } = await import('../graphql/resolvers/board-presence/shared');
 
@@ -278,7 +280,8 @@ beforeEach(async () => {
   await db.execute(sql`
     TRUNCATE TABLE "spray_walls", "user_boards", "board_climbs", "board_climb_holds", "board_climb_stats",
                    "board_layouts", "board_product_sizes", "board_product_sizes_layouts_sets",
-                   "board_holes", "board_placements", "community_roles", "feed_items"
+                   "board_holes", "board_placements", "community_roles", "feed_items",
+                   "sync_daemon_leases"
     RESTART IDENTITY CASCADE
   `);
   await db.execute(sql`ALTER SEQUENCE spray_wall_catalog_id_seq RESTART WITH 1`);
@@ -429,6 +432,94 @@ describe('hold provenance on upsert', () => {
       { id: accepted.id, cx: 140, cy: 100, r: 20, source: 'MANUAL' },
     ]);
     expect(cleared).toMatchObject({ autoReview: null, originDetectionId: null, originCandidateIndex: null });
+  });
+});
+
+describe('hold provenance edge cases', () => {
+  it('clears provenance on an explicit null, and inherits it on a moved hold', async () => {
+    const wall = await createWall();
+    const versionId = await createDraft(wall);
+    const detectionId = await insertDetection(versionId, [
+      { cx: 10, cy: 10, r: 5, confidence: 0.9 },
+      { cx: 20, cy: 20, r: 5, confidence: 0.9 },
+    ]);
+    const [cleared, moved] = await upsertHolds(wall, versionId, [
+      {
+        cx: 100,
+        cy: 100,
+        r: 20,
+        source: 'AUTO',
+        confidence: 0.9,
+        autoReview: 'ACCEPTED',
+        originDetectionId: detectionId,
+        originCandidateIndex: 0,
+      },
+      {
+        cx: 300,
+        cy: 300,
+        r: 20,
+        source: 'AUTO',
+        confidence: 0.9,
+        autoReview: 'ACCEPTED',
+        originDetectionId: detectionId,
+        originCandidateIndex: 1,
+      },
+    ]);
+
+    // The editor merged it: it says outright the result came from no suggestion.
+    const [merged] = await upsertHolds(wall, versionId, [
+      {
+        id: cleared.id,
+        cx: 120,
+        cy: 100,
+        r: 25,
+        source: 'AUTO',
+        confidence: 0.9,
+        autoReview: null,
+        originDetectionId: null,
+        originCandidateIndex: null,
+      },
+    ]);
+    expect(merged).toMatchObject({ autoReview: null, originDetectionId: null, originCandidateIndex: null });
+
+    // A new hold that moved from an auto hold, with a new shape and no provenance
+    // of its own: it carries its predecessor's origin, as a correction.
+    const [successor] = await upsertHolds(wall, versionId, [
+      { cx: 360, cy: 300, r: 20, source: 'AUTO', confidence: 0.9, movedFromHoldId: moved.id },
+    ]);
+    expect(successor).toMatchObject({ autoReview: 'EDITED', originDetectionId: detectionId, originCandidateIndex: 1 });
+  });
+
+  it('refuses an origin from another photo of the same wall', async () => {
+    const wall = await createWall();
+    const versionId = await createDraft(wall);
+    const detectionId = await insertDetection(versionId, [{ cx: 10, cy: 10, r: 5, confidence: 0.9 }]);
+    await db.execute(
+      sql`UPDATE spray_wall_detections SET photo_key = 'some-other-photo.jpg' WHERE id = ${detectionId}`,
+    );
+    const [hold] = await upsertHolds(wall, versionId, [
+      {
+        cx: 100,
+        cy: 100,
+        r: 20,
+        source: 'AUTO',
+        confidence: 0.9,
+        originDetectionId: detectionId,
+        originCandidateIndex: 0,
+      },
+    ]);
+    expect(hold).toMatchObject({ originDetectionId: null, originCandidateIndex: null });
+  });
+});
+
+describe('the user data export', () => {
+  it('lists each owned spray wall with its training consent stamp', async () => {
+    const consenting = await createWall();
+    const declining = await createWall({ trainingConsent: false });
+    const archive = await buildUserDataArchive(db, OWNER, 'spray', '2026-W40');
+    const byUuid = new Map((archive.sprayWalls ?? []).map((wall) => [wall.uuid, wall]));
+    expect(byUuid.get(consenting.uuid)?.trainingConsentAt).toEqual(expect.any(String));
+    expect(byUuid.get(declining.uuid)?.trainingConsentAt).toBeNull();
   });
 });
 
@@ -774,16 +865,119 @@ describe('the export', () => {
     expect(new Set(allRoots).size).toBe(allRoots.length);
   });
 
-  it('skips a run that meets another holding the lock', async () => {
+  it('answers LOCKED and writes nothing while another run holds the lease', async () => {
     const { versionId } = await createPublishedWall();
     await review(versionId, 'APPROVED');
-    const results = await Promise.all([
-      exportSprayTrainingDataset({ now: RUN_1 }),
-      exportSprayTrainingDataset({ now: runAt(1) }),
-    ]);
-    // Either the second waited out the first and found nothing new, or it met the
-    // lock; never two exports of the same set.
-    expect(results.filter((result) => !result.skipped)).toHaveLength(1);
-    expect(new Set(exportKeys().map((key) => key.split('/')[2])).size).toBe(1);
+    // A live run elsewhere: a fresh lease row this process does not own.
+    await db.execute(sql`
+      INSERT INTO sync_daemon_leases (daemon_name, holder_id, acquired_at, heartbeat_at)
+      VALUES (${SPRAY_TRAINING_EXPORT_LEASE}, 'another-run', now(), now())
+    `);
+
+    expect(await exportSprayTrainingDataset({ now: RUN_1 })).toMatchObject({
+      exportId: null,
+      skipped: true,
+      skippedReason: 'LOCKED',
+    });
+    expect(exportKeys()).toEqual([]);
+
+    // The other run finishes and releases: the next run writes, and releases too.
+    await db.execute(sql`DELETE FROM sync_daemon_leases`);
+    expect(await exportSprayTrainingDataset({ now: runAt(1) })).toMatchObject({ skipped: false, skippedReason: null });
+    const leases = (await db.execute(sql`SELECT count(*)::int AS n FROM sync_daemon_leases`)) as unknown as Array<{
+      n: number;
+    }>;
+    expect(leases[0].n).toBe(0);
+  });
+
+  it('takes over a lease whose holder died more than its TTL ago', async () => {
+    const { versionId } = await createPublishedWall();
+    await review(versionId, 'APPROVED');
+    await db.execute(sql`
+      INSERT INTO sync_daemon_leases (daemon_name, holder_id, acquired_at, heartbeat_at)
+      VALUES (${SPRAY_TRAINING_EXPORT_LEASE}, 'crashed-run', now() - interval '1 hour', now() - interval '1 hour')
+    `);
+    expect(await exportSprayTrainingDataset({ now: RUN_1 })).toMatchObject({ skipped: false });
+  });
+
+  it('stops at its deadline without writing a manifest', async () => {
+    const { versionId } = await createPublishedWall();
+    await review(versionId, 'APPROVED');
+    await expect(exportSprayTrainingDataset({ now: RUN_1, deadlineMs: -1 })).rejects.toThrow('deadline');
+    expect(exportKeys().some((key) => key.endsWith('manifest.json'))).toBe(false);
+    // And the lease was released, so tomorrow's run is not blocked.
+    expect(await exportSprayTrainingDataset({ now: runAt(1) })).toMatchObject({ skipped: false });
+  });
+
+  it('retires a stored export with no manifest or a corrupt one', async () => {
+    const { versionId } = await createPublishedWall();
+    await review(versionId, 'APPROVED');
+    bucket('private').set(`${SPRAY_TRAINING_EXPORT_PREFIX}2020-01-01T00-00-00-000Z/train/v1.jpg`, Buffer.from('x'));
+    bucket('private').set(`${SPRAY_TRAINING_EXPORT_PREFIX}2020-01-02T00-00-00-000Z/train/v1.jpg`, Buffer.from('x'));
+    bucket('private').set(
+      `${SPRAY_TRAINING_EXPORT_PREFIX}2020-01-02T00-00-00-000Z/manifest.json`,
+      Buffer.from('{not json'),
+    );
+
+    const result = await exportSprayTrainingDataset({ now: RUN_1 });
+    expect(result).toMatchObject({ exportsRetired: 2, skipped: false });
+    expect(exportKeys().some((key) => key.includes('2020-01-0'))).toBe(false);
+  });
+
+  it.each([
+    ['deleted', (wall: CreatedWall) => sprayWallMutations.deleteSprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))],
+    [
+      'hidden',
+      (wall: CreatedWall) => db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${wall.uuid}`),
+    ],
+  ])('retires the export holding a wall that was %s', async (_label, act) => {
+    const leaving = await createPublishedWall();
+    const staying = await createPublishedWall();
+    await review(leaving.versionId, 'APPROVED');
+    await review(staying.versionId, 'APPROVED');
+    const first = await exportSprayTrainingDataset({ now: RUN_1 });
+
+    await act(leaving.wall);
+
+    const second = await exportSprayTrainingDataset({ now: runAt(1) });
+    expect(second).toMatchObject({ imagesWritten: 1, exportsRetired: 1 });
+    expect(exportKeys().some((key) => key.includes(`/${first.exportId}/`))).toBe(false);
+    expect(manifestOf(second.exportId!).images.map((image) => String(image.versionId))).toEqual([staying.versionId]);
+  });
+
+  it('retires the export holding a version an admin un-approved', async () => {
+    const leaving = await createPublishedWall();
+    const staying = await createPublishedWall();
+    await review(leaving.versionId, 'APPROVED');
+    await review(staying.versionId, 'APPROVED');
+    const first = await exportSprayTrainingDataset({ now: RUN_1 });
+
+    await review(leaving.versionId, 'REJECTED', 'BAD_HOLDS');
+
+    const second = await exportSprayTrainingDataset({ now: runAt(1) });
+    expect(second).toMatchObject({ imagesWritten: 1, exportsRetired: 1 });
+    expect(exportKeys().some((key) => key.includes(`/${first.exportId}/`))).toBe(false);
+  });
+
+  it('leaves out a version whose holds do not project onto the photo, and the queue says why', async () => {
+    const broken = await createPublishedWall();
+    const fine = await createPublishedWall();
+    // A singular homography: nothing projects.
+    await db.execute(sql`
+      UPDATE spray_wall_versions SET homography = '[0,0,0,0,0,0,0,0,0]'::jsonb WHERE id = ${Number(broken.versionId)}
+    `);
+    const queued = (await queue()).items.find((item) => item.versionId === broken.versionId)!;
+    expect(queued.unmappableHoldCount).toBe(DEFAULT_HOLDS.length);
+    expect(queued.holds).toEqual([]);
+
+    await review(broken.versionId, 'APPROVED');
+    await review(fine.versionId, 'APPROVED');
+    const result = await exportSprayTrainingDataset({ now: RUN_1 });
+    expect(result).toMatchObject({ imagesWritten: 1, versionsSkipped: 1 });
+    const manifest = manifestOf(result.exportId!) as Manifest & {
+      counts: { skippedVersions: { unmappableHolds: number } };
+    };
+    expect(manifest.images.map((image) => String(image.versionId))).toEqual([fine.versionId]);
+    expect(manifest.counts.skippedVersions.unmappableHolds).toBe(1);
   });
 });

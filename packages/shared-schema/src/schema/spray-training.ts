@@ -120,7 +120,11 @@ export const sprayTrainingTypeDefs = /* GraphQL */ `
     photoHeight: Int
     "Alive holds of this version in photo pixels."
     holds: [SprayTrainingHold!]!
-    "Holds whose canonical position does not project onto the photo, so they are not in holds."
+    """
+    Holds whose canonical position does not project onto the photo, so they are
+    not in holds. A version with any is left out of the export even when
+    approved: a real hold missing from the labels would be learned as background.
+    """
     unmappableHoldCount: Int!
     candidates: [SprayTrainingCandidate!]!
     "Model version of the detector run candidates come from, or null when the version has none."
@@ -157,6 +161,16 @@ export const sprayTrainingTypeDefs = /* GraphQL */ `
     review: SprayTrainingReview!
   }
 
+  "Why an export run wrote nothing."
+  enum SprayTrainingExportSkipReason {
+    "Another run holds the export lease. The scheduler job reports this as a failure."
+    LOCKED
+    "The approved, eligible set matches the newest export."
+    UNCHANGED
+    "Nothing is approved and eligible, or nothing approved could be exported."
+    NOTHING_TO_EXPORT
+  }
+
   "What one export run did."
   type SprayTrainingExportResult {
     "The export written on this run, or null when nothing changed or nothing is approved."
@@ -164,8 +178,11 @@ export const sprayTrainingTypeDefs = /* GraphQL */ `
     imagesWritten: Int!
     "Stored exports deleted because a version in them is no longer eligible and approved, or they fell out of the newest two."
     exportsRetired: Int!
-    "True when the approved set matched the newest export and nothing was written."
+    "True when nothing was written; skippedReason says why."
     skipped: Boolean!
+    skippedReason: SprayTrainingExportSkipReason
+    "Approved, eligible versions left out of this export: holds that do not project onto the photo, no holds, or an unreadable photo."
+    versionsSkipped: Int!
     durationMs: Int!
   }
 
