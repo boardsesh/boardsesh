@@ -188,6 +188,10 @@ describe('the public spray wall query', () => {
     expect(normalised).toContain('"spray_walls"."hidden_at" is null');
   });
 
+  it('skips a wall a reset has archived', () => {
+    expect(normalised).toContain('"spray_walls"."archived_at" is null');
+  });
+
   it('needs a slug, because that is the whole URL', () => {
     expect(normalised).toContain('"user_boards"."slug" is not null');
   });

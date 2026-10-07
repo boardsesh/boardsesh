@@ -412,6 +412,58 @@ describe('POST /api/spray-wall-photos', () => {
     expect(uploadedObjects).toHaveLength(0);
   });
 
+  it('refuses an archived wall, before and after the bytes land, and stores nothing', async () => {
+    await db.execute(sql`UPDATE spray_walls SET archived_at = now() WHERE board_uuid = ${wallUuid}`);
+    const refused = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code: string }).code).toBe('SPRAY_WALL_ARCHIVED');
+    expect(uploadedObjects).toHaveLength(0);
+
+    // A reset's first publish archiving the wall while the bytes upload.
+    await db.execute(sql`UPDATE spray_walls SET archived_at = NULL WHERE board_uuid = ${wallUuid}`);
+    uploadRace.onUpload = async () => {
+      await db.execute(sql`UPDATE spray_walls SET archived_at = now() WHERE board_uuid = ${wallUuid}`);
+    };
+    const raced = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(raced.status).toBe(409);
+    expect(uploadedObjects).toEqual([]);
+  });
+
+  it('accepts a photo for an unfinished reset clone', async () => {
+    const cloneUuid = uuidv4();
+    const [{ layout_id: cloneLayoutId }] = (await db.execute(sql`
+      SELECT nextval('spray_wall_catalog_id_seq')::int AS layout_id
+    `)) as unknown as Array<{ layout_id: number }>;
+    await db.execute(sql`
+      INSERT INTO user_boards (uuid, slug, owner_id, board_type, layout_id, size_id, set_ids, name,
+                               is_public, is_unlisted, angle, is_angle_adjustable, has_leds, created_at, updated_at)
+      VALUES (${cloneUuid}, ${cloneUuid}, ${OWNER}, 'spray', ${cloneLayoutId}, ${cloneLayoutId}, '1', 'Garage wall',
+              false, false, 40, false, false, now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO spray_walls (board_uuid, layout_id, hold_count, reset_from_wall_id)
+      VALUES (${cloneUuid}, ${cloneLayoutId}, 0, (SELECT id FROM spray_walls WHERE board_uuid = ${wallUuid}))
+    `);
+
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid: cloneUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(200);
+  });
+
   it('404s an unknown wall without saying whether the uuid is a wall', async () => {
     const response = await uploadPhoto(baseUrl, {
       token: OWNER,

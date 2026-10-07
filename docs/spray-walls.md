@@ -333,6 +333,7 @@ history menu, which does not support removal prevention.
 | `MAX_HOLDS_PER_WALL` | 1500 | A dense commercial spray wall runs 400–800 holds. The cap bounds what a detector run, a hold-editor session and a reset match hold in memory at once. |
 | `MAX_VERSIONS_PER_WALL` | 50 | A wall reset monthly for four years stays inside it. Every version keeps its own photo and its own hold generation. |
 | `MAX_REVISIONS_PER_CLIMB` | 50 | A spray climb can be edited with no time limit, so its history needs a bound. A rename every week for a year stays inside it. Applies to every board, but only a spray climb can get near it. |
+| `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` | 50 | A reset archives the old wall, and an archived wall keeps its photos and catalogue rows. Archived walls do not count toward the 10 live walls, so they need their own bound. Fifty is a monthly reset for four years. See [Archive and reset](#archive-and-reset). |
 
 The first three are reachable by ordinary use — ten walls is a gym with a lot of bays,
 1,500 holds is a dense commercial spray wall, fifty resets is four years of
@@ -1611,6 +1612,213 @@ render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot, so the
 ghosts need a seam in that pipeline, and the create editor would need the parent
 climb's holds threaded through route params that are strings. Both are follow-up
 work, and the banner already answers the question the missing holds raise.
+
+## Archive and reset
+
+A second way to reset a wall, beside the in-place reset above. Changing a live
+wall in place turned out to be hard to follow for climbers, so a reset can
+instead be a **clone**: a new wall with the old wall's settings, a new photo and
+holds marked from scratch. When the new wall is published, the old one is
+**archived**. The in-place reset and hold editing on a live wall still work
+exactly as before.
+
+Holds stay editable on a live wall, published climbs or not. Before it removes
+(or moves) a hold, the app asks `sprayWallHoldUsage` how many published and
+draft climbs use it and asks the climber to confirm when published climbs do;
+those climbs then get `missing_hold_count` from the publish, as they always
+have.
+
+### The two columns
+
+| Column | Meaning |
+| --- | --- |
+| `spray_walls.archived_at` | When a reset replaced this wall. NULL for a live wall. |
+| `spray_walls.reset_from_wall_id` | The wall this one was cloned from. Self-reference, `ON DELETE SET NULL`, with a partial index where it is not null (almost no wall has one). |
+
+Migration 0258 adds both. Nothing is dropped or rewritten.
+
+### `resetSprayWall`
+
+`resetSprayWall(input: { wallUuid })` returns the clone as a `SprayWall`.
+
+- **The owner only.** `board.ownerId` must be the caller. A gym admin or a
+  community leader, who can edit the wall's holds, gets
+  `SPRAY_WALL_RESET_OWNER_ONLY`; replacing the wall is the owner's call. A
+  caller who cannot see the wall gets `SPRAY_WALL_NOT_FOUND`, like every other
+  wall read.
+- **A published, live wall.** A wall with no published version gets
+  `SPRAY_WALL_RESET_SOURCE_UNPUBLISHED`, an archived one gets
+  `SPRAY_WALL_ARCHIVED`, a deleted one is not found. A wall an admin has hidden
+  gets `SPRAY_WALL_RESET_HIDDEN` ("This wall is hidden while a report is
+  reviewed, so it can't be reset yet."): a reset copies the audience and
+  carries the followers over, so it would put the wall straight back in front
+  of them.
+- **Idempotent.** Under the owner's account lock and then the old wall's lock,
+  it looks for a live clone of this wall that has not been published yet and
+  returns it. A retry, or the owner coming back to the wizard, gets the same
+  clone, never a second one.
+- **Settings only.** The clone is made by `insertSprayWallRows`, the same
+  function `createSprayWall` uses, so its catalogue rows, board row and slug are
+  made exactly like any new wall's. It copies the name, description, angle,
+  location fields, the stored look (`render_settings`) and the climb edit
+  policy. The gym link and `hide_location` are copied as they were when the
+  reset started; a later change to the old wall does not follow. No photo,
+  version, hold or climb is copied.
+- **Visibility.** The old wall's visibility is parked on `pending_is_public` /
+  `pending_is_unlisted`, so the clone is private until its first publish, like
+  any new wall (#5513). At that publish the clone gets the NARROWER of the
+  parked pair and the old wall's visibility at that moment (private, then
+  unlisted, then public and unlisted, then public; a tie keeps the parked
+  pair). An owner who makes the old wall private mid-reset publishes a private
+  new wall, and an old wall made WIDER mid-reset does not widen the clone. An
+  old wall an admin hid in between counts as private. A deleted old wall still
+  bounds the clone by the flags it last had, so narrowing it and then deleting
+  it cannot widen the clone back.
+- **An explicit choice opts out of narrowing.** Once the owner states a
+  visibility for the clone itself through `updateSprayWall`, the parked pair is
+  dropped and the clone's own board row is what publishes, unnarrowed. Narrowing
+  exists to catch a stale parked copy of the old wall's audience, not to
+  overrule a choice the owner made for the new wall, and dropping the pair makes
+  the result the same whichever wall the owner edited first.
+- **Caps.** The clone skips the 10-wall live cap, because a reset nets to zero
+  live walls once it publishes. It counts against
+  `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` (50) instead: the count is the owner's
+  archived walls plus their unfinished clones, since each of those will archive
+  one more wall. At 50 the call is refused with
+  `SPRAY_WALL_ARCHIVE_LIMIT_REACHED`. The create-wall rate limit (5 a minute)
+  applies. Archived walls also do not count toward `MAX_BOARDS_PER_ACCOUNT`
+  (50 boards, `assertBoardCapNotReached`), so resets never block `createBoard`
+  or the BLE auto-mint.
+
+Until the clone is published, the old wall is untouched. An abandoned clone, or
+one the owner deletes, leaves the old wall live and listed, and the next
+`resetSprayWall` starts a new clone.
+
+### Archive at first publish
+
+`publishDraftUnderLock` reads `reset_from_wall_id` with the rest of the wall.
+On the clone's FIRST publish (both `publishSprayWallVersion` and
+`commitSprayWallVersion` go through it), in the same transaction:
+
+1. it takes the old wall's lock, while already holding the clone's, and reads
+   the old wall's visibility to narrow the clone's (above);
+2. stamps `archived_at` (and `updated_at`) on the old wall, if it is not
+   already archived or deleted;
+3. copies the old board's `board_follows` rows, its pins
+   (`user_board_activity.pinned_at`) and its new-climb subscriptions
+   (`new_climb_subscriptions`, keyed by layout, so the old ones would never fire
+   again) onto the clone.
+
+They only go to people the clone is shared with. A follow and a subscription
+carry over on the `followBoard` rule (a public board, or its owner). A pin
+carries over to the owner, to everyone on a public board, and to members of the
+board's gym. An existing activity row on the clone keeps its pin and gains one
+if it had none. Nothing carries to strangers on an unlisted or private clone.
+
+Deleting the published successor later does NOT un-archive the old wall. That
+is intended: the old wall's photo no longer matches a real wall.
+
+**Lock order is new wall, then old wall.** A clone is always inserted after its
+source, so it has the higher id. `deleteAccountSprayWalls`, the only other path
+that holds two wall locks at once, walks walls highest id first to match.
+`resetSprayWall` takes the account lock, then the old wall's lock, which is the
+order account deletion uses too.
+
+### What an archived wall refuses
+
+Each check reads `archived_at` under the wall lock, so a write either commits
+before the archive or sees it. The refusal is `SPRAY_WALL_ARCHIVED`, "This wall
+is archived. Its climbs stay, but nothing new can be set on it."
+
+| Refused | Still allowed |
+| --- | --- |
+| `saveClimb`, every `updateClimb` (including publishing a draft) | `saveTick` (the offline drainer would dead-letter a refusal) |
+| `createSprayWallVersion`, and a photo upload to `/api/spray-wall-photos` (409, before and after the bytes land) | `deleteDraftClimb` |
+| `upsertSprayWallHolds`, `removeSprayWallHolds` | `discardSprayWallVersion` |
+| `publishSprayWallVersion`, `commitSprayWallVersion` | `updateSprayWall`, `setSprayWallRenderSettings`, `deleteSprayWall` |
+
+`viewerCanEditClimbs` is false on an archived wall for everyone, collaborators
+included, so an app that predates archiving does not offer an edit that can
+only fail. `viewerCanEdit` stays true for the owner, because it also gates
+renaming and deleting the wall, which an archived wall still allows.
+
+### Where an archived wall shows up
+
+Left out of:
+
+- `listableSprayWallCondition` (both branches), so `myBoards`, `searchBoards`
+  and `gymBoards`. The archived test sits outside the owner escape, so the
+  owner's own pickers drop the wall too;
+- `sprayWallIsListable`, so `gymSprayWalls`;
+- `boardDiscovery`, the www homepage rail;
+- a gym kiosk's slots (`resolveKioskView` skips the board like a deleted one);
+- the public spray wall sitemap. An archived public wall's climb pages leave
+  the climb sitemap with it, which is intended: the successor is the page worth
+  crawling;
+- the 10-wall live cap in `createSprayWall`, `MAX_BOARDS_PER_ACCOUNT`, and a
+  gym's `boardCount`;
+- a gym kiosk layout write (`assertLayoutBoardsInGym` refuses a slot or
+  leaderboard naming an archived wall, matching the read side).
+
+Deliberately still counted: a gym's `boardTypes` and angle chips, the gym
+directory's board type filter, and the admin duplicate and stray-board tools.
+The successor has the same type and angle, so the chips and the filter come
+out the same either way, and the admin tools are about rows, archived or not.
+
+Still returned by: `sprayWall`, `sprayWallByLayout`, `sprayWallRenderData`,
+`board`, `boardBySlug`, `mySprayWalls` (where the owner finds archived walls),
+`syncSprayWalls`, climb sync, and every climb, tick, playlist, feed and logbook
+read.
+
+**Archived is not deleted.** Every spray climb visibility predicate in
+`packages/db/src/queries/climbs/spray-visibility.ts` tests `sw.deleted_at`,
+never `archived_at`, so an archived wall's climbs keep resolving everywhere. A
+test reads search, the climb, a logbook, render data, the layout lookup and
+both syncs on an archived wall, so adding `archived_at` there goes red.
+
+An offline device learns a wall is archived from the wall payload
+(`archivedAt`), not from its SQLite mirror, which has no column for it.
+
+### The `SprayWall` fields
+
+| Field | Meaning |
+| --- | --- |
+| `archivedAt` | ISO time of the archive, or null. |
+| `resetOfWallUuid` | The wall this one was cloned from, if it is not deleted, and only for a viewer who can see that wall without its uuid: its owner, a member of its gym, or anyone when it is public. |
+| `replacedByWallUuid` | The live, PUBLISHED clone that replaced this wall, null while the clone is unfinished. Shown to a viewer who can see the successor without its uuid, plus one carry-forward: when the old wall is unlisted and NOT public, and the successor is unlisted too, someone holding the old share link is shown the new one. Old to new only. |
+
+`mySprayWalls` and `gymSprayWalls` read these fields for every wall in two
+queries (`loadSprayWallArchiveFacts`), not two per wall.
+
+`sprayWallHoldUsage(wallUuid, holdIds)` answers one row per distinct requested
+hold (at most 500 per call): `publishedClimbCount` (listed, non-draft) and
+`draftClimbCount`, from `board_climb_holds` joined to this wall's climbs.
+Hidden climbs and climbs a full reset retired are not counted. It takes the
+same gate as editing the holds and refuses an archived wall with
+`SPRAY_WALL_ARCHIVED`.
+
+These fields are in the SDL only. The shared `SPRAY_WALL_FIELDS` selection does
+not ask for them yet, so a client built against it keeps working against a
+backend that has not deployed them.
+
+### Generated wall art
+
+Art (`spray_wall_versions.art`, migration 0256) is generated per published
+version and requested inside `publishDraftUnderLock`, so a reset clone's first
+publish requests art for the clone exactly as any new wall's does, and the clone
+copies the old wall's `render_settings` (including a generated `background`)
+like every other setting. If the clone's photo fails the quality gate, the
+read-side fallback draws the photo. An archived wall gets no new art: no version
+can be published on it, and the two backfills (`sprayWallArt` on read and
+`setSprayWallRenderSettings`) skip an archived wall. Its existing art keeps
+rendering.
+
+### Known gaps
+
+- A kiosk slot that named the old wall is not repointed to the successor. The
+  kiosk layout is a validated JSON blob (unique slots, a leaderboard board that
+  must be one of them), so repointing is a rewrite, not an UPDATE. The slot
+  simply drops the archived wall until a gym editor places the new one.
 
 ## Photo privacy
 

@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import Busboy from 'busboy';
 import sharp from 'sharp';
 import { and, eq, isNull } from 'drizzle-orm';
+import { SPRAY_WALL_ARCHIVED_CODE, SPRAY_WALL_ARCHIVED_MESSAGE } from '../services/spray-wall-archive';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyCorsHeaders } from './cors';
 import { guardUploadFileStream } from './http-utils';
@@ -286,13 +287,18 @@ async function normaliseWallPhoto(input: Buffer): Promise<{ base: EncodedWallPho
  * 2026-09-14: users own a wall and that ownership is what grants editing), so
  * this is deliberately NOT `requireBoardEditAccess` — no gym admin and no
  * community role uploads a photograph of a stranger's living room.
+ *
+ * An ARCHIVED wall takes no photo: `createSprayWallVersion` would refuse the
+ * version, and the upload would be a stray object nothing names. A reset's
+ * clone is a separate wall and is never archived, so its wizard uploads as any
+ * new wall's does.
  */
 async function loadOwnedWall(
   wallUuid: string,
   userId: string,
-): Promise<{ outcome: 'ok' } | { outcome: 'not-found' } | { outcome: 'forbidden' }> {
+): Promise<{ outcome: 'ok' } | { outcome: 'not-found' } | { outcome: 'forbidden' } | { outcome: 'archived' }> {
   const [row] = await db
-    .select({ ownerId: dbSchema.userBoards.ownerId })
+    .select({ ownerId: dbSchema.userBoards.ownerId, archivedAt: dbSchema.sprayWalls.archivedAt })
     .from(dbSchema.sprayWalls)
     .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
     .where(
@@ -306,6 +312,7 @@ async function loadOwnedWall(
 
   if (!row) return { outcome: 'not-found' };
   if (row.ownerId !== userId) return { outcome: 'forbidden' };
+  if (row.archivedAt != null) return { outcome: 'archived' };
   return { outcome: 'ok' };
 }
 
@@ -458,6 +465,11 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
           resolve();
           return;
         }
+        if (wall.outcome === 'archived') {
+          respondJson(res, 409, { error: SPRAY_WALL_ARCHIVED_MESSAGE, code: SPRAY_WALL_ARCHIVED_CODE });
+          resolve();
+          return;
+        }
 
         let normalised: { base: EncodedWallPhoto; full: EncodedWallPhoto | null };
         try {
@@ -481,6 +493,12 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
         // Erase its own objects on withdrawal; retain a durable retry if storage
         // is unavailable. The purge's updated_at fence protects this retry from
         // an older prefix listing that had not seen our late upload.
+        //
+        // The retry only acts on a DELETED wall. When the withdrawal is an
+        // archive and the erase fails, the object is left behind on purpose: it
+        // is in the private bucket under a random key nothing names, and the
+        // retention purge sweeps the wall's whole prefix, this object included,
+        // if the archived wall is ever deleted.
         const eraseUpload = async () => {
           const erased = await Promise.allSettled(writtenKeys.map((writtenKey) => deleteFromS3('private', writtenKey)));
           if (erased.every((result) => result.status === 'fulfilled')) return;
@@ -546,7 +564,16 @@ export async function handleSprayWallPhotoUpload(req: IncomingMessage, res: Serv
               [SPRAY_PHOTO_HEIGHT_METADATA_KEY]: String(basePhoto.height),
             },
           });
-          if ((await loadOwnedWall(wallUuid, authenticatedUserId)).outcome !== 'ok') {
+          // Re-checked after the bytes land: a delete or an archive may have
+          // committed while they were uploading.
+          const wallAfterSave = await loadOwnedWall(wallUuid, authenticatedUserId);
+          if (wallAfterSave.outcome === 'archived') {
+            await eraseUpload();
+            respondJson(res, 409, { error: SPRAY_WALL_ARCHIVED_MESSAGE, code: SPRAY_WALL_ARCHIVED_CODE });
+            resolve();
+            return;
+          }
+          if (wallAfterSave.outcome !== 'ok') {
             await eraseUpload();
             respondJson(res, 404, { error: 'Spray wall not found' });
             resolve();

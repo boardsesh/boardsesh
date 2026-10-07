@@ -4288,6 +4288,18 @@ export type Mutation = {
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
   requestUserDataExport: UserDataExportStatus;
   /**
+   * Start a reset of a wall by cloning it. The clone copies the wall's settings
+   * (name, description, angle, gym, location, look, climb edit policy and
+   * visibility) and nothing else: the owner takes a new photo and marks the holds
+   * from scratch, and the clone's first publish archives the old wall. Calling it
+   * again before that publish returns the same unfinished clone.
+   *
+   * The wall's owner only. Refused on a wall with nothing published, and on an
+   * archived wall. Capped at `MAX_ARCHIVED_SPRAY_WALLS_PER_USER` archived walls
+   * per owner; the clone does not count toward `MAX_SPRAY_WALLS_PER_USER`.
+   */
+  resetSprayWall: SprayWall;
+  /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
    * or freshly created), or a list of `candidates` when several boards share
@@ -4993,6 +5005,11 @@ export type MutationRequestSprayWallDetectionArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestUserDataExportArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationResetSprayWallArgs = {
+  input: ResetSprayWallInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6616,6 +6633,14 @@ export type Query = {
   sprayWallDetection?: Maybe<SprayWallDetection>;
   sprayWallDetectionForVersion?: Maybe<SprayWallDetection>;
   /**
+   * How many climbs set on this wall use each of the given holds, for the hold
+   * editor to ask before it removes (or moves) one that published climbs use.
+   * One row per distinct requested hold, zeros included. Hidden climbs and
+   * climbs a full reset retired are not counted. Same gate as editing the
+   * wall's holds; refused on an archived wall. At most 500 holds per call.
+   */
+  sprayWallHoldUsage: Array<SprayWallHoldUsage>;
+  /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
    *
@@ -7377,6 +7402,12 @@ export type QuerySprayWallDetectionForVersionArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallHoldUsageArgs = {
+  holdIds: Array<Scalars['Int']['input']>;
+  wallUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -7887,6 +7918,11 @@ export type RequestGymClaimResult = {
 
 export type RequestSprayWallDetectionInput = {
   versionId: Scalars['ID']['input'];
+  wallUuid: Scalars['ID']['input'];
+};
+
+export type ResetSprayWallInput = {
+  /** The published, live wall to replace. */
   wallUuid: Scalars['ID']['input'];
 };
 
@@ -9114,6 +9150,15 @@ export type SprayRemixSeed = {
  */
 export type SprayWall = {
   __typename?: 'SprayWall';
+  /**
+   * When this wall was archived, ISO 8601, or null for a live wall.
+   *
+   * A wall is archived when a reset clone of it (`resetSprayWall`) reaches its
+   * first publish. An archived wall is read-only: its climbs, ticks, playlists
+   * and share links keep working, it leaves every board picker and listing, and
+   * nobody can set a new climb, edit a climb or change its holds on it.
+   */
+  archivedAt?: Maybe<Scalars['String']['output']>;
   board: UserBoard;
   /** Who may edit published climbs on this wall (#6025). */
   climbEditPolicy: SprayClimbEditPolicy;
@@ -9163,6 +9208,20 @@ export type SprayWall = {
    * art is not READY.
    */
   renderSettings?: Maybe<Scalars['JSON']['output']>;
+  /**
+   * The published wall that replaced this one through `resetSprayWall`, when the
+   * viewer may see it: its owner, a member of its gym, anyone when it is public,
+   * or anyone holding this wall's share link when this wall is unlisted and not
+   * public and the replacement is unlisted too. Null while the replacement is
+   * unfinished.
+   */
+  replacedByWallUuid?: Maybe<Scalars['ID']['output']>;
+  /**
+   * The wall this one was cloned from by `resetSprayWall`. Only for a viewer who
+   * can see that wall without its uuid: its owner, a member of its gym, or anyone
+   * when it is public.
+   */
+  resetOfWallUuid?: Maybe<Scalars['ID']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
   uuid: Scalars['ID']['output'];
@@ -9319,6 +9378,16 @@ export type SprayWallHoldInput = {
   outline?: InputMaybe<Array<Scalars['Float']['input']>>;
   r: Scalars['Int']['input'];
   source?: InputMaybe<SprayHoldSource>;
+};
+
+/** How many climbs on a wall use one hold. See `sprayWallHoldUsage`. */
+export type SprayWallHoldUsage = {
+  __typename?: 'SprayWallHoldUsage';
+  /** Draft climbs that use the hold. */
+  draftClimbCount: Scalars['Int']['output'];
+  holdId: Scalars['Int']['output'];
+  /** Published climbs that use the hold. Removing it gives each of them a lost hold. */
+  publishedClimbCount: Scalars['Int']['output'];
 };
 
 /** Keep this hold, optionally refreshing its silhouette from the new photo. */

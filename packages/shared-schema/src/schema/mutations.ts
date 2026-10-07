@@ -666,6 +666,19 @@ export const mutationsTypeDefs = /* GraphQL */ `
     createSprayWall(input: CreateSprayWallInput!): SprayWall!
 
     """
+    Start a reset of a wall by cloning it. The clone copies the wall's settings
+    (name, description, angle, gym, location, look, climb edit policy and
+    visibility) and nothing else: the owner takes a new photo and marks the holds
+    from scratch, and the clone's first publish archives the old wall. Calling it
+    again before that publish returns the same unfinished clone.
+
+    The wall's owner only. Refused on a wall with nothing published, and on an
+    archived wall. Capped at \`MAX_ARCHIVED_SPRAY_WALLS_PER_USER\` archived walls
+    per owner; the clone does not count toward \`MAX_SPRAY_WALLS_PER_USER\`.
+    """
+    resetSprayWall(input: ResetSprayWallInput!): SprayWall!
+
+    """
     Rename a wall, change its description, share it, attach it to a gym, or correct
     its angle. Owner only (through the same gate as every other wall mutation).
 
