@@ -12,13 +12,13 @@ import { spacing } from '../../theme/tokens';
  */
 export function NameRequiredHint() {
   const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  const { brandColors } = useTheme();
   const message = t('mobile.create.header.nameRequired');
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(message);
   }, [message]);
   return (
-    <Text variant="footnote" color={systemColors.systemRed} style={styles.hint} testID="create-drawer-name-required">
+    <Text variant="footnote" color={brandColors.error} style={styles.hint} testID="create-drawer-name-required">
       {message}
     </Text>
   );
