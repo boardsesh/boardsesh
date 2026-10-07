@@ -6,6 +6,7 @@ import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
 import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
 import { purgeSprayWallPhotos } from '../jobs/purge-spray-wall-photos';
 import { purgeUserActivity, snapshotActiveUsers } from '../jobs/active-users';
+import { exportSprayTraining } from '../jobs/export-spray-training';
 
 type VercelConfig = { crons?: { path: string; schedule: string }[] };
 
@@ -135,6 +136,19 @@ describe('job registry', () => {
     });
     expect(findJob('snapshot-active-users')?.webPath).toBeUndefined();
     expect(findJob('purge-user-activity')?.webPath).toBeUndefined();
+  });
+
+  it('runs the spray training export directly against GraphQL at 08:00 UTC', () => {
+    // Daily is the promise: a wall whose owner switches training off leaves every
+    // stored export within 24 hours, because each run retires before it writes.
+    // 08:00, after the 07:00 purge, so the two never share a tick.
+    expect(findJob('export-spray-training')).toMatchObject({
+      schedule: '0 8 * * *',
+      timezone: 'UTC',
+      timeoutMs: 900_000,
+      run: exportSprayTraining,
+    });
+    expect(findJob('export-spray-training')?.webPath).toBeUndefined();
   });
 
   it('gives the long jobs more than the 300s Vercel capped them at', () => {

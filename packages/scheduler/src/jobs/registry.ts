@@ -2,6 +2,7 @@ import { triggerWebCron } from './trigger-web-cron';
 import { refreshGymActivityStats } from './refresh-gym-activity-stats';
 import { purgeSprayWallPhotos } from './purge-spray-wall-photos';
 import { purgeUserActivity, snapshotActiveUsers } from './active-users';
+import { exportSprayTraining } from './export-spray-training';
 import type { JobDefinition } from './types';
 
 /**
@@ -80,6 +81,16 @@ const SPRAY_PHOTO_PURGE_TIMEOUT_MS = 600_000;
  * until the next day's tick.
  */
 const ACTIVE_USERS_TIMEOUT_MS = 600_000;
+
+/**
+ * The spray training export copies every approved photo (each at most 10 MB)
+ * inside the private bucket and writes a few JSON files, one object at a time.
+ * Its database reads are bounded by the approved set, which an admin builds by
+ * hand. Fifteen minutes leaves a large set room to finish; a run that does not
+ * finish writes no manifest, so the half-written export is ignored by the ML
+ * fetch and deleted by the next run.
+ */
+const SPRAY_TRAINING_EXPORT_TIMEOUT_MS = 900_000;
 
 export const JOBS: readonly JobDefinition[] = [
   {
@@ -208,6 +219,25 @@ export const JOBS: readonly JobDefinition[] = [
     timezone: 'UTC',
     timeoutMs: ACTIVE_USERS_TIMEOUT_MS,
     run: purgeUserActivity,
+  },
+
+  // The spray wall training set (SW-20, #5471). Daily, because the promise to a
+  // climber who switches "Help train hold finding" off is that their wall leaves
+  // every stored export within 24 hours, and each run retires before it writes.
+  //
+  // Overlap-safe, which JobDefinition requires: the mutation holds
+  // `pg_try_advisory_xact_lock` for the whole run, so a second run meeting a
+  // first answers `skipped: true` and writes nothing.
+  {
+    name: 'export-spray-training',
+    // 08:00 UTC — an hour after the 07:00 photo purge, so a wall purged today is
+    // already photo-less (and so ineligible) when the export reads it.
+    schedule: '0 8 * * *',
+    // Load-bearing for the same reason as every row above: a container's local
+    // zone is not guaranteed to be UTC.
+    timezone: 'UTC',
+    timeoutMs: SPRAY_TRAINING_EXPORT_TIMEOUT_MS,
+    run: exportSprayTraining,
   },
 ];
 
