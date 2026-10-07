@@ -1214,7 +1214,7 @@
       "lockedRetake": "Setz die Wand mit einem frontalen Foto zurück, um das freizuschalten.",
       "generating": "Wird erstellt…",
       "failed": "Dieser Look ließ sich nicht erstellen. Speicher ihn noch mal, um es erneut zu versuchen.",
-      "afterPublish": "Etwa eine Minute nach dem Veröffentlichen fertig. Bis dahin siehst du dein Foto.",
+      "preview": "So wird deine Wand aussehen.",
       "soft": "Nimm das Foto frontal neu auf, dann wird es schärfer.",
       "volumes": "Volumen werden noch nicht ausgeschnitten."
     },

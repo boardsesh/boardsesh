@@ -2,30 +2,50 @@
 //
 // Wall only is the photo flattened into the wall's frame and cropped to it;
 // Holds only is the same pixels with everything but the holds cut away, drawn
-// on the board's field colour. Both are made by the backend per published
-// version (`sprayWallArt`), so this picker reads that one answer for whether
-// they can be offered, whether they are ready, and what they look like.
+// on the board's field colour. The backend makes both per published version
+// (`sprayWallArt`), and this picker reads that one answer for whether they can
+// be offered.
 //
-// Rendered by the add-a-wall look step (a draft: nothing is generated until the
-// publish) and by the wall's edit screen (the live wall).
+// Each look is a tile showing it. The tiles are drawn on the phone from the
+// version's photo, pins and holds (`FlattenedSprayPhoto`), so a draft in the
+// add-a-wall flow shows every look before anything is generated, and a live
+// wall shows its stored art instead once that is ready. The live drawing is
+// only for choosing: what climbers see is the backend's art.
+//
+// Rendered by the add-a-wall look step and by the wall's edit screen.
 
-import { memo, useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { Pressable, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
+import MaskedView from '@react-native-masked-view/masked-view';
+import Svg, { Path } from 'react-native-svg';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import type { ReferenceSize } from '@boardsesh/spray-wall-geometry';
 import type { SprayWallArt } from '@boardsesh/graphql/generated/graphql';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { SegmentedControl } from '../SegmentedControl';
 import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
 import type { SprayWallBackground } from '../../lib/spray/spray-wall-background';
+import {
+  lookPreviewMask,
+  lookPreviewTileSize,
+  type LookPreviewMask,
+  type SprayLookPreviewSource,
+} from '../../lib/spray/spray-look-preview';
+import { FlattenedSprayPhoto } from './FlattenedSprayPhoto';
 import { backgroundPickerNote, type SprayBackgroundGate } from './spray-background-gate';
 
-const GENERATED_BACKGROUNDS: ReadonlySet<SprayWallBackground> = new Set(['wall-crop', 'hold-cutouts']);
-const ALL_BACKGROUNDS: ReadonlySet<SprayWallBackground> = new Set(['photo', 'wall-crop', 'hold-cutouts']);
+const LOOKS: readonly SprayWallBackground[] = ['photo', 'wall-crop', 'hold-cutouts'];
+
+/** The tallest a tile grows, so a tall wall does not push the Continue button off screen. */
+const TILE_MAX_HEIGHT = 160;
+/** Room the selected ring takes on each side of a tile. */
+const TILE_RING = 2;
+/** The frame shape a tile takes before the wall's own is known. */
+const FALLBACK_FRAME: ReferenceSize = { width: 4, height: 3 };
 
 export type SprayWallBackgroundPickerProps = {
   gate: SprayBackgroundGate;
@@ -35,9 +55,96 @@ export type SprayWallBackgroundPickerProps = {
   disabled?: boolean;
   /** The wall's existing retake flow, where there is one. Shown on a locked gate. */
   onRetakePhoto?: () => void;
-  /** A draft: the looks are made when it is published, so say that instead of "Generating". */
+  /** A draft: nothing is generated until it is published, so every tile is drawn on the phone. */
   isDraft?: boolean;
+  /** The version's photo, pins and holds, for the tiles drawn on the phone. Null while it loads. */
+  previewSource?: SprayLookPreviewSource | null;
 };
+
+type TileVisualProps = {
+  look: SprayWallBackground;
+  tile: ReferenceSize;
+  source: SprayLookPreviewSource | null;
+  /** The backend's art for this look, when it is ready and is what the wall will show. */
+  storedUri: string | null;
+  mask: LookPreviewMask | null;
+  fieldColor: ColorValue;
+  placeholderColor: ColorValue;
+  locked: boolean;
+};
+
+const TileVisual = memo(function TileVisual({
+  look,
+  tile,
+  source,
+  storedUri,
+  mask,
+  fieldColor,
+  placeholderColor,
+  locked,
+}: TileVisualProps) {
+  const sizeStyle = useMemo(() => ({ width: tile.width, height: tile.height }), [tile]);
+  const photoSource = useMemo(() => (source ? { uri: source.photoUrl } : null), [source]);
+  const storedSource = useMemo(() => (storedUri ? { uri: storedUri } : null), [storedUri]);
+  const backgroundStyle = useMemo(
+    () => ({ backgroundColor: look === 'hold-cutouts' && !locked ? fieldColor : placeholderColor }),
+    [look, locked, fieldColor, placeholderColor],
+  );
+
+  // Every image here is memory-cached only: this is a private wall's photo and
+  // art, and nothing clears expo-image's disk cache on sign-out or when a wall
+  // is withdrawn.
+  let content: ReactNode = null;
+  if (look === 'photo') {
+    content = photoSource ? (
+      <Image source={photoSource} style={sizeStyle} contentFit="contain" cachePolicy="memory" accessible={false} />
+    ) : null;
+  } else if (locked) {
+    content = null;
+  } else if (storedSource) {
+    content = (
+      <Image
+        source={storedSource}
+        style={sizeStyle}
+        contentFit="fill"
+        cachePolicy="memory"
+        accessible={false}
+        testID={`spray-background-stored-${look}`}
+      />
+    );
+  } else if (source && look === 'wall-crop') {
+    content = <FlattenedSprayPhoto source={source} tile={tile} />;
+  } else if (source && mask) {
+    content = (
+      <MaskedView
+        style={sizeStyle}
+        maskElement={
+          <Svg width={tile.width} height={tile.height}>
+            {/* The job feathers its mask with a Gaussian blur; a soft, wider
+                stroke under the hard edge is the cheap stand-in. */}
+            <Path
+              d={mask.path}
+              fill="#000"
+              stroke="#000"
+              strokeOpacity={0.4}
+              strokeWidth={2 * (mask.grow + mask.feather)}
+              strokeLinejoin="round"
+            />
+            <Path d={mask.path} fill="#000" stroke="#000" strokeWidth={2 * mask.grow} strokeLinejoin="round" />
+          </Svg>
+        }
+      >
+        <FlattenedSprayPhoto source={source} tile={tile} />
+      </MaskedView>
+    );
+  }
+
+  return (
+    <View style={[styles.tileVisual, sizeStyle, backgroundStyle]} testID={`spray-background-tile-visual-${look}`}>
+      {content}
+    </View>
+  );
+});
 
 export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker({
   gate,
@@ -47,24 +154,21 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
   disabled = false,
   onRetakePhoto,
   isDraft = false,
+  previewSource = null,
 }: SprayWallBackgroundPickerProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const colorScheme = useAppColorScheme();
 
-  const options = useMemo(
-    () => [
-      { key: 'photo' as const, label: t('sprayBackground.photo') },
-      { key: 'wall-crop' as const, label: t('sprayBackground.wallCrop') },
-      { key: 'hold-cutouts' as const, label: t('sprayBackground.holdCutouts') },
-    ],
+  const labels = useMemo<Record<SprayWallBackground, string>>(
+    () => ({
+      photo: t('sprayBackground.photo'),
+      'wall-crop': t('sprayBackground.wallCrop'),
+      'hold-cutouts': t('sprayBackground.holdCutouts'),
+    }),
     [t],
   );
   const locked = gate.kind !== 'open';
-  const disabledKeys = useMemo(
-    () => (disabled ? ALL_BACKGROUNDS : locked ? GENERATED_BACKGROUNDS : undefined),
-    [disabled, locked],
-  );
   const handleSelect = useCallback(
     (key: SprayWallBackground) => {
       if (disabled) return;
@@ -74,64 +178,108 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
     [disabled, locked, onChange],
   );
 
-  const note = backgroundPickerNote(gate, value, isDraft);
-  // A soft photo still gets the volumes line when Holds only is picked: two
-  // short facts, and the volumes one is the one that changes what is on the wall.
-  const showVolumes = note === 'soft' && value === 'hold-cutouts';
+  const [rowWidth, setRowWidth] = useState(0);
+  const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
+    const width = Math.round(event.nativeEvent.layout.width);
+    setRowWidth((current) => (current === width ? current : width));
+  }, []);
 
-  const preview =
-    gate.kind === 'open' && gate.status === 'ready' && !isDraft && value !== 'photo'
-      ? value === 'wall-crop'
-        ? art?.crop
-        : art?.cutout
-      : null;
-  const previewUri = preview?.thumbUrl ?? preview?.url ?? null;
-  const previewSource = useMemo(() => (previewUri ? { uri: previewUri } : null), [previewUri]);
-  const previewAspect = art?.width && art?.height ? art.width / art.height : null;
-  const previewStyle = useMemo(
-    () => [
-      styles.preview,
-      {
-        aspectRatio: previewAspect ?? 1,
-        // Holds only is transparent by design: drawn on the field colour, as on the wall.
-        backgroundColor: value === 'hold-cutouts' ? BOARD_FIELD_COLORS[colorScheme] : systemColors.secondaryBackground,
-      },
-    ],
-    [previewAspect, value, colorScheme, systemColors.secondaryBackground],
+  const artWidth = art?.width ?? null;
+  const artHeight = art?.height ?? null;
+  const frame = useMemo<ReferenceSize>(() => {
+    if (previewSource) return previewSource.frame;
+    if (artWidth && artHeight) return { width: artWidth, height: artHeight };
+    return FALLBACK_FRAME;
+  }, [previewSource, artWidth, artHeight]);
+  const tile = useMemo(() => {
+    if (rowWidth <= 0) return null;
+    const slot = (rowWidth - 2 * spacing[2]) / LOOKS.length - 2 * TILE_RING;
+    return lookPreviewTileSize(frame, slot, TILE_MAX_HEIGHT);
+  }, [rowWidth, frame]);
+  const mask = useMemo(
+    () => (previewSource && tile ? lookPreviewMask(previewSource.holds, tile.width / previewSource.frame.width) : null),
+    [previewSource, tile],
   );
-  const selectedLabel = options.find((option) => option.key === value)?.label ?? '';
+
+  // The stored art, on a live wall whose art is ready: what the wall will
+  // actually show. A draft has none, and anything not ready draws on the phone.
+  const showStored = gate.kind === 'open' && gate.status === 'ready' && !isDraft;
+  const storedCrop = showStored ? (art?.crop?.thumbUrl ?? art?.crop?.url ?? null) : null;
+  const storedCutout = showStored ? (art?.cutout?.thumbUrl ?? art?.cutout?.url ?? null) : null;
+
+  const note = backgroundPickerNote(gate, value, isDraft);
+  const noteText = note ? t(`sprayBackground.note.${note}`) : null;
+  // A Holds-only pick always hears about volumes, unless that is the note already.
+  const showVolumes = gate.kind === 'open' && value === 'hold-cutouts' && note !== 'volumes';
 
   if (gate.kind === 'loading' || gate.kind === 'unsupported') return null;
+
+  const fieldColor = BOARD_FIELD_COLORS[colorScheme];
 
   return (
     <View style={styles.root}>
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.label}>
         {t('sprayBackground.label')}
       </Text>
-      {/* Not drawn while the generated looks are locked. iOS's segmented
-          Picker cannot disable one segment, so a refused tap would leave
-          "Wall only" highlighted natively while nothing was chosen. A locked
-          gate shows why, and the way out, instead. While a save is running the
-          whole control is held still for the same reason, and says so to
-          VoiceOver and TalkBack. */}
-      {locked ? null : (
-        <View
-          pointerEvents={disabled ? 'none' : 'auto'}
-          accessibilityState={{ disabled }}
-          accessibilityElementsHidden={disabled}
-          importantForAccessibility={disabled ? 'no-hide-descendants' : 'auto'}
-          testID="spray-background-control"
-        >
-          <SegmentedControl<SprayWallBackground>
-            options={options}
-            selectedKey={value}
-            onSelect={handleSelect}
-            disabledKeys={disabledKeys}
-            accessibilityLabel={t('sprayBackground.label')}
-          />
-        </View>
-      )}
-      {note ? (
+      {/* Tiles, not a native segmented control: iOS's segmented Picker cannot
+          disable one segment, so a refused tap would leave "Wall only"
+          highlighted while nothing was chosen. A tile only looks selected
+          when it is the value. While a save is running every tile is held
+          still, and says so to VoiceOver and TalkBack. */}
+      <View
+        style={styles.row}
+        onLayout={handleRowLayout}
+        pointerEvents={disabled ? 'none' : 'auto'}
+        accessibilityRole="radiogroup"
+        accessibilityLabel={t('sprayBackground.label')}
+        accessibilityState={{ disabled }}
+        testID="spray-background-control"
+      >
+        {LOOKS.map((look) => {
+          const label = labels[look];
+          const lookLocked = locked && look !== 'photo';
+          const selected = value === look;
+          return (
+            <Pressable
+              key={look}
+              onPress={() => handleSelect(look)}
+              disabled={disabled || lookLocked}
+              accessibilityRole="radio"
+              accessibilityLabel={t('sprayBackground.previewLabel', { look: label })}
+              accessibilityHint={lookLocked && noteText ? noteText : undefined}
+              accessibilityState={{ selected, disabled: disabled || lookLocked }}
+              style={[
+                styles.tile,
+                { borderColor: selected ? systemColors.accent : 'transparent' },
+                lookLocked || disabled ? styles.dimmed : null,
+              ]}
+              testID={`spray-background-tile-${look}`}
+            >
+              {tile ? (
+                <TileVisual
+                  look={look}
+                  tile={tile}
+                  source={previewSource}
+                  storedUri={look === 'wall-crop' ? storedCrop : look === 'hold-cutouts' ? storedCutout : null}
+                  mask={mask}
+                  fieldColor={fieldColor}
+                  placeholderColor={systemColors.secondaryBackground}
+                  locked={lookLocked}
+                />
+              ) : null}
+              <Text
+                variant="footnote"
+                color={selected ? systemColors.label : systemColors.secondaryLabel}
+                style={styles.tileLabel}
+                numberOfLines={2}
+              >
+                {label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {noteText ? (
         <View style={styles.noteRow}>
           {note === 'generating' ? <ActivityIndicator size="small" /> : null}
           <Text
@@ -141,7 +289,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
             accessibilityLiveRegion="polite"
             testID={`spray-background-note-${note}`}
           >
-            {t(`sprayBackground.note.${note}`)}
+            {noteText}
           </Text>
         </View>
       ) : null}
@@ -152,7 +300,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
       ) : null}
       {locked && value !== 'photo' ? (
         // A stored generated look the photo no longer qualifies for: the photo
-        // is still one tap away, without the segmented control.
+        // is still one tap away.
         <Button
           title={t('sprayBackground.usePhoto')}
           variant="text"
@@ -170,18 +318,6 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
           style={styles.retake}
         />
       ) : null}
-      {previewSource ? (
-        <Image
-          source={previewSource}
-          style={previewStyle}
-          contentFit="contain"
-          // Memory only: this is a private wall's art, and nothing clears
-          // expo-image's disk cache on sign-out or when a wall is withdrawn.
-          cachePolicy="memory"
-          accessibilityLabel={t('sprayBackground.previewLabel', { look: selectedLabel })}
-          testID="spray-background-preview"
-        />
-      ) : null}
     </View>
   );
 });
@@ -193,6 +329,29 @@ const styles = StyleSheet.create({
   label: {
     textTransform: 'uppercase',
   },
+  row: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    alignItems: 'flex-start',
+  },
+  tile: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing[1],
+    borderWidth: TILE_RING,
+    borderRadius: borderRadius.md + TILE_RING,
+    paddingBottom: spacing[1],
+  },
+  tileVisual: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+  },
+  dimmed: {
+    opacity: 0.5,
+  },
+  tileLabel: {
+    textAlign: 'center',
+  },
   noteRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -203,10 +362,5 @@ const styles = StyleSheet.create({
   },
   retake: {
     alignSelf: 'flex-start',
-  },
-  preview: {
-    width: '100%',
-    maxHeight: 220,
-    borderRadius: borderRadius.md,
   },
 });

@@ -53,15 +53,20 @@ export function suggestedBackground(gate: SprayBackgroundGate): SprayWallBackgro
   return gate.kind === 'open' ? 'wall-crop' : 'photo';
 }
 
-/** The one line of help under the control, by gate and choice. */
+/**
+ * The one line of help under the tiles, by gate and choice. A draft's tiles
+ * are drawn on the phone from the draft's own photo and pins, so the line
+ * there says what they are; the backend makes the stored look at publish.
+ */
 export function backgroundPickerNote(
   gate: SprayBackgroundGate,
   value: SprayWallBackground,
   isDraft: boolean,
-): 'lockedNoPins' | 'lockedRetake' | 'generating' | 'failed' | 'afterPublish' | 'soft' | 'volumes' | null {
+): 'lockedNoPins' | 'lockedRetake' | 'generating' | 'failed' | 'preview' | 'soft' | 'volumes' | null {
   if (gate.kind === 'locked') return gate.reason === 'no-pins' ? 'lockedNoPins' : 'lockedRetake';
-  if (gate.kind !== 'open' || value === 'photo') return null;
-  if (isDraft) return 'afterPublish';
+  if (gate.kind !== 'open') return null;
+  if (isDraft) return 'preview';
+  if (value === 'photo') return null;
   // NONE on a published version means the job is queued by this very read
   // (old recipe, or a wall published before generated looks): still coming.
   if (gate.status === 'pending' || gate.status === 'none') return 'generating';

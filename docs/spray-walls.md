@@ -1943,15 +1943,57 @@ the stored value). The edit screen polls a live wall's art every 10 s while it
 is `NONE` or `PENDING`, for at most 30 reads, and swaps the wall onto the art
 when it turns `READY`.
 
+#### Previewing a look on the phone
+
+The picker is three tiles, Photo, Wall only and Holds only, each showing that
+look on the owner's own wall. They are drawn on the phone from the version's
+render payload (photo, homography, canonical frame and holds;
+`lookPreviewSourceFromRenderData`), so a draft in the wizard shows every look
+before anything has been generated. On the edit screen a tile shows the
+backend's `@280` art thumbnail once the art is `READY`, and the phone's drawing
+until then. The phone's drawing is only for choosing: what climbers see is
+always the backend's art, or the photo.
+
+- **Wall only** maps the photo into the tile with the version's photo ->
+  canonical homography, scaled to the tile (`photoToTileHomography` in
+  `@boardsesh/spray-wall-geometry`'s `look-preview.ts`). On iOS and the
+  browser it is one image in a view with `transform: [{ matrix }]`
+  (`perspectiveViewMatrix`): both apply a 4x4 matrix's perspective row, so the
+  view IS the homography. **Android does not.** React Native's Android view
+  manager decomposes the matrix into translate, rotate, scale and camera
+  distance (`BaseViewManager.setTransformProperty`), which drops both the
+  perspective row and skew. There the tile is a mesh of triangles
+  (`affinePreviewMesh`), each clipping the photo drawn as an SVG image under
+  the affine map that is exact at the triangle's corners. Neighbours share
+  edges exactly, so there are no seams beyond the 0.6 pt bleed that hides
+  anti-aliasing. The grid grows from 1 to 8 cells a side until no triangle is
+  more than 0.5 tile points off the homography: a front-on photo is 2
+  triangles, a photo at stretch 1.6 (still `good`) 72, and the finest grid
+  is 128.
+- **Holds only** is the same drawing inside a `MaskedView` whose mask is one
+  SVG path of every hold outline (`holdMaskRings` at tile scale), stroked by
+  the job's dilation, over the Aura field colour. A wider stroke at 40% opacity
+  stands in for the job's Gaussian feather. One path however many holds, so a
+  300-hold wall is two SVG elements. Volumes are not detected, so the tile
+  says so, as the picker always has.
+- **Photo** is the photo, `contain`ed in the tile.
+
+Every image is memory-cached only (`cachePolicy="memory"`), for the private
+photo's reason. The Android mesh decodes the version's base photo (up to 2048
+px) once through react-native-svg's image pipeline, shared by both generated
+tiles. A locked gate greys the generated tiles out (disabled, with the reason
+as their accessibility hint) and draws nothing in them. Tiles replace the
+segmented control, so iOS's one-segment-cannot-be-disabled problem is gone
+with it: a tile only looks selected when it is the value. While a save runs,
+every tile is disabled.
+
 Without any screen open, the loader itself asks again 20 s after it reads
 `NONE` or `PENDING` art for a published version, at most 6 times per version, so
 a wall swaps onto its look about a minute after a publish, hold edit or reset.
 A revalidation that fails offline registers the local mirror, which keeps the
 art it held when it is for the same published version and its file is still on
 disk (`RegisteredSprayArt.version`), so a gym with no signal does not flip every
-board back to the photo. The picker hides its segmented control on a locked
-gate (iOS's segmented control cannot disable one segment) and holds it still
-while a save runs. Its previews use expo-image's memory cache only.
+board back to the photo.
 
 ### Asking is not the same as subscribing (SW-11)
 

@@ -141,7 +141,10 @@ async function photoJpeg(): Promise<Buffer> {
     .toBuffer();
 }
 
-async function publishWall(anchors: [number, number][] | undefined) {
+async function publishWall(
+  anchors: [number, number][] | undefined,
+  beforePublish?: (wall: { uuid: string; layoutId: number }) => Promise<void>,
+) {
   const wall = (await sprayWallMutations.createSprayWall(
     {},
     { input: { name: `Art ${uuidv4().slice(0, 6)}`, angle: 40 } },
@@ -164,6 +167,7 @@ async function publishWall(anchors: [number, number][] | undefined) {
     { input: { wallUuid: wall.uuid, versionId: version.id, holds: [{ cx: 400, cy: 400, r: 40 }] } },
     ctx,
   );
+  await beforePublish?.(wall);
   await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctx);
   return { wall, versionId: Number(version.id) };
 }
@@ -296,6 +300,77 @@ describe('spray-wall-art', () => {
       'permission denied',
     );
     await expect(restricted`UPDATE spray_wall_holds SET r = r WHERE false`).rejects.toThrow('permission denied');
+  }, 60000);
+
+  it('renders the look an owner picked in the wizard, before the first publish', async () => {
+    // The wizard's order: holds committed, the look step stores the background
+    // on the never-published wall, then the publish.
+    const { wall, versionId } = await publishWall(
+      [
+        [100, 100],
+        [2300, 100],
+        [2300, 1700],
+        [100, 1700],
+      ],
+      async (draftWall) => {
+        const draftArt = (await sprayWallQueries.sprayWallArt({}, { uuid: draftWall.uuid, version: 1 }, ctx)) as {
+          status: string;
+          quality: { verdict: string };
+        };
+        expect(draftArt).toMatchObject({ status: 'NONE', quality: { verdict: 'GOOD' } });
+        const stored = (await sprayWallMutations.setSprayWallRenderSettings(
+          {},
+          {
+            input: {
+              uuid: draftWall.uuid,
+              renderSettings: {
+                mode: 'aura',
+                boardsesh: {
+                  glowFalloff: 'plateau',
+                  glowReach: 1.4,
+                  plateauShare: 0.5,
+                  veil: 'custom',
+                  veilOpacity: 0.45,
+                  markStyle: 'glow-fill',
+                  fillOpacity: 0.6,
+                  softDisc: false,
+                  smallHoldBoost: true,
+                  ledDots: true,
+                  roleGlyphs: false,
+                  thumbnailStyle: 'fill',
+                  holdShape: 'silhouette',
+                },
+                background: 'hold-cutouts',
+              },
+            },
+          },
+          ctx,
+        )) as { renderSettings: { background?: string } | null };
+        expect(stored.renderSettings?.background).toBe('hold-cutouts');
+        // Nothing is queued for a draft: the publish does it.
+        expect(await runs()).toHaveLength(0);
+      },
+    );
+    expect(await artOf(versionId)).toMatchObject({ status: 'pending', recipe: ART_RECIPE });
+    expect(await runs()).toHaveLength(1);
+
+    const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    expect(
+      await executeBackgroundJob(
+        workerDatabase,
+        workerBoss,
+        job,
+        handlerForRole('maintenance-delivery'),
+        new AbortController().signal,
+      ),
+    ).toBe('succeeded');
+    const art = (await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx)) as {
+      status: string;
+      cutout: { url: string; thumbUrl: string | null } | null;
+    };
+    expect(art.status).toBe('READY');
+    expect(art.cutout?.url).toContain(`spray-walls/${wall.uuid}/art/${versionId}-r${ART_RECIPE}-cutout.webp`);
+    expect(art.cutout?.thumbUrl).toContain('-cutout.webp@280.webp');
   }, 60000);
 
   it('refuses a wall with no corner pins at publish, and queues nothing', async () => {

@@ -448,6 +448,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
             onChange={backgroundEditor.onChange}
             disabled={submitting}
             onRetakePhoto={canResetWall ? openRetake : undefined}
+            previewSource={backgroundEditor.previewSource}
           />
         ) : undefined
       }
