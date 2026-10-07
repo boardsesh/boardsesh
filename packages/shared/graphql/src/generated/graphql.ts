@@ -2034,6 +2034,8 @@ export type CreateSprayWallInput = {
   longitude?: InputMaybe<Scalars['Float']['input']>;
   /** What the climber calls the wall. Becomes the board name, the catalogue row names and the slug. */
   name: Scalars['String']['input'];
+  /** Let this wall's photo and marked holds help train hold finding. On when omitted. */
+  trainingConsent?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 export type CreateSprayWallVersionInput = {
@@ -4149,6 +4151,12 @@ export type Mutation = {
    * the returned SessionSummary.
    */
   endSession?: Maybe<SessionSummary>;
+  /**
+   * Retire stale exports and write a new one of every approved, eligible version
+   * to the private bucket. Cron-authenticated; the scheduler's
+   * `export-spray-training` job is the only caller.
+   */
+  exportSprayTrainingDataset: SprayTrainingExportResult;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
   /** Follow a gym. */
@@ -4510,6 +4518,11 @@ export type Mutation = {
    * Must be a participant of the session.
    */
   setSessionHealthKitWorkoutId: Scalars['Boolean']['output'];
+  /**
+   * Approve, reject or clear the verdict on one version. Community admins only
+   * (`spray`-scoped or global). Refused for a version that is not eligible.
+   */
+  setSprayTrainingReview: SprayTrainingReviewResult;
   /**
    * Hide or unhide a wall. Community admins only (`spray`-scoped or global).
    *
@@ -5309,6 +5322,11 @@ export type MutationSetSessionBoardSerialArgs = {
 export type MutationSetSessionHealthKitWorkoutIdArgs = {
   sessionId: Scalars['ID']['input'];
   workoutId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetSprayTrainingReviewArgs = {
+  input: SetSprayTrainingReviewInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6875,6 +6893,11 @@ export type Query = {
    */
   smartPlaylist: SmartPlaylistResult;
   /**
+   * Wall versions eligible as training data, by review status, oldest first.
+   * Community admins only (`spray`-scoped or global). At most 25 per page.
+   */
+  sprayTrainingQueue: SprayTrainingQueue;
+  /**
    * One spray wall by uuid (the `user_boards` uuid it is keyed on).
    *
    * Visible to the owner, to a member of the gym the wall is attached to, and to
@@ -7661,6 +7684,13 @@ export type QuerySimilarClimbsArgs = {
 /** Root query type for all read operations. */
 export type QuerySmartPlaylistArgs = {
   input: GetSmartPlaylistInput;
+};
+
+/** Root query type for all read operations. */
+export type QuerySprayTrainingQueueArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  status: SprayTrainingReviewStatus;
 };
 
 /** Root query type for all read operations. */
@@ -9048,6 +9078,16 @@ export type SetContentAudienceInput = {
   privacyRevision: Scalars['Int']['input'];
 };
 
+export type SetSprayTrainingReviewInput = {
+  /** At most 500 characters. */
+  notes?: InputMaybe<Scalars['String']['input']>;
+  /** Required with REJECTED, refused otherwise. */
+  reason?: InputMaybe<SprayTrainingRejectReason>;
+  /** UNREVIEWED clears the verdict. */
+  status: SprayTrainingReviewStatus;
+  versionId: Scalars['ID']['input'];
+};
+
 export type SetSprayWallHiddenInput = {
   hidden: Scalars['Boolean']['input'];
   uuid: Scalars['ID']['input'];
@@ -9434,6 +9474,18 @@ export type SprayDetectionResult = {
   width: Scalars['Int']['output'];
 };
 
+/**
+ * What the climber did with a detector suggestion before saving it as an AUTO
+ * hold. Ranked ACCEPTED < CONFIRMED < EDITED; a hold never moves down.
+ */
+export type SprayHoldAutoReview =
+  /** Kept as found, through accept-defaults or keep-maybes. */
+  | 'ACCEPTED'
+  /** A maybe the climber switched on by itself. */
+  | 'CONFIRMED'
+  /** Its shape changed after the detector drew it. The server also sets this whenever an AUTO hold's geometry moves. */
+  | 'EDITED';
+
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
@@ -9470,6 +9522,155 @@ export type SprayRemixSeed = {
    */
   suggestedHoldIds: Array<Scalars['Int']['output']>;
 };
+
+/** One suggestion from the version's newest finished detector run, in photo pixels. */
+export type SprayTrainingCandidate = {
+  __typename?: 'SprayTrainingCandidate';
+  confidence: Scalars['Float']['output'];
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  fate: SprayTrainingCandidateFate;
+  /** Index into the run's result.candidates. */
+  index: Scalars['Int']['output'];
+  /** Flat ring in units of r relative to the centre, as the detector sent it. */
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+};
+
+/**
+ * What happened to one detector suggestion.
+ *
+ * KEPT: a saved hold came from it and its shape was not changed. EDITED: a saved
+ * hold came from it and the climber changed its shape. DELETED: the editor
+ * showed it and no saved hold came from it. NOT_SHOWN: it scored below the
+ * editor's floor, so the climber never saw it. UNKNOWN: no hold on the version
+ * records where it came from (it was saved by an app that predates provenance),
+ * so kept and deleted cannot be told apart.
+ */
+export type SprayTrainingCandidateFate = 'DELETED' | 'EDITED' | 'KEPT' | 'NOT_SHOWN' | 'UNKNOWN';
+
+/** What one export run did. */
+export type SprayTrainingExportResult = {
+  __typename?: 'SprayTrainingExportResult';
+  durationMs: Scalars['Int']['output'];
+  /** The export written on this run, or null when nothing changed or nothing is approved. */
+  exportId?: Maybe<Scalars['String']['output']>;
+  /** Stored exports deleted because a version in them is no longer eligible and approved, or they fell out of the newest two. */
+  exportsRetired: Scalars['Int']['output'];
+  imagesWritten: Scalars['Int']['output'];
+  /** True when the approved set matched the newest export and nothing was written. */
+  skipped: Scalars['Boolean']['output'];
+};
+
+/** One saved hold, projected into the version's PHOTO pixels. */
+export type SprayTrainingHold = {
+  __typename?: 'SprayTrainingHold';
+  autoReview?: Maybe<SprayHoldAutoReview>;
+  confidence?: Maybe<Scalars['Float']['output']>;
+  cx: Scalars['Float']['output'];
+  cy: Scalars['Float']['output'];
+  id: Scalars['Int']['output'];
+  /** Flat implicitly-closed ring in units of THIS (projected) radius, relative to the centre. Null draws the circle. */
+  outline?: Maybe<Array<Scalars['Float']['output']>>;
+  r: Scalars['Float']['output'];
+  source: SprayHoldSource;
+};
+
+export type SprayTrainingQueue = {
+  __typename?: 'SprayTrainingQueue';
+  hasMore: Scalars['Boolean']['output'];
+  items: Array<SprayTrainingQueueItem>;
+  /** Eligible versions per status, over the whole queue rather than this page. */
+  totals: SprayTrainingTotals;
+};
+
+/**
+ * One wall version in the vetting queue. Carries no owner name and no wall name:
+ * the reviewer judges the photo and the holds, not the person.
+ */
+export type SprayTrainingQueueItem = {
+  __typename?: 'SprayTrainingQueueItem';
+  candidates: Array<SprayTrainingCandidate>;
+  createdAt: Scalars['String']['output'];
+  /** Model version of the detector run candidates come from, or null when the version has none. */
+  detectionModelVersion?: Maybe<Scalars['String']['output']>;
+  /** Alive holds of this version in photo pixels. */
+  holds: Array<SprayTrainingHold>;
+  /** Admin-only presigned photo; re-query after photo.expiresAt. Null when it cannot be signed. */
+  photo?: Maybe<SprayWallPhoto>;
+  photoHeight?: Maybe<Scalars['Int']['output']>;
+  photoWidth?: Maybe<Scalars['Int']['output']>;
+  publishedAt?: Maybe<Scalars['String']['output']>;
+  review: SprayTrainingReview;
+  stats: SprayTrainingStats;
+  /** Holds whose canonical position does not project onto the photo, so they are not in holds. */
+  unmappableHoldCount: Scalars['Int']['output'];
+  versionId: Scalars['ID']['output'];
+  versionNumber: Scalars['Int']['output'];
+  visibility: SprayTrainingWallVisibility;
+  wallUuid: Scalars['ID']['output'];
+};
+
+/** Why a version was kept out of the training set. A closed set; notes carry anything else. */
+export type SprayTrainingRejectReason =
+  /** Holds are drawn in the wrong place or the wrong shape. */
+  | 'BAD_HOLDS'
+  /** The same wall and photo is already in the set. */
+  | 'DUPLICATE'
+  /** Real holds on the wall were never marked. */
+  | 'MISSING_HOLDS'
+  /** Not a climbing wall. */
+  | 'NOT_A_WALL'
+  | 'OTHER'
+  /** A person, a face, an address or documents are in the frame. */
+  | 'PEOPLE_OR_PERSONAL_INFO'
+  /** Blurred, dark, cropped or too angled to learn from. */
+  | 'PHOTO_QUALITY';
+
+export type SprayTrainingReview = {
+  __typename?: 'SprayTrainingReview';
+  notes?: Maybe<Scalars['String']['output']>;
+  reason?: Maybe<SprayTrainingRejectReason>;
+  reviewedAt?: Maybe<Scalars['String']['output']>;
+  status: SprayTrainingReviewStatus;
+};
+
+export type SprayTrainingReviewResult = {
+  __typename?: 'SprayTrainingReviewResult';
+  review: SprayTrainingReview;
+  versionId: Scalars['ID']['output'];
+};
+
+/** An admin's verdict on one wall version as training data. UNREVIEWED is the absence of one. */
+export type SprayTrainingReviewStatus = 'APPROVED' | 'REJECTED' | 'UNREVIEWED';
+
+export type SprayTrainingStats = {
+  __typename?: 'SprayTrainingStats';
+  /** AUTO holds kept as found (accept-defaults or keep-maybes). */
+  acceptedHoldCount: Scalars['Int']['output'];
+  autoHoldCount: Scalars['Int']['output'];
+  candidateCount: Scalars['Int']['output'];
+  /** AUTO holds the climber switched on one at a time. */
+  confirmedHoldCount: Scalars['Int']['output'];
+  deletedCandidateCount: Scalars['Int']['output'];
+  editedCandidateCount: Scalars['Int']['output'];
+  /** AUTO holds whose shape the climber changed. */
+  editedHoldCount: Scalars['Int']['output'];
+  holdCount: Scalars['Int']['output'];
+  keptCandidateCount: Scalars['Int']['output'];
+  manualHoldCount: Scalars['Int']['output'];
+  notShownCandidateCount: Scalars['Int']['output'];
+};
+
+export type SprayTrainingTotals = {
+  __typename?: 'SprayTrainingTotals';
+  approved: Scalars['Int']['output'];
+  rejected: Scalars['Int']['output'];
+  unreviewed: Scalars['Int']['output'];
+};
+
+/** Who can see the wall a version belongs to. */
+export type SprayTrainingWallVisibility = 'PRIVATE' | 'PUBLIC' | 'UNLISTED';
 
 /**
  * A climber's own wall: one runtime-created catalogue layout under the `spray`
@@ -9555,6 +9756,12 @@ export type SprayWall = {
   resetOfWallUuid?: Maybe<Scalars['ID']['output']>;
   /** Always equal to layoutId. Returned so a client never has to know the equality. */
   sizeId: Scalars['Int']['output'];
+  /**
+   * Whether the owner lets this wall's photo and marked holds help train hold
+   * finding. On by default. The Boardsesh team checks a version before it is
+   * used, and nobody else sees it. Only ever non-null for the wall's OWNER.
+   */
+  trainingConsent?: Maybe<Scalars['Boolean']['output']>;
   uuid: Scalars['ID']['output'];
   /** Every version, newest first. Drafts are only visible to the owner. */
   versions: Array<SprayWallVersion>;
@@ -9675,6 +9882,8 @@ export type SprayWallDetectionInput = {
  */
 export type SprayWallHold = {
   __typename?: 'SprayWallHold';
+  /** What the climber did with the suggestion. Null for MANUAL holds and for AUTO holds saved without provenance. */
+  autoReview?: Maybe<SprayHoldAutoReview>;
   /** Detector confidence 0-1 for AUTO holds; null when a human drew it. */
   confidence?: Maybe<Scalars['Float']['output']>;
   cx: Scalars['Int']['output'];
@@ -9685,6 +9894,10 @@ export type SprayWallHold = {
   installedVersion: Scalars['Int']['output'];
   /** The hold this one replaced, when a reset review linked a move. */
   movedFromHoldId?: Maybe<Scalars['Int']['output']>;
+  /** Index of the suggestion in that run's result.candidates. */
+  originCandidateIndex?: Maybe<Scalars['Int']['output']>;
+  /** The detection run the suggestion came from. Null for MANUAL holds. */
+  originDetectionId?: Maybe<Scalars['ID']['output']>;
   /** Flat implicitly-closed ring [x0, y0, x1, y1, ...] in units of this hold's own radius, relative to its centre. Null falls back to the circle (cx, cy, r) describes. */
   outline?: Maybe<Array<Scalars['Float']['output']>>;
   r: Scalars['Int']['output'];
@@ -9702,11 +9915,25 @@ export type SprayWallHold = {
  * re-runs detection: it is the owner's wall.
  */
 export type SprayWallHoldInput = {
+  /**
+   * What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
+   * The server keeps the highest of this, the stored value and EDITED when the
+   * geometry changed, so an omitted value never clears one.
+   */
+  autoReview?: InputMaybe<SprayHoldAutoReview>;
   confidence?: InputMaybe<Scalars['Float']['input']>;
   cx: Scalars['Int']['input'];
   cy: Scalars['Int']['input'];
   id?: InputMaybe<Scalars['Int']['input']>;
   movedFromHoldId?: InputMaybe<Scalars['Int']['input']>;
+  originCandidateIndex?: InputMaybe<Scalars['Int']['input']>;
+  /**
+   * The detection run the suggestion came from, with originCandidateIndex. AUTO
+   * holds only. A run of another wall, an unfinished run or an index out of range
+   * is stored as null rather than failing the save. Omit both to keep what the
+   * hold already records.
+   */
+  originDetectionId?: InputMaybe<Scalars['ID']['input']>;
   /** Flat implicitly-closed ring in radius units, 3-150 points, every coordinate within 4 radii. */
   outline?: InputMaybe<Array<Scalars['Float']['input']>>;
   r: Scalars['Int']['input'];
@@ -10669,6 +10896,12 @@ export type UpdateSprayWallInput = {
   /** Reachable by uuid — the share link — and listed nowhere. */
   isUnlisted?: InputMaybe<Scalars['Boolean']['input']>;
   name?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Let this wall's photo and marked holds help train hold finding. Owner only,
+   * like visibility. Switching it off takes the wall out of the next training
+   * export and retires stored exports that held it within a day.
+   */
+  trainingConsent?: InputMaybe<Scalars['Boolean']['input']>;
   uuid: Scalars['ID']['input'];
 };
 

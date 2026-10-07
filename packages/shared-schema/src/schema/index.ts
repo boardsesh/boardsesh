@@ -34,6 +34,7 @@ import { gymOwnerReassignTypeDefs } from './gym-owner-reassign';
 import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
 import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs } from './spray-walls';
 import { sprayDetectionTypeDefs } from './spray-detection';
+import { sprayTrainingTypeDefs } from './spray-training';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 
@@ -66,6 +67,7 @@ export const typeDefs = [
   holdOutlineOverridesTypeDefs,
   sprayWallsTypeDefs,
   sprayDetectionTypeDefs,
+  sprayTrainingTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
   queriesTypeDefs,

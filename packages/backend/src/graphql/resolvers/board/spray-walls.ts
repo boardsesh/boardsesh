@@ -78,6 +78,7 @@ import {
   sprayWallArtNeedsRequest,
   sprayWallArtView,
 } from '../../../services/spray-wall-art';
+import type { SprayWallHoldInput } from '../../../validation/schemas/spray-walls';
 import {
   CommitSprayWallVersionInputSchema,
   CreateSprayWallInputSchema,
@@ -88,6 +89,7 @@ import {
   SprayWallHoldUsageArgsSchema,
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
+  SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME,
   SPRAY_VERSION_STATUS_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
   UUIDSchema,
@@ -602,6 +604,9 @@ function toGraphQLHold(hold: SprayWallHoldRow, versionNumberById: Map<number, nu
     movedFromHoldId: hold.movedFromHoldId ?? null,
     source: hold.source === 'auto' ? 'AUTO' : 'MANUAL',
     confidence: hold.confidence ?? null,
+    autoReview: hold.autoReview == null ? null : SPRAY_HOLD_AUTO_REVIEW_WIRE_NAME[hold.autoReview],
+    originDetectionId: hold.originDetectionId ?? null,
+    originCandidateIndex: hold.originCandidateIndex ?? null,
   };
 }
 
@@ -716,6 +721,10 @@ async function toGraphQLWall(
       source && (await viewerCanSeeSprayWallByLayout(source.wall, source.board, userId)) ? source.board.uuid : null,
     replacedByWallUuid:
       successor && (await viewerMayFollowToSuccessor(loaded, successor, userId)) ? successor.board.uuid : null,
+    // The owner's own switch (SW-20, #5471). Null for everybody else, gym admins
+    // and community leaders included: whether a climber agreed to share their
+    // photo for training is theirs to know, and only they can change it.
+    trainingConsent: userId != null && board.ownerId === userId ? wall.trainingConsentAt != null : null,
   };
 }
 
@@ -2041,6 +2050,8 @@ type NewSprayWallSettings = {
   renderSettings: SprayWallRow['renderSettings'];
   /** The wall this one is a reset clone of, or null for a fresh wall. */
   resetFromWallId: number | null;
+  /** "Help train hold finding": consented now, or null when the owner said no. */
+  trainingConsentAt: Date | null;
 };
 
 /**
@@ -2137,10 +2148,161 @@ async function insertSprayWallRows(tx: SprayWriteTransaction, settings: NewSpray
       ...settings.pendingVisibility,
       renderSettings: settings.renderSettings,
       resetFromWallId: settings.resetFromWallId,
+      trainingConsentAt: settings.trainingConsentAt,
     })
     .returning();
 
   return { wall, board };
+}
+
+// ============================================
+// Hold provenance (SW-20, #5471)
+// ============================================
+
+type SprayHoldAutoReview = dbSchema.SprayHoldAutoReview;
+
+/** What one written hold records about the suggestion it came from. */
+type HoldProvenance = {
+  autoReview: SprayHoldAutoReview | null;
+  originDetectionId: string | null;
+  originCandidateIndex: number | null;
+};
+
+const NO_PROVENANCE: HoldProvenance = { autoReview: null, originDetectionId: null, originCandidateIndex: null };
+
+/** The ladder a hold only ever climbs: kept as found, switched on, reshaped. */
+const AUTO_REVIEW_RANK: Record<SprayHoldAutoReview, number> = { accepted: 1, confirmed: 2, edited: 3 };
+
+function strongerAutoReview(
+  first: SprayHoldAutoReview | null | undefined,
+  second: SprayHoldAutoReview | null | undefined,
+): SprayHoldAutoReview | null {
+  if (first == null) return second ?? null;
+  if (second == null) return first;
+  return AUTO_REVIEW_RANK[first] >= AUTO_REVIEW_RANK[second] ? first : second;
+}
+
+/**
+ * How far a resubmitted hold may drift from the stored one and still count as
+ * untouched: one canonical pixel for the centre and radius, a fiftieth of a
+ * radius for each outline coordinate.
+ *
+ * Not zero, because the app holds its holds in PHOTO pixels and maps them back to
+ * the canonical frame on every write, so an untouched hold can come back a pixel
+ * off after rounding. A real nudge is several pixels; calling a rounding error an
+ * edit would label every resaved hold as corrected.
+ */
+const GEOMETRY_TOLERANCE_PX = 1;
+const OUTLINE_TOLERANCE_RADII = 0.02;
+
+function holdGeometryChanged(sent: SprayWallHoldInput, stored: SprayWallHoldRow): boolean {
+  if (Math.abs(sent.cx - stored.cx) > GEOMETRY_TOLERANCE_PX) return true;
+  if (Math.abs(sent.cy - stored.cy) > GEOMETRY_TOLERANCE_PX) return true;
+  if (Math.abs(sent.r - stored.r) > GEOMETRY_TOLERANCE_PX) return true;
+  const sentOutline = sent.outline ?? null;
+  const storedOutline = stored.outline ?? null;
+  if (sentOutline == null || storedOutline == null) return sentOutline !== storedOutline;
+  if (sentOutline.length !== storedOutline.length) return true;
+  return sentOutline.some((coordinate, index) => Math.abs(coordinate - storedOutline[index]) > OUTLINE_TOLERANCE_RADII);
+}
+
+const originKey = (detectionId: string, candidateIndex: number) => `${detectionId}#${candidateIndex}`;
+
+/**
+ * Which `(detection, candidate)` pairs named in this batch are real: a run of THIS
+ * wall that finished, and an index inside its candidate list. One query for the
+ * whole batch, whatever its size.
+ */
+async function validOriginKeys(
+  tx: SprayWriteTransaction,
+  wallId: number,
+  holds: readonly SprayWallHoldInput[],
+): Promise<Set<string>> {
+  const detectionIds = [
+    ...new Set(
+      holds.map((hold) => hold.originDetectionId).filter((detectionId): detectionId is string => detectionId != null),
+    ),
+  ];
+  if (detectionIds.length === 0) return new Set();
+
+  const runs = await tx
+    .select({
+      id: dbSchema.sprayWallDetections.id,
+      candidateCount: sql<number>`CASE WHEN jsonb_typeof(${dbSchema.sprayWallDetections.result} -> 'candidates') = 'array'
+        THEN jsonb_array_length(${dbSchema.sprayWallDetections.result} -> 'candidates') ELSE 0 END`,
+    })
+    .from(dbSchema.sprayWallDetections)
+    .where(
+      and(
+        eq(dbSchema.sprayWallDetections.wallId, wallId),
+        eq(dbSchema.sprayWallDetections.status, 'done'),
+        inArray(dbSchema.sprayWallDetections.id, detectionIds),
+      ),
+    );
+  const candidateCounts = new Map(runs.map((run) => [run.id, Number(run.candidateCount)]));
+
+  const valid = new Set<string>();
+  for (const hold of holds) {
+    if (hold.originDetectionId == null || hold.originCandidateIndex == null) continue;
+    const candidateCount = candidateCounts.get(hold.originDetectionId);
+    if (candidateCount !== undefined && hold.originCandidateIndex < candidateCount) {
+      valid.add(originKey(hold.originDetectionId, hold.originCandidateIndex));
+    }
+  }
+  return valid;
+}
+
+/**
+ * The provenance to store for one written hold.
+ *
+ * `previous` is the row this write replaces: the stored row for an in-place edit,
+ * the superseded original for a correction of an inherited hold, nothing for a
+ * genuine addition.
+ *
+ *  - A MANUAL hold records none, whatever was sent: provenance is a fact about a
+ *    detector suggestion.
+ *  - The origin is the one sent when it validates, NULL when it does not (never a
+ *    failed save: provenance is bookkeeping, the holds are the climber's work),
+ *    and the previous row's when nothing was sent, so an app that predates the
+ *    fields does not wipe it.
+ *  - The review is the highest of what was sent, what the previous row had, and
+ *    `edited` when an auto hold's geometry moved. The server decides the last on
+ *    its own so an older app's nudge still counts as a correction.
+ */
+function resolveHoldProvenance(
+  hold: SprayWallHoldInput,
+  previous: SprayWallHoldRow | undefined,
+  validOrigins: ReadonlySet<string>,
+  wallId: number,
+): HoldProvenance {
+  if (hold.source !== 'auto') return NO_PROVENANCE;
+
+  const inherited = previous?.source === 'auto' ? previous : undefined;
+  let originDetectionId = inherited?.originDetectionId ?? null;
+  let originCandidateIndex = inherited?.originDetectionId == null ? null : (inherited.originCandidateIndex ?? null);
+  if (hold.originDetectionId != null || hold.originCandidateIndex != null) {
+    const sentValid =
+      hold.originDetectionId != null &&
+      hold.originCandidateIndex != null &&
+      validOrigins.has(originKey(hold.originDetectionId, hold.originCandidateIndex));
+    if (sentValid) {
+      originDetectionId = hold.originDetectionId!;
+      originCandidateIndex = hold.originCandidateIndex!;
+    } else {
+      logger.debug('Dropped an invalid spray hold origin', {
+        wallId,
+        originDetectionId: hold.originDetectionId ?? null,
+        originCandidateIndex: hold.originCandidateIndex ?? null,
+      });
+      originDetectionId = null;
+      originCandidateIndex = null;
+    }
+  }
+
+  let autoReview = strongerAutoReview(hold.autoReview, inherited?.autoReview);
+  if (inherited && holdGeometryChanged(hold, inherited)) autoReview = 'edited';
+
+  return { autoReview, originDetectionId, originCandidateIndex };
 }
 
 // ============================================
@@ -2224,6 +2386,8 @@ export const sprayWallMutations = {
         pendingVisibility: pendingVisibilityColumns(validated),
         renderSettings: null,
         resetFromWallId: null,
+        // On unless the climber switched it off in the wizard (SW-20, #5471).
+        trainingConsentAt: validated.trainingConsent === false ? null : new Date(),
       }),
     );
 
@@ -2374,6 +2538,9 @@ export const sprayWallMutations = {
         }),
         renderSettings: source.wall.renderSettings,
         resetFromWallId: source.wall.id,
+        // The owner's training choice carries over like the rest of the settings,
+        // stamped fresh because the clone's photo is a new one.
+        trainingConsentAt: source.wall.trainingConsentAt == null ? null : new Date(),
       });
       return { clone, created: true };
     });
@@ -2852,6 +3019,14 @@ export const sprayWallMutations = {
       ];
       const newIds = await allocateHoldIds(tx, newRows.length);
 
+      // Provenance (SW-20, #5471): validated in one query, decided per hold. An
+      // addition has no previous row; a supersede inherits from the original it
+      // replaces; an in-place edit from its own stored row.
+      const validOrigins = await validOriginKeys(tx, wall.id, validated.holds);
+      const newRowProvenance = newRows.map(({ hold }) =>
+        resolveHoldProvenance(hold, hold.id == null ? undefined : aliveById.get(hold.id), validOrigins, wall.id),
+      );
+
       if (newRows.length > 0) {
         // The catalogue pair every hold needs: one `board_holes` row and one
         // `board_placements` row SHARING the id, because a climb's frames string
@@ -2896,6 +3071,7 @@ export const sprayWallMutations = {
             movedFromHoldId: predecessorId,
             source: hold.source,
             confidence: hold.confidence ?? null,
+            ...newRowProvenance[index],
           })),
         );
       }
@@ -2936,6 +3112,7 @@ export const sprayWallMutations = {
             movedFromHoldId: hold.movedFromHoldId ?? null,
             source: hold.source,
             confidence: hold.confidence ?? null,
+            ...resolveHoldProvenance(hold, aliveById.get(hold.id!), validOrigins, wall.id),
             updatedAt: new Date(),
           })
           .where(and(eq(dbSchema.sprayWallHolds.wallId, wall.id), eq(dbSchema.sprayWallHolds.holdId, hold.id!)));
@@ -3415,6 +3592,14 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
     });
   }
+  // Training consent (SW-20, #5471) is the same kind of decision as visibility:
+  // whether a photograph of somebody's home goes somewhere beyond the wall. Only
+  // the person who took it decides, so the same gate and the same code.
+  if (validated.trainingConsent !== undefined && board.ownerId !== ctx.userId) {
+    throw new GraphQLError('Only the climber who set this wall up can change whether it helps train hold finding', {
+      extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
+    });
+  }
 
   const policyCondition = and(
     eq(dbSchema.resourcePrivacy.kind, 'board'),
@@ -3557,6 +3742,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
           pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
           deletedAt: dbSchema.sprayWalls.deletedAt,
           resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
+          trainingConsentAt: dbSchema.sprayWalls.trainingConsentAt,
         })
         .from(dbSchema.sprayWalls)
         .where(eq(dbSchema.sprayWalls.id, wall.id))
@@ -3687,6 +3873,15 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
       }
 
+      // Off nulls the stamp; on stamps `now()` only when it was off, so restating
+      // "on" keeps the date the consent was actually given (and leaves the
+      // training export's consent fingerprint alone).
+      if (validated.trainingConsent === false) {
+        wallUpdates.trainingConsentAt = null;
+      } else if (validated.trainingConsent === true && wallNow?.trainingConsentAt == null) {
+        wallUpdates.trainingConsentAt = new Date();
+      }
+
       await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));
     });
   } catch (error) {
@@ -3705,6 +3900,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
     layoutId: wall.layoutId,
     userId: ctx.userId,
     fields: Object.keys(updates),
+    ...(validated.trainingConsent === undefined ? {} : { trainingConsent: validated.trainingConsent }),
   });
 
   const reloaded = await loadWall('uuid', validated.uuid);
