@@ -5,7 +5,7 @@
     "weekly": "Wir erstellen pro Board jede UTC-Woche eine Kopie. Downloads verwenden diese Kopie bis zur nächsten Woche.",
     "expiry": "Dateien laufen 14 Tage nach der Erstellung ab. Jeder Download verwendet einen neuen Link, der 5 Minuten gültig ist.",
     "boardType": "Boardtyp",
-    "sprayWalls": "Spraywände",
+    "sprayWalls": "Spraywalls",
     "format": "Dateiformat",
     "boardseshFormat": "Boardsesh-JSON",
     "auroraFormat": "Aurora-JSON",

@@ -461,9 +461,9 @@
           "dismissAccessibility": "Descartar esta sugerencia"
         },
         "sprayWalls": {
-          "title": "Muros de spray",
-          "useOwnLook": "Usar mi aspecto en los muros de spray",
-          "footer": "Los muros de spray muestran el aspecto que eligió su creador para la foto. Actívalo para ver tu propio aspecto en ellos."
+          "title": "Plafones de spray",
+          "useOwnLook": "Usar mi aspecto en los plafones de spray",
+          "footer": "Los plafones de spray muestran el aspecto que eligió su creador para la foto. Actívalo para ver tu propio aspecto en ellos."
         }
       },
       "accessibility": {

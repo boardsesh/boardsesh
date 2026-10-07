@@ -219,7 +219,7 @@
       "boardConfigIncomplete": "Les détails de la board sont manquants ou invalides. Choisis à nouveau la board pour ouvrir ton bloc.",
       "noUsableBoard": "Choisis d'abord une board, puis ouvre ton bloc.",
       "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board.",
-      "wallArchived": "Ce mur est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc."
+      "wallArchived": "Ce spray wall est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc."
     },
     "alerts": {
       "publishDuplicateNamed": "Cette configuration de prises correspond à « {{name}} ». Activez Brouillon pour l'enregistrer sans la publier, ou changez une prise.",
@@ -954,32 +954,32 @@
     "unknownGrade": "Sans cotation",
     "unknownSetter": "un ouvreur inconnu",
     "heading": "{{climbName}} — {{grade}}",
-    "summary": "Sur {{wallName}}, un mur de pan à {{angle}}° avec {{holdCount}} prises.",
+    "summary": "Sur {{wallName}}, un spray wall à {{angle}}° avec {{holdCount}} prises.",
     "setterLine": "Ouvert par {{setter}}. {{ascents}} croix enregistrées.",
     "ascentsLine": "{{ascents}} croix enregistrées.",
     "setterNotesHeading": "Notes de l’ouvreur",
     "keepLookingHeading": "Continue à chercher",
     "setterLink": "Plus de blocs de {{setter}}",
-    "gymsLink": "Trouver une salle avec des murs",
+    "gymsLink": "Trouver une salle avec des spray walls",
     "homeLink": "Accueil Boardsesh",
-    "photoAlt": "{{climbName}}, {{grade}}, allumé sur le mur de pan {{wallName}}",
-    "noPhoto": "Ce mur n’a pas encore de photo à montrer.",
+    "photoAlt": "{{climbName}}, {{grade}}, allumé sur le spray wall {{wallName}}",
+    "noPhoto": "Ce spray wall n’a pas encore de photo à montrer.",
     "metadata": {
-      "title": "{{climbName}} {{grade}} sur {{wallName}} | Mur de pan",
-      "description": "{{climbName}}, {{grade}}, sur le mur de pan {{wallName}} à {{angle}}°, ouvert par {{setter}}. Vois les prises sur la photo du mur."
+      "title": "{{climbName}} {{grade}} sur {{wallName}} | Spray wall",
+      "description": "{{climbName}}, {{grade}}, sur le spray wall {{wallName}} à {{angle}}°, ouvert par {{setter}}. Vois les prises sur la photo du spray wall."
     },
     "wall": {
-      "summary": "Un mur de pan à {{angle}}° avec {{holdCount}} prises.",
-      "photoAlt": "Le mur de pan {{wallName}}",
-      "openInApp": "Ouvre ce mur dans l’app Boardsesh pour voir ses blocs, ouvrir les tiens et enregistrer tes croix.",
+      "summary": "Un spray wall à {{angle}}° avec {{holdCount}} prises.",
+      "photoAlt": "Le spray wall {{wallName}}",
+      "openInApp": "Ouvre ce spray wall dans l’app Boardsesh pour voir ses blocs, ouvrir les tiens et enregistrer tes croix.",
       "metadata": {
-        "title": "{{wallName}} | Mur de pan",
-        "description": "{{wallName}}, un mur de pan à {{angle}}°. Vois le mur et ouvre-le dans l’app Boardsesh."
+        "title": "{{wallName}} | Spray wall",
+        "description": "{{wallName}}, un spray wall à {{angle}}°. Vois le spray wall et ouvre-le dans l’app Boardsesh."
       }
     },
     "install": {
       "heading": "Prends l’app",
-      "body": "Note tes croix sur ce mur et ouvre tes propres blocs."
+      "body": "Note tes croix sur ce spray wall et ouvre tes propres blocs."
     }
   }
 }

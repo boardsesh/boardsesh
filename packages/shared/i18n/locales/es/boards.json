@@ -4,7 +4,7 @@
     "running": "Buscando presas en tu foto…",
     "connection": "No podemos acceder al reconocimiento. Inténtalo cuando tengas conexión.",
     "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
-    "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
+    "resumeHint": "Puedes salir y continuar más tarde. Tu plafón publicado no cambia.",
     "retry": "Intentar de nuevo",
     "manual": "Marcar las presas a mano"
   },
@@ -72,7 +72,7 @@
       "unfollowConfirm": "Dejar de seguir",
       "edit": "Editar",
       "done": "Listo",
-      "deleteWallTitle": "¿Eliminar el muro de spray?",
+      "deleteWallTitle": "¿Eliminar el plafón de spray?",
       "deleteWallMessage": "¿Eliminar \"{{name}}\"? Sus fotos y bloques dejarán de estar disponibles. No se puede deshacer.",
       "deleteSuccess": "\"{{name}}\" eliminado"
     },
@@ -92,7 +92,7 @@
       "gymHint": "Elige el plafón de tu rocódromo",
       "own": "Mi propio plafón",
       "ownHint": "Configura el plafón que tienes en casa",
-      "sprayWall": "Añadir mi muro de spray",
+      "sprayWall": "Añadir mi plafón de spray",
       "scan": "Buscar el plafón que tengo delante",
       "scanFootnote": "Los MoonBoard y algunas cajas de Kilter aún no aparecen aquí.",
       "searching": "Buscando plafones cerca de ti…",
@@ -145,7 +145,7 @@
       "unpinAria": "Desfijar {{name}}",
       "pinnedBadgeAria": "Fijado",
       "pinError": "No se pudieron actualizar tus plafones fijados",
-      "addWallTile": "Muro spray"
+      "addWallTile": "Plafón de spray"
     },
     "create": {
       "screenTitle": "Configura tu plafón",
@@ -223,13 +223,13 @@
         "adjustable": "ajustable"
       },
       "spray": {
-        "kind": "Plafón de presas",
+        "kind": "Plafón de spray",
         "editHolds": "Editar presas",
-        "editHoldsHint": "Añade, mueve o borra las presas de tu muro.",
-        "resetWall": "Resetear este muro",
+        "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
+        "resetWall": "Resetear este plafón",
         "resetWallHint": "Haz una foto nueva y marca las presas otra vez.",
         "shareLink": "Compartir enlace",
-        "shareLinkPublicHint": "Cualquiera puede abrir este muro.",
+        "shareLinkPublicHint": "Cualquiera puede abrir este plafón.",
         "shareLinkUnlistedHint": "Solo quien reciba el enlace."
       },
       "details": "Detalles",
@@ -810,7 +810,7 @@
     },
     "startOver": {
       "title": "¿Empezar de nuevo?",
-      "body": "Todas las presas vuelven a como estaban al abrir el muro. Puedes deshacerlo.",
+      "body": "Todas las presas vuelven a como estaban al abrir el plafón. Puedes deshacerlo.",
       "confirm": "Empezar de nuevo",
       "cancel": "Seguir editando"
     },
@@ -858,7 +858,7 @@
       "pencil": "El Apple Pencil añade y activa presas. Con los dedos te mueves y eliges una presa."
     },
     "a11y": {
-      "wall": "Foto de tu muro: {{summary}}",
+      "wall": "Foto de tu plafón: {{summary}}",
       "holdValue": "Presa {{position}} de {{total}}, {{role}}",
       "noHold": "Ninguna presa elegida",
       "hint": "Desliza hacia arriba o abajo para recorrer las presas. Toca dos veces para activar o desactivar una.",
@@ -876,7 +876,7 @@
       },
       "revealed": "Presas encontradas: {{summary}}"
     },
-    "readOnly": "No puedes editar este muro.",
+    "readOnly": "No puedes editar este plafón.",
     "errors": {
       "tooManyHolds": "Has llegado al límite de {{max}} presas. Desactiva algunas para añadir más.",
       "saveFailed": "No se pudieron guardar tus presas. Inténtalo de nuevo.",
@@ -884,8 +884,8 @@
       "strokeTooBig": "Ese trazo es mucho más grande que una presa. Amplía y repasa la presa misma.",
       "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
       "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
-      "someHoldsOffWall_one": "{{count}} presa cae fuera del muro. Devuélvela a la foto o desactívala.",
-      "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas.",
+      "someHoldsOffWall_one": "{{count}} presa cae fuera del plafón. Devuélvela a la foto o desactívala.",
+      "someHoldsOffWall_other": "{{count}} presas caen fuera del plafón. Devuélvelas a la foto o desactívalas.",
       "cornersCross": "Dos lados se cruzan. Toca las esquinas en orden alrededor de la presa.",
       "cornersTooFew": "Esas esquinas están demasiado juntas o en línea. Toca al menos 3 alrededor de la presa.",
       "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa.",
@@ -894,17 +894,17 @@
       "refineCantStore": "Ese trazo dejaría una forma que no se puede guardar como una sola presa, así que no se ha aplicado."
     },
     "empty": {
-      "noPhoto": "Este muro todavía no tiene foto que editar."
+      "noPhoto": "Este plafón todavía no tiene foto que editar."
     },
-    "loading": "Cargando tu muro…",
-    "loadStalled": "No pudimos cargar tu muro. Inténtalo de nuevo.",
+    "loading": "Cargando tu plafón…",
+    "loadStalled": "No pudimos cargar tu plafón. Inténtalo de nuevo.",
     "rail": {
       "label": "Herramientas de edición",
       "grip": "Mover las herramientas al otro lado",
       "mark": "Elegir y activar presas",
       "pencilOnly": "Solo Pencil",
-      "pencilOnlyHint": "Con los dedos eliges presas y te mueves. Solo el Apple Pencil cambia el muro.",
-      "fit": "Ajustar el muro a la pantalla",
+      "pencilOnlyHint": "Con los dedos eliges presas y te mueves. Solo el Apple Pencil cambia el plafón.",
+      "fit": "Ajustar el plafón a la pantalla",
       "more": "Más opciones"
     },
     "inspector": {
@@ -944,21 +944,21 @@
     }
   },
   "sprayWizard": {
-    "screenTitle": "Añadir un muro de spray",
+    "screenTitle": "Añadir un plafón de spray",
     "stepCounter": "Paso {{current}} de {{total}}",
     "back": "Atrás",
     "meta": {
-      "title": "¿Qué muro es este?",
+      "title": "¿Qué plafón es este?",
       "body": "Ponle nombre, di cuánto se inclina y elige quién puede verlo.",
-      "namePlaceholder": "Muro del garaje",
+      "namePlaceholder": "Plafón del garaje",
       "angle": "Ángulo",
-      "angleHint": "Cuánto se inclina el muro, en pasos de 5°. Queda fijo al publicar.",
+      "angleHint": "Cuánto se inclina el plafón, en pasos de 5°. Queda fijo al publicar.",
       "next": "Siguiente",
-      "anglePreview": "Muro a {{angle}} grados"
+      "anglePreview": "Plafón a {{angle}} grados"
     },
     "photo": {
-      "title": "Fotografía el muro",
-      "body": "Ponte de frente, dispara a 1x y encuadra el muro entero. Cada presa que pongas vive en estos píxeles.",
+      "title": "Fotografía el plafón",
+      "body": "Ponte de frente, dispara a 1x y encuadra el plafón entero. Cada presa que pongas vive en estos píxeles.",
       "helpLink": "Cómo hacer la foto",
       "helpLinkHint": "Abre la guía de fotos en tu navegador",
       "library": "Elegir una foto",
@@ -966,13 +966,13 @@
       "pickAnother": "Elegir otra foto",
       "adjust": "Recortar o girar",
       "next": "Siguiente",
-      "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
+      "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un plafón.",
       "failed": "Esa foto no se abre. Prueba con otra.",
-      "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas."
+      "tip": "Aléjate, ponte de frente al plafón y encuadra las 4 esquinas."
     },
     "adjust": {
       "title": "Recorta y gira",
-      "body": "Recorta hasta los bordes del muro. Gira la foto si salió de lado.",
+      "body": "Recorta hasta los bordes del plafón. Gira la foto si salió de lado.",
       "hint": "Arrastra un borde o una esquina. Arrastra dentro del recuadro para moverlo.",
       "small": "Esta foto es pequeña. Las presas pueden verse borrosas al hacer zoom.",
       "failed": "No se pudo recortar esa foto. Inténtalo de nuevo o cancela para dejarla como estaba.",
@@ -993,9 +993,9 @@
     },
     "anchors": {
       "title": "Marca las esquinas",
-      "body": "Arrastra los cuatro círculos a las esquinas del muro. Sáltatelo si disparaste de frente.",
+      "body": "Arrastra los cuatro círculos a las esquinas del plafón. Sáltatelo si disparaste de frente.",
       "hint": "Arriba izquierda, arriba derecha, abajo derecha, abajo izquierda.",
-      "crossed": "Esas esquinas se cruzan entre sí. Colócalas alrededor del muro en orden.",
+      "crossed": "Esas esquinas se cruzan entre sí. Colócalas alrededor del plafón en orden.",
       "cornerTopLeft": "Esquina superior izquierda",
       "cornerTopRight": "Esquina superior derecha",
       "cornerBottomRight": "Esquina inferior derecha",
@@ -1004,7 +1004,7 @@
       "skip": "Saltar por ahora",
       "clear": "Empezar las esquinas de nuevo",
       "quality": {
-        "good": "Bien de frente. El muro se enderezará limpio.",
+        "good": "Bien de frente. El plafón se enderezará limpio.",
         "soft": "Un poco inclinada. Repítela de frente para un aspecto más nítido.",
         "fail": "Demasiado inclinada para enderezarla. Tu foto sigue sirviendo, o repítela de frente.",
         "small": "Esta foto es demasiado pequeña para enderezarla. Tu foto sigue sirviendo tal cual."
@@ -1027,102 +1027,102 @@
     "scan": {
       "queued": "Esperando turno…",
       "running": "Buscando presas…",
-      "slow": "Los muros con muchas presas tardan un poco más",
+      "slow": "Los plafones con muchas presas tardan un poco más",
       "resumeHint": "Puedes salir y continuar más tarde."
     },
     "review": {
       "next": "Elegir el aspecto",
-      "nothingFound": "No se encontraron presas. Toca el muro para añadirlas.",
-      "detectionFailed": "Esta vez no pudimos encontrar presas. Toca el muro para añadirlas.",
-      "manualOnly": "Toca el muro para añadir tus presas.",
+      "nothingFound": "No se encontraron presas. Toca el plafón para añadirlas.",
+      "detectionFailed": "Esta vez no pudimos encontrar presas. Toca el plafón para añadirlas.",
+      "manualOnly": "Toca el plafón para añadir tus presas.",
       "retry": "Reintentar"
     },
     "look": {
       "title": "¿Cómo quieres que se iluminen tus presas?",
-      "body": "Los escaladores verán tu muro así, salvo quienes hayan elegido usar su propio aspecto en los muros de spray.",
-      "loading": "Cargando tu muro…",
-      "unavailable": "Aquí no se puede mostrar la foto de tu muro, pero puedes elegir el aspecto igualmente.",
+      "body": "Los escaladores verán tu plafón así, salvo quienes hayan elegido usar su propio aspecto en los plafones de spray.",
+      "loading": "Cargando tu plafón…",
+      "unavailable": "Aquí no se puede mostrar la foto de tu plafón, pero puedes elegir el aspecto igualmente.",
       "saving": "Guardando el aspecto…",
       "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
       "publishWithout": "Publicar igualmente",
-      "dimTitle": "Oscurecer el resto del muro",
+      "dimTitle": "Oscurecer el resto del plafón",
       "dimOff": "Desactivado"
     },
     "publish": {
       "title": "Añádelo a tus plafones",
-      "working": "Publicando tu muro…",
-      "failed": "No se pudo publicar el muro.",
-      "stalled": "Tu muro está guardado, pero prepararlo tardó demasiado. Inténtalo de nuevo.",
+      "working": "Publicando tu plafón…",
+      "failed": "No se pudo publicar el plafón.",
+      "stalled": "Tu plafón está guardado, pero prepararlo tardó demasiado. Inténtalo de nuevo.",
       "retry": "Reintentar"
     },
     "done": {
-      "body": "Preparando tu muro…",
+      "body": "Preparando tu plafón…",
       "leave": "Volver a escalar"
     },
     "leave": {
-      "title": "¿Dejar este muro por ahora?",
-      "body": "Tu muro y su foto están guardados. Retómalo donde lo dejaste.",
+      "title": "¿Dejar este plafón por ahora?",
+      "body": "Tu plafón y su foto están guardados. Retómalo donde lo dejaste.",
       "stay": "Seguir",
       "go": "Salir",
       "unsavedTitle": "¿Salir sin publicar?",
-      "unsavedBody": "Tus cambios en las presas no se guardarán. El muro y su foto siguen guardados.",
+      "unsavedBody": "Tus cambios en las presas no se guardarán. El plafón y su foto siguen guardados.",
       "discard": "Salir igualmente"
     },
     "resume": {
-      "checking": "Buscando un muro que empezaste…",
-      "title": "Tienes un muro a medias",
+      "checking": "Buscando un plafón que empezaste…",
+      "title": "Tienes un plafón a medias",
       "body": "«{{name}}» no está terminado. Retómalo donde lo dejaste o empieza de nuevo.",
       "pickUp": "Retomarlo",
       "startOver": "Empezar de nuevo",
-      "checkFailed": "No se pudo comprobar ese muro. Inténtalo otra vez.",
+      "checkFailed": "No se pudo comprobar ese plafón. Inténtalo otra vez.",
       "retry": "Reintentar"
     },
     "reset": {
-      "screenTitle": "Resetear este muro",
-      "starting": "Preparando tu muro nuevo…",
+      "screenTitle": "Resetear este plafón",
+      "starting": "Preparando tu plafón nuevo…",
       "startFailed": "No se pudo empezar el reseteo. Inténtalo otra vez.",
       "resumeTitle": "Tienes un reseteo a medias",
-      "resumeBody": "La foto nueva de «{{name}}» no está terminada. Retómala donde la dejaste o empieza de nuevo. El muro sigue activo hasta que se publique el nuevo.",
-      "photoTitle": "Fotografía el muro tal como está ahora",
-      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa.",
-      "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
+      "resumeBody": "La foto nueva de «{{name}}» no está terminada. Retómala donde la dejaste o empieza de nuevo. El plafón sigue activo hasta que se publique el nuevo.",
+      "photoTitle": "Fotografía el plafón tal como está ahora",
+      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el plafón entero y luego marca cada presa.",
+      "archiveNotice": "Cuando este plafón se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
     }
   },
   "sprayResetConfirm": {
-    "title": "¿Resetear este muro?",
-    "body": "Haz una foto nueva y marca las presas desde cero. Cuando el muro nuevo se publique, este se archiva. Sus bloques y encadenes se quedan en los logbooks y las playlists, y ya nadie podrá montar bloques en él.",
+    "title": "¿Resetear este plafón?",
+    "body": "Haz una foto nueva y marca las presas desde cero. Cuando el plafón nuevo se publique, este se archiva. Sus bloques y encadenes se quedan en los logbooks y las playlists, y ya nadie podrá montar bloques en él.",
     "start": "Empezar el reseteo",
     "cancel": "Ahora no"
   },
   "sprayArchive": {
     "banner": "Archivado el {{date}}. Los bloques y encadenes se quedan, pero aquí ya no se monta nada nuevo.",
     "bannerUndated": "Archivado. Los bloques y encadenes se quedan, pero aquí ya no se monta nada nuevo.",
-    "switchToNew": "Ir al muro nuevo",
-    "openFailed": "No se pudo abrir ese muro. Inténtalo otra vez.",
+    "switchToNew": "Ir al plafón nuevo",
+    "openFailed": "No se pudo abrir ese plafón. Inténtalo otra vez.",
     "manageHeader": "Archivados",
     "manageRow": "Archivado el {{date}}",
     "manageRowUndated": "Archivado",
     "deleteMessage": "¿Eliminar «{{name}}»? Se elimina su foto, y sus bloques y todos los encadenes registrados en ellos desaparecen de los logbooks y las playlists. No se puede deshacer."
   },
   "sprayWallErrors": {
-    "archived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
-    "resetRetired": "Ahora los muros se cambian reseteándolos. Actualiza la app y luego resetea el muro.",
-    "resetOwnerOnly": "Solo quien creó el muro puede resetearlo.",
-    "resetSourceUnpublished": "Termina de configurar este muro antes de resetearlo.",
-    "archiveLimitReached": "Puedes guardar {{max}} muros archivados. Borra uno de la sección Archivados para resetear este muro."
+    "archived": "Este plafón está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
+    "resetRetired": "Ahora los plafones se cambian reseteándolos. Actualiza la app y luego resetea el plafón.",
+    "resetOwnerOnly": "Solo quien creó el plafón puede resetearlo.",
+    "resetSourceUnpublished": "Termina de configurar este plafón antes de resetearlo.",
+    "archiveLimitReached": "Puedes guardar {{max}} plafones archivados. Borra uno de la sección Archivados para resetear este plafón."
   },
   "sprayMaintenance": {
     "screenTitle": "Editar presas",
-    "preparing": "Abriendo tu muro…",
-    "unavailable": "No puedes editar este muro.",
-    "nothingPublished": "Termina de configurar este muro antes de editar sus presas.",
-    "draftUnavailable": "Este borrador ha cambiado. Vuelve a abrir el muro para editar sus presas.",
+    "preparing": "Abriendo tu plafón…",
+    "unavailable": "No puedes editar este plafón.",
+    "nothingPublished": "Termina de configurar este plafón antes de editar sus presas.",
+    "draftUnavailable": "Este borrador ha cambiado. Vuelve a abrir el plafón para editar sus presas.",
     "loadFailed": "No se ha podido abrir el editor de presas. Inténtalo de nuevo.",
     "publish": "Publicar presas",
     "publishing": "Publicando tus presas…",
     "publishFailed": "Los cambios de tus presas están guardados. Intenta publicarlos de nuevo.",
-    "refreshing": "Cargando el muro actualizado…",
-    "refreshFailed": "Tus presas están publicadas. Intenta cargar el muro de nuevo.",
+    "refreshing": "Cargando el plafón actualizado…",
+    "refreshFailed": "Tus presas están publicadas. Intenta cargar el plafón de nuevo.",
     "retry": "Reintentar",
     "temporarilyUnavailable": "La edición de presas no está disponible ahora. Inténtalo más tarde.",
     "leave": {
@@ -1131,7 +1131,7 @@
       "stay": "Seguir editando",
       "discard": "Descartar cambios"
     },
-    "leftoverPhoto": "Este muro tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
+    "leftoverPhoto": "Este plafón tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
     "discardLeftover": "Descartar la foto sin terminar",
     "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
   },
@@ -1144,14 +1144,14 @@
     "keep": "Mantener las presas"
   },
   "sprayCaps": {
-    "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-    "versions": "Un muro guarda hasta {{max}} versiones de sus presas, una por cada edición publicada, y este ya las ha gastado todas. Resetea el muro para empezar de cero.",
-    "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
-    "wallsHint": "Puedes tener hasta {{max}} muros."
+    "holds": "En un plafón caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
+    "versions": "Un plafón guarda hasta {{max}} versiones de sus presas, una por cada edición publicada, y este ya las ha gastado todas. Resetea el plafón para empezar de cero.",
+    "walls": "Puedes tener {{max}} plafones. Borra uno para hacer sitio.",
+    "wallsHint": "Puedes tener hasta {{max}} plafones."
   },
   "sprayHidden": {
     "body": "Alguien lo reportó y lo hemos quitado de la vista de los demás. Para ti sigue aquí, y no se ha borrado nada.",
-    "title": "Este muro está oculto"
+    "title": "Este plafón está oculto"
   },
   "sprayModeration": {
     "reportTitle": "Denunciar plafón",
@@ -1160,7 +1160,7 @@
     "reported": "Gracias. Tu denuncia está pendiente de revisión.",
     "reportOffline": "Conéctate a internet para enviar tu denuncia.",
     "reportError": "No se pudo enviar tu denuncia. Inténtalo de nuevo.",
-    "queueTitle": "Denuncias de plafones spray",
+    "queueTitle": "Denuncias de plafones de spray",
     "hide": "Ocultar plafón",
     "unhide": "Mostrar plafón",
     "keepVisible": "Mantener visible",
@@ -1169,12 +1169,12 @@
     "noPhoto": "No hay foto disponible",
     "review": "Revisar plafón",
     "reviewError": "No se guardó la decisión. Inténtalo de nuevo.",
-    "unavailable": "La moderación de plafones spray no está disponible para esta cuenta ahora.",
+    "unavailable": "La moderación de plafones de spray no está disponible para esta cuenta ahora.",
     "loadError": "No se pudieron cargar las denuncias.",
     "empty": "No hay plafones pendientes de revisión.",
     "reasons": {
       "inappropriate": "Foto o nombre inapropiado",
-      "notAWall": "No es un muro de escalada",
+      "notAWall": "No es un plafón de spray",
       "personalInfo": "Información personal en la foto",
       "other": "Otro"
     },
@@ -1182,24 +1182,24 @@
     "reportCount_other": "{{count}} denuncias"
   },
   "sprayBackground": {
-    "label": "Fondo del muro",
+    "label": "Fondo del plafón",
     "photo": "Foto",
-    "wallCrop": "Solo el muro",
+    "wallCrop": "Solo el plafón",
     "holdCutouts": "Solo las presas",
-    "retake": "Resetear el muro con una foto nueva",
+    "retake": "Resetear el plafón con una foto nueva",
     "previewLabel": "Vista previa de {{look}}",
     "saveFailed": "No se pudo guardar el fondo. Inténtalo de nuevo.",
     "notAvailable": "Esta foto está demasiado inclinada para ese aspecto. Repítela de frente.",
     "note": {
       "lockedNoPins": "Marca las 4 esquinas para desbloquearlo.",
-      "lockedRetake": "Resetea el muro con una foto de frente para desbloquearlo.",
+      "lockedRetake": "Resetea el plafón con una foto de frente para desbloquearlo.",
       "generating": "Generando…",
       "failed": "Ese aspecto no se pudo generar. Guárdalo otra vez para reintentarlo.",
       "afterPublish": "Listo más o menos un minuto después de publicar. Hasta entonces se ve tu foto.",
       "soft": "Repite la foto de frente para un aspecto más nítido.",
       "volumes": "Los volúmenes todavía no se recortan."
     },
-    "notAvailableNoPins": "Marca primero las 4 esquinas del muro para usar este aspecto.",
+    "notAvailableNoPins": "Marca primero las 4 esquinas del plafón para usar este aspecto.",
     "notAvailableSmall": "Esta foto es demasiado pequeña para enderezarla. Repítela con la cámara principal a 1x.",
     "usePhoto": "Usar la foto"
   }

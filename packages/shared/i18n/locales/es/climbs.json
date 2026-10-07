@@ -213,7 +213,7 @@
       "boardConfigIncomplete": "Los datos del plafón faltan o no son válidos. Vuelve a elegir el plafón para montar tu bloque.",
       "noUsableBoard": "Elige un plafón primero y luego monta tu bloque.",
       "boardTypeUnsupported": "Esta versión de la app todavía no permite montar bloques en ese plafón. Elige otro plafón.",
-      "wallArchived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él."
+      "wallArchived": "Este plafón está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él."
     },
     "alerts": {
       "publishDuplicateNamed": "Este patrón de presas coincide con \"{{name}}\". Activa Borrador para guardarlo sin publicar, o cambia una presa.",

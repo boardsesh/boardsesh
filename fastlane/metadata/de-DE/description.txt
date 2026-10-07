@@ -3,8 +3,8 @@ Suche dir einen Boulder, und dein Board leuchtet auf. Weniger Zeit am Handy, meh
 EINE APP FÜR JEDES BOARD, AN DEM DU KLETTERST
 Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh kann alle drei, dazu Woods, Decoy, Touchstone, Grasshopper und So iLL — alles an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
 
-AUCH DEINE SPRAYWAND
-Eine Heimwand oder eine Spraywand in deiner Halle? Fotografier sie, und Boardsesh findet die Griffe. Korrigier, was fehlt, dann schraub Boulder, leg sie in die Warteschlange und trag Begehungen im selben Routenbuch ein wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben. Teile die Wand per Link, dann kann deine Crew darauf auch schrauben. Wand abgeschraubt? Setz sie mit einem neuen Foto zurück, und die alte Wand wird mit ihren Bouldern und Begehungen archiviert. Tausch einen einzelnen Griff, und jeder Boulder, der ihn genutzt hat, wird markiert, bereit zum Remixen.
+AUCH DEINE SPRAYWALL
+Eine Spraywall zu Hause oder in deiner Halle? Fotografier sie, und Boardsesh findet die Griffe. Korrigier, was fehlt, dann schraub Boulder, leg sie in die Warteschlange und trag Begehungen im selben Routenbuch ein wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben. Teile die Spraywall per Link, dann kann deine Crew darauf auch schrauben. Spraywall abgeschraubt? Setz sie mit einem neuen Foto zurück, und die alte Spraywall wird mit ihren Bouldern und Begehungen archiviert. Tausch einen einzelnen Griff, und jeder Boulder, der ihn genutzt hat, wird markiert, bereit zum Remixen.
 
 BOARD-VERLAUF, IMMER AN
 Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
@@ -28,6 +28,6 @@ Sichere deine Session in Apple Health, und importiere dein bisheriges Kilter- un
 FINDE MEHR ZUM KLETTERN
 Folge deiner Crew und Routenbauer*innen, suche nach Kletterer*innen, und pinne dir Playlists aus Entdecken.
 
-Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper und So iLL. Dazu Spraywände: jede Wand, die du fotografieren kannst.
+Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper und So iLL. Dazu Spraywalls: jede, die du fotografieren kannst.
 
 Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es steht in keiner Verbindung zu den Board-Herstellern und wird von ihnen weder unterstützt noch empfohlen.

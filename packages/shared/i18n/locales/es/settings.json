@@ -5,7 +5,7 @@
     "weekly": "Preparamos una copia por plafón cada semana UTC. Las descargas reutilizan esa copia hasta la semana siguiente.",
     "expiry": "Los archivos caducan 14 días después de crearse. Cada descarga usa un enlace nuevo que dura 5 minutos.",
     "boardType": "Tipo de plafón",
-    "sprayWalls": "Muros spray",
+    "sprayWalls": "Plafones de spray",
     "format": "Formato del archivo",
     "boardseshFormat": "JSON de Boardsesh",
     "auroraFormat": "JSON de Aurora",

@@ -1,5 +1,5 @@
 Neu in 2.6:
-- Spraywände: Fotografier deine Wand, die App findet die Griffe, dann schraubst du Boulder, legst sie in die Warteschlange und loggst sie. Keine LEDs nötig.
+- Spraywalls: Fotografier deine Spraywall, die App findet die Griffe, dann schraubst du Boulder, legst sie in die Warteschlange und loggst sie. Keine LEDs nötig.
 - Live-Sessions deiner Crew auf Start, ihre Begehungen bei jedem Boulder.
 - Ein Pausen-Timer ab deiner Begehung, der die Warteschlange weiterschaltet.
 - Als Nächstes dran: Boulder gedrückt halten.

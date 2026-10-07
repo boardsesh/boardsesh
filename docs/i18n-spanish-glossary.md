@@ -45,6 +45,15 @@ Two things it does **not** touch:
 - **URLs, slugs and email examples drop the accent** — `hola@rocodromo.com`, `https://turocodromo.com`, `tu-rocodromo`. Accented characters do not belong in a placeholder someone is meant to type into a URL or address field.
 - **`plafón` is a different word.** The board is the plafón, the building is the rocódromo. A find/replace that turns one into the other is a bug — `gym-term-consistency.test.ts` guards both directions.
 
+## A spray wall is a **plafón de spray**
+
+One name for a user-built spray wall, in every string: **plafón de spray** (masculine: _el plafón de spray, un plafón de spray_, plural _los plafones de spray_). After the first mention in a sentence or screen, a bare **plafón** is fine — it is the same word as the board term above, so one spray wall is never a "muro" in one string and a "plafón" in the next.
+
+Never: _muro de spray_, _muro spray_, _muros de spray_, _plafón spray_, _plafones spray_, _plafón de presas_. Never a bare _muro_ / _muros_ for the spray wall either (_Resetear este muro_ → _Resetear este plafón_). Hold-detection copy keeps its own words (_presa_, _bloque_); only the name of the wall changes.
+
+- Store `keywords.txt` keeps the search words people type (_muro de spray_ included); everything else in `fastlane/metadata` follows this section.
+- `spray-term-consistency.test.ts` in `@boardsesh/i18n` bans the retired names in every Spanish string, and the bare _muro_ in spray-wall strings.
+
 ## Other climbing terms
 
 These are already used consistently in the catalogs — keep using them so we don't drift.
