@@ -337,7 +337,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
           onUndo={handleUndo}
           onDismiss={handleUndoDismiss}
           duration={QUEUE_UNDO_DURATION}
-          bottom={insets.bottom + spacing[3]}
+          bottom={windowBottomInset + spacing[3]}
         />
       ) : null}
 
