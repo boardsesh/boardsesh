@@ -769,7 +769,7 @@
       },
       "header": {
         "newClimb": "Nouvelle voie",
-        "nameRequired": "Donnez-lui un nom pour enregistrer"
+        "nameRequired": "Donne-lui un nom pour enregistrer"
       },
       "save": {
         "idle": "Enregistrer",

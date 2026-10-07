@@ -10,15 +10,28 @@ import { spacing } from '../../theme/tokens';
  * that tap and unmounts when the name changes, so the screen reader hears it
  * once per appearance. Rendered between the measured blocks, like the banners.
  */
-export function NameRequiredHint() {
+type NameRequiredHintProps = {
+  /** Bumps on every blank Save tap, so a repeat tap is announced again. */
+  announceKey: number;
+  /** The vertical space this line takes in the drawer, top margin included. */
+  onFootprint?: (height: number) => void;
+};
+
+export function NameRequiredHint({ announceKey, onFootprint }: NameRequiredHintProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
   const message = t('mobile.create.header.nameRequired');
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(message);
-  }, [message]);
+  }, [message, announceKey]);
   return (
-    <Text variant="footnote" color={brandColors.error} style={styles.hint} testID="create-drawer-name-required">
+    <Text
+      variant="footnote"
+      color={brandColors.error}
+      style={styles.hint}
+      testID="create-drawer-name-required"
+      onLayout={onFootprint ? (event) => onFootprint(event.nativeEvent.layout.height + spacing[2]) : undefined}
+    >
       {message}
     </Text>
   );

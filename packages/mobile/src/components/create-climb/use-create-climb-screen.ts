@@ -1275,6 +1275,7 @@ export function useCreateClimbScreen({
       resetHolds();
       lastPaintRef.current = null;
       setName('');
+      setNameMissingTick(0);
       setDescription('');
       setNoMatch(false);
       setNoKickboard(false);
@@ -1578,14 +1579,19 @@ export function useCreateClimbScreen({
   const [focusNameSignal, setFocusNameSignal] = useState(0);
   // Save with no name focuses the field AND says why, in a line under the
   // header. Cleared as soon as the name changes, so it never outlives the fix.
-  const [nameMissingHint, setNameMissingHint] = useState(false);
+  // A counter, not a flag: every blank Save tap bumps it so the hint announces
+  // again. 0 means hidden.
+  const [nameMissingTick, setNameMissingTick] = useState(0);
+  const nameMissingHint = nameMissingTick > 0;
   const requestFocusName = useCallback(() => {
     setFocusNameSignal((value) => value + 1);
-    setNameMissingHint(true);
+    setNameMissingTick((value) => value + 1);
   }, []);
+  // Same test as the Save gate: whitespace alone does not answer the hint.
+  const nameFilled = name.trim() !== '';
   useEffect(() => {
-    setNameMissingHint(false);
-  }, [name]);
+    if (nameFilled) setNameMissingTick(0);
+  }, [name, nameFilled]);
 
   const handleSave = useCallback(async () => {
     if (saveInFlightRef.current || startNewInFlightRef.current) return;
@@ -2011,6 +2017,8 @@ export function useCreateClimbScreen({
     focusNameSignal,
     /** True after a Save tap with no name, until the name changes. */
     nameMissingHint,
+    /** Bumped on every blank Save tap; the hint re-announces on a change. */
+    nameMissingTick,
     /** Bumped by a Save tap that needs the setter grade first; 0 when none is
      *  outstanding. The drawer scrolls to the grade rail on a change. */
     focusGradeSignal,
