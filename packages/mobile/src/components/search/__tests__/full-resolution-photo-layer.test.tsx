@@ -12,7 +12,9 @@ const reaction = vi.hoisted(() => ({
   last: null as boolean | null,
 }));
 
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 vi.mock('react-native', () => ({
+  Platform: platform,
   StyleSheet: { absoluteFill: { position: 'absolute' } },
 }));
 
@@ -66,6 +68,7 @@ function zoomTo(scaleSV: { value: number }, scale: number) {
 type LayerProps = Parameters<typeof FullResolutionPhotoLayer>[0];
 
 function setup(photoUnderTest: FullResolutionPhoto = photo) {
+  platform.OS = 'ios';
   reaction.last = null;
   imageRenders.length = 0;
   const scaleSV = { value: 1 };
@@ -85,7 +88,7 @@ function setup(photoUnderTest: FullResolutionPhoto = photo) {
 afterEach(() => cleanup());
 
 describe('FullResolutionPhotoLayer', () => {
-  // A 4096 px photo is ~48 MB decoded; most visits never zoom that far.
+  // A 24 MP photo is ~98 MB decoded; most visits never zoom that far.
   it('fetches nothing at rest or below the switch zoom', () => {
     const { container, scaleSV } = setup();
     zoomTo(scaleSV, 2);
@@ -103,6 +106,17 @@ describe('FullResolutionPhotoLayer', () => {
     // stops expo-image resizing it to the view's un-zoomed pixel size.
     expect(imageRenders.at(-1)?.contentFit).toBe('fill');
     expect(imageRenders.at(-1)?.allowDownscaling).toBe(false);
+  });
+
+  // expo-image's Android safety cap only runs with downscaling allowed. With
+  // `fill` it shrinks nothing under the 100 MiB Android will draw, and without
+  // it an oversized bitmap throws "Canvas: trying to draw too large bitmap".
+  it('leaves the Android bitmap-size safety cap on', () => {
+    const { scaleSV } = setup();
+    platform.OS = 'android';
+    zoomTo(scaleSV, 4);
+    expect(imageRenders.at(-1)?.contentFit).toBe('fill');
+    expect(imageRenders.at(-1)?.allowDownscaling).toBe(true);
   });
 
   // Zooming back out must not unload and re-decode it on the next zoom in.

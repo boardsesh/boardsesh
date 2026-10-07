@@ -361,8 +361,8 @@ would leave first-run open.
 | --- | --- |
 | `resuming` | Asks `mySprayWalls` for a wall of the caller's own with no published version and offers to pick it up or start over (a reset's unfinished clone excepted, see [The reset on the phone](#the-reset-on-the-phone)). With `?resetOf=` it calls `resetSprayWall` instead. |
 | `meta` | Name, gym, visibility, location, and the angle — snapped to `SPRAY_ANGLES`, because the server validates against that list. |
-| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 4096 px JPEG (`WALL_PHOTO_MAX_DIMENSION`), which bakes the EXIF orientation into the pixels. A 12 MP phone photo goes up unscaled. The server keeps a 2048 px base for the frame, the detector and the climb view, and the larger copy only for the hold editor's deep zoom (#5911). The photo's size is the rendered JPEG's own (`compressPickedImageWithSize`), not the picker's, which on some Android builds describes the sensor rather than the picture. "Crop or rotate" under the preview opens `adjust`. |
-| `adjust` | Not counted, and always returns to `photo`. A free-aspect crop box (four corners, four edges, drag inside to move) and a Rotate button that turns the photo a quarter clockwise, over the BASE — the first compressed, uncropped copy. Copy: "Crop to the edges of the wall". Done renders the edit in one pass with `renderWallPhotoEdit` (rotate, crop, shrink to `WALL_PHOTO_MAX_DIMENSION`, JPEG 0.85) from the picker's ORIGINAL, falling back to the base when the original is over 25 MP (`ORIGINAL_RENDER_MAX_PIXELS`: decoded memory, about 195 MB for a 48 MP capture), gone, or fails to render; the result's size is the rendered image's. At the 4096 px cap the base keeps half a 48 MP original's width, so only a crop tighter than half of each side comes out softer. The output is at most 4096 x 4096 (a square crop of a 24 MP photo), about 3.5 MB for a real wall photo against the 15 MB upload cap. It clears the anchors, as a new photo does: a quarter turn changes which corner is the top-left. Reset puts the photo back as picked, Cancel (Back) leaves it as it was, and Back and leaving wait while the edit renders (`photoProcessing`). The smallest crop keeps 15% of each side and at least 512 base pixels, which guarantees 512 uploaded ones; under 1200 px on the long side a soft warning says holds may look soft, predicted from the same file the render will read (`renderableOriginalSize`). Rotation renders a turned preview of the base per quarter turn (`renderRotatedPreview`, 1600 px) rather than a view transform, because a rotated view hands pan translations back in its own axes. The pure halves are `photo-edit.ts` and `crop-box-math.ts`. Re-opening starts from the base with the last edit, so a crop can be loosened again. |
+| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a JPEG of at most 5712 px on the long side (`WALL_PHOTO_MAX_DIMENSION`) and 24.5 MP, at quality 0.92 (`WALL_PHOTO_QUALITY`), which bakes the EXIF orientation into the pixels. A 12 MP or 24 MP phone photo goes up unscaled; a square photo stops at 4946 px. Both limits come from `sprayWallPhotoMaxLongSide` in `@boardsesh/spray-wall-geometry`, the rule the server's full copy follows too (see "Two sizes per photo" for why the pixel cap exists). The server keeps a 2048 px base for the frame, the detector and the climb view, and the larger copy only for the hold editor's deep zoom (#5911). The photo's size is the rendered JPEG's own (`compressPickedImageWithSize`), not the picker's, which on some Android builds describes the sensor rather than the picture. "Crop or rotate" under the preview opens `adjust`. |
+| `adjust` | Not counted, and always returns to `photo`. A free-aspect crop box (four corners, four edges, drag inside to move) and a Rotate button that turns the photo a quarter clockwise, over the BASE — the first compressed, uncropped copy. Copy: "Crop to the edges of the wall". Done renders the edit in one pass with `renderWallPhotoEdit` (rotate, crop, shrink to the cap for the crop's shape, JPEG 0.92) from the picker's ORIGINAL, falling back to the base when the original is over 25 MP (`ORIGINAL_RENDER_MAX_PIXELS`: decoded memory, about 195 MB for a 48 MP capture), gone, or fails to render; the result's size is the rendered image's. At the 5712 px cap the base keeps 71% of a 48 MP original's width, so only a crop tighter than 71% of each side comes out softer. The output is at most 5712 px on the long side and 24.5 MP (a square crop stops at 4946 x 4946), so no crop uploads more than an uncropped 24 MP photo. It clears the anchors, as a new photo does: a quarter turn changes which corner is the top-left. Reset puts the photo back as picked, Cancel (Back) leaves it as it was, and Back and leaving wait while the edit renders (`photoProcessing`). The smallest crop keeps 15% of each side and at least 512 base pixels, which guarantees 512 uploaded ones; under 1200 px on the long side a soft warning says holds may look soft, predicted from the same file the render will read (`renderableOriginalSize`). Rotation renders a turned preview of the base per quarter turn (`renderRotatedPreview`, 1600 px) rather than a view transform, because a rotated view hands pan translations back in its own axes. The pure halves are `photo-edit.ts` and `crop-box-math.ts`. Re-opening starts from the base with the last edit, so a crop can be loosened again. |
 | `anchors` | Optional, Skip by default. Four draggable handles with the marked area outlined between them; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. The photo is fitted on both axes to the space under the header (`corner-photo-fit.ts`), so all four handles are on screen and the step does not scroll. Back, Skip and Next are in the header; "Start the corners again" sits in a row above the photo that is always drawn (disabled until there are corners), so the photo is not re-fitted when the first drag ends. When that space would fall under about 200 points the photo stops shrinking and the step scrolls instead — reachable on a 375x667 phone at large text sizes — and the page is held still while a ring is being dragged, so a drag never becomes a scroll. The hint and the refusal that replaces it share one slot, so a refused quad does not re-fit the photo. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"). With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file keeps the plain spinner. |
@@ -1641,7 +1641,7 @@ What the editor does with a wall is decided by this document rather than by tast
     guard (`onDirtyChange`), since its strokes reach the reducer only on Done.
   - **Resolution.** The engine works in a frame centred on the hold with its
     radius at 32 units (`REFINE_FRAME_RADIUS` in `spray-refine.ts`): 5% of the
-    hold's radius whatever the photo, so the 4096 px full photo past 3x
+    hold's radius whatever the photo, so the 5712 px full photo past 3x
     changes nothing. The fine work comes from the screen-point brush (zoom in
     and it shrinks to the 3-unit floor), not from a finer frame: 40 units would
     lower the floor to 7.5% of the hold, but its cost (below) has only been
@@ -1813,22 +1813,28 @@ What the editor does with a wall is decided by this document rather than by tast
   expo-image resizes the base to the view's un-zoomed pixel size (about 1179 px
   across on an iPhone), so 8x shows about 150. Decoding the base at full size
   too is a possible follow-up. A version uploaded larger also has a
-  copy at up to 4096 px, which only the draft read (`GET_SPRAY_WALL_DRAFT_RENDER_DATA`)
+  copy at up to 5712 px (4096 px for photos uploaded before October 2026), which only the draft read (`GET_SPRAY_WALL_DRAFT_RENDER_DATA`)
   asks for, as `photoFullUrl`; the climb view, search and every other read keep
   the base alone. The editor hands it to `InteractiveFilterBoard` as
   `fullResolutionPhoto` (`spray-full-photo.ts`), and `FullResolutionPhotoLayer`
   draws it over the base, inside the zoom transform.
   - **Fetched on the first zoom past 3x** (`SPRAY_FULL_PHOTO_MIN_SCALE`), not on
-    open: a 4096x3072 photo is about 48 MB decoded. One `useAnimatedReaction`
+    open: a 5712x4284 photo is about 98 MB decoded. One `useAnimatedReaction`
     tells the JS thread once, on the first crossing.
   - **No flash.** The base stays mounted underneath and shows until the full
     photo has loaded, so the swap reads as the wall sharpening. Both are drawn
     `fill` into the same box, so every ring stays where it was.
-  - **Decoded at full size.** The layer passes `allowDownscaling={false}`.
-    Without it expo-image on iOS resizes any image larger than its view's
-    pixel size down to that size, `fill` included, and the zoom transform does
-    not change the view's layout box, so the 4096 px copy would land smaller
-    than the base. Android's `fill` path keeps the pixels either way.
+  - **Decoded at full size.** On iOS the layer passes `allowDownscaling={false}`.
+    Without it expo-image resizes any image larger than its view's pixel size
+    down to that size, `fill` included, and the zoom transform does not change
+    the view's layout box, so the full copy would land smaller than the base.
+    On Android it passes `true`: with `fill`, expo-image 57's only downscale
+    there is `SafeDownsampleStrategy`, which shrinks a bitmap only past the
+    100 MiB `RecordingCanvas` will draw. `false` would skip that cap too, and a
+    bitmap over it throws "Canvas: trying to draw too large bitmap". The
+    server's 24.5 MP cap keeps every full copy under 98 MB decoded, so the
+    Android cap is a backstop, and the only guard at all on Android 9 and
+    older, where `SafeDownsampleStrategy` does nothing.
   - **Kept for the visit.** Zooming back out does not unload it, so a climber
     working up and down the wall decodes it once. It is cached in memory only,
     like the base, under a key naming the version (`spray-full/<wallUuid>/v<versionId>`),
@@ -3077,7 +3083,16 @@ soft. So a photo larger than 2048 px on its long side is stored twice:
 | --- | --- | --- | --- |
 | Base | `spray-walls/<wallUuid>/<photoId>.jpg` | ≤ 2048 px (`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION`) | the canonical frame, the hold detector, the climb view, search, offline sync, the public copy |
 | Thumbnail | `<base key>@280.jpg` | 280 px square | list rows |
-| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution, which keeps it in its cache |
+| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 5712 px and ≤ 24.5 MP (`sprayWallPhotoMaxLongSide`); 4096 px before October 2026 | the hold editor, once zoomed past the base's resolution, which keeps it in its cache |
+
+- **Why the full copy has a pixel cap as well as a long-side cap.** 5712 px is
+  a 24 MP phone photo (5712 x 4284), which is 97.9 MB decoded at 4 bytes a
+  pixel. Android will not draw a bitmap over 100 MiB (104.9 MB), and a
+  long-side cap alone would let a square photo through at 5712 x 5712, 130 MB.
+  So the shared rule (`@boardsesh/spray-wall-geometry`, `photo-size.ts`) also
+  caps the pixel count at 5712 x 4284: a square photo stops at 4946 x 4946. The
+  app compresses its upload by the same rule, so it never sends pixels the
+  server would throw away.
 
 - **The base keeps every number it had.** The response's `width`/`height` and
   the base object's metadata are the BASE's, so `createSprayWallVersion`, the
@@ -3126,14 +3141,22 @@ past the 15-minute presign that is supposed to BE the access control, and past t
 owner making the wall private. The public-promotion copy SW-14 (#5447) writes to
 `media` is the only place a long lifetime may ever be set.
 
-The cap is 15MB (10MB before #5911 raised the app's upload to 4096 px), `files: 1`, the magic bytes decide the format regardless of the
+The cap is 25MB (10MB before #5911, 15MB while the app sent 4096 px), `files: 1`, the magic bytes decide the format regardless of the
 declared Content-Type, and the caller must **own** the wall — not merely be able
 to edit it. Nobody uploads a photograph of a stranger's living room.
+
+The cap is 25MB because the app sends a 24 MP photo at JPEG 0.92. Twenty
+indoor-wall photos from Wikimedia Commons, resized the app's way, measured
+1.2-4.0 MB at libjpeg quality 92 and at most 12.3 MB at quality 97 with
+full-resolution colour (the most an iPhone's encoder could plausibly write).
+A dim gym photo carries more sensor noise than those, and pure noise at quality
+92 is 20.4 MB, so 15MB left too little room. The bucket keeps the re-encoded
+quality-88 copies, so the cap bounds one POST's transfer and buffer, not storage.
 
 There is also a **per-user budget of 20 uploads per 10 minutes**, answering `429`
 with a `Retry-After: 600` once it is spent. It is the `feedback-screenshots.ts`
 pattern and it is here for the same reason: every POST mints a NEW object, so one
-authenticated account could otherwise fill the private bucket with 15MB objects,
+authenticated account could otherwise fill the private bucket with objects,
 and `MAX_VERSIONS_PER_WALL` does not help because it caps the ROWS rather than the
 uploads that never become one. A rejected upload is charged too — it still costs a
 multipart parse and a sharp decode, which is exactly what a spammer would loop on

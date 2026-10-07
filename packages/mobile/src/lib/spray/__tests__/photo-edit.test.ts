@@ -29,8 +29,14 @@ const LANDSCAPE_24MP = { width: 5712, height: 4284 };
 const PORTRAIT_24MP = { width: 4284, height: 5712 };
 const BASE_4096 = { width: 4096, height: 3072 };
 
-/** `WALL_PHOTO_MAX_DIMENSION`: the long side an upload is shrunk to. */
+/**
+ * A long-side ceiling for the plans below. Under the shared cap's square limit
+ * (4946 px), so these read as the long-side rule alone; the pixel cap has its
+ * own tests at the real 5712.
+ */
 const MAX = 4096;
+/** `WALL_PHOTO_MAX_DIMENSION` / `SPRAY_WALL_PHOTO_MAX_LONG_SIDE`. */
+const UPLOAD_MAX = 5712;
 
 /** A crop off-centre enough that every edge is distinguishable. */
 const SKEWED_CROP = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.9 };
@@ -185,6 +191,36 @@ describe('planWallPhotoRender', () => {
     expect(portrait.output.height).toBeGreaterThan(portrait.output.width);
     const landscape = planWallPhotoRender({ quarterTurns: 1, crop: FULL_RECT }, PORTRAIT_24MP, MAX);
     expect(landscape.output).toEqual(BASE_4096);
+  });
+
+  it('lets a 24 MP photo through at the real cap', () => {
+    expect(planWallPhotoRender({ quarterTurns: 1, crop: FULL_RECT }, LANDSCAPE_24MP, UPLOAD_MAX)).toEqual({
+      ops: [{ type: 'rotate', degrees: 90 }],
+      output: PORTRAIT_24MP,
+    });
+  });
+
+  it('shrinks a square crop under the pixel cap, not just the long-side cap', () => {
+    // 5712 x 5712 decodes to 130 MB, past the 100 MiB Android will draw.
+    const plan = planWallPhotoRender({ quarterTurns: 0, crop: FULL_RECT }, { width: 6000, height: 6000 }, UPLOAD_MAX);
+    expect(plan.ops).toEqual([{ type: 'resize', width: 4946 }]);
+    expect(plan.output).toEqual({ width: 4946, height: 4946 });
+  });
+
+  it('never decodes past 24.5 MP at the real cap, whatever the crop', () => {
+    const sizes = [LANDSCAPE_24MP, PORTRAIT_24MP, { width: 8064, height: 6048 }, { width: 6000, height: 6000 }];
+    const crops = [FULL_RECT, SKEWED_CROP, { left: 0.1, top: 0, right: 0.85, bottom: 1 }];
+    for (const size of sizes) {
+      for (const quarterTurns of [0, 1, 2, 3] as const) {
+        for (const crop of crops) {
+          const { output } = planWallPhotoRender({ quarterTurns, crop }, size, UPLOAD_MAX);
+          expect(Math.max(output.width, output.height)).toBeLessThanOrEqual(UPLOAD_MAX);
+          // Half a row of rounding at most, and always under Android's 100 MiB.
+          expect(output.width * output.height).toBeLessThanOrEqual(5712 * 4284 + 5712 / 2);
+          expect(output.width * output.height * 4).toBeLessThan(100 * 1024 * 1024);
+        }
+      }
+    }
   });
 
   it('does not enlarge a small crop', () => {

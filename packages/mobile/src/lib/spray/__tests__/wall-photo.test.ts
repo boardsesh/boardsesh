@@ -89,16 +89,18 @@ const PICKED_PHOTO = {
   edit: null,
 };
 
-/** A photo picked from a capture of `longSide` px, which the compressor shrank to 4096 x 3072. */
-function shrunkPhoto(name: string, longSide: number) {
-  const base = { uri: `file:///${name}.jpg`, width: 4096, height: 3072 };
-  return { ...base, base, original: { uri: `file:///${name}.heic`, longSide }, edit: null };
+/** A photo picked from a capture of `longSide` px, which the compressor left at `base`. */
+function pickedPhoto(name: string, longSide: number, base: { width: number; height: number }) {
+  const file = { uri: `file:///${name}.jpg`, ...base };
+  return { ...file, base: file, original: { uri: `file:///${name}.heic`, longSide }, edit: null };
 }
 
-/** A 24 MP capture (5712 x 4284), the default on recent flagship phones. */
-const PHOTO_24MP = shrunkPhoto('wall-24mp', 5712);
+/** A 24 MP capture (5712 x 4284), the default on recent flagship phones: under the cap, so unscaled. */
+const PHOTO_24MP = pickedPhoto('wall-24mp', 5712, { width: 5712, height: 4284 });
+/** A 24 MP 3:2 capture (6000 x 4000), shrunk to 5712 across. */
+const PHOTO_24MP_WIDE = pickedPhoto('wall-24mp-wide', 6000, { width: 5712, height: 3808 });
 /** A 48 MP capture (8064 x 6048): about 195 MB decoded, so the render reads its base. */
-const PHOTO_48MP = shrunkPhoto('wall-48mp', 8064);
+const PHOTO_48MP = pickedPhoto('wall-48mp', 8064, { width: 5712, height: 4284 });
 
 describe('pickWallPhotoFromLibrary', () => {
   // The system picker hands back only the chosen photo and needs no permission
@@ -112,6 +114,19 @@ describe('pickWallPhotoFromLibrary', () => {
     expect(picker.launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['images'], quality: 1 });
     expect(compressPickedImageWithSize).toHaveBeenCalledWith('file:///wall.heic', 4032, 3024, {
       maxDimension: WALL_PHOTO_MAX_DIMENSION,
+      quality: WALL_PHOTO_QUALITY,
+    });
+  });
+
+  it('asks the compressor for the pixel cap on a square photo, not the plain long side', async () => {
+    // 5712 x 5712 would decode to 130 MB, past the 100 MiB Android will draw.
+    picker.launchImageLibraryAsync.mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///square.jpg', width: 6000, height: 6000 }],
+    });
+    await pickWallPhotoFromLibrary();
+    expect(compressPickedImageWithSize).toHaveBeenCalledWith('file:///square.jpg', 6000, 6000, {
+      maxDimension: 4946,
       quality: WALL_PHOTO_QUALITY,
     });
   });
@@ -144,19 +159,26 @@ describe('predictCompressedSize', () => {
   });
 
   // #5911: the server keeps its own 2048 px base and stores this larger copy
-  // beside it for the hold editor's deep zoom, so a 12 MP phone photo goes up
-  // whole instead of being thrown down to 2048 on the phone.
-  it('keeps a 12 MP phone photo at its full size', () => {
-    expect(WALL_PHOTO_MAX_DIMENSION).toBe(4096);
+  // beside it for the hold editor's deep zoom, so a 12 MP or 24 MP phone photo
+  // goes up whole instead of being thrown down to 2048 on the phone.
+  it('keeps a 12 MP or 24 MP phone photo at its full size', () => {
+    expect(WALL_PHOTO_MAX_DIMENSION).toBe(5712);
+    expect(WALL_PHOTO_QUALITY).toBe(0.92);
     expect(predictCompressedSize(4032, 3024)).toEqual({ width: 4032, height: 3024 });
+    expect(predictCompressedSize(5712, 4284)).toEqual({ width: 5712, height: 4284 });
   });
 
   it('constrains the long edge of a landscape photo', () => {
-    expect(predictCompressedSize(6000, 4000)).toEqual({ width: WALL_PHOTO_MAX_DIMENSION, height: 2731 });
+    expect(predictCompressedSize(6000, 4000)).toEqual({ width: WALL_PHOTO_MAX_DIMENSION, height: 3808 });
+    expect(predictCompressedSize(8064, 6048)).toEqual({ width: WALL_PHOTO_MAX_DIMENSION, height: 4284 });
   });
 
   it('constrains the long edge of a portrait photo', () => {
-    expect(predictCompressedSize(4000, 6000)).toEqual({ width: 2731, height: WALL_PHOTO_MAX_DIMENSION });
+    expect(predictCompressedSize(4000, 6000)).toEqual({ width: 3808, height: WALL_PHOTO_MAX_DIMENSION });
+  });
+
+  it('shrinks a square photo further, to stay under the pixel cap', () => {
+    expect(predictCompressedSize(6000, 6000)).toEqual({ width: 4946, height: 4946 });
   });
 
   it('still honours a smaller cap when one is asked for', () => {
@@ -219,19 +241,34 @@ describe('renderWallPhotoEdit', () => {
     expect(manipulator.calls).toHaveLength(0);
   });
 
-  it('renders from the original in one pass and takes its size from the rendered image', async () => {
-    // The plan expects 4096 x 2731; the native render is the authority.
-    manipulator.renders.set('file:///wall-24mp.heic', { width: 4096, height: 2732 });
+  it("crops a 24 MP photo from the original's own pixels, with nothing to shrink", async () => {
+    manipulator.renders.set('file:///wall-24mp.heic', { width: 4284, height: 2856 });
     const result = await renderWallPhotoEdit(PHOTO_24MP, CROP_AND_TURN);
 
-    expect(result).toEqual({ uri: 'file:///wall-24mp.heic.rendered.jpg', width: 4096, height: 2732 });
+    expect(result).toEqual({ uri: 'file:///wall-24mp.heic.rendered.jpg', width: 4284, height: 2856 });
     expect(manipulator.calls).toHaveLength(1);
     expect(manipulator.calls[0].source).toBe('file:///wall-24mp.heic');
-    // Turned, the original is 4283 x 5712 (the short side derived as a lower
-    // bound); its top half is still past the cap, so it shrinks to 4096 across.
+    // The compressor left a 24 MP photo whole, so the base IS the original's size.
     expect(manipulator.calls[0].ops).toEqual([
       ['rotate', 90],
-      ['crop', { originX: 0, originY: 0, width: 4283, height: 2856 }],
+      ['crop', { originX: 0, originY: 0, width: 4284, height: 2856 }],
+    ]);
+    expect(reportError).not.toHaveBeenCalled();
+  });
+
+  it('renders from the original in one pass and takes its size from the rendered image', async () => {
+    // The plan expects 5712 x 3617; the native render is the authority.
+    manipulator.renders.set('file:///wall-24mp-wide.heic', { width: 5712, height: 3616 });
+    const edit = { quarterTurns: 2 as const, crop: { left: 0, top: 0, right: 1, bottom: 0.95 } };
+    const result = await renderWallPhotoEdit(PHOTO_24MP_WIDE, edit);
+
+    expect(result).toEqual({ uri: 'file:///wall-24mp-wide.heic.rendered.jpg', width: 5712, height: 3616 });
+    expect(manipulator.calls.map((call) => call.source)).toEqual(['file:///wall-24mp-wide.heic']);
+    // The original is 6000 x 3999 (the short side derived as a lower bound); a
+    // 95% crop is still past the cap, so it shrinks to 5712 across.
+    expect(manipulator.calls[0].ops).toEqual([
+      ['rotate', 180],
+      ['crop', { originX: 0, originY: 0, width: 6000, height: 3799 }],
       ['resize', { width: WALL_PHOTO_MAX_DIMENSION }],
     ]);
     expect(reportError).not.toHaveBeenCalled();
@@ -248,23 +285,26 @@ describe('renderWallPhotoEdit', () => {
   });
 
   it('falls back to the base when the original will not render', async () => {
-    manipulator.renders.set('file:///wall-24mp.heic', new Error('out of memory'));
-    manipulator.renders.set('file:///wall-24mp.jpg', { width: 3072, height: 2048 });
-    const result = await renderWallPhotoEdit(PHOTO_24MP, CROP_AND_TURN);
+    manipulator.renders.set('file:///wall-24mp-wide.heic', new Error('out of memory'));
+    manipulator.renders.set('file:///wall-24mp-wide.jpg', { width: 3808, height: 2856 });
+    const result = await renderWallPhotoEdit(PHOTO_24MP_WIDE, CROP_AND_TURN);
 
-    expect(result).toEqual({ uri: 'file:///wall-24mp.jpg.rendered.jpg', width: 3072, height: 2048 });
-    expect(manipulator.calls.map((call) => call.source)).toEqual(['file:///wall-24mp.heic', 'file:///wall-24mp.jpg']);
+    expect(result).toEqual({ uri: 'file:///wall-24mp-wide.jpg.rendered.jpg', width: 3808, height: 2856 });
+    expect(manipulator.calls.map((call) => call.source)).toEqual([
+      'file:///wall-24mp-wide.heic',
+      'file:///wall-24mp-wide.jpg',
+    ]);
     // The same edit, planned against the base's own size: already under the
     // cap, so no resize.
     expect(manipulator.calls[1].ops).toEqual([
       ['rotate', 90],
-      ['crop', { originX: 0, originY: 0, width: 3072, height: 2048 }],
+      ['crop', { originX: 0, originY: 0, width: 3808, height: 2856 }],
     ]);
     expect(reportError).toHaveBeenCalledTimes(1);
   });
 
   it('reads the base, not the original, when the original is too big to decode safely', async () => {
-    manipulator.renders.set('file:///wall-48mp.jpg', { width: 3072, height: 2048 });
+    manipulator.renders.set('file:///wall-48mp.jpg', { width: 4284, height: 2856 });
     await renderWallPhotoEdit(PHOTO_48MP, CROP_AND_TURN);
     expect(manipulator.calls.map((call) => call.source)).toEqual(['file:///wall-48mp.jpg']);
     expect(reportError).not.toHaveBeenCalled();

@@ -11,6 +11,7 @@
 
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { SPRAY_WALL_PHOTO_MAX_LONG_SIDE, sprayWallPhotoMaxLongSide } from '@boardsesh/spray-wall-geometry';
 import { compressPickedImageWithSize } from '../image-compression';
 import { reportError } from '../error-reporting';
 import {
@@ -28,17 +29,28 @@ import {
 /**
  * Longest edge of an uploaded wall photo.
  *
- * 4096, not the 2048 the wall is drawn at (#5911). The server keeps a 2048 px
+ * 5712, not the 2048 the wall is drawn at (#5911). The server keeps a 2048 px
  * base for the canonical frame, the detector and the climb view, and stores this
  * larger copy beside it for the hold editor to swap in once it zooms past 3x.
- * A 12 MP phone photo (4032x3024) goes up unscaled. Eight sample wall photos
- * came to 1.5–2.6 MB at JPEG 0.85 and at most 4.7 MB at 0.95, and even pure
- * noise at 4096x3072 stays under 13 MB, so the handler's 15 MB cap needs no
- * second, lower-quality pass.
+ * A 24 MP phone photo (5712x4284) goes up unscaled.
+ *
+ * It is the long-side half of the shared rule. The other half caps the pixel
+ * count at 24.5 MP, so a square photo stops at 4946 px: Android will not draw a
+ * decoded bitmap over 100 MiB. Every resize here asks `sprayWallPhotoMaxLongSide`
+ * for the cap that fits the photo's shape.
  */
-export const WALL_PHOTO_MAX_DIMENSION = 4096;
-/** JPEG quality. The hold editor traces silhouettes on these pixels. */
-export const WALL_PHOTO_QUALITY = 0.85;
+export const WALL_PHOTO_MAX_DIMENSION = SPRAY_WALL_PHOTO_MAX_LONG_SIDE;
+/**
+ * JPEG quality. The hold editor traces silhouettes on these pixels, and the
+ * server re-encodes the copy it keeps, so this is the first of two generations.
+ *
+ * Twenty indoor-wall photos at 24 MP came to 1.2–4.0 MB at libjpeg quality 92
+ * and at most 12.3 MB at quality 97 with full-resolution colour, the most an
+ * iPhone's encoder could plausibly write. Pure noise at quality 92 is 20.4 MB.
+ * The handler's 25 MB cap covers all of them, so there is no second,
+ * lower-quality pass.
+ */
+export const WALL_PHOTO_QUALITY = 0.92;
 
 /**
  * What the pickers answer: the compressed photo, plus what the crop step needs
@@ -68,7 +80,7 @@ const ROTATED_PREVIEW_MAX_DIMENSION = 1600;
 export function predictCompressedSize(
   width: number,
   height: number,
-  maxDimension = WALL_PHOTO_MAX_DIMENSION,
+  maxDimension = sprayWallPhotoMaxLongSide(width, height),
 ): { width: number; height: number } {
   // Anything that is not a real, positive pixel count answers zero rather than
   // being passed through. A picker that could not report a size hands back 0 —
@@ -107,7 +119,8 @@ export type WallPhotoCameraResult = WallPhotoLibraryResult | { outcome: 'denied'
 
 async function compressAsset(asset: ImagePicker.ImagePickerAsset): Promise<PickedWallPhotoFile> {
   const compressed = await compressPickedImageWithSize(asset.uri, asset.width, asset.height, {
-    maxDimension: WALL_PHOTO_MAX_DIMENSION,
+    // The shape's cap, not the plain long side: a square photo stops at 4946 px.
+    maxDimension: sprayWallPhotoMaxLongSide(asset.width, asset.height),
     quality: WALL_PHOTO_QUALITY,
   });
   // The rendered size when the platform reports one: it is measured after the
@@ -160,8 +173,8 @@ async function renderEditFrom(uri: string, sourceSize: PixelSize, edit: WallPhot
 }
 
 /**
- * Apply a crop-and-rotate edit, in one pass: rotate, crop, then shrink to
- * `WALL_PHOTO_MAX_DIMENSION` and encode at `WALL_PHOTO_QUALITY`.
+ * Apply a crop-and-rotate edit, in one pass: rotate, crop, then shrink to the
+ * cap for the crop's shape and encode at `WALL_PHOTO_QUALITY`.
  *
  * Reads the picker's ORIGINAL where it can, so a crop keeps the camera's own
  * pixels rather than enlarging a compressed copy. Falls back to the base — the
@@ -171,11 +184,9 @@ async function renderEditFrom(uri: string, sourceSize: PixelSize, edit: WallPhot
  * bitmap whose real size differs from the derived one throws). The identity
  * edit renders nothing: the base IS that photo.
  *
- * The output is bounded like the compressor's: at most 4096 px on the long
- * side, so at most 4096 x 4096 for a square crop of a 24 MP photo. That is a
- * third more pixels than a 4096 x 3072 photo, which puts a real wall photo at
- * about 3.5 MB against the upload's 15 MB cap, the same headroom a square
- * original gets from the compressor.
+ * The output is bounded like the compressor's: at most 5712 px on the long
+ * side and 24.5 MP, so a square crop stops at 4946 x 4946. No crop can upload
+ * more pixels, or decode bigger, than an uncropped 24 MP photo.
  *
  * Throws only when the base cannot be rendered either.
  */

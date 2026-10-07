@@ -1,10 +1,10 @@
 // The hold editor's sharper photo (#5911): when to fetch it, and what to call it.
 //
 // The server keeps a 2048 px base for every wall and, for a photo uploaded
-// larger, a copy at up to 4096 px beside it. The base is what the canonical
-// frame, the detector, the climb view and search all read. Only the hold editor
-// zooms deep enough to run out of its pixels, so only the editor asks for the
-// copy, and only once the climber zooms in.
+// larger, a copy at up to 5712 px (4096 px before October 2026) beside it. The
+// base is what the canonical frame, the detector, the climb view and search all
+// read. Only the hold editor zooms deep enough to run out of its pixels, so only
+// the editor asks for the copy, and only once the climber zooms in.
 
 import type { FullResolutionPhoto } from '../search/FullResolutionPhotoLayer';
 import type { SprayFullPhotoRequest } from '../../lib/spray/spray-photo-cache';
@@ -13,8 +13,8 @@ import type { SprayFullPhotoRequest } from '../../lib/spray/spray-photo-cache';
  * The zoom past which the editor fetches the full-resolution photo.
  *
  * On a phone the base's 2048 px already fill the screen's own pixels at 1x and
- * are visibly soft by 3x. Fetching any earlier would cost a 48 MB decode
- * (4096x3072 RGBA) on every visit that only glances at the wall.
+ * are visibly soft by 3x. Fetching any earlier would cost a 98 MB decode
+ * (5712x4284 RGBA) on every visit that only glances at the wall.
  */
 export const SPRAY_FULL_PHOTO_MIN_SCALE = 3;
 

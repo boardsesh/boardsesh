@@ -162,9 +162,9 @@ The fourth media surface, and the only one that is private by design: a spray wa
 | --- | --- |
 | Bucket | `private`, never `media` — `media` is world-readable under guessable keys |
 | Key | `spray-walls/<wallUuid>/<photoId>.jpg`, plus the single largest allowed resize variant, plus `<photoId>-full.jpg` when the source was over 2048 px |
-| Cap | 15 MB per POST (`SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES`), 20 uploads per user per window |
+| Cap | 25 MB per POST (`SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES`), 20 uploads per user per window |
 | Accepted | JPEG / PNG / WebP by magic bytes, re-encoded to JPEG at quality 88 |
-| Sizes | base ≤ 2048 px on its long side (defines the wall's frame); `-full` copy ≤ 4096 px for the zoomed hold editor (#5911) |
+| Sizes | base ≤ 2048 px on its long side (defines the wall's frame); `-full` copy ≤ 5712 px and ≤ 24.5 MP for the zoomed hold editor (#5911; 4096 px before October 2026) |
 | Read | a 15-minute presigned GET, minted per read (`presignGetObject`); nothing persists a URL |
 | `Cache-Control` | `private, no-store` |
 

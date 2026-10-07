@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import Busboy from 'busboy';
 import sharp from 'sharp';
 import { and, eq, isNull } from 'drizzle-orm';
+import { sprayWallPhotoMaxLongSide } from '@boardsesh/spray-wall-geometry';
 import { SPRAY_WALL_ARCHIVED_CODE, SPRAY_WALL_ARCHIVED_MESSAGE } from '../services/spray-wall-archive';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyCorsHeaders } from './cors';
@@ -51,9 +52,12 @@ import { markDeletedSprayWallPhotoRetry } from '../services/spray-photo-erasure-
  * {@link SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION} px on its long side: it is what the
  * canonical frame, the hold detector and the climb view read, and its size is
  * the one the response and the object metadata carry. A source larger than that
- * also gets a FULL copy (`sprayWallFullPhotoKey`, at most
- * {@link SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION} px) that only the hold editor
- * loads once it zooms past the base's resolution.
+ * also gets a FULL copy (`sprayWallFullPhotoKey`) that only the hold editor
+ * loads once it zooms past the base's resolution. Its size follows the rule the
+ * app uploads by (`sprayWallPhotoMaxLongSide` in `@boardsesh/spray-wall-geometry`):
+ * at most 5712 px on the long side (`SPRAY_WALL_PHOTO_MAX_LONG_SIDE`), a 24 MP
+ * phone photo, and at most 24.5 MP, so a square photo stops at 4946 px and a
+ * decoded copy stays under the 100 MiB Android will draw.
  *
  * Returns `{ success, photoId, width, height }`. The photo sits in the bucket
  * unreferenced until `createSprayWallVersion(wallUuid, photoId)` adopts it as a
@@ -62,10 +66,16 @@ import { markDeletedSprayWallPhotoRetry } from '../services/spray-photo-erasure-
  */
 
 /**
- * 15MB. A 4096 px phone JPEG of a wall is 3-8MB; the cap bounds what one POST can
- * cost while leaving room for the full-resolution source #5911 asks for.
+ * 25MB. The app sends up to a 24 MP photo (5712 x 4284) at JPEG 0.92. Twenty
+ * indoor-wall photos from Wikimedia Commons, resized the way the app does, came
+ * to 1.2-4.0MB at libjpeg quality 92, and at most 12.3MB (scaled to the full
+ * 24.5 MP) at quality 97 with full-resolution colour, the most an iPhone's
+ * encoder could plausibly write. A dim, noisy gym photo compresses worse than
+ * those, and pure noise at quality 92 is 20.4MB, so 15MB (the cap at 4096 px)
+ * left too little room. Stored copies are re-encoded below, so the cap bounds
+ * one POST's transfer and buffer, not what the bucket keeps.
  */
-export const SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+export const SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 /**
  * Long-side cap for the BASE photo. The canonical frame, the detector and every
@@ -75,17 +85,10 @@ export const SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
  */
 export const SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION = 2048;
 
-/**
- * Long-side cap for the FULL copy. 4096 px is twice the base, aimed at keeping a
- * 1 cm hold edge sharp at the editor's 8x zoom, and a bound on what one
- * decoded copy costs a phone (about 48MB of RGBA).
- */
-export const SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION = 4096;
-
 // Per-user upload budget, copied from `handlers/feedback-screenshots.ts` and for
 // the same reason: every POST here mints a NEW object (the key carries a fresh
 // uuid), so without a budget one authenticated account can fill the private
-// bucket with 15MB objects, and an abandoned upload is never referenced by a row
+// bucket with objects, and an abandoned upload is never referenced by a row
 // so nothing else bounds it either. `MAX_VERSIONS_PER_WALL` does not help — it
 // caps the rows, not the uploads that never become one.
 //
@@ -270,7 +273,10 @@ async function encodeWallPhoto(input: Buffer, maxDimension: number): Promise<Enc
  * base the detector reads takes one JPEG generation, as it always has.
  */
 async function normaliseWallPhoto(input: Buffer): Promise<{ base: EncodedWallPhoto; full: EncodedWallPhoto | null }> {
-  const full = await encodeWallPhoto(input, SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION);
+  // The pixel cap depends only on the shape, so the pre-rotation header size is
+  // enough: a quarter turn swaps the sides but not the ratio.
+  const { width, height } = await sharp(input).metadata();
+  const full = await encodeWallPhoto(input, sprayWallPhotoMaxLongSide(width ?? 0, height ?? 0));
   if (Math.max(full.width, full.height) <= SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION) {
     // Already within the base cap, so the one encode IS the base. No full copy:
     // it would be the same pixels stored twice.

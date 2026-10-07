@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { runOnJS, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
 
@@ -44,8 +44,8 @@ type FullResolutionPhotoLayerProps = {
 /**
  * Drawn directly over the base photo, inside the board's zoom transform.
  *
- * Nothing mounts until the zoom first passes `minScale`: a 4096x3072 photo is
- * about 48 MB decoded, and most visits never zoom that far. Once fetched it
+ * Nothing mounts until the zoom first passes `minScale`: a 5712x4284 photo is
+ * about 98 MB decoded, and most visits never zoom that far. Once fetched it
  * stays for the rest of the visit, so zooming out and back in neither re-decodes
  * it nor swaps the photo back and forth. Until it has loaded the base shows
  * through, which is why the swap has no flash: the base is the placeholder.
@@ -113,11 +113,17 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
       source={{ uri: filePath ? `file://${filePath}` : photo.uri, cacheKey }}
       style={StyleSheet.absoluteFill}
       contentFit="fill"
-      // Without this, expo-image on iOS resizes the bitmap to the view's
+      // iOS: without `false`, expo-image resizes the bitmap to the view's
       // un-zoomed pixel size (about 1179 px across on an iPhone), which is
       // smaller than the 2048 px base and throws away the pixels it was
       // fetched for. The zoom transform scales the view, not its layout box.
-      allowDownscaling={false}
+      // Android: `true`, and the pixels still survive. With `fill`, expo-image
+      // 57's only downscale there is its safety cap (`SafeDownsampleStrategy`),
+      // which shrinks a bitmap only past the 100 MiB `RecordingCanvas` will
+      // draw. `false` would skip that cap too, and an oversized photo would
+      // crash the app. The server keeps full copies under 98 MB, so the cap is
+      // a backstop.
+      allowDownscaling={Platform.OS === 'android'}
       // Memory only: the file on disk, when there is one, is this app's own copy
       // under the spray-wall cache (`ensureSprayFullPhotoCached`), which sign-out
       // and wall withdrawal erase. A second copy in expo-image's shared disk

@@ -19,7 +19,7 @@
  * {@link REFINE_FRAME_RADIUS} units: the edit is then accurate to the same
  * fraction of the hold (5% of its radius) whatever the photo's resolution or the
  * zoom, and the bitmap stays at most 512 cells a side. This is also why the
- * 4096 px full photo the editor loads past 3× changes nothing here: the frame
+ * 5712 px full photo the editor loads past 3× changes nothing here: the frame
  * follows the hold, not the photo.
  */
 

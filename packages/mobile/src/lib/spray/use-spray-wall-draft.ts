@@ -123,7 +123,7 @@ export type UseSprayWallDraftResult = {
   /** The version's row-major photo→canonical homography, or null. */
   homography: readonly number[] | null;
   /**
-   * Presigned GET for the same photo at up to 4096 px (#5911), or null when the
+   * Presigned GET for the same photo at up to 5712 px (#5911), or null when the
    * version has none — every wall uploaded before it, and any photo that was
    * already 2048 px or smaller. Signed with `wall.photoUrl` and expiring with
    * `wall.photoExpiresAt`. Only the hold editor reads it, and only once zoomed.
