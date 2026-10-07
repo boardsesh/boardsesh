@@ -153,16 +153,24 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     onSubmit,
     errorMessage,
     sprayBackgroundSection,
+    sprayTrainingSection,
   }: {
     onSubmit: () => void;
     errorMessage?: string | null;
     sprayBackgroundSection?: ReactNode;
+    sprayTrainingSection?: ReactNode;
   }) =>
     createElement('div', null, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
+      createElement('div', { key: 'training' }, sprayTrainingSection),
       createElement('div', { key: 'background' }, sprayBackgroundSection),
     ]),
+}));
+
+vi.mock('../../../src/components/spray-wall/SprayWallTrainingConsentRow', () => ({
+  SprayWallTrainingConsentRow: ({ wallUuid, isOwner }: { wallUuid: string; isOwner: boolean }) =>
+    createElement('span', { 'data-testid': 'training-consent' }, `${wallUuid}:${String(isOwner)}`),
 }));
 
 vi.mock('../../../src/components/Text', () => ({
@@ -687,3 +695,26 @@ vi.mock('../../../src/components/privacy/use-publication-audience', () => ({
     chooseAudience: () => {},
   }),
 }));
+
+describe('EditBoard — Help train hold finding', () => {
+  beforeEach(() => {
+    state.boardType = 'spray';
+  });
+
+  it("shows the switch to the wall's owner", () => {
+    render(createElement(EditBoard));
+    expect(screen.getByTestId('training-consent').textContent).toBe('board-uuid:true');
+  });
+
+  it('leaves it out for an editor who does not own the wall', () => {
+    state.profileId = 'gym-admin';
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('training-consent')).toBeNull();
+  });
+
+  it('leaves it out on a catalogue board', () => {
+    state.boardType = 'moonboard';
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('training-consent')).toBeNull();
+  });
+});

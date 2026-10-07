@@ -85,6 +85,8 @@ type BoardFormProps = {
   currentBoardUuid?: string;
   /** A spray wall's background picker, drawn under its visibility rows. */
   sprayBackgroundSection?: ReactNode;
+  /** The owner's "Help train hold finding" switch, drawn right under visibility. Owner only. */
+  sprayTrainingSection?: ReactNode;
 };
 
 /**
@@ -105,6 +107,7 @@ export function BoardForm({
   errorMessage = null,
   currentBoardUuid,
   sprayBackgroundSection,
+  sprayTrainingSection,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
@@ -381,6 +384,7 @@ export function BoardForm({
             {isSprayWall ? (
               <>
                 {!privacySettings?.enabled ? <SprayWallVisibilityField builder={builder} /> : null}
+                {sprayTrainingSection}
                 {sprayBackgroundSection}
               </>
             ) : null}

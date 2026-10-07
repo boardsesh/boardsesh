@@ -33,6 +33,7 @@ import { SegmentedControl } from '../SegmentedControl';
 import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import type { PickedGym } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { iosSystemColors } from '../../theme/ios-colors';
 
 /**
  * A gym as the picker hands it back and both builders hold it.
@@ -221,6 +222,50 @@ export function SprayWallVisibilityField({
             ? t('mobile.sprayVisibility.unlistedHint')
             : t('mobile.sprayVisibility.privateHint')}
       </Text>
+    </>
+  );
+}
+
+/**
+ * The owner's "Help train hold finding" switch (SW-20, #5471), drawn right
+ * under the wall's visibility because it is the other answer to "who sees my
+ * photo". Owner only: each caller decides that and leaves this out otherwise.
+ *
+ * Controlled, with the error slot inline: the edit screen is a modal route and a
+ * toast would draw behind it (`toast-provider.tsx`).
+ */
+export function SprayTrainingConsentField({
+  value,
+  onValueChange,
+  disabled = false,
+  errorMessage = null,
+}: {
+  value: boolean;
+  onValueChange: (next: boolean) => void;
+  disabled?: boolean;
+  errorMessage?: string | null;
+}) {
+  const { t } = useTranslation('boards');
+  return (
+    <>
+      <SwitchRow
+        label={t('mobile.sprayTraining.label')}
+        description={t('mobile.sprayTraining.description')}
+        wrapDescription
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+      />
+      {errorMessage ? (
+        <Text
+          variant="footnote"
+          color={iosSystemColors.systemRed}
+          style={styles.visibilityHint}
+          accessibilityLiveRegion="polite"
+        >
+          {errorMessage}
+        </Text>
+      ) : null}
     </>
   );
 }

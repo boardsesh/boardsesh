@@ -51,8 +51,29 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#FF3B30' } }));
 vi.mock('../../SwitchRow', () => ({
-  SwitchRow: ({ label }: { label: string }) => createElement('div', null, label),
+  SwitchRow: ({
+    label,
+    description,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    description?: string;
+    value?: boolean;
+    onValueChange?: (next: boolean) => void;
+  }) =>
+    createElement('div', null, [
+      createElement('span', { key: 'label' }, label),
+      description ? createElement('span', { key: 'description' }, description) : null,
+      createElement('button', {
+        key: 'toggle',
+        'data-testid': `switch-${label}`,
+        'data-value': String(!!value),
+        onClick: () => onValueChange?.(!value),
+      }),
+    ]),
 }));
 vi.mock('../../Button', () => ({
   Button: ({ title, loading }: { title: string; loading?: boolean }) =>
@@ -97,7 +118,12 @@ vi.mock('../../../lib/open-app-settings', () => ({
   openAppSettings: vi.fn(),
 }));
 
-import { BoardIdentityFields, BoardVisibilityFields, SprayWallVisibilityField } from '../BoardMetaFields';
+import {
+  BoardIdentityFields,
+  BoardVisibilityFields,
+  SprayTrainingConsentField,
+  SprayWallVisibilityField,
+} from '../BoardMetaFields';
 
 const visibilityBuilder = {
   isPublic: false,
@@ -194,5 +220,31 @@ describe('BoardVisibilityFields switches', () => {
     const { queryByText } = render(<BoardVisibilityFields builder={visibilityBuilder} hideVisibilitySwitches />);
     expect(queryByText('mobile.create.public')).toBeNull();
     expect(queryByText('mobile.create.unlisted')).toBeNull();
+  });
+});
+
+describe('SprayTrainingConsentField', () => {
+  it('says what the switch does and hands back the flip', () => {
+    const onValueChange = vi.fn();
+    const { getByText, getByTestId, queryByText } = render(
+      <SprayTrainingConsentField value onValueChange={onValueChange} />,
+    );
+    expect(getByText('mobile.sprayTraining.description')).toBeTruthy();
+    const toggle = getByTestId('switch-mobile.sprayTraining.label');
+    expect(toggle.getAttribute('data-value')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith(false);
+    expect(queryByText('mobile.sprayTraining.updateError')).toBeNull();
+  });
+
+  it('shows a refusal inline', () => {
+    const { getByText } = render(
+      <SprayTrainingConsentField
+        value={false}
+        onValueChange={() => {}}
+        errorMessage="mobile.sprayTraining.updateError"
+      />,
+    );
+    expect(getByText('mobile.sprayTraining.updateError')).toBeTruthy();
   });
 });

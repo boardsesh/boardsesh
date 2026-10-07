@@ -46,7 +46,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS, sprayHoldsReviewed, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
-import type { UserBoard, SprayDetectionCandidate } from '@boardsesh/shared-schema';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -59,10 +59,12 @@ import {
   type SprayEditorNotice,
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
+import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
 import {
   BoardIdentityFields,
   BoardVisibilityFields,
   SectionLabel,
+  SprayTrainingConsentField,
   SprayWallVisibilityField,
 } from '../board-discovery/BoardMetaFields';
 import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
@@ -113,6 +115,7 @@ import {
   useUpdateSprayWallVisibility,
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
+import { useSprayWallTrainingConsent } from '../../lib/spray/use-spray-wall-training-consent';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
@@ -253,6 +256,12 @@ export function SprayWallWizardScreen({
 
   const builder = useSprayWallBuilder();
   const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
+  // Whether the photo step may say the photo helps train hold finding. Before
+  // the wall exists that is the switch on the step before; a resumed or reset
+  // wall skipped that step, so the server's answer is the only true one.
+  const consentWallUuid = state.step === 'photo' ? (state.wall?.wallUuid ?? null) : null;
+  const storedTrainingConsent = useSprayWallTrainingConsent(consentWallUuid, consentWallUuid != null);
+  const photoTrainsHoldFinding = state.wall ? storedTrainingConsent.data === true : builder.trainingConsent;
   // Offline mode, said on the photo step before an upload tries and fails
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
   const connectivityReason = useConnectivityField(selectConnectivityReason);
@@ -739,7 +748,7 @@ export function SprayWallWizardScreen({
   // ============================================
 
   const runDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
-  const detectionCompleted = useCallback((candidates: SprayDetectionCandidate[]) => {
+  const detectionCompleted = useCallback((candidates: SprayHoldCandidate[]) => {
     dispatch({ type: 'DETECTION_FINISHED', candidates });
   }, []);
   const useManualEditor = useCallback(() => dispatch({ type: 'DETECTION_UNAVAILABLE' }), []);
@@ -1466,6 +1475,7 @@ export function SprayWallWizardScreen({
             {/* Same three-way control as Edit board: two switches let "Public"
                 and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
             <SprayWallVisibilityField builder={builder} />
+            <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
             <BoardVisibilityFields builder={builder} hideVisibilitySwitches />
 
             {/* The wall cap said before it bites rather than after: ten is a
@@ -1489,6 +1499,11 @@ export function SprayWallWizardScreen({
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.tip')}
             </Text>
+            {photoTrainsHoldFinding ? (
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('sprayWizard.photo.trainingNote')}
+              </Text>
+            ) : null}
             <PressableSurface
               onPress={openPhotoGuide}
               hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}

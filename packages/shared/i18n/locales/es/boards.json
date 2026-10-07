@@ -442,11 +442,16 @@
       "private": "Privado",
       "unlisted": "Solo con enlace",
       "public": "Público",
-      "privateHint": "Solo tú. La foto de tu plafón se queda en tu cuenta.",
+      "privateHint": "Solo tú puedes verlo. Con «Ayuda a entrenar la búsqueda de presas» activado, el equipo de Boardsesh puede usar la foto para mejorar la búsqueda de presas.",
       "unlistedHint": "Cualquiera con el enlace entra. El plafón no aparece en la página del rocódromo y su foto no sale a la web abierta.",
       "publicHint": "Cualquiera puede encontrar el plafón. Aparece en la página del rocódromo, sus bloques salen en el feed y su foto se publica en la web abierta.",
       "ownerOnlyError": "Solo quien montó este plafón puede cambiar quién lo ve. El resto de tus cambios se han guardado.",
       "updateError": "No se pudo cambiar quién ve este plafón. Inténtalo de nuevo."
+    },
+    "sprayTraining": {
+      "label": "Ayuda a entrenar la búsqueda de presas",
+      "description": "Usamos la foto de este muro y las presas que marques para enseñar a la app a encontrar presas. Alguien del equipo de Boardsesh las revisa antes. Nadie más las ve.",
+      "updateError": "No se pudo cambiar «Ayuda a entrenar la búsqueda de presas». Inténtalo de nuevo."
     }
   },
   "boardEntity": {
@@ -992,7 +997,8 @@
       "next": "Siguiente",
       "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
       "failed": "Esa foto no se abre. Prueba con otra.",
-      "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas."
+      "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas.",
+      "trainingNote": "Tu foto y las presas que marques ayudan a enseñar a la app a encontrar presas. Puedes desactivarlo cuando quieras en los ajustes del muro."
     },
     "adjust": {
       "title": "Recorta y gira",

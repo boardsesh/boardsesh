@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { SprayDetectionCandidate } from '@boardsesh/shared-schema';
 import { sprayWallDetectionFinished } from '@boardsesh/analytics';
 import { useSprayDetection } from '../../lib/spray/use-spray-detection';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
@@ -8,6 +7,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SprayScanPhoto } from './SprayScanPhoto';
+import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
 
 /** How long a scan runs before the card admits it is taking a while. */
 const SLOW_SCAN_MS = 8000;
@@ -27,7 +27,8 @@ export function SprayDetectionStep({
    * resumed on a phone that never had the file) it stays the plain spinner.
    */
   photo?: { uri: string; width: number; height: number } | null;
-  onComplete: (candidates: SprayDetectionCandidate[]) => void;
+  /** Every find carries its run id and its index in the run's full list. */
+  onComplete: (candidates: SprayHoldCandidate[]) => void;
   onManual?: () => void;
 }) {
   const { t } = useTranslation('boards');
@@ -44,7 +45,11 @@ export function SprayDetectionStep({
         durationMs: Date.parse(detection.finishedAt ?? detection.createdAt) - Date.parse(detection.createdAt),
       }),
     );
-    onComplete(detection.result.candidates);
+    // Stamped HERE, at the one place the run's id and its full list are both in
+    // hand: the seed later drops finds below the maybe floor, so a position
+    // counted any later would point the training review at the wrong find.
+    const detectionId = detection.id;
+    onComplete(detection.result.candidates.map((candidate, index) => ({ ...candidate, detectionId, index })));
   }, [detection, onComplete]);
 
   const failed = detection?.status === 'failed' || detection?.status === 'cancelled';

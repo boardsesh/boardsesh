@@ -22,6 +22,7 @@ import { ringForTheWire } from './ring-contract';
 import {
   allHolds,
   sprayEditorReducer,
+  type SprayEditorAutoReview,
   type SprayEditorHoldSource,
   type SprayEditorState,
 } from './spray-hold-editor-reducer';
@@ -37,6 +38,11 @@ export type SprayHoldWireInput = {
   confidence?: number | null;
   /** The removed hold this one replaced, carried as the server sent it. */
   movedFromHoldId?: number;
+  /** What the climber did with the suggestion. AUTO holds only. */
+  autoReview?: SprayEditorAutoReview;
+  /** The detection run and find index the hold started as. AUTO holds only, always as a pair. */
+  originDetectionId?: string;
+  originCandidateIndex?: number;
 };
 
 export type SprayHoldWritePlan = {
@@ -161,6 +167,13 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
       // wipe the link. Correcting an inherited hold makes a successor whose link
       // is the corrected hold, so the field is ignored there.
       ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
+      // Training provenance (SW-20, #5471), detector holds only and only when
+      // known. Left out, the server keeps what the hold already records, so a
+      // stored hold that was never re-offered loses nothing by omitting them.
+      ...(hold.source === 'AUTO' && hold.autoReview != null ? { autoReview: hold.autoReview } : {}),
+      ...(hold.source === 'AUTO' && hold.origin != null
+        ? { originDetectionId: hold.origin.detectionId, originCandidateIndex: hold.origin.candidateIndex }
+        : {}),
     });
   }
 

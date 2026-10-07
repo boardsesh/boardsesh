@@ -40,6 +40,7 @@ import * as sharedOperations from '@boardsesh/graphql/operations';
 import * as sharedTicks from '@boardsesh/graphql/operations/ticks';
 import * as sharedSprayWalls from '@boardsesh/graphql/operations/spray-walls';
 import * as sharedSprayDetection from '@boardsesh/graphql/operations/spray-detection';
+import * as sharedSprayTraining from '@boardsesh/graphql/operations/spray-training';
 import * as sharedAccount from '@boardsesh/graphql/operations/account';
 import * as sharedUserDataExport from '@boardsesh/graphql/operations/user-data-export';
 import * as sharedActivityFeed from '@boardsesh/graphql/operations/activity-feed';
@@ -163,6 +164,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/ticks': sharedTicks,
   '@boardsesh/graphql/operations/spray-walls': sharedSprayWalls,
   '@boardsesh/graphql/operations/spray-detection': sharedSprayDetection,
+  '@boardsesh/graphql/operations/spray-training': sharedSprayTraining,
   '@boardsesh/graphql/operations/account': sharedAccount,
   '@boardsesh/graphql/operations/user-data-export': sharedUserDataExport,
   '@boardsesh/graphql/operations/activity-feed': sharedActivityFeed,

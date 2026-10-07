@@ -177,6 +177,11 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardIdentityFields: () => null,
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
+  SprayWallVisibilityField: () => null,
+  SprayTrainingConsentField: () => null,
+}));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
+  useSprayWallTrainingConsent: () => ({ data: undefined }),
 }));
 // One object for the whole file: the wizard's callbacks list the builder as a
 // dependency, and a fresh one per render would rebuild every one of them.

@@ -232,6 +232,13 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
   SprayWallVisibilityField: () => null,
+  SprayTrainingConsentField: () => null,
+}));
+const trainingConsentMock = vi.hoisted(() =>
+  vi.fn((_wallUuid: string | null, _enabled: boolean) => ({ data: undefined as boolean | null | undefined })),
+);
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
+  useSprayWallTrainingConsent: trainingConsentMock,
 }));
 // Online throughout: the upload-notice wording has its own suite (#5960).
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
@@ -493,6 +500,21 @@ describe('a reset (`resetOf`)', () => {
     expect(alertMock).not.toHaveBeenCalled();
     expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
     expect(queryByTestId('identity')).toBeNull();
+  });
+
+  it("says the photo helps train hold finding only when the clone's switch is on", async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    trainingConsentMock.mockReturnValue({ data: true });
+    const on = await mountReset();
+    expect(trainingConsentMock).toHaveBeenLastCalledWith('clone-1', true);
+    expect(on.getByText('sprayWizard.photo.trainingNote')).toBeTruthy();
+    on.unmount();
+
+    trainingConsentMock.mockReturnValue({ data: false });
+    const off = await mountReset();
+    expect(off.queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+    trainingConsentMock.mockReturnValue({ data: undefined });
   });
 
   it('leaves the flow from the photo step rather than opening the meta form', async () => {
