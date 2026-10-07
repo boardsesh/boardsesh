@@ -2631,6 +2631,7 @@ export function SprayHoldEditorScreen({
             key={gestureEpoch}
             pointsSV={refinePointsSV}
             acceptStationaryTaps
+            closeOnReturn={false}
             fingerDrawSV={fingerDrawSV}
             scaleSV={scaleSV}
             translateXSV={context.translateXSV}

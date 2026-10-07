@@ -100,6 +100,7 @@ function loupeFeed(): SprayLoupeFeed {
   };
 }
 type OptIns = {
+  closeOnReturn?: boolean;
   declineOnSelection?: number[];
   declineHitHolds?: number[];
   onStylusSeen?: () => void;
@@ -115,6 +116,7 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = 
   render(
     <DrawStrokeOverlay
       acceptStationaryTaps={acceptStationaryTaps}
+      closeOnReturn={optIns.closeOnReturn}
       pointsSV={points}
       fingerDrawSV={shared(fingerDraw)}
       scaleSV={shared(2)}
@@ -262,6 +264,81 @@ describe('Add Draw pointer lifecycle', () => {
     expect(stroke.cancel).not.toHaveBeenCalled();
   });
 });
+describe('closing the loop', () => {
+  // Screen → board here is +40 x, +30 y, 1:1, so the close target is 11 board px
+  // and the head (screen 40,60) is board (80,90).
+  const square = [touch(7, 70, 60), touch(7, 70, 90), touch(7, 40, 90)];
+  const squareBoard = [80, 90, 110, 90, 110, 120, 80, 120];
+  const backAtStart = touch(7, 42, 64);
+
+  it('commits an Add stroke the moment it comes back to its start, without the crossing sample', () => {
+    const stroke = mount();
+    stroke.send('down');
+    for (const corner of square) stroke.send('move', event([corner]));
+    expect(stroke.end).not.toHaveBeenCalled();
+    stroke.send('move', event([backAtStart]));
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith(squareBoard);
+    expect(stroke.manager.end).toHaveBeenCalledTimes(1);
+    // Moving on and lifting draw nothing more.
+    stroke.send('move', event([touch(7, 60, 70)]));
+    stroke.send('up', upEvent([touch(7, 60, 70)], []));
+    stroke.send('finalize');
+    expect(stroke.end).toHaveBeenCalledTimes(1);
+    expect(stroke.cancel).not.toHaveBeenCalled();
+  });
+
+  it('ends a Trace pan on the next move after it comes back, and commits once', () => {
+    const stroke = mount(false);
+    stroke.send('down');
+    stroke.send('start', { x: 40, y: 60 });
+    for (const corner of square) stroke.send('update', { x: corner.x, y: corner.y });
+    stroke.send('update', { x: backAtStart.x, y: backAtStart.y });
+    stroke.send('update', { x: 60, y: 70 });
+    expect(stroke.manager.end).not.toHaveBeenCalled();
+    stroke.send('move');
+    expect(stroke.manager.end).toHaveBeenCalledTimes(1);
+    stroke.send('end', {}, true);
+    stroke.send('finalize', {}, true);
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith(squareBoard);
+    expect(stroke.cancel).not.toHaveBeenCalled();
+  });
+
+  it('keeps a closed Trace loop when a second finger lands before the ending move', () => {
+    const stroke = mount(false);
+    stroke.send('down');
+    stroke.send('start', { x: 40, y: 60 });
+    for (const corner of square) stroke.send('update', { x: corner.x, y: corner.y });
+    stroke.send('update', { x: backAtStart.x, y: backAtStart.y });
+    stroke.send('down', event([touch(8, 90, 90)], [touch(), touch(8, 90, 90)]));
+    expect(stroke.manager.end).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.fail).not.toHaveBeenCalled();
+    stroke.send('end', {}, true);
+    stroke.send('finalize', {}, true);
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith(squareBoard);
+    expect(stroke.cancel).not.toHaveBeenCalled();
+  });
+
+  it('keeps drawing to the lift when the caller opts out', () => {
+    const stroke = mount(true, true, { closeOnReturn: false });
+    stroke.send('down');
+    for (const corner of square) stroke.send('move', event([corner]));
+    stroke.send('move', event([backAtStart]));
+    expect(stroke.end).not.toHaveBeenCalled();
+    stroke.send('up', upEvent([touch(7, 60, 70)], []));
+    expect(stroke.end).toHaveBeenCalledExactlyOnceWith([...squareBoard, 82, 94, 100, 100]);
+  });
+
+  it('opts the Refine brush out, and leaves every outline tool on the default', () => {
+    const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
+    const refineSection = source.slice(
+      source.indexOf("if (tool === 'refine')"),
+      source.indexOf("if (tool === 'trace')"),
+    );
+    expect(refineSection).toContain('closeOnReturn={false}');
+    expect(source.match(/closeOnReturn/g)).toHaveLength(1);
+  });
+});
+
 describe('the loupe feed', () => {
   it('follows a finger stroke in clip points and unzoomed render px, then lets go on UP', () => {
     const loupe = loupeFeed();

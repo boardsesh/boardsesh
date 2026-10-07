@@ -1,8 +1,15 @@
 import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
+import {
+  Gesture,
+  GestureDetector,
+  PointerType,
+  type GestureStateManager,
+  type GestureType,
+} from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { fallbackRadiusAt, selectedDragIdAt } from './spray-gesture-math';
+import { fallbackRadiusAt, selectedDragIdAt, strokeReturnsToHead } from './spray-gesture-math';
+import { CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 import { STROKE_MIN_SAMPLE_BOARD_PX } from './stroke';
 import { stopLoupe, trackLoupe, useReleaseLoupeOnUnmount, type SprayLoupeFeed } from './spray-loupe-feed';
 
@@ -34,6 +41,14 @@ type DrawStrokeOverlayProps = {
   pointsSV: SharedValue<number[]>;
   /** Add mode accepts stationary taps; Trace keeps its existing pan recognizer. */
   acceptStationaryTaps?: boolean;
+  /**
+   * End the stroke the moment it comes back round to where it started
+   * (`strokeReturnsToHead`), instead of on lift. On by default: every stroke
+   * here is an outline, and movement after closing the loop only drags a tail
+   * past the start. Off for a tool that paints rather than outlines (spray
+   * Refine), whose strokes cross themselves on purpose.
+   */
+  closeOnReturn?: boolean;
   /**
    * True when the finger-draw toggle is on. Off (the default) only an Apple
    * Pencil / stylus draws, and every finger touch falls through to the board's
@@ -144,6 +159,11 @@ const NO_HIT_HOLDS: number[] = [];
  * avoiding Pan centroid movement and committing stationary matching UP events.
  * Trace retains the Pan behavior above.
  *
+ * A stroke that comes back round to its first sample ends right there, as if
+ * the pointer had lifted (`closeOnReturn`, on unless a caller paints rather
+ * than outlines). Add commits from its MOVE; Trace's pan can't end itself from
+ * onUpdate, so it flags the return and the next touch move ends the pan.
+ *
  * Three opt-in props exist for the spray editor's iPad Pencil surface and
  * change nothing when omitted: `declineOnSelectionSV` (with
  * `declineHitHoldsSV`) steps aside at touch-down for a touch the edit
@@ -157,6 +177,7 @@ const NO_HIT_HOLDS: number[] = [];
 export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   pointsSV,
   acceptStationaryTaps = false,
+  closeOnReturn = true,
   fingerDrawSV,
   scaleSV,
   translateXSV,
@@ -178,6 +199,14 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   // have to be a gesture dependency, and rebuilding a live RNGH gesture
   // mid-session has wedged iOS before (see use-zoom-pan-gesture).
   const boardScaleSV = useSharedValue(boardScale);
+  // Mirrored for the same reason as boardScale.
+  const closeOnReturnSV = useSharedValue(closeOnReturn);
+  // How far the live stroke has reached from its first sample, in board px —
+  // kept as it grows so the close test never rescans the stroke per frame.
+  const farthestSV = useSharedValue(0);
+  // Trace only: the stroke came back to its start in onUpdate, which can't end
+  // a gesture; the next touch move ends it (see the pan below).
+  const returnedSV = useSharedValue(false);
   // True between activation and finalize. Lives on the UI thread because the
   // activation worklet has to read it on the very next touch-down.
   const isDrawingSV = useSharedValue(false);
@@ -197,6 +226,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   useEffect(() => {
     boardScaleSV.value = boardScale;
   }, [boardScale, boardScaleSV]);
+  useEffect(() => {
+    closeOnReturnSV.value = closeOnReturn;
+  }, [closeOnReturn, closeOnReturnSV]);
 
   const callbacksRef = useRef({ onStrokeStart, onStrokeEnd, onStrokeCancel, onStylusSeen });
   callbacksRef.current = { onStrokeStart, onStrokeEnd, onStrokeCancel, onStylusSeen };
@@ -249,10 +281,37 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       const fallbackRadius = fallbackRadiusAt(boardScaleSV.value, scaleSV.value);
       return selectedDragIdAt(hitHolds, selected, boardX, boardY, fallbackRadius) !== 0;
     };
+    // Whether the next sample brings the live stroke back to its first one, in
+    // which case it is NOT appended: the implicit closing edge from the last
+    // kept sample to the head is the line the climber meant. Otherwise the
+    // caller appends it, and its reach is recorded here.
+    const returnsToHead = (current: number[], boardX: number, boardY: number) => {
+      'worklet';
+      const count = current.length;
+      if (count < 2) return false;
+      if (
+        closeOnReturnSV.value &&
+        strokeReturnsToHead(
+          current[0],
+          current[1],
+          current[count - 2],
+          current[count - 1],
+          boardX,
+          boardY,
+          farthestSV.value,
+          (CORNERS_CLOSE_TARGET_PT * boardScaleSV.value) / scaleSV.value,
+        )
+      ) {
+        return true;
+      }
+      farthestSV.value = Math.max(farthestSV.value, Math.hypot(boardX - current[0], boardY - current[1]));
+      return false;
+    };
     if (acceptStationaryTaps) {
       // A manually activated UIPan recognizer need not deliver onStart/onEnd
       // for a stationary touch. Add owns raw pointer events instead: DOWN seeds
       // a stroke and its matching UP commits it, including a zero-length tap.
+      /** Appends a kept sample; true when it closed the loop instead. */
       const appendSample = (screenX: number, screenY: number) => {
         'worklet';
         const centreX = containerWidthSV.value / 2;
@@ -261,13 +320,24 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         const boardY = ((screenY - translateYSV.value - centreY) / scaleSV.value + centreY) * boardScaleSV.value;
         const current = pointsSV.value;
         const count = current.length;
-        if (count >= MAX_STROKE_NUMBERS) return;
+        if (count >= MAX_STROKE_NUMBERS) return false;
         if (count > 0) {
           const deltaX = boardX - current[count - 2];
           const deltaY = boardY - current[count - 1];
-          if (deltaX * deltaX + deltaY * deltaY < MIN_SAMPLE_DISTANCE_SQUARED) return;
+          if (deltaX * deltaX + deltaY * deltaY < MIN_SAMPLE_DISTANCE_SQUARED) return false;
         }
+        if (returnsToHead(current, boardX, boardY)) return true;
         pointsSV.value = [...current, boardX, boardY];
+        return false;
+      };
+      /** Commits the live stroke: on UP, or the moment it closes its loop. */
+      const commitStroke = (manager: GestureStateManager) => {
+        'worklet';
+        isDrawingSV.value = false;
+        ownerPointerIdSV.value = -1;
+        stopLoupe(loupe);
+        runOnJS(handleEnd)(pointsSV.value);
+        manager.end();
       };
       const cancelStroke = () => {
         'worklet';
@@ -307,6 +377,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           isDrawingSV.value = true;
           if (strokeZoomSV) strokeZoomSV.value = scaleSV.value;
           pointsSV.value = [];
+          farthestSV.value = 0;
           appendSample(pointer.x, pointer.y);
           followWithLoupe(pointer.x, pointer.y);
           runOnJS(handleStart)();
@@ -323,7 +394,11 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           }
           const pointer = event.changedTouches.find((touch) => touch.id === ownerPointerIdSV.value);
           if (!pointer) return;
-          appendSample(pointer.x, pointer.y);
+          // Back at the start: the outline is done, whatever the pointer does next.
+          if (appendSample(pointer.x, pointer.y)) {
+            commitStroke(manager);
+            return;
+          }
           followWithLoupe(pointer.x, pointer.y);
         })
         .onTouchesUp((event, manager) => {
@@ -334,11 +409,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           const pointer = event.changedTouches.find((touch) => touch.id === ownerPointerIdSV.value);
           if (!pointer) return;
           appendSample(pointer.x, pointer.y);
-          isDrawingSV.value = false;
-          ownerPointerIdSV.value = -1;
-          stopLoupe(loupe);
-          runOnJS(handleEnd)(pointsSV.value);
-          manager.end();
+          commitStroke(manager);
         })
         .onTouchesCancelled((event, manager) => {
           'worklet';
@@ -370,6 +441,12 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           // A stylus stroke is live: a second touch (typically the palm) must
           // neither restart nor fail it.
           if (strokeIsStylusSV.value) return;
+          // The loop already closed and is only waiting on the move that ends
+          // the pan: keep it, rather than drop a finished outline for a pinch.
+          if (returnedSV.value) {
+            manager.end();
+            return;
+          }
           // A finger stroke is live and another finger landed: that's a pinch.
           // Drop the stroke and step aside for the board's zoom.
           abandonedSV.value = true;
@@ -405,12 +482,15 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         const renderX = (event.x - translateXSV.value - centreX) / scaleSV.value + centreX;
         const renderY = (event.y - translateYSV.value - centreY) / scaleSV.value + centreY;
         if (strokeZoomSV) strokeZoomSV.value = scaleSV.value;
+        farthestSV.value = 0;
+        returnedSV.value = false;
         pointsSV.value = [renderX * boardScaleSV.value, renderY * boardScaleSV.value];
         followWithLoupe(event.x, event.y);
         runOnJS(handleStart)();
       })
       .onUpdate((event) => {
         'worklet';
+        if (returnedSV.value) return;
         followWithLoupe(event.x, event.y);
         const current = pointsSV.value;
         const count = current.length;
@@ -426,7 +506,17 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         // Gate the append on real movement so a resting stylus doesn't push a
         // point (and reallocate the shared value) every frame.
         if (deltaX * deltaX + deltaY * deltaY < MIN_SAMPLE_DISTANCE_SQUARED) return;
+        if (returnsToHead(current, boardX, boardY)) {
+          returnedSV.value = true;
+          return;
+        }
         pointsSV.value = [...current, boardX, boardY];
+      })
+      .onTouchesMove((_event, manager) => {
+        'worklet';
+        // onUpdate can't end the pan; this does, so onEnd commits the closed
+        // loop now rather than when the pointer lifts.
+        if (returnedSV.value) manager.end();
       })
       .onEnd((_event, success) => {
         'worklet';
@@ -436,6 +526,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       .onFinalize((_event, success) => {
         'worklet';
         isDrawingSV.value = false;
+        returnedSV.value = false;
         stopLoupe(loupe);
         const abandoned = abandonedSV.value;
         abandonedSV.value = false;
@@ -463,6 +554,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     containerWidthSV,
     containerHeightSV,
     boardScaleSV,
+    closeOnReturnSV,
+    farthestSV,
+    returnedSV,
     isDrawingSV,
     strokeIsStylusSV,
     abandonedSV,

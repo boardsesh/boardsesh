@@ -30,6 +30,7 @@ import {
   holdIdAtPoint,
   selectedDragIdAt,
   screenToBoard,
+  strokeReturnsToHead,
 } from '../spray-gesture-math';
 import { radiusRingToBoardPx, screenToBoardPoint } from '../stroke';
 
@@ -492,5 +493,41 @@ describe('strokeExtent', () => {
   it('is the wider side of the bounding box', () => {
     expect(strokeExtent([0, 0, 4, 1, 2, 9])).toBe(9);
     expect(strokeExtent([10, 5, -6, 7])).toBe(16);
+  });
+});
+
+describe('strokeReturnsToHead', () => {
+  // Head at the origin, an 11 board-px close target throughout.
+  const returns = (fromX: number, fromY: number, toX: number, toY: number, farthest: number, closeTarget = 11) =>
+    strokeReturnsToHead(0, 0, fromX, fromY, toX, toY, farthest, closeTarget);
+
+  it('closes when a stroke that went out comes back within the close target', () => {
+    expect(returns(20, 0, 5, 0, 40)).toBe(true);
+  });
+
+  it('stays open while the stroke is still on its way back', () => {
+    expect(returns(40, 0, 20, 0, 40)).toBe(false);
+  });
+
+  it('closes on a fast segment that skips past the start', () => {
+    expect(returns(20, 2, -20, 2, 40)).toBe(true);
+  });
+
+  it('never closes before the stroke has reached past the close target', () => {
+    expect(returns(9, 0, 1, 0, 10)).toBe(false);
+  });
+
+  it('never closes on a segment that starts at the head', () => {
+    expect(returns(1, 0, 3, 0, 40)).toBe(false);
+  });
+
+  it("caps the radius at a fraction of the stroke's reach, so a small loop needs to really close", () => {
+    // Reach 12: the radius is 0.35 * 12 = 4.2, not 11.
+    expect(returns(12, 0, 6, 0, 12)).toBe(false);
+    expect(returns(12, 0, 4, 0, 12)).toBe(true);
+  });
+
+  it('never closes with no close target', () => {
+    expect(returns(20, 0, 0, 0, 40, 0)).toBe(false);
   });
 });

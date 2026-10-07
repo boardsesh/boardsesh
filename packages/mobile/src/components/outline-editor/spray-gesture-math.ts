@@ -8,7 +8,12 @@
  * hit test (`holdAtPoint`) is a unit test rather than a hope.
  */
 
-import { HIT_FALLBACK_SCREEN_PT, HIT_RADIUS_MULTIPLE, type HoldGeometry } from './spray-hold-tools';
+import {
+  CORNERS_CLOSE_EXTENT_FRACTION,
+  HIT_FALLBACK_SCREEN_PT,
+  HIT_RADIUS_MULTIPLE,
+  type HoldGeometry,
+} from './spray-hold-tools';
 
 /** Numbers per hold in a flat hit list: id, cx, cy, r. */
 export const HIT_STRIDE = 4;
@@ -128,6 +133,54 @@ export function selectedDragIdAt(
   if (selected.length < HIT_STRIDE) return 0;
   if (Math.hypot(x - selected[1], y - selected[2]) > Math.max(selected[3], fallbackRadius)) return 0;
   return holdIdAtPoint(flat, x, y, fallbackRadius, selected) === selected[0] ? selected[0] : 0;
+}
+
+/**
+ * Has a freehand outline just come back round to where it started?
+ *
+ * Asked once per kept sample, with the segment from the previous sample `from`
+ * to the new one `to`, all in board px. True ends the stroke there, so a
+ * climber who keeps moving after closing the loop can't drag a tail past the
+ * start (the overshoot is what put spikes and crossings in a traced ring).
+ *
+ * The rule is the Corners tool's close target, so the two tools agree on what
+ * "back at the start" means: `closeTarget` (`CORNERS_CLOSE_TARGET_PT` at the
+ * current zoom), never more than `CORNERS_CLOSE_EXTENT_FRACTION` of how far the
+ * stroke has reached. Three guards keep it from firing early:
+ *
+ *  - The stroke has to have reached past `closeTarget` first (`farthest`, from
+ *    earlier samples only). An outline that never gets that far ends on lift,
+ *    as before.
+ *  - The segment has to arrive from outside the close radius. Without it the
+ *    first segment of every stroke, which starts ON the head, would close it.
+ *  - The distance is to the whole SEGMENT, not just its end, so a fast swipe
+ *    whose samples straddle the start still closes rather than overshooting.
+ */
+export function strokeReturnsToHead(
+  headX: number,
+  headY: number,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  farthest: number,
+  closeTarget: number,
+): boolean {
+  'worklet';
+  if (!(closeTarget > 0) || farthest <= closeTarget) return false;
+  const radius = Math.min(closeTarget, CORNERS_CLOSE_EXTENT_FRACTION * farthest);
+  const radiusSquared = radius * radius;
+  const fromHeadX = headX - fromX;
+  const fromHeadY = headY - fromY;
+  if (fromHeadX * fromHeadX + fromHeadY * fromHeadY <= radiusSquared) return false;
+  const segmentX = toX - fromX;
+  const segmentY = toY - fromY;
+  const lengthSquared = segmentX * segmentX + segmentY * segmentY;
+  const along =
+    lengthSquared > 0 ? Math.min(1, Math.max(0, (fromHeadX * segmentX + fromHeadY * segmentY) / lengthSquared)) : 0;
+  const offsetX = fromX + along * segmentX - headX;
+  const offsetY = fromY + along * segmentY - headY;
+  return offsetX * offsetX + offsetY * offsetY <= radiusSquared;
 }
 
 /**
