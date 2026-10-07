@@ -2210,6 +2210,7 @@ export function PlayDrawer({
           onOpenQueue={openQueueFromActions}
           onShare={showConnectPill && !displayedClimbIsDraft ? handleShare : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
+          onClimbDeleted={handleDismiss}
           onClose={handleCloseSubDrawer}
         />
       )}

@@ -161,6 +161,24 @@ export async function markDeadLetter(db: SqlExecutor, id: number, error: string)
   await db.runAsync(`UPDATE pending_mutations SET status = 'dead_letter', last_error = ? WHERE id = ?`, [error, id]);
 }
 
+/**
+ * Whether this device still has a tick on `climbUuid` waiting in the outbox
+ * (#5960). The setter's "Delete climb" refuses while one does: the server only
+ * counts ticks it has, so a delete sent now would win, and the queued send would
+ * then dead-letter as CLIMB_NOT_FOUND. A row being drained stays `pending` until
+ * it is marked completed, so an in-flight send counts too. Dead letters do not.
+ */
+export async function hasPendingTickForClimb(db: SqlExecutor, climbUuid: string): Promise<boolean> {
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_mutations
+     WHERE table_name = 'boardsesh_ticks' AND operation = 'create' AND status = 'pending'
+       AND json_extract(payload, '$.climbUuid') = ?
+     LIMIT 1`,
+    [climbUuid],
+  );
+  return row != null;
+}
+
 export async function getPendingCount(db: SqlExecutor): Promise<number> {
   const row = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) as count FROM pending_mutations WHERE status = 'pending'`,

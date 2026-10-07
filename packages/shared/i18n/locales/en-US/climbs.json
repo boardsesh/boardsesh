@@ -422,7 +422,8 @@
     "logAscent": {
       "errorMessage": "Could not save your ascent. Please try again.",
       "offlineErrorMessage": "Couldn't save this ascent while you're offline. Your phone's storage was busy — try again in a moment.",
-      "savedToast": "Tick saved"
+      "savedToast": "Tick saved",
+      "climbDeletedMessage": "This climb was deleted."
     },
     "tick": {
       "dateLabel": "Date",
@@ -685,7 +686,22 @@
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
       "closeOverlay": "Close climb actions",
-      "openQueue": "Open the queue"
+      "openQueue": "Open the queue",
+      "deleteClimb": {
+        "row": "Delete climb",
+        "title": "Delete this climb?",
+        "message": "It comes off the spray wall for everyone, with its comments. This can't be undone.",
+        "confirm": "Delete",
+        "cancel": "Keep it",
+        "success": "Climb deleted.",
+        "hasTicks": "Someone has logged this climb, so it stays on the wall.",
+        "pendingTick": "You have a send on this climb waiting to sync, so it stays.",
+        "notFound": "This climb is already gone.",
+        "notAllowed": "Only spray wall climbs can be deleted.",
+        "archived": "This spray wall is archived, so its climbs stay as they are.",
+        "offline": "You're offline. Deleting a climb needs a connection.",
+        "error": "Couldn't delete the climb. Try again."
+      }
     },
     "create": {
       "brush": {

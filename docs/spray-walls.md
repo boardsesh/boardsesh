@@ -3427,6 +3427,24 @@ When the delete locks first, the tick waits and then finds no row:
 An offline tick drained after the delete gets the same answer.
 `packages/backend/src/__tests__/spray-climb-delete.test.ts` drives both orders.
 
+**In the app.** "Delete climb" is the last row of the climb actions, in both the
+long-press menu (`use-climb-actions.ts`, which is also the iOS play drawer's
+menu) and the Android play drawer's sheet (`ClimbActionsSheet.tsx`). It shows
+on the setter's own published spray climb on a live wall; drafts keep their
+delete in the drafts list. The app never guesses at ticks: the server's
+`CLIMB_HAS_TICKS` comes back as "Someone has logged this climb, so it stays on
+the wall." The delete is online only and never queued, because a delete that
+waited in the outbox could land after somebody ticked the climb; offline, the
+row says so instead of sending. It also refuses while this phone has a send on
+the climb waiting in the outbox (`hasPendingTickForClimb`): the server cannot
+count a tick it has not received, so the delete would win and strand the send.
+A send that reaches the server after a delete gets `CLIMB_NOT_FOUND`, which the
+tick sheet shows as "This climb was deleted." After a delete the climb comes off the
+downloaded copy at once (`removeDeletedClimbLocally` in
+`@boardsesh/offline-sync`: the row, stats, grades, this account's favourite
+and playlist rows, and the holds index), the climb lists refetch, and the play
+drawer closes. The flow is `components/climb-actions/use-delete-climb-action.ts`.
+
 ### Turning a wall private has to RETRACT, not just stop
 
 Two things outlive a visibility change and both are handled in the same transaction

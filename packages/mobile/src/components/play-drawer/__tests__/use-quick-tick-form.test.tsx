@@ -566,6 +566,21 @@ describe('useQuickTickForm save errors', () => {
 
     expect(container.querySelector('[data-testid="last-error"]')?.textContent).toBe('Climb not found');
   });
+
+  // #5960: a setter can delete their unticked spray climb, so a send logged on
+  // a copy the phone still shows comes back CLIMB_NOT_FOUND. Say it plainly.
+  it('says the climb was deleted when the server answers CLIMB_NOT_FOUND', () => {
+    boardState.current = null;
+    connectivityState.isOffline = false;
+    saveMock.state.failure = Object.assign(new Error('Climb not found'), { extensions: { code: 'CLIMB_NOT_FOUND' } });
+    const { container, getByTestId } = renderForm();
+
+    fireEvent.click(getByTestId('save'));
+
+    expect(container.querySelector('[data-testid="last-error"]')?.textContent).toBe(
+      'mobile.logAscent.climbDeletedMessage',
+    );
+  });
 });
 
 // Issue #2888. The tries control and the save path must always agree: the

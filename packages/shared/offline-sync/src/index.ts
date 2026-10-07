@@ -29,6 +29,7 @@ export {
   enqueue,
   peekPending,
   getPendingCount,
+  hasPendingTickForClimb,
   getDeadLetterCount,
   getDeadLetters,
   getOutboxSummary,
@@ -387,3 +388,4 @@ export {
 export type { OfflineBoardScope, OfflineBoardLike } from './offline-board-key';
 
 export { mirrorSavedClimb } from './sync/saved-climb-mirror';
+export { removeDeletedClimbLocally } from './sync/deleted-climb-local';

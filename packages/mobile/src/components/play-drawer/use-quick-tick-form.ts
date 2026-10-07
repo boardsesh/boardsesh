@@ -29,6 +29,7 @@ import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at
 import { sameRenderBoard } from '../../lib/boards/climb-render-board';
 import { useGrades } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { extractGraphqlCode } from '../../lib/graphql/extract-error-message';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
@@ -443,9 +444,13 @@ export function useQuickTickForm({
             track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null });
             const message = isOfflineRef.current
               ? tClimbs('mobile.logAscent.offlineErrorMessage')
-              : error instanceof Error && error.message
-                ? error.message
-                : tClimbs('mobile.logAscent.errorMessage');
+              : isClimbNotFound(error)
+                ? // The setter deleted it (#5960), or it never existed. The server's
+                  // own words are English-only, so say it in the climber's language.
+                  tClimbs('mobile.logAscent.climbDeletedMessage')
+                : error instanceof Error && error.message
+                  ? error.message
+                  : tClimbs('mobile.logAscent.errorMessage');
             setLastError(message);
           },
         },
@@ -505,4 +510,11 @@ export function useQuickTickForm({
     onSave: handleSave,
     onAttempt: handleAttempt,
   };
+}
+
+/** A save the server refused because the climb is gone (`saveTick`'s CLIMB_NOT_FOUND). */
+function isClimbNotFound(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const lifted = (error as { extensions?: { code?: unknown } | null }).extensions?.code;
+  return (typeof lifted === 'string' ? lifted : extractGraphqlCode(error)) === 'CLIMB_NOT_FOUND';
 }
