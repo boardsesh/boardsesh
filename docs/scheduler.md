@@ -141,20 +141,23 @@ every stored export within 24 hours: each run first deletes any export holding a
 version that is no longer eligible and approved, then keeps the newest two.
 
 The same shape as the purge: a cron-authenticated backend mutation, the same
-failure handling, 502/503 retried once. Overlap-safe with a lock: the mutation
-holds `pg_try_advisory_xact_lock` for the whole run, so a second run meeting a
-first answers `skipped: true` and writes nothing. A run that finds the approved
-set unchanged since the newest export also answers `skipped: true`.
+failure handling, 502/503 retried once. Overlap-safe with a lease row in
+`sync_daemon_leases` (`spray-training-export`, 20-minute TTL), not a lock held
+in a transaction, so the run pins no pooled connection while it works on
+storage. A second run meeting a live lease answers `skippedReason: LOCKED`, and
+the job treats that as a FAILED run: a lease still held a day later is a stuck
+run, and the 24-hour removal promise depends on today's retirement. `UNCHANGED`
+and `NOTHING_TO_EXPORT` are ordinary skips.
 
-Fifteen minutes, because each approved photo (at most 10 MB) is read and written
-once. A run cut short writes no `manifest.json`, so the half-written export is
-invisible to the ML fetch and the next run deletes it.
+The backend stops the run at 12 minutes, inside the job's 15-minute timeout and
+the lease's TTL. A run cut short writes no `manifest.json`, so the half-written
+export is invisible to the ML fetch and the next run deletes it.
 
 Manual run: `scheduler run export-spray-training`, or POST to the backend
 `/graphql` with `Authorization: Bearer $CRON_SECRET`:
 
 ```json
-{"query":"mutation { exportSprayTrainingDataset { exportId imagesWritten exportsRetired skipped durationMs } }"}
+{"query":"mutation { exportSprayTrainingDataset { exportId imagesWritten exportsRetired skipped skippedReason versionsSkipped durationMs } }"}
 ```
 
 ### Gym activity backend cutover

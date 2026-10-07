@@ -16,9 +16,19 @@ const written = {
   imagesWritten: 4,
   exportsRetired: 1,
   skipped: false,
+  skippedReason: null,
+  versionsSkipped: 0,
   durationMs: 812,
 };
-const skipped = { exportId: null, imagesWritten: 0, exportsRetired: 0, skipped: true, durationMs: 15 };
+const skipped = {
+  exportId: null,
+  imagesWritten: 0,
+  exportsRetired: 0,
+  skipped: true,
+  skippedReason: 'UNCHANGED',
+  versionsSkipped: 0,
+  durationMs: 15,
+};
 const context = {
   config: loadSchedulerConfig({
     CRON_SECRET: 'test-secret',
@@ -48,6 +58,9 @@ describe('readExportResult', () => {
     expect(() => readExportResult({ data: { exportSprayTrainingDataset: { ...written, skipped: 'no' } } })).toThrow(
       'invalid result',
     );
+    expect(() =>
+      readExportResult({ data: { exportSprayTrainingDataset: { ...written, skippedReason: 'BUSY' } } }),
+    ).toThrow('invalid result');
     expect(() => readExportResult({ data: { exportSprayTrainingDataset: { ...written, exportId: 7 } } })).toThrow(
       'invalid result',
     );
@@ -66,6 +79,11 @@ describe('spray training export scheduler job', () => {
         body: JSON.stringify({ query: EXPORT_SPRAY_TRAINING_MUTATION }),
       }),
     );
+  });
+
+  it('fails when another run holds the lease, so a stuck run is seen', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(success({ ...skipped, skippedReason: 'LOCKED' }));
+    await expect(exportSprayTraining(context)).rejects.toThrow('holds the export lease');
   });
 
   it.each([401, 409, 500, 504])('fails without retrying HTTP %s', async (status) => {

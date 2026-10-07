@@ -3355,7 +3355,10 @@ wall with its `trainingConsentAt`.
 `origin_detection_id` + `origin_candidate_index`, the suggestion it came from.
 A CHECK keeps both on `source = 'auto'` rows only. `upsertSprayWallHolds`
 validates every origin in one query (same wall, run `done`, index in range) and
-stores an invalid one as NULL rather than failing the save. It sets `edited`
+stores an invalid one as NULL rather than failing the save; the run must also be
+on the draft's own photo. An omitted field keeps what the hold records and an
+explicit null clears it. A moved hold inherits from its `movedFromHoldId`
+predecessor. It sets `edited`
 itself whenever an auto hold's centre, radius or outline moves by more than a
 pixel (a fiftieth of a radius for the outline), so an app that predates the
 fields still records a correction. Deleted suggestions need no table: a shown
@@ -3383,8 +3386,12 @@ own: the predicate is re-read every time.
 ### The export
 
 `exportSprayTrainingDataset`, run daily at 08:00 UTC by the scheduler's
-`export-spray-training` job ([scheduler.md](./scheduler.md)), under one advisory
-lock:
+`export-spray-training` job ([scheduler.md](./scheduler.md)). One run at a
+time, through a `sync_daemon_leases` row (`spray-training-export`, 20-minute
+TTL) that holds no database connection while the run works on storage. A run
+meeting a live lease answers `skippedReason: LOCKED`, which the job reports as
+a failure. A run stops at 12 minutes and writes no manifest if it has not
+finished. Reads are short separate queries, not one snapshot.
 
 1. **Retire.** Every stored export under `spray-training/exports/` in the
    private bucket whose manifest names a version that is no longer eligible and
@@ -3399,7 +3406,11 @@ lock:
    `mask_from_circle: true`; `train`, `valid` and `eval` always present, even
    when empty),
    `candidates.json`, and `manifest.json` LAST, listing every file's sha256.
-   Then only the newest two exports are kept.
+   Then only the newest two exports are kept. A version with any hold that does
+   not project onto its photo (the queue shows `unmappableHoldCount`), with no
+   holds, or with an unreadable photo is left out and counted under
+   `counts.skippedVersions`: a real hold missing from the labels would be
+   learned as background.
 
 The split is frozen per physical wall: `sha256('spray-split:' + root wall
 uuid)`, following `reset_from_wall_id` to the root, so reset clones share it;
