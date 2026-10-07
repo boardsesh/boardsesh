@@ -374,7 +374,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
 
   beforeEach(async () => {
     await db.execute(
-      sql`TRUNCATE TABLE boardsesh_ticks, board_climb_stats, board_climbs, user_profiles, users RESTART IDENTITY CASCADE`,
+      sql`TRUNCATE TABLE boardsesh_ticks, board_climb_stats, board_climbs, climb_community_status, user_profiles, users RESTART IDENTITY CASCADE`,
     );
   });
 
@@ -2202,6 +2202,67 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
   // send. Each case runs the single-key and the bulk path on twin climbs and
   // requires the same row from both.
   // -------------------------------------------------------------------------
+  describe('the climbers\u2019-vote grade rule, fenced to spray (#5971)', () => {
+    async function seedGradeScale(boardType: string) {
+      await db.execute(sql`
+        INSERT INTO board_difficulty_grades (board_type, difficulty, boulder_name, route_name, is_listed)
+        VALUES (${boardType}, 10, '4a/V0', '5b/5.9', true), (${boardType}, 22, '7a/V6', '7c/5.12d', true)
+        ON CONFLICT (board_type, difficulty) DO NOTHING
+      `);
+    }
+
+    async function pinCommunityGrade(boardType: string, climbUuid: string, angle: number, grade: string) {
+      await db.execute(sql`
+        INSERT INTO climb_community_status (climb_uuid, board_type, angle, community_grade)
+        VALUES (${climbUuid}, ${boardType}, ${angle}, ${grade})
+      `);
+    }
+
+    // Climber A sends twice at 4a/V0, climber B once at 7a/V6. The plain tick
+    // average is (10 + 10 + 22) / 3 = 14; one vote per climber is (10 + 22) / 2 = 16.
+    async function seedTwoClimbers(boardType: string, climbUuid: string, angle: number) {
+      await seedUser('u-vote-a', 'Ada');
+      await seedUser('u-vote-b', 'Bo');
+      await seedClimb(boardType, climbUuid, 'u-vote-a', angle);
+      await seedStats(boardType, climbUuid, angle);
+      const key = { boardType, climbUuid, angle, status: 'send' as const, origin: 'native' as const };
+      await seedTick({ ...key, userId: 'u-vote-a', difficulty: 10, climbedAt: '2026-01-01 00:00:00' });
+      await seedTick({ ...key, userId: 'u-vote-a', difficulty: 10, climbedAt: '2026-01-02 00:00:00' });
+      await seedTick({ ...key, userId: 'u-vote-b', difficulty: 22, climbedAt: '2026-01-03 00:00:00' });
+    }
+
+    it('leaves an owned Kilter climb on the plain tick average, ignoring a community grade', async () => {
+      const kilter = { boardType: 'kilter', climbUuid: 'VOTE-KILTER', angle: 40 };
+      await seedGradeScale('kilter');
+      await seedTwoClimbers(kilter.boardType, kilter.climbUuid, kilter.angle);
+      await pinCommunityGrade(kilter.boardType, kilter.climbUuid, kilter.angle, '7a/V6');
+
+      await recomputeClimbStatsCore(db, kilter.boardType, kilter.climbUuid, kilter.angle);
+      expect(Number((await statsRow(kilter.boardType, kilter.climbUuid, kilter.angle)).display_difficulty)).toBe(14);
+
+      await recomputeClimbStatsBulk(db, [kilter]);
+      expect(Number((await statsRow(kilter.boardType, kilter.climbUuid, kilter.angle)).display_difficulty)).toBe(14);
+    });
+
+    it('gives a spray climb one vote per climber, then the pinned community grade, on both paths', async () => {
+      const spray = { boardType: 'spray', climbUuid: 'VOTE-SPRAY', angle: 40 };
+      await seedGradeScale('spray');
+      await seedTwoClimbers(spray.boardType, spray.climbUuid, spray.angle);
+
+      await recomputeClimbStatsCore(db, spray.boardType, spray.climbUuid, spray.angle);
+      expect(Number((await statsRow(spray.boardType, spray.climbUuid, spray.angle)).display_difficulty)).toBe(16);
+      await recomputeClimbStatsBulk(db, [spray]);
+      expect(Number((await statsRow(spray.boardType, spray.climbUuid, spray.angle)).display_difficulty)).toBe(16);
+
+      await pinCommunityGrade(spray.boardType, spray.climbUuid, spray.angle, '4a/V0');
+      await recomputeClimbStatsBulk(db, [spray]);
+      const pinned = await statsRow(spray.boardType, spray.climbUuid, spray.angle);
+      expect(Number(pinned.display_difficulty)).toBe(10);
+      expect(Number(pinned.difficulty)).toBe(10);
+      expect(pinned.tick_graded_at).not.toBeNull();
+    });
+  });
+
   describe('the holds epoch (#6023)', () => {
     const ANGLE = 40;
 

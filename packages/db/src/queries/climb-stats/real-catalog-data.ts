@@ -62,11 +62,10 @@ export function deriveGradeFromTicksSql(tableAlias: StatsTableAlias): SQL {
  * grade was gone with nothing left to recover it from — the row no longer even
  * says a grade was ever derived.
  *
- * The spray fence mirrors the MoonBoard one above, and sits on the OWNED leg rather
- * than inside `deriveGradeFromTicksSql` because the two legs answer different
- * questions and only this one is wrong for spray: an UNGRADED spray climb
- * (`display_difficulty IS NULL`) still takes its grade from its ticks, which is the
- * only grade it can have.
+ * Spray grades now follow their own rule, the climbers' vote
+ * (`climber-vote-grade.ts`, #5971), which the recompute checks before this leg.
+ * The spray fence here stays so this predicate keeps meaning "the plain tick
+ * average is the grade" on its own.
  *
  * Everything else the owned leg decides — the plain quality AVG, the derived FA,
  * `quality_normalized` — stays TRUE for spray: those ARE Boardsesh's to compute,

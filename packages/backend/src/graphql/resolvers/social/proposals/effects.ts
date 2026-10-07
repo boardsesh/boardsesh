@@ -1,7 +1,45 @@
 import { eq, and, sql, desc, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { CLIMBER_VOTE_GRADE_BOARDS, recomputeClimbStats } from '@boardsesh/db/queries';
+import { queueClimbStatsRecompute } from '../../ticks/debounced-climb-stats-publisher';
 import type { ProposalExecutor } from './lifecycle';
+
+/**
+ * On a board whose grade is the climbers' vote (#5971, spray), the approved
+ * community grade is the first thing its grade rule reads, so a change to it has
+ * to reach `board_climb_stats.display_difficulty` — the column lists, search, the
+ * offline mirror and the play drawer all read. Recomputed in the caller's
+ * transaction, so the community grade and the climb's grade commit together.
+ */
+async function recomputeVoteGradedClimb(
+  proposal: typeof dbSchema.climbProposals.$inferSelect,
+  executor: ProposalExecutor,
+): Promise<void> {
+  const angle = voteGradedAngle(proposal);
+  if (angle == null) return;
+  await recomputeClimbStats(executor, proposal.boardType, proposal.climbUuid, angle);
+}
+
+/** The angle of a grade proposal on a climbers'-vote board, or null for any other proposal. */
+function voteGradedAngle(proposal: typeof dbSchema.climbProposals.$inferSelect): number | null {
+  if (proposal.type !== 'grade' || proposal.angle == null) return null;
+  if (!(CLIMBER_VOTE_GRADE_BOARDS as readonly string[]).includes(proposal.boardType)) return null;
+  return proposal.angle;
+}
+
+/**
+ * Tell open play drawers about a grade an approval or a revert just changed.
+ * Call it AFTER the transaction that applied the effect has committed: the
+ * debounced pass re-reads the row and publishes `climbStatsUpdated`, which is
+ * how a session's drawers learn the new grade. The recompute is idempotent, so
+ * running it again over the row the effect already wrote changes nothing.
+ */
+export function publishVoteGradedClimbStats(proposal: typeof dbSchema.climbProposals.$inferSelect): void {
+  const angle = voteGradedAngle(proposal);
+  if (angle == null) return;
+  queueClimbStatsRecompute(proposal.boardType, proposal.climbUuid, angle);
+}
 
 /**
  * Apply the effect of an approved proposal to the climb community/classic status.
@@ -54,6 +92,7 @@ export async function applyProposalEffect(
         lastProposalId: proposal.id,
       });
     }
+    await recomputeVoteGradedClimb(proposal, executor);
   } else if (proposal.type === 'hide') {
     // The hidden flag lives on the climb row itself — hidden climbs drop out of
     // browse and search but stay openable by direct link. `updated_at`/`sync_seq`
@@ -156,6 +195,7 @@ export async function revertProposalEffect(
         .set(updates)
         .where(eq(dbSchema.climbCommunityStatus.id, existing.id));
     }
+    await recomputeVoteGradedClimb(proposal, executor);
   } else if (proposal.type === 'hide') {
     // Fall back to whatever the previous approved hide decision said; with none,
     // the climb goes back to visible. Hide proposals are climb-wide, so they

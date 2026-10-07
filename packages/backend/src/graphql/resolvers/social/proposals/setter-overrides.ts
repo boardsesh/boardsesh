@@ -36,6 +36,12 @@ export async function setterOverrideCommunityStatus(_: unknown, { input }: { inp
   }
   assertClimbBoardType(climb.climbBoardType, boardType);
 
+  // A spray climb's grade changes only through a proposal, the setter's and the
+  // wall owner's included (#5971). Refused before the role check, for everyone.
+  if (climb.climbBoardType === 'spray') {
+    throw new Error('A spray wall climb changes grade through a proposal');
+  }
+
   // Check if caller is the setter
   let isSetter = false;
 

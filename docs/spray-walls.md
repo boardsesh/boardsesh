@@ -563,8 +563,9 @@ false — that is the whole board, and it is one row in
   from a client (SW-05), and SW-09 must not show the "has LEDs" toggle on the
   add-a-wall flow. Deriving the suppression from the capability instead of the
   row is a follow-up; it touches the mobile BLE path, which needs its own review.
-- **No crowd grade.** `crowdGrade: false`. The setter's grade is required on
-  publish instead.
+- **No Boardsesh grade model.** `crowdGrade: false`: spray is not in
+  `CROWD_MEAN_BOARDS`, so the nightly model has nothing for a wall. A spray
+  climb's grade is its climbers' vote instead (rule 2 below, #5971).
 - **No mirroring.** `boardSupportsMirroring('spray', …)` is false: a wall is a
   photograph of one physical wall with no mirror geometry to reflect holds
   through.
@@ -3330,15 +3331,19 @@ four rules there are what the gate was standing in for:
    wrong — send it unconditionally. An edit needs it too: `updateClimb` resolves
    the wall from the stored climb's `layoutId`, which is no more a secret than the
    one on the create.
-2. **A setter grade is required to publish.** `getBoardCapabilities('spray')`
-   answers `crowdGrade: false` — a home wall has a handful of climbers, so nothing
-   converges on a consensus grade and a published climb with no grade would stay
-   ungraded forever. `userGrade` is on `SaveClimbInput` for this, mirroring
-   `SaveMoonBoardClimbInput`, and it seeds
-   `board_climb_stats.display_difficulty`. A graded DRAFT gets the stats row too,
-   because `updateClimb`'s publish-time seed has no grade source to reconstruct
-   from — and `updateClimb` refuses to publish a spray draft whose stats row has
-   no grade, so draft → publish is not a way around rule 2.
+2. **No setter grade: the first ascent grades the climb (#5971).** A climb
+   publishes ungraded and shows as a project. Its grade is the climbers' vote, a
+   recompute rule fenced to `CLIMBER_VOTE_GRADE_BOARDS` (spray only;
+   `packages/db/src/queries/climb-stats/climber-vote-grade.ts`), in this order:
+   an approved community grade, which is pinned until a newer proposal; else one
+   vote per climber, the grade on their latest graded flash/send; else a grade an
+   older app sent with the publish. That last one is seeded unstamped
+   (`tick_graded_at IS NULL`), which marks it provisional: the first graded send
+   replaces it, and once a vote has graded the climb, losing every graded send
+   takes it back to ungraded. `userGrade` on an edit is ignored: a published
+   climb's grade changes through a proposal. A grade proposal the wall owner
+   files applies at once; anyone else's, the setter's included, goes to the vote
+   (`docs/climb-moderation.md`). The setter override is refused on spray.
 3. **Every hold has to be alive on the PUBLISHED version**, checked inside the
    write transaction so a reset committing mid-write cannot let a climb through on
    a hold that just came off. `updateClimb` runs the same check on every spray
@@ -3531,8 +3536,8 @@ What an edit does now:
   stats restart and no recompute marker any more.
 - **The rest is as before:** the `board_climb_holds` rewrite, the neighbours row
   delete, the fingerprint refresh, `populateSprayClimbColumns`,
-  `recomputeMissingHoldCountForClimb`, the web revalidation and the stats row
-  upsert on a grade edit. Every spray edit still checks that the climb's holds are
+  `recomputeMissingHoldCountForClimb` and the web revalidation. A grade on an
+  edit is ignored (#5971). Every spray edit still checks that the climb's holds are
   alive on the published version, and an edit never moves `published_at`. The
   setter stays the setter.
 
@@ -3610,7 +3615,9 @@ and start/finish still cap at two each. What is left is five rules a wall answer
 differently, and they live as pure functions in
 `packages/mobile/src/components/create-climb/spray-climb-rules.ts`:
 
-1. **A setter grade is required to publish, optional on a draft.**
+1. **A setter grade is required to publish, optional on a draft.** (Until the
+   mobile half of #5971 lands: the server no longer requires it, see rule 2 of
+   "Climb writes on a wall" above.)
    `SetterGradeRow.tsx` puts the tick sheets' single-select grade rail in the
    create form, over the board's own scale (`useGrades`, which falls back to the
    bundled taxonomy offline — a wall copies the Tension scale, so the ids line up

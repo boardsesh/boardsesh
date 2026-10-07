@@ -375,7 +375,9 @@ describe('createProposal and reportClimb against a climb the caller cannot see',
   it('keeps the wall open to its owner and to a gym member', async () => {
     const privateWall = await createPublishedWall(OWNER);
     const privateClimb = await setClimb(privateWall.wall, privateWall.holdIds);
-    await createHide(OWNER, privateClimb);
+    // A grade, not a hide: the owner set this climb, and a setter may not file a
+    // hide on their own climb (#5971).
+    await reportGrade(OWNER, privateClimb);
     expect(await proposalCount(privateClimb), 'the owner proposes on their own wall').toBe(1);
 
     const gymWall = await createPublishedWall(OWNER);
@@ -405,7 +407,7 @@ describe('createProposal and reportClimb against a climb the caller cannot see',
     const rejection = await captureRejection(createHide(STRANGER, climbUuid));
     expect(rejection.message).toBe('Climb not found');
 
-    await expect(createHide(OWNER, climbUuid)).resolves.toBeTruthy();
+    await expect(reportGrade(OWNER, climbUuid)).resolves.toBeTruthy();
   });
 
   it('falls back to private for a wall an admin hid, except for its owner', async () => {
@@ -421,7 +423,7 @@ describe('createProposal and reportClimb against a climb the caller cannot see',
     await hideWall(gymWall.wall);
     const hiddenGymClimb = await setClimb(gymWall.wall, gymWall.holdIds);
     await expect(createHide(GYM_MEMBER, hiddenGymClimb)).rejects.toThrow('Climb not found');
-    await expect(createHide(OWNER, climbUuid)).resolves.toBeTruthy();
+    await expect(reportGrade(OWNER, climbUuid)).resolves.toBeTruthy();
   });
 
   it('refuses a draft the caller does not own, on every board type (as comments do)', async () => {
@@ -460,7 +462,8 @@ describe('createProposal and reportClimb against a climb the caller cannot see',
         input: {
           climbUuid: 'wv-kilter-draft',
           boardType: 'kilter',
-          type: 'hide',
+          // Classic, not hide: a setter may not file a hide on their own climb.
+          type: 'classic',
           proposedValue: 'true',
           reason: HIDE_REASON,
         },

@@ -78,6 +78,23 @@ export type WorkerTableGrant = {
  * appliers touch (`apply-user-logbook.ts`, aurora `user-sync.ts`, kilter
  * `user-sync.ts`, and the stats recompute they both call).
  */
+/**
+ * What the stats recompute reads for the spray climbers'-vote grade (#5971,
+ * `climb-stats/climber-vote-grade.ts`): the approved community grade at the
+ * key and the board's grade scale it is matched against. Every role that runs
+ * the recompute needs it. The recompute only names these tables when a key is
+ * a spray key, so a Kilter or Aurora recompute keeps working on a worker that
+ * starts before the migrator has granted them.
+ */
+const RECOMPUTE_VOTE_GRADE_GRANTS: readonly WorkerTableGrant[] = [
+  {
+    table: 'climb_community_status',
+    privileges: ['SELECT'],
+    columns: ['board_type', 'climb_uuid', 'angle', 'community_grade'],
+  },
+  { table: 'board_difficulty_grades', privileges: ['SELECT'], columns: ['board_type', 'difficulty', 'boulder_name'] },
+];
+
 const PROVIDER_SYNC_WRITE: readonly TablePrivilege[] = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
   // Status, token and failure bookkeeping on the credential; the link
@@ -115,6 +132,7 @@ const PROVIDER_SYNC_GRANTS: readonly WorkerTableGrant[] = [
   // The stats keys a page or flush still owes a recompute: marked (upsert) in
   // the page transaction, locked, recomputed and deleted in the batch after it.
   { table: 'climb_stats_recompute_pending', privileges: PROVIDER_SYNC_WRITE },
+  ...RECOMPUTE_VOTE_GRADE_GRANTS,
 ];
 
 const CATALOG_WRITE: readonly TablePrivilege[] = ['SELECT', 'INSERT', 'UPDATE'];
@@ -224,6 +242,7 @@ const CLIMB_STATS_SELF_HEAL_GRANTS: readonly WorkerTableGrant[] = [
   // The first ascensionist's crown: COALESCE(display_name, name).
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name'] },
   { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'display_name'] },
+  ...RECOMPUTE_VOTE_GRADE_GRANTS,
 ];
 
 /** Personal archives: selected climbing fields only, with no credentials or catalogue writes. */

@@ -16,12 +16,14 @@ import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { requireAdminOrLeader, getUserVoteWeight } from '../roles';
 import { insertComment, publishCommentAddedLive } from '../comments';
 import { enrichProposal } from './enrichment';
-import { applyProposalEffect, revertProposalEffect } from './effects';
+import { applyProposalEffect, publishVoteGradedClimbStats, revertProposalEffect } from './effects';
 import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
 import {
   addWeightedUpvote,
   assertAngleForType,
+  assertSprayProposalAllowed,
   assertNotFrozen,
+  assertNotHidingOwnClimb,
   findOpenProposal,
   flipVoteToUpvote,
   insertProposalWithProposerVote,
@@ -57,7 +59,9 @@ export const socialProposalMutations = {
     }
 
     const target = await loadTargetClimb(climbUuid, boardType, proposerId);
+    assertNotHidingOwnClimb(type, target, proposerId);
     await assertNotFrozen(climbUuid, angle ?? null, boardType);
+    await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 
     const currentValue = await resolveCurrentValue({
       type,
@@ -102,7 +106,7 @@ export const socialProposalMutations = {
       publishCommentAddedLive('proposal', proposal.uuid, comment);
     }
 
-    await runAutoApproval(proposal, proposerId);
+    await runAutoApproval(proposal, proposerId, { filedByActor: true });
     publishProposalCreated(proposal, proposerId);
 
     return enrichProposal(proposal, proposerId);
@@ -201,7 +205,9 @@ export const socialProposalMutations = {
     const proposedValue = kind === 'hide' ? 'true' : proposedGrade!;
 
     const target = await loadTargetClimb(climbUuid, boardType, reporterId);
+    assertNotHidingOwnClimb(type, target, reporterId);
     await assertNotFrozen(climbUuid, angle, boardType);
+    await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 
     const outcome = await withProposalLock(climbUuid, type, async (tx) => {
       const openProposal = await findOpenProposal({ climbUuid, boardType, type, angle, proposedValue, executor: tx });
@@ -306,7 +312,9 @@ export const socialProposalMutations = {
     // sits at threshold with nobody left to carry it over. The tally is
     // idempotent and the status flip is guarded on `status = 'open'` under the
     // proposal lock, so a duplicate report can never approve twice.
-    await runAutoApproval(outcome.proposal, reporterId);
+    // A report is the reporter filing the change, so a spray wall owner's grade
+    // report applies at once (#5971) whether it opened the proposal or joined it.
+    await runAutoApproval(outcome.proposal, reporterId, { filedByActor: true });
 
     if (outcome.status === 'created') {
       publishProposalCreated(outcome.proposal, reporterId);
@@ -375,6 +383,7 @@ export const socialProposalMutations = {
 
     if (status === 'approved') {
       void notifyClimbRevalidated(proposal.climbUuid);
+      publishVoteGradedClimbStats(proposal);
     }
 
     const eventType = status === 'approved' ? 'proposal.approved' : 'proposal.rejected';
@@ -426,6 +435,7 @@ export const socialProposalMutations = {
       await tx.delete(dbSchema.climbProposals).where(eq(dbSchema.climbProposals.id, proposal.id));
     });
     void notifyClimbRevalidated(proposal.climbUuid);
+    publishVoteGradedClimbStats(proposal);
 
     // Publish deleted event
     publishSocialEvent({

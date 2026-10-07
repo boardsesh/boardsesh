@@ -338,12 +338,10 @@ export const SaveClimbInputSchema = z
     noMatch: RuleFlagSchema,
     anyFeet: RuleFlagSchema,
     sizeId: ClimbSizeIdSchema,
-    // The setter's own grade, mirroring SaveMoonBoardClimbInputSchema. REQUIRED to
-    // publish on a spray wall — that board has `crowdGrade: false`, so nothing will
-    // ever converge on a consensus difficulty and this is the only grade the climb
-    // will have. Ignored on every other board, where the grade comes from ticks or
-    // the Aurora sync; the RESOLVER decides that, not this schema, because the
-    // requirement depends on the wall rather than on the shape of the input.
+    // The setter's own grade, mirroring SaveMoonBoardClimbInputSchema. Older apps
+    // send it on a spray wall, where it seeds a provisional grade the first graded
+    // send replaces (#5971); current apps leave it out. Ignored on every other
+    // board, where the grade comes from ticks or the Aurora sync.
     userGrade: z.string().max(20).optional(),
     // The spray wall's uuid, as an unlisted wall's share link carries it. Only
     // consulted for `boardType: 'spray'`, and only for a caller who is neither the

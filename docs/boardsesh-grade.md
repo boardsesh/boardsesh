@@ -711,6 +711,12 @@ model to beat the display label itself would reject any useful non-label signal.
 
 These are real and we'd rather state them than paper over them.
 
+- **Spray walls are outside the model.** A home wall has a handful of
+  climbers, so spray is not in `CROWD_MEAN_BOARDS` and gets no
+  `board_climb_grades` rows. Its displayed grade is a plain vote instead: one
+  vote per climber, or an approved community grade (`docs/spray-walls.md`,
+  #5971). Widening that rule to other boards is #6192.
+
 - **Moon has no cross-board claim.** A problem graded at both 25° and 40° now
   gets a real within-board `confirmed`/`provisional` grade from its own
   `userGrade`-backed crowd mean (§2, §3) — but `universal_grade` stays NULL for
