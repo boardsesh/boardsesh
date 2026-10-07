@@ -106,8 +106,9 @@ jobs:
         working-directory: packages/mobile/android
         # Robolectric/JUnit tests for local Expo modules that ship them:
         # live-activity (session-presence lifecycle + foreground-service retry),
-        # memory-trim (Glide trim-level policy) and board-renderer (overlay
-        # cache-dir recovery), plus patched ble-plx disconnect diagnostics.
+        # memory-trim (Glide trim-level policy), board-renderer (overlay
+        # cache-dir recovery) and spray-editor-input (the spray editor's
+        # keyboard-shortcut matcher), plus patched ble-plx disconnect diagnostics.
         # The gradle project path for an Expo local module
         # is autolinking-derived, so discover it rather than hardcode.
         run: |
@@ -115,7 +116,7 @@ jobs:
           # One entry per module that ships native unit tests. Adding a
           # module here is the only change needed — each name is discovered
           # and must resolve to exactly one Gradle project.
-          TESTED_MODULES=(live-activity memory-trim board-renderer react-native-ble-plx)
+          TESTED_MODULES=(live-activity memory-trim board-renderer spray-editor-input react-native-ble-plx)
           ALL_PROJECTS=$(./gradlew --no-daemon -q projects)
           for MODULE in "${TESTED_MODULES[@]}"; do
             mapfile -t PROJECTS < <(printf '%s\n' "$ALL_PROJECTS" | sed -n "s/.*Project '\(:[^']*${MODULE}[^']*\)'.*/\1/p")
@@ -132,7 +133,10 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 60, not 45: R8 now runs inside assembleRelease. A timeout that kills the
+    # job after the APK is already built is pure waste, and the headroom costs
+    # nothing when unused.
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -153,6 +157,31 @@ jobs:
         # The GitHub Release sideload APK uses the same arm64-only path; Play
         # distribution still goes through the signed AAB in android-apk-rn.yml.
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --no-daemon --console=plain --stacktrace
+
+      # R8 runs on every PR from here on, so this is where a keep-rule regression
+      # is cheap to find. It asserts the ARTIFACT, not the intent: a grep for the
+      # gradle property stays green when the property name is wrong for the
+      # template, which is exactly how Google Play ended up scoring us at
+      # Obfuscation 1%. Floor starts at 0.40 — see the script header for the
+      # calibration note.
+      - name: Check Android obfuscation (R8 mapping)
+        run: |
+          vp run check:mobile-android-obfuscation -- \
+            --mapping packages/mobile/android/app/build/outputs/mapping/release/mapping.txt \
+            --min-renamed-fraction 0.40 \
+            --summary
+
+      # mapping.txt symbolicates a crash a tester hits on the sideload APK below;
+      # missing_rules.txt is what AGP writes when R8 fails on missing classes, and
+      # without it a red build has to be re-run to be diagnosed.
+      - name: Upload R8 mapping and rules
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boardsesh-rn-android-pr-mapping-${{ github.event.pull_request.number || github.run_number }}
+          path: packages/mobile/android/app/build/outputs/mapping/release/*
+          retention-days: 14
+          if-no-files-found: warn
 
       - name: Upload sideloadable APK
         uses: actions/upload-artifact@v4

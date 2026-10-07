@@ -25,6 +25,11 @@ type CreateDrawerHeaderProps = {
   /** Bumped by the controller to pull focus into the name field (unnamed save). */
   focusSignal: number;
   onClose: () => void;
+  /**
+   * False on a board with no lights to connect to (a spray wall, #5960): the
+   * lightbulb here only ever starts a Bluetooth connect, so it is not drawn.
+   */
+  showLightbulb: boolean;
   bleConnected: boolean;
   bleConnecting: boolean;
   onToggleBle: () => void;
@@ -45,6 +50,7 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   finishCount,
   focusSignal,
   onClose,
+  showLightbulb,
   bleConnected,
   bleConnecting,
   onToggleBle,
@@ -132,17 +138,19 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         style={styles.overflow}
       />
 
-      <BleLightbulbButton
-        isConnected={bleConnected}
-        isScanning={bleConnecting}
-        onPress={onToggleBle}
-        accessibilityLabel={bleConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
-        scanningAccessibilityHint={tSettings('ble.scanning')}
-        writingAccessibilityHint={tSettings('ble.writing')}
-        haptic="medium"
-        size={24}
-        containerSize={44}
-      />
+      {showLightbulb ? (
+        <BleLightbulbButton
+          isConnected={bleConnected}
+          isScanning={bleConnecting}
+          onPress={onToggleBle}
+          accessibilityLabel={bleConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
+          scanningAccessibilityHint={tSettings('ble.scanning')}
+          writingAccessibilityHint={tSettings('ble.writing')}
+          haptic="medium"
+          size={24}
+          containerSize={44}
+        />
+      ) : null}
     </View>
   );
 });

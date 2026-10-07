@@ -1,10 +1,33 @@
-import { Stack, router } from 'expo-router';
+import { Stack, router, type NativeStackNavigationOptions } from 'expo-router';
+import { SprayWizardExitButton } from '../../src/components/spray-wall/SprayWizardExitButton';
+import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../../src/components/Icon';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { isFirstBoardMode, isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
+import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
+import { sprayFlowCoversScreen, sprayFlowScreenOptions } from '../../src/lib/spray/spray-flow-presentation';
+
+/**
+ * The holds screen on iPad: full screen, so it also needs an X, as it has
+ * neither a back chevron (a modal shows none) nor a swipe down to leave by. The
+ * X goes back the way the screen's own Back button does, so its
+ * `usePreventRemove` guard still asks before unsaved edits are thrown away.
+ * Elsewhere this adds nothing: on a phone the card's swipe and the chevron are
+ * already the way out. The reset screen needs no such helper: it carries the
+ * #5960 X on every platform already, and only adds the iPad presentation.
+ */
+function sprayMaintenanceOptions(): NativeStackNavigationOptions {
+  if (!sprayFlowCoversScreen()) return {};
+  return {
+    ...sprayFlowScreenOptions(),
+    headerLeft: ({ tintColor }) => (
+      <SprayWizardExitButton returnTo={resolveBoardReturnTo(undefined)} tintColor={tintColor} />
+    ),
+  };
+}
 
 /**
  * How the picker was opened, from its params, read defensively: `route.params`
@@ -41,7 +64,7 @@ function closeNoBoardPicker() {
   router.back();
 }
 
-export default function BoardsLayout() {
+function BoardsLayout() {
   const { t } = useTranslation('common');
   const { t: tBoards } = useTranslation('boards');
   const screenOptions = useStackScreenOptions();
@@ -84,29 +107,71 @@ export default function BoardsLayout() {
       {/* The add-a-wall flow, pushed like the builder above it. A ROUTE and not a
           sheet: two of its steps (the corner markers and the hold editor) are
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
-          rule 3 keeps off a sheet's own drag. Flag-gated inside the screen — the
-          route existing is not the same as the feature being reachable. */}
+          rule 3 keeps off a sheet's own drag.
+
+          On iPad the three spray screens cover the whole screen
+          (`sprayFlowScreenOptions`) when pushed over the picker. Opened straight
+          from the live board sheet, one is this stack's FIRST screen, which
+          ignores its own presentation; app/_layout.tsx covers that case on the
+          root `boards` screen. */}
       <Stack.Screen
         name="spray/new"
-        options={{ title: tBoards('sprayWizard.screenTitle'), headerBackButtonMenuEnabled: false }}
+        options={({ route }) => ({
+          ...sprayFlowScreenOptions(),
+          title: tBoards('sprayWizard.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          headerLeft: ({ tintColor }) => {
+            const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
+            return (
+              <SprayWizardExitButton
+                returnTo={resolveBoardReturnTo(typeof returnTo === 'string' ? returnTo : undefined)}
+                tintColor={tintColor}
+              />
+            );
+          },
+        })}
+      />
+      <Stack.Screen
+        name="spray/holds"
+        options={{
+          title: tBoards('sprayMaintenance.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          ...sprayMaintenanceOptions(),
+        }}
       />
       {/* Resetting a wall — a new photograph of a wall that already carries
           climbs. Same route-not-sheet reasoning as the flow above: the corner
           markers and the compare view are both full-screen pan-and-pinch
           surfaces.
 
-          NOTHING IN THE APP PUSHES THIS ROUTE YET, and that is deliberate rather
-          than missing. The "New photo" row belongs to the wall's own page, which
-          lives on a DIFFERENT stack (SW-11's `BoardDetailSheet` rows, still dark
-          behind `SPRAY_DETAIL_ROWS_ENABLED = false`), and #5491 (SW-11b) wires
-          the row to this route once both stacks have merged. A second entry point
-          here would be a duplicate the moment that lands — and a worse one, since
-          the wall uuid is on the detail sheet and not on this stack. Until then
-          the route is exercised by its tests and reachable by deep link. */}
+          The live board sheet's "New photo" row opens this route after its
+          native dismissal has settled. */}
+      {/* The live board sheet opens this as the first screen of the modal, so
+          there is no back chevron; swiping down was the only way out (#5960).
+          The X goes through the same removal as a swipe, so the screen's leave
+          guard still asks before a half-done reset is dropped. */}
       <Stack.Screen
         name="spray/reset"
-        options={{ title: tBoards('sprayReset.screenTitle'), headerBackButtonMenuEnabled: false }}
+        options={({ route }) => ({
+          ...sprayFlowScreenOptions(),
+          title: tBoards('sprayReset.screenTitle'),
+          headerBackButtonMenuEnabled: false,
+          headerLeft: ({ tintColor }) => {
+            const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
+            return (
+              <SprayWizardExitButton
+                returnTo={resolveBoardReturnTo(typeof returnTo === 'string' ? returnTo : undefined)}
+                tintColor={tintColor}
+              />
+            );
+          },
+        })}
       />
     </Stack>
   );
 }
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(BoardsLayout);

@@ -27,6 +27,14 @@ export type SprayHoldProvenance = {
   source?: 'MANUAL' | 'AUTO';
   /** Detector confidence 0–1 for an AUTO hold; absent when a human drew it. */
   confidence?: number | null;
+  /**
+   * The hold this one replaced, when a reset review linked a move.
+   *
+   * Not geometry either. The create editor reads it (#5493): a climb that lost a
+   * hold offers the live hold that replaced it first. Present only when set, so a
+   * hold with no predecessor keeps the shape it always had.
+   */
+  movedFromHoldId?: number;
 };
 
 /** One hold as the server stores it: centre, radius and silhouette in canonical pixels. */
@@ -143,10 +151,45 @@ export function mapCanonicalHoldsToPhoto(
     const outline = mapHoldOutline(inverse, hold, cx, cy, r);
     // Provenance rides along unchanged — it is not geometry, and the homography
     // has no opinion about who drew the hold.
-    const provenance = { source: hold.source, confidence: hold.confidence };
+    const provenance = {
+      source: hold.source,
+      confidence: hold.confidence,
+      ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
+    };
     mapped.push(
       outline ? { id: hold.id, cx, cy, r, outline, ...provenance } : { id: hold.id, cx, cy, r, ...provenance },
     );
   }
   return mapped;
+}
+
+/**
+ * Every alive hold of a wall version, in the pixels of a GENERATED look
+ * (`sprayWallArt`): the canonical frame scaled by `scale` (art width / canonical
+ * frame width). No homography — the art is already drawn in the canonical frame,
+ * which is the whole point of it. Outlines stay as they are stored: they are in
+ * units of the hold's own radius, and a uniform scale leaves those unchanged.
+ *
+ * `null` for a scale that is not a positive finite number, which the caller
+ * reads as "draw the photo instead".
+ */
+export function scaleCanonicalHoldsToArt(holds: readonly CanonicalSprayHold[], scale: number): SprayPhotoHold[] | null {
+  if (!Number.isFinite(scale) || scale <= 0) return null;
+  const scaled: SprayPhotoHold[] = [];
+  for (const hold of holds) {
+    const cx = hold.cx * scale;
+    const cy = hold.cy * scale;
+    const r = hold.r * scale;
+    if (!isFinitePair(cx, cy) || !Number.isFinite(r) || r < MIN_MAPPED_RADIUS_PX) continue;
+    const outline = hold.outline && isValidOutlineRing(hold.outline) ? [...hold.outline] : undefined;
+    const provenance = {
+      source: hold.source,
+      confidence: hold.confidence,
+      ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
+    };
+    scaled.push(
+      outline ? { id: hold.id, cx, cy, r, outline, ...provenance } : { id: hold.id, cx, cy, r, ...provenance },
+    );
+  }
+  return scaled;
 }

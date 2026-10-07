@@ -30,10 +30,10 @@ export type QaGateInput = {
   /** This binary can surf OTA branches at all (fingerprint-bound headers present). */
   surfingBuild: boolean;
   /**
-   * The root layout has published its answer AND xprem's one-time
-   * legacy-override migration has settled, so a reload is not pending. False
-   * both while that migration runs and before anything has been published at
-   * all — `wait` covers each.
+   * The root layout has published its answer AND the one-time retired-override
+   * cleanup has settled with this runtime's channel being the baked one. False
+   * while that cleanup runs, before anything has been published at all, and
+   * for the launch that cleared a live override. `wait` covers each.
    */
   surfingReady: boolean;
   screenshotMode: boolean;
@@ -84,9 +84,13 @@ export function decideQaGate(input: QaGateInput): QaGateDecision {
   // guessing wrong re-briefs tester A for tester B's work, or worse, silences B.
   if (input.userId === undefined) return 'wait';
   if (input.onboardingSeen === undefined) return 'wait';
-  // A surfing-capable binary runs a one-time migration that ends in
-  // Updates.reloadAsync(). Prompting before it settles would push a route the
-  // reload immediately throws away.
+  // A surfing-capable binary clears a retired channel override once per
+  // install. The cleanup itself no longer reloads (#6006): the launch update
+  // gate owns that, and it holds `ready` above until it has resolved, so a
+  // route pushed here cannot be thrown away by its reload. What this waits for
+  // is the cleanup having settled, because xprem's branch API reads
+  // Updates.channel, and on the one launch that cleared a live override that
+  // constant still names the retired channel. That launch never becomes ready.
   //
   // Waiting on `surfingReady` ALONE, not on `surfingBuild && !surfingReady`:
   // `{ surfingBuild: false, surfingReady: false }` is also the state of the
@@ -94,9 +98,10 @@ export function decideQaGate(input: QaGateInput): QaGateDecision {
   // `none` is a silent kill switch — the caller marks the session decided on a
   // `none` and never asks again, so one reordering of the mount effects would
   // switch QA off with nothing said anywhere. A build that cannot surf publishes
-  // `{ false, true }` from its very first effect (`migrationComplete` starts at
+  // `{ false, true }` from its very first effect (`cleanupSettled` starts at
   // `!branchSurfingBuild`), so "not ready" only ever means "nobody has answered
-  // yet" or "the migration is still running" — and both are `wait`.
+  // yet", "the cleanup is still running" or "this runtime's channel is stale",
+  // and all three are `wait`.
   if (!input.surfingReady) return 'wait';
 
   if (input.screenshotMode) return 'none';

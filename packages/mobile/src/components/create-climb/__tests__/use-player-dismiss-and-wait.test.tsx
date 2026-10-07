@@ -206,6 +206,7 @@ describe('player-to-create handoff', () => {
         forkFrames: 'p1129r15p1130r12',
         forkName: 'Sloper Traverse',
         forkDescription: 'Start matched on the jug',
+        forkParentUuid: handoffClimb.uuid,
         boardName: 'kilter',
         layoutId: '8',
         sizeId: '17',

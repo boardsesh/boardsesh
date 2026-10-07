@@ -24,7 +24,6 @@ import {
   logbookClimbAngleKey,
 } from '@boardsesh/board-react';
 import { toBoardName, normaliseSetIds } from '@boardsesh/board-config';
-import { knownClimbRevision } from '@boardsesh/logbook';
 import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { clampToNow, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { sameRenderBoard } from '../../lib/boards/climb-render-board';
@@ -38,8 +37,6 @@ import { nowMs } from '../../lib/clock';
 import { noteRestTimerTick } from '../../lib/rest-timer-store';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
-import { useLocalClimbRevision } from '../../hooks/use-local-climb-revision';
-import { resolveTickClimbRevision } from '../../lib/tick-climb-revision';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
@@ -76,19 +73,6 @@ export type QuickTickFormInput = {
   // difficulty id here via the loaded grades list so the consensus chip can be
   // outlined without being preselected.
   consensusGradeName?: string;
-  /**
-   * The version of the climb on screen (`Climb.revisionNumber`), when the climb
-   * carries one. Without it the form asks the phone's own copy of the climb, and
-   * uses its answer only when that copy has the same holds as `climbFrames`.
-   * Otherwise the tick is sent with no version (#6023).
-   */
-  climbRevision?: number | null;
-  /**
-   * The frames of the climb on screen (`Climb.frames`). Needed for the fallback
-   * above: without them the phone's copy cannot be shown to be the climb the
-   * climber is looking at, and no version is sent.
-   */
-  climbFrames?: string | null;
   onDismiss: () => void;
   // Optional analytics plumbing for LogAscentSheet's dismiss tracking. Both are
   // refs (not state) so updating them never triggers a re-render.
@@ -139,8 +123,6 @@ export function useQuickTickForm({
   setIds,
   sessionId,
   consensusGradeName,
-  climbRevision,
-  climbFrames,
   onDismiss,
   savedRef,
   fieldSnapshotRef,
@@ -274,20 +256,6 @@ export function useQuickTickForm({
     return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle))?.length ?? 0) > 0;
   }, [boardLogbook, climbUuid, angle, localPendingTicks]);
 
-  // Which version of the climb this tick is on. A climb that came through a
-  // shared queue, or out of the editor, carries no number (see
-  // `useLocalClimbRevision`), so the phone's copy answers for it, and only
-  // when it has the same holds as the climb on screen. Anything else sends no
-  // `climbRevision` key and the server picks: a wrong version is stored as
-  // sent, a missing one is not (`resolveTickClimbRevision`). The local read is
-  // skipped when the climb has its own number.
-  const localRevisionNumbers = useLocalClimbRevision(boardName, climbUuid, knownClimbRevision(climbRevision) === null);
-  const tickClimbRevision = resolveTickClimbRevision({
-    displayedRevision: climbRevision,
-    displayedFrames: climbFrames,
-    local: localRevisionNumbers,
-  });
-
   const [tickState, setTickState] = useState(createInitialTickState);
   const [comment, setComment] = useState('');
   // The climb date/time to log. Defaults to now; the Date/Time fields let the
@@ -418,8 +386,6 @@ export function useQuickTickForm({
           ...(setIds ? { setIds } : {}),
           ...(selectedBoardUuid ? { boardUuid: selectedBoardUuid } : {}),
           ...(tickBoardId != null ? { boardId: tickBoardId } : {}),
-          // Only when known: an absent key lets the server pick the version.
-          ...(tickClimbRevision === null ? {} : { climbRevision: tickClimbRevision }),
         },
         {
           onSuccess: () => {
@@ -499,7 +465,6 @@ export function useQuickTickForm({
       setIds,
       tickBoardId,
       selectedBoardUuid,
-      tickClimbRevision,
       tickState,
       comment,
       climbedAt,

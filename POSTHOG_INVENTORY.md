@@ -650,7 +650,7 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 
 | Event | Properties | Emit site | Volume |
 | --- | --- | --- | --- |
-| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board); `path` gains `spray_wall` ("Add my spray wall", `no_board` entry with the spray-walls flag on) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
+| `First Board Path Chosen` (changed) | adds `entry` (`launch_gate` = opened by the gate / `no_board` = Climbs' Find my board); `path` gains `spray_wall` ("Add my spray wall", `no_board` entry) | `use-first-board-picker-tracking.ts` | Unchanged per showing |
 | `First Board Picker Skipped` (changed) | adds `entry`; `close_button` now also covers the plain Close X on the `no_board` entry | `use-first-board-picker-tracking.ts` | Adds the Climbs showings |
 | `Board Picker Opened` / `Board Picker Selection Completed` (changed) | `source` gains `no_board`, a gym-map pick made from that picker included | `use-board-picker-analytics.ts` (the picker and `/gyms`) | Unchanged (those rows used to read `board_picker`) |
 | `Board Builder Abandoned` | `boardType`, `hadLayout`, `hadSize` (what was selected at the end), `source` (`popular_seed` / `scratch`, as on `Board Created`), `preset` (opened from "My own board", which preselects the board type's most used setup when the popular list carries that type), `openedFrom` (`onboarding` / `no_board` / `board_picker`), `submitAttempted`, `secondsOpen` | `app/boards/create.tsx`, when the builder unmounts without a board created, reused or followed | At most one per builder visit |
@@ -673,6 +673,35 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
 - **iOS 26 tab decision**: compare "left Climbs, never returned" on iOS 26 before and after the
   tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
   goes away when they tap back to Climbs or close it, and never shows again on that device.
+
+## Appendix D — 2026-10-04 launch update gate telemetry (#6006)
+
+A store binary's first launch runs the JS embedded at build time, and the reload that used to move it
+forward landed mid-sign-in for 26% of 2.5.0 newcomers. The launch update gate now holds launch
+readiness while the update downloads. Native app only. The name lives in
+`packages/mobile/src/lib/ota-telemetry.ts` (`OTA_LAUNCH_UPDATE_EVENT`), beside `OTA Update Status`.
+
+### New event (1)
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `OTA Launch Update` | `outcome` (`updated` / `timed_out` / `failed` / `offline` / `nothing_newer` / `skipped_failed_update`), `phase_at_release` (`check` / `download` / `none`), `duration_ms`, `trigger` (`fresh_install` / `binary_update` / `cold_start`), `cap_ms` (the profile's full cap, 15000 for a first launch and 10000 otherwise; the 4000 check cap is not reported), `ota_runtime_version`, `ota_is_embedded` | `packages/mobile/src/lib/launch-update-gate-store.ts`, once per gated launch, before any reload | Roughly one per cold start. Dev builds, background launches, emergency launches and the runtime a reload produced send nothing |
+
+### Reading it
+
+- Success is two numbers on `Login Succeeded` for newcomers: the share with `ota_is_embedded = true`
+  (48% on 2.5.0, aim under 15%) and the share where a reload landed between `Login Attempted` and
+  `Login Succeeded` (26%, aim near 0). Neither is measured on a build with the gate yet.
+- Compare `duration_ms` with `cap_ms`. Split `timed_out` on `phase_at_release`: `check` means the
+  manifest request did not answer in 4 s (a dead upstream), `download` means the bundle was still
+  coming down at the cap, so that cap may be too short. The caps are JS constants, so an OTA can
+  change them.
+- `updated` is sent before the reload; the flush waits up to 700 ms, so it can still be
+  undercounted. Count the reload from the next `OTA Update Status` (`ota_is_embedded = false`) too.
+- `trigger = fresh_install` is a first launch with no earlier marker; `binary_update` is a store
+  update to a new fingerprint. A `failed` event with `trigger = cold_start` and `phase_at_release = none` can also mean the marker
+  could not be read. `skipped_failed_update` means a stored update that already failed to launch was
+  not reloaded onto again.
 
 ## Board account linking
 

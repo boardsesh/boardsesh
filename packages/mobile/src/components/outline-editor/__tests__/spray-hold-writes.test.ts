@@ -8,7 +8,8 @@ import {
   type SprayEditorHold,
   type SprayEditorState,
 } from '../spray-hold-editor-reducer';
-import { buildSprayHoldWritePlan, planHasWork } from '../spray-hold-writes';
+import { buildSprayHoldWritePlan, planHasWork, prepareCommit } from '../spray-hold-writes';
+import { SPRAY_ON_CUTOFF } from '../spray-hold-tools';
 
 function storedHold(id: number, overrides: Partial<SprayEditorHold> = {}): SprayEditorHold {
   return {
@@ -53,18 +54,37 @@ describe('buildSprayHoldWritePlan', () => {
     ]);
   });
 
-  it('never sends a candidate nobody ruled on', () => {
+  it('sends a put-back hold with the removed hold it replaces (#5493), and keeps sending it on a nudge', () => {
+    const added = run([], {
+      type: 'ADD_HOLD',
+      geometry: { cx: 300, cy: 400, r: 25, outline: null },
+      movedFromHoldId: 42,
+    });
+    expect(buildSprayHoldWritePlan(added, IDENTITY_HOMOGRAPHY).upsert).toEqual([
+      { cx: 300, cy: 400, r: 25, outline: null, source: 'MANUAL', movedFromHoldId: 42 },
+    ]);
+    expect(
+      run([], { type: 'ADD_HOLD', geometry: { cx: 1, cy: 2, r: 3, outline: null }, select: true }).selectedId,
+    ).toBe(added.nextLocalId + 1);
+    // The server writes an in-place edit's link as sent, so a nudge resends it.
+    const stored = run([storedHold(9, { movedFromHoldId: 42 })], { type: 'MOVE_HOLD', id: 9, cx: 150, cy: 250 });
+    expect(buildSprayHoldWritePlan(stored, IDENTITY_HOMOGRAPHY).upsert).toEqual([
+      { id: 9, cx: 150, cy: 250, r: 20, outline: null, source: 'MANUAL', movedFromHoldId: 42 },
+    ]);
+  });
+
+  it('never sends a find nobody ruled on', () => {
     const state = run([storedHold(-1, { source: 'AUTO', confidence: 0.95, review: 'pending' })]);
     expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).upsert).toEqual([]);
   });
 
-  it('sends an accepted candidate as AUTO, with its confidence intact', () => {
-    const state = run([storedHold(-1, { source: 'AUTO', confidence: 0.82, review: 'pending' })], {
-      type: 'ACCEPT',
-      ids: [-1],
+  it('sends an accepted find as AUTO, with its confidence intact', () => {
+    const state = run([storedHold(-1, { source: 'AUTO', confidence: 0.3, review: 'pending' })], {
+      type: 'TOGGLE_HOLD',
+      id: -1,
     });
     expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).upsert).toEqual([
-      { cx: 100, cy: 200, r: 20, outline: null, source: 'AUTO', confidence: 0.82 },
+      { cx: 100, cy: 200, r: 20, outline: null, source: 'AUTO', confidence: 0.3 },
     ]);
   });
 
@@ -89,7 +109,7 @@ describe('buildSprayHoldWritePlan', () => {
   });
 
   it('carries removals separately, so they can be stamped before the upsert lands', () => {
-    const state = run([storedHold(4), storedHold(5)], { type: 'DELETE', ids: [4] });
+    const state = run([storedHold(4), storedHold(5)], { type: 'DELETE', id: 4 });
     const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
     expect(plan.removeIds).toEqual([4]);
     expect(plan.upsert).toEqual([]);
@@ -218,5 +238,82 @@ describe('buildSprayHoldWritePlan', () => {
     expect(plan.removeIds).toEqual([9]);
     expect(plan.upsert).toHaveLength(1);
     expect(plan.upsert[0].id).toBe(8);
+  });
+
+  it('never writes a switched-off hold', () => {
+    const state = run(
+      [storedHold(-1, { source: 'AUTO', confidence: 0.3, review: 'pending' })],
+      { type: 'TOGGLE_HOLD', id: -1 },
+      { type: 'TOGGLE_HOLD', id: -1 },
+    );
+    expect(state.holds[-1].review).toBe('rejected');
+    // Still dirty from the accept, and still never written.
+    expect(state.holds[-1].dirty).toBe(true);
+    expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).upsert).toEqual([]);
+  });
+
+  it('removes a switched-off stored hold, even one that was also moved', () => {
+    const state = run(
+      [storedHold(4), storedHold(5)],
+      { type: 'MOVE_HOLD', id: 4, cx: 1, cy: 1 },
+      { type: 'TOGGLE_HOLD', id: 4 },
+    );
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.removeIds).toEqual([4]);
+    expect(plan.upsert).toEqual([]);
+  });
+
+  it('removes a rejected stored hold the removal list somehow lost', () => {
+    const state = run([storedHold(4, { review: 'rejected' })]);
+    expect(state.removedIds).toEqual([]);
+    expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).removeIds).toEqual([4]);
+  });
+
+  it('a switched-off hold does not count against the cap', () => {
+    const holds = Array.from({ length: 1500 }, (_, index) => storedHold(index + 1));
+    const state = run(
+      holds,
+      { type: 'TOGGLE_HOLD', id: 1 },
+      { type: 'ADD_HOLD', geometry: { cx: 1, cy: 1, r: 5, outline: null } },
+    );
+    expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).overCap).toBe(false);
+  });
+});
+
+describe('prepareCommit', () => {
+  const confident = (id: number) =>
+    storedHold(id, { source: 'AUTO', confidence: SPRAY_ON_CUTOFF + 0.2, review: 'pending' });
+  const unsure = (id: number) =>
+    storedHold(id, { source: 'AUTO', confidence: SPRAY_ON_CUTOFF - 0.1, review: 'pending' });
+
+  it('writes the confident finds and leaves the maybes out', () => {
+    const { plan } = prepareCommit(run([confident(-1), unsure(-2), confident(-3)]), IDENTITY_HOMOGRAPHY);
+    expect(plan.writtenIds).toEqual([-3, -1]);
+    expect(plan.upsert.every((hold) => hold.source === 'AUTO')).toBe(true);
+  });
+
+  it('respects a confident find the climber switched off', () => {
+    const { plan } = prepareCommit(
+      run([confident(-1), confident(-2)], { type: 'TOGGLE_HOLD', id: -1 }),
+      IDENTITY_HOMOGRAPHY,
+    );
+    expect(plan.writtenIds).toEqual([-2]);
+  });
+
+  it('is idempotent on its own output', () => {
+    const first = prepareCommit(run([confident(-1), unsure(-2), storedHold(3)]), IDENTITY_HOMOGRAPHY);
+    const second = prepareCommit(first.state, IDENTITY_HOMOGRAPHY);
+    expect(second.state).toBe(first.state);
+    expect(second.plan).toEqual(first.plan);
+  });
+
+  it('cannot write a hold twice: after the save lands, a second commit has nothing to add', () => {
+    const first = prepareCommit(run([confident(-1), confident(-2)]), IDENTITY_HOMOGRAPHY);
+    const saved = sprayEditorReducer(first.state, { type: 'MARK_SAVED', writtenIds: first.plan.writtenIds });
+    const second = prepareCommit(saved, IDENTITY_HOMOGRAPHY);
+    expect(second.plan.upsert).toEqual([]);
+    expect(planHasWork(second.plan)).toBe(false);
+    // ...and undo cannot reach a snapshot where those finds are unwritten again.
+    expect(sprayEditorReducer(saved, { type: 'UNDO' })).toBe(saved);
   });
 });

@@ -22,6 +22,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   ensureSprayWallLoaded,
   getSprayWallLoadState,
+  sprayWallViewerCanEdit,
+  sprayWallViewerCanEditClimbs,
   subscribeToSprayWalls,
   type SprayWallLoadState,
 } from './spray-wall-registry';
@@ -44,6 +46,49 @@ export {
 export function useSprayWallLoader(): void {
   const queryClient = useQueryClient();
   useEffect(() => installSprayWallLoader(queryClient), [queryClient]);
+}
+
+/**
+ * Whether the viewer can edit the wall behind a board config. `false` on every
+ * catalogue board, and until the wall has registered.
+ *
+ * Asks for the wall too, so a registration past its revalidation window is
+ * re-read: this is what bounds how stale the answer can get. Safe per row: one
+ * Map lookup, and at most one in-flight fetch per wall.
+ */
+export function useSprayWallViewerCanEdit(boardName: string | null | undefined, layoutId: number | null): boolean {
+  const sprayLayoutId = boardName === 'spray' ? layoutId : null;
+  useEffect(() => {
+    if (sprayLayoutId != null) ensureSprayWallLoaded(sprayLayoutId);
+  }, [sprayLayoutId]);
+  return useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(
+      () => (sprayLayoutId == null ? false : sprayWallViewerCanEdit('spray', sprayLayoutId)),
+      [sprayLayoutId],
+    ),
+  );
+}
+
+/**
+ * Whether the viewer can edit climbs on the wall behind a board config (#6025).
+ * `false` on every catalogue board, and until the wall has registered.
+ */
+export function useSprayWallViewerCanEditClimbs(
+  boardName: string | null | undefined,
+  layoutId: number | null,
+): boolean {
+  const sprayLayoutId = boardName === 'spray' ? layoutId : null;
+  useEffect(() => {
+    if (sprayLayoutId != null) ensureSprayWallLoaded(sprayLayoutId);
+  }, [sprayLayoutId]);
+  return useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(
+      () => (sprayLayoutId == null ? false : sprayWallViewerCanEditClimbs('spray', sprayLayoutId)),
+      [sprayLayoutId],
+    ),
+  );
 }
 
 export type UseSprayWallResult = {

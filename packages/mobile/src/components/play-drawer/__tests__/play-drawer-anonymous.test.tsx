@@ -254,6 +254,7 @@ vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
 // for — the banner through the design-system Button, the handoff through
 // Sentry — and neither is what is under test here.
 vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
+vi.mock('../use-can-edit-displayed-climb', () => ({ useCanEditDisplayedClimb: () => false }));
 vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
 }));
@@ -280,6 +281,7 @@ vi.mock('../use-wall-climb', () => ({ useWallClimb: () => wall }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: false }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
     recorded.favoriteStatus.push(options ?? {});

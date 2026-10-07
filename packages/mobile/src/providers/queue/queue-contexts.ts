@@ -1,6 +1,7 @@
 import type { WidgetMirrorEvent } from '../../../modules/live-activity/src/index';
 import { createContext, useContext } from 'react';
 import type {
+  ClimbAuthoredPatch,
   QueueState,
   QueueAction,
   ClimbQueueItem,
@@ -103,9 +104,18 @@ type QueueContextValue = {
    */
   appendQueueItems: (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean }) => number;
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
+  /**
+   * Correct every queued copy of a climb its setter just saved again (name,
+   * holds, draft state). `setCurrentClimb` deliberately leaves an item that is
+   * already current untouched, and never rewrites a slot already in the queue,
+   * so without this a climb published from the editor keeps reading as a draft.
+   * Local-only; touches neither the queue order nor the party session.
+   */
+  refreshAuthoredClimb: (climbUuid: string, patch: ClimbAuthoredPatch) => void;
   nextClimb: () => void;
   previousClimb: () => void;
-  mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<void>;
+  /** Resolves true only when the server accepted the orientation. */
+  mirrorCurrentClimb: (mirrored: boolean, queueItemUuid: string) => Promise<boolean>;
   dispatchWidgetMirror: (event: Extract<WidgetMirrorEvent, { kind: 'confirmed' }>) => Promise<boolean>;
   /**
    * Select the absolute native navigation target with its correlation ID.

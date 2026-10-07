@@ -17,11 +17,21 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const wallQueryState = vi.hoisted(() => ({ current: { data: null as unknown, isPending: false } }));
+const wallQueryState = vi.hoisted(() => ({
+  current: { data: null, isPending: false } as { data: unknown; isPending: boolean; isFetching?: boolean },
+}));
 const pickResult = vi.hoisted(() => ({
   current: { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } } as unknown,
 }));
 const discardMutateAsync = vi.hoisted(() => vi.fn(async () => true));
+const createMutateAsync = vi.hoisted(() => vi.fn());
+const refetchWall = vi.hoisted(() => vi.fn());
+/** The crop step's props, so a test can press its Done. */
+const adjustProps = vi.hoisted(() => ({
+  current: null as null | { onDone: (edit: unknown) => void; onCancel: () => void; body: string },
+}));
+const renderWallPhotoEdit = vi.hoisted(() => vi.fn());
+const discardLocalPhoto = vi.hoisted(() => vi.fn());
 /** The corner marker's props, so a test can hand the screen four corners. */
 const markerProps = vi.hoisted(() => ({ current: null as null | { onChange?: (quad: unknown) => void } }));
 
@@ -39,7 +49,7 @@ vi.mock('react-native', () => ({
 vi.mock('../use-spray-leave-guard', () => ({ useSprayLeaveGuard: vi.fn() }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img', { 'data-testid': 'preview' }) }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: vi.fn(), replace: vi.fn() }),
   useNavigation: () => ({ addListener: () => () => {}, dispatch: vi.fn() }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -70,15 +80,34 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: (e: unknown) => (e as Error)?.message,
-  extractGraphqlCode: () => undefined,
+  extractGraphqlCode: (error: unknown) => (error as { extensions?: { code?: string } })?.extensions?.code,
 }));
 
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', {}, children),
 }));
+type ButtonMockProps = {
+  title: string;
+  onPress?: () => void;
+  disabled?: boolean;
+  variant?: string;
+  size?: string;
+  role?: string;
+};
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, disabled }: { title: string; onPress?: () => void; disabled?: boolean }) =>
-    createElement('button', { onClick: onPress, disabled, 'data-disabled': disabled ? 'true' : 'false' }, title),
+  Button: ({ title, onPress, disabled, variant, size, role }: ButtonMockProps) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        disabled,
+        'data-disabled': disabled ? 'true' : 'false',
+        'data-variant': variant ?? 'default',
+        'data-size': size ?? 'default',
+        'data-role': role ?? '',
+      },
+      title,
+    ),
 }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
@@ -121,14 +150,21 @@ vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () =
 vi.mock('../../../lib/spray/wall-photo', () => ({
   pickWallPhotoFromLibrary: vi.fn(async () => pickResult.current),
   pickWallPhotoFromCamera: vi.fn(async () => pickResult.current),
+  renderWallPhotoEdit,
   rescalePoint: (point: [number, number]) => point,
 }));
+vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto }));
+vi.mock('../SprayPhotoAdjustStep', () => ({
+  SprayPhotoAdjustStep: (props: { onDone: (edit: unknown) => void; onCancel: () => void; body: string }) => {
+    adjustProps.current = props;
+    return createElement('div', { 'data-testid': 'adjust' }, props.body);
+  },
+}));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
-  useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
-  fetchSprayWallVersions: vi.fn(),
+  useCreateSprayWallVersion: () => ({ mutateAsync: createMutateAsync }),
 }));
 vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
-  useSprayWallWithVersions: () => wallQueryState.current,
+  useSprayWallWithVersions: () => ({ ...wallQueryState.current, refetch: refetchWall }),
   useDiscardSprayWallVersion: () => ({ mutateAsync: discardMutateAsync, isPending: false }),
 }));
 
@@ -154,7 +190,16 @@ const renderScreen = () => render(createElement(SprayWallResetScreen, { wallUuid
 beforeEach(() => {
   markerProps.current = null;
   discardMutateAsync.mockClear();
-  pickResult.current = { outcome: 'picked', photo: { uri: 'file:///w.jpg', width: 2048, height: 1536 } };
+  createMutateAsync.mockReset();
+  refetchWall.mockReset();
+  const base = { uri: 'file:///w.jpg', width: 2048, height: 1536 };
+  pickResult.current = {
+    outcome: 'picked',
+    photo: { ...base, base, original: { uri: 'file:///w.heic', longSide: 4032 }, edit: null },
+  };
+  adjustProps.current = null;
+  renderWallPhotoEdit.mockReset().mockResolvedValue({ uri: 'file:///w-edited.jpg', width: 1800, height: 1200 });
+  discardLocalPhoto.mockReset();
   wallQueryState.current = { data: EDITABLE_WALL, isPending: false };
 });
 
@@ -186,6 +231,27 @@ describe('SprayWallResetScreen', () => {
       getByText('sprayReset.openDraft.discard').click();
     });
     expect(discardMutateAsync).toHaveBeenCalledWith('2');
+  });
+
+  // #5960: Resume was drawn smaller than the destructive discard under it.
+  it('makes Resume the primary action and the discard a destructive text button', () => {
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        versions: [
+          { id: '2', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } },
+          ...EDITABLE_WALL.versions,
+        ],
+      },
+      isPending: false,
+    };
+    const { getByText } = renderScreen();
+    const resume = getByText('sprayDetection.resume');
+    expect(resume.getAttribute('data-variant')).toBe('filled');
+    expect(resume.getAttribute('data-size')).toBe('large');
+    const discard = getByText('sprayReset.openDraft.discard');
+    expect(discard.getAttribute('data-variant')).toBe('text');
+    expect(discard.getAttribute('data-role')).toBe('destructive');
   });
 
   it('resumes the existing reset detection without manual fallback or changing the published wall', async () => {
@@ -281,5 +347,161 @@ describe('SprayWallResetScreen', () => {
 
     expect(getByText('sprayReset.photo.title')).toBeTruthy();
     expect(getByText('sprayWizard.photo.next').getAttribute('data-disabled')).toBe('true');
+  });
+});
+
+describe('reset draft ownership and retry identity', () => {
+  it('routes a hold-edit draft back to Edit holds without offering reset detection', () => {
+    const photo = { url: 'https://private.example/spray-walls/aaaa/bbbb.jpg?signature=one', width: 800, height: 600 };
+    const geometry = { photo, anchors: null, homography: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
+    wallQueryState.current = {
+      data: {
+        ...EDITABLE_WALL,
+        currentVersion: { ...EDITABLE_WALL.currentVersion, ...geometry },
+        versions: [{ id: '2', number: 2, status: 'DRAFT', ...geometry }],
+      },
+      isPending: false,
+    };
+    const mounted = renderScreen();
+    expect(mounted.getByText('sprayReset.openDraft.holdEditTitle')).toBeTruthy();
+    expect(mounted.queryByText('sprayDetection.resume')).toBeNull();
+    expect(mounted.queryByText('sprayReset.openDraft.discard')).toBeNull();
+  });
+
+  it('retries the same uploaded object after a lost create response', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto)
+      .mockReset()
+      .mockResolvedValue({ photoId: 'chosen-photo', width: 800, height: 600, determinate: true });
+    createMutateAsync.mockRejectedValueOnce(new Error('lost response')).mockResolvedValueOnce({ id: '2', number: 2 });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    await act(async () => mounted.getByText('sprayWizard.upload.retry').click());
+    expect(uploadSprayWallPhoto).toHaveBeenCalledTimes(1);
+    expect(createMutateAsync).toHaveBeenCalledTimes(2);
+    expect(createMutateAsync.mock.calls[1]?.[0]).toEqual(createMutateAsync.mock.calls[0]?.[0]);
+    expect(createMutateAsync.mock.calls[1]?.[0].photoId).toBe('chosen-photo');
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('2');
+  });
+
+  it('offers explicit recovery when an older draft blocks the chosen photo', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto)
+      .mockReset()
+      .mockResolvedValue({ photoId: 'chosen-photo', width: 800, height: 600, determinate: true });
+    createMutateAsync.mockRejectedValue({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } });
+    refetchWall.mockImplementation(async () => {
+      wallQueryState.current = {
+        data: {
+          ...EDITABLE_WALL,
+          versions: [{ id: 'older', number: 2, status: 'DRAFT', photo: { width: 800, height: 600 } }],
+        },
+        isPending: false,
+      };
+    });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    expect(mounted.getByText('sprayReset.openDraft.title')).toBeTruthy();
+    expect(mounted.queryByTestId('detection')).toBeNull();
+    expect(createMutateAsync).toHaveBeenCalledTimes(1);
+    await act(async () => mounted.getByText('sprayDetection.resume').click());
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('older');
+  });
+});
+
+describe('fresh history and discard recovery', () => {
+  it('waits for fresh history before offering cached draft actions', () => {
+    wallQueryState.current = {
+      data: { ...EDITABLE_WALL, versions: [{ id: 'stale', number: 2, status: 'DRAFT' }] },
+      isPending: false,
+      isFetching: true,
+    };
+    const mounted = renderScreen();
+    expect(mounted.getByTestId('spinner')).toBeTruthy();
+    expect(mounted.queryByText('sprayDetection.resume')).toBeNull();
+    wallQueryState.current = { data: EDITABLE_WALL, isPending: false, isFetching: false };
+    mounted.rerender(createElement(SprayWallResetScreen, { wallUuid: 'wall-1' }));
+    expect(mounted.queryByTestId('spinner')).toBeNull();
+    expect(mounted.getByText('sprayWizard.photo.next')).toBeTruthy();
+  });
+
+  it('discards a conflicting draft and retries with the chosen photo upload', async () => {
+    const { uploadSprayWallPhoto } = await import('../../../lib/spray/spray-wall-photo-upload');
+    vi.mocked(uploadSprayWallPhoto).mockReset().mockResolvedValue({
+      photoId: 'chosen-photo',
+      width: 800,
+      height: 600,
+      determinate: true,
+    });
+    createMutateAsync
+      .mockRejectedValueOnce({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } })
+      .mockResolvedValueOnce({ id: 'replacement', number: 2 });
+    refetchWall.mockImplementation(async () => {
+      wallQueryState.current = {
+        data: { ...EDITABLE_WALL, versions: [{ id: 'older', number: 2, status: 'DRAFT' }] },
+        isPending: false,
+      };
+    });
+    discardMutateAsync.mockImplementationOnce(async () => {
+      wallQueryState.current = { data: EDITABLE_WALL, isPending: false };
+      return true;
+    });
+    const mounted = renderScreen();
+    await act(async () => mounted.getByText('sprayWizard.photo.library').click());
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    await act(async () => mounted.getByText('sprayReset.openDraft.discard').click());
+    expect(discardMutateAsync).toHaveBeenCalledWith('older');
+    expect(mounted.getByText('sprayWizard.photo.next').getAttribute('data-disabled')).toBe('false');
+    act(() => mounted.getByText('sprayWizard.photo.next').click());
+    act(() => markerProps.current?.onChange?.(SQUARE));
+    await act(async () => mounted.getByText('sprayReset.anchors.use').click());
+    expect(uploadSprayWallPhoto).toHaveBeenCalledTimes(1);
+    expect(createMutateAsync).toHaveBeenCalledTimes(2);
+    expect(createMutateAsync.mock.calls[1]?.[0]).toEqual(createMutateAsync.mock.calls[0]?.[0]);
+    expect(mounted.getByTestId('detection').getAttribute('data-version')).toBe('replacement');
+  });
+
+  it('crops the photo before the corners, and asks for the corners inside the crop', async () => {
+    const { getByText, getByTestId, queryByTestId } = renderScreen();
+    await act(async () => {
+      getByText('sprayWizard.photo.library').click();
+    });
+
+    act(() => getByText('sprayWizard.photo.adjust').click());
+    expect(getByTestId('adjust').textContent).toBe('sprayReset.adjust.body');
+
+    const edit = { quarterTurns: 1, crop: { left: 0, top: 0.1, right: 1, bottom: 0.9 } };
+    await act(async () => adjustProps.current?.onDone(edit));
+
+    expect(renderWallPhotoEdit).toHaveBeenCalledWith(expect.objectContaining({ uri: 'file:///w.jpg' }), edit);
+    expect(queryByTestId('adjust')).toBeNull();
+    expect(getByText('sprayReset.photo.title')).toBeTruthy();
+    // The first edit replaced the picked base, which is never deleted.
+    expect(discardLocalPhoto).not.toHaveBeenCalled();
+
+    // The corners come next, and are marked on the cropped photo.
+    act(() => getByText('sprayWizard.photo.next').click());
+    expect(getByText('sprayReset.anchors.use').getAttribute('data-disabled')).toBe('true');
+  });
+
+  it('stays on the crop step when the edit will not render', async () => {
+    renderWallPhotoEdit.mockRejectedValue(new Error('no memory'));
+    const { getByText, getByTestId } = renderScreen();
+    await act(async () => {
+      getByText('sprayWizard.photo.library').click();
+    });
+    act(() => getByText('sprayWizard.photo.adjust').click());
+    await act(async () =>
+      adjustProps.current?.onDone({ quarterTurns: 2, crop: { left: 0, top: 0, right: 1, bottom: 1 } }),
+    );
+    expect(getByTestId('adjust')).toBeTruthy();
   });
 });

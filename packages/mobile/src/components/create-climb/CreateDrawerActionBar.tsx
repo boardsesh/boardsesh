@@ -284,8 +284,10 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
 
       {/* Always rendered, even with nothing to say — see CreateDraftStatusRow.
           While the heat is on its line takes the same box, unless the draft has
-          something urgent to say. */}
-      {heatmapLine && draftStatus?.tone !== 'error' && draftStatus?.tone !== 'warning' ? (
+          something urgent to say. "What a publish still needs" is not urgent
+          (`yieldsToHeatmap`): it is up for most of an ordinary spray session,
+          and it is still announced from the offscreen row below. */}
+      {heatmapLine && !statusOutranksHeatmap(draftStatus) ? (
         <>
           <View style={statusRowStyles.row} testID="create-heatmap-line">
             {heatmapLine}
@@ -306,6 +308,13 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
     </View>
   );
 });
+
+/** A failed save or "nothing is being stored" beats the heat line; a publish hint does not. */
+function statusOutranksHeatmap(status: DraftStatusView | null): boolean {
+  if (status === null) return false;
+  if (status.tone === 'muted') return false;
+  return status.yieldsToHeatmap !== true;
+}
 
 function SaveButton({
   saveState,
@@ -334,8 +343,10 @@ function SaveButton({
         // we pass nothing so the filled Button uses its own scheme-aware
         // `primaryFill` (lifts to #7C3AED in dark), matching every other CTA.
         tintColor={view.tint === 'success' ? brandColors.success : undefined}
-        // A blocked publish disables the button; the status line directly below
-        // names the missing requirement, so it is never mute.
+        // A publish with no start or no finish disables the button; the status
+        // line directly below names what is missing, so it is never mute. A
+        // missing setter grade does NOT disable it — that tap opens the grade
+        // rail instead (#5954).
         disabled={view.disabled || publishBlocked}
         onPress={onSave}
       />

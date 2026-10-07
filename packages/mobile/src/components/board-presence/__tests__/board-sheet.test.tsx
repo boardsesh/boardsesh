@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, createRef, forwardRef, useImperativeHandle, type ReactNode, type Ref } from 'react';
-import type { BoardPresenceClimb, BoardPresenceStats, Climb } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb, BoardPresenceStats, Climb, UserBoard } from '@boardsesh/shared-schema';
 
 const presence = vi.hoisted(() => ({
   currentClimb: null as BoardPresenceClimb | null,
@@ -449,6 +449,59 @@ describe('BoardSheet', () => {
 
     ref.current?.dismiss();
     expect(sheetModal.dismiss).toHaveBeenCalled();
+  });
+
+  it('forwards the active spray wall actions from the presented panel', () => {
+    const activeSprayWall: UserBoard = {
+      uuid: '2ad0c896-6d22-47b4-875e-3f2221942d0a',
+      slug: 'garage-wall',
+      ownerId: 'owner-1',
+      boardType: 'spray',
+      layoutId: 4242,
+      sizeId: 4242,
+      setIds: '4242',
+      name: 'Garage wall',
+      isPublic: false,
+      isUnlisted: true,
+      hideLocation: false,
+      isOwned: true,
+      angle: 40,
+      isAngleAdjustable: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      totalAscents: 0,
+      uniqueClimbers: 0,
+      followerCount: 0,
+      commentCount: 0,
+      isFollowedByMe: false,
+      canEdit: true,
+    };
+    const ref = createRef<BoardSheetHandle>();
+    const onOpenSprayMaintenance = vi.fn();
+    const onShareSprayWall = vi.fn();
+    const { getByLabelText, queryByLabelText } = render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: activeSprayWall.name,
+        onClose: noop,
+        onSwitchBoard: noop,
+        boardConfig: { ...boardConfig, boardName: 'spray', layoutId: 4242, sizeId: 4242, setIds: '4242' },
+        activeBoard: activeSprayWall,
+        onOpenSprayMaintenance,
+        onShareSprayWall,
+      }),
+    );
+    expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
+
+    act(() => ref.current?.present());
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.newPhoto'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.shareLink'));
+
+    expect(onOpenSprayMaintenance.mock.calls).toEqual([
+      [activeSprayWall.uuid, 'editHolds'],
+      [activeSprayWall.uuid, 'newPhoto'],
+    ]);
+    expect(onShareSprayWall).toHaveBeenCalledExactlyOnceWith(activeSprayWall.uuid);
   });
 
   // The sheet used to pass its colour unconditionally. That was meant to darken

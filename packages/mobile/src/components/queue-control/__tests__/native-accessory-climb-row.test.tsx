@@ -482,4 +482,24 @@ describe('NativeAccessoryClimbRow', () => {
     expect(container.textContent).toContain('On The Wall');
     expect(container.querySelector('[data-tick="true"]')).not.toBeNull();
   });
+
+  // #5954: a draft is left out of the Climbs list, so the platter says why the
+  // climb it is showing is not in it.
+  it('marks a draft climb with the Draft chip', () => {
+    const { container } = render(
+      <NativeAccessoryClimbRow climb={makeClimb({ is_draft: true })} placement="regular" width={344} />,
+    );
+    const chip = container.querySelector('[data-label="createClimbForm.draftBadge"]');
+    expect(chip?.textContent).toBe('createClimbForm.draftBadge');
+  });
+
+  it('leaves a published climb, and one that does not say, without the chip', () => {
+    for (const isDraft of [false, null, undefined]) {
+      const { container, unmount } = render(
+        <NativeAccessoryClimbRow climb={makeClimb({ is_draft: isDraft })} placement="regular" width={344} />,
+      );
+      expect(container.querySelector('[data-label="createClimbForm.draftBadge"]')).toBeNull();
+      unmount();
+    }
+  });
 });

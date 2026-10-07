@@ -60,6 +60,14 @@ export type SprayWallUploadFinishedProps = {
   determinate: boolean;
   /** 1 for the first try. A retry is a different population; never pool them. */
   attempt: number;
+  /**
+   * Whether the climber cropped the photo before uploading it ("Crop or rotate"
+   * on the photo step). Omitted by clients that predate the step, so read a
+   * missing value as unknown, not as false.
+   */
+  cropped?: boolean;
+  /** Whether they turned it a quarter turn or more. Same omission rule as `cropped`. */
+  rotated?: boolean;
 };
 
 export function sprayWallUploadFinished(
@@ -110,6 +118,24 @@ export function sprayHoldsReviewed(
   return { name: SHARED_EVENTS.SprayHoldsReviewed, properties };
 }
 
+/**
+ * Which part of the post-publish bind did not finish. `navigate` is the dismiss
+ * that was dispatched and did not land; the other three ran past their deadline.
+ */
+export type SprayBindStage = 'visibility' | 'fetch_board' | 'bind' | 'navigate';
+
+export type SprayWallBindStalledProps = {
+  stage: SprayBindStage;
+  /** From the publish landing to the moment the stall was called. */
+  elapsedMs: number;
+};
+
+export function sprayWallBindStalled(
+  properties: SprayWallBindStalledProps,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallBindStalled, SprayWallBindStalledProps> {
+  return { name: SHARED_EVENTS.SprayWallBindStalled, properties };
+}
+
 export type SprayWallResetPreviewedProps = {
   keptCount: number;
   removedCount: number;
@@ -140,6 +166,8 @@ export type SprayWallResetAppliedProps = {
    * thing that makes remix able to suggest a successor months later.
    */
   moveCount: number;
+  /** The owner marked it a full reset, retiring the climbs that lost holds (#6024). */
+  fullReset: boolean;
 };
 
 export function sprayWallResetApplied(
@@ -149,7 +177,11 @@ export function sprayWallResetApplied(
 }
 
 /** Which surface offered the remix. One today; named so a second is legible. */
-export type SprayRemixSurface = 'play_drawer';
+/**
+ * Where a broken climb's Edit or Remix started. `set_active` is the editor
+ * opening by itself because someone who can fix the climb set it active (#5493).
+ */
+export type SprayRemixSurface = 'play_drawer' | 'set_active';
 
 export type ClimbRemixedFromBrokenProps = {
   /** Holds this climb lost to a reset. Never which holds. */
@@ -164,6 +196,15 @@ export function climbRemixedFromBroken(
   properties: ClimbRemixedFromBrokenProps,
 ): SprayWallPayload<typeof SHARED_EVENTS.ClimbRemixedFromBroken, ClimbRemixedFromBrokenProps> {
   return { name: SHARED_EVENTS.ClimbRemixedFromBroken, properties };
+}
+
+/** Same shape as the remix event, so the two read side by side (#6024). */
+export type ClimbEditedFromBrokenProps = ClimbRemixedFromBrokenProps;
+
+export function climbEditedFromBroken(
+  properties: ClimbEditedFromBrokenProps,
+): SprayWallPayload<typeof SHARED_EVENTS.ClimbEditedFromBroken, ClimbEditedFromBrokenProps> {
+  return { name: SHARED_EVENTS.ClimbEditedFromBroken, properties };
 }
 
 /**

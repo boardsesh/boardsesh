@@ -25,10 +25,15 @@ const trackMock = vi.hoisted(() => vi.fn());
 const alertMock = vi.hoisted(() => vi.fn());
 const buildUpdateInputMock = vi.hoisted(() => vi.fn());
 const updateSprayWallMock = vi.hoisted(() => vi.fn());
+const background = vi.hoisted(() => ({
+  changed: false,
+  save: vi.fn(async (): Promise<{ outcome: string; reason?: string | null }> => ({ outcome: 'saved' })),
+}));
 
 // What each test varies: the gym on file, the gym the picker is showing, and
 // whether the board being edited is also the active one.
 const state = vi.hoisted(() => ({
+  ownerDisplayName: undefined as string | undefined,
   boardGymUuid: null as string | null,
   selectedGym: null as { uuid: string; name: string } | null,
   activeBoardUuid: null as string | null,
@@ -43,12 +48,14 @@ const state = vi.hoisted(() => ({
 
 const board = {
   uuid: 'board-uuid',
+  ownerId: 'owner-id',
   layoutId: 3,
   sizeId: 1,
   setIds: '5,6,7',
   name: 'Klimmuur MoonBoard',
   gymUuid: null,
   canEdit: true,
+  isOwned: true,
 } as unknown as UserBoard;
 
 /** A graphql-request ClientError carrying the server's duplicate rejection. */
@@ -90,10 +97,11 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
       gymUuid: state.boardGymUuid,
       isPublic: state.boardIsPublic,
       isUnlisted: state.boardIsUnlisted,
+      ownerDisplayName: state.ownerDisplayName,
     },
     isLoading: false,
   }),
-  useProfile: () => ({ data: { displayName: 'Marco' } }),
+  useProfile: () => ({ data: { id: 'owner-id', displayName: 'Marco' } }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
   useUpdateSprayWall: () => ({ mutateAsync: updateSprayWallMock }),
@@ -130,7 +138,7 @@ vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
 }));
 
 vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
-  formatDefaultBoardName: () => 'Default name',
+  formatDefaultBoardName: ({ userName }: { userName?: string | null }) => `${userName ?? 'nobody'}'s board`,
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
@@ -162,6 +170,20 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+vi.mock('../../../src/components/spray-wall/SprayWallBackgroundPicker', () => ({
+  SprayWallBackgroundPicker: () => null,
+}));
+vi.mock('../../../src/components/spray-wall/use-spray-wall-background-editor', () => ({
+  useSprayWallBackgroundEditor: () => ({
+    gate: { kind: 'unsupported' },
+    art: null,
+    value: 'photo',
+    onChange: () => {},
+    changed: background.changed,
+    save: background.save,
+  }),
+}));
+
 const { default: EditBoard } = await import('../edit');
 
 /** The buttons handed to the last `Alert.alert` call. */
@@ -179,6 +201,9 @@ beforeEach(() => {
   state.boardIsUnlisted = false;
   state.builderIsPublic = false;
   state.builderIsUnlisted = false;
+  state.ownerDisplayName = undefined;
+  background.changed = false;
+  background.save.mockResolvedValue({ outcome: 'saved' });
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -195,6 +220,31 @@ describe('EditBoard', () => {
       expect.objectContaining({ currentConfig: { layoutId: 3, sizeId: 1, setIds: '5,6,7' } }),
     );
     expect(updateBoardMock.mock.calls[0][0].allowDuplicateConfig).toBeUndefined();
+  });
+
+  // #5960 review: an admin clearing somebody's board name must not rename it
+  // after themselves. The signed-in profile here is "Marco".
+  it("falls back to the OWNER's name, not the editor's, for a cleared name", async () => {
+    state.ownerDisplayName = 'Test User';
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(buildUpdateInputMock).toHaveBeenCalledTimes(1));
+    expect(buildUpdateInputMock).toHaveBeenCalledWith(
+      'board-uuid',
+      expect.objectContaining({ fallbackName: "Test User's board" }),
+    );
+  });
+
+  it("uses the editor's name when the board carries no owner name", async () => {
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(buildUpdateInputMock).toHaveBeenCalledTimes(1));
+    expect(buildUpdateInputMock).toHaveBeenCalledWith(
+      'board-uuid',
+      expect.objectContaining({ fallbackName: "Marco's board" }),
+    );
   });
 
   it('asks instead of failing when the config collides with a sibling board', async () => {
@@ -465,5 +515,65 @@ describe('EditBoard — spray wall visibility', () => {
     await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
     expect(updateBoardMock.mock.calls[0][0].isPublic).toBe(true);
     expect(updateSprayWallMock).not.toHaveBeenCalled();
+  });
+
+  it('saves a changed wall background and leaves on success', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+    expect(background.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the background alone when it did not change', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+    expect(background.save).not.toHaveBeenCalled();
+  });
+
+  it('says why when the server refuses a generated look, and stays', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'keystone' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('sprayBackground.notAvailable');
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('still saves the background when visibility was refused, and says both', async () => {
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    updateSprayWallMock.mockRejectedValueOnce({
+      response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } }] },
+    });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'keystone' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(background.save).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('error').textContent).toBe(
+      'mobile.sprayVisibility.ownerOnlyError sprayBackground.notAvailable',
+    );
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('names the missing corner pins when that is why the look was refused', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'no-pins' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('sprayBackground.notAvailableNoPins');
   });
 });

@@ -760,7 +760,7 @@ version. The toolbar says so.
 
 SW-08 (#5441) gave the editor a second **target**. `outline-editor/editor-target.ts` names
 the two and what each may do — and it is one pure function, `editorTargetCapabilities`,
-because the gate, the toolbar, the SVG layer and the write path all branch on the same
+because the gate, the editor chrome, the SVG layer and the write path all branch on the same
 answer and a capability computed twice is a capability that will disagree with itself.
 
 | | `catalogue` | `sprayWall` |
@@ -775,27 +775,65 @@ answer and a capability computed twice is a capability that will disagree with i
 The catalogue path is untouched by all of it. `DrawStrokeOverlay`, `stroke.ts`,
 `OutlineSvgLayer` and `OutlineCanvasScreen` are the same files they were, which is what
 keeps the `manualActivation` + `pinchRef` coexistence and the round-trip ring algebra from
-drifting. The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
-mounts the *same* `DrawStrokeOverlay`, and reads what a stroke MEANT through the active tool
-instead of changing what a stroke IS.
+drifting. What the wall needed from `DrawStrokeOverlay` came in as opt-in props the
+catalogue never passes: `acceptStationaryTaps` (Add's Manual recognizer) and `loupe` (the
+magnifier over a finger stroke). The wall target reuses them rather than forking them: `SprayHoldEditorScreen`
+mounts the *same* `DrawStrokeOverlay` for its one-shot Trace tool, and everything else — tap
+to pick a ring and tap it again to switch it off or on, long press to pick one up and move
+it — goes through its own `SprayEditGestureOverlay` (see `docs/spray-walls.md`, "The hold
+editor").
 
-That reading is `spray-hold-tools.ts`, and it is pure. `classifyStroke` answers tap or drag
-on the stroke's BOUNDING BOX rather than its endpoints — a loop drawn around a hold ends
-roughly where it began, and judging it by its endpoints would call every traced outline a
-tap. A tap places a circle at the wall's median hold radius; a loop goes through
-`buildOutlineRing` unchanged, so a wall gets exactly the ring a board would, with the centre
-at the polygon centroid and the radius the equivalent-area one. A merge is the convex hull
-of the two silhouettes — a real polygon union is a clipping library this app will not grow
-for one tool, and a hull always contains both holds, is always simple, and always contains
-its own centroid, so the ring contract is always satisfiable.
+`DrawStrokeOverlay` has two OPT-IN props for the spray editor's iPad Pencil surface, and the
+catalogue editor passes neither, so its behaviour is unchanged. `declineOnSelectionSV`
+(the selected hold as `[id, cx, cy, r]`) fails a drawing touch at touch-down when it lands
+inside that hold, so an ancestor's drag can claim it. `onStylusSeen` fires once per mount
+at the first stylus touch-down. Their maths is inlined in the worklets for the same
+cross-module reason as the sampling. `PolygonTapOverlay` likewise gains an opt-in
+`stylusOnlySV` that fails a non-stylus touch at touch-down.
 
-State is one reducer with undo (`spray-hold-editor-reducer.ts`), modelled on `framesReducer`
-in `@boardsesh/create-climb-react`: a present, a capped past, a future, snapshot-based
-because a merge is not trivially invertible. Two rules in it are load-bearing rather than
+The geometry behind those tools is `spray-hold-tools.ts`, and it is pure. A tap in Add mode
+places a circle at the wall's median hold radius; a traced loop goes through `buildOutlineRing`
+unchanged, so a wall gets exactly the ring a board would, with the centre at the polygon
+centroid and the radius the equivalent-area one. A join is the convex hull of the two
+silhouettes — a real polygon union is a clipping library this app will not grow for one
+tool, and a hull always contains both holds, is always simple, and always contains its own
+centroid, so the ring contract is always satisfiable.
+
+**Refine** (the spray editor's add / erase brush) is the one place the wall target shares
+the brush ENGINE rather than a stroke chain: `src/brush.ts` and `src/raster.ts` (package
+exports `./brush` and `./raster`) and the mobile `outline-editor/use-brush-session.ts`, all
+shared with the catalogue editor's brush and kept byte-identical to it. A brush edit cannot
+be done on the ring directly, because a stroke is a swept disc rather than a boundary, so
+the engine round-trips through a bitmap: rasterise the ring, stamp the disc along the
+stroke, keep the piece covering the placement centre, trim one-cell necks, walk the border
+back out with the tracer's own follower and decimate it with `simplifyRing`. The session
+keeps that bitmap across strokes so successive strokes compose on one raster.
+
+The wall needs nothing changed in the engine, only an adapter around it
+(`outline-editor/spray-refine.ts`). The engine's numbers are absolute — two cells per unit,
+a 1.6-unit decimation tolerance, a 3-unit smallest brush — and spray board px are the
+photo's own pixels, where holds run from about 20 px to several hundred. So the adapter
+maps each hold into a frame centred on it with its radius at 32 units, which holds the
+precision at 5% of the hold's radius (what Trace keeps on a typical 40 px spray hold) and
+the bitmap at most 512 cells a side whatever the photo's resolution; 32 rather than 64
+because a one-shot stroke costs 17 ms in Node at 32 units and 70 ms at 64, and Hermes is
+slower. The brush is sized in screen points, so zooming in paints finer, and clamped
+between the engine's 3-unit floor and 0.6 of the hold's radius; the slider, its range and
+the per-lift costs are in `docs/spray-walls.md`.
+The adapter also owns the two spray rules the engine leaves to its caller: an erase through
+the hold's middle (the engine's `anchor-erased`) keeps the largest piece and moves the
+anchor onto it, built from the engine's own primitives; and every kept stroke must still be
+a storable hold — centroid and equivalent-area radius (`radiusForRing`), rounded then
+closed, `isValidOutlineRing`, the centre gate — with the anchor as the fallback centre when
+a concave area's centroid falls outside it. See `docs/spray-walls.md`, "The hold editor".
+
+State is one reducer with undo and redo (`spray-hold-editor-reducer.ts`), modelled on
+`framesReducer` in `@boardsesh/create-climb-react`: a present, a capped past and a future
+that every new edit empties, snapshot-based because a merge is not trivially invertible. Two rules in it are load-bearing rather than
 stylistic. A hold this session DREW is dropped outright on delete while one the wall already
 had is recorded for `removeSprayWallHolds` — the server's own split, because a climb set on
 an inherited hold has to stay findable. And a merge keeps the STORED hold as the survivor
-even when it is the second id selected, so the merge is a correction of a hold with history
+even when it is the second hold tapped, so the merge is a correction of a hold with history
 rather than a delete-plus-add that orphans every climb on it.
 
 The ring contract is imported, never restated. `outline-editor/ring-contract.ts` calls

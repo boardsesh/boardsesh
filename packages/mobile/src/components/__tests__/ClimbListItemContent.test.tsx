@@ -522,6 +522,52 @@ describe('ClimbListItemContent lost-holds chip', () => {
   });
 });
 
+// #5954: a draft is left out of the Climbs list, so every row that does show one
+// (Open drafts, your queue, the actions sheet preview) marks it with a chip.
+describe('ClimbListItemContent draft chip', () => {
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+    liveStatsOverride.current = null;
+  });
+
+  const chip = (container: HTMLElement) => container.querySelector('[aria-label="createClimbForm.draftBadge"]');
+
+  const renderWith = (isDraft: boolean | null | undefined, primarySubtitleOverride?: string) =>
+    render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, is_draft: isDraft, setter_username: 'marco' }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        primarySubtitleOverride={primarySubtitleOverride}
+      />,
+    );
+
+  it('marks a draft', () => {
+    const { container } = renderWith(true);
+    expect(chip(container)?.textContent).toBe('createClimbForm.draftBadge');
+  });
+
+  it('says it once: the subtitle no longer repeats the word', () => {
+    const { container } = renderWith(true);
+    expect(container.textContent?.split('createClimbForm.draftBadge').length).toBe(2);
+    expect(container.textContent).toContain('marco');
+  });
+
+  it('still marks a draft whose subtitle a caller replaced', () => {
+    // A queue row passes its own subtitle, which used to drop the only draft marker.
+    expect(chip(renderWith(true, 'Added by Sam').container)).not.toBeNull();
+  });
+
+  it('leaves a published climb unmarked, and one that does not say', () => {
+    expect(chip(renderWith(false).container)).toBeNull();
+    expect(chip(renderWith(null).container)).toBeNull();
+    expect(chip(renderWith(undefined).container)).toBeNull();
+  });
+});
+
 // #5917: exercise the actual indexed hook and status precedence, not a glyph stub.
 describe('ClimbListItemContent original and mirror statuses', () => {
   const tick = (overrides: Partial<StatusEntry> = {}): StatusEntry => ({

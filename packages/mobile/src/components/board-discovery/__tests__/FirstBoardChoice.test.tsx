@@ -107,7 +107,7 @@ describe('FirstBoardChoice', () => {
     expect(screen.getByRole('button', { name: 'Scan for the board in front of me' })).toBeTruthy();
   });
 
-  // Climbs' no-board entry with the spray-walls flag on: the builder behind My
+  // Climbs' no-board entry: the builder behind My
   // own board cannot make a spray wall.
   it('offers a spray wall only when the screen passes the path', () => {
     renderChoice();

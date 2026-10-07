@@ -7,7 +7,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 // A cold spray entry renders BEFORE the registry has the wall. `createClimbScreenKey`
 // folds the wall version in, but it reads that version out of a module-level map —
 // so unless this route subscribes, nothing re-renders when the wall lands: the
-// screen keeps its `-sv0` key, its editor never remounts, the version-keyed draft
+// screen keeps its `-svid0` key, its editor never remounts, the version-keyed draft
 // restore never re-runs, and every autosave goes into the slot the loader's
 // superseded-draft sweep has already removed.
 //
@@ -67,6 +67,7 @@ function registerWall(version: number) {
     wallUuid: 'wall-uuid',
     angle: 25,
     version,
+    versionId: version,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/photo',

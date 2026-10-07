@@ -21,6 +21,7 @@ function makeInput(overrides: Partial<BoardLookModelInput> = {}): BoardLookModel
     suggestion: null,
     onApplySuggestion: vi.fn(),
     onDismissSuggestion: vi.fn(),
+    sprayWalls: null,
     ...overrides,
   };
 }
@@ -92,6 +93,26 @@ describe('buildBoardLookModel — what the nav rows say is behind them', () => {
 
   it('counts the customised markers when some have moved', () => {
     expect(navRow(makeInput({ overriddenCount: 3 }), 'accessibility').subtitle).toContain('"count":3');
+  });
+});
+
+describe('buildBoardLookModel — spray walls', () => {
+  it('leaves the section out for a climber without spray walls', () => {
+    expect(sectionKeys(makeInput())).not.toContain('sprayWalls');
+  });
+
+  it('sits between the destinations and the reset, and flips the setting', () => {
+    const onUseOwnLookChange = vi.fn();
+    const input = makeInput({ sprayWalls: { useOwnLook: false, onUseOwnLookChange } });
+    expect(sectionKeys(input)).toEqual(['presets', 'destinations', 'sprayWalls', 'reset']);
+
+    const section = buildBoardLookModel(input).sections.find((candidate) => candidate.key === 'sprayWalls');
+    expect(section?.footer).toBe('mobile.settings.boardLook.sprayWalls.footer');
+    const row = section?.rows[0];
+    if (row?.kind !== 'toggle') throw new Error('no spray walls toggle');
+    expect(row.value).toBe(false);
+    row.onValueChange(true);
+    expect(onUseOwnLookChange).toHaveBeenCalledWith(true);
   });
 });
 

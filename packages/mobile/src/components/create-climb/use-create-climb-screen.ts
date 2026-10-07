@@ -22,6 +22,7 @@ import {
   computeCanUpdate,
   computeEditLocked,
   buildInitialFrames,
+  type HoldPlacement,
   type SavedClimbSnapshot,
 } from '@boardsesh/create-climb-react';
 import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
@@ -33,6 +34,8 @@ import { track } from '../../lib/analytics';
 import { trackBoardConnectTapped } from '../../lib/analytics-board-connect';
 import { useAuth } from '../../providers/auth-provider';
 import { useProfile, useClimb } from '../../lib/graphql/hooks';
+import { resolveProvisionalSetter } from './provisional-setter';
+import { climbEditRefusal, climbEditRefusalMessage } from './climb-edit-refusal';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -52,12 +55,14 @@ import { computeRoleCapacity, getNextBrushRole, getPaintRoles, type BrushRole } 
 import {
   authoringAngle,
   defaultAnyFeet,
+  defaultIsDraft,
   hasFootHolds,
   nextAnyFeetForFeetChange,
   requiresSetterGrade,
   sprayWallUuidFor,
 } from './spray-climb-rules';
 import { useLastUsedGrade } from './use-last-used-grade';
+import type { LostHoldPutBackReturn } from '../../lib/spray/lost-hold-put-back';
 import { getDifficultyIdForGradeName, getGradeLabel } from '../../lib/grade-label';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
@@ -113,6 +118,18 @@ type UseCreateClimbScreenArgs = {
    * grade again.
    */
   forkDifficultyId?: number | null;
+  /**
+   * The climber is back from putting a lost hold back on the wall (#5493): the
+   * working copy they left with, and the hold that went back on (null when they
+   * backed out). Applied once the editor's own seed has settled.
+   */
+  putBackReturn?: LostHoldPutBackReturn | null;
+  /**
+   * Fired once `putBackReturn` has been applied. `roleFull` is true when the
+   * hold came back but its role was already full (two starts or two finishes),
+   * so it could not go into the climb.
+   */
+  onPutBackApplied?: (roleFull: boolean) => void;
 };
 
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
@@ -283,13 +300,15 @@ export function useCreateClimbScreen({
   onStartedNewClimb,
   sprayWallToken = '',
   forkDifficultyId,
+  putBackReturn = null,
+  onPutBackApplied,
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
   const { isAuthenticated, saveClimb, updateClimb } = useBoardActions();
   const auth = useAuth();
   const { data: profile } = useProfile();
-  const { setCurrentClimb } = useQueueActions();
+  const { setCurrentClimb, refreshAuthoredClimb } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
@@ -357,6 +376,7 @@ export function useCreateClimbScreen({
     frameCount,
     currentFrameIndex,
     setHoldState,
+    placeHold,
     generateFramesString,
     currentFrameBleString,
     startingCount,
@@ -427,7 +447,10 @@ export function useCreateClimbScreen({
     if (isForking) return defaultAnyFeet(board.boardName) && !hasFootHolds(initialFrames?.[0] ?? {});
     return defaultAnyFeet(board.boardName);
   });
-  const [isDraft, setIsDraft] = useState(true);
+  // Where "Save as draft" starts. Off on a spray wall, where Save publishes
+  // (#5954); on everywhere else. A restored autosave slot and an edit session
+  // both overwrite this with the value they carry.
+  const [isDraft, setIsDraft] = useState(() => defaultIsDraft(board.boardName));
   // The setter's own grade, as a difficulty id on the shared Boardsesh scale.
   // Only boards with no crowd grade ask for it (`requiresSetterGrade`), and only
   // publishing needs it — a draft may sit ungraded, because the grade is the last
@@ -536,6 +559,10 @@ export function useCreateClimbScreen({
   // "edited since you saved" and "that save failed" stay true without a timer.
   // Inline "Start over?" confirm, rendered as sheet content — see handleNewClimb.
   const [pendingNewClimb, setPendingNewClimb] = useState(false);
+  // Bumped when Save is tapped to publish a climb that still needs the setter's
+  // grade, so the drawer can bring the grade rail into view. Zero means "no
+  // prompt outstanding" — a blank climb resets it.
+  const [focusGradeSignal, setFocusGradeSignal] = useState(0);
   // Bumped once per blank climb that ACTUALLY starts, so chrome can react to a
   // new climb rather than to the intent to start one. `handleNewClimb` only
   // raises the confirmation when there is unsaved work, and that confirmation
@@ -1170,6 +1197,59 @@ export function useCreateClimbScreen({
     [setHoldState, reclaimWall],
   );
 
+  /**
+   * Put a live hold in the climb in place of one a reset took off (#5493), in
+   * every frame the lost hold was in and with the role it had there — one undo
+   * step. Placements pointing past the last frame (a frame deleted since) fall
+   * back to the frame on screen, with the lost hold's first role. Returns false
+   * when the role is already full (two starts or finishes), so the caller can
+   * say so instead of the tap doing nothing.
+   */
+  const placeLostHoldReplacement = useCallback(
+    (replacementHoldId: number, placements: readonly HoldPlacement[]): boolean => {
+      if (placements.length === 0) return false;
+      const inRange = placements.filter((placement) => placement.frameIndex < frameCount);
+      const effective = inRange.length > 0 ? inRange : [{ frameIndex: currentFrameIndex, state: placements[0].state }];
+      const placed = placeHold(replacementHoldId, effective);
+      if (placed) {
+        reclaimWall();
+        lastPaintRef.current = null;
+      }
+      return placed;
+    },
+    [placeHold, frameCount, currentFrameIndex, reclaimWall],
+  );
+
+  // ---- Back from putting a lost hold back on the wall (#5493). ----
+  // Two steps on two renders: the working copy first (it replaces the frames),
+  // then the new hold into the frames that copy produced. `placeHold` reads the
+  // frames it is given, so placing in the same pass would read the pre-restore
+  // ones. Both wait for the editor's own seed (an edit's server copy and slot),
+  // which would otherwise land on top.
+  const [putBackStage, setPutBackStage] = useState<'waiting' | 'placing' | 'done'>(putBackReturn ? 'waiting' : 'done');
+  const putBackReturnRef = useRef(putBackReturn);
+  const onPutBackAppliedRef = useRef(onPutBackApplied);
+  onPutBackAppliedRef.current = onPutBackApplied;
+  useEffect(() => {
+    const pending = putBackReturnRef.current;
+    if (putBackStage !== 'waiting' || !pending || restoreEpoch === 0) return;
+    applyStoredDraft(pending.draft);
+    const restoredSavedClimb = parseSavedClimbSnapshot(pending.draft.savedClimbJson);
+    if (restoredSavedClimb) {
+      setSavedClimb(restoredSavedClimb);
+      setSavedSignature(pending.draft.savedPayloadSignature ?? null);
+      setSavedSignatureUnknown(pending.draft.savedPayloadSignature === undefined);
+    }
+    setPutBackStage('placing');
+  }, [putBackStage, restoreEpoch, applyStoredDraft]);
+  useEffect(() => {
+    const pending = putBackReturnRef.current;
+    if (putBackStage !== 'placing' || !pending) return;
+    const placed = pending.newHoldId === null ? true : placeLostHoldReplacement(pending.newHoldId, pending.placements);
+    setPutBackStage('done');
+    onPutBackAppliedRef.current?.(!placed);
+  }, [putBackStage, placeLostHoldReplacement]);
+
   // Editing or touching the transport takes the wall back from the queue.
   const handleDuplicateFrame = useCallback(() => {
     reclaimWall();
@@ -1279,7 +1359,9 @@ export function useCreateClimbScreen({
       // route — the boulder-pays-nothing invariant, broken one climb later.
       setRouteMode(false);
       setFramesPaceMs(DEFAULT_PACE_MS);
-      setIsDraft(true);
+      setIsDraft(defaultIsDraft(board.boardName));
+      // A grade prompt belongs to the climb it was raised for.
+      setFocusGradeSignal(0);
       setSavedClimb(null);
       setPublishDuplicateError(null);
       setSavedSignature(null);
@@ -1344,20 +1426,28 @@ export function useCreateClimbScreen({
   // you just made lands in the queue as if it belonged to nobody, so the play
   // drawer's owner-only Edit action never appears on your own fresh draft —
   // `computeCanUpdate` reads exactly userId + is_draft + published_at.
+  //
+  // `saved` is the row to mirror. It defaults to the tracked one, which is right
+  // for every caller but the save path: there `setSavedClimb` has only just been
+  // called, so the state this closure sees is still the row from BEFORE the save
+  // (null on a first save) and a first publish would queue as a draft.
   const buildProvisionalClimb = useCallback(
-    (uuid: string, frames: string): Climb => ({
+    (uuid: string, frames: string, saved: SavedClimbSnapshot | null = savedClimb): Climb => ({
       uuid,
       boardType: board.boardName,
       layoutId: board.layoutId,
       ...(board.boardName === 'woods' ? { compatibleSizeIds: [board.sizeId] } : {}),
       name: name.trim() || t('createClimbForm.draftBadge'),
       frames,
-      setter_username: profile?.displayName ?? '',
-      // Null until the profile query resolves, same as setter_username above, so
+      // The saver's on a new climb, and null until the profile query resolves, so
       // a climb queued during a cold start shows no Edit action until the next
       // save replaces the item. Self-correcting and not worth a queue-item
       // update path; revisit if it shows up in offline-first flows.
-      userId: profile?.id ?? null,
+      //
+      // The ORIGINAL setter's on an edit: a wall owner fixing somebody else's
+      // spray climb has not taken it (#5955), and the server never rewrites
+      // either field on an update.
+      ...resolveProvisionalSetter(isEditing ? editClimb : null, profile),
       description,
       // The wall's own angle on a spray board, the caller's everywhere else —
       // the same value Save writes, so "Set as active" queues the climb at the
@@ -1373,18 +1463,17 @@ export function useCreateClimbScreen({
       characteristics: buildProvisionalCharacteristics(noMatch, noKickboard, campus, anyFeet, rulesAlwaysKnown),
       // Not-yet-saved climbs are drafts by definition; once saved, mirror the
       // tracked row so a published climb doesn't queue as a draft.
-      is_draft: savedClimb?.isDraft ?? true,
-      published_at: savedClimb?.publishedAt ?? null,
+      is_draft: saved?.isDraft ?? true,
+      published_at: saved?.publishedAt ?? null,
       userAscents: 0,
       userAttempts: 0,
       // No `revisionNumber` / `holdsRevisionNumber`, on purpose (#6023). This
       // climb is what the editor holds, which is not what any saved version
       // holds: unsaved paint, or a save the queue never took (a local
       // set-current for the uuid that is already current is a no-op in the
-      // reducer, so a second save leaves the first save's item in place). A
-      // version here would be stamped on the setter's next send and stored as
-      // sent. Without one the tick form sends none unless the phone's copy of
-      // the climb has these exact frames, and the server works it out.
+      // reducer, so a second save leaves the first save's item in place, and
+      // `refreshAuthoredClimb` then patches only what the editor authors). A
+      // version here would describe holds the editor does not hold.
       framesCount: frameCount,
       // Mirrors what Save writes, so the queue plays a WIP route at the pace the
       // setter dialled rather than at the default. Null on a boulder: 0/null both
@@ -1401,6 +1490,8 @@ export function useCreateClimbScreen({
       anyFeet,
       rulesAlwaysKnown,
       profile,
+      isEditing,
+      editClimb,
       savedClimb,
       board.angle,
       board.boardName,
@@ -1414,23 +1505,42 @@ export function useCreateClimbScreen({
 
   // Push the freshly saved climb into the queue as the current climb so the
   // board (and any connected BLE wall) reflects what was just published.
-  // Known limitation: re-saving a climb that is ALREADY the active queue item
-  // won't refresh its frames via the queue — the reducer short-circuits a
-  // same-uuid local SET_CURRENT_CLIMB. The live BLE preview keeps the local
-  // wall correct; a mobile queue `updateQueueItem` is the follow-up for peers.
+  // Known limitation, peers only: a party peer's copy of a slot that is already
+  // in THEIR queue is not rewritten by a re-save. They get the new payload for
+  // the current climb from the CurrentClimbChanged broadcast; a mobile queue
+  // `updateQueueItem` mutation is the follow-up for the rest.
   const syncSavedToQueue = useCallback(
-    (uuid: string, framesString: string) => {
+    (saved: SavedClimbSnapshot, framesString: string) => {
       // Same wall hand-off as Set-Active: the auto-sender now lights the whole
       // route. A draft save leaves the drawer open, so without this the creator's
       // debounced preview would snatch the wall straight back to one frame.
       setHandedOff(true);
+      // The snapshot is passed in rather than read off state — see
+      // `buildProvisionalClimb`.
+      const climb = buildProvisionalClimb(saved.uuid, framesString, saved);
       // Marked as a save, not a choice: `Set Active Climb` is otherwise the one
       // deliberate "this climb, now" act, and a save must not count as it.
-      setCurrentClimb(climbToQueueItem(buildProvisionalClimb(uuid, framesString), { uuid }), {
-        trigger: 'climb_saved',
+      setCurrentClimb(climbToQueueItem(climb, { uuid: saved.uuid }), { trigger: 'climb_saved' });
+      // `setCurrentClimb` leaves an item that is ALREADY current untouched (the
+      // queue reducer's deliberate same-uuid short-circuit) and never rewrites a
+      // slot already in the queue. So a second save of the same climb — a draft
+      // published, a rename — left the bottom bar and the play drawer showing
+      // the copy from the first save, Draft chip included. Only what this editor
+      // authors is refreshed: a queued copy's grade and send counts are not this
+      // editor's to overwrite with its placeholders.
+      refreshAuthoredClimb(saved.uuid, {
+        name: climb.name,
+        frames: climb.frames,
+        description: climb.description,
+        is_draft: climb.is_draft,
+        published_at: climb.published_at,
+        is_no_match: climb.is_no_match,
+        characteristics: climb.characteristics,
+        framesCount: climb.framesCount,
+        framesPace: climb.framesPace,
       });
     },
-    [buildProvisionalClimb, setCurrentClimb],
+    [buildProvisionalClimb, setCurrentClimb, refreshAuthoredClimb],
   );
 
   // ---- Set Active: build a minimal Climb and push to the queue. ----
@@ -1488,7 +1598,12 @@ export function useCreateClimbScreen({
   // is the last thing a setter decides and a draft has to be leavable without it.
   const showSetterGrade = requiresSetterGrade(board.boardName);
   const setterGradeMissing = showSetterGrade && !isDraft && setterGradeDifficultyId === null;
-  const publishBlocked = !isDraft && hasContent && (!canPublish || setterGradeMissing);
+  // What disables Save: the holds. The missing grade does NOT (#5954) — the grade
+  // rail sits below the fold, so a dead button there reads as a broken editor.
+  // Save stays tappable and the tap takes the setter to the rail instead; see
+  // `handleSave`.
+  const publishBlocked = !isDraft && hasContent && !canPublish;
+  const gradeNeededToPublish = setterGradeMissing && hasContent && canPublish;
   const localPersistenceAvailable = isDraftStorageAvailable();
   const saveFailed = failedSignature !== null && failedSignature === payloadSignature;
 
@@ -1502,7 +1617,8 @@ export function useCreateClimbScreen({
           hasUnsavedEdits,
           saveFailed,
           publishBlocked,
-          publishBlockedByGrade: publishBlocked && setterGradeMissing,
+          gradeNeededToPublish,
+          isDraft,
         },
         t,
       ),
@@ -1513,13 +1629,22 @@ export function useCreateClimbScreen({
       hasUnsavedEdits,
       saveFailed,
       publishBlocked,
-      setterGradeMissing,
+      gradeNeededToPublish,
+      isDraft,
       t,
     ],
   );
 
   // Signal the screen should focus the header name field (e.g. on a save with
   // no name yet). The name input lives in the drawer header, not a settings sheet.
+  // The prompt is answered the moment the grade stops being what is missing: a
+  // grade was picked, or the draft switch went on. Without this the signal stayed
+  // raised, and flipping the switch back brought the warning colour with it,
+  // with no Save tap behind it.
+  useEffect(() => {
+    if (!setterGradeMissing) setFocusGradeSignal(0);
+  }, [setterGradeMissing]);
+
   const [focusNameSignal, setFocusNameSignal] = useState(0);
   const requestFocusName = useCallback(() => setFocusNameSignal((value) => value + 1), []);
 
@@ -1532,7 +1657,13 @@ export function useCreateClimbScreen({
     if (editLocked) return;
     // Drafts stay cheap; publishing needs a start, a finish, and — on a board with
     // no crowd grade — the setter's own grade.
-    if (isDraft ? !canSave : !canPublish || setterGradeMissing) return;
+    if (isDraft ? !canSave : !canPublish) return;
+    // Nothing is sent without the grade (the server would refuse it anyway). The
+    // tap is answered rather than swallowed: the drawer opens onto the rail.
+    if (setterGradeMissing) {
+      setFocusGradeSignal((value) => value + 1);
+      return;
+    }
     if (name.trim() === '') {
       requestFocusName();
       return;
@@ -1624,7 +1755,7 @@ export function useCreateClimbScreen({
           isDraft: result.isDraft,
           holdCount,
         });
-        syncSavedToQueue(result.uuid, frames);
+        syncSavedToQueue(nextSavedClimb, frames);
       } else {
         const result = await saveClimb({
           layout_id: board.layoutId,
@@ -1659,7 +1790,7 @@ export function useCreateClimbScreen({
           isDraft,
           holdCount,
         });
-        syncSavedToQueue(result.uuid, frames);
+        syncSavedToQueue(nextSavedClimb, frames);
       }
       // ---- What happens to the on-device working copy. ----
       // A draft-Save used to delete it unconditionally, which is what made "Save,
@@ -1721,7 +1852,18 @@ export function useCreateClimbScreen({
         // on reading "Saved on this phone" — true, and silent about the account
         // copy never happening. Sticky until the next successful save or an edit.
         setFailedSignature(signatureAtSave);
-        showToast(t('createClimbForm.alerts.saveFailedFallback'), 'error');
+        // A refusal the server gave a code for is said in the climber's own
+        // language: somebody else saved this climb while it was open here, the
+        // viewer's access to the wall has changed since Edit was offered, or the
+        // 24 hours are up. The server's prose is never shown. Nothing is retried
+        // for them and nothing is thrown away: the working copy stays on screen
+        // and in the autosave slot, and Save can be tapped again (after a
+        // conflict the server re-reads the climb, so a second Save can succeed).
+        const refusal = climbEditRefusal(err);
+        showToast(
+          refusal ? climbEditRefusalMessage(refusal, t) : t('createClimbForm.alerts.saveFailedFallback'),
+          'error',
+        );
       }
     } finally {
       saveInFlightRef.current = false;
@@ -1840,6 +1982,16 @@ export function useCreateClimbScreen({
     handlePaint,
     handleAssignRole,
     handleClearHolds,
+    /** Every frame of the climb as painted now (the active one is `litUpHoldsMap`). */
+    frames,
+    /** The wall's live hold ids, read once at mount; undefined off spray. */
+    availableHoldIds,
+    /** The frames string the editor was seeded from — the row being edited, or
+     *  the remixed parent's — still naming any hold a reset took off. */
+    sourceFrames: isEditing ? (editClimb?.frames ?? null) : (forkFrames ?? null),
+    placeLostHoldReplacement,
+    /** The working copy as the autosave would store it — what a put-back trip carries. */
+    snapshotWorkingDraft: () => autosaveDraftRef.current,
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,
@@ -1893,8 +2045,8 @@ export function useCreateClimbScreen({
     /** The picked grade as a difficulty id on the shared Boardsesh scale, or null. */
     setterGradeDifficultyId,
     setSetterGradeDifficultyId,
-    /** True while publishing is selected and the missing setter grade is what is
-     *  blocking it — the form's subtitle and the status line both say so. */
+    /** True while publishing is selected and the setter grade is still missing —
+     *  the form's subtitle and the status line both say so. Save stays enabled. */
     setterGradeMissing,
     /** Whether this board's climbs can hold more than one frame. Off on Woods,
      *  whose BLE packet builder rejects the comma a second frame introduces. */
@@ -1912,6 +2064,9 @@ export function useCreateClimbScreen({
     publishDuplicateError,
     dismissDuplicateError,
     focusNameSignal,
+    /** Bumped by a Save tap that needs the setter grade first; 0 when none is
+     *  outstanding. The drawer scrolls to the grade rail on a change. */
+    focusGradeSignal,
     // persistence
     draftStatus,
     notifyDraftKeptOnDismiss,

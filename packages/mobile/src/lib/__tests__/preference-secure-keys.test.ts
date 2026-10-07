@@ -49,7 +49,7 @@ describe('preference-secure-keys imports', () => {
 });
 
 describe('PREFERENCE_SECURE_KEYS', () => {
-  it('is exactly the eighteen preference keys the migration covers', async () => {
+  it('is exactly the preference keys the migration covers', async () => {
     const { PREFERENCE_SECURE_KEYS } = await import('../preference-secure-keys');
 
     // Pinned as literals so a renamed or deleted constant lands as a diff on
@@ -74,6 +74,11 @@ describe('PREFERENCE_SECURE_KEYS', () => {
       'onboarding_tip_accessory_seen',
       'onboarding_tip_quickactions_seen',
       'onboarding_tip_climbs_tab_seen',
+      'onboarding_tip_spray_tap_select_seen',
+      'onboarding_tip_spray_maybe_seen',
+      'onboarding_tip_spray_long_press_seen',
+      'onboarding_tip_spray_add_hold_seen',
+      'onboarding_tip_spray_pencil_seen',
     ]);
   });
 

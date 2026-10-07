@@ -5,10 +5,14 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 
+const BANNER_MARGIN_TOP = spacing[2];
+
 type DuplicateBannerProps = {
   name: string | null;
   onView?: () => void;
   onDismiss: () => void;
+  /** The vertical space this banner takes in the drawer, top margin included. */
+  onFootprint?: (height: number) => void;
 };
 
 /**
@@ -16,11 +20,14 @@ type DuplicateBannerProps = {
  * because the hold pattern already exists. Rendered in-drawer (not at the
  * screen root) so the drawer's backdrop can't occlude it.
  */
-export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProps) {
+export function DuplicateBanner({ name, onView, onDismiss, onFootprint }: DuplicateBannerProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
   return (
-    <View style={[styles.banner, { backgroundColor: systemColors.fill }]}>
+    <View
+      style={[styles.banner, { backgroundColor: systemColors.fill }]}
+      onLayout={onFootprint ? (event) => onFootprint(event.nativeEvent.layout.height + BANNER_MARGIN_TOP) : undefined}
+    >
       <View style={styles.bannerText}>
         <Text variant="footnote">
           {name
@@ -47,7 +54,7 @@ export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProp
 const styles = StyleSheet.create({
   banner: {
     marginHorizontal: spacing[4],
-    marginTop: spacing[2],
+    marginTop: BANNER_MARGIN_TOP,
     padding: spacing[3],
     borderRadius: borderRadius.md,
     flexDirection: 'row',

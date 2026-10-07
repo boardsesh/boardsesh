@@ -337,4 +337,28 @@ describe('ClimbCapsule', () => {
     );
     expect(nameNodes).toHaveLength(1);
   });
+
+  // #5954: a draft is left out of the Climbs list, so the bar says why the climb
+  // it is showing is not in it.
+  it('marks a draft climb with the Draft chip', () => {
+    const item = makeItem(makeClimb({ is_draft: true }));
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+
+    const { container } = render(<ClimbCapsule />);
+    const chip = container.querySelector('[data-testid="capsule-climb-draft"]');
+    expect(chip?.textContent).toBe('createClimbForm.draftBadge');
+  });
+
+  it('leaves a published climb, and one that does not say, without the chip', () => {
+    for (const isDraft of [false, null, undefined]) {
+      const item = makeItem(makeClimb({ is_draft: isDraft }));
+      queue.state.currentClimbQueueItem = item;
+      queue.state.queue = [item];
+
+      const { container, unmount } = render(<ClimbCapsule />);
+      expect(container.querySelector('[data-testid="capsule-climb-draft"]')).toBeNull();
+      unmount();
+    }
+  });
 });

@@ -763,7 +763,7 @@
         "favorite": "Basculer favori, c'est le cœur. Les blocs avec un cœur remplissent Voies aimées.",
         "editEntry": "Modifier l'entrée du carnet, quand tu viens de ton carnet.",
         "betaVideo": "Ajouter une vidéo beta, quand tu es connecté.",
-        "edit": "Modifier le bloc, pour tes propres blocs en brouillon ou dans les 24 heures après publication.",
+        "edit": "Modifier le bloc, pour tes propres blocs en brouillon ou dans les 24 heures après publication. Les blocs d’un mur de spray n’ont pas de limite de temps.",
         "remix": "Remixer ce bloc démarre un nouveau bloc à partir de ces prises.",
         "openInAurora": "Ouvrir dans l'app Aurora, pour Tension et les autres boards Aurora. Kilter n'en a pas.",
         "report": "Signaler le bloc, quand tu es connecté et que la modération est active."

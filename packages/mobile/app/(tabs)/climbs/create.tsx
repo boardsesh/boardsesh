@@ -25,7 +25,11 @@ type CreateClimbParams = {
   forkCharacteristics?: string;
   /** The source climb's grade, as a name on the shared scale ("6c/V5"). */
   forkDifficulty?: string;
+  /** The remixed climb's uuid, so the editor can draw the holds it lost (#5493). */
+  forkParentUuid?: string;
   editClimbUuid?: string;
+  /** Back from putting a lost hold back on the wall (#5493). */
+  putBackRequest?: string;
 };
 
 type EditorBoard = {
@@ -190,7 +194,9 @@ export default function CreateClimbRoute() {
         forkDescription={params.forkDescription}
         forkCharacteristics={params.forkCharacteristics}
         forkDifficulty={params.forkDifficulty}
+        forkParentUuid={params.forkParentUuid}
         editClimbUuid={params.editClimbUuid}
+        putBackRequest={params.putBackRequest}
       />
       {/* Host the BLE device picker from inside this route so a connect from the
           create-climb lightbulb presents OVER this transparentModal route instead

@@ -1,0 +1,77 @@
+import { glassSize } from '../../theme/layout';
+import { spacing } from '../../theme/tokens';
+
+/** Height of the editor bottom bar's tallest member. */
+export const SPRAY_BAR_HEIGHT = glassSize.standard;
+/** Gap between the bottom bar and the bottom safe area. */
+export const SPRAY_BAR_GUTTER = spacing[2];
+/** Two 48pt rows (count controls and primary action), separated by spacing[2]. */
+export const SPRAY_BAR_TOTAL_HEIGHT = SPRAY_BAR_HEIGHT * 2 + spacing[2];
+
+/**
+ * Vertical room kept free under the photo for the floating bottom bar: the bar,
+ * the gutter under it and a matching gap above it. The safe-area inset is added
+ * on top.
+ */
+export const SPRAY_BAR_RESERVE = SPRAY_BAR_TOTAL_HEIGHT + SPRAY_BAR_GUTTER * 3;
+
+/**
+ * Deepest pinch zoom in the spray hold editor. Small holds tucked beside big ones
+ * need more than the climb view's 4×. Past 3× the editor swaps in the wall's
+ * 4096 px copy where it has one (#5911, `spray-full-photo.ts`); past 8× even
+ * that has no more detail to show.
+ */
+export const SPRAY_EDITOR_MAX_SCALE = 8;
+
+/** The shortest the photo slot is ever made, however little room the screen leaves. */
+const MIN_SLOT_HEIGHT = 200;
+
+export type SprayPhotoFrame = {
+  /** The photo's drawn width, in points. */
+  width: number;
+  /** The photo's drawn height, in points. */
+  height: number;
+  /** The height of the slot the photo is centred in: the screen minus the bar's reserve. */
+  slotHeight: number;
+};
+
+const NO_FRAME: SprayPhotoFrame = { width: 0, height: 0, slotHeight: 0 };
+
+/**
+ * Where a wall photo sits on the spray screens: full width, fitted to the height
+ * the bottom bar leaves free, and centred in that height.
+ *
+ * With `reserveBottom` false (the iPad layout) nothing is kept free: the photo
+ * is fitted to the whole area, safe area included, and the chrome floats over
+ * it on glass.
+ *
+ * Shared by the scan step and the hold editor, so the photo the scan band
+ * sweeps over is the same box, to the point, that the rings then appear on.
+ * Both must pass the same `reserveBottom` for that to hold. Zeros until the
+ * area and the photo both have a size.
+ */
+export function fitSprayPhoto({
+  areaWidth,
+  areaHeight,
+  bottomInset,
+  photoWidth,
+  photoHeight,
+  reserveBottom = true,
+}: {
+  areaWidth: number;
+  areaHeight: number;
+  bottomInset: number;
+  photoWidth: number;
+  photoHeight: number;
+  /** Keep the bottom bar's room and the safe area free under the photo. Defaults to true. */
+  reserveBottom?: boolean;
+}): SprayPhotoFrame {
+  if (!(areaWidth > 0) || !(photoWidth > 0) || !(photoHeight > 0)) return NO_FRAME;
+  const aspect = photoWidth / photoHeight;
+  const bottomReserve = reserveBottom ? bottomInset + SPRAY_BAR_RESERVE : 0;
+  const slotHeight = Math.max(MIN_SLOT_HEIGHT, areaHeight - bottomReserve);
+  if (areaWidth / slotHeight > aspect) {
+    return { width: slotHeight * aspect, height: slotHeight, slotHeight };
+  }
+  return { width: areaWidth, height: areaWidth / aspect, slotHeight };
+}

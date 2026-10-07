@@ -38,6 +38,7 @@ import { defaultAngle } from '../../lib/boards/default-angle';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
+import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
@@ -61,6 +62,8 @@ export type ModerationFeedScreenProps = {
 export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardType }: ModerationFeedScreenProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
+  const { t: tBoards } = useTranslation('boards');
+  const { canReview: canReviewSpray } = useSprayModerationAccess();
   const { systemColors, brandColors } = useTheme();
   const router = useRouter();
   const bottomChrome = useBottomChromeMetrics();
@@ -250,9 +253,14 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
     [activeBoardType],
   );
 
+  const openSprayReports = useCallback(() => router.push('/moderation/spray-walls'), [router]);
+
   const listHeader = useMemo(
     () => (
       <View style={styles.header}>
+        {canReviewSpray ? (
+          <Button title={tBoards('sprayModeration.queueTitle')} variant="tonal" onPress={openSprayReports} />
+        ) : null}
         <SegmentedControl
           options={statusOptions}
           selectedKey={statusScope}
@@ -284,6 +292,9 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
       </View>
     ),
     [
+      canReviewSpray,
+      openSprayReports,
+      tBoards,
       statusOptions,
       statusScope,
       boardOptions,

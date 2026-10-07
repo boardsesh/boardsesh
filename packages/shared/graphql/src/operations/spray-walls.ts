@@ -1,4 +1,5 @@
 import { gql } from 'graphql-request';
+import { BOARD_FIELDS } from './boards';
 import type { SprayWallPhoto, SprayWallReportReason } from '../generated/graphql';
 
 export type { SprayWallReportReason } from '../generated/graphql';
@@ -63,7 +64,7 @@ const SPRAY_WALL_HOLD_FIELDS = `
  * carry fifty versions, each of which costs two presigned signatures to build.
  * Ask for the history with `SPRAY_WALL_WITH_VERSIONS` on the screen that shows it.
  */
-const SPRAY_WALL_FIELDS = `
+const SPRAY_WALL_ENTITY_FIELDS = `
   uuid
   layoutId
   sizeId
@@ -72,10 +73,19 @@ const SPRAY_WALL_FIELDS = `
   holdCount
   publicPhotoUrl
   viewerCanEdit
+  climbEditPolicy
+  viewerCanEditClimbs
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
   # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK.
+  currentVersion {
+    ${SPRAY_WALL_VERSION_FIELDS}
+  }
+`;
+
+const SPRAY_WALL_FIELDS = `
+  ${SPRAY_WALL_ENTITY_FIELDS}
   board {
     uuid
     slug
@@ -95,15 +105,24 @@ const SPRAY_WALL_FIELDS = `
     gymName
     canEdit
   }
-  currentVersion {
-    ${SPRAY_WALL_VERSION_FIELDS}
-  }
 `;
 
 export const GET_SPRAY_WALL = gql`
   query GetSprayWall($uuid: ID!) {
     sprayWall(uuid: $uuid) {
       ${SPRAY_WALL_FIELDS}
+    }
+  }
+`;
+
+/** Resolve a shared wall and the complete board entity needed for route adoption. */
+export const GET_SPRAY_WALL_FOR_LINK = gql`
+  query GetSprayWallForLink($uuid: ID!) {
+    sprayWall(uuid: $uuid) {
+      ${SPRAY_WALL_ENTITY_FIELDS}
+      board {
+        ${BOARD_FIELDS}
+      }
     }
   }
 `;
@@ -142,6 +161,35 @@ export const GET_SPRAY_WALL_RENDER_DATA = gql`
       }
       wall {
         ${SPRAY_WALL_FIELDS}
+      }
+    }
+  }
+`;
+
+/**
+ * Draft reads verify the immutable row id even when a discarded number is reused.
+ *
+ * The one read that asks for `photoFullUrl` (#5911): the hold editor swaps it in
+ * once it zooms past 3x. The climb view's `GET_SPRAY_WALL_RENDER_DATA` leaves it
+ * out, so the render path never pays for a second signature it would not use.
+ */
+export const GET_SPRAY_WALL_DRAFT_RENDER_DATA = gql`
+  query GetSprayWallDraftRenderData($uuid: ID!, $version: Int) {
+    sprayWallRenderData(uuid: $uuid, version: $version) {
+      versionNumber
+      boardWidth
+      boardHeight
+      homography
+      photo {
+        ${SPRAY_WALL_PHOTO_FIELDS}
+      }
+      photoFullUrl
+      holds {
+        ${SPRAY_WALL_HOLD_FIELDS}
+      }
+      wall {
+        ${SPRAY_WALL_FIELDS}
+        versions { id number status }
       }
     }
   }
@@ -468,6 +516,71 @@ export const REMIX_CLIMB = gql`
     }
   }
 `;
+
+/**
+ * The holds a climb lost to a reset, with the geometry they had (#5493).
+ *
+ * The create editor draws a dashed ghost ring at each one and offers a
+ * replacement. Same arguments as `GetClimb`: `Climb.lostHolds` resolves off the
+ * climb row that query returns, and decides the wall's visibility itself — a
+ * stranger gets `[]`, never an error. A single-climb read; a list must not
+ * select `lostHolds`.
+ */
+export const GET_CLIMB_LOST_HOLDS = gql`
+  query GetClimbLostHolds(
+    $boardName: String!
+    $layoutId: Int!
+    $sizeId: Int!
+    $setIds: String!
+    $angle: Int!
+    $climbUuid: ID!
+  ) {
+    climb(
+      boardName: $boardName
+      layoutId: $layoutId
+      sizeId: $sizeId
+      setIds: $setIds
+      angle: $angle
+      climbUuid: $climbUuid
+    ) {
+      uuid
+      missingHoldCount
+      lostHolds {
+        id
+        cx
+        cy
+        r
+        outline
+        movedFromHoldId
+        removedVersion
+      }
+    }
+  }
+`;
+
+export type GetClimbLostHoldsQueryVariables = {
+  boardName: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  angle: number;
+  climbUuid: string;
+};
+
+/** One lost hold, in the wall's canonical frame. */
+export type ClimbLostHold = {
+  id: number;
+  cx: number;
+  cy: number;
+  r: number;
+  outline: number[] | null;
+  movedFromHoldId: number | null;
+  removedVersion: number | null;
+};
+
+export type GetClimbLostHoldsQueryResponse = {
+  climb: { uuid: string; missingHoldCount: number | null; lostHolds: ClimbLostHold[] | null } | null;
+};
 
 /** Reports never accept free text; duplicate reports preserve the first reason. */
 export const REPORT_SPRAY_WALL = gql`

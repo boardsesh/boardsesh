@@ -39,7 +39,7 @@ import { climbToQueueItem, resolveCommittableQueueItem } from '../../lib/climb-t
 import { toBoardName } from '@boardsesh/board-config';
 import { formatRenderBoardLabel, resolveClimbRenderBoard, sameRenderBoard } from '../../lib/boards/climb-render-board';
 import type { ActiveSubDrawer } from '@boardsesh/play-view';
-import { SHARED_EVENTS, climbRemixedFromBroken } from '@boardsesh/analytics';
+import { SHARED_EVENTS, climbEditedFromBroken, climbRemixedFromBroken } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
 import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
@@ -100,12 +100,15 @@ import type { OpenClimbActionsOptions } from '../../providers/drawer-host-provid
 import { useAuth } from '../../providers/auth-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useToggleFavorite, useFavoriteStatus, useClimb } from '../../lib/graphql/hooks';
+import { canReportDisplayedClimb } from './can-report-climb';
+import { useToggleFavorite, useFavoriteStatus, useClimb, useProfile } from '../../lib/graphql/hooks';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveTickDefaultGradeName } from '../../lib/boardsesh-grade-display';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { LostHoldsBanner } from './LostHoldsBanner';
+import { useCanEditDisplayedClimb } from './use-can-edit-displayed-climb';
+import { useLostHoldsEditReadiness } from './use-lost-holds-edit-readiness';
 import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
@@ -519,6 +522,8 @@ export function PlayDrawer({
   // tick picker's default grade below.
   const { boardseshActive } = useDisplayGrade();
   const { isAuthenticated } = useAuth();
+  const { data: profile } = useProfile();
+  const currentUserId = profile?.id ?? null;
   // Kill switch: unresolved reads as enabled, so the Report row never pops in a
   // beat after the sheet opens. See useClimbModerationEnabled.
   const moderationEnabled = useClimbModerationEnabled();
@@ -566,7 +571,7 @@ export function PlayDrawer({
    * frames, and the create editor's own sanitiser drops the hold ids that are no
    * longer on the wall, so the editor opens with exactly the holds that survived.
    */
-  const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const { openRemix, openEdit } = useCreateClimbNavigation({ dismissPlayerAndWait });
   const openingSetterRef = useRef(false);
   const openSetterPlaylist = useCallback(() => {
     const username = displayedClimb?.setter_username;
@@ -589,6 +594,27 @@ export function PlayDrawer({
     trackSprayEvent(climbRemixedFromBroken({ lostHoldCount, source: 'play_drawer' }));
     openRemix(displayedClimb, renderBoardConfig);
   }, [lostHoldCount, openRemix, displayedClimb, renderBoardConfig]);
+  // Fix it in place as well as remix it (#6024). The editor drops the holds that
+  // are no longer on the wall when it loads the climb, so Save writes a new
+  // revision on what is there now. Offered only to whoever may edit the climb.
+  const canEditDisplayedClimb = useCanEditDisplayedClimb(
+    displayedClimb,
+    renderBoardConfig.boardName,
+    renderBoardConfig.layoutId,
+  );
+  // And only when the editor would open on something it can save: this device's
+  // wall agrees with the server about what is gone, and some holds survive.
+  const lostHoldsEditReadiness = useLostHoldsEditReadiness(
+    lostHoldCount > 0 ? displayedClimb : null,
+    renderBoardConfig.boardName,
+    renderBoardConfig.layoutId,
+  );
+  const canEditLostHolds = canEditDisplayedClimb && lostHoldsEditReadiness === 'ready';
+  const handleEditLostHolds = useCallback(() => {
+    if (!displayedClimb) return;
+    trackSprayEvent(climbEditedFromBroken({ lostHoldCount, source: 'play_drawer' }));
+    openEdit(displayedClimb, renderBoardConfig);
+  }, [lostHoldCount, openEdit, displayedClimb, renderBoardConfig]);
   // The climb belongs to a genuinely DIFFERENT board model. Same gate as an
   // explicit board override (`boardMismatch` from the host), just discovered
   // from the climb rather than handed in by the opener.
@@ -1271,6 +1297,10 @@ export function PlayDrawer({
       showToast(t('playView.shareError'), 'error');
     });
   }, [shareClimb, displayedClimb, boardName, layoutId, showToast, t]);
+
+  // A draft is visible to its setter alone: a share link opens nowhere for
+  // anyone else, and the only person who can report it is the setter (#5960).
+  const displayedClimbIsDraft = displayedClimb?.is_draft === true;
 
   // Long-press the climb name to copy it — handy for pasting into a chat when
   // sharing beta. Delegates to the unit-tested copyClimbName helper; haptic for
@@ -1961,7 +1991,11 @@ export function PlayDrawer({
                           why the board is drawing fewer holds than the setter
                           painted. Above the board, because it is about what the
                           board is showing. */}
-                      <LostHoldsBanner count={lostHoldCount} onRemix={handleRemixLostHolds} />
+                      <LostHoldsBanner
+                        count={lostHoldCount}
+                        onRemix={handleRemixLostHolds}
+                        onEdit={canEditLostHolds ? handleEditLostHolds : undefined}
+                      />
 
                       <View style={styles.boardSection}>
                         {/* Viewfinder brackets while browsing: you're looking through a
@@ -2089,7 +2123,7 @@ export function PlayDrawer({
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
                             onOpenQueue={onOpenQueue}
-                            onShare={handleShare}
+                            onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}
                             onTickLongPress={handleTickFabLongPress}
                             viewer={viewer}
@@ -2191,6 +2225,7 @@ export function PlayDrawer({
           sizeId={sizeId}
           setIds={setIds}
           angle={angle}
+          currentUserId={currentUserId}
           onAddToQueue={() => {
             if (displayedClimb) {
               void addToQueue({
@@ -2201,9 +2236,18 @@ export function PlayDrawer({
           }}
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
-          onReportClimb={isAuthenticated && moderationEnabled ? handleOpenReportClimb : undefined}
+          onReportClimb={
+            canReportDisplayedClimb({
+              isAuthenticated,
+              moderationEnabled,
+              climb: displayedClimb,
+              currentUserId,
+            })
+              ? handleOpenReportClimb
+              : undefined
+          }
           onOpenQueue={openQueueFromActions}
-          onShare={showConnectPill ? handleShare : undefined}
+          onShare={showConnectPill && !displayedClimbIsDraft ? handleShare : undefined}
           dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />
@@ -2318,11 +2362,6 @@ export function PlayDrawer({
                   tickTarget?.boardConfig.boardName ?? boardName,
                 ) ?? tickClimb.difficulty
               }
-              // The version of the climb on screen, when it carries one, and
-              // the holds on screen, which decide whether the phone's copy of
-              // the climb may answer when it does not.
-              climbRevision={tickClimb.revisionNumber}
-              climbFrames={tickClimb.frames}
             />
           );
         })()}

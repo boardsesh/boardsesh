@@ -81,11 +81,7 @@ export const LogbookSection = memo(function LogbookSection({
   const { t } = useTranslation('session');
   const { isAuthenticated } = useAuth();
   const { brandColors, systemColors } = useTheme();
-  const { ledger, hasEntries, fetched, error, offline, retry, climbCurrentRevision } = useClimbLedger(
-    boardName,
-    climbUuid,
-    angle,
-  );
+  const { ledger, hasEntries, fetched, error, offline, retry } = useClimbLedger(boardName, climbUuid, angle);
   const { data: pendingTicks = 0 } = useLocalPendingTicks(climbUuid, boardName);
 
   // A reader with no account has no logbook, so every string below would be a
@@ -200,7 +196,6 @@ export const LogbookSection = memo(function LogbookSection({
                   showMirrorTag={showMirrorTag}
                   showDayTries={section.sessionCount > 1}
                   maxEntries={MAX_ENTRIES_PER_SESSION}
-                  climbCurrentRevision={climbCurrentRevision}
                   boardName={boardName}
                 />
               ))}

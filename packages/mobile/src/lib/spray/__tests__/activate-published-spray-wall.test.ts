@@ -64,6 +64,37 @@ describe('activating a published spray wall', () => {
     queryClient.clear();
   });
 
+  it('says which stage it is in, so a bind that never finishes names where it sat', async () => {
+    const queryClient = new QueryClient();
+    const stages: string[] = [];
+    request.mockImplementation(async () => {
+      stages.push('request');
+      return { board: privateBoard };
+    });
+    const activateBoard = vi.fn(async () => {
+      stages.push('activate');
+    });
+
+    await activatePublishedSprayWall(queryClient, privateBoard.uuid, activateBoard, {
+      onStage: (stage) => stages.push(stage),
+    });
+
+    expect(stages).toEqual(['fetch_board', 'request', 'bind', 'activate']);
+    queryClient.clear();
+  });
+
+  it('refreshes the cache but does not bind for a run that has given up', async () => {
+    const queryClient = new QueryClient();
+    request.mockResolvedValue({ board: privateBoard });
+    const activateBoard = vi.fn(async () => {});
+
+    await activatePublishedSprayWall(queryClient, privateBoard.uuid, activateBoard, { isLive: () => false });
+
+    expect(activateBoard).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['board', privateBoard.uuid])).toEqual({ board: privateBoard });
+    queryClient.clear();
+  });
+
   it('does not activate a wall that disappeared after publication', async () => {
     const queryClient = new QueryClient();
     request.mockResolvedValue({ board: null });

@@ -244,9 +244,36 @@ describe('pruneStoredSprayPhotos', () => {
     expect(pruneStoredSprayPhotos([KEY_V2])).toBe(2);
     expect(names()).toEqual([livePartial]);
   });
+
+  it('discards a download still in flight for a key no wall names any more', async () => {
+    await storeSprayPhoto(KEY_V2, 'https://private.example/a?sig=2');
+    transfers.suspended = true;
+    const superseded = storeSprayPhoto(KEY_V1, 'https://private.example/a?sig=1');
+
+    pruneStoredSprayPhotos([KEY_V2]);
+    transfers.pending.shift()!();
+
+    expect(await superseded).toBeNull();
+    expect(names()).toEqual([sprayPhotoStoreFileName(KEY_V2)]);
+  });
 });
 
 describe('deleteStoredSprayPhoto', () => {
+  it('fences a removed wall’s late download while a fresh download for the same key lands', async () => {
+    transfers.suspended = true;
+    const pending = storeSprayPhoto(KEY_V1, 'https://private.example/a?sig=old');
+    deleteStoredSprayPhoto(KEY_V1);
+    transfers.suspended = false;
+    // Not joined to the revoked transfer: it stages under its own generation.
+    expect(await storeSprayPhoto(KEY_V1, 'https://private.example/a?sig=new')).not.toBeNull();
+    expect(downloadedUrls).toHaveLength(2);
+
+    transfers.pending.shift()!();
+    expect(await pending).toBeNull();
+    expect(names()).toEqual([sprayPhotoStoreFileName(KEY_V1)]);
+    expect(files.get(pathFor(KEY_V1))?.contents).toBe('https://private.example/a?sig=new');
+  });
+
   it('removes one wall’s photo and its staging file, leaving the others', async () => {
     await storeSprayPhoto(KEY_V2, 'https://private.example/a?sig=2');
     await storeSprayPhoto(KEY_OTHER, 'https://private.example/b?sig=1');

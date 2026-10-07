@@ -36,6 +36,7 @@ function registerWall(version: number, holds: SprayPhotoHold[] = HOLDS) {
     wallUuid: 'wall-uuid',
     angle: 40,
     version,
+    versionId: version,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
@@ -109,6 +110,7 @@ describe('getBoardRenderData — spray branch', () => {
       wallUuid: 'wall-uuid',
       angle: 40,
       version: 1,
+      versionId: 1,
       photoWidth: 0,
       photoHeight: 0,
       photoUrl: 'https://private.example/photo',
@@ -248,21 +250,29 @@ describe('the wall version is in every spray cache key', () => {
   });
 
   it('photo file name: two generations are two different files', () => {
-    expect(sprayPhotoFileName({ layoutId: LAYOUT_ID, version: 1 })).not.toBe(
-      sprayPhotoFileName({ layoutId: LAYOUT_ID, version: 2 }),
+    expect(sprayPhotoFileName({ layoutId: LAYOUT_ID, versionId: 1 })).not.toBe(
+      sprayPhotoFileName({ layoutId: LAYOUT_ID, versionId: 2 }),
     );
   });
 });
 
 describe('spray background keys', () => {
   it('round-trips', () => {
-    expect(parseSprayBackgroundKey(sprayBackgroundKey(4200, 3))).toEqual({ layoutId: 4200, version: 3 });
+    expect(parseSprayBackgroundKey(sprayBackgroundKey(4200, 3))).toEqual({ layoutId: 4200, versionId: 3 });
   });
 
   it('never claims a bundled board key', () => {
     expect(parseSprayBackgroundKey('kilter/product_sizes_layouts_sets/36-1.webp')).toBeNull();
     expect(parseSprayBackgroundKey('woods/woods12x12.webp')).toBeNull();
     expect(parseSprayBackgroundKey('spray/4200/3.webp')).toBeNull();
+  });
+
+  it('round-trips a local mirror identity and rejects a misgrouped UUID', () => {
+    const versionId = 'local-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d-2' as const;
+    expect(parseSprayBackgroundKey(sprayBackgroundKey(4200, versionId))).toEqual({ layoutId: 4200, versionId });
+    // 36 hex-or-hyphen characters, but not 8-4-4-4-12.
+    expect(parseSprayBackgroundKey(`spray/4200/vlocal-${'-'.repeat(36)}-2.jpg`)).toBeNull();
+    expect(parseSprayBackgroundKey('spray/4200/vlocal-0a1b2c3d4e5f-4a6b-8c7d-9e0f1a2b3c4d-0-2.jpg')).toBeNull();
   });
 });
 
@@ -271,20 +281,33 @@ describe('planSprayPhotoSweep', () => {
 
   it('reaps a photo nothing is using any more', () => {
     const plan = planSprayPhotoSweep({
-      entries: [{ name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: NOW - SPRAY_PHOTO_MAX_AGE_MS - 1 }],
+      entries: [{ name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: NOW - SPRAY_PHOTO_MAX_AGE_MS - 1 }],
       nowMs: NOW,
       maxAgeMs: SPRAY_PHOTO_MAX_AGE_MS,
       protectedNames: new Set(),
     });
-    expect(plan).toEqual({ deleteNames: ['4200-1.jpg'], freedBytes: 900 });
+    expect(plan).toEqual({ deleteNames: ['4200-v1.jpg'], freedBytes: 900 });
+  });
+
+  it('ages out legacy numeric filenames while retaining the immutable live photo', () => {
+    const plan = planSprayPhotoSweep({
+      entries: [
+        { name: '4200-3.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+        { name: '4200-v31.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+      ],
+      nowMs: NOW,
+      maxAgeMs: SPRAY_PHOTO_MAX_AGE_MS,
+      protectedNames: new Set(['4200-v31.jpg']),
+    });
+    expect(plan).toEqual({ deleteNames: ['4200-3.jpg'], freedBytes: 900 });
   });
 
   it('never deletes the photo of a wall on screen, however old the file is', () => {
     const plan = planSprayPhotoSweep({
-      entries: [{ name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: 0 }],
+      entries: [{ name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: 0 }],
       nowMs: NOW,
       maxAgeMs: 0,
-      protectedNames: new Set(['4200-1.jpg']),
+      protectedNames: new Set(['4200-v1.jpg']),
     });
     expect(plan.deleteNames).toEqual([]);
   });
@@ -292,14 +315,14 @@ describe('planSprayPhotoSweep', () => {
   it('reaps the generation a reset superseded while keeping the live one', () => {
     const plan = planSprayPhotoSweep({
       entries: [
-        { name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: 0 },
-        { name: '4200-2.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+        { name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+        { name: '4200-v2.jpg', sizeBytes: 900, modifiedAtMs: 0 },
       ],
       nowMs: NOW,
       maxAgeMs: 0,
-      protectedNames: new Set(['4200-2.jpg']),
+      protectedNames: new Set(['4200-v2.jpg']),
     });
-    expect(plan.deleteNames).toEqual(['4200-1.jpg']);
+    expect(plan.deleteNames).toEqual(['4200-v1.jpg']);
   });
 
   it('never deletes a download in flight, even on the Clear button', () => {
@@ -308,23 +331,23 @@ describe('planSprayPhotoSweep', () => {
     // staging file under a running download and its `moveSync` would ENOENT.
     const plan = planSprayPhotoSweep({
       entries: [
-        { name: `4200-1.jpg${SPRAY_PARTIAL_SUFFIX}`, sizeBytes: 400, modifiedAtMs: 0 },
-        { name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: 0 },
+        { name: `4200-v1.jpg${SPRAY_PARTIAL_SUFFIX}`, sizeBytes: 400, modifiedAtMs: 0 },
+        { name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: 0 },
       ],
       nowMs: NOW,
       maxAgeMs: 0,
       protectedNames: new Set(),
     });
-    expect(plan.deleteNames).toEqual(['4200-1.jpg']);
+    expect(plan.deleteNames).toEqual(['4200-v1.jpg']);
   });
 
   it('agrees with the cache on what a staging file is called', () => {
-    expect(sprayPartialPhotoFileName({ layoutId: 4200, version: 1 })).toBe(`4200-1.jpg${SPRAY_PARTIAL_SUFFIX}`);
+    expect(sprayPartialPhotoFileName({ layoutId: 4200, versionId: 1 })).toBe(`4200-v1.jpg${SPRAY_PARTIAL_SUFFIX}`);
   });
 
   it('leaves an undateable entry alone', () => {
     const plan = planSprayPhotoSweep({
-      entries: [{ name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: null }],
+      entries: [{ name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: null }],
       nowMs: NOW,
       maxAgeMs: 0,
       protectedNames: new Set(),
@@ -334,7 +357,7 @@ describe('planSprayPhotoSweep', () => {
 
   it('keeps a fresh photo', () => {
     const plan = planSprayPhotoSweep({
-      entries: [{ name: '4200-1.jpg', sizeBytes: 900, modifiedAtMs: NOW - 1000 }],
+      entries: [{ name: '4200-v1.jpg', sizeBytes: 900, modifiedAtMs: NOW - 1000 }],
       nowMs: NOW,
       maxAgeMs: SPRAY_PHOTO_MAX_AGE_MS,
       protectedNames: new Set(),
@@ -347,18 +370,36 @@ describe('clearSupersededSprayDrafts', () => {
   it('drops the wall\u2019s older slots and nothing else', async () => {
     const removed: string[] = [];
     const keys = [
-      'boardsesh_create_climb_draft:spray:4200:4200-sv1:1:40',
-      'boardsesh_create_climb_draft:spray:4200:4200-sv2:1:40',
+      'boardsesh_create_climb_draft:spray:4200:4200-svid1:1:40',
+      'boardsesh_create_climb_draft:spray:4200:4200-svid2:1:40',
       // Another wall, and a catalogue board. Neither is this wall's business.
-      'boardsesh_create_climb_draft:spray:4201:4201-sv1:1:40',
+      'boardsesh_create_climb_draft:spray:4201:4201-svid1:1:40',
       'boardsesh_create_climb_draft:kilter:1:10:24,25:40',
     ];
     vi.spyOn(preferenceStore, 'removePreferencesMatching').mockImplementation(async (matches) => {
       removed.push(...keys.filter(matches));
     });
 
-    await clearSupersededSprayDrafts(LAYOUT_ID, '-sv2');
+    await clearSupersededSprayDrafts(LAYOUT_ID, '-svid2');
 
-    expect(removed).toEqual(['boardsesh_create_climb_draft:spray:4200:4200-sv1:1:40']);
+    expect(removed).toEqual(['boardsesh_create_climb_draft:spray:4200:4200-svid1:1:40']);
   });
+});
+
+describe('immutable spray photo namespace', () => {
+  it('never resolves a legacy number-based photo key', () => {
+    expect(parseSprayBackgroundKey('spray/4200/3.jpg')).toBeNull();
+    expect(sprayPhotoFileName({ layoutId: 4200, versionId: 30 })).not.toBe('4200-3.jpg');
+    expect(sprayPhotoFileName({ layoutId: 4200, versionId: 30 })).not.toBe(
+      sprayPhotoFileName({ layoutId: 4200, versionId: 31 }),
+    );
+  });
+});
+
+it('keeps a local immutable photo identity distinct from online row IDs', () => {
+  const versionId = 'local-00000000-0000-4000-8000-000000000001-2' as const;
+  expect(parseSprayBackgroundKey(sprayBackgroundKey(4200, versionId))).toEqual({ layoutId: 4200, versionId });
+  expect(sprayBackgroundKey(4200, versionId)).not.toBe(sprayBackgroundKey(4200, 2));
+  expect(parseSprayBackgroundKey('spray/4200/vlocal-../../private-2.jpg')).toBeNull();
+  expect(parseSprayBackgroundKey('spray/4200/vlocal-not-a-uuid-2.jpg')).toBeNull();
 });

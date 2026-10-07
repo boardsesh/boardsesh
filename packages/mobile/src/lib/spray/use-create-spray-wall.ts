@@ -16,6 +16,7 @@ import {
   GET_MY_SPRAY_WALLS,
   GET_SPRAY_WALL_WITH_VERSIONS,
   PUBLISH_SPRAY_WALL_VERSION,
+  SET_SPRAY_WALL_RENDER_SETTINGS,
   UPDATE_SPRAY_WALL,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
@@ -26,7 +27,11 @@ import type {
 } from '@boardsesh/graphql/generated/graphql';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
+import type { BoardRenderDefault } from '../board-render-settings';
 import { clearSprayWallPrivateCaches } from './spray-privacy-cleanup';
+import { primeSprayWallLook } from './spray-wall-loader';
+import type { SprayWallBackground } from './spray-wall-background';
+import { sprayWallWithVersionsQueryKey } from './use-spray-wall-reset';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
@@ -49,6 +54,8 @@ type SprayWallWithVersionsResponse = { sprayWall: CreatedSprayWall | null };
 type CreateVersionResponse = { createSprayWallVersion: SprayWallVersion };
 type PublishResponse = { publishSprayWallVersion: SprayWallVersion };
 type UpdateWallResponse = { updateSprayWall: CreatedSprayWall };
+type SetRenderSettingsResult = Pick<SprayWall, 'uuid' | 'renderSettings'>;
+type SetRenderSettingsResponse = { setSprayWallRenderSettings: SetRenderSettingsResult };
 
 /**
  * Create the wall row, its catalogue layout and its size.
@@ -77,11 +84,16 @@ export function useCreateSprayWall() {
  * generic failure: it names the draft that is in the way.
  */
 export function useCreateSprayWallVersion() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateSprayWallVersionInput): Promise<SprayWallVersion> => {
       const response = await getHttpClient().request<CreateVersionResponse>(CREATE_SPRAY_WALL_VERSION, { input });
       return response.createSprayWallVersion;
     },
+    onSuccess: (_version, input) =>
+      queryClient.invalidateQueries({
+        queryKey: sprayWallWithVersionsQueryKey(input.wallUuid),
+      }),
   });
 }
 
@@ -136,11 +148,18 @@ export function useDiscardSprayWallDraft() {
       const client = getHttpClient();
       if (versionId) await client.request(DISCARD_SPRAY_WALL_VERSION, { input: { versionId } });
       await client.request(DELETE_SPRAY_WALL, { uuid: wallUuid });
+      // Initial drafts stay registered between editor and look steps. Explicit
+      // Start over deletes that wall, so withdraw its geometry and erase its
+      // private caches at this boundary.
       clearSprayWallPrivateCaches(layoutId);
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
+    onSuccess: async (_result, { wallUuid }) => {
+      // A draft read still in flight is disowned, not only its cached payload
+      // erased: its late response must not seed the next attempt's editor.
+      await queryClient.cancelQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
+      queryClient.removeQueries({ queryKey: ['sprayWallRenderData', wallUuid] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      await queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
   });
 }
@@ -187,6 +206,39 @@ export function usePublishSprayWallVersion() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+    },
+  });
+}
+
+/**
+ * Store the wall's default look — the one a climber who never picked a render
+ * mode sees on it. The add-a-wall flow's look step writes it once, before the
+ * publish, so the wall's first climbers already get it.
+ *
+ * Idempotent (the last write wins), so a retry after a lost response is safe.
+ * On success the look goes straight into the look cache and the registry, so the
+ * wall draws it now rather than after the cache's window runs out.
+ */
+export function useSetSprayWallRenderSettings() {
+  return useMutation({
+    mutationFn: async ({
+      uuid,
+      renderSettings,
+    }: {
+      layoutId: number;
+      uuid: string;
+      // `background` only when the owner picked a generated look, or is
+      // changing away from one: a backend older than generated looks validates
+      // this object strictly and refuses a key it does not know.
+      renderSettings: BoardRenderDefault & { background?: SprayWallBackground };
+    }): Promise<SetRenderSettingsResult> => {
+      const response = await getHttpClient().request<SetRenderSettingsResponse>(SET_SPRAY_WALL_RENDER_SETTINGS, {
+        input: { uuid, renderSettings },
+      });
+      return response.setSprayWallRenderSettings;
+    },
+    onSuccess: (_result, { layoutId, uuid, renderSettings }) => {
+      primeSprayWallLook(layoutId, uuid, renderSettings);
     },
   });
 }

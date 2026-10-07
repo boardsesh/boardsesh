@@ -6,6 +6,9 @@ Cherche n'importe quelle voie et Boardsesh allume les prises sur le mur en Bluet
 UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
 Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
 
+TON MUR DE SPRAY AUSSI
+Un mur chez toi, ou un mur de spray dans ta salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le mur par lien et ton crew peut y ouvrir des blocs aussi. Mur reconfiguré ? Prends une nouvelle photo : tes anciens blocs restent dans la liste, marqués de ce qui a disparu.
+
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
 Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
 Dans Boardsesh, chaque board sur laquelle tu te connectes a un fil live de ce qui est allumé sur ce mur en ce moment : le nom de la voie, qui l'a allumée, qui l'a ouverte, la cotation et l'inclinaison, et les sends récents. Ça se met à jour au fil des changements sur le mur, pour que tu saches toujours ce qu'il y a dessus.

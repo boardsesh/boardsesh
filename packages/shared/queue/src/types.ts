@@ -75,7 +75,7 @@ export type Climb = {
   // unknown. LOCAL ONLY for now: the queue documents are pinned by the App
   // Store screenshot fixtures and cannot select them, so they are not written
   // to the wire either, and an item rebuilt from a server echo has neither.
-  // The tick form falls back to the phone's own copy of the climb then.
+  // The sent glyph then counts every tick on the climb. No tick sends a version.
   revisionNumber?: number | null;
   holdsRevisionNumber?: number | null;
 };
@@ -119,6 +119,21 @@ export type SetCurrentClimbOptions = {
   playlistSuggestionSource?: PlaylistSuggestionSource | null;
   trigger?: SetCurrentClimbTrigger;
 };
+
+/**
+ * The fields of a climb its setter can change by saving it again in the editor.
+ * `REFRESH_AUTHORED_CLIMB` patches these onto every copy of the climb already in
+ * the queue. Deliberately not the whole `Climb`: the editor's copy carries
+ * placeholder grade and send counts, and writing those over a queued climb would
+ * blank the grade it was fetched with. Keyed by `climb.uuid`.
+ */
+export type ClimbAuthoredPatch = Pick<Climb, 'name' | 'frames'> &
+  Partial<
+    Pick<
+      Climb,
+      'description' | 'is_draft' | 'published_at' | 'is_no_match' | 'characteristics' | 'framesCount' | 'framesPace'
+    >
+  >;
 
 /**
  * Per-climb grade fields that change when the board angle changes. A climb's
@@ -211,4 +226,5 @@ type QueueActionPayload<TSearchParams extends QueueSearchParams> =
   | { type: 'CLEANUP_PENDING_UPDATES_BATCH'; payload: { correlationIds: string[] } }
   | { type: 'CLEAR_RESYNC_FLAG' }
   | { type: 'REGRADE_CLIMBS'; payload: { grades: Record<string, ClimbRegradePatch> } }
+  | { type: 'REFRESH_AUTHORED_CLIMB'; payload: { climbUuid: string; patch: ClimbAuthoredPatch } }
   | { type: 'CLEAR_QUEUE' };

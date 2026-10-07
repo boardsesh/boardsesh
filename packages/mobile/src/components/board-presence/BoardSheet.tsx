@@ -40,6 +40,7 @@ import { track } from '../../lib/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
 import type { BoardSheetClimbAction, NowOnTheWallPanelHandle } from './NowOnTheWallPanel';
+import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 
 export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
@@ -73,6 +74,8 @@ type BoardSheetProps = {
   onSwitchBoard: () => void;
   /** The board the climber is on — names the gym whose other boards we list. */
   activeBoard?: UserBoard | null;
+  onOpenSprayMaintenance?: (wallUuid: string, action: SprayDetailRowKey) => void;
+  onShareSprayWall?: (wallUuid: string) => void;
   /** Hop to another board at the same gym, without closing the sheet. */
   onSelectGymWall?: (board: UserBoard) => void;
   /** Activate/open a climb from the wall feed. BoardSheet closes itself after this. */
@@ -93,6 +96,8 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     onDismissed,
     onSwitchBoard,
     activeBoard,
+    onOpenSprayMaintenance,
+    onShareSprayWall,
     onSelectGymWall,
     onClimbPress,
     onAddToQueue,
@@ -251,6 +256,8 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           dismissAndWait={dismissAndWait}
           onSwitchBoard={onSwitchBoard}
           activeBoard={activeBoard}
+          onOpenSprayMaintenance={onOpenSprayMaintenance}
+          onShareSprayWall={onShareSprayWall}
           onSelectGymWall={onSelectGymWall}
           onClimbPress={onClimbPress}
           onAddToQueue={onAddToQueue}

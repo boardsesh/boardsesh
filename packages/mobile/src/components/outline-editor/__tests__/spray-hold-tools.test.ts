@@ -1,21 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_RING_COORDINATE, pointInRing, type RingPoint } from '@boardsesh/board-art-geometry/ring';
 import {
-  classifyStroke,
+  MAX_RING_COORDINATE,
+  MAX_RING_NUMBERS,
+  isValidOutlineRing,
+  pointInRing,
+  type RingPoint,
+} from '@boardsesh/board-art-geometry/ring';
+import {
   convexHull,
   defaultHoldRadius,
   holdAtPoint,
   holdBoundaryPoints,
+  holdFromPolygon,
   holdFromStroke,
   holdFromTap,
   MIN_HOLD_RADIUS_BOARD_PX,
   mergeHoldGeometry,
+  POLYGON_MAX_VERTICES,
   polygonCentroidAndArea,
+  polygonSelfOverlaps,
   radiusForRing,
   toRingPoints,
   type HoldGeometry,
+  strokeExtent,
 } from '../spray-hold-tools';
-import { radiusRingToBoardPx } from '../stroke';
+import {
+  fallbackRadiusAt,
+  flattenHitHolds,
+  holdIdAtPoint,
+  selectedDragIdAt,
+  screenToBoard,
+} from '../spray-gesture-math';
+import { radiusRingToBoardPx, screenToBoardPoint } from '../stroke';
 
 /** A closed-ish freehand circle, as a finger would draw it. */
 function circleStroke(cx: number, cy: number, radius: number, samples = 40): RingPoint[] {
@@ -24,40 +40,6 @@ function circleStroke(cx: number, cy: number, radius: number, samples = 40): Rin
     return [cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius] as RingPoint;
   });
 }
-
-describe('classifyStroke', () => {
-  it('reads a stroke that stayed put as a tap, at the centre of where it wandered', () => {
-    const gesture = classifyStroke(
-      [
-        [100, 100],
-        [101, 102],
-        [99, 101],
-      ],
-      20,
-    );
-    expect(gesture).toEqual({ kind: 'tap', x: 100, y: 101 });
-  });
-
-  it('reads a loop as a drag, not a tap, even though it ends where it started', () => {
-    const gesture = classifyStroke(circleStroke(200, 200, 25), 20);
-    expect(gesture?.kind).toBe('drag');
-  });
-
-  it('scales the tap window with the hold radius in play', () => {
-    const wander: RingPoint[] = [
-      [0, 0],
-      [8, 0],
-    ];
-    // On a wall whose holds are 60 px across, an 8 px wobble is a tap...
-    expect(classifyStroke(wander, 60)?.kind).toBe('tap');
-    // ...and on one whose holds are 10 px across it is a deliberate drag.
-    expect(classifyStroke(wander, 10)?.kind).toBe('drag');
-  });
-
-  it('answers null for an empty stroke rather than inventing a point', () => {
-    expect(classifyStroke([], 20)).toBeNull();
-  });
-});
 
 describe('polygonCentroidAndArea', () => {
   it('finds the centre and area of a square', () => {
@@ -147,6 +129,155 @@ describe('holdFromStroke', () => {
       [1, 1],
     ]);
     expect(result).toEqual({ ok: false, reason: 'too-few-points' });
+  });
+});
+
+describe('holdFromPolygon', () => {
+  const square: RingPoint[] = [
+    [100, 100],
+    [140, 100],
+    [140, 140],
+    [100, 140],
+  ];
+
+  it('turns four corners into a hold centred in the square with a storable ring', () => {
+    const result = holdFromPolygon(square);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.cx).toBeCloseTo(120);
+    expect(result.hold.cy).toBeCloseTo(120);
+    expect(result.hold.outline).toHaveLength(8);
+    expect(isValidOutlineRing(result.hold.outline)).toBe(true);
+    // The ring walks back to the exact corners the climber tapped.
+    const boardRing = radiusRingToBoardPx(result.hold.outline, { id: 0, ...result.hold });
+    expect(boardRing[0]).toBeCloseTo(100, 2);
+    expect(boardRing[1]).toBeCloseTo(100, 2);
+    expect(boardRing[4]).toBeCloseTo(140, 2);
+    expect(boardRing[5]).toBeCloseTo(140, 2);
+  });
+
+  it('refuses two corners', () => {
+    expect(
+      holdFromPolygon([
+        [0, 0],
+        [10, 10],
+      ]),
+    ).toEqual({ ok: false, reason: 'too-few-points' });
+  });
+
+  it('refuses three corners on one line, which enclose nothing', () => {
+    expect(
+      holdFromPolygon([
+        [0, 0],
+        [10, 10],
+        [20, 20],
+      ]),
+    ).toEqual({ ok: false, reason: 'too-few-points' });
+  });
+
+  it('refuses a bow-tie whose edges cross', () => {
+    expect(
+      holdFromPolygon([
+        [0, 0],
+        [40, 40],
+        [40, 0],
+        [0, 40],
+      ]),
+    ).toEqual({ ok: false, reason: 'self-overlap' });
+  });
+
+  it('refuses one corner more than a stored ring can hold', () => {
+    expect(POLYGON_MAX_VERTICES * 2).toBe(MAX_RING_NUMBERS);
+    const tooMany = circleStroke(500, 500, 200, POLYGON_MAX_VERTICES + 1);
+    expect(holdFromPolygon(tooMany)).toEqual({ ok: false, reason: 'too-complex' });
+  });
+
+  it('accepts exactly the cap', () => {
+    const result = holdFromPolygon(circleStroke(500, 500, 200, POLYGON_MAX_VERTICES));
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(MAX_RING_NUMBERS);
+  });
+
+  it('refuses a deep C whose centre falls in the open mouth', () => {
+    // Outer 100x100, a 80x60 bite out of the right side. The centroid lands at
+    // x ~41, about 21 board px (0.5 radii) into the mouth.
+    const letterC: RingPoint[] = [
+      [0, 0],
+      [100, 0],
+      [100, 20],
+      [20, 20],
+      [20, 80],
+      [100, 80],
+      [100, 100],
+      [0, 100],
+    ];
+    expect(holdFromPolygon(letterC)).toEqual({ ok: false, reason: 'centre-outside' });
+  });
+
+  it('drops a closing corner that repeats the first', () => {
+    const result = holdFromPolygon([...square, [100.2, 100.1]]);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(8);
+  });
+
+  it('drops a corner tapped twice in a row', () => {
+    const result = holdFromPolygon([square[0], square[1], [140.1, 100.2], square[2], square[3]]);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(8);
+  });
+
+  it('keeps every corner, even one a stroke simplifier would have dropped', () => {
+    // 0.3 px off the bottom edge: far inside the 1.6 px Douglas-Peucker tolerance.
+    const result = holdFromPolygon([
+      [0, 0],
+      [50, 0.3],
+      [100, 0],
+      [100, 100],
+      [0, 100],
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok || !result.hold.outline) throw new Error('expected a traced hold');
+    expect(result.hold.outline).toHaveLength(10);
+  });
+});
+
+describe('polygonSelfOverlaps', () => {
+  it('passes a simple concave polygon', () => {
+    expect(
+      polygonSelfOverlaps([
+        [0, 0],
+        [20, 0],
+        [10, 5],
+        [20, 20],
+        [0, 20],
+      ]),
+    ).toBe(false);
+  });
+
+  it('catches a corner that lands on a non-adjacent edge', () => {
+    expect(
+      polygonSelfOverlaps([
+        [0, 0],
+        [20, 0],
+        [20, 20],
+        [10, 0],
+        [0, 20],
+      ]),
+    ).toBe(true);
+  });
+
+  it('catches an edge that folds straight back over the one before it', () => {
+    expect(
+      polygonSelfOverlaps([
+        [0, 0],
+        [20, 0],
+        [10, 0],
+        [10, 20],
+      ]),
+    ).toBe(true);
   });
 });
 
@@ -251,15 +382,95 @@ describe('holdAtPoint', () => {
   const holds = [
     { id: 1, cx: 100, cy: 100, r: 20, outline: null },
     { id: 2, cx: 110, cy: 100, r: 5, outline: null },
+    { id: 3, cx: 300, cy: 100, r: 4, outline: null },
   ];
 
-  it('finds the nearest centre when two holds overlap', () => {
-    expect(holdAtPoint(holds, 110, 100)?.id).toBe(2);
-    expect(holdAtPoint(holds, 95, 100)?.id).toBe(1);
+  it('gives an overlapping tap to the SMALLEST hold that contains it', () => {
+    // Inside both circles: the crimp wins, wherever the centres are.
+    expect(holdAtPoint(holds, 108, 100)?.id).toBe(2);
+    expect(holdAtPoint(holds, 106, 100)?.id).toBe(2);
+    // Inside the jug only.
+    expect(holdAtPoint(holds, 90, 100)?.id).toBe(1);
+  });
+
+  it('falls back to the nearest centre within 1.4r when nothing contains the tap', () => {
+    expect(holdAtPoint(holds, 305, 100)?.id).toBe(3);
+    expect(holdAtPoint(holds, 306, 100)).toBeNull();
+  });
+
+  it('widens the grab area to a fingertip on screen, which shrinks as you zoom in', () => {
+    // A 1000 px photo drawn 250 px wide: 4 board px per render px.
+    const atRest = fallbackRadiusAt(4, 1);
+    const zoomed = fallbackRadiusAt(4, 4);
+    expect(atRest).toBe(88);
+    expect(zoomed).toBe(22);
+    expect(holdAtPoint(holds, 360, 100, atRest)?.id).toBe(3);
+    expect(holdAtPoint(holds, 360, 100, zoomed)).toBeNull();
+    expect(holdAtPoint(holds, 320, 100, zoomed)?.id).toBe(3);
   });
 
   it('answers null on bare wall', () => {
-    expect(holdAtPoint(holds, 400, 400)).toBeNull();
+    expect(holdAtPoint(holds, 800, 800)).toBeNull();
+  });
+});
+
+describe('holdIdAtPoint (the UI-thread twin)', () => {
+  const holds = [
+    { id: 1, cx: 100, cy: 100, r: 20, outline: null },
+    { id: -2, cx: 110, cy: 100, r: 5, outline: null },
+    { id: 3, cx: 300, cy: 100, r: 4, outline: null },
+  ];
+  const flat = flattenHitHolds(holds);
+
+  it.each([
+    [108, 100, 0],
+    [90, 100, 0],
+    [305, 100, 0],
+    [360, 100, 88],
+    [360, 100, 22],
+    [800, 800, 0],
+  ])('agrees with holdAtPoint at (%d, %d) with fallback %d', (x, y, fallback) => {
+    expect(holdIdAtPoint(flat, x, y, fallback)).toBe(holdAtPoint(holds, x, y, fallback)?.id ?? 0);
+  });
+
+  it('lets a live hold stand in for its stale entry in the list', () => {
+    // Hold 3 has been dragged to (500, 100) and the list has not caught up.
+    expect(holdIdAtPoint(flat, 500, 100, 12, [3, 500, 100, 4])).toBe(3);
+    expect(holdIdAtPoint(flat, 300, 100, 12, [3, 500, 100, 4])).toBe(0);
+    // A live hold missing from the list entirely still counts.
+    expect(holdIdAtPoint([], 10, 10, 12, [7, 10, 10, 4])).toBe(7);
+  });
+
+  describe('selectedDragIdAt', () => {
+    it('claims a touch on the selection, a fingertip wide at least', () => {
+      expect(selectedDragIdAt(flattenHitHolds([holds[2]]), [3, 300, 100, 4], 310, 100, 12)).toBe(3);
+      expect(selectedDragIdAt(flattenHitHolds([holds[2]]), [3, 300, 100, 4], 320, 100, 12)).toBe(0);
+      expect(selectedDragIdAt(flat, [], 100, 100, 12)).toBe(0);
+    });
+
+    it('never claims a drag of the selection for a touch on a neighbour inside its grab radius', () => {
+      // Hold 1 (r 20) is selected; the finger lands on hold -2, which sits
+      // inside 1's radius. The touch is -2's, so no drag of 1 is claimed.
+      expect(selectedDragIdAt(flat, [1, 100, 100, 20], 110, 100, 12)).toBe(0);
+      // Off the neighbour, the same big selection still claims.
+      expect(selectedDragIdAt(flat, [1, 100, 100, 20], 90, 100, 12)).toBe(1);
+    });
+
+    it('claims the small selection even when a big neighbour contains the touch', () => {
+      expect(selectedDragIdAt(flat, [-2, 110, 100, 5], 111, 100, 12)).toBe(-2);
+    });
+
+    it('uses the live position of a selection that has just been moved', () => {
+      expect(selectedDragIdAt(flat, [3, 500, 100, 4], 501, 100, 12)).toBe(3);
+    });
+  });
+
+  it('inverts the board transform exactly as the stroke chain does', () => {
+    const transform = { scale: 2.5, translateX: 40, translateY: -30, containerWidth: 300, containerHeight: 400 };
+    const expected = screenToBoardPoint(210, 90, transform, 900, 300);
+    const actual = screenToBoard(210, 90, 2.5, 40, -30, 300, 400, 3);
+    expect(actual.x).toBeCloseTo(expected[0]);
+    expect(actual.y).toBeCloseTo(expected[1]);
   });
 });
 
@@ -269,5 +480,17 @@ describe('toRingPoints', () => {
       [1, 2],
       [3, 4],
     ]);
+  });
+});
+
+describe('strokeExtent', () => {
+  it('is zero with no points and for a single point', () => {
+    expect(strokeExtent([])).toBe(0);
+    expect(strokeExtent([12, 30])).toBe(0);
+  });
+
+  it('is the wider side of the bounding box', () => {
+    expect(strokeExtent([0, 0, 4, 1, 2, 9])).toBe(9);
+    expect(strokeExtent([10, 5, -6, 7])).toBe(16);
   });
 });

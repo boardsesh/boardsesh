@@ -29,15 +29,18 @@ export type StatusFilter = (typeof STATUS_FILTER_VALUES)[number];
 
 /**
  * Whether a climb still has every hold it was set on — the spray-wall reset
- * filter (SW-12).
+ * filter (SW-12), and since #6024 whether climbs retired by a full reset show.
  *
- * 'any' is the default and sends nothing. 'intact' and 'broken' map onto
- * `ClimbSearchInput.holdIntegrity`, whose SQL lives in @boardsesh/db
- * create-climb-filters.ts (`holdIntegrityCondition`) and reads the materialised
- * `board_climbs.missing_hold_count`. Only a spray wall ever has a broken climb;
- * on a catalogue board 'broken' is an honest empty list.
+ * 'current' is the default and sends nothing: the server (and the offline
+ * mirror) then hides climbs a full reset retired, so a wall's list shows the
+ * set that is up now. 'any' ("All") sends ANY explicitly and shows them too.
+ * 'intact' and 'broken' map onto `ClimbSearchInput.holdIntegrity`, whose SQL
+ * lives in @boardsesh/db create-climb-filters.ts (`holdIntegrityCondition`,
+ * `retiredByResetCondition`). Only a spray wall ever has a broken or retired
+ * climb; on a catalogue board 'current' and 'any' are the same list and 'broken'
+ * is an honest empty one.
  */
-export const HOLD_INTEGRITY_VALUES = ['any', 'intact', 'broken'] as const;
+export const HOLD_INTEGRITY_VALUES = ['current', 'any', 'intact', 'broken'] as const;
 export type HoldIntegrityFilterValue = (typeof HOLD_INTEGRITY_VALUES)[number];
 
 /**
@@ -125,7 +128,7 @@ export function hasActiveClimbFilters(state: ClimbFilterState): boolean {
   if (state.showOnlyCompleted) return true;
   if (state.minUserRating != null) return true;
   if (state.onlyRatedByMe) return true;
-  if (state.holdIntegrity != null && state.holdIntegrity !== 'any') return true;
+  if (state.holdIntegrity != null && state.holdIntegrity !== 'current') return true;
   // Default is boulders-only, so "active" means routes turned on or boulders off.
   if ((state.boulders ?? true) !== true) return true;
   if ((state.routes ?? false) !== false) return true;
@@ -231,9 +234,12 @@ export function toClimbSearchInput(
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
   if (state.minUserRating != null) input.minUserRating = state.minUserRating;
   if (state.onlyRatedByMe) input.onlyRatedByMe = true;
-  // 'any' is the absence of a filter, so it is omitted rather than sent — the
-  // backend treats an absent value and ANY identically, and omitting keeps the
-  // search-cache key stable for the overwhelmingly common unfiltered search.
+  // 'current' (the default) is omitted: the server reads an absent value as
+  // "the set that is up now" and hides climbs a full reset retired (#6024).
+  // 'any' ("All") is sent explicitly on a spray wall, which is the only board
+  // where it differs from the default; on a catalogue board it stays omitted,
+  // so the everyday search keeps its cache key.
+  if (state.holdIntegrity === 'any' && board.boardName === 'spray') input.holdIntegrity = 'ANY';
   if (state.holdIntegrity === 'intact') input.holdIntegrity = 'INTACT';
   if (state.holdIntegrity === 'broken') input.holdIntegrity = 'BROKEN';
 

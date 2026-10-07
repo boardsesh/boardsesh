@@ -12,6 +12,12 @@ export type LostHoldsBannerProps = {
   count: number;
   /** Start a remix onto the holds that are there now. Omitted where remix cannot be reached. */
   onRemix?: () => void;
+  /**
+   * Open the climb in the editor with the lost holds already dropped, so the
+   * setter or a wall editor can save it as a new revision (#6024). Omitted when
+   * this viewer may not edit the climb.
+   */
+  onEdit?: () => void;
 };
 
 /**
@@ -28,11 +34,16 @@ export type LostHoldsBannerProps = {
  * not a warning strip and not a blocker — it sits above the board, states a fact,
  * and gets out of the way.
  */
-export const LostHoldsBanner = React.memo(function LostHoldsBanner({ count, onRemix }: LostHoldsBannerProps) {
+export const LostHoldsBanner = React.memo(function LostHoldsBanner({ count, onRemix, onEdit }: LostHoldsBannerProps) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
 
   if (!(count > 0)) return null;
+
+  // The body line describes the actions next to it, so it names exactly the
+  // ones offered: none, Remix alone, or Edit and Remix.
+  const body =
+    onEdit && onRemix ? t('mobile.lostHolds.bannerBodyEdit') : onRemix ? t('mobile.lostHolds.bannerBody') : null;
 
   return (
     <View
@@ -43,13 +54,20 @@ export const LostHoldsBanner = React.memo(function LostHoldsBanner({ count, onRe
       <Icon name="frame.remove" size={16} color={systemColors.secondaryLabel} />
       <View style={styles.copy}>
         <Text variant="footnote">{t('mobile.lostHolds.banner', { count })}</Text>
-        {onRemix ? (
+        {body ? (
           <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {t('mobile.lostHolds.bannerBody')}
+            {body}
           </Text>
         ) : null}
       </View>
-      {onRemix ? <Button title={t('mobile.lostHolds.remix')} variant="tonal" size="small" onPress={onRemix} /> : null}
+      {onEdit || onRemix ? (
+        <View style={styles.actions}>
+          {onEdit ? <Button title={t('mobile.lostHolds.edit')} variant="tonal" size="small" onPress={onEdit} /> : null}
+          {onRemix ? (
+            <Button title={t('mobile.lostHolds.remix')} variant="tonal" size="small" onPress={onRemix} />
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -69,5 +87,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 1,
+  },
+  // Stacked, so two buttons never squeeze the sentence beside them on a narrow
+  // phone or in a longer locale.
+  actions: {
+    alignItems: 'stretch',
+    gap: spacing[1],
   },
 });

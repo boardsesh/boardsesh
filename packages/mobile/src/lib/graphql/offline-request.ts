@@ -181,7 +181,7 @@ const searchBoardName = ({ input }: SearchClimbsQueryVariables) => input.boardNa
 // by hash (docs/mobile-screenshot-fixtures.md). A climb read over the network
 // therefore gets its version numbers from the phone's own `board_climbs` row,
 // one indexed read per page. A climb the phone does not hold stays without
-// them, and a tick on it is sent with no version (#6023).
+// them, and its sent glyph counts every tick (#6023).
 async function fillSearchRevisionNumbers(
   db: SQLiteDatabase,
   { input }: SearchClimbsQueryVariables,

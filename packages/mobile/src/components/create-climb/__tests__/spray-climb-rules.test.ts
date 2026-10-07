@@ -6,15 +6,18 @@ import { getPaintRoles, computeRoleCapacity } from '../brush-roles';
 import {
   authoringAngle,
   defaultAnyFeet,
+  defaultIsDraft,
   hasFootHolds,
   isSprayBoard,
   nextAnyFeetForFeetChange,
+  offersBoardLightbulb,
+  offersNoKickboardRule,
   requiresSetterGrade,
   shouldAwaitWall,
   sprayWallUuidFor,
 } from '../spray-climb-rules';
 
-// The four rules a spray wall answers differently from a catalogue board
+// The five rules a spray wall answers differently from a catalogue board
 // (#5443), plus the two things the editor gets for free and must keep getting:
 // the wall's role set and the start/finish capacities.
 
@@ -30,6 +33,7 @@ function registerWall(angle: number) {
     wallUuid: 'wall-uuid',
     angle,
     version: 1,
+    versionId: 1,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/photo',
@@ -82,6 +86,18 @@ describe('the setter grade', () => {
     expect(requiresSetterGrade('spray')).toBe(true);
     for (const boardName of ['kilter', 'tension', 'moonboard', 'woods'] satisfies BoardName[]) {
       expect(requiresSetterGrade(boardName)).toBe(false);
+    }
+  });
+});
+
+describe('where the draft switch starts', () => {
+  it('is off on a spray wall, so Save publishes', () => {
+    expect(defaultIsDraft('spray')).toBe(false);
+  });
+
+  it('stays on for every catalogue board', () => {
+    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
+      expect(defaultIsDraft(boardName)).toBe(true);
     }
   });
 });
@@ -139,6 +155,7 @@ describe('the wall is the angle', () => {
       wallUuid: 'wall-uuid',
       angle: null,
       version: 1,
+      versionId: 1,
       photoWidth: 1200,
       photoHeight: 1600,
       photoUrl: 'https://private.example/photo',
@@ -201,5 +218,29 @@ describe('the grade name a remix inherits', () => {
     expect(getDifficultyIdForGradeName('V4')).toBeNull();
     expect(getDifficultyIdForGradeName('6b')).toBeNull();
     expect(getDifficultyIdForGradeName('')).toBeNull();
+  });
+});
+
+describe('the no-kickboard rule', () => {
+  it('is hidden on a spray wall, which has no kickboard', () => {
+    expect(offersNoKickboardRule('spray')).toBe(false);
+  });
+
+  it('stays on every catalogue board', () => {
+    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
+      expect(offersNoKickboardRule(boardName)).toBe(true);
+    }
+  });
+});
+
+describe('the creator lightbulb', () => {
+  it('is not offered on a spray wall, which has no lights', () => {
+    expect(offersBoardLightbulb('spray')).toBe(false);
+  });
+
+  it('stays on every catalogue board', () => {
+    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods']) {
+      expect(offersBoardLightbulb(boardName)).toBe(true);
+    }
   });
 });

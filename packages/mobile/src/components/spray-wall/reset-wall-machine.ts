@@ -25,6 +25,7 @@
 
 import { isConvexQuad, type Quad } from '@boardsesh/spray-wall-geometry';
 import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
+import type { EditableWallPhoto } from '../../lib/spray/photo-edit';
 
 /**
  * Where the climber is.
@@ -32,15 +33,16 @@ import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-typ
  * There is no `meta` step: the wall already exists, with its name, angle and
  * visibility settled. `upload` covers the multipart POST and
  * `createSprayWallVersion` together, because neither is separately actionable.
- * `compare` is a whole other screen.
+ * `compare` is a whole other screen. `adjust` is the photo step's "Crop or
+ * rotate": opened from `photo`, always returning there, and not counted.
  */
-export type ResetWallStep = 'photo' | 'anchors' | 'upload' | 'detect' | 'compare' | 'done';
+export type ResetWallStep = 'photo' | 'adjust' | 'anchors' | 'upload' | 'detect' | 'compare' | 'done';
 
-/** A photo as the picker and the compressor left it: a local JPEG and its pixels. */
-export type ResetPhoto = {
-  uri: string;
-  width: number;
-  height: number;
+/**
+ * A photo as the picker and the compressor left it (a local JPEG and its
+ * pixels), plus what the crop step needs to re-edit it (`photo-edit.ts`).
+ */
+export type ResetPhoto = EditableWallPhoto & {
   /** Which affordance produced it. Telemetry only. */
   source: 'library' | 'camera';
 };
@@ -79,11 +81,19 @@ export type ResetWallState = {
     total: number;
     candidates: readonly SprayHoldCandidate[];
   };
+  /** The crop step is rendering the edited photo; Back and leaving wait for it. */
+  photoProcessing: boolean;
 };
 
 export type ResetWallAction =
   | { type: 'PHOTO_PICKED'; photo: ResetPhoto }
   | { type: 'PHOTO_CONFIRMED' }
+  /** "Crop or rotate" on the photo step. */
+  | { type: 'ADJUST_OPENED' }
+  | { type: 'PHOTO_PROCESSING_STARTED' }
+  /** The edit rendered; `photo` is the new upload, still carrying its base and original. */
+  | { type: 'PHOTO_ADJUSTED'; photo: ResetPhoto }
+  | { type: 'PHOTO_PROCESSING_FAILED' }
   | { type: 'ANCHORS_SET'; anchors: Quad }
   | { type: 'ANCHORS_CLEARED' }
   | { type: 'ANCHORS_DONE' }
@@ -97,6 +107,7 @@ export type ResetWallAction =
   | { type: 'DETECTION_UNAVAILABLE' }
   | { type: 'DETECTION_FAILED' }
   | { type: 'COMMITTED' }
+  | { type: 'DRAFT_DISCARDED' }
   | { type: 'BACK' };
 
 const NO_CANDIDATES: readonly SprayHoldCandidate[] = [];
@@ -110,6 +121,7 @@ export function initialResetWallState(): ResetWallState {
     draft: null,
     upload: { running: false, progress: null, error: null, attempts: 0 },
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
+    photoProcessing: false,
   };
 }
 
@@ -122,6 +134,8 @@ export function initialResetWallState(): ResetWallState {
  * rule refuses. The way out of `compare` is leaving, which keeps the draft.
  */
 const BACK_TARGET: Partial<Record<ResetWallStep, ResetWallStep>> = {
+  // Back on the crop step is Cancel: the edit is dropped, the photo is as it was.
+  adjust: 'photo',
   anchors: 'photo',
   upload: 'photo',
   detect: 'photo',
@@ -145,7 +159,7 @@ export function leavingKeepsDraft(state: ResetWallState): boolean {
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: ResetWallState): boolean {
-  return state.upload.running;
+  return state.upload.running || state.photoProcessing;
 }
 
 /**
@@ -184,6 +198,9 @@ export function resetBackAction(state: ResetWallState): ResetBackAction {
 
 export function resetWallReducer(state: ResetWallState, action: ResetWallAction): ResetWallState {
   switch (action.type) {
+    case 'DRAFT_DISCARDED':
+      return { ...initialResetWallState(), photo: state.photo };
+
     case 'PHOTO_PICKED':
       // A new photo invalidates the anchors — they were four points on the OTHER
       // picture — and resets the upload, whose attempts counted against a file
@@ -198,6 +215,36 @@ export function resetWallReducer(state: ResetWallState, action: ResetWallAction)
 
     case 'PHOTO_CONFIRMED':
       return state.photo ? { ...state, step: 'anchors' } : state;
+
+    case 'ADJUST_OPENED':
+      // Only from the photo step, with a photo, and never once a draft has
+      // adopted one: its photo is already on the server.
+      if (state.step !== 'photo' || !state.photo || state.draft) return state;
+      return { ...state, step: 'adjust' };
+
+    case 'PHOTO_PROCESSING_STARTED':
+      if (state.step !== 'adjust') return state;
+      return { ...state, photoProcessing: true };
+
+    case 'PHOTO_ADJUSTED':
+      // Exactly what a newly picked photo invalidates. The anchors are CLEARED
+      // rather than carried through the crop: a quarter turn changes which
+      // corner is the top-left, and on a reset the four corners are the only
+      // thing lining this photograph up with the wall's frame.
+      if (state.step !== 'adjust') return state;
+      return {
+        ...state,
+        step: 'photo',
+        photo: action.photo,
+        photoProcessing: false,
+        anchors: null,
+        anchorRejection: null,
+        upload: { running: false, progress: null, error: null, attempts: 0 },
+      };
+
+    case 'PHOTO_PROCESSING_FAILED':
+      // Stays on the crop step with the edit intact, so Done can be tried again.
+      return state.photoProcessing ? { ...state, photoProcessing: false } : state;
 
     case 'ANCHORS_SET': {
       // A bow-tie quad has a homography that maps the wall inside out, and the

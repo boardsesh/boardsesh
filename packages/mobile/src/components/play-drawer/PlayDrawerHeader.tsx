@@ -11,6 +11,7 @@ import { Icon } from '../Icon';
 import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
+import { DraftChip } from '../DraftChip';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { PLAY_HEADER_TRAILING_MIN_WIDTH, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -52,6 +53,9 @@ type PlayDrawerHeaderProps = {
    *  the subtitle so someone who reached it by link, queue or deep link knows why
    *  it stopped showing up in search. */
   isHidden?: boolean;
+  /** `climb.is_draft` — only the setter can see this climb. Prints the Draft chip
+   *  beside the name, so the drawer says why the climb is not in the Climbs list. */
+  isDraft?: boolean;
   /** Left-aligned element on the name's row (e.g. the on-wall status). The header
    *  balances both flanks so the name stays centered. The swipe peek passes a
    *  reserve-only copy so the incoming header matches this one exactly. */
@@ -89,6 +93,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   isNoMatch,
   boardName,
   isHidden = false,
+  isDraft = false,
   leading,
   onLongPressName,
   secondaryGrade,
@@ -172,6 +177,10 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               characteristics={residualCharacteristics?.length ? residualCharacteristics : null}
               isNoMatch={ruleLabels ? undefined : isNoMatch}
             />
+            {/* In the name row, not a caption line of its own like Hidden: the
+                chip is one word, and a new line would move the board down for
+                every draft. */}
+            {isDraft ? <DraftChip style={styles.draftChip} testID="play-drawer-climb-draft" /> : null}
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
@@ -307,6 +316,7 @@ export const LivePlayDrawerHeader = memo(function LivePlayDrawerHeader({
       isNoMatch={climb.is_no_match}
       boardName={boardName}
       isHidden={climb.is_hidden === true}
+      isDraft={climb.is_draft === true}
       leading={leading}
       onLongPressName={onLongPressName}
       statsAngle={climb.statsAngle}
@@ -351,6 +361,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 0,
+  },
+  draftChip: {
+    marginLeft: 6,
   },
   // Shrinks with the name so a long title scrolls within the available width while
   // the attribute glyphs stay visible; the long-press target is the name itself.

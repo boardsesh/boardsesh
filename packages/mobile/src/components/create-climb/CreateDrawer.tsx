@@ -44,6 +44,9 @@ import type { CreateOverflowAction } from './create-overflow-menu';
 import { computeBoardMaxHeight } from './create-drawer-layout';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
+import { LostHoldGhostLayer } from './LostHoldGhostLayer';
+import { LostHoldsEditorBanner } from './LostHoldsEditorBanner';
+import type { HighlightedHold, LostHoldGhostsState } from './use-lost-hold-ghosts';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
 import { useTranslation } from 'react-i18next';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
@@ -52,6 +55,7 @@ import { formatHeatmapClimbCount, HeatmapLegend } from '../board/HeatmapLegend';
 import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
 import type { CreateHeatmap } from './create-heatmap';
+import { offersBoardLightbulb } from './spray-climb-rules';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -76,7 +80,11 @@ type CreateDrawerProps = {
   onViewDuplicate: (uuid: string) => void;
   /** The hold heatmap, following the active brush (omitted → no heatmap button). */
   heatmap?: CreateHeatmap;
+  /** Holds a reset took off the climb being edited or remixed (#5493). */
+  lostHolds?: LostHoldGhostsState;
 };
+
+const NO_HIGHLIGHTS: readonly HighlightedHold[] = [];
 
 // The peek must never grow into the '100%' snap — at that point the two snap
 // points collapse into one, the sheet has no travel and the "drag up for the
@@ -107,6 +115,7 @@ export function CreateDrawer({
   onClose,
   onViewDuplicate,
   heatmap,
+  lostHolds,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
   const { t, i18n } = useTranslation('climbs');
@@ -269,6 +278,59 @@ export function CreateDrawer({
       ) : null,
     [heatmapActive, heatLayer, board.boardName, board.layoutId, board.sizeId, board.setIds, boardHolds],
   );
+  // Ghost rings where the climb's lost holds were, plus the replacements on
+  // offer during a pick. Same slot as the heat, drawn after it.
+  const lostHoldGhosts = lostHolds?.ghosts;
+  const lostHoldCandidates = lostHolds?.replacing?.candidateHolds ?? NO_HIGHLIGHTS;
+  const boardOverlay = useMemo(() => {
+    const ghostLayer =
+      lostHoldGhosts && (lostHoldGhosts.length > 0 || lostHoldCandidates.length > 0) ? (
+        <LostHoldGhostLayer
+          boardName={board.boardName as BoardName}
+          ghosts={lostHoldGhosts}
+          candidateHolds={lostHoldCandidates}
+          boardWidth={boardHolds.boardWidth}
+          boardHeight={boardHolds.boardHeight}
+          renderWidth={boardRender.width}
+          renderHeight={boardRender.height}
+        />
+      ) : null;
+    if (!ghostLayer) return heatmapOverlay;
+    return (
+      <>
+        {heatmapOverlay}
+        {ghostLayer}
+      </>
+    );
+  }, [
+    heatmapOverlay,
+    lostHoldGhosts,
+    lostHoldCandidates,
+    board.boardName,
+    boardHolds.boardWidth,
+    boardHolds.boardHeight,
+    boardRender.width,
+    boardRender.height,
+  ]);
+
+  // While a replacement is being picked, a board tap is a pick, not a paint.
+  const interceptLostHoldPaint = lostHolds?.interceptPaint;
+  const controllerPaint = controller.handlePaint;
+  const handleBoardPaint = useCallback(
+    (holdId: number) => {
+      if (interceptLostHoldPaint?.(holdId)) return;
+      controllerPaint(holdId);
+    },
+    [interceptLostHoldPaint, controllerPaint],
+  );
+  const handleBoardLongPress = useCallback(
+    (holdId: number) => {
+      if (interceptLostHoldPaint?.(holdId)) return;
+      onLongPressHold(holdId);
+    },
+    [interceptLostHoldPaint, onLongPressHold],
+  );
+
   // While heat is on, the line under Save explains it (or offers the download)
   // in place of the autosave note. Erase hides the heat, and the line with it.
   const heatmapLine = useMemo(() => {
@@ -337,6 +399,62 @@ export function CreateDrawer({
     indexRef.current = index;
   }, []);
 
+  // ---- Save tapped with no setter grade (#5954). ----
+  // The grade rail is below the fold, so the controller answers that tap with a
+  // signal instead of a save and the drawer brings the rail up: open the sheet,
+  // then scroll just far enough that the rail clears the bottom edge. Not
+  // further — the Save button is the next thing the setter needs, and scrolling
+  // the rail to the top would push it off screen.
+  //
+  // The rail's box comes from the form's own onLayout (y within the form, plus
+  // its height), kept in a ref: nothing here is measured by the peek maths, and
+  // no View in this file gains an onLayout.
+  const setterGradeBoxRef = useRef<{ y: number; height: number } | null>(null);
+  const handleSetterGradeLayout = useCallback((event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    setterGradeBoxRef.current = { y, height };
+  }, []);
+  // The two transient banners sit between the measured blocks and are measured
+  // by neither, so they are not in `aboveFoldHeight` — but they do push the rail
+  // down. Each reports its own footprint (its root's onLayout, inside the banner
+  // component, so still no measured View here), kept in refs and only counted
+  // while that banner is actually mounted: an unmount fires no layout event.
+  const confirmBannerFootprintRef = useRef(0);
+  const duplicateBannerFootprintRef = useRef(0);
+  const handleConfirmBannerFootprint = useCallback((height: number) => {
+    confirmBannerFootprintRef.current = height;
+  }, []);
+  const handleDuplicateBannerFootprint = useCallback((height: number) => {
+    duplicateBannerFootprintRef.current = height;
+  }, []);
+  const confirmBannerShown = controller.pendingNewClimb;
+  const duplicateBannerShown = controller.publishDuplicateError != null;
+  const scrollToGradeRef = useRef<() => void>(() => {});
+  scrollToGradeRef.current = () => {
+    sheetRef.current?.snapToIndex(1);
+    const gradeBox = setterGradeBoxRef.current;
+    if (!gradeBox || aboveFoldHeight === 0) return;
+    const bannersHeight =
+      (confirmBannerShown ? confirmBannerFootprintRef.current : 0) +
+      (duplicateBannerShown ? duplicateBannerFootprintRef.current : 0);
+    // Content offset of the rail's bottom edge: the scroll padding, the measured
+    // above-fold blocks, any banner between them, the below-fold padding, then
+    // the rail inside the form.
+    const gradeBottom = spacing[2] + aboveFoldHeight + bannersHeight + spacing[4] + gradeBox.y + gradeBox.height;
+    // The fully open sheet's viewport. Window-derived on purpose: the scroll
+    // view's own height is still the PEEK height at this point, a frame before
+    // the snap above lands.
+    const openViewportHeight = windowHeight - insets.top - NATIVE_HANDLE_RESERVE;
+    const offset = gradeBottom + spacing[4] + windowInsetBottom - openViewportHeight;
+    scrollRef.current?.scrollTo({ y: Math.max(0, offset), animated: true });
+  };
+  const focusGradeSignal = controller.focusGradeSignal;
+  useEffect(() => {
+    // 0 is "no prompt outstanding" — the first render, and a blank climb's reset.
+    if (!focusGradeSignal) return;
+    scrollToGradeRef.current();
+  }, [focusGradeSignal]);
+
   const snapPoints = useMemo<(number | string)[]>(
     () => (peekHeight > 0 ? [peekHeight, '100%'] : ['80%', '100%']),
     [peekHeight],
@@ -384,6 +502,7 @@ export function CreateDrawer({
               finishCount={controller.finishCount}
               focusSignal={controller.focusNameSignal}
               onClose={() => sheetRef.current?.close()}
+              showLightbulb={offersBoardLightbulb(board.boardName)}
               bleConnected={controller.bleConnected}
               bleConnecting={controller.bleConnecting}
               onToggleBle={controller.handleToggleBle}
@@ -412,6 +531,7 @@ export function CreateDrawer({
               cancelLabel={t('createClimbForm.dismiss')}
               onConfirm={controller.confirmNewClimb}
               onCancel={controller.cancelNewClimb}
+              onFootprint={handleConfirmBannerFootprint}
             />
           ) : null}
 
@@ -427,6 +547,7 @@ export function CreateDrawer({
                   : undefined
               }
               onDismiss={controller.dismissDuplicateError}
+              onFootprint={handleDuplicateBannerFootprint}
             />
           ) : null}
 
@@ -442,15 +563,29 @@ export function CreateDrawer({
                 boardHeight={boardHolds.boardHeight}
                 holdTargets={boardHolds.holdTargets}
                 litUpHoldsMap={controller.litUpHoldsMap}
-                onPaint={controller.handlePaint}
-                onLongPressHold={onLongPressHold}
+                onPaint={handleBoardPaint}
+                onLongPressHold={handleBoardLongPress}
                 renderWidth={boardRender.width}
                 renderHeight={boardRender.height}
                 controlRef={boardControlsRef}
                 onInteractionActiveChange={setBoardInteractionActive}
                 scrollRef={scrollGestureRef}
-                overlay={heatmapOverlay}
+                overlay={boardOverlay}
+                // Off during a pick: a candidate sits right beside its ghost, and
+                // the ghost's wider tap circle would take the tap and cancel the pick.
+                ghostTargets={lostHolds?.replacing ? undefined : lostHolds?.ghostTargets}
+                onGhostPress={lostHolds?.openGhost}
               />
+              {lostHolds ? (
+                <LostHoldsEditorBanner
+                  status={lostHolds.status}
+                  count={lostHolds.count}
+                  replacing={lostHolds.replacing !== null}
+                  roleFull={lostHolds.roleFull}
+                  onOpenFirstGhost={lostHolds.openFirstGhost}
+                  onCancelReplacing={lostHolds.cancelReplacing}
+                />
+              ) : null}
             </View>
 
             <CreateRoutePlaybackSlot
@@ -496,6 +631,8 @@ export function CreateDrawer({
               setterGradeDifficultyId={controller.setterGradeDifficultyId}
               onChangeSetterGrade={controller.setSetterGradeDifficultyId}
               setterGradeRequired={controller.setterGradeMissing}
+              setterGradeHighlightSignal={controller.focusGradeSignal}
+              onSetterGradeLayout={handleSetterGradeLayout}
               description={controller.description}
               onChangeDescription={controller.setDescription}
               noMatch={controller.noMatch}

@@ -427,6 +427,52 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       };
     }
 
+    case 'REFRESH_AUTHORED_CLIMB': {
+      // The setter saved this climb again, so every copy already in the queue is
+      // out of date: its name, its holds, whether it is still a draft.
+      //
+      // This is its own action, NOT a relaxation of DELTA_UPDATE_CURRENT_CLIMB's
+      // same-uuid short-circuit. That branch is what keeps a re-tap from
+      // churning state and what seeds the correlationId that suppresses the
+      // server echo; both stay exactly as they are. A save that re-asserts the
+      // current climb still goes through it (and still broadcasts), and this
+      // action then corrects the payload the short-circuit left alone.
+      //
+      // Local-only, like REGRADE_CLIMBS. Nothing here changes the queue's order
+      // or its item uuids, which is all the session state hash covers, so it
+      // cannot trip the drift watchdog. Peers get the new payload for the
+      // current climb from the CurrentClimbChanged broadcast, as before.
+      //
+      // Keyed by climb.uuid, so a climb queued twice is corrected in both slots,
+      // history included: a climb that was published is published everywhere.
+      const { climbUuid, patch } = action.payload;
+      const patchKeys = Object.keys(patch) as Array<keyof typeof patch>;
+      let changed = false;
+      const refresh = (item: ClimbQueueItem): ClimbQueueItem => {
+        if (item.climb.uuid !== climbUuid) return item;
+        if (patchKeys.every((key) => item.climb[key] === patch[key])) return item;
+        changed = true;
+        // The version numbers describe the holds the item was queued with
+        // (#6023). New holds make them stale, so drop them: an unknown holds
+        // version lets the sent glyph count every tick on the climb.
+        const versions = item.climb.frames === patch.frames ? {} : { revisionNumber: null, holdsRevisionNumber: null };
+        return { ...item, climb: { ...item.climb, ...patch, ...versions } };
+      };
+
+      const newQueue = state.queue.map(refresh);
+      const newCurrent = state.currentClimbQueueItem ? refresh(state.currentClimbQueueItem) : null;
+
+      // Same state reference when nothing matched or nothing differs, so a save
+      // of a climb that is not queued re-renders no queue consumer.
+      if (!changed) return state;
+
+      return {
+        ...state,
+        queue: newQueue,
+        currentClimbQueueItem: newCurrent,
+      };
+    }
+
     case 'CLEAR_RESYNC_FLAG':
       return {
         ...state,

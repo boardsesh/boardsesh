@@ -554,7 +554,7 @@ export const SHARED_EVENTS = {
   // FirstBoardPathChosen: a tap on one of its choices. Props: { path: 'gym' |
   // 'own' | 'scan' | 'gym_map' | 'spray_wall', entry }. 'gym_map' is "Find your
   // gym on the map", offered under At a gym. 'spray_wall' is "Add my spray
-  // wall", offered only on the 'no_board' entry with the spray-walls flag on. A
+  // wall", offered only on the 'no_board' entry. A
   // climber can try several; each tap fires.
   //
   // FirstBoardPickerSkipped: the picker closed with no board bound, which is
@@ -702,6 +702,13 @@ export const SHARED_EVENTS = {
   // Props: { holdCount, hadCandidates }. What the review step actually saved —
   // the number the detector, and later the retrain flywheel (SW-20), is judged on.
   SprayHoldsReviewed: 'Spray Holds Reviewed',
+  // Props: { stage: 'visibility' | 'fetch_board' | 'bind' | 'navigate', elapsedMs }.
+  // The wall published but the bind that follows did not finish: a stage ran
+  // past its 30 s deadline, or (`navigate`) the dismiss was dispatched and the
+  // wizard was still on screen afterwards. Not part of the funnel — a climber
+  // who sees it can still finish — but the count of walls that published and
+  // then sat on "Setting your wall up…", by where they sat.
+  SprayWallBindStalled: 'Spray Wall Bind Stalled',
   // Spray walls — the reset funnel (epic #5346, SW-13). Two events, because a
   // reset is two decisions: looking at what the matcher found, and landing it.
   // The gap between them is the number that says whether the compare screen is
@@ -727,6 +734,12 @@ export const SHARED_EVENTS = {
   // than no property at all — it reads as "no successors were offered" rather
   // than "nobody asked".
   ClimbRemixedFromBroken: 'Climb Remixed From Broken',
+  // Props: { lostHoldCount, source: 'play_drawer' }. The other answer to the
+  // same banner (#6024): the setter or a wall editor opens the climb in the
+  // editor, lost holds already dropped, to save it in place as a new revision.
+  // Read beside `Climb Remixed From Broken` to see whether broken climbs get
+  // repaired or replaced. Fires on the tap, not on the save.
+  ClimbEditedFromBroken: 'Climb Edited From Broken',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

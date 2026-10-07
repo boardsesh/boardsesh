@@ -1,0 +1,8 @@
+{
+  "name": "@boardsesh/spray-editor-input-module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hardware-keyboard shortcuts and Apple Pencil double-tap / squeeze for the spray-wall hold editor. A view the editor mounts while it is open: it turns the shortcut list it is given into UIKeyCommands (iOS) or focused key handling (Android) and reports each one, and the Pencil's own gestures, back to JS.",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

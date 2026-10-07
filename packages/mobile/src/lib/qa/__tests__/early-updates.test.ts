@@ -26,7 +26,7 @@ vi.mock('@xprem/control-center/src/config', () => ({
   readConfig: vi.fn(),
   readLoadedState: vi.fn(),
 }));
-vi.mock('../../legacy-ota-channel-migration', () => ({ isBranchSurfingBuild: () => true }));
+vi.mock('../../ota-channel-override-cleanup', () => ({ isBranchSurfingBuild: () => true }));
 vi.mock('../qa-surf', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../qa-surf')>()),
   readOtaPinnedBranch: () => surf.pinnedBranch,

@@ -16,6 +16,9 @@ const resolveBoardForSession = vi.hoisted(() => vi.fn());
 const fetchAllMyBoards = vi.hoisted(() => vi.fn());
 const fetchBoardByUuid = vi.hoisted(() => vi.fn());
 const fetchBoardBySlug = vi.hoisted(() => vi.fn());
+const fetchSprayWallBoardFromLink = vi.hoisted(() => vi.fn());
+const routeQueryClient = vi.hoisted(() => ({}));
+const credentialState = vi.hoisted(() => ({ current: true }));
 const createBoardMutateAsync = vi.hoisted(() => vi.fn());
 const getStoredActiveBoard = vi.hoisted(() => vi.fn());
 const getOfflineBoards = vi.hoisted(() => vi.fn());
@@ -35,6 +38,16 @@ const authState = vi.hoisted(() => ({ current: { isAuthenticated: true, isLoadin
 // `false` is the native fork's value, which is what every pre-existing case in
 // this file runs against.
 const gateState = vi.hoisted(() => ({ relaxesRoutes: false }));
+// The launch hold as a tiny external store, so releasing it re-renders the hook
+// the way the launch-ready context does.
+const launchHold = vi.hoisted(() => ({
+  released: true,
+  listeners: new Set<() => void>(),
+  release() {
+    launchHold.released = true;
+    for (const listener of launchHold.listeners) listener();
+  },
+}));
 // The hook reads connectivity straight off React Query's onlineManager (the
 // resolve runs once, so a reactive hook would be the wrong shape) and subscribes
 // to it to heal a resolve that failed offline. `goOnline` drives that transition
@@ -53,6 +66,7 @@ const connectivity = vi.hoisted(() => {
 
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => routeQueryClient,
   onlineManager: {
     isOnline: () => connectivity.isOnline,
     subscribe: (listener: (online: boolean) => void) => {
@@ -60,6 +74,11 @@ vi.mock('@tanstack/react-query', () => ({
       return () => connectivity.listeners.delete(listener);
     },
   },
+}));
+vi.mock('../../spray/spray-wall-link-board', () => ({ fetchSprayWallBoardFromLink }));
+vi.mock('../../auth-store', () => ({
+  captureAuthCredentialGeneration: () => 0,
+  isAuthCredentialGenerationCurrent: () => credentialState.current,
 }));
 vi.mock('../../graphql/hooks', () => ({
   useClimb: (variables: unknown) => {
@@ -84,6 +103,14 @@ vi.mock('../../board-path-to-user-board', async (importOriginal) => ({
   resolveBoardForSession,
 }));
 vi.mock('../../open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
+vi.mock('../../launch-hold', async () => {
+  const { useSyncExternalStore } = await import('react');
+  const subscribe = (listener: () => void) => {
+    launchHold.listeners.add(listener);
+    return () => launchHold.listeners.delete(listener);
+  };
+  return { useLaunchHoldReleased: () => useSyncExternalStore(subscribe, () => launchHold.released) };
+});
 // The platform switch, as a mutable so one suite can exercise both forks. A
 // getter (not a captured value) because the hook reads the constant on every
 // render and the mock factory runs once.
@@ -157,18 +184,21 @@ function Harness({
   activationIntent,
   onHandedOff,
   anonymousClimbEnabled,
+  wallUuid,
 }: {
   target: BoardRouteTarget | null;
   mode?: 'deep-link' | 'in-app';
   activationIntent?: string | string[];
   onHandedOff?: () => void;
   anonymousClimbEnabled?: boolean;
+  wallUuid?: string | string[];
 }) {
   const { status, climb, boardConfig, isAngleAdjustable } = useBoardRouteTarget(target, {
     mode,
     activationIntent,
     onHandedOff,
     anonymousClimbEnabled,
+    wallUuid,
   });
   return createElement('span', {
     'data-status': status,
@@ -210,17 +240,208 @@ beforeEach(() => {
   fetchAllMyBoards.mockResolvedValue([]);
   fetchBoardByUuid.mockResolvedValue(null);
   fetchBoardBySlug.mockResolvedValue(null);
+  fetchSprayWallBoardFromLink.mockReset().mockResolvedValue(null);
+  credentialState.current = true;
   getStoredActiveBoard.mockResolvedValue(null);
   getOfflineBoards.mockReturnValue([]);
   climbQuery.current = { data: undefined, isError: false, isSuccess: false };
   climbQueryVariables.current = [];
   authState.current = { isAuthenticated: true, isLoading: false };
   gateState.relaxesRoutes = false;
+  launchHold.released = true;
+  launchHold.listeners.clear();
   connectivity.isOnline = true;
   connectivity.listeners.clear();
 });
 
 describe('useBoardRouteTarget', () => {
+  const WALL_UUID = '11111111-2222-3333-4444-555555555555';
+
+  it('awaits a shared-wall capability and adopts its board without a slug lookup', async () => {
+    useRealResolver();
+    const wallBoard = board({ uuid: 'wall-board', slug: 'unlisted-wall', boardType: 'spray', layoutId: 4242 });
+    const pending = deferredBoard(wallBoard);
+    fetchSprayWallBoardFromLink.mockReturnValue(pending.promise);
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'unlisted-wall', angle: 40 },
+        wallUuid: WALL_UUID,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(fetchSprayWallBoardFromLink).toHaveBeenCalledWith(routeQueryClient, WALL_UUID, 'unlisted-wall'),
+    );
+    expect(statusOf(container)).toBe('resolving');
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    await act(async () => pending.release());
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+    expect(setActiveBoard).toHaveBeenCalledWith({ ...wallBoard, angle: 40 });
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+    expect(fetchAllMyBoards).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('adopts a capability-authorized wall before opening an authorized climb', async () => {
+    useRealResolver();
+    const wallBoard = board({
+      uuid: WALL_UUID,
+      slug: 'public-wall',
+      boardType: 'spray',
+      isPublic: true,
+      layoutId: 4242,
+      sizeId: 4242,
+      setIds: '4242',
+    });
+    fetchSprayWallBoardFromLink.mockResolvedValue(wallBoard);
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-climb', slug: 'public-wall', angle: 40, climbUuid: CLIMB_UUID },
+        wallUuid: WALL_UUID,
+      }),
+    );
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(setActiveBoard).toHaveBeenCalledWith({ ...wallBoard, angle: 40 });
+    expect(openClimbInPlayDrawer).toHaveBeenCalledWith(
+      {
+        kind: 'climb',
+        climb: { uuid: CLIMB_UUID },
+        boardConfig: { boardName: 'spray', layoutId: 4242, sizeId: 4242, setIds: '4242', angle: 40 },
+      },
+      { openPlayDrawer, router },
+      { preview: true },
+    );
+    expect(setActiveBoard.mock.invocationCallOrder[0]).toBeLessThan(openClimbInPlayDrawer.mock.invocationCallOrder[0]);
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+    expect(createBoardMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not adopt a locally stored wall when its explicit capability is denied', async () => {
+    useRealResolver();
+    getStoredActiveBoard.mockResolvedValue(board({ uuid: 'old-wall', slug: 'unlisted-wall', boardType: 'spray' }));
+    const { container } = render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'unlisted-wall', angle: null },
+        wallUuid: WALL_UUID,
+      }),
+    );
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(getStoredActiveBoard).not.toHaveBeenCalled();
+    expect(fetchBoardBySlug).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'heals a rejected capability after reconnecting (initially online: %s)',
+    async (initiallyOnline) => {
+      useRealResolver();
+      connectivity.isOnline = initiallyOnline;
+      const wallBoard = board({ uuid: WALL_UUID, slug: 'unlisted-wall', boardType: 'spray', angle: 25 });
+      getStoredActiveBoard.mockResolvedValue(wallBoard);
+      getOfflineBoards.mockReturnValue([wallBoard]);
+      fetchSprayWallBoardFromLink.mockRejectedValueOnce(new TypeError('Network request failed'));
+      const { container } = render(
+        createElement(Harness, {
+          target: { kind: 'slug-list', slug: 'unlisted-wall', angle: null },
+          wallUuid: WALL_UUID,
+        }),
+      );
+
+      await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+      await act(async () => {});
+      expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(1);
+      expect(setActiveBoard).not.toHaveBeenCalled();
+      expect(router.replace).not.toHaveBeenCalled();
+      expect(getStoredActiveBoard).not.toHaveBeenCalled();
+      expect(getOfflineBoards).not.toHaveBeenCalled();
+      expect(fetchBoardBySlug).not.toHaveBeenCalled();
+      expect(fetchAllMyBoards).not.toHaveBeenCalled();
+      expect(createBoardMutateAsync).not.toHaveBeenCalled();
+
+      if (initiallyOnline) {
+        act(() => {
+          connectivity.isOnline = false;
+          for (const listener of connectivity.listeners) listener(false);
+        });
+      }
+      fetchSprayWallBoardFromLink.mockResolvedValue(wallBoard);
+      act(() => connectivity.goOnline());
+      await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(wallBoard));
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/(tabs)/climbs'));
+      expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2);
+      expect(fetchSprayWallBoardFromLink).toHaveBeenLastCalledWith(routeQueryClient, WALL_UUID, 'unlisted-wall');
+    },
+  );
+
+  it('retries the same slug when a different wall capability arrives', async () => {
+    useRealResolver();
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'unlisted-wall', angle: null };
+    const { container, rerender } = render(createElement(Harness, { target, wallUuid: WALL_UUID }));
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    const nextUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const wallBoard = board({ uuid: 'wall-board', slug: 'unlisted-wall', boardType: 'spray' });
+    fetchSprayWallBoardFromLink.mockResolvedValue(wallBoard);
+    rerender(createElement(Harness, { target, wallUuid: nextUuid }));
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(wallBoard));
+    expect(fetchSprayWallBoardFromLink).toHaveBeenLastCalledWith(routeQueryClient, nextUuid, 'unlisted-wall');
+  });
+
+  it('does not retry a pending capability on reconnect because an earlier capability failed', async () => {
+    useRealResolver();
+    connectivity.isOnline = false;
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'unlisted-wall', angle: null };
+    fetchSprayWallBoardFromLink.mockRejectedValueOnce(new TypeError('Network request failed'));
+    const { container, rerender } = render(createElement(Harness, { target, wallUuid: WALL_UUID }));
+    await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+
+    const nextUuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const wallBoard = board({ uuid: nextUuid, slug: 'unlisted-wall', boardType: 'spray' });
+    const pending = deferredBoard(wallBoard);
+    fetchSprayWallBoardFromLink.mockReturnValue(pending.promise);
+    rerender(createElement(Harness, { target, wallUuid: nextUuid }));
+    await waitFor(() => expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2));
+    expect(statusOf(container)).toBe('resolving');
+
+    await act(async () => connectivity.goOnline());
+    expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2);
+    expect(resolveBoardForSession).toHaveBeenCalledTimes(2);
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    await act(async () => pending.release());
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalledWith(wallBoard));
+    expect(setActiveBoard).toHaveBeenCalledTimes(1);
+    expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for the session before redeeming a private-wall capability', async () => {
+    authState.current = { isAuthenticated: false, isLoading: true };
+    const target: BoardRouteTarget = { kind: 'slug-list', slug: 'private-wall', angle: null };
+    const { rerender } = render(createElement(Harness, { target, wallUuid: WALL_UUID }));
+    expect(resolveBoardForSession).not.toHaveBeenCalled();
+    authState.current = { isAuthenticated: true, isLoading: false };
+    rerender(createElement(Harness, { target, wallUuid: WALL_UUID }));
+    await waitFor(() => expect(resolveBoardForSession).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not adopt a capability response after credentials changed', async () => {
+    useRealResolver();
+    const wallBoard = board({ uuid: 'wall-board', slug: 'unlisted-wall', boardType: 'spray' });
+    const pending = deferredBoard(wallBoard);
+    fetchSprayWallBoardFromLink.mockReturnValue(pending.promise);
+    render(
+      createElement(Harness, {
+        target: { kind: 'slug-list', slug: 'unlisted-wall', angle: null },
+        wallUuid: WALL_UUID,
+      }),
+    );
+    await waitFor(() => expect(fetchSprayWallBoardFromLink).toHaveBeenCalledTimes(1));
+    credentialState.current = false;
+    await act(async () => pending.release());
+    expect(setActiveBoard).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+
   it('adopts the URL board and lands on the climbs tab for a list URL', async () => {
     const { container } = render(
       createElement(Harness, { target: { kind: 'list', board: KILTER_BOARD } as BoardRouteTarget }),
@@ -247,6 +468,30 @@ describe('useBoardRouteTarget', () => {
       expect.anything(),
       { preview: true },
     );
+  });
+
+  // `/play` is a root modal, which iOS presents ABOVE the launch update
+  // placeholder. A cold-start climb link must not open a usable player while
+  // the gate may still reload (#6006).
+  it('holds the hand-off until launch is ready, then opens the drawer once', async () => {
+    launchHold.released = false;
+    climbQuery.current = { data: { uuid: CLIMB_UUID }, isError: false, isSuccess: true };
+
+    render(
+      createElement(Harness, {
+        target: { kind: 'climb', board: KILTER_BOARD, climbUuid: CLIMB_UUID } as BoardRouteTarget,
+      }),
+    );
+
+    // Everything the hand-off needs has resolved; only the hold is in the way.
+    await waitFor(() => expect(setActiveBoard).toHaveBeenCalled());
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
+
+    act(() => launchHold.release());
+
+    await waitFor(() => expect(openClimbInPlayDrawer).toHaveBeenCalledTimes(1));
+    expect(router.replace).toHaveBeenCalledTimes(1);
   });
 
   // Opening the drawer navigates to `/play`. A deep link has nothing behind it,
@@ -641,6 +886,9 @@ describe('useBoardRouteTarget', () => {
     );
 
     await waitFor(() => expect(statusOf(container)).toBe('not-found'));
+    // The DOM commits before the reconnect watcher's passive error-ref update.
+    // Flush that update before delivering the next external connectivity event.
+    await act(async () => {});
     expect(fetchAllMyBoards).not.toHaveBeenCalled();
 
     fetchAllMyBoards.mockResolvedValue([RESOLVED_BOARD]);

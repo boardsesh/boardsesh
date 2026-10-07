@@ -1,23 +1,34 @@
-Neu in 2.5:
+SPRAYWÄNDE: DEINE EIGENE WAND IN BOARDSESH
 
-LÄUFT MIT WOODS, VON VORN BIS HINTEN
+Fotografier deine Heimwand oder die Spraywand in deiner Halle, und die App findet die Griffe. Korrigier, was fehlt, wähl einen Look, veröffentliche, und leg mit dem Schrauben los. Boulder funktionieren wie an jedem anderen Board: in die Warteschlange legen, in Playlists speichern und Begehungen im selben Routenbuch eintragen wie an deinen anderen Boards. Keine LEDs nötig: Die Griffe werden auf deinem Foto hervorgehoben.
 
-Du hast ein Woods Board? Leg dein 12x12 oder 8x10 an, stöbere durch über 5.000 Boulder mit ihren Match- und Fußregeln und beleuchte jeden davon per Bluetooth. Bau und remixe eigene Boulder auf beiden Größen (der Editor bietet nur Griffe an, die wirklich an deinem Board sind), spiegle einen Boulder und das Board zieht mit, und steuere Zurück, Weiter und Spiegeln vom Sperrbildschirm und der Dynamic Island. Griffe erscheinen im Aura-Look mit schärferen Konturen.
+Halte eine Wand privat, mach sie öffentlich oder teile sie per Link oder QR-Code, dann kann deine Crew darauf auch schrauben und loggen. Wand abgeschraubt? Mach ein neues Foto und prüf, was weg ist, bevor sich etwas ändert. Boulder, die einen Griff verloren haben, bleiben mit einem Badge in deiner Liste, und mit einem Tipp remixt du sie auf das, was noch an der Wand ist.
 
-ÜBERNIMM DIE WAND, AUCH OHNE LEDS
+Kostenlos, wie der Rest von Boardsesh.
 
-Du kletterst an einem Board ohne LED-Kit? Übernimm die Wand, und die ganze Session folgt dem Boulder, den du zeigst, der Hallen-Bildschirm auch. Schalt die Beleuchtung in den Einstellungen des Boards aus: Ihr wechselt euch weiter ab, dein Winkel bleibt stehen, und Sessions an einer benannten Wand loggst du auch von der Uhr.
+DEINE CREW, BEI JEDEM BOULDER
 
-SPIEGELN VOM SPERRBILDSCHIRM
+Start zeigt, wer gerade klettert, damit du in die Session springen kannst. Öffne einen Boulder, und die Leute, denen du folgst, kommen zuerst: ihre Notizen, der Grad, den sie ihm geben würden, dann die Begehungen aller anderen. Folge einer Routenbauer*in, und ihre neuen Boulder landen im Feed deiner Crew als eine Karte zum Durchwischen.
 
-Während dein Handy das Board steuert, bekommen Live-Aktivität und Dynamic Island einen Spiegeln-Button neben Zurück, Weiter und der Glühbirne. App, Crew, Vorschaubilder und LEDs folgen dem gespiegelten Boulder, und er bleibt gespiegelt, wenn du die App öffnest.
+EIN PAUSEN-TIMER, DER DIE WARTESCHLANGE WEITERSCHALTET
+
+Zieh Boulder im Minutentakt durch, ohne zwischen den Versuchen zum Handy zu greifen. Schalt den Pausen-Timer im Tab Session ein, und er läuft ab dem Moment, in dem du eine Begehung einträgst, und danach ins Rote, wenn du zu lange sitzen bleibst. Lass ihn zum nächsten Boulder wechseln, dann beleuchtet er ihn für dich an der Wand. Jemand will zuerst dran? Halte seinen Boulder gedrückt und tipp auf Als Nächstes dran, um ihn direkt hinter den Boulder an der Wand zu setzen.
+
+AUSSERDEM NEU
+
+- Die anderen Boards deiner Halle stehen im Wand-Sheet: ein Tipp auf die Wand, vor der du stehst, und die Bluetooth-Verbindung und die Warteschlange ziehen mit.
+- Schalt Meine Grade verwenden ein, und der Grad, den du einem Boulder gegeben hast, ist der, den du siehst, sortierst und filterst.
+- Ähnliche Boulder und die neu gestaltete Griff-Heatmap laufen auf deinem heruntergeladenen Board, auch ohne Empfang.
+- Verknüpfte Board-Routenbücher synchronisieren jetzt von selbst, rund um die Uhr.
+- Kletterdaten exportieren: Verlauf, Playlists und Boulder aus den Einstellungen.
+- Ein neuer Board-Look, Aura Umriss: eine feste Kontur um jeden leuchtenden Griff.
+- Routen laufen im Tempo, in dem sie gesetzt wurden: Das Tempo steht in Sekunden pro Bild, bis 60.
 
 BEHOBEN
 
-- Griffe zeichnen schneller: das Board-Rendering wartet nicht mehr auf den Rest der App.
-- Dein Board bleibt dunkel, bis du es willst. Ein Handy, das Stunden oder Tage später wieder in Reichweite kommt, beleuchtet nicht mehr deinen letzten Boulder. Glühbirne, Widget und Reconnects mitten im Boulder beleuchten das Board weiterhin sofort.
-- Der Boulder-Tab und seine Suche bleiben nicht mehr hängen, nachdem sich mitten in der Session eine Playlist darüber geschlossen hat. Kein App-Neustart mehr, um die Suche zurückzubekommen.
-- Heruntergeladene Boulder bleiben nach einem App-Update aktuell.
-- Die Boulder-Suche schließt sich, ohne dass ein Vorschau-Sheet aufspringt.
+- Begehungen, die bei schlechter Verbindung eingetragen werden, warten auf Empfang und synchronisieren, statt verloren zu gehen.
+- Woods: Jeder Boulder taucht auf, egal in welchem Winkel er gesetzt wurde, und der Filter zeigt alle Routenbauer*innen eines Boards.
+- MoonBoard: Ein Boulder mit Grad in nur einem der beiden Winkel zeigt jetzt eine Schätzung für den anderen.
+- Wischen im Play-Drawer bleibt auf der Liste, aus der du ausgewählt hast, auch wenn eine eingetragene Begehung diese Liste neu sortiert.
 
 Kostenlos, werbefrei, Open Source.

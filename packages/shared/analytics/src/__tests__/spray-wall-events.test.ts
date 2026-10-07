@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { SHARED_EVENTS } from '../events';
 import {
   SPRAY_ROLLOUT_GATES,
+  climbEditedFromBroken,
   climbRemixedFromBroken,
   sprayHoldsReviewed,
+  sprayWallBindStalled,
   sprayWallDetectionFinished,
   sprayWallPhotoPicked,
   sprayWallResetApplied,
@@ -36,9 +38,17 @@ const FORBIDDEN_KEY_FRAGMENTS = ['uri', 'url', 'name', 'uuid', 'path', 'file', '
 
 const EVERY_PAYLOAD = [
   sprayWallPhotoPicked('camera'),
-  sprayWallUploadFinished({ outcome: 'ok', durationMs: 1200, determinate: true, attempt: 1 }),
+  sprayWallUploadFinished({
+    outcome: 'ok',
+    durationMs: 1200,
+    determinate: true,
+    attempt: 1,
+    cropped: true,
+    rotated: false,
+  }),
   sprayWallDetectionFinished({ outcome: 'ok', candidateCount: 214, durationMs: 4100 }),
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
+  sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
   sprayWallResetPreviewed({
     keptCount: 150,
     removedCount: 20,
@@ -48,8 +58,16 @@ const EVERY_PAYLOAD = [
     aspectMismatch: false,
     detectionCount: 181,
   }),
-  sprayWallResetApplied({ keptCount: 150, removedCount: 20, addedCount: 31, climbsChanged: 12, moveCount: 6 }),
+  sprayWallResetApplied({
+    keptCount: 150,
+    removedCount: 20,
+    addedCount: 31,
+    climbsChanged: 12,
+    moveCount: 6,
+    fullReset: false,
+  }),
   climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
+  climbEditedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
 ];
 
 describe('spray wall event builders', () => {
@@ -62,10 +80,40 @@ describe('spray wall event builders', () => {
       name: SHARED_EVENTS.SprayHoldsReviewed,
       properties: { holdCount: 12, hadCandidates: false },
     });
+    expect(sprayWallBindStalled({ stage: 'navigate', elapsedMs: 1500 })).toEqual({
+      name: SHARED_EVENTS.SprayWallBindStalled,
+      properties: { stage: 'navigate', elapsedMs: 1500 },
+    });
     expect(climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' })).toEqual({
       name: SHARED_EVENTS.ClimbRemixedFromBroken,
       properties: { lostHoldCount: 3, source: 'play_drawer' },
     });
+    expect(climbEditedFromBroken({ lostHoldCount: 2, source: 'play_drawer' })).toEqual({
+      name: SHARED_EVENTS.ClimbEditedFromBroken,
+      properties: { lostHoldCount: 2, source: 'play_drawer' },
+    });
+  });
+
+  it('says whether the uploaded photo was cropped or turned, and nothing about how', () => {
+    // Two booleans, not the crop rectangle or the angle: what was cut away from
+    // a photograph of somebody's wall is not ours to know.
+    expect(
+      sprayWallUploadFinished({
+        outcome: 'ok',
+        durationMs: 900,
+        determinate: true,
+        attempt: 1,
+        cropped: true,
+        rotated: true,
+      }),
+    ).toEqual({
+      name: SHARED_EVENTS.SprayWallUploadFinished,
+      properties: { outcome: 'ok', durationMs: 900, determinate: true, attempt: 1, cropped: true, rotated: true },
+    });
+    // An older client sends neither, and that must stay a valid payload.
+    expect(
+      sprayWallUploadFinished({ outcome: 'failed', durationMs: 10, determinate: false, attempt: 2 }).properties,
+    ).not.toHaveProperty('cropped');
   });
 
   it('uses a name from the shared catalog for every builder', () => {

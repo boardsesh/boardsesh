@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, render, screen, waitFor, act } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const redirectMock = vi.hoisted(() => vi.fn());
@@ -35,6 +35,10 @@ const linkEmptyDismissalMocks = vi.hoisted(() => ({
   clear: vi.fn(async () => {}),
   resume: vi.fn(),
   suspend: vi.fn(),
+}));
+const clearUserDataExportDownloadsMock = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('../../lib/user-data-export-download', () => ({
+  clearUserDataExportDownloads: clearUserDataExportDownloadsMock,
 }));
 
 // expo-router and react-native both reach for the native runtime; stub the
@@ -405,6 +409,14 @@ vi.mock('../../lib/auth-interceptor', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../auth-provider';
+import {
+  clearSprayWallRegistry,
+  getSprayWall,
+  registerSprayWall,
+  setSprayWallLoader,
+  sprayWallViewerCanEdit,
+  sprayWallViewerGeneration,
+} from '../../lib/spray/spray-wall-registry';
 import { GATED_PATHS, READ_ONLY_PATHS } from '../../lib/routing/__tests__/read-only-route-corpus';
 
 describe('AuthProvider loading state', () => {
@@ -839,6 +851,226 @@ describe('AuthProvider sign-in and the cached signed-out profile', () => {
 
     expect(result.current.isAuthenticated).toBe(true);
     expect(queryClient.getQueryState(['profile'])?.isInvalidated).toBe(false);
+  });
+});
+
+// Whether the viewer can edit a spray wall is one ACCOUNT's answer, kept in a
+// module-level registry that survives sign-out (#5955). The provider has to
+// disown it, and it is the only thing that can: on a real sign-out or sign-in
+// it renders a redirect INSTEAD of its children, so every hook below it is
+// unmounted and comes back with no memory. These cases run the REAL registry
+// through the real tree swap, and each one asserts the children really went
+// away, so they cannot pass on a reset that only works for a mounted consumer.
+describe('AuthProvider and who can edit a spray wall', () => {
+  const LAYOUT_ID = 4200;
+
+  beforeEach(() => {
+    clearSprayWallRegistry();
+    getAuthTokenMock.mockReset();
+    isTokenExpiringSoonMock.mockReset();
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+    authSignOutMock.mockReset();
+    authSignOutMock.mockResolvedValue(true);
+    clearStoredSessionIdMock.mockReset();
+    clearStoredSessionIdMock.mockResolvedValue(undefined);
+    clearStoredActiveBoardMock.mockReset();
+    clearStoredActiveBoardMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    clearSprayWallRegistry();
+  });
+
+  /** A wall the signed-in account can edit, as the loader would have registered it. */
+  function registerEditableWall() {
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-uuid',
+      angle: 40,
+      version: 3,
+      versionId: 3,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://private.example/photo',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [{ id: 7, cx: 100, cy: 200, r: 18 }],
+      viewerAccess: { canEdit: true, generation: sprayWallViewerGeneration() },
+    });
+  }
+
+  /** Mount/unmount counts for the app tree below the provider. */
+  function renderWithTree() {
+    const tree = { mounts: 0, unmounts: 0 };
+    function AppTree() {
+      useEffect(() => {
+        tree.mounts += 1;
+        return () => {
+          tree.unmounts += 1;
+        };
+      }, []);
+      return null;
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AppTree />
+          {children}
+        </AuthProvider>
+      </QueryClientProvider>
+    );
+    return { tree, ...renderHook(() => useAuth(), { wrapper }) };
+  }
+
+  it("does not hand a wall owner's Edit to whoever uses the phone after they sign out", async () => {
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { result, tree } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    registerEditableWall();
+    const generationBefore = sprayWallViewerGeneration();
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(true);
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    // The tree below the provider is gone, which is why no hook in it could
+    // have done this.
+    expect(tree.unmounts).toBe(tree.mounts);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(sprayWallViewerGeneration()).toBeGreaterThan(generationBefore);
+    // Still registered and still drawable, and stale, so the next ask refetches.
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 3, registeredAtMs: 0 });
+  });
+
+  it('disowns a fetch that left under the old account and lands after the sign-out', async () => {
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { result } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    const generationAtFetch = sprayWallViewerGeneration();
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    // The old account's answer arrives now. The wall registers; the Edit does not.
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-uuid',
+      angle: 40,
+      version: 3,
+      versionId: 3,
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'https://private.example/photo',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+      viewerAccess: { canEdit: true, generation: generationAtFetch },
+    });
+    expect(getSprayWall(LAYOUT_ID)?.version).toBe(3);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
+  });
+
+  it('does not leave the anonymous "cannot edit" standing for a climber who signs in', async () => {
+    routerState.segments = ['auth', 'login'];
+    getAuthTokenMock.mockResolvedValueOnce(null).mockResolvedValue('jwt-token');
+    authSignInWithCredentialsMock.mockResolvedValue({ success: true });
+    const { result, tree } = renderWithTree();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isAuthenticated).toBe(false);
+    registerEditableWall();
+    const generationBefore = sprayWallViewerGeneration();
+
+    const { signInWithCredentials } = result.current;
+    await act(async () => {
+      await signInWithCredentials('climber@example.com', 'password');
+    });
+
+    // Signed in on the login route: the provider swaps the tree for a redirect.
+    expect(tree.unmounts).toBe(tree.mounts);
+    expect(sprayWallViewerGeneration()).toBeGreaterThan(generationBefore);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(getSprayWall(LAYOUT_ID)?.registeredAtMs).toBe(0);
+  });
+
+  it('fetches each wall once on sign-out, under the generation that is still current afterwards', async () => {
+    // The flip to signed-out and the cleanup both touch the registry. If both
+    // bumped the generation around one refetch, that request would be disowned
+    // and sent again: two render-data requests per wall for one sign-out.
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { result } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    registerEditableWall();
+    const generationsAtFetch: number[] = [];
+    const loader = vi.fn(async () => {
+      generationsAtFetch.push(sprayWallViewerGeneration());
+    });
+    setSprayWallLoader(loader);
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID, { force: true });
+    // Nothing moved the generation after the request left, so the real loader
+    // would keep this answer rather than ask again.
+    expect(generationsAtFetch).toEqual([sprayWallViewerGeneration()]);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+  });
+
+  it('drops Edit but fetches nothing when a keychain failure flips the app to signed-out', async () => {
+    // Native: a token read that throws releases the UI to the login route with
+    // NO sign-out cleanup, and requests sent in that state carry no token. A
+    // private wall fetched then would resolve null and be withdrawn from the
+    // live player. So: forget who could edit, and do not ask.
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const { result, tree } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    registerEditableWall();
+    const registeredAt = getSprayWall(LAYOUT_ID)?.registeredAtMs;
+    const generationBefore = sprayWallViewerGeneration();
+    const loader = vi.fn(async () => {});
+    setSprayWallLoader(loader);
+    const { refreshAuthState } = result.current;
+
+    getAuthTokenMock.mockRejectedValueOnce(new Error('keychain locked'));
+    await act(async () => {
+      await refreshAuthState();
+    });
+
+    // It really was the no-cleanup path: the tree is gone, the caches are not.
+    expect(tree.unmounts).toBe(tree.mounts);
+    expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
+    expect(sprayWallViewerGeneration()).toBeGreaterThan(generationBefore);
+    expect(loader).not.toHaveBeenCalled();
+    // Still registered, at the same version, and still fresh: no surface that
+    // asks for it is sent to the network without a token.
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 3, registeredAtMs: registeredAt });
+
+    // The keychain answers again: now the wall is re-read, once, with a token.
+    await act(async () => {
+      await refreshAuthState();
+    });
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledWith(LAYOUT_ID, { force: true });
+  });
+
+  it('leaves the registry alone at launch and on a re-check of the same session', async () => {
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    const generationAtLaunch = sprayWallViewerGeneration();
+    const { result } = renderWithTree();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    registerEditableWall();
+
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+
+    expect(sprayWallViewerGeneration()).toBe(generationAtLaunch);
+    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(true);
   });
 });
 
@@ -1444,6 +1676,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
   });
 
   it('keeps the downloaded catalogs when checkAuth finds the session expired', async () => {
+    clearUserDataExportDownloadsMock.mockClear();
     const result = await renderSignedIn();
 
     deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
@@ -1453,6 +1686,7 @@ describe('AuthProvider sign-out offline data wipe', () => {
     });
 
     expect(clearUserDataMock).toHaveBeenCalled();
+    expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(purgeLocalDataForSignOutMock).not.toHaveBeenCalled();
   });
 
@@ -2081,6 +2315,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
   // stored board. The heavy in-memory cleanup stays gated behind the
   // authenticated transition (nothing to wipe on a cold start).
   it('clears persisted board/session on a signed-out cold start (relaunch guard)', async () => {
+    clearUserDataExportDownloadsMock.mockClear();
     getAuthTokenMock.mockResolvedValue(null);
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -2095,6 +2330,7 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
 
     await waitFor(() => expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1));
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
+    expect(clearUserDataExportDownloadsMock).toHaveBeenCalledWith(1);
     expect(resetHttpClientMock).not.toHaveBeenCalled();
     expect(disposeWsClientMock).not.toHaveBeenCalled();
   });

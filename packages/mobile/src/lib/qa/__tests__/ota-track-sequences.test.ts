@@ -253,7 +253,7 @@ vi.mock('react-native', () => ({
     },
   },
 }));
-vi.mock('../../legacy-ota-channel-migration', () => ({ isBranchSurfingBuild: () => true }));
+vi.mock('../../ota-channel-override-cleanup', () => ({ isBranchSurfingBuild: () => true }));
 vi.mock('../../../settings', () => ({
   getSetting: (key: string) => {
     if (key in device.settings) return device.settings[key];

@@ -15,7 +15,7 @@
 // component (`SprayResetCompareScreen`), so it is still testable on its own and
 // still gets the whole screen when it is showing.
 
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -30,6 +30,7 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SprayCornerFooter } from './SprayCornerFooter';
 import { SprayCornerStep } from './SprayCornerStep';
+import { SprayPhotoAdjustStep } from './SprayPhotoAdjustStep';
 import { SprayResetCompareScreen } from './SprayResetCompareScreen';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -39,11 +40,20 @@ import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
+import { sprayDraftPurpose } from '../../lib/spray/spray-draft-purpose';
+import { sprayHoldEditorHref } from '../../lib/spray/spray-routes';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { SprayDetectionStep } from './SprayDetectionStep';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
-import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
-import { fetchSprayWallVersions, useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
+import {
+  pickWallPhotoFromCamera,
+  pickWallPhotoFromLibrary,
+  renderWallPhotoEdit,
+  rescalePoint,
+} from '../../lib/spray/wall-photo';
+import { discardLocalPhoto } from '../../lib/spray/discard-local-photo';
+import { editCrops, editRotates, editsEqual, isIdentityEdit, type WallPhotoEdit } from '../../lib/spray/photo-edit';
+import { useCreateSprayWallVersion } from '../../lib/spray/use-create-spray-wall';
 import { useDiscardSprayWallVersion, useSprayWallWithVersions } from '../../lib/spray/use-spray-wall-reset';
 import {
   anchorsAreReady,
@@ -54,6 +64,7 @@ import {
   shouldConfirmLeave,
   type ResetWallStep,
 } from './reset-wall-machine';
+import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 
 /** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
@@ -72,6 +83,9 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   const { showToast } = useToast();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
+  // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
+  // cover however its window is later resized.
+  const formColumnCapped = sprayFlowCoversScreen();
   const insets = useSafeAreaInsets();
 
   const wallQuery = useSprayWallWithVersions(wallUuid);
@@ -83,6 +97,12 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
 
   const [state, dispatch] = useReducer(resetWallReducer, undefined, initialResetWallState);
   const [pickerBusy, setPickerBusy] = useState(false);
+  const [draftConflict, setDraftConflict] = useState(false);
+  // Keep the exact successful upload across create retries; another photo is never adopted.
+  const uploadedPhotoRef = useRef<{
+    photo: NonNullable<typeof state.photo>;
+    uploaded: Awaited<ReturnType<typeof uploadSprayWallPhoto>>;
+  } | null>(null);
 
   /**
    * Whether the climber has started work this session — a photo picked, or
@@ -93,8 +113,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    * focus, the query going stale), and an upload that LANDED but lost its
    * response leaves a draft on the wall this session does not know about. The
    * next refetch would then swap a climber who is mid-flow — photo chosen,
-   * corners marked — onto "there's a reset half done", throwing both away for a
-   * draft the retry is about to adopt anyway (`runUpload` reconciles).
+   * corners marked — onto "there's a reset half done", throwing both away.
+   * A conflicting draft discovered during upload requires an explicit choice.
    *
    * So the in-progress state stays authoritative until the climber acts. The
    * open-draft screen is for arriving at a blocked wall, not for being moved to
@@ -117,6 +137,17 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    * leaving this screen; resuming never replaces the published wall.
    */
   const openDraft = useMemo(() => wall?.versions?.find((version) => version.status === 'DRAFT') ?? null, [wall]);
+  // The wall's canonical frame, which a reset's corners map onto: what the
+  // corner step grades them against for the generated wall looks.
+  const referenceWidth = wall?.referenceWidth ?? null;
+  const referenceHeight = wall?.referenceHeight ?? null;
+  const qualityFrame = useMemo(
+    () =>
+      referenceWidth && referenceHeight && referenceWidth > 0 && referenceHeight > 0
+        ? { width: referenceWidth, height: referenceHeight }
+        : null,
+    [referenceWidth, referenceHeight],
+  );
 
   // ============================================
   // Step 1 — the photo
@@ -148,6 +179,49 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   );
 
   // ============================================
+  // Step 1, detour — crop or rotate
+  // ============================================
+
+  // The last render failed. Local rather than machine state: it is copy on the
+  // crop step, and the machine's own answer to a failure is to stay put.
+  const [adjustFailed, setAdjustFailed] = useState(false);
+
+  const openAdjust = useCallback(() => {
+    setAdjustFailed(false);
+    dispatch({ type: 'ADJUST_OPENED' });
+  }, []);
+
+  const applyPhotoEdit = useCallback(
+    async (edit: WallPhotoEdit) => {
+      const photo = state.photo;
+      if (!photo || state.photoProcessing) return;
+      setAdjustFailed(false);
+      // Done with nothing changed is Cancel: re-rendering the same file would
+      // clear the four corners for nothing.
+      if (editsEqual(photo.edit, edit)) {
+        dispatch({ type: 'BACK' });
+        return;
+      }
+      dispatch({ type: 'PHOTO_PROCESSING_STARTED' });
+      try {
+        const rendered = await renderWallPhotoEdit(photo, edit);
+        dispatch({
+          type: 'PHOTO_ADJUSTED',
+          photo: { ...photo, ...rendered, edit: isIdentityEdit(edit) ? null : edit },
+        });
+        // The edit this one replaced is nobody's now. Never the base, which the
+        // next re-edit starts from, nor the picker's original.
+        if (photo.uri !== photo.base.uri && photo.uri !== rendered.uri) discardLocalPhoto(photo.uri);
+      } catch (error) {
+        reportError(error);
+        setAdjustFailed(true);
+        dispatch({ type: 'PHOTO_PROCESSING_FAILED' });
+      }
+    },
+    [state.photo, state.photoProcessing],
+  );
+
+  // ============================================
   // Steps 3 and 4 — upload, then suggest
   // ============================================
 
@@ -168,17 +242,24 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     const startedAt = Date.now();
     const attempt = state.upload.attempts + 1;
     try {
-      const uploaded = await uploadSprayWallPhoto({
-        wallUuid,
-        uri: photo.uri,
-        onProgress: (progress) => dispatch({ type: 'UPLOAD_PROGRESS', progress }),
-      });
+      const savedUpload = uploadedPhotoRef.current;
+      const uploaded =
+        savedUpload?.photo === photo
+          ? savedUpload.uploaded
+          : await uploadSprayWallPhoto({
+              wallUuid,
+              uri: photo.uri,
+              onProgress: (progress) => dispatch({ type: 'UPLOAD_PROGRESS', progress }),
+            });
+      uploadedPhotoRef.current = { photo, uploaded };
       trackSprayEvent(
         sprayWallUploadFinished({
           outcome: 'ok',
           durationMs: Date.now() - startedAt,
           determinate: uploaded.determinate,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
 
@@ -190,18 +271,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         rescalePoint(point, { width: photo.width, height: photo.height }, stored),
       );
 
-      // A retry has to reconcile before it creates. `createSprayWallVersion` can
-      // land on the server and lose its response on the way back — a dropped
-      // connection, a backgrounded app — and the wall then carries a draft this
-      // session does not know about. Creating a second one is refused by the
-      // one-draft-per-wall rule, so the retry would fail forever on a wall that
-      // is actually fine. Adopting the draft that is already there is both the
-      // correct state and the only way out.
-      const version =
-        attempt > 1
-          ? ((await fetchSprayWallVersions(wallUuid))?.versions?.find((row) => row.status === 'DRAFT') ??
-            (await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors })))
-          : await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors });
+      // Backend reconciliation accepts only this exact uploaded object and mapping.
+      const version = await createVersionAsync({ wallUuid, photoId: uploaded.photoId, anchors: storedAnchors });
       dispatch({
         type: 'DRAFT_CREATED',
         draft: {
@@ -220,11 +291,17 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           durationMs: Date.now() - startedAt,
           determinate: false,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
       // The version cap is the one a reset can actually hit — fifty resets is four
       // years of monthly changes — and it comes back as an English resolver
       // sentence. Branch on the code and say the number instead.
+      if (extractGraphqlCode(error) === 'SPRAY_WALL_DRAFT_ALREADY_OPEN') {
+        await wallQuery.refetch();
+        setDraftConflict(true);
+      }
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
       dispatch({
         type: 'UPLOAD_FAILED',
@@ -239,6 +316,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     wallUuid,
     createVersionAsync,
     runDetection,
+    wallQuery.refetch,
     t,
   ]);
 
@@ -292,6 +370,10 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     hapticSelection();
     try {
       await discardVersionAsync(openDraft.id);
+      setDraftConflict(false);
+      // Keep the chosen new photo and its upload: we discarded the conflicting
+      // saved draft, which references a different object.
+      dispatch({ type: 'DRAFT_DISCARDED' });
       showToast(t('sprayReset.openDraft.discarded'), 'success');
     } catch (error) {
       reportError(error);
@@ -303,10 +385,13 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // Render
   // ============================================
 
-  if (wallQuery.isPending) {
+  if (wallQuery.isPending || (!hasStartedWork && wallQuery.isFetching)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
+        <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+          {t('sprayReset.loading')}
+        </Text>
       </View>
     );
   }
@@ -339,7 +424,24 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
   // ARRIVAL. Once the climber has picked a photo, a background refetch must not
   // take the screen off them (see `hasStartedWork`), and once `state.draft`
   // exists the open draft IS this flow's.
-  if (openDraft && !hasStartedWork) {
+  if (openDraft && (!hasStartedWork || draftConflict)) {
+    if (sprayDraftPurpose(openDraft, wall.currentVersion) !== 'reset') {
+      return (
+        <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
+          <Text variant="title3" style={styles.centeredText}>
+            {t('sprayReset.openDraft.holdEditTitle')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centeredText}>
+            {t('sprayReset.openDraft.holdEditBody')}
+          </Text>
+          <Button
+            title={t('sprayMaintenance.screenTitle')}
+            onPress={() => router.replace(sprayHoldEditorHref(wallUuid))}
+          />
+          <Button title={t('sprayWizard.back')} variant="text" onPress={() => router.back()} />
+        </View>
+      );
+    }
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Text variant="title3" style={styles.centeredText}>
@@ -349,11 +451,17 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           {t('sprayReset.openDraft.body')}
         </Text>
         {openDraft.photo?.width && openDraft.photo?.height ? (
+          // The way forward is the primary action; throwing the reset away is
+          // the destructive side road. They were drawn the other way round:
+          // a small Resume above a large filled discard (#5960).
           <Button
             title={t('sprayDetection.resume')}
+            variant="filled"
+            size="large"
             onPress={() => {
               const { width, height } = openDraft.photo ?? {};
               if (!width || !height) return;
+              setDraftConflict(false);
               dispatch({
                 type: 'DRAFT_CREATED',
                 draft: {
@@ -369,8 +477,8 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
         ) : null}
         <Button
           title={t('sprayReset.openDraft.discard')}
-          variant="filled"
-          size="large"
+          variant="text"
+          role="destructive"
           onPress={() => void discardOpenDraft()}
           loading={discardVersion.isPending}
           disabled={discardVersion.isPending}
@@ -398,6 +506,23 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);
 
+  // The crop step: a detour off the photo step, uncounted. On a reset the four
+  // corners are mandatory next, so the copy says to keep them inside the crop
+  // (a corner cut off here is a corner nobody can mark).
+  if (state.step === 'adjust' && state.photo) {
+    return (
+      <SprayPhotoAdjustStep
+        title={t('sprayWizard.adjust.title')}
+        body={t('sprayReset.adjust.body')}
+        photo={state.photo}
+        processing={state.photoProcessing}
+        failed={adjustFailed}
+        onDone={(edit) => void applyPhotoEdit(edit)}
+        onCancel={goBack}
+      />
+    );
+  }
+
   // Its own screenful rather than a section of the scrolling page below: the
   // photo is fitted to the space between the header and the footer, so all four
   // rings are on screen and a vertical drag is never also a scroll (#5958).
@@ -417,6 +542,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           value={state.anchors}
           onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
           invalid={state.anchorRejection != null}
+          qualityFrame={qualityFrame}
         />
         <SprayCornerFooter
           primaryTitle={t('sprayReset.anchors.use')}
@@ -436,7 +562,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={formColumnCapped ? [styles.content, styles.tabletContent] : styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -466,6 +592,9 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {t('sprayReset.photo.body')}
             </Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayWizard.photo.tip')}
+            </Text>
             {state.photo ? (
               <View style={styles.previewWrap}>
                 <Image
@@ -477,6 +606,13 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
                   }}
                   contentFit="cover"
                   accessibilityIgnoresInvertColors
+                />
+                <Button
+                  title={t('sprayWizard.photo.adjust')}
+                  icon="crop.free"
+                  variant="text"
+                  onPress={openAdjust}
+                  disabled={pickerBusy}
                 />
               </View>
             ) : null}
@@ -602,6 +738,12 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     gap: spacing[2],
   },
+  // A full-screen iPad cover: the form keeps a readable column, centred.
+  tabletContent: {
+    maxWidth: SPRAY_FORM_MAX_WIDTH,
+    alignSelf: 'center',
+    width: '100%',
+  },
   stepCounter: {
     textTransform: 'uppercase',
     marginBottom: spacing[1],
@@ -609,6 +751,7 @@ const styles = StyleSheet.create({
   previewWrap: {
     alignItems: 'center',
     paddingVertical: spacing[3],
+    gap: spacing[2],
   },
   photoActions: {
     gap: spacing[2],

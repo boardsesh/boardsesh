@@ -21,7 +21,6 @@ import {
   displayedAttemptCount,
   normalizeLogbookQuality,
   logbookNoteIsVisible,
-  isTickOnEarlierVersion,
 } from '@boardsesh/logbook';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -218,10 +217,6 @@ export const LogbookRow = memo(function LogbookRow({
   // name remains extra personal context and stays in the accessibility label.
   const layoutLabel = getLayoutDisplayName(ascent.boardType, ascent.layoutId);
   const boardAngleLabel = `${layoutLabel} · ${ascent.angle}°`;
-  // The climb has been edited since this was logged (#6023). Only the flat
-  // logbook's feed carries the two versions; a grouped row leaves them
-  // undefined and shows no tag.
-  const onEarlierVersion = isTickOnEarlierVersion(ascent.climbRevision, ascent.climbCurrentRevision);
   const namedWall = ascent.boardDisplayName?.trim();
   const wallContext = showBoardInMeta && namedWall && namedWall !== layoutLabel ? namedWall : null;
   // A grouped flash day (flash + later repeats) still owns its summed tries —
@@ -409,7 +404,6 @@ export const LogbookRow = memo(function LogbookRow({
     notePreview ? `${t('mobile.logbook.row.a11yHasNote')}: ${notePreview}` : null,
     hasBetaVideo ? t('mobile.logbook.row.a11yHasBetaVideo') : null,
     ascent.isMirror ? t('mobile.logbook.row.a11yMirrored') : null,
-    onEarlierVersion ? t('mobile.logbook.row.a11yEarlierVersion') : null,
     boardAngleLabel,
     namedWall && namedWall !== layoutLabel ? namedWall : null,
     timeLabel,
@@ -498,7 +492,6 @@ export const LogbookRow = memo(function LogbookRow({
                 style={styles.boardIdentity}
               >
                 {boardAngleLabel}
-                {onEarlierVersion ? ` · ${t('mobile.logbook.row.earlierVersion')}` : null}
               </Text>
               {wallContext ? (
                 <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>

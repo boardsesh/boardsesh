@@ -6,7 +6,8 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
 import Animated, { type SharedValue } from 'react-native-reanimated';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
@@ -19,6 +20,7 @@ import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/
 import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { SearchHoldFilterRings } from './SearchHoldFilterRings';
+import { FullResolutionPhotoLayer, type FullResolutionPhoto } from './FullResolutionPhotoLayer';
 
 /** Context handed to an overlay rendered inside the board's zoom transform. */
 export type FilterBoardTransformContext = {
@@ -43,6 +45,13 @@ export type FilterBoardTransformContext = {
   /** Live zoom scale, so an overlay can convert screen-pixel deltas to board px. */
   scaleSV: SharedValue<number>;
   /**
+   * True while a two-finger pinch is in progress (see `useZoomPanGesture`). An
+   * overlay whose own gestures are `simultaneousWithExternalGesture(pinchRef)`
+   * is not failed by the pinch, so it bails on this instead of editing under a
+   * zooming hand.
+   */
+  isPinchingSV: SharedValue<boolean>;
+  /**
    * The rest of the live zoom transform. Together with `scaleSV` and the
    * container size these are everything needed to invert the board's transform
    * on the UI thread — what an overlay drawn ABOVE the transform (see
@@ -59,6 +68,16 @@ export type FilterBoardTransformContext = {
 };
 
 type InteractiveFilterBoardProps = {
+  /** Explicit draft photograph; avoids published registry geometry. */
+  backgroundPhotoUrl?: string;
+  /**
+   * A sharper copy of `backgroundPhotoUrl`, fetched once the zoom passes its
+   * `minScale` and drawn over it (#5911). Only the spray hold editor passes one;
+   * ignored without `backgroundPhotoUrl`.
+   */
+  fullResolutionPhoto?: FullResolutionPhoto | null;
+  /** `fullResolutionPhoto` would not load. The base photo stays on screen. */
+  onFullResolutionPhotoError?: () => void;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -116,6 +135,20 @@ type InteractiveFilterBoardProps = {
    * it, and a declarative prop equal to its previous value would not.
    */
   controlRef?: RefObject<FilterBoardControls | null>;
+  /**
+   * Where the zoomed-in reset control sits. Defaults to bottom-right, the corner
+   * every other board uses; a screen with its own floating chrome along the
+   * bottom edge moves it out of the way.
+   */
+  resetZoomStyle?: StyleProp<ViewStyle>;
+  /**
+   * Deepest pinch zoom. Defaults to the 4× every board uses; the spray hold
+   * editor passes `SPRAY_EDITOR_MAX_SCALE` so small holds beside big ones can be
+   * framed. Changing it does not rebuild the board's gestures.
+   */
+  maxScale?: number;
+  /** Two fingers pan as well as zoom. See `useZoomPanGesture`'s `pinchPans`. */
+  pinchPans?: boolean;
 };
 
 /** What {@link InteractiveFilterBoard} exposes through `controlRef`. */
@@ -140,6 +173,9 @@ export type FilterBoardControls = {
  * yield idle drags to.
  */
 export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard({
+  backgroundPhotoUrl,
+  fullResolutionPhoto,
+  onFullResolutionPhotoError,
   boardName,
   layoutId,
   sizeId,
@@ -157,6 +193,9 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderInTransform,
   renderAboveBoard,
   controlRef,
+  resetZoomStyle,
+  maxScale,
+  pinchPans,
 }: InteractiveFilterBoardProps) {
   // Shared with the rest/zoom tap overlays so they mark themselves simultaneous
   // with the pinch — same Android pinch-stall fix as the create board (a finger
@@ -181,6 +220,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     containerHeight: renderHeight,
     panActivationOffset: PAN_ACTIVATION_OFFSET,
     pinchRef,
+    maxScale,
+    pinchPans,
   });
 
   const transformContext = useMemo<FilterBoardTransformContext>(
@@ -188,6 +229,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       pinchGesture,
       pinchRef,
       scaleSV,
+      isPinchingSV,
       translateXSV,
       translateYSV,
       containerWidthSV,
@@ -195,7 +237,17 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       renderWidth,
       renderHeight,
     }),
-    [pinchGesture, scaleSV, translateXSV, translateYSV, containerWidthSV, containerHeightSV, renderWidth, renderHeight],
+    [
+      pinchGesture,
+      scaleSV,
+      isPinchingSV,
+      translateXSV,
+      translateYSV,
+      containerWidthSV,
+      containerHeightSV,
+      renderWidth,
+      renderHeight,
+    ],
   );
 
   useImperativeHandle(controlRef, () => ({ zoomTo, resetZoom }), [zoomTo, resetZoom]);
@@ -271,17 +323,35 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       <GestureDetector gesture={pinchGesture}>
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
-            <BoardImageNative
-              frames=""
-              boardName={boardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              boardWidth={boardWidth}
-              boardHeight={boardHeight}
-              mirrored={mirrored}
-              underOverlay={underOverlay}
-            />
+            {backgroundPhotoUrl ? (
+              <>
+                <Image
+                  source={{ uri: backgroundPhotoUrl }}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="fill"
+                  cachePolicy="memory"
+                />
+                {fullResolutionPhoto ? (
+                  <FullResolutionPhotoLayer
+                    photo={fullResolutionPhoto}
+                    scaleSV={scaleSV}
+                    onError={onFullResolutionPhotoError}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <BoardImageNative
+                frames=""
+                boardName={boardName}
+                layoutId={layoutId}
+                sizeId={sizeId}
+                setIds={setIds}
+                boardWidth={boardWidth}
+                boardHeight={boardHeight}
+                mirrored={mirrored}
+                underOverlay={underOverlay}
+              />
+            )}
             {holdsFilter ? (
               <SearchHoldFilterRings
                 boardName={boardName}
@@ -319,7 +389,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
                     own taps: it sits in the corner the panning thumb rests in,
                     and as a sibling above the overlay it would be a dead zone
                     for panning. */}
-                <ResetZoomButton visible onPress={resetZoom} style={styles.resetZoom} />
+                <ResetZoomButton visible onPress={resetZoom} style={resetZoomStyle ?? styles.resetZoom} />
               </View>
             </GestureDetector>
           ) : null}

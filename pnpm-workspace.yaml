@@ -41,15 +41,20 @@ enableGlobalVirtualStore: false
 virtualStoreDirMaxLength: 120
 
 overrides:
-  # Expo loads these browser datasets through its config plugins and hashes them.
-  # Keep main on the App Store 2.5.0 runtime; advance these only on release/next.
-  baseline-browser-mapping: 2.11.17
-  caniuse-lite: 1.0.30001809
+  # These Expo fingerprint inputs advance with the release train's native builds.
+  baseline-browser-mapping: 2.11.24
+  caniuse-lite: 1.0.30001810
+  # expo-app-metrics 57.0.21 asks for 57.0.2, whose Android Maven artifact was
+  # not published. Its Android sources are identical to the autolinked 57.0.1.
+  # Remove when expo-updates-interface >=57.0.2 publishes that Maven artifact (#5867).
+  # Source-build removal conditions: docs/mobile-ota-updates.md, expo-observe section.
+  expo-updates-interface: 57.0.1
   # Remove only when an upstream release passes the disconnect/recovery tests (#5299).
   postgres: 3.4.9
   react-native-screens: 4.26.2
 
 patchedDependencies:
+  expo-sqlite@57.0.2: patches/expo-sqlite@57.0.2.patch
   'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
   '@expo/fingerprint@0.20.11': patches/@expo__fingerprint@0.20.11.patch
@@ -58,6 +63,7 @@ patchedDependencies:
   'expo-image@57.0.3': patches/expo-image@57.0.3.patch
   'expo-updates@57.0.19': patches/expo-updates@57.0.19.patch
   'react-native-screens@4.26.2': patches/react-native-screens@4.26.2.patch
+  'expo-modules-core@57.0.14': patches/expo-modules-core@57.0.14.patch
 
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.

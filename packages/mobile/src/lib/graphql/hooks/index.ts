@@ -100,6 +100,7 @@ import {
 import { UPDATE_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, UpdateSprayWallInput } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../client';
+import { invalidateSprayWallRenderData } from '../../spray/spray-wall-loader';
 import { requestSearchBoards, shouldRetryBoardSearch, boardSearchRetryDelay } from '../search-boards-request';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { withHoldOutlineOverride, withoutHoldOutlineOverride } from './hold-outline-cache';
@@ -597,6 +598,11 @@ export function useUpdateSprayWall() {
       void queryClient.invalidateQueries({ queryKey: ['searchBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['sprayWall', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['sprayWallByLayout', updated.layoutId] });
+      // The registered wall carries the slug and visibility Share reads
+      // (`RegisteredSprayWall.share`), filled from the render payload. Without
+      // this a public -> private flip kept handing out the public link and
+      // warming its card until the registry's 10-minute revalidation.
+      void invalidateSprayWallRenderData(queryClient, updated.uuid, updated.layoutId).catch(() => {});
     },
   });
 }

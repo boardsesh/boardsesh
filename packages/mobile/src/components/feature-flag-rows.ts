@@ -47,7 +47,7 @@ export function buildFeatureFlagRows(
     // i18n-ignore-next-line — tester-only screen
     const baseLabel = baseBool === undefined ? 'not set' : baseBool ? 'on' : 'off';
     const configuredValue: boolean | undefined = overrideBool ?? baseBool;
-    const effective = configuredValue === true;
+    const effective = (configuredValue ?? definition.defaultEnabled) === true;
     // i18n-ignore-next-line — tester-only screen
     const policyNote = overrideIgnored ? ' · override ignored on this build (region-gated)' : '';
     return {

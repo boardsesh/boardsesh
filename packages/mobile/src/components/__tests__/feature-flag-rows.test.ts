@@ -24,6 +24,10 @@ function captionFor(key: string, overrides: Record<string, boolean>, baseFlags: 
 }
 
 describe('buildFeatureFlagRows', () => {
+  it('does not expose shipped spray walls despite stale remote flags or overrides', () => {
+    const rows = buildFeatureFlagRows(FEATURE_FLAG_DEFINITIONS, { 'spray-walls': false }, { 'spray-walls': false });
+    expect(rows.some((row) => row.key === 'spray-walls')).toBe(false);
+  });
   it('does not expose permanently shipped offline capabilities as overrides', () => {
     const keys = FEATURE_FLAG_DEFINITIONS.map((definition) => definition.key);
     expect(keys).not.toContain('offline-board-downloads');

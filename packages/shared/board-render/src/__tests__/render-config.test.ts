@@ -176,6 +176,35 @@ describe('buildRenderConfig — boardsesh mode', () => {
     expect(config.glow).toMatchObject(AURA_GLOW_TUNING);
   });
 
+  it('builds the Aura Outline look end to end: outline mark, tight soft glow, stroke alpha in fill', () => {
+    const holdGeometry = { outlines: { 100: [1, 0, 0, 1, -1, 0] } };
+    const { config } = buildRenderConfig({
+      ...boardseshParams,
+      holdGeometry,
+      auraSettings: {
+        markStyle: 'outline',
+        holdShape: 'silhouette',
+        glowFalloff: 'soft',
+        glowReach: 0.5,
+        fillOpacity: 0.9,
+      },
+    });
+    expect(config.render_mode).toBe('aura');
+    expect(config.mark_style).toBe('outline');
+    expect(config.glow_falloff).toBe('soft');
+    // `fill.opacity` is the outline stroke's alpha under this mark.
+    expect(config.fill).toEqual({ opacity: 0.9 });
+    expect(config.glow).toEqual({
+      reach_scale: 0.5,
+      plateau_share: 0.4,
+      disc_opacity: 0,
+      small_hold_max_boost: BOARDSESH_SMALL_HOLD_MAX_BOOST,
+      ...AURA_GLOW_TUNING,
+    });
+    // The outline is drawn on the traced silhouette, so the outlines must ship.
+    expect(config.holds.find((hold) => hold.id === 100)?.outline).toEqual([1, 0, 0, 1, -1, 0]);
+  });
+
   it('washes the wall against a dark field, and not at all against a light one', () => {
     const wallLightness = { mean: 0.541, coverage: 0.9 };
     const dark = buildRenderConfig({ ...boardseshParams, fieldColor: '#181225', wallLightness }).config;

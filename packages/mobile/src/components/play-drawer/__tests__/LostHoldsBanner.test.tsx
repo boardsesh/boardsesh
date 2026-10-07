@@ -97,6 +97,29 @@ describe('LostHoldsBanner', () => {
     expect(onRemix).toHaveBeenCalledTimes(1);
   });
 
+  it('offers Edit beside Remix for someone who may edit the climb (#6024)', () => {
+    const onEdit = vi.fn();
+    const onRemix = vi.fn();
+    const { getByRole, getByTestId } = render(createElement(LostHoldsBanner, { count: 2, onRemix, onEdit }));
+
+    getByRole('button', { name: 'mobile.lostHolds.edit' }).click();
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onRemix).not.toHaveBeenCalled();
+    getByRole('button', { name: 'mobile.lostHolds.remix' }).click();
+    expect(onRemix).toHaveBeenCalledTimes(1);
+    // The body names both actions, not Remix alone.
+    const text = getByTestId('lost-holds-banner').textContent;
+    expect(text).toContain('mobile.lostHolds.bannerBodyEdit');
+    expect(text).not.toMatch(/mobile\.lostHolds\.bannerBody(?!Edit)/);
+  });
+
+  it('offers no Edit when the viewer may not edit the climb', () => {
+    const { queryByRole, getByTestId } = render(createElement(LostHoldsBanner, { count: 2, onRemix: vi.fn() }));
+
+    expect(queryByRole('button', { name: 'mobile.lostHolds.edit' })).toBeNull();
+    expect(getByTestId('lost-holds-banner').textContent).not.toContain('mobile.lostHolds.bannerBodyEdit');
+  });
+
   it('is informational with no Remix handler — no dead button, no dead sentence', () => {
     const { getByTestId, queryByRole } = render(createElement(LostHoldsBanner, { count: 2 }));
 

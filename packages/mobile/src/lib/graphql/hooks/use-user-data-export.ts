@@ -17,7 +17,10 @@ import { useIsOffline } from '../../../hooks/use-is-offline';
 import { useIsAppBackgrounded } from '../../app-visibility';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../auth-store';
 import { openUserDataExportDownload } from '../../user-data-export-download';
+import { UserDataExportActionError } from '../../user-data-export-action';
 import { getHttpClient } from '../client';
+
+export { UserDataExportActionError } from '../../user-data-export-action';
 
 export const USER_DATA_EXPORT_POLL_MS = 5_000;
 export const USER_DATA_EXPORT_POLL_LIMIT_MS = 5 * 60_000;
@@ -29,12 +32,6 @@ export function userDataExportQueryKey(
   period: string | null = null,
 ) {
   return ['userDataExport', userId, credentialGeneration, boardType, period] as const;
-}
-
-export class UserDataExportActionError extends Error {
-  constructor(public readonly reason: 'session_changed' | 'offline' | 'browser_failed') {
-    super(`User data export action: ${reason}`);
-  }
 }
 
 type ExportActionScope = {
@@ -64,6 +61,17 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
   const queryKey = userDataExportQueryKey(userId, credentialGeneration, boardType, period);
   const currentScope = useRef(scope);
   currentScope.current = scope;
+  const downloadControllers = useRef(new Set<AbortController>());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const controllers = downloadControllers.current;
+    return () => {
+      mounted.current = false;
+      for (const controller of controllers) controller.abort();
+      controllers.clear();
+    };
+  }, [scope]);
   const pollingDeadline = useRef<{ scope: string; at: number } | null>(null);
   const manualRefresh = useRef(false);
   const [pollDeadline, setPollDeadline] = useState<{ scope: string; reached: boolean }>({ scope, reached: false });
@@ -180,20 +188,35 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
     retry: false,
     mutationFn: async (request: ExportActionScope & { period: string; format: UserDataExportFormat }) => {
       requireCurrentSession(request.credentialGeneration);
-      if (currentScope.current !== request.scope) throw new UserDataExportActionError('session_changed');
-      const response = await getHttpClient().request<
-        GetUserDataExportDownloadResponse,
-        UserDataExportDownloadVariables
-      >(GET_USER_DATA_EXPORT_DOWNLOAD, {
-        boardType: request.boardType,
-        period: request.period,
-        format: request.format,
-      });
-      requireCurrentSession(request.credentialGeneration);
-      if (currentScope.current !== request.scope) throw new UserDataExportActionError('session_changed');
-      const opened = await openUserDataExportDownload(response.userDataExportDownload.url);
-      if (!opened) throw new UserDataExportActionError('browser_failed');
-      // No signed URL is returned or persisted; every tap obtains a fresh five-minute link.
+      const isCurrent = () =>
+        mounted.current &&
+        currentScope.current === request.scope &&
+        isAuthCredentialGenerationCurrent(request.credentialGeneration);
+      if (!isCurrent()) throw new UserDataExportActionError('session_changed');
+      const controller = new AbortController();
+      downloadControllers.current.add(controller);
+      try {
+        const response = await getHttpClient().request<
+          GetUserDataExportDownloadResponse,
+          UserDataExportDownloadVariables
+        >(GET_USER_DATA_EXPORT_DOWNLOAD, {
+          boardType: request.boardType,
+          period: request.period,
+          format: request.format,
+        });
+        requireCurrentSession(request.credentialGeneration);
+        if (!isCurrent() || controller.signal.aborted) throw new UserDataExportActionError('session_changed');
+        await openUserDataExportDownload({
+          url: response.userDataExportDownload.url,
+          filename: response.userDataExportDownload.filename,
+          credentialGeneration: request.credentialGeneration,
+          isCurrent,
+          signal: controller.signal,
+        });
+        // Signed URLs remain local to this call, outside mutation variables/data.
+      } finally {
+        downloadControllers.current.delete(controller);
+      }
     },
   });
 

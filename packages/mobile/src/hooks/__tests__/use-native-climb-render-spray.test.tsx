@@ -8,7 +8,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 // `sprayCacheToken` is the only input to `buildCacheKey` / `buildBoardKey` that
 // is not a prop — `useSprayWall` writes it into a module-level registry — so
 // memoising those keys on their prop inputs alone leaves a board that mounted
-// before the wall query landed holding the `-sv0` key it computed at mount. The
+// before the wall query landed holding the `-svid0` key it computed at mount. The
 // effects never re-run and the wall stays blank; after a reset the same
 // staleness shows the previous generation's overlay over the new photograph.
 
@@ -70,6 +70,7 @@ function registerWall(version: number) {
     wallUuid: 'wall-uuid',
     angle: 40,
     version,
+    versionId: version,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,
@@ -153,7 +154,7 @@ describe('useNativeClimbRender reacts to the spray registry', () => {
     await expect(getOrStartInflightRender(catalogue, start)).resolves.toMatchObject({ uri: 'file:///late.png' });
   });
   it('picks the wall up when it lands after mount', async () => {
-    // Mounted with nothing registered: the board key carries `-sv0` and there is
+    // Mounted with nothing registered: the board key carries `-svid0` and there is
     // no render data behind it.
     const { result } = renderHook(() => useNativeClimbRender(SPRAY_BOARD));
     await waitFor(() => expect(ensureBackgroundsCachedMock).toHaveBeenCalled());

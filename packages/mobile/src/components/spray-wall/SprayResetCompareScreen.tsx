@@ -23,7 +23,7 @@
 //     it, and the climbs number disappears the moment the owner changes the
 //     removal set it was computed for (nothing on the phone can recompute it).
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +33,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { SegmentedControl } from '../SegmentedControl';
+import { SwitchRow } from '../SwitchRow';
 import { InteractiveFilterBoard } from '../search/InteractiveFilterBoard';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
@@ -43,7 +44,7 @@ import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { getSprayWall, SPRAY_BOARD_NAME, subscribeToSprayWalls } from '../../lib/spray/spray-wall-registry';
+import { SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useCommitSprayWallVersion, useSprayWallResetProposal } from '../../lib/spray/use-spray-wall-reset';
 import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
@@ -64,7 +65,11 @@ import {
   type ResetReviewState,
 } from './reset-review-machine';
 
-/** Vertical space the chrome around the board needs — see `SprayHoldEditorScreen`. */
+/**
+ * Vertical space the compare view's own chrome, above and below the board,
+ * takes away from the photo. The hold editor no longer budgets this
+ * way — it fits the photo to the space its floating bar leaves free.
+ */
 const CHROME_BUDGET = 400;
 
 export type SprayResetCompareScreenProps = {
@@ -101,14 +106,14 @@ export function SprayResetCompareScreen({
 
   // Registers the DRAFT under the wall's layout id, so the board below draws the
   // new photograph rather than the published one.
-  const { isLoading: draftLoading, isUnavailable, homography } = useSprayWallDraft(layoutId, wallUuid, versionNumber);
+  const {
+    isLoading: draftLoading,
+    isUnavailable,
+    homography,
+    wall,
+  } = useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
   const commit = useCommitSprayWallVersion(layoutId);
   const commitAsync = commit.mutateAsync;
-
-  const wall = useSyncExternalStore(
-    subscribeToSprayWalls,
-    useCallback(() => getSprayWall(layoutId), [layoutId]),
-  );
 
   // One array, used to draw AND to ask. The proposal answers in indices into it,
   // so a second copy built for either purpose would be a second numbering.
@@ -169,6 +174,10 @@ export function SprayResetCompareScreen({
   const effective = review.seeded ? review : null;
 
   const [selectedKey, setSelectedKey] = useState<number | null>(null);
+  // A full reset retires every climb that loses a hold in it: off the wall's
+  // default list, still in logbooks, playlists and share links (#6024). Off by
+  // default, so a reset that swaps a few holds keeps every climb listed.
+  const [fullReset, setFullReset] = useState(false);
   const [pairingIndex, setPairingIndex] = useState<number | null>(null);
 
   const counts = useMemo(() => (effective ? resetReviewCounts(effective) : null), [effective]);
@@ -229,7 +238,15 @@ export function SprayResetCompareScreen({
     hapticSelection();
     const decisions = buildResetCommitDecisions(effective, detections);
     try {
-      const result = await commitAsync({ wallUuid, versionId, ...decisions });
+      // `fullReset` only goes on the wire when it is true: a backend that
+      // predates the field rejects an unknown input key, so a partial reset
+      // must send exactly what it always did (#6024).
+      const result = await commitAsync({
+        wallUuid,
+        versionId,
+        ...decisions,
+        ...(fullReset ? { fullReset: true } : {}),
+      });
       trackSprayEvent(
         sprayWallResetApplied({
           keptCount: result.keptCount,
@@ -237,6 +254,7 @@ export function SprayResetCompareScreen({
           addedCount: result.addedCount,
           climbsChanged: result.climbsChanged,
           moveCount: Object.keys(effective.moves).length,
+          fullReset,
         }),
       );
       onCommitted(result);
@@ -244,7 +262,7 @@ export function SprayResetCompareScreen({
       reportError(error);
       showToast(extractGraphqlMessage(error) ?? t('sprayReset.commit.failed'), 'error');
     }
-  }, [effective, commit.isPending, commitAsync, detections, wallUuid, versionId, onCommitted, showToast, t]);
+  }, [effective, commit.isPending, commitAsync, detections, wallUuid, versionId, fullReset, onCommitted, showToast, t]);
 
   const renderInTransform = useCallback(
     () =>
@@ -342,6 +360,7 @@ export function SprayResetCompareScreen({
 
       <View style={styles.boardSection}>
         <InteractiveFilterBoard
+          backgroundPhotoUrl={wall.photoUrl}
           boardName={SPRAY_BOARD_NAME}
           layoutId={layoutId}
           sizeId={layoutId}
@@ -386,6 +405,17 @@ export function SprayResetCompareScreen({
             onPress={() => dispatch({ type: 'ACCEPT_SUGGESTED_MOVES' })}
           />
         ) : null}
+
+        {/* In the scrolling controls rather than the footer, so the board keeps
+            the space CHROME_BUDGET gives it. Last, right above Confirm. */}
+        <SwitchRow
+          label={t('sprayReset.compare.fullReset')}
+          description={t('sprayReset.compare.fullResetBody')}
+          wrapDescription
+          value={fullReset}
+          onValueChange={setFullReset}
+          disabled={commit.isPending}
+        />
       </ScrollView>
 
       <View

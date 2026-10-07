@@ -9,8 +9,8 @@ describe('sprayDetailRows', () => {
     const rows = sprayDetailRows(wall);
 
     expect(rows.map((row) => row.key)).toEqual(['editHolds', 'newPhoto']);
-    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?boardUuid=wall-uuid-1`);
-    expect(rows[1].href).toBe(`${SPRAY_RESET_PATH}?boardUuid=wall-uuid-1`);
+    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?wallUuid=wall-uuid-1`);
+    expect(rows[1].href).toBe(`${SPRAY_RESET_PATH}?wallUuid=wall-uuid-1`);
   });
 
   // The gate. Every one of these rows leads into a screen the server refuses for
@@ -49,6 +49,6 @@ describe('sprayDetailRows', () => {
   // would silently split into a second query parameter.
   it('escapes the uuid it puts in the query string', () => {
     const rows = sprayDetailRows({ ...wall, uuid: 'a&b=c' });
-    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?boardUuid=a%26b%3Dc`);
+    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?wallUuid=a%26b%3Dc`);
   });
 });

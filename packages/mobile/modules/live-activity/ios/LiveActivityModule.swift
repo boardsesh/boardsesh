@@ -108,6 +108,14 @@ public class LiveActivityModule: Module {
             guard let defaults = SharedConstants.sharedDefaults else { return }
             SharedMirrorState.acknowledge(sessionId: sessionId, sequence: sequence, in: defaults)
         }
+        /// JS acted on a parked tap — it either replayed it or decided the slot
+        /// had moved on. Anything it merely could not act on yet (no board link,
+        /// no session) leaves the record alone for the next handover.
+        AsyncFunction("acknowledgeMirrorRequest") { (sessionId: String) in
+            guard let defaults = SharedConstants.sharedDefaults,
+                  SharedMirrorState.pendingRequest(in: defaults)?.sessionId == sessionId else { return }
+            SharedMirrorState.clearRequest(in: defaults)
+        }
 
         AsyncFunction("isAvailable") { () -> [String: Any] in
             if #available(iOS 17.0, *) {
@@ -345,9 +353,23 @@ public class LiveActivityModule: Module {
     }
 
     private func emitPendingMirror() {
-        guard let defaults = SharedConstants.sharedDefaults,
-              let pending = SharedMirrorState.pending(in: defaults) else { return }
-        emitOrBuffer(name: "queueMirror", body: pending.eventBody)
+        guard let defaults = SharedConstants.sharedDefaults else { return }
+        if let pending = SharedMirrorState.pending(in: defaults) {
+            emitOrBuffer(name: "queueMirror", body: pending.eventBody)
+        }
+        // A tap whose server request never got an answer. JS replays it through
+        // the same mutation the Android notification button uses, then the
+        // confirmed receipt comes back down the normal path.
+        //
+        // Kept until JS says it acted on it, never cleared on emit: the first
+        // replay after a lock-screen outage can land before the socket or the
+        // board link is back, and dropping it there would lose the tap for
+        // good. Re-emission is safe — mirroring is an absolute write and the
+        // queue provider is single-flight — and the record's own TTL, not this
+        // handover, is what stops a forgotten tap flipping a climb later.
+        if let request = SharedMirrorState.pendingRequest(in: defaults) {
+            emitOrBuffer(name: "queueMirror", body: request.eventBody)
+        }
     }
 
     private func handleQueueNavigateFromWidget() {
@@ -695,6 +717,7 @@ public class LiveActivityModule: Module {
         if let defaults = SharedConstants.sharedDefaults {
             if defaults.string(forKey: SharedConstants.sessionIdKey) != sessionId {
                 defaults.removeObject(forKey: SharedConstants.pendingMirrorKey)
+                defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
                 defaults.removeObject(forKey: SharedConstants.queueSequenceKey)
             }
             defaults.set(options.supportsMirroring, forKey: SharedConstants.supportsMirroringKey)
@@ -861,6 +884,7 @@ public class LiveActivityModule: Module {
             defaults.removeObject(forKey: SharedConstants.sessionIdKey)
             defaults.removeObject(forKey: SharedConstants.pendingActionKey)
             defaults.removeObject(forKey: SharedConstants.pendingMirrorKey)
+            defaults.removeObject(forKey: SharedConstants.pendingMirrorRequestKey)
             defaults.removeObject(forKey: SharedConstants.widgetNavigateUrlKey)
             defaults.removeObject(forKey: SharedConstants.widgetTakeControlUrlKey)
             defaults.removeObject(forKey: SharedConstants.authTokenKey)

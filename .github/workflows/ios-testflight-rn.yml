@@ -152,7 +152,10 @@ jobs:
           tag="fingerprint-ios-$fp"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "should_build=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::iOS fingerprint $fp already built (tag $tag) — skipping the native build; the OTA delivers the JS."
+            # The marketing version and build numbers are not part of the fingerprint
+            # (fingerprint.config.js sourceSkips), so a push that only bumps `version`
+            # lands here too. A new version number needs a manual dispatch.
+            echo "::notice::iOS fingerprint $fp already built (tag $tag) — skipping the native build; the OTA delivers the JS. A version-only bump does not move the fingerprint: dispatch this workflow by hand to ship a binary with the new version number."
           else
             echo "should_build=true" >> "$GITHUB_OUTPUT"
             echo "::notice::iOS fingerprint $fp is new — running the native build."
@@ -263,7 +266,7 @@ jobs:
           # likely. There is no committed Podfile.lock to reconcile it against
           # (.gitignore ignores packages/mobile/ios/), so a key miss must mean a
           # clean `pod install`, not a partially-stale one.
-          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/icon.png', 'packages/mobile/assets/adaptive-icon.png', 'packages/mobile/assets/splash-icon.png', 'packages/mobile/targets/**', 'patches/**') }}
+          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/eas.json', 'packages/mobile/assets/icon.png', 'packages/mobile/assets/adaptive-icon.png', 'packages/mobile/assets/splash-icon.png', 'packages/mobile/targets/**', 'patches/**') }}
 
       - name: Install CocoaPods dependencies
         working-directory: packages/mobile/ios

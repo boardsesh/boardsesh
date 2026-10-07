@@ -40,6 +40,7 @@
           "aura": "Aura",
           "auraBold": "Aura kräftig",
           "auraSubtle": "Aura dezent",
+          "auraOutline": "Aura Umriss",
           "modernClassic": "Klassisch modern",
           "maxContrast": "Maximaler Kontrast",
           "descriptions": {
@@ -48,6 +49,7 @@
             "modernClassic": "Die gewohnten Kreise auf gedämpfter Wand.",
             "maxContrast": "Stärkster Schleier und gefüllte Griffe.",
             "auraBold": "Ein breiteres, härteres Leuchten — auch von weitem sichtbar.",
+            "auraOutline": "Ein klarer Umriss um jeden Griff, mit engem Leuchten.",
             "classic": "Die runden Marker, die Boardsesh immer gezeichnet hat.",
             "custom": "Stell dir jeden Teil des Looks selbst ein."
           },
@@ -103,12 +105,16 @@
             "options": {
               "glow": "Leuchten",
               "glowFill": "Leuchten + Füllung",
-              "fill": "Füllung"
+              "fill": "Füllung",
+              "outline": "Umriss"
             }
           },
           "fillOpacity": {
             "title": "Füllstärke",
             "value": "{{value}}%"
+          },
+          "outlineOpacity": {
+            "title": "Umrissstärke"
           },
           "softDisc": {
             "label": "Weiche Scheibe",
@@ -179,6 +185,11 @@
           },
           "dismiss": "Jetzt nicht",
           "dismissAccessibility": "Diesen Vorschlag ausblenden"
+        },
+        "sprayWalls": {
+          "title": "Spraywände",
+          "useOwnLook": "Meinen Look auf Spraywänden verwenden",
+          "footer": "Spraywände zeigen den Look, der beim Anlegen für das Foto gewählt wurde. Schalte das ein, um dort deinen eigenen Look zu sehen."
         }
       },
       "accessibility": {
@@ -548,6 +559,9 @@
         "title": "Update-Suche fehlgeschlagen",
         "message": "Beim Abrufen der neuesten Version ging etwas schief. Versuch es gleich nochmal."
       }
+    },
+    "launchUpdate": {
+      "message": "Suche nach der neuesten Version"
     },
     "connectivity": {
       "serverDown": {

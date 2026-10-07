@@ -124,15 +124,22 @@ describe('spray native leave guard', () => {
   });
 
   it('both routes use native protection and footer exits have no separate confirmation', () => {
-    for (const filename of ['SprayWallWizardScreen.tsx', 'SprayWallResetScreen.tsx']) {
+    // The wizard's guard is its own hook: it is always on, because the editor's
+    // unsaved holds are refs and cannot switch protection on by rendering.
+    const guards = {
+      'SprayWallWizardScreen.tsx': 'useSprayWizardLeaveGuard(confirmLeave);',
+      'SprayWallResetScreen.tsx': 'useSprayLeaveGuard(shouldConfirmLeave(state),',
+    };
+    for (const [filename, guard] of Object.entries(guards)) {
       const screen = readFileSync(resolve(mobileRoot, 'src/components/spray-wall', filename), 'utf8');
-      expect(screen).toContain('useSprayLeaveGuard(shouldConfirmLeave(state),');
+      expect(screen).toContain(guard);
       expect(screen).not.toContain("'beforeRemove'");
       const footerBack = screen.slice(screen.indexOf('  const goBack ='), screen.indexOf('  }, [state, router]);'));
       expect(footerBack).toContain('router.back()');
       expect(footerBack).not.toMatch(/confirmLeave|Alert.alert/);
     }
     const layout = readFileSync(resolve(mobileRoot, 'app/boards/_layout.tsx'), 'utf8');
-    expect(layout.match(/headerBackButtonMenuEnabled: false/g)).toHaveLength(2);
+    // The wizard, the hold maintenance route and the reset.
+    expect(layout.match(/headerBackButtonMenuEnabled: false/g)).toHaveLength(3);
   });
 });

@@ -55,7 +55,7 @@ vi.mock('expo-file-system', () => {
     constructor(parent: { uri: string } | string, name?: string) {
       const base = typeof parent === 'string' ? parent : parent.uri;
       this.name = name ?? base;
-      this.uri = `file://${base}/${this.name}`;
+      this.uri = name === undefined ? base : `file://${base}/${this.name}`;
     }
     get exists() {
       return fsState.files.get(this.uri)?.exists ?? false;
@@ -90,12 +90,17 @@ vi.mock('expo-file-system', () => {
 
 const { clearSprayWallRegistry, registerSprayWall } = await import('../spray-wall-registry');
 const registry = await import('../spray-wall-registry');
-const { ensureSprayPhotoCached, resetSprayPhotoCacheForTests, tryGetSprayPhotoPathSync, deleteCachedSprayPhotos } =
-  await import('../spray-photo-cache');
+const {
+  ensureSprayPhotoCached,
+  resetSprayPhotoCacheForTests,
+  tryGetSprayPhotoPathSync,
+  deleteCachedSprayPhotos,
+  liveSprayPhotoFileNames,
+} = await import('../spray-photo-cache');
 const { sprayPartialPhotoFileName, sprayPhotoFileName } = await import('../spray-photo-keys');
 
 const LAYOUT_ID = 4200;
-const IDENTITY = { layoutId: LAYOUT_ID, version: 1 };
+const IDENTITY = { layoutId: LAYOUT_ID, versionId: 1 };
 const FINAL_URI = `file:///cache/spray-walls/${sprayPhotoFileName(IDENTITY)}`;
 const PART_URI = `file:///cache/spray-walls/${sprayPartialPhotoFileName(IDENTITY)}`;
 
@@ -107,6 +112,7 @@ function registerWall(expiresAt: string, layoutId = LAYOUT_ID) {
     wallUuid: 'wall-uuid',
     angle: 40,
     version: 1,
+    versionId: 1,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: 'https://private.example/photo?sig=1',
@@ -133,9 +139,35 @@ afterEach(() => {
   resetSprayPhotoCacheForTests();
 });
 
+describe('deleteCachedSprayPhotos', () => {
+  it('removes every version and memo for only the withdrawn wall', async () => {
+    registerWall(FUTURE);
+    await ensureSprayPhotoCached(IDENTITY);
+    // A name from before photos were keyed on the version's row id.
+    const legacyVersion = 'file:///cache/spray-walls/4200-9.jpg';
+    const newerVersion = `file:///cache/spray-walls/${sprayPhotoFileName({ layoutId: LAYOUT_ID, versionId: 2 })}`;
+    const otherWall = `file:///cache/spray-walls/${sprayPhotoFileName({ layoutId: 42001, versionId: 1 })}`;
+    for (const uri of [legacyVersion, newerVersion, otherWall]) fsState.files.set(uri, { exists: true });
+
+    registry.unregisterSprayWall(LAYOUT_ID);
+    deleteCachedSprayPhotos(LAYOUT_ID);
+
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+    expect([...fsState.files.keys()]).toEqual([otherWall]);
+  });
+});
+
 describe('ensureSprayPhotoCached', () => {
+  it('ignores a legacy photo cached under the reused version number', async () => {
+    registerWall(FUTURE);
+    fsState.files.set('file:///cache/spray-walls/4200-1.jpg', { exists: true });
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+    expect(await ensureSprayPhotoCached(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
+    expect(fsState.downloads).toHaveLength(1);
+  });
+
   it('selects real generation-scoped partials and legacy names while preserving another wall and unknown prefixes', async () => {
-    const otherIdentity = { layoutId: 4201, version: 1 };
+    const otherIdentity = { layoutId: 4201, versionId: 1 };
     registerWall(FUTURE);
     registerWall(FUTURE, otherIdentity.layoutId);
     fsState.downloadResult = 'hang';
@@ -175,17 +207,6 @@ describe('ensureSprayPhotoCached', () => {
       expect(fsState.downloads[0].destination).not.toBe(fsState.downloads[1].destination);
     },
   );
-
-  it('removes all versions of one wall while preserving another wall', () => {
-    fsState.files.set(FINAL_URI, { exists: true });
-    fsState.files.set('file:///cache/spray-walls/4200-2.jpg', { exists: true });
-    fsState.files.set('file:///cache/spray-walls/4201-1.jpg', { exists: true });
-    expect(tryGetSprayPhotoPathSync(IDENTITY)).not.toBeNull();
-    registry.unregisterSprayWall(LAYOUT_ID);
-    deleteCachedSprayPhotos(LAYOUT_ID);
-    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
-    expect([...fsState.files.keys()]).toEqual(['file:///cache/spray-walls/4201-1.jpg']);
-  });
 
   it('stages under .part and moves the finished file into place', async () => {
     registerWall(FUTURE);
@@ -268,7 +289,7 @@ describe('ensureSprayPhotoCached', () => {
 
   it('does not fetch when the version asked for is not the one registered', async () => {
     registerWall(FUTURE);
-    await expect(ensureSprayPhotoCached({ layoutId: LAYOUT_ID, version: 2 })).resolves.toBeNull();
+    await expect(ensureSprayPhotoCached({ layoutId: LAYOUT_ID, versionId: 2 })).resolves.toBeNull();
     expect(fsState.downloads).toHaveLength(0);
   });
 
@@ -279,5 +300,67 @@ describe('ensureSprayPhotoCached', () => {
     expect(tryGetSprayPhotoPathSync(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
     await ensureSprayPhotoCached(IDENTITY);
     expect(fsState.downloads).toHaveLength(0);
+  });
+});
+
+describe('durable offline photos', () => {
+  it('uses the owner-gated stored file without downloading and withdraws on account change', async () => {
+    const versionId = 'local-00000000-0000-4000-8000-000000000001-2' as const;
+    fsState.files.set('file:///photos/wall.jpg', { exists: true });
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall',
+      angle: null,
+      version: 2,
+      versionId,
+      photoWidth: 1200,
+      photoHeight: 900,
+      photoUrl: 'file:///photos/wall.jpg',
+      localPhotoPath: '/photos/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: PAST,
+      holds: [],
+    });
+    const identity = { layoutId: LAYOUT_ID, versionId };
+    expect(tryGetSprayPhotoPathSync(identity)).toBe('/photos/wall.jpg');
+    expect(await ensureSprayPhotoCached(identity)).toBe('/photos/wall.jpg');
+    expect(fsState.downloads).toHaveLength(0);
+    const { resetSprayWallViewerAccess } = await import('../spray-wall-registry');
+    resetSprayWallViewerAccess();
+    expect(tryGetSprayPhotoPathSync(identity)).toBeNull();
+  });
+});
+
+describe('liveSprayPhotoFileNames', () => {
+  it('protects the art a local mirror kept, under the server version it was made for', () => {
+    const local = 'local-0a1b2c3d-0000-4000-8000-000000000000-3' as const;
+    registerSprayWall(LAYOUT_ID, {
+      wallUuid: 'wall-uuid',
+      angle: 40,
+      version: 3,
+      versionId: local,
+      localPhotoPath: '/photos/wall.jpg',
+      photoWidth: 1200,
+      photoHeight: 1600,
+      photoUrl: 'file:///photos/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: PAST,
+      holds: [],
+      background: 'wall-crop',
+      art: {
+        variant: 'crop',
+        versionId: 21,
+        version: 3,
+        width: 800,
+        height: 1200,
+        scale: 0.8,
+        url: 'https://private.example/crop',
+        expiresAt: PAST,
+        holds: [],
+      },
+    });
+    const names = liveSprayPhotoFileNames();
+    // An offline sweep must not delete the file the board is drawn from.
+    expect(names.has(`${LAYOUT_ID}-v21-crop.jpg`)).toBe(true);
+    expect(names.has(`${LAYOUT_ID}-v${local}.jpg`)).toBe(true);
   });
 });

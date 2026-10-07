@@ -1,7 +1,7 @@
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
-// Name it → photograph it → optionally mark its corners → upload → let the phone
-// suggest holds → correct them → publish. One route, not seven: the steps share
+// Name it → photograph it → optionally mark its corners → upload → let the
+// server suggest holds → correct them → pick how it lights up → publish. One route, not seven: the steps share
 // state that must survive going back (`add-wall-machine.ts` is the transition
 // table), and two of them — the anchors and the hold editor — are full-screen
 // pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md` rule 3 puts on
@@ -22,10 +22,19 @@
 // per wall").
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import {
+  AccessibilityInfo,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { useSprayLeaveGuard } from './use-spray-leave-guard';
+import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -38,24 +47,42 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
 import { SprayCornerFooter } from './SprayCornerFooter';
 import { SprayCornerStep } from './SprayCornerStep';
-import { SprayHoldEditorScreen } from '../outline-editor/SprayHoldEditorScreen';
-import { BoardIdentityFields, BoardVisibilityFields, SectionLabel } from '../board-discovery/BoardMetaFields';
+import { SprayPhotoAdjustStep } from './SprayPhotoAdjustStep';
+import {
+  confirmDiscardSprayEdits,
+  SprayHoldEditorScreen,
+  type SprayEditorNotice,
+  type SprayHoldSaveSummary,
+} from '../outline-editor/SprayHoldEditorScreen';
+import {
+  BoardIdentityFields,
+  BoardVisibilityFields,
+  SectionLabel,
+  SprayWallVisibilityField,
+} from '../board-discovery/BoardMetaFields';
 import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { useConnectivityField } from '../../lib/connectivity/use-connectivity';
+import { getConnectivitySnapshot, type ConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
+import { classifySprayUploadFailure, sprayUploadNotice, type SprayUploadNotice } from './spray-upload-notice';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { track } from '../../lib/analytics';
 import { hapticSelection } from '../../lib/haptics';
-import { reportError } from '../../lib/error-reporting';
+import { addErrorBreadcrumb, reportError } from '../../lib/error-reporting';
+import { openExternalUrl } from '../../lib/open-url';
+import { buildHelpUrl } from '../../lib/help-url';
 import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
+import { DONE_EXIT_OFFER_MS, PostPublishStalledError, runPostPublishBind } from '../../lib/spray/post-publish-bind';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
 import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
+import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import {
   fetchSprayWallVersions,
   useCreateSprayWall,
@@ -68,18 +95,33 @@ import {
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
+import { SprayWallLookStep } from './SprayWallLookStep';
+import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
-import { pickWallPhotoFromCamera, pickWallPhotoFromLibrary, rescalePoint } from '../../lib/spray/wall-photo';
+import {
+  pickWallPhotoFromCamera,
+  pickWallPhotoFromLibrary,
+  renderWallPhotoEdit,
+  rescalePoint,
+} from '../../lib/spray/wall-photo';
+import { discardLocalPhoto } from '../../lib/spray/discard-local-photo';
+import { editCrops, editRotates, editsEqual, isIdentityEdit, type WallPhotoEdit } from '../../lib/spray/photo-edit';
 import {
   addWallReducer,
+  backLeavesFlow,
   initialAddWallState,
   isBusy,
-  shouldConfirmLeave,
+  leaveCheckpoint,
+  leaveDecision,
+  leaveStillApplies,
   type AddWallStep,
+  type EditorLeaveState,
   type CreatedWall,
   type CreatedWallDraft,
+  type DetectionOutcome,
 } from './add-wall-machine';
 import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
+import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
 const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
@@ -87,18 +129,38 @@ const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
 /** Widest the photo preview is ever drawn. Past this it is a wall on a coffee table. */
 const MAX_PREVIEW_WIDTH = 520;
 
+/**
+ * The bind's navigation, taken away from `useActivateBoard`: the wizard leaves
+ * by itself once the bind has landed (`runPostPublishBind`), so that whether
+ * the dismiss actually took can be watched and, failing that, retried.
+ */
+const LEAVE_AFTER_BIND = () => {};
+
 /** The steps that get a "step N of M" counter — the ones a climber drives. */
-const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'publish'];
+const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'look', 'publish'];
 
 type SprayWallWizardScreenProps = {
   /** Which tab the flow dismisses back to once the wall is bound. */
   returnTo: BoardReturnTo;
 };
 
+/** Hoisted for `useConnectivityField`: a stable selector keeps one subscription. */
+function selectConnectivityReason(snapshot: ConnectivitySnapshot): ConnectivitySnapshot['reason'] {
+  return snapshot.reason;
+}
+
 export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) {
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
+
+  // The photo is the step that decides how many holds the finder misses, so
+  // the long version of the advice (with the why) is one tap away, in the
+  // language the climber is reading.
+  const language = i18n.resolvedLanguage ?? i18n.language;
+  const openPhotoGuide = useCallback(() => {
+    void openExternalUrl(buildHelpUrl('spray-walls', language), 'spray-wizard-photo-guide');
+  }, [language]);
 
   /**
    * A cap refusal said in the climber's own language, with its number, ahead of
@@ -109,6 +171,15 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
    * `extensions.code` — never on that sentence — is what lets the app say the
    * rule and the number instead of relaying a string nobody translated.
    */
+  /** The sentence for a network-class upload failure; literal keys for the i18n linter. */
+  const uploadNoticeMessage = useCallback(
+    (notice: SprayUploadNotice): string => {
+      if (notice === 'offlineMode') return t('sprayWizard.upload.offlineMode');
+      if (notice === 'noSignal') return t('sprayWizard.upload.noSignal');
+      return t('sprayWizard.upload.serverUnreachable');
+    },
+    [t],
+  );
   const capOrServerMessage = useCallback(
     (error: unknown, fallback: string): string => {
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
@@ -118,12 +189,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     [t],
   );
   const router = useRouter();
+  const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { width: windowWidth } = useWindowDimensions();
+  // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
+  // cover however its window is later resized.
+  const formColumnCapped = sprayFlowCoversScreen();
   const insets = useSafeAreaInsets();
 
   const builder = useSprayWallBuilder();
   const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
+  // Offline mode, said on the photo step before an upload tries and fails
+  // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
+  const connectivityReason = useConnectivityField(selectConnectivityReason);
+  const offlineModeOn = sprayUploadNotice(connectivityReason) === 'offlineMode';
   const [pickerBusy, setPickerBusy] = useState(false);
   // Hosted here rather than inside `BoardIdentityFields` so the sheet is a
   // SIBLING of the ScrollView, exactly as it is in `BoardForm` — a sheet mounted
@@ -181,10 +260,56 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // route; the publish tap already buzzed.
   const finish = useActivateBoard({
     returnTo,
+    navigate: LEAVE_AFTER_BIND,
     isLocalOnly: true,
     writeFailure: 'rethrow',
     haptic: false,
   });
+
+  /**
+   * Out of the flow, back onto the tab the Boards modal was opened from. The
+   * first road, taken once the bind has landed: a POP_TO onto the tab, which
+   * is what every other board picker does (`useActivateBoard`).
+   */
+  const leaveToReturnTo = useCallback(() => {
+    try {
+      router.dismissTo(returnTo);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [router, returnTo]);
+
+  /**
+   * The second road, for when the first did not land and for the `done`
+   * step's own button. Re-sending the same `dismissTo` would fail the same way
+   * — a POP_TO to a tab that is not in the history, say — so this closes the
+   * Boards modal itself: `navigation` is the boards stack, and its parent is
+   * the root stack the modal sits on. A modal with nothing under it (a cold
+   * deep link) has nowhere to go back to, and only then is it replaced with
+   * the tab; replacing while the tabs ARE underneath would stack a second tab
+   * tree over them. At `done` the leave guard lets either straight through
+   * (`leaveDecision`).
+   */
+  const closeBoardsModal = useCallback(() => {
+    try {
+      const rootNavigation = navigation.getParent();
+      if (rootNavigation?.canGoBack()) {
+        rootNavigation.goBack();
+        return;
+      }
+      router.replace(returnTo);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [navigation, router, returnTo]);
+
+  /**
+   * The bind attempt in flight. Aborted when a newer one starts and when the
+   * screen unmounts: that clears its timers, and it is what stops a late answer
+   * from a run that already gave up from starting a bind or navigating.
+   */
+  const bindControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => () => bindControllerRef.current?.abort(), []);
 
   const previewWidth = Math.min(MAX_PREVIEW_WIDTH, windowWidth - spacing[4] * 2);
 
@@ -327,6 +452,49 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   );
 
   // ============================================
+  // Step 2, detour — crop or rotate
+  // ============================================
+
+  // The last render failed. Local rather than machine state: it is copy on the
+  // crop step, and the machine's own answer to a failure is to stay put.
+  const [adjustFailed, setAdjustFailed] = useState(false);
+
+  const openAdjust = useCallback(() => {
+    setAdjustFailed(false);
+    dispatch({ type: 'ADJUST_OPENED' });
+  }, []);
+
+  const applyPhotoEdit = useCallback(
+    async (edit: WallPhotoEdit) => {
+      const photo = state.photo;
+      if (!photo || state.photoProcessing) return;
+      setAdjustFailed(false);
+      // Done with nothing changed is Cancel: re-rendering the same file would
+      // clear corners the climber has no reason to mark again.
+      if (editsEqual(photo.edit, edit)) {
+        dispatch({ type: 'BACK' });
+        return;
+      }
+      dispatch({ type: 'PHOTO_PROCESSING_STARTED' });
+      try {
+        const rendered = await renderWallPhotoEdit(photo, edit);
+        dispatch({
+          type: 'PHOTO_ADJUSTED',
+          photo: { ...photo, ...rendered, edit: isIdentityEdit(edit) ? null : edit },
+        });
+        // The edit this one replaced is nobody's now. Never the base, which
+        // the next re-edit starts from, nor the picker's original.
+        if (photo.uri !== photo.base.uri && photo.uri !== rendered.uri) discardLocalPhoto(photo.uri);
+      } catch (error) {
+        reportError(error);
+        setAdjustFailed(true);
+        dispatch({ type: 'PHOTO_PROCESSING_FAILED' });
+      }
+    },
+    [state.photo, state.photoProcessing],
+  );
+
+  // ============================================
   // Steps 4 and 5 — upload, then suggest
   // ============================================
 
@@ -404,6 +572,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           durationMs: Date.now() - startedAt,
           determinate: uploaded.determinate,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
 
@@ -427,9 +597,19 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           durationMs: Date.now() - startedAt,
           determinate: false,
           attempt,
+          cropped: editCrops(photo.edit),
+          rotated: editRotates(photo.edit),
         }),
       );
-      dispatch({ type: 'UPLOAD_FAILED', message: capOrServerMessage(error, t('sprayWizard.upload.failed')) });
+      // Classified now, at failure time, and stored with the message: a server
+      // refusal (the wall cap) keeps its own words however connectivity moves
+      // afterwards, and only a request that never got an answer is blamed on
+      // the network (#5960).
+      const notice = classifySprayUploadFailure(error, getConnectivitySnapshot().reason);
+      dispatch({
+        type: 'UPLOAD_FAILED',
+        message: notice ? uploadNoticeMessage(notice) : capOrServerMessage(error, t('sprayWizard.upload.failed')),
+      });
     }
   }, [
     state.photo,
@@ -442,6 +622,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     createWallAsync,
     createVersionAsync,
     runDetection,
+    capOrServerMessage,
+    uploadNoticeMessage,
     t,
   ]);
 
@@ -469,6 +651,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     void runUpload();
   }, [state.step, state.upload.running, state.upload.error, state.upload.attempts, runUpload]);
 
+  // The editor reads the draft the moment detection hands over. Starting that
+  // read while the detector runs means it usually opens with its wall in hand.
+  const detectDraft = state.step === 'detect' ? state.draft : null;
+  useEffect(() => {
+    if (!detectDraft) return;
+    void prefetchSprayWallDraft(
+      queryClient,
+      detectDraft.layoutId,
+      detectDraft.wallUuid,
+      detectDraft.versionNumber,
+      detectDraft.versionId,
+    );
+  }, [detectDraft, queryClient]);
+
   // ============================================
   // Step 7 — publish, bind, leave
   // ============================================
@@ -477,8 +673,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     const { draft, wall, published } = state;
     const board = boardRef.current;
     if (!draft || !wall || state.publish.running) return;
+    bindControllerRef.current?.abort();
+    const bindController = new AbortController();
+    bindControllerRef.current = bindController;
     dispatch({ type: 'PUBLISH_STARTED' });
     hapticSelection();
+    // The look step just saved; this is the next thing that happens, and the
+    // spinner's own live region only speaks on Android.
+    AccessibilityInfo.announceForAccessibility(t('sprayWizard.publish.working'));
     try {
       // Skipped once the version is already published. Publishing and binding
       // the wall as the active board are two writes behind one button, and
@@ -494,61 +696,190 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
       if (!published) {
         await publishVersionAsync(draft.versionId);
+        // Latched before anything else can throw: past this point a failure
+        // must retry the bind, never the publish the server would now refuse.
         dispatch({ type: 'PUBLISHED' });
-        // Register the PUBLISHED generation right now. SW-07's revalidation
-        // window would get there eventually, but the device that published
-        // already knows the version moved — and until it re-registers, every
-        // spray cache key still names the draft the climber was editing.
-        await invalidateSprayWallRenderData(queryClient, draft.wallUuid, draft.layoutId);
         // Built from the wall itself, not from `builder`: a resumed run never ran
         // the meta step, so the builder's fields are its constructor defaults and
         // reporting them would bias this funnel for every wall finished on a
         // second sitting. `wall-created-event.ts` carries the whole rule.
-        track(
-          SHARED_EVENTS.BoardCreated,
-          wallCreatedEventProperties({
-            layoutId: wall.layoutId,
-            board,
-            meta: metaRanHereRef.current
-              ? {
-                  angle: builder.angle,
-                  hasLocationName: builder.locationName.trim().length > 0,
-                  hasCoords: builder.coords != null,
-                  gymUuid: builder.selectedGym?.uuid ?? null,
-                }
-              : null,
-            pendingVisibility: visibility,
-          }),
-        );
+        // Once per wall, here and nowhere else; and caught, so a builder that
+        // throws costs the event rather than the bind.
+        try {
+          track(
+            SHARED_EVENTS.BoardCreated,
+            wallCreatedEventProperties({
+              layoutId: wall.layoutId,
+              board,
+              meta: metaRanHereRef.current
+                ? {
+                    angle: builder.angle,
+                    hasLocationName: builder.locationName.trim().length > 0,
+                    hasCoords: builder.coords != null,
+                    gymUuid: builder.selectedGym?.uuid ?? null,
+                  }
+                : null,
+              pendingVisibility: visibility,
+            }),
+          );
+        } catch (error) {
+          reportError(error);
+        }
+      } else {
+        // A retry: the re-bind runs on `done`, exactly like the first.
+        dispatch({ type: 'PUBLISHED' });
       }
 
-      // Idempotent, and after the latch above, so a retry of a failed bind
-      // re-applies it rather than re-publishing.
-      if (visibility) {
-        await updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility });
-      }
-
-      // Fetch the published visibility before persisting the active board.
-      // A failed read leaves the published latch set, so retry only binds.
-      await activatePublishedSprayWall(queryClient, draft.wallUuid, finish);
+      await runPostPublishBind({
+        // Register the PUBLISHED generation right now. SW-07's revalidation
+        // window would get there eventually, but the device that published
+        // already knows the version moved — and until it re-registers, every
+        // spray cache key still names the draft the climber was editing. Not
+        // waited on: it is a cache invalidation, and a live subscriber's
+        // refetch can pause under `offlineFirst` for as long as the app thinks
+        // it is offline.
+        refresh: () => invalidateSprayWallRenderData(queryClient, draft.wallUuid, draft.layoutId),
+        // Idempotent, and after the latch above, so a retry of a failed bind
+        // re-applies it rather than re-publishing.
+        updateVisibility: visibility ? () => updateVisibilityAsync({ uuid: draft.wallUuid, ...visibility }) : null,
+        // Fetch the published visibility before persisting the active board.
+        // A failed read leaves the published latch set, so retry only binds.
+        activate: (hooks) => activatePublishedSprayWall(queryClient, draft.wallUuid, finish, hooks),
+        navigate: leaveToReturnTo,
+        fallbackNavigate: closeBoardsModal,
+        signal: bindController.signal,
+      });
     } catch (error) {
+      // Unmounted, or superseded by a newer attempt: nobody is left to tell.
+      if (bindController.signal.aborted) return;
+      if (error instanceof PostPublishStalledError) {
+        // Already reported, with its stage, by the run that called it.
+        dispatch({ type: 'PUBLISH_FAILED', message: t('sprayWizard.publish.stalled') });
+        return;
+      }
       reportError(error);
       dispatch({ type: 'PUBLISH_FAILED', message: capOrServerMessage(error, t('sprayWizard.publish.failed')) });
     }
-  }, [state, publishVersionAsync, updateVisibilityAsync, queryClient, builder, finish, t]);
+  }, [
+    state,
+    publishVersionAsync,
+    updateVisibilityAsync,
+    queryClient,
+    builder,
+    finish,
+    leaveToReturnTo,
+    closeBoardsModal,
+    t,
+  ]);
 
-  useSprayLeaveGuard(shouldConfirmLeave(state), {
-    title: t('sprayWizard.leave.title'),
-    body: t('sprayWizard.leave.body'),
-    stay: t('sprayWizard.leave.stay'),
-    leave: t('sprayWizard.leave.go'),
-  });
+  /**
+   * The `done` step's own way out, offered once the bind has had long enough
+   * that something is wrong. The wall is published and in Your boards whatever
+   * happens next, so leaving here loses nothing; a bind not yet started is
+   * dropped with the screen (`bindControllerRef`) rather than flipping the
+   * active board later under whatever the climber has moved on to. It takes
+   * the second road out, because the first may be the one that did not land.
+   */
+  const [doneExitOffered, setDoneExitOffered] = useState(false);
+  useEffect(() => {
+    // Not reset when the step moves on: a retry that lands back here after a
+    // failed bind offers the way out straight away, which is right for a
+    // climber who has already waited once.
+    if (state.step !== 'done') return;
+    const timer = setTimeout(() => setDoneExitOffered(true), DONE_EXIT_OFFER_MS);
+    return () => clearTimeout(timer);
+  }, [state.step]);
+  const leaveFromDone = useCallback(() => {
+    addErrorBreadcrumb({ category: 'spray-wall.bind', message: 'done_exit_tapped', level: 'info' });
+    closeBoardsModal();
+  }, [closeBoardsModal]);
+
+  /**
+   * Publish runs by itself the moment the look step confirms — its button is
+   * the last one, and a further screen asking to publish again would be the
+   * three-commit flow this replaced. Once per draft: a failure stays on the
+   * publish step with its error and Retry, and never re-fires on its own.
+   */
+  const autoPublishedVersionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (state.step !== 'publish' || !state.draft) return;
+    if (state.publish.running || state.publish.error) return;
+    if (autoPublishedVersionRef.current === state.draft.versionId) return;
+    autoPublishedVersionRef.current = state.draft.versionId;
+    void publish();
+  }, [state.step, state.draft, state.publish.running, state.publish.error, publish]);
+
+  /**
+   * What only the editor knows about leaving: whether it holds decisions it has
+   * not written (`onDirtyChange`), and whether its commit is in flight or its
+   * publish moment is playing (`onHandoverChange`). Refs: nothing renders on
+   * them, and every way out reads them at the moment it is taken.
+   */
+  const editorDirtyRef = useRef(false);
+  const editorHandingOverRef = useRef(false);
+  const onEditorDirtyChange = useCallback((dirty: boolean) => {
+    editorDirtyRef.current = dirty;
+  }, []);
+  const onEditorHandoverChange = useCallback((handingOver: boolean) => {
+    editorHandingOverRef.current = handingOver;
+  }, []);
+  const readEditorLeaveState = useCallback(
+    (): EditorLeaveState => ({ dirty: editorDirtyRef.current, handingOver: editorHandingOverRef.current }),
+    [],
+  );
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  /**
+   * Ask, then run `onConfirm` — or run it straight away when there is nothing to
+   * ask about, or drop it when the editor is mid-hand-over (`leaveDecision`).
+   *
+   * The dialog's Leave re-checks the flow when it is pressed, not when it was
+   * shown: a publish that started under the dialog must not be popped by an
+   * answer given before it began.
+   */
+  const confirmLeave = useCallback(
+    (onConfirm: () => void) => {
+      const decision = leaveDecision(state, readEditorLeaveState());
+      if (decision === 'block') return;
+      if (decision === 'leave') {
+        onConfirm();
+        return;
+      }
+      const askedAt = leaveCheckpoint(state);
+      const confirmed = () => {
+        if (!leaveStillApplies(askedAt, stateRef.current, readEditorLeaveState())) return;
+        onConfirm();
+      };
+      if (decision === 'confirmDiscard') {
+        // Unwritten hold changes: the wall is kept, the changes are not, and the
+        // dialog says exactly that.
+        confirmDiscardSprayEdits(true, confirmed, {
+          title: t('sprayWizard.leave.unsavedTitle'),
+          message: t('sprayWizard.leave.unsavedBody'),
+          keep: t('sprayWizard.leave.stay'),
+          discard: t('sprayWizard.leave.discard'),
+        });
+        return;
+      }
+      Alert.alert(t('sprayWizard.leave.title'), t('sprayWizard.leave.body'), [
+        { text: t('sprayWizard.leave.stay'), style: 'cancel' },
+        { text: t('sprayWizard.leave.go'), onPress: confirmed },
+      ]);
+    },
+    [state, t, readEditorLeaveState],
+  );
+
+  // Native dismissal is held while the existing decision and stale-answer
+  // checks run. Always registered: editor dirtiness changes through refs.
+  useSprayWizardLeaveGuard(confirmLeave);
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
-    // `review` and `publish` have no step behind them — the draft is on the
-    // server by then — so back means leaving, which keeps the draft.
-    if (state.draft || state.step === 'meta' || state.step === 'review' || state.step === 'publish') {
+    // `review`, `look` and `publish` have no step behind them — the draft is on
+    // the server by then — so back means leaving, which keeps the draft.
+    if (backLeavesFlow(state)) {
       router.back();
       return;
     }
@@ -556,49 +887,113 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   }, [state, router]);
 
   const candidateCount = state.detection.candidates.length;
-  const onHoldsSaved = useCallback(
-    ({ written }: { written: number; removed: number }) => {
-      trackSprayEvent(sprayHoldsReviewed({ holdCount: written, candidateCount, hadCandidates: candidateCount > 0 }));
-      dispatch({ type: 'HOLDS_SAVED', holdCount: written });
+  const onHoldsCommitted = useCallback(
+    ({ written, removed, holdCount }: SprayHoldSaveSummary) => {
+      // A resumed draft with nothing changed commits without writing; nothing
+      // was reviewed, so nothing is reported.
+      if (written > 0 || removed > 0) {
+        trackSprayEvent(sprayHoldsReviewed({ holdCount: written, candidateCount, hadCandidates: candidateCount > 0 }));
+      }
+      editorDirtyRef.current = false;
+      dispatch({ type: 'REVIEW_COMMITTED', holdCount });
     },
     [candidateCount],
   );
+
+  const onLookSaveStarted = useCallback(() => dispatch({ type: 'LOOK_SAVE_STARTED' }), []);
+  const onLookSaveFailed = useCallback(() => dispatch({ type: 'LOOK_SAVE_FAILED' }), []);
+  const onLookConfirmed = useCallback(() => dispatch({ type: 'LOOK_CONFIRMED' }), []);
+
+  const retryDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
+  const reviewNotice = useMemo(
+    () => reviewNoticeFor(state.detection.outcome, t, retryDetection),
+    [state.detection.outcome, t, retryDetection],
+  );
+
+  // The rings sweep in only when a scan has just found some. A resumed draft's
+  // stored holds, or an empty or failed scan, open without the show.
+  const revealRings = state.detection.outcome === 'done' && state.detection.candidates.length > 0;
 
   // ============================================
   // Render
   // ============================================
 
-  // The editor is its own full-screen surface with its own toolbar and its own
-  // save. It gets the whole screen rather than being boxed into the wizard's
-  // scroll view, which would put a second scroller around a pinch-zoom board.
+  // With the photo on this phone, the scan is a full-screen surface too: the
+  // photo full-bleed where the editor will put it, so the rings land on the very
+  // pixels the scan band was sweeping. A run resumed without the file keeps the
+  // plain spinner inside the stepper below.
+  if (state.step === 'detect' && state.draft && state.photo) {
+    return (
+      <SprayDetectionStep
+        wallUuid={state.draft.wallUuid}
+        versionId={state.draft.versionId}
+        photo={state.photo}
+        onComplete={detectionCompleted}
+        onManual={useManualEditor}
+      />
+    );
+  }
+
+  // The editor is its own full-screen surface with its own floating bar and its
+  // own Publish button. It gets the whole screen rather than being boxed into
+  // the wizard's scroll view, which would put a second scroller around a
+  // pinch-zoom board.
   if (state.step === 'review' && state.draft) {
     return (
-      <View style={styles.flex}>
-        <View style={[styles.reviewBar, { borderBottomColor: systemColors.separator }]}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.reviewHint}>
-            {detectionSummary(state, t)}
-          </Text>
-          <Button
-            title={t('sprayWizard.review.done')}
-            variant="filled"
-            onPress={() => dispatch({ type: 'REVIEW_DONE' })}
-            disabled={!state.hasSavedHolds}
-          />
-        </View>
-        <SprayHoldEditorScreen
-          wallUuid={state.draft.wallUuid}
-          layoutId={state.draft.layoutId}
-          versionId={state.draft.versionId}
-          versionNumber={state.draft.versionNumber}
-          viewerCanEdit={state.draft.viewerCanEdit}
-          candidates={state.detection.candidates}
-          onSaved={onHoldsSaved}
-        />
-      </View>
+      <SprayHoldEditorScreen
+        wallUuid={state.draft.wallUuid}
+        layoutId={state.draft.layoutId}
+        versionId={state.draft.versionId}
+        versionNumber={state.draft.versionNumber}
+        viewerCanEdit={state.draft.viewerCanEdit}
+        candidates={state.detection.candidates}
+        revealOnMount={revealRings}
+        primaryLabel={t('sprayWizard.review.next')}
+        loadingPhoto={state.photo}
+        notice={reviewNotice}
+        onCommitted={onHoldsCommitted}
+        onDirtyChange={onEditorDirtyChange}
+        onHandoverChange={onEditorHandoverChange}
+      />
+    );
+  }
+
+  // The wall's look, on its own full-screen surface for the editor's reason: its
+  // rail is a near-full-height horizontal swiper, and the wizard's vertical
+  // scroll view around it would steal the swipes.
+  if (state.step === 'look' && state.draft) {
+    return (
+      <SprayWallLookStep
+        draft={state.draft}
+        stepCounter={t('sprayWizard.stepCounter', {
+          current: COUNTED_STEPS.indexOf('look') + 1,
+          total: COUNTED_STEPS.length,
+        })}
+        onSaveStarted={onLookSaveStarted}
+        onSaveFailed={onLookSaveFailed}
+        onConfirmed={onLookConfirmed}
+      />
     );
   }
 
   const stepIndex = COUNTED_STEPS.indexOf(state.step);
+
+  // The crop step is a screenful of its own for the corner step's reason: a
+  // drag on the crop box must never also be a scroll. It is not counted — it
+  // is a detour off the photo step, not a step of the flow.
+  if (state.step === 'adjust' && state.photo) {
+    return (
+      <SprayPhotoAdjustStep
+        title={t('sprayWizard.adjust.title')}
+        body={t('sprayWizard.adjust.body')}
+        photo={state.photo}
+        processing={state.photoProcessing}
+        failed={adjustFailed}
+        onDone={(edit) => void applyPhotoEdit(edit)}
+        onCancel={goBack}
+      />
+    );
+  }
 
   // Its own screenful rather than a section of the scrolling page below: the
   // photo is fitted to the space between the header and the footer, so all four
@@ -614,6 +1009,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           value={state.anchors}
           onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
           invalid={state.anchorRejection != null}
+          // A new wall's frame IS its first photo (version 1 defines it).
+          qualityFrame={state.photo}
         />
         <SprayCornerFooter
           primaryTitle={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
@@ -634,7 +1031,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={formColumnCapped ? [styles.content, styles.tabletContent] : styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -692,7 +1089,10 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
               {t('sprayWizard.meta.angleHint')}
             </Text>
 
-            <BoardVisibilityFields builder={builder} publicHint={t('sprayWizard.meta.publicHint')} />
+            {/* Same three-way control as Edit board: two switches let "Public"
+                and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
+            <SprayWallVisibilityField builder={builder} />
+            <BoardVisibilityFields builder={builder} hideVisibilitySwitches />
 
             {/* The wall cap said before it bites rather than after: ten is a
                 number a gym with a lot of bays can reach, and meeting it as a
@@ -710,19 +1110,26 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.body')}
             </Text>
-            {state.photo ? (
-              <View style={styles.previewWrap}>
-                <Image
-                  source={{ uri: state.photo.uri }}
-                  style={{
-                    width: previewWidth,
-                    height: previewHeight(previewWidth, state.photo),
-                    borderRadius: borderRadius.lg,
-                  }}
-                  contentFit="cover"
-                  accessibilityIgnoresInvertColors
-                />
-              </View>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayWizard.photo.tip')}
+            </Text>
+            <Pressable
+              onPress={openPhotoGuide}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+              style={styles.photoGuideLink}
+              accessibilityRole="link"
+              accessibilityHint={t('sprayWizard.photo.helpLinkHint')}
+            >
+              <Text variant="subheadline" color={systemColors.accent}>
+                {t('sprayWizard.photo.helpLink')}
+              </Text>
+            </Pressable>
+            {/* Said before the upload, not after it fails: Offline mode is a
+                switch the climber can turn off right now. */}
+            {offlineModeOn ? (
+              <Text variant="footnote" color={iosSystemColors.systemOrange} accessibilityLiveRegion="polite">
+                {t('sprayWizard.upload.offlineMode')}
+              </Text>
             ) : null}
             <View style={styles.photoActions}>
               <Button
@@ -742,6 +1149,29 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
                 />
               ) : null}
             </View>
+            {state.photo ? (
+              <View style={styles.previewWrap}>
+                <Image
+                  source={{ uri: state.photo.uri }}
+                  style={{
+                    width: previewWidth,
+                    height: previewHeight(previewWidth, state.photo),
+                    borderRadius: borderRadius.lg,
+                  }}
+                  contentFit="cover"
+                  accessibilityIgnoresInvertColors
+                />
+                {/* Under the photo it changes. Crop happens before the upload, so
+                    the server only ever sees the cropped file. */}
+                <Button
+                  title={t('sprayWizard.photo.adjust')}
+                  icon="crop.free"
+                  variant="text"
+                  onPress={openAdjust}
+                  disabled={pickerBusy}
+                />
+              </View>
+            ) : null}
           </>
         ) : null}
 
@@ -777,14 +1207,18 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         {state.step === 'publish' ? (
           <>
             <Text variant="title3">{t('sprayWizard.publish.title')}</Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.publish.body')}
-            </Text>
             {state.publish.error ? (
               <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
                 {state.publish.error}
               </Text>
-            ) : null}
+            ) : (
+              <View style={styles.doneBlock}>
+                <ActivityIndicator />
+                <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+                  {t('sprayWizard.publish.working')}
+                </Text>
+              </View>
+            )}
           </>
         ) : null}
 
@@ -802,6 +1236,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         <GymPickerSheet
           selectedUuid={builder.selectedGym?.uuid ?? null}
           boardCoords={builder.coords}
+          showsOnMap={builder.isPublic}
           onSelect={(gym) => {
             builder.setSelectedGym(gym);
             setGymPickerOpen(false);
@@ -845,15 +1280,19 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
           <Button title={t('sprayWizard.upload.retry')} variant="filled" size="large" onPress={retryUpload} />
         ) : null}
 
-        {state.step === 'publish' ? (
+        {state.step === 'publish' && state.publish.error ? (
           <Button
-            title={t('sprayWizard.publish.cta')}
+            title={t('sprayWizard.publish.retry')}
             variant="filled"
             size="large"
             onPress={() => void publish()}
             loading={state.publish.running}
             disabled={state.publish.running}
           />
+        ) : null}
+
+        {state.step === 'done' && doneExitOffered ? (
+          <Button title={t('sprayWizard.done.leave')} variant="filled" size="large" onPress={leaveFromDone} />
         ) : null}
 
         {state.step !== 'done' && state.step !== 'resuming' ? (
@@ -879,19 +1318,20 @@ function previewHeight(width: number, photo: { width: number; height: number }):
   return (width * photo.height) / photo.width;
 }
 
-/** What the review bar says about where its candidates came from. */
-function detectionSummary(
-  state: { detection: { outcome: string; candidates: readonly unknown[] } },
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  if (state.detection.outcome === 'unavailable') return t('sprayWizard.review.manualOnly');
-  if (state.detection.outcome === 'failed') return t('sprayWizard.review.detectionFailed');
-  if (state.detection.candidates.length === 0) return t('sprayWizard.review.nothingFound');
-  // `{{value}}` and not `{{count}}`: the four catalogs interpolate `value`, and
-  // i18next leaves an unmatched placeholder in the string verbatim — so the wrong
-  // name here does not fall back, it ships "{{value}} holds to check" to a
-  // climber. It is also i18next's plural key, which these strings do not use.
-  return t('sprayWizard.review.found', { value: state.detection.candidates.length });
+/**
+ * What the editor says over an empty wall, by how detection went. Shown only
+ * while the wall has no rings at all, so a scan that found holds says nothing.
+ */
+function reviewNoticeFor(outcome: DetectionOutcome, t: (key: string) => string, retry: () => void): SprayEditorNotice {
+  if (outcome === 'failed') {
+    return {
+      message: t('sprayWizard.review.detectionFailed'),
+      actionLabel: t('sprayWizard.review.retry'),
+      onAction: retry,
+    };
+  }
+  if (outcome === 'done') return { message: t('sprayWizard.review.nothingFound') };
+  return { message: t('sprayWizard.review.manualOnly') };
 }
 
 /** A determinate bar when the work can count itself, a spinner when it cannot. */
@@ -929,6 +1369,12 @@ const styles = StyleSheet.create({
     padding: spacing[4],
     gap: spacing[2],
   },
+  // A full-screen iPad cover: the form keeps a readable column, centred.
+  tabletContent: {
+    maxWidth: SPRAY_FORM_MAX_WIDTH,
+    alignSelf: 'center',
+    width: '100%',
+  },
   stepCounter: {
     textTransform: 'uppercase',
     marginBottom: spacing[1],
@@ -940,6 +1386,10 @@ const styles = StyleSheet.create({
   previewWrap: {
     alignItems: 'center',
     paddingVertical: spacing[3],
+    gap: spacing[2],
+  },
+  photoGuideLink: {
+    alignSelf: 'flex-start',
   },
   photoActions: {
     gap: spacing[2],
@@ -963,17 +1413,6 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     paddingVertical: spacing[8],
     alignItems: 'center',
-  },
-  reviewBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  reviewHint: {
-    flex: 1,
   },
   footer: {
     paddingHorizontal: spacing[4],

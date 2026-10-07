@@ -25,6 +25,7 @@ import {
 } from '../../src/lib/graphql/hooks';
 import { resolveBoardForSession } from '../../src/lib/board-path-to-user-board';
 import { spacing, borderRadius } from '../../src/theme/tokens';
+import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
 
 /** Human board label for the confirmation card, e.g. "Kilter · 40°". */
 function boardLabelFromPath(boardPath: string): string {
@@ -45,7 +46,7 @@ function parseLiveSessionJoinSource(source: string | string[] | undefined): Live
   return LIVE_SESSION_JOIN_SOURCES.find((known) => known === value) ?? null;
 }
 
-export default function JoinSessionScreen() {
+function JoinSessionScreen() {
   const { sessionId, source } = useLocalSearchParams<{ sessionId: string; source?: string }>();
   const liveSessionSource = parseLiveSessionJoinSource(source);
   const { t } = useTranslation('session');
@@ -322,3 +323,8 @@ const styles = StyleSheet.create({
     marginTop: spacing[2],
   },
 });
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(JoinSessionScreen);

@@ -73,8 +73,14 @@ export const STROKE_CLOSE_TOLERANCE_BOARD_PX = 3;
  */
 export const OUTLINE_DECIMALS = 4;
 
-/** Why a drawn stroke can't be stored. The editor keeps drawing on any of these. */
-export type StrokeRejection = 'too-few-points' | 'too-complex' | 'centre-outside' | 'out-of-bounds';
+/**
+ * Why a drawn stroke (or a tapped-out polygon) can't be stored. The editor keeps
+ * drawing on any of these. `'self-overlap'` is the polygon tool's alone: a
+ * freehand stroke is decimated into whatever it becomes, but corners the climber
+ * placed one by one are kept exactly, so edges that cross are refused rather
+ * than silently reordered.
+ */
+export type StrokeRejection = 'too-few-points' | 'too-complex' | 'centre-outside' | 'out-of-bounds' | 'self-overlap';
 
 export type StrokeResult = { ok: true; outline: number[] } | { ok: false; reason: StrokeRejection };
 

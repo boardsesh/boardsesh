@@ -4,6 +4,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { BoardName, UserDataExportStatus } from '@boardsesh/shared-schema';
+import { UserDataExportActionError, type UserDataExportDownloadRequest } from '../../../user-data-export-action';
 import {
   GET_USER_DATA_EXPORT,
   GET_USER_DATA_EXPORT_DOWNLOAD,
@@ -58,7 +59,7 @@ function exportStatus(overrides: Partial<UserDataExportStatus> = {}): UserDataEx
 
 beforeEach(() => {
   mocks.request.mockReset().mockResolvedValue({ userDataExport: exportStatus() });
-  mocks.openDownload.mockReset().mockResolvedValue(true);
+  mocks.openDownload.mockReset().mockResolvedValue(undefined);
   mocks.focused = true;
   mocks.offline = false;
   mocks.backgrounded = false;
@@ -266,7 +267,7 @@ describe('bounded export polling', () => {
   });
 });
 
-describe('fresh private browser downloads', () => {
+describe('fresh private export downloads', () => {
   it('gets a new signed URL for each tap and never caches those URLs', async () => {
     mocks.request.mockImplementation((document: string) => {
       if (document === GET_USER_DATA_EXPORT_DOWNLOAD) {
@@ -292,8 +293,20 @@ describe('fresh private browser downloads', () => {
       });
     }
     expect(mocks.openDownload.mock.calls).toEqual([
-      ['https://private.test/export?signature=1'],
-      ['https://private.test/export?signature=2'],
+      [
+        expect.objectContaining({
+          url: 'https://private.test/export?signature=1',
+          filename: 'tension.json',
+          credentialGeneration: 1,
+        }),
+      ],
+      [
+        expect.objectContaining({
+          url: 'https://private.test/export?signature=2',
+          filename: 'tension.json',
+          credentialGeneration: 1,
+        }),
+      ],
     ]);
     expect(mocks.request).toHaveBeenCalledWith(GET_USER_DATA_EXPORT_DOWNLOAD, {
       boardType: 'tension',
@@ -351,7 +364,7 @@ describe('fresh private browser downloads', () => {
     mocks.request
       .mockResolvedValueOnce({ userDataExport: exportStatus() })
       .mockResolvedValueOnce({ userDataExportDownload: { url: 'https://private.test/export.json' } });
-    mocks.openDownload.mockResolvedValue(false);
+    mocks.openDownload.mockRejectedValue(new UserDataExportActionError('browser_failed'));
     const { wrapper } = makeWrapper();
     const { result } = renderHook(() => useUserDataExport('climber-a', 'tension'), { wrapper });
     await waitFor(() => expect(result.current.statusQuery.isSuccess).toBe(true));
@@ -360,5 +373,83 @@ describe('fresh private browser downloads', () => {
         result.current.downloadMutation.mutateAsync({ period: '2026-W40', format: 'boardsesh' }),
       ).rejects.toMatchObject({ reason: 'browser_failed' });
     });
+  });
+
+  it('stays pending through native sharing and never stores the private helper input', async () => {
+    let finishSharing: (() => void) | undefined;
+    mocks.openDownload.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSharing = resolve;
+        }),
+    );
+    mocks.request.mockImplementation((document: string) =>
+      Promise.resolve(
+        document === GET_USER_DATA_EXPORT_DOWNLOAD
+          ? {
+              userDataExportDownload: {
+                url: 'https://private.test/export?signature=private',
+                filename: 'tension.json',
+              },
+            }
+          : { userDataExport: exportStatus() },
+      ),
+    );
+    const { queryClient, wrapper } = makeWrapper();
+    const { result } = renderHook(() => useUserDataExport('climber-a', 'tension'), { wrapper });
+    await waitFor(() => expect(result.current.statusQuery.isSuccess).toBe(true));
+    let outcome: Promise<void> | undefined;
+    await act(async () => {
+      outcome = result.current.downloadMutation.mutateAsync({ period: '2026-W40', format: 'aurora' });
+    });
+    await waitFor(() => expect(result.current.downloadMutation.isPending).toBe(true));
+    expect(mocks.openDownload).toHaveBeenCalled();
+    expect(
+      JSON.stringify(
+        queryClient
+          .getMutationCache()
+          .getAll()
+          .map((mutation) => mutation.state),
+      ),
+    ).not.toContain('signature');
+    await act(async () => {
+      finishSharing?.();
+      await outcome;
+    });
+    await waitFor(() => expect(result.current.downloadMutation.isPending).toBe(false));
+  });
+
+  it('aborts native work and invalidates its ownership guard when unmounted', async () => {
+    let downloadRequest: UserDataExportDownloadRequest | undefined;
+    mocks.openDownload.mockImplementation((request: UserDataExportDownloadRequest) => {
+      downloadRequest = request;
+      return new Promise<void>((_resolve, reject) =>
+        request.signal.addEventListener('abort', () => reject(new UserDataExportActionError('session_changed')), {
+          once: true,
+        }),
+      );
+    });
+    mocks.request.mockImplementation((document: string) =>
+      Promise.resolve(
+        document === GET_USER_DATA_EXPORT_DOWNLOAD
+          ? { userDataExportDownload: { url: 'https://private.test/export.json', filename: 'tension.json' } }
+          : { userDataExport: exportStatus() },
+      ),
+    );
+    const { wrapper } = makeWrapper();
+    const { result, unmount } = renderHook(() => useUserDataExport('climber-a', 'tension'), { wrapper });
+    await waitFor(() => expect(result.current.statusQuery.isSuccess).toBe(true));
+    let outcome: Promise<unknown> | undefined;
+    await act(async () => {
+      outcome = result.current.downloadMutation
+        .mutateAsync({ period: '2026-W40', format: 'boardsesh' })
+        .catch((error: unknown) => error);
+    });
+    await waitFor(() => expect(downloadRequest).toBeDefined());
+    expect(downloadRequest?.isCurrent()).toBe(true);
+    unmount();
+    expect(downloadRequest?.signal.aborted).toBe(true);
+    expect(downloadRequest?.isCurrent()).toBe(false);
+    expect(await outcome).toMatchObject({ reason: 'session_changed' });
   });
 });

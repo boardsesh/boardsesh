@@ -154,6 +154,21 @@ Three consequences worth stating plainly.
   that turns out singular — the solver returns the identity rather than a matrix
   of NaN, because a wrong map still renders and NaN renders nothing.
 
+**A crop is not a warp either.** The photo step's crop happens on the phone
+before the upload, so the server only ever sees the cropped file: its stored
+width and height are the cropped photo's, the anchors are tapped on it, and the
+homography is solved in its pixels — exactly as for a photo framed that tightly
+in the camera. Nothing on the server knows a crop happened, and nothing has to.
+A crop is a translation of the pixel grid, and a homography solved from anchors
+that moved with the grid absorbs it: `homography.test.ts` ("a crop before the
+upload") pins that a wall point maps to the same canonical point however the
+photo was cropped. Cropping a version-1 photo to the wall's edges also makes
+"Skip for now" on the corner step honest: without anchors the frame is the whole
+photo, so a photo cropped to the wall is a frame that IS the wall. An uncropped
+version 1 with no anchors is the case that goes wrong: every later reset maps
+the wall's corners onto that photo's corners and is off by the floor and
+ceiling margin ([#6157](https://github.com/boardsesh/boardsesh/issues/6157)).
+
 A hold's radius is mapped with `mapRadius`, which takes `sqrt(|det J|)` of the
 local Jacobian: the scale that preserves the hold's **area**. A circle under a
 projective map is an ellipse, so there is no single right radius; taking one axis
@@ -225,13 +240,14 @@ the physical standby is not a queue endpoint. See
 segmentation model, tiling, outlines, retries and native-runtime cleanup.
 
 The box-model measurements below are historical evidence, not the current
-segmentation service's inference configuration.
+segmentation service's inference configuration. The native runtime and benchmark
+have been removed; see [native cleanup](spray-recognition-native-cleanup.md).
 
-`@boardsesh/hold-detection` is the platform-free half of on-device detection:
+`@boardsesh/hold-detection` is the platform-free detection post-processing:
 tile planning, preprocessing into the model's input tensor, decoding RF-DETR's
 two output tensors, merging what several tiles saw, and handing back circles. The
 inference runtime and the image decoder are injected, so the same code runs in
-the Expo app, in a browser worker and under Node.
+a browser worker or Node, without a mobile native inference dependency.
 
 The default is **one full-frame pass**, not the 2x2 tiling the SW-01 harness
 config uses. SW-01 measured tiling making the small model 4.9 F1 points *worse*
@@ -269,12 +285,13 @@ model.** On `1.jpg`'s first tile, 280 of 300 query boxes differ by more than
 the whole-photo detection count moves from 44 to 49. Dynamic
 int8 quantisation puts a build-specific QGemm kernel in the hot path. The app's
 runtime will not reproduce the harness's numbers hold for hold either, which is
-one more reason the score threshold is a slider rather than a shipped constant.
+one more reason the editor's confidence cutoffs (below) are coarse bands rather
+than a tuned threshold.
 
 ## Adding a wall
 
 `packages/mobile/app/boards/spray/new.tsx` → `SprayWallWizardScreen` (SW-09,
-#5442). One route, seven steps, behind the mobile flag `spray-walls`.
+#5442). One route, seven steps, available to every climber.
 
 Two front doors open it: the board picker's Spray wall tile, and "Add my spray
 wall" under My own board in the "Where do you climb?" block that Climbs' Find my
@@ -287,11 +304,13 @@ would leave first-run open.
 | --- | --- |
 | `resuming` | Asks `mySprayWalls` for a wall of the caller's own with no published version and offers to pick it up or start over. |
 | `meta` | Name, gym, visibility, location, and the angle — snapped to `SPRAY_ANGLES`, because the server validates against that list. |
-| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 2048 px JPEG, which bakes the EXIF orientation into the pixels. |
+| `photo` | Library pick; the camera button only on a binary at or past the version that shipped the usage description. Compressed to a 4096 px JPEG (`WALL_PHOTO_MAX_DIMENSION`), which bakes the EXIF orientation into the pixels. A 12 MP phone photo goes up unscaled. The server keeps a 2048 px base for the frame, the detector and the climb view, and the larger copy only for the hold editor's deep zoom (#5911). The photo's size is the rendered JPEG's own (`compressPickedImageWithSize`), not the picker's, which on some Android builds describes the sensor rather than the picture. "Crop or rotate" under the preview opens `adjust`. |
+| `adjust` | Not counted, and always returns to `photo`. A free-aspect crop box (four corners, four edges, drag inside to move) and a Rotate button that turns the photo a quarter clockwise, over the BASE — the first compressed, uncropped copy. Copy: "Crop to the edges of the wall". Done renders the edit in one pass with `renderWallPhotoEdit` (rotate, crop, shrink to `WALL_PHOTO_MAX_DIMENSION`, JPEG 0.85) from the picker's ORIGINAL, falling back to the base when the original is over 25 MP (`ORIGINAL_RENDER_MAX_PIXELS`: decoded memory, about 195 MB for a 48 MP capture), gone, or fails to render; the result's size is the rendered image's. At the 4096 px cap the base keeps half a 48 MP original's width, so only a crop tighter than half of each side comes out softer. The output is at most 4096 x 4096 (a square crop of a 24 MP photo), about 3.5 MB for a real wall photo against the 15 MB upload cap. It clears the anchors, as a new photo does: a quarter turn changes which corner is the top-left. Reset puts the photo back as picked, Cancel (Back) leaves it as it was, and Back and leaving wait while the edit renders (`photoProcessing`). The smallest crop keeps 15% of each side and at least 512 base pixels, which guarantees 512 uploaded ones; under 1200 px on the long side a soft warning says holds may look soft, predicted from the same file the render will read (`renderableOriginalSize`). Rotation renders a turned preview of the base per quarter turn (`renderRotatedPreview`, 1600 px) rather than a view transform, because a rotated view hands pan translations back in its own axes. The pure halves are `photo-edit.ts` and `crop-box-math.ts`. Re-opening starts from the base with the last edit, so a crop can be loosened again. |
 | `anchors` | Optional, Skip by default. Four draggable handles with the marked area outlined between them; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. The photo is fitted on both axes to the space between the header and the footer (`corner-photo-fit.ts`), so all four handles are on screen and the step does not scroll; the footer is the same height before and after the first drag. When that space would fall under about 200 points the photo stops shrinking and the step scrolls instead — reachable on a 375x667 phone with the reset flow's longer copy, not only at large text sizes — and the page is held still while a ring is being dragged, so a drag never becomes a scroll. The hint and the refusal that replaces it share one slot, so a refused quad does not re-fit the photo. The reset flow's corner step is the same component. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
-| `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued; published reset versions remain unchanged until review and confirmation. |
-| `review` → `publish` | `SprayHoldEditorScreen`, then `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind. |
+| `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"); published reset versions remain unchanged until review and confirmation. With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file, and the reset flow, keep the plain spinner. |
+| `review` | `SprayHoldEditorScreen`. Its one button, "Pick a look", commits the holds (`REVIEW_COMMITTED`) and hands over to the look step. Until its draft has loaded it shows `SprayEditorLoading`, never a bare spinner: the local photo dimmed with a status card and no scan band when the wizard still has the file, a spinner and a status line otherwise, and "Couldn't load your wall" with "Try again" when the read has given up or is parked offline (`useSprayWallDraft`'s `isStalled`; an automatic retry still in flight keeps the plain wait). "Try again" re-probes connectivity before it refetches, because an offline connectivity store refuses requests before they reach the network. The wizard prefetches that draft during `detect` (`prefetchSprayWallDraft`). |
+| `look` → `publish` | `SprayWallLookStep`. The onboarding board-look rail without Custom, every card drawn on the creator's own draft with ~12 of its holds lit as a stand-in problem (`samplePreviewHolds`, `useSyntheticSprayWallPreview`). Defaults to `DEFAULT_SPRAY_WALL_LOOK_OPTION_ID` (Aura Outline); no Skip. Its button stores the card's bundle with `setSprayWallRenderSettings`, then `LOOK_CONFIRMED`; the publish step then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and only stops to show an error with Try again. Like `review`, it has no step behind it: Back leaves and keeps the draft. |
 
 Three rules in that flow are not obvious from the API and are easy to undo:
 
@@ -317,13 +336,244 @@ Three rules in that flow are not obvious from the API and are easy to undo:
 - **Publishing and binding the board are latched apart.** They sit behind one
   button, and `publishSprayWallVersion` refuses a version that has already
   published — so a shared retry would turn a failed board bind into a dead end.
+  The bind itself (`runPostPublishBind` in
+  `packages/mobile/src/lib/spray/post-publish-bind.ts`) cannot hold the `done`
+  spinner forever: the render-data refresh is started and never waited on, the
+  visibility write and the board read plus bind each get 30 s (past the GraphQL
+  client's 20 s deadline), and a stage that runs out lands on the publish step's
+  error and Try again, reported with its stage as `Spray Wall Bind Stalled`. A
+  timed-out run cannot start a bind or navigate when its answer arrives late
+  (a board write already in flight may still land). If the wizard is still
+  mounted 1.5 s after its `dismissTo`, it leaves by a second road: it closes the
+  Boards modal through the root stack, or replaces it with the tab when nothing
+  is underneath. After 5 s `done` shows its own "Back to climbing" button, which
+  takes that second road too. The maintenance editor (`spray/holds`) puts the
+  same 30 s ceiling on its post-publish refresh, which ends in its Retry screen.
 
-The wizard and reset share `useSprayLeaveGuard`: `usePreventRemove` registers
-native dismissal prevention before a gesture can remove the screen, and carries
-that protection up to the containing Boards modal. Cancelling keeps the flow
-mounted; confirming redispatches the original navigation action. Footer exits
-use the same guard, so they ask once. Both routes disable the native back-button
-history menu, which does not support removal prevention.
+The wizard always exposes a header close control, including cold deep links
+without a back stack. It returns to the resolved source tab when no back route
+exists, and native removal prevention runs the same busy, unsaved-edit and
+stale-confirmation checks for header and footer exits. The editor and Look
+surfaces reserve the transparent header's measured height. When a Look preview
+cannot be drawn, the creator can still select any offered look and save it.
+Photo replacement controls precede the preview so portrait photos cannot hide
+them below the fold.
+
+Both the wizard and the reset guard leaving with `usePreventRemove`, which
+registers native dismissal prevention before a gesture can remove the screen,
+and carries that protection up to the containing Boards modal. The wizard
+registers it through `useSprayWizardLeaveGuard`, always on, and hands the held
+navigation action to the leave decision above; the reset uses
+`useSprayLeaveGuard`, on while there is something to lose. Cancelling keeps the
+flow mounted; confirming redispatches the original navigation action. Footer
+exits use the same guard, so they ask once. Both routes disable the native
+back-button history menu, which does not support removal prevention.
+
+### Full screen on iPad
+
+On iPad the three spray routes (`spray/new`, `spray/holds`, `spray/reset`) are a
+`fullScreenModal`, not the page card every other Boards screen is. A card leaves
+the editor a box in the middle of the screen with the app dimmed around it.
+`sprayFlowCoversScreen()` (`src/lib/spray/spray-flow-presentation.ts`) is the
+one switch: `Platform.isPad` on iOS. Phones and Android, tablets included, keep
+the presentation and layout they had, key for key.
+
+- **Two places set it.** Pushed over the picker, a spray screen's own options
+  make it full screen (`sprayFlowScreenOptions`). Opened from the live wall
+  sheet, `/boards/spray/holds` or `/reset` is the FIRST screen of the Boards
+  stack, and a stack's first screen ignores its own presentation. So the root
+  `boards` screen in `app/_layout.tsx` takes an options function and asks
+  `opensIntoSprayFlow(route)` which screen the modal was opened on: the nested
+  navigate's `params.screen`, or the first route of a cold link's state. It reads
+  the ENTRY, so the presentation does not change while the modal is up. With
+  neither, it opens as the card, which still works.
+- **An X on holds and reset.** A full-screen modal has no swipe down and no back
+  chevron, so both need the wizard's header X (`SprayWizardExitButton`). Reset
+  already carries it on every platform (#5960), so iPad only adds the
+  presentation there; holds gets it on iPad only. It calls `router.back()` like
+  the screens' own Back buttons, so the `usePreventRemove` guards above still
+  ask first; with nothing to go back to it dismisses to Climbs.
+- **The home indicator fades** (`autoHideHomeIndicator`). The status bar stays:
+  hiding it per screen needs the view-controller-based status bar appearance,
+  which Expo turns off.
+- **Form steps keep a column.** The wizard's and the reset's scrolling steps are
+  capped at `SPRAY_FORM_MAX_WIDTH` (640 pt) and centred.
+- **The photo gets the screen.** `useSprayEditorLayout()` answers `tablet` for an
+  iPad window at the regular width (700 pt and up) and `phone` otherwise, live,
+  so Split View, Slide Over and a small iPadOS 26 window fall back to the phone
+  layout. On `tablet`, `fitSprayPhoto` keeps no room free for the bottom bar
+  (`reserveBottom: false`) and the chrome floats over the photo. The scan step
+  (`SprayScanPhoto`) fits with the same answer, through the same
+  `sprayPhotoReservesBottom`, or the rings would not land where the band swept.
+- **A resize resets the zoom.** When the photo's fitted size changes under the
+  editor (rotation, Split View, Stage Manager), the zoom is reset through the
+  board's `controlRef`, and a stroke or hold drag in progress is dropped by
+  remounting the gesture overlay. The stroke's points are board pixels, so what
+  was drawn is not wrong; the rest of it would be. Phones are portrait-locked and
+  never resize.
+
+Why iPad may use `fullScreenModal` when `docs/mobile-sheets-vs-routes.md` rule 2
+bans it: the ban is about the iOS 26 NativeTabs, and iPad never mounts them.
+
+### The iPad editor and Apple Pencil
+
+On the `tablet` layout the hold editor keeps every handler the phone has and
+changes where they live. The phone layout is untouched, key for key.
+
+- **A tool rail down one side** (`SprayToolRail`): Undo, Redo, Mark (the resting
+  pick-and-switch tool) and Add, the maybes' show-or-hide and Keep all, "Pencil
+  only" once a Pencil has been seen, Fit (the zoom reset), the wall-wide menu
+  (Start over) and the "?". It is the phone's bottom bar on its side, minus the
+  counts and the primary button. It docks to the leading edge; dragging its grip
+  past the middle of the screen springs it to the other edge, and the side is
+  kept per device (`boardsesh_spray_editor_rail_side`, `useSprayRailSide`). A
+  screen reader activates the grip to switch sides.
+- **Everything else stays away from the rail** (`sprayTabletPlacement` in
+  `spray-tablet-layout.ts`, tested as a table). The picked hold's
+  `SprayHoldInspector` replaces the chip bar: a 300 pt glass card with the
+  hold's role, where it came from ("Found by scan · 82%" or "Added by you"),
+  the size stepper, the role's actions (Switch off, Redraw, Refine, Join;
+  Switch on, Delete; Keep, Switch off) and Previous / Next, which pick the neighbouring
+  ring in reading order (`sprayHoldReadingOrder`, the screen reader's walk) and
+  frame it through the board's `controlRef.zoomTo`. In landscape the card sits
+  under the header on the side away from the rail; in portrait it sits low on
+  that side, above the cluster. The undo toast and Corners' Finish stack above
+  the cluster on the same side. The reset-zoom control moves to the top corner
+  away from the rail, and the banner and hints keep a column of up to 520 pt in
+  the middle, narrower in landscape so it clears the inspector.
+- **A primary cluster along the bottom**: the count capsule
+  (`SprayCountCapsule`, shared with the phone's bottom bar) and the primary
+  button. Landscape docks it to the side away from the rail, portrait centres
+  it at up to 520 pt.
+
+**The Pencil marks and fingers inspect.** The Pencil needs no mode: on the
+tablet layout every touch is checked for `PointerType.STYLUS`. "Pencil only"
+is about fingers. It turns itself on the first time a Pencil touches or hovers
+over the wall in a session (`pencil-session.ts`, module-scoped so the wizard
+remounting the editor does not forget it), and the rail's toggle overrides it,
+kept per device (`boardsesh_spray_editor_pencil_only`).
+
+| Input | On a ring | On bare wall |
+|---|---|---|
+| Pencil tap | switch it on or off | add a circle at the median hold size |
+| Pencil stroke | starting on the SELECTED ring: move it | outline a new hold (`holdFromStroke`); centred inside the selected hold, redraw that hold instead (`SET_OUTLINE`), which also switches a selected ghost or maybe on |
+| Pencil hover | a violet halo round it: a tap will switch it | a dashed circle of the size a tap would add |
+| Finger tap, Pencil only on | pick it (the inspector opens) | put the picked ring down |
+| Finger tap, Pencil only off | the phone rule (`resolveEditTap`) | the phone rule |
+| Finger long press or drag on the picked ring | pick up and move | Pencil only off: place a hold (the phone rule). On: pan when zoomed |
+| Pinch | zoom and pan | zoom and pan |
+| Two-finger tap | undo the last wall edit | undo the last wall edit |
+
+- **How the touches are split.** The resting editor nests a Pencil-only
+  `DrawStrokeOverlay` (`SprayPencilSurface`: Add's Manual recognizer, finger
+  draw off) inside `SprayEditGestureOverlay`, the same ancestor fall-through
+  Trace relies on. A finger fails it at touch-down and lands on the edit
+  overlay. A Pencil touch inside the selected hold's grab radius fails it too
+  (`declineOnSelectionSV`), so the edit overlay's drag claims it and the
+  Pencil moves the ring. The grab radius is the drag's own claim at
+  touch-down: the hold's radius, or 22 screen pt when that is bigger. Were the
+  two to differ, a small ring would be claimed by both on the same touch, and
+  the drag's end ignores a cancelled touch (`success` false) for the same
+  reason. Everything else the Pencil does comes back as one
+  stroke: within 10 screen pt it is a tap (`resolveEditTap` with
+  `input: 'pencil'`), otherwise an outline (`pencilStrokeTarget` decides new
+  hold or redraw).
+- **Add mode, Trace and Refine follow Pencil only.** With it on, Add's Draw takes only
+  the Pencil (`fingerDrawSV` false), Corners takes only the Pencil
+  (`PolygonTapOverlay`'s `stylusOnlySV` fails a finger at touch-down, so it
+  pans), and Trace draws only with the Pencil and says so in its banner.
+- **Hover** is RNGH's `Gesture.Hover()`, already in the binary, simultaneous
+  with the edit overlay's race. It writes `[id, cx, cy, r]` (or `[0, x, y, r]`
+  on bare wall) to a shared value on the UI thread with the same hit test a
+  tap uses, and `SprayHoverPreview` draws it inside the zoom transform. A
+  mouse or trackpad pointer is ignored. Hover only exists on the iPads whose
+  Pencil hovers (iPad Pro M2 and later, and the Pencil Pro models); elsewhere
+  nothing arrives and nothing draws.
+- **The Pencil hint** ("Apple Pencil adds and switches holds. Fingers move
+  around and pick a hold.") is asked for by the first Pencil touch or hover,
+  and again by each later wizard step once one has been seen, and goes ahead
+  of every other hint. It is used up when a finger then picks a
+  ring, or when it is closed (`onboarding_tip_spray_pencil_seen`).
+- **Two-finger tap undo** is a `Gesture.Tap().minPointers(2)` of at most 250 ms
+  and 15 pt, simultaneous with the pinch, so a quick tap undoes and anything
+  longer or wider is a pinch.
+- **With the resize handle, press and hold, and the loupe.** These came from
+  the phone editor and keep working on iPad unchanged. The resize handle is
+  mounted after the edit overlay, so its own detector still wins a touch on
+  the handle, Pencil or finger. Press and hold to place a hold is for fingers
+  only: the edit overlay's long press steps aside at touch-down for a Pencil
+  on bare wall (the Pencil adds by tapping or drawing), and with "Pencil only"
+  on, a finger's press and hold on bare wall steps aside too and pans, since
+  fingers do not add then. The loupe follows fingers only (`pointerWantsLoupe`),
+  so a Pencil never brings it up. On iPad the handle avoids the bottom count
+  and primary cluster instead of the phone's dock.
+
+What can only be checked on hardware: palm rejection while the Pencil draws,
+a Pencil landing on the selection while zoomed, hover on a Pencil Pro iPad,
+and a two-finger tap against a short pinch.
+
+### Keyboard shortcuts and the Pencil's double tap and squeeze
+
+Neither has a JS path on iOS: React Native 0.86's `onKeyDown` is Android only,
+and nothing else references `UIPencilInteraction`. On Android `onKeyDown`
+exists but sits behind the native `enableKeyEvents` feature flag, which is off
+in every OSS release level and cannot be turned on from JS. So both platforms
+use one local Expo module, `packages/mobile/modules/spray-editor-input`, which
+ships on the `release/next` train because it moves the native fingerprint.
+
+- **The native half only turns keys into ids.** `SprayEditorKeyScope` is the
+  editor's root view, so the module's view is the ancestor of everything a
+  touch lands on. It is `box-none`, not `none`: on iOS, Fabric turns `none` into
+  `userInteractionEnabled = NO`, and UIKit can then refuse it first responder
+  and never hit-tests it, which would silence both the key commands and the
+  Pencil interaction. For a climber who can edit, JS hands it the shortcut
+  list (`sprayShortcutCommands`: keys, plus the titles the iPad's Cmd-hold
+  overlay shows). iOS registers each one as a `UIKeyCommand` on a view that
+  makes itself first responder. Android matches key presses on a view that
+  takes key focus (`SprayShortcutMatcher`, JVM-tested in CI). Both report
+  `onShortcut({ id })`, and neither takes the keyboard from a text field. iOS
+  takes it back when its window becomes key, when the app becomes active, or
+  when a touch lands on the editor, because UIKit gives it to nobody after an
+  alert.
+- **What a shortcut does is JS** (`resolveSprayShortcut` in
+  `spray-editor-shortcuts.ts`, tested as a table), so it ships by OTA. Each one
+  runs the handler its button runs, under the same lock (the table below). On
+  Android, `command` means Ctrl or Meta, so undo is Ctrl+Z.
+- **The Pencil's double tap and squeeze follow the iPad's own Pencil setting**
+  (`resolvePencilGesture`), on the tablet layout only. A switch setting ("switch
+  between current tool and eraser" or "…and last used") swaps between Mark and
+  Add. A palette setting opens `SprayPencilPalette`: Mark, Draw, Corners, Undo
+  and Redo in a ring round the Pencil tip, pulled in from the edges by
+  `pencilPaletteCentre`, or mid-screen when the Pencil was not hovering.
+  Ignore and a system shortcut are left alone. A squeeze (Pencil Pro, iPadOS
+  17.5 and later) acts when it is let go, and a second squeeze closes the
+  palette.
+- **An older binary does nothing.** `modules/spray-editor-input/src/index.ts`
+  resolves the module with `requireOptionalNativeModule('SprayEditorInput')`
+  and only asks for the view when the module is there. An OTA of this JS on a
+  store build without the module renders nothing, and the shortcuts are absent.
+
+| Keys | Does | Only when |
+|---|---|---|
+| ⌘Z / ⇧⌘Z | Undo / Redo | there is something to undo or redo |
+| Delete or Backspace | switch the picked ring off; on a ghost, delete it | Mark, a ring picked |
+| Esc | close the Pencil palette or the wall menu; otherwise leave Add, cancel Trace or Join, or put the ring down | |
+| A | Add on or off | |
+| − / = (or +) | smaller / bigger | Mark, a ring picked |
+| [ / ] | previous / next ring in reading order | Mark, more than one ring |
+| ⌘↩ | the primary button | the button's own enabled rule |
+
+Each key is matched as its US layout types it, with exactly the modifiers in
+the table. On a layout where `[`, `]` or `=` needs Shift, Option or AltGr
+(German and French, for two), previous, next and bigger do not fire from those
+keys; the inspector's buttons and the keypad `+` still do.
+
+What can only be checked on hardware: the shortcuts on an iPad keyboard (and
+that they survive an alert and a trip to the home screen), that the scope view
+becomes first responder at all, which input the Delete and forward-delete keys
+reach (`UIKeyCommand.inputDelete` against `"\u{8}"`), the Cmd-hold overlay's
+titles, double tap on a Pencil 2 or Pro, squeeze and its hover point
+on a Pencil Pro, and Ctrl+Z on an Android tablet with a keyboard.
 
 ## Caps
 
@@ -434,8 +684,18 @@ fix sends both false — gets a private wall and nothing pending, as before.
 `{ mode: 'classic' | 'aura', boardsesh: BoardseshRenderSettings }` — the look the
 creator picked in the add-wall wizard. `SprayWall.renderSettings` returns it on
 every wall read. NULL means "no wall default", which is every wall created before
-the column existed, and the mobile resolver falls back to the global default for
-it. A viewer's own explicit render-mode choice always wins over the wall's.
+the column existed, and the mobile resolver falls back to the climber's own look
+for it. On a wall that has one, the wall's look wins over the climber's own,
+unless they turned on "Use my look on spray walls" (More → Board look).
+
+The dimming over unlit holds (the Aura veil) is set by the creator in the same
+step, with a slider under the looks, and stored in the look as `veil: 'custom'`
+plus `veilOpacity` (or `veil: 'off'` at zero). A spray wall cannot use
+`veil: 'auto'`: that sizes the veil from a measured wall brightness, which only
+the catalogue boards have, so on a photo it draws nothing. Until the creator
+touches the slider each look keeps its own dimming, which for Aura Outline is
+none. `withSprayWallDim` applies the value to the options themselves, so the
+previews and the stored bundle cannot disagree.
 
 - **Validated against `@boardsesh/board-look`'s slider bounds**
   (`SetSprayWallRenderSettingsInputSchema`), strict, every knob required.
@@ -1037,8 +1297,15 @@ editor that writes them"; what belongs here is what it means for a wall.
 
 `SprayHoldEditorScreen` is the entry point, and its props are the contract:
 `wallUuid`, `layoutId`, the draft's `versionId` AND its `versionNumber`,
-`viewerCanEdit`, and an optional `candidates` list. SW-09 hosts it as the review
-step of `/boards/spray/new`; SW-11 wires the owner's later entry points.
+`viewerCanEdit`, an optional `candidates` list, the `primaryLabel` of its one
+button, an optional `notice` for an empty wall, and two callbacks:
+`onCommitted` (every hold is on the draft, with the count) and `onDirtyChange`
+(which the host's leave guard reads before `confirmDiscardSprayEdits`). Dirty
+includes confident finds nobody has touched yet: they are ON and unsaved, and a
+resumed draft never re-runs detection, so leaving straight after detection
+asks first. SW-09
+hosts it as the review step of `/boards/spray/new`; SW-11 wires the owner's
+later entry points.
 
 Both version fields are needed, and the reason is the one bug this screen could
 not survive. The mutations take the `id`; `sprayWallRenderData(uuid, version)`
@@ -1083,23 +1350,431 @@ What the editor does with a wall is decided by this document rather than by tast
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
-- **Review controls only ever reach candidates.** Keep and Drop act on the
-  selected holds whose review state is `pending`, never on the selection as a
-  whole — a review control that reached a persisted hold would take it off the
-  wall.
+- **Rings are holds. A tap picks one, and a tap on the picked one switches it.**
+  At rest there are no finger modes, and no single tap changes the wall. The
+  rule is pure (`resolveEditTap` in `spray-edit-tap.ts`, tested row by row) and
+  the screen's `handleTap` is a switch over its answer:
+
+  | Tap on | Result |
+  |---|---|
+  | a ring that is not picked (ON, OFF or maybe) | pick it: the chip bar for its role appears, nothing changes |
+  | the picked ring | switch it: ON goes OFF (a ghost), OFF or maybe goes ON; it stays picked, so a third tap reverses it |
+  | bare wall, with a ring picked | put it down |
+  | bare wall, nothing picked | nothing changes; a ripple plays where it landed and the add-a-hold hint asks to be shown |
+
+  A double tap is pick + switch with no added delay. A TAP on bare wall never
+  adds a hold: that was the old rule, and on a dense wall it put a stray hold
+  under every missed tap. A long press does the deliberate things:
+
+  | Press and hold (400 ms) on | Result |
+  |---|---|
+  | a ring | pick it up: it is selected, and the same touch carries on into a move |
+  | bare wall | place a hold: a median-size circle appears under the finger (medium haptic), slides with it, and lands where the finger lifts — one `ADD_HOLD` then `SELECT`, so one undo step, and the resize handle is on it straight away |
+
+  Placement lives in `SprayEditGestureOverlay`: the long press no longer fails
+  at touch-down on bare wall, it arms instead, and still steps aside for Join,
+  a second finger, or a wall at the hold cap (`canAdd`). The circle is
+  `placeHoldSV` on the UI thread, drawn by `SprayPlacementPreview` inside the
+  zoom transform; the screen clears it in the layout effect of the commit that
+  draws the real ring, so the two never both show or both vanish. A finger that
+  slid past the board's edge lands the hold on the edge, and so does a move
+  (`clampPointToPhoto`): a hold centred off the photo would be saved and drawn
+  nowhere. A zoomed
+  board's one-finger pan still wins a finger that moves, because it activates
+  at 8 px and the long press allows 10. Add mode (the +, below) stays for
+  adding several in a row, and the screen reader keeps "Add a hold in the
+  middle of the view". Two fingers always zoom. Trace and Join are one-shot
+  tools with a banner and a Cancel; Join still takes its second hold with a
+  tap. The one mode is add mode, below.
+- **Resizing is a handle on a 5% grid** (`SprayResizeHandle`). The selected
+  ring carries a 12 pt dot (white edge) at the centre of a 44 pt touch box
+  turned 45°, on the bottom-right diagonal. The box's flat face towards the
+  hold stays 2 pt outside the hold's own disc — its farthest point, or the
+  22 pt fingertip grab around a small hold, whichever is bigger
+  (`resizeHandleDistance`) — so the dot sits 46 pt from a small hold's centre
+  at 1x and 24 pt past a big or zoomed hold's edge. The handle has its own
+  gesture detector, and a touch on it never reaches the edit surface under it;
+  keeping it off the disc is what keeps a tap on the selected ring a toggle and
+  a press there a pick-up at every zoom. The spec's "10 pt outside" would have
+  laid the box over the whole ring of a typical hold at 1x. It flips to another
+  diagonal when its touch box would leave the board or sit under the bottom
+  dock (toast, chip bar) or bar (`resizeHandleAnchor`, which the dock's
+  measured top feeds). It is placed in screen space, so it is the same size at
+  any zoom. One finger
+  drags it and the hold scales uniformly about its centre: the drag is
+  projected onto the handle's outward diagonal at grab time and mapped through
+  `scale = exp(pt / 120)` (`RESIZE_GAIN_PT`), so one 5% step is about 6 pt of
+  travel at any zoom and on any size of hold. The size snaps to the grid
+  `median × 1.05ⁿ`, with two magnets that each capture within half a step: the
+  size at grab time and the wall's median. Bounds are
+  `max(MIN_HOLD_RADIUS_BOARD_PX, 0.3 × median)` to
+  `min(4 × median, 0.2 × the photo's shorter side)` (`holdRadiusBounds`); a
+  hold already outside them (a wide merge) can still be dragged back to its own
+  size, and a drag away from the bounds leaves it at that size rather than
+  clamping it the other way. Each new step ticks (selection haptic, at most once per 30 ms), a
+  magnet ticks light, and reaching a bound bumps medium once. A pill above the
+  handle reads "+15%" against the grab size, or "Typical" on the median. The
+  full-strength ring scales live on the UI thread (`resizeScaleSV` on
+  `SelectedHoldOverlay`, with its stroke divided back to constant width) over
+  the ghost at the original size; JS hears from the drag only when the step
+  changes and once on release, which commits one `RESIZE_HOLD` (one undo
+  step). Resizing an OFF ring or a maybe switches it ON and meets the cap
+  check, and a refusal snaps the ring back. The chip bar's − and + step the
+  same grid, one step and one undo step per press, always strictly past the
+  current size (`stepHoldRadius`), so "+" can never shrink a hold. In add mode
+  the hold just added keeps the handle, without the chip bar, until the next
+  add or the next touch on the wall. None of this touches the ring contract:
+  outlines are stored in radius units, so a resize changes `r` alone.
+- **The chip bar is one set per role** (`SprayHoldChipBar`). ON: `[−] [+]
+  Trace Refine Join Switch off` (− and + are 44 pt icon chips; on a 375 pt
+  phone the row wraps to two). An OFF ghost: `Switch
+  on  Delete`. A maybe: `Keep  Switch off`. The picked ring is drawn in its
+  role's line pattern (`SelectedHoldOverlay`'s `role`), so the second tap
+  visibly switches it.
+- **Refine touches up an outline with a brush; Trace redraws it.** The two sit
+  side by side on purpose: Trace is one loop that replaces the whole outline,
+  which is right when the scan got the hold wrong everywhere; Refine is for the
+  common case of one bad lobe or a missed corner, where re-tracing would throw
+  away the nine-tenths that were fine. Refine (an ON ring only, like Trace)
+  turns the hold into a filled violet AREA over its own faint ghost; the rest of
+  the wall drops to 35% so the area reads. Plain circles start as their circle.
+  - **Add | Erase** is a segmented control on the banner, beside Cancel; on
+    iPad a Pencil double tap (or squeeze) set to "switch to eraser" flips it
+    too, instead of leaving the tool. The brush size is a slider in the dock
+    with Done (`SprayRefineBar`, on the shared `ValueSlider`): a radius in
+    SCREEN POINTS, starting on 2 pt (about the old Medium at 1x on a phone).
+    Screen points so that zooming in paints finer: the radius a stroke paints,
+    in board px, is `size x boardPxPerPt / zoom` at the zoom the stroke STARTED
+    at (`DrawStrokeOverlay`'s `strokeZoomSV`), clamped between the engine's
+    floor (3 frame units, 3.75 board px or 9.4% of a 40 px hold; below it a dab
+    vanishes in the decimation) and a cap of 0.6 of the hold's radius when
+    Refine opened (`REFINE_BRUSH_CAP_FRACTION`, the old Large;
+    `refineBrushRadiusAtZoom`). The cap is what keeps a 12 pt brush at 1x
+    (about 66 board px against a 40 px hold) from re-shaping the whole hold
+    and pushing the bitmap to its cap.
+  - **The slider's range follows the zoom.** It runs from the size that paints
+    the floor to the size that paints the cap at the zoom the board last
+    SETTLED at, inside 1-32 pt, on a log track with 21 steps whatever the range
+    (`refineBrushRangeAtZoom`): on a phone with a 40 px hold, 1 to about 4.4 pt
+    at 1x, about 5.5 to 32 pt at 8x. So no stretch of the track paints the same
+    brush. The range changes only on a settle, never per frame: the refine
+    layer watches the zoom on the UI thread and reports it to JS once it has
+    held still for 120 ms at a new value (a pinch's end, a zoom animation's
+    end, Refine opening), so the slider re-renders once per zoom. The watch is
+    event-driven (`useZoomSettle`): each zoom change restarts one delayed
+    no-op timing on a shared value, and only the one that outlives its delay
+    reports, so nothing runs per frame while the board is idle. The stored
+    size is the screen-point radius the climber last picked, remembered per
+    device (`useSprayRefineBrush`, the add shape's AsyncStorage pattern); the
+    slider shows it clamped into the current range (`clampRefineBrushPt`) and
+    only a drag or a VoiceOver step rewrites it, so zooming in and back out
+    returns the thumb to where it was. Next to the slider a dot is drawn at the
+    size the next dab paints ON SCREEN after the clamp, at the live zoom (the
+    refine layer mirrors the board's zoom out to it), so it grows and shrinks
+    as the board zooms. While the slider moves a disc of the brush's size sits
+    on the hold's centre, so the size reads against the hold's real edge; it
+    fades 0.7 s after the slider lets go. VoiceOver reads the slider as "Brush
+    size, Size 5 of 21" and steps it one step per swipe. The mode carries from
+    one hold to the next for the visit.
+  - **Painting.** `DrawStrokeOverlay` with `acceptStationaryTaps`, so a dab
+    paints too, and the loupe for a finger. Two fingers zoom and pan
+    (`pinchPans`). On iPad with "Pencil only" on, fingers pan and only the
+    Pencil paints, and the banner says so. The stroke is drawn on the UI thread
+    as a round-capped path one brush DIAMETER wide in board px (violet for Add,
+    dark for Erase), so the preview covers what the brush will paint. When the
+    finger lifts, JS runs the stroke through the shared brush engine
+    (`@boardsesh/board-art-geometry/brush`, via `use-brush-session.ts` — the
+    catalogue editor's brush, see `docs/board-art-geometry.md`) and the area
+    redraws. The preview stays until the new area is drawn, cleared on the UI
+    thread only if it is still that stroke (`clearStrokeIfStill`), so a quick
+    second dab is never lost.
+  - **What a stroke may leave.** Holes fill (a stored outline has none). A
+    split keeps the piece holding the hold's centre, and the banner says how
+    many stray bits went; that is the engine's rule, because the biggest piece
+    is not always the hold (an erase that cuts a neighbour's lobe off). An
+    erase through the middle keeps the BIGGEST piece and moves the hold onto it
+    (`strokeKeepingLargestPiece`), so Refine can still shift a scan circle that
+    sat half off its hold. An erase that leaves nothing is refused with a
+    warning buzz and "Switch it off instead". Every kept stroke must still be a
+    storable hold, checked there and then, so Done never refuses.
+  - **One edit.** Strokes have their own undo: while Refine is open the bar's
+    (and the rail's) Undo takes back one stroke, up to 20, and Redo is hidden.
+    Cancel throws every stroke away. Done (and the rail's Mark, and a tap on +)
+    commits ONE `SET_OUTLINE`: the centre is the area's centroid (the hold's
+    anchor when a concave area's centroid falls outside it), the radius the
+    equivalent-area one grown until the ring fits (`radiusForRing`), and the
+    ring goes through round, close, `isValidOutlineRing` and the centre gate
+    (`holdFromRefinedOutline`). So the editor's Undo takes the whole refine back
+    in one step. Publish waits until Refine is closed; Start over discards it.
+    An open Refine with a kept stroke counts as unsaved work for the leave
+    guard (`onDirtyChange`), since its strokes reach the reducer only on Done.
+  - **Resolution.** The engine works in a frame centred on the hold with its
+    radius at 32 units (`REFINE_FRAME_RADIUS` in `spray-refine.ts`): 5% of the
+    hold's radius whatever the photo, so the 4096 px full photo past 3x
+    changes nothing. The fine work comes from the screen-point brush (zoom in
+    and it shrinks to the 3-unit floor), not from a finer frame: 40 units would
+    lower the floor to 7.5% of the hold, but its cost (below) has only been
+    measured in Node, so it waits for a number from a phone.
+  - **The 4x limit.** The engine's bitmap reaches from the anchor to the
+    outline plus one radius, and is capped at 4 radii (`MAX_RING_COORDINATE`
+    times the radius Refine opened with) along either axis, because nothing
+    past that is storable: 512 x 512 cells at the cap. So Add can grow a hold
+    to about 4x its original radius in any direction, and no further. An Add
+    stroke whose brush crosses that line keeps what landed inside, and the
+    banner says "That's as far as this hold can grow" with a warning buzz,
+    rather than clipping silently; erasing out there clips nothing that
+    matters and says nothing. Trace is the way to make a hold much bigger. The
+    bitmap never shrinks within a session, so once a stroke has reached the
+    cap every later stroke pays the cap's cost.
+  - **Cost per lift.** Measured through the session (`useSprayRefineSession`,
+    60 strokes round a 40 px hold at the 1x brush sizes, five seeds, Node on
+    the dev box), by frame radius:
+
+    | `REFINE_FRAME_RADIUS` | median per lift | bitmap side, normal | median at the cap | bitmap side at the cap |
+    | --------------------- | --------------- | ------------------- | ----------------- | ---------------------- |
+    | 32 (shipped)          | 17 ms           | 360-370 cells       | 48 ms             | 512 cells              |
+    | 40                    | 28 ms           | 440-460 cells       | 75 ms             | 640 cells              |
+    | 48                    | 40 ms           | 530-545 cells       | 112 ms            | 768 cells              |
+
+    Zoomed-in strokes with the finest brushes cost a little less (15 ms median
+    at 32). Hermes runs these loops several times slower than Node's JIT, so
+    expect tens of milliseconds per lift on a phone and 100-200 ms at the cap.
+    A development build logs each lift's real cost (`[refine] lift … ms` from
+    `handleRefineStrokeEnd`), which is the number that would justify 40. The
+    cost lands once per lift on the JS thread, never during a stroke, and the
+    stroke's preview stays on screen until the new area is drawn. Each undo
+    entry is a bitmap copy: about 75 kB, 260 kB at the cap.
+- **Nothing is removed by accident.** Every switch-off is a ghost — a hold this
+  session drew by hand included, which used to vanish on its second tap. A
+  ghost is never written (`buildSprayHoldWritePlan` skips rejected holds and a
+  re-seed drops a hand-drawn one), and only a ghost offers Delete, so taking a
+  hold off the photo is two deliberate steps. Delete, Join, Keep all maybes and
+  Start over raise `SprayUndoToast` ("Joined 2 holds · Undo") in the bottom
+  dock above the chip bar for 4 s; the next edit takes it down, so its Undo can
+  only undo what it names, and an edit the reducer refused raises no toast at
+  all (`actionChangesWall`: the action must move `past`). The toast's Undo
+  always takes back a wall edit, never the last corner of a Corners outline
+  in progress the way the bar's Undo does. It is drawn inside the screen because the app's global toast draws
+  behind this modal. Toggles raise no toast: the ring is still there.
+- **Undo has Redo.** The reducer keeps a `future` beside the capped `past`:
+  Undo pushes the present onto it, `REDO` pops it back, and every new edit,
+  `LOAD` and `MARK_SAVED` empties it. `MARK_REMOVED` scrubs it the same way it
+  scrubs the past, or a Redo could bring back a hold the server has already
+  stamped off. Selecting leaves it alone. In the bar, Undo and Redo share one
+  split glass pill and the Redo half only fades in while there is something to
+  redo; Redo spotlights the hold it changes with the same violet halo as Undo. The gesture surface (`SprayEditGestureOverlay`) hit-tests on the UI
+  thread only to decide whether a long press has a ring under it, and whether a
+  touch-down claims a drag of the selected ring — which it does only when the
+  full hit test at that point names the selection, so a touch on a neighbour
+  inside a big selection's grab radius never moves the selection. Every tap is
+  resolved in JS by `holdAtPoint` (smallest containing hold first, then the
+  nearest centre within `max(1.4r, 22 pt on screen)`). With maybes hidden, a tap
+  on a hidden maybe picks it, so the chip bar can keep it or switch it off.
+  Moving, resizing or tracing an OFF ring or a maybe switches it ON, so each is
+  held to the hold cap like an add. To a screen reader the wall is one image
+  labelled with the counts, and activating it does nothing: the bar and the chip
+  bar are the accessible path. The wall also keeps its "Add a hold in the middle
+  of the view" action in the resting editor, and its named actions follow the
+  chip bar's roles (Make smaller / Make bigger for an ON ring, Delete for a
+  ghost). Make smaller / Make bigger move four grid steps (about 22%) per
+  swipe and one undo step, where a chip press moves one. Add mode itself is a
+  touch tool.
+- **Add mode is for the holds detection missed** (#5906). At rest a tap never
+  adds, so a press and hold places one at a time and the glass + in the bottom
+  bar, after the count capsule, is how a run of them goes in. It is an icon, not a label, so the row fits a 375 pt phone with the
+  Undo | Redo pill at its widest and German counts.
+  While add mode is on the + becomes a check, and the check and the banner's
+  Done both leave it. It is the one tool that is a mode rather than one-shot: it
+  stays on until Done, so several missed holds go in one go. In add mode no
+  touch selects, toggles or picks up a ring. Because Draw takes every
+  one-finger touch, the editor passes `pinchPans` to `InteractiveFilterBoard`:
+  two fingers pan as well as zoom, so a climber can move across a zoomed wall
+  without leaving add mode. Every other board keeps the pinch as zoom only.
+  Undo removes the last corner while an outline is in progress, then falls back
+  to the reducer undo (the last added hold), and never brings back a selection
+  in add mode. Publish is disabled while corners are placed but not closed.
+- **Add mode has two shapes, Draw and Corners.** A Draw | Corners segmented
+  control on the banner picks one and is remembered per device in AsyncStorage
+  (`boardsesh_spray_editor_add_shape`, default Draw).
+  - Draw: one finger drags round the hold, and the stroke goes through the same
+    `holdFromStroke` then `buildOutlineRing` chain as Trace. A stroke that stays
+    within 10 screen pt is a tap and drops a circle at the median radius. Add
+    captures raw pointer DOWN and matching UP with a Manual gesture, so a
+    stationary tap or long press commits without waiting for Pan movement.
+    Cancellation releases that pointer before handing a pinch back. Trace
+    keeps its existing Pan recognizer. If a
+    second finger lands during a finger stroke, the stroke is dropped and the
+    pinch zooms (Trace works the same way); a Pencil stroke still ignores a
+    resting palm.
+  - Corners: touch the photo, slide to the exact spot and lift; the corner
+    lands where the finger lifted, and a quick tap still drops one where it
+    landed. `PolygonTapOverlay` is a Manual recognizer that owns one pointer
+    from touch-down to lift, as Draw does, so a slide positions the corner
+    instead of panning the board: a zoomed board pans with two fingers here
+    too (`pinchPans`). A second finger drops the corner and the pinch zooms.
+    A live preview is drawn on the UI thread so corners never round-trip
+    through React per frame. The corners
+    live in one shared value, and the corner count React shows is derived from
+    it. Tapping the first corner once there are 3, or pressing the Finish chip,
+    closes the outline. The close target is 11 pt, capped at 35% of the
+    outline's own size (`CORNERS_CLOSE_EXTENT_FRACTION`); without the cap the
+    fourth corner of a small hold at 1× landed inside the target and closed a
+    triangle. The closing tap empties the corners on the UI thread before JS
+    hears of it, so a quick second tap cannot add the same hold twice. `holdFromPolygon` keeps the corners exactly, with no
+    stroke sampling, no loop-closing trim and no simplification. It refuses
+    fewer than 3 corners or zero area, more than the ring contract's cap
+    (`POLYGON_MAX_VERTICES`), crossing sides (`self-overlap`), and a shape whose
+    centre falls outside it. A refused outline keeps its corners so they can be
+    fixed, with Corners-specific copy (`errors.cornersCross`,
+    `cornersTooFew`, `cornersHollow`). Done closes a valid outline before
+    leaving; one that cannot close keeps add mode on with its error.
+- **A loupe follows the finger** (`SprayLoupe`), so a thumb never hides the
+  spot it is drawing, placing or moving. It shows during Draw, Trace and
+  Refine strokes, a Corners touch, a move of the selected ring, a press-and-hold
+  placement and a pick-up — and only once the touch has lasted 120 ms or
+  moved 4 pt (`loupeGateOpen`), so a tap never flashes it. A gesture that is
+  already long, like the 400 ms pick-up, shows it at once. Fingers only: a
+  Pencil's tip hides nothing, so a stylus never gets one. It is a 112 pt
+  circle centred 88 pt above the touch; with no room above it moves the same
+  distance to the side, left by default and right when left would leave the
+  screen, keeps that side while it fits, and only comes back above with
+  12 pt to spare so it cannot flicker at the boundary (`loupePlacement`). It
+  magnifies the unzoomed board `min(2 × zoom, 12)` times, with a hairline
+  crosshair and a centre dot on the exact point under the finger. It is
+  mounted in the screen, outside the board's clip, so it can overhang the
+  board's edge and draws over the chrome; it takes no touches and is hidden
+  from screen readers. Inside the circle is a board-sized view moved by one
+  animated translate and scale (`loupeInnerTransform`, which accounts for RN
+  scaling about the view's centre: `t = size/2 − c − (p − c)·m`), holding a
+  second `expo-image` of the same URI (a memory-cache hit), the same dim, and
+  second instances of `SprayHoldSvgLayer` (with the loupe's magnification as
+  its scale, so strokes stay thin, and the board's zoom as its
+  `geometryScaleSV`, so the Corners dots and close target are magnified with
+  the photo and the target covers exactly what `PolygonTapOverlay` closes
+  on), `SelectedHoldOverlay` (with
+  `syncSharedValues={false}`: the board's copy owns re-syncing) and
+  `SprayPlacementPreview`. Those layers draw from shared values, so the
+  stroke, the Corners preview, the move and the placed circle show in the
+  loupe for free. The loupe cannot read the board's zoom transform from
+  where it is mounted, so the overlay that owns the touch writes a
+  `SprayLoupeFeed` (`spray-loupe-feed.ts`): the touch-down time (0 when off),
+  the finger in the board clip's points, the point under it in render px,
+  and the zoom. An overlay unmounted mid-touch (a tool chip or Done tapped
+  with a finger still on the wall) never finalizes, so each one clears the
+  feed on unmount while it still carries its own touch
+  (`useReleaseLoupeOnUnmount`). The loupe's own state across readings — the
+  touch's start point, its side and whether the gate has opened — is one
+  pure step per reading (`stepLoupe`). It is always mounted at opacity 0, and
+  only transforms and opacity animate, so a gesture never re-renders it; the
+  second ring layer re-renders only when the rings do, or on the first touch
+  after a pinch that crossed a stroke step (the feed's zoom is written at
+  touch-down). `DrawStrokeOverlay` takes the feed as
+  an opt-in `loupe` prop, which the catalogue editor never passes. The
+  resize handle has none (the finger is beside the ring, not on it), and
+  the anchors step has none yet.
+- **The spray editor zooms to 8x, every other board to 4x.** The editor passes
+  `maxScale={SPRAY_EDITOR_MAX_SCALE}` (8) to `InteractiveFilterBoard`, which
+  hands it to `useZoomPanGesture`. Everything else keeps `MAX_SCALE = 4` from
+  `@boardsesh/play-view`: climb view, search, zone, the catalogue outline
+  editor, reset compare and web. Ring strokes snap through zoom steps 1, 1.5, 2,
+  3, 4, 6 and 8 so they stay thin.
+- **Past 3x the editor swaps in the full-resolution photo (#5911).** The base
+  photo is 2048 px on its long side, so at 8x a phone shows at most about 190
+  of its pixels across and a small hold goes soft. On iOS it is fewer still:
+  expo-image resizes the base to the view's un-zoomed pixel size (about 1179 px
+  across on an iPhone), so 8x shows about 150. Decoding the base at full size
+  too is a possible follow-up. A version uploaded larger also has a
+  copy at up to 4096 px, which only the draft read (`GET_SPRAY_WALL_DRAFT_RENDER_DATA`)
+  asks for, as `photoFullUrl`; the climb view, search and every other read keep
+  the base alone. The editor hands it to `InteractiveFilterBoard` as
+  `fullResolutionPhoto` (`spray-full-photo.ts`), and `FullResolutionPhotoLayer`
+  draws it over the base, inside the zoom transform.
+  - **Fetched on the first zoom past 3x** (`SPRAY_FULL_PHOTO_MIN_SCALE`), not on
+    open: a 4096x3072 photo is about 48 MB decoded. One `useAnimatedReaction`
+    tells the JS thread once, on the first crossing.
+  - **No flash.** The base stays mounted underneath and shows until the full
+    photo has loaded, so the swap reads as the wall sharpening. Both are drawn
+    `fill` into the same box, so every ring stays where it was.
+  - **Decoded at full size.** The layer passes `allowDownscaling={false}`.
+    Without it expo-image on iOS resizes any image larger than its view's
+    pixel size down to that size, `fill` included, and the zoom transform does
+    not change the view's layout box, so the 4096 px copy would land smaller
+    than the base. Android's `fill` path keeps the pixels either way.
+  - **Kept for the visit.** Zooming back out does not unload it, so a climber
+    working up and down the wall decodes it once. It is cached in memory only,
+    like the base, under a key naming the version (`spray-full/<wallUuid>/v<versionId>`),
+    so a refetch that re-signs the URL does not download it again.
+  - **A lapsed signature is refetched.** The first deep zoom can come after the
+    draft's 15-minute signature ran out; a load that fails past `photo.expiresAt`
+    reads the draft again for fresh URLs, at most once a minute. Any other
+    failure leaves the base on screen.
+  - **Walls without a copy are unchanged.** `photoFullUrl` is null for every
+    version uploaded before #5911 and for any photo already 2048 px or smaller;
+    the editor then shows the base alone, as before.
+- **Motion is whole-layer or one spotlight, never per hold.** After a fresh
+  scan (`revealOnMount`) the ring layer is revealed by a 700 ms top-to-bottom
+  clip of one wrapper view, with the scan band riding its edge, then the maybes
+  fade in (one SVG group's opacity) and a success buzz closes it; a resumed
+  draft opens without it. The board, the bars and the "?" take no touch until
+  the reveal ends, so a tap cannot land on a ring that is not drawn yet. A
+  toggled, added, undone or redone hold is marked by `SprayHoldSpotlight`, one
+  small box at that hold that springs, ripples or pulses violet; a ring switched
+  off pops in the OFF ghost's dotted style, never as a solid ON ring, and a tap
+  on bare wall with nothing picked throws the ripple alone (`ping`). Publishing
+  sweeps the ON rings violet (`SprayPublishSweep`) and turns the count capsule
+  into a checkmark, and `onCommitted` fires once that has played, about 700 ms
+  later. From the press until then `onHandoverChange(true)` tells the host, and
+  the wizard swallows every back gesture without a dialog (`leaveDecision` in
+  `add-wall-machine.ts`): the dirty flag is already clear, so the generic
+  "draft kept" question would otherwise appear, and either answer would race
+  the hand-over. A Leave pressed on an older dialog is re-checked when pressed
+  (`leaveStillApplies`) and dropped if publishing began under it. A screen
+  reader hears each hint as it appears, the counts when the reveal ends,
+  "Holds saved", then "Publishing your wall…". Every frame is a UI-thread transform,
+  opacity or clip height; the ring SVG never re-renders for an animation. With
+  Reduce Motion the reveal is a 150 ms fade, taps change the rings with no
+  extra motion, the undo halo is a static 300 ms highlight, the count only
+  crossfades, and publishing shows the checkmark alone.
+- **First-run hints, one at a time** (`use-spray-editor-hints.ts`): tap a
+  ring to pick it and again to switch it, then (only with maybes on the wall)
+  tap a dashed maybe and Keep it, then after three edits press and hold to move
+  a ring. A fourth, "Press and hold to add a hold.", waits to be asked: the
+  first tap on bare wall with nothing picked shows it ahead of the others, and
+  adding a hold (a press and hold, or add mode) or closing it uses it up. Each is marked seen when the climber does the thing
+  or closes it, never just for showing; picking a ring or tapping bare wall is
+  not an edit for the long-press gate. On iPad a fifth, the Pencil hint, is
+  asked for by the first Pencil (see "The iPad editor and Apple Pencil"). The
+  top-right "?" (the rail's "?" on iPad) replays them all for the session. None show in screenshot mode or on a read-only wall. The tap
+  hint is stored under a new key (`onboarding_tip_spray_tap_select_seen`, not
+  the old `..._toggle_seen`), so a climber who learned "a tap switches a ring"
+  sees the new rule once.
 - **Provenance survives a round trip.** The render payload carries each stored
   hold's `source` and `confidence`, the registry carries them into photo space,
   and the seed reads them back; without that, an accepted detector hold is
   re-submitted as MANUAL the first time it is nudged, overwriting what the wall
   records about where its holds came from.
-- **A candidate is drawn and never written.** Detector output arrives as
-  `source: AUTO` holds with a confidence, and Save skips every one nobody has
-  ruled on. A confidence slider hides the ones below its cut-off and "Keep all"
-  takes the rest; a rejected candidate is simply deleted, because it never became
-  a hold. Accepting is what marks it for the upsert — so a candidate cannot
-  become a hold on somebody's wall as a side effect of saving something else.
+- **Confidence sets the starting state, not a slider.** A find at or above
+  `SPRAY_ON_CUTOFF` (0.75) opens ON; between `SPRAY_MAYBE_FLOOR` (0.6) and the
+  cutoff it opens as a dashed amber MAYBE that is drawn but not written; below
+  the floor the seed drops it. The worker only sends finds at or above its
+  manifest's `thresholds.default` (0.6 for `2026-09-18-seg`), so the app works
+  inside a 0.6–1.0 band; a cutoff under 0.6 would make every find ON. Both
+  constants live in `spray-hold-tools.ts` with their provenance (on a 240-hold
+  validation wall: 224 finds, 189 ON, 35 maybes); re-derive them once a seg
+  precision curve is checked in. Tapping a
+  picked confident find switches it OFF (a faint dotted ghost, never written);
+  tapping a picked maybe or ghost switches it ON, and a maybe's Switch off chip
+  makes it a ghost too. A stored hold switched off is queued for
+  `removeSprayWallHolds`, and switching it back takes it off the queue.
+- **One pure step builds the commit.** `prepareCommit` accepts the confident
+  finds and builds the write plan in one go, and is idempotent: run on its own
+  output it hands back the same state and plan, and after `MARK_SAVED` a second
+  run has nothing left to upsert — so a double press cannot write a hold twice.
+  The screen still refuses a second press while one is in flight.
 - **A save clears the dirty flags of the holds it actually wrote**
-  (`MARK_SAVED` takes the ids), rather than waiting for the refetch. Until they
+  (`MARK_SAVED` takes the ids), rather than waiting for the refetch, and drops
+  the undo history and the redo future — a snapshot from before the write still holds those finds
+  as unwritten, and undoing into it would let the next commit write them again. Until they
   are clear, a second press of Save re-sends holds the server has already applied
   — and a correction re-sent names an id the resolver has just superseded, which
   fails the whole batch. Named rather than "everything", because a plan can
@@ -1196,6 +1871,76 @@ registration epoch subscribed as a background-effect-only dependency; it must no
 reach `buildCacheKey`, or every overlay PNG is orphaned on each ten-minute
 revalidation. Costs nothing before SW-09 makes a wall reachable.
 
+**A wall's own look wins, unless the climber opted out.** The wall's look is
+read in its own query (`GET_SPRAY_WALL_LOOK`), never in the shared
+`SPRAY_WALL_FIELDS`: a field a deployed backend lacks fails validation for the
+whole operation, and in the shared fragment that took down creating, loading and
+drawing every wall. `loadSprayWall` starts that read alongside the render
+payload and registers the wall with the look already on it, so a surface draws
+once rather than in the climber's settings and again when the look lands. The
+read never rejects; a failure registers "no stored look" and is retried after
+30 s. The value runs through `sanitizeBoardRenderDefault` (a `JSON` scalar
+promises nothing: an unknown mode or a missing knob bundle reads as "no stored
+look", a present bundle is clamped like a stored preference, an unknown option
+name falls back to that knob's default).
+
+`useNativeClimbRender` subscribes to it through `sprayBoardRenderDefault(boardName,
+layoutId)` — `null` off spray — and `boardLookForRender` decides whether this
+render uses it: not for a climber who turned on "Use my look on spray walls"
+(`spray-wall-look-preference.ts`, its own AsyncStorage key so applying a preset
+cannot reset it), and not for a preview card or the heatmap, which each ask for a
+specific drawing. The rule is whole-bundle: the wall's mode AND its knobs, with
+the climber's own Role glyphs kept on (the same floor a preset pick respects).
+It is not "only for a climber on `mode: 'default'`": the onboarding look step
+stores an explicit mode for nearly everyone, so that rule meant almost nobody saw
+a wall's look. The look moves the render signature with it, so the two never
+share a PNG. It has its own subscription rather than riding `sprayCacheToken`,
+because a look stored without a reset does not move the version. The registry
+keeps an unchanged look's identity across re-registrations, so a revalidation
+does not re-resolve every row.
+
+### Drawing a wall on a generated look
+
+An owner can draw a wall on its photo, on "Wall only" (`wall-crop`) or on
+"Holds only" (`hold-cutouts`). What the looks are, the quality gate that decides
+whether a photo may have them, and when the backend makes them are in
+["Generated wall looks"](#generated-wall-looks). This section is the app's
+half: the app draws the art only when the owner chose a generated look and
+`sprayWallArt` for the registered version is `READY`, its size matches the
+canonical frame's aspect, and the file downloaded to
+`{cache}/spray-walls/<layoutId>-v<versionId>-crop.jpg` / `-cutout.webp`.
+
+Anything else (pending, failed, refused, an older backend, offline, a failed
+download) draws the photo. The loader downloads the art BEFORE it registers the
+wall, so the switch is one registry write: `activeSprayArt` decides the board
+size (the art's), the holds (canonical times `art width / frame width`, no
+homography), the background key (`sprayBackgroundKey(layoutId, versionId,
+variant)`) and the runtime outline table together. `sprayCacheToken` gains
+`-bg<variant>` while art is drawn, so every overlay and memo moves with it;
+`sprayVersionToken` does not, so persisted drafts survive. The registry keeps
+the photo-pixel `holds` and `photoWidth` too: the hold editor, reset flows and
+drafts always work on the raw photo. Holds only gets the Aura field colour
+(`BOARD_FIELD_COLORS`) painted under it (`LayeredClimbImage` `baseColor`).
+
+The picker lives in the add-a-wall look step (a draft: art is made at publish)
+and on the board edit screen. It is shown only when `sprayWallArt` answers,
+because a backend older than generated looks validates render settings strictly
+and refuses the `background` key. The app sends `background` only for a
+generated look, or `photo` when the owner moves off one (an omitted key keeps
+the stored value). The edit screen polls a live wall's art every 10 s while it
+is `NONE` or `PENDING`, for at most 30 reads, and swaps the wall onto the art
+when it turns `READY`.
+
+Without any screen open, the loader itself asks again 20 s after it reads
+`NONE` or `PENDING` art for a published version, at most 6 times per version, so
+a wall swaps onto its look about a minute after a publish, hold edit or reset.
+A revalidation that fails offline registers the local mirror, which keeps the
+art it held when it is for the same published version and its file is still on
+disk (`RegisteredSprayArt.version`), so a gym with no signal does not flip every
+board back to the photo. The picker hides its segmented control on a locked
+gate (iOS's segmented control cannot disable one segment) and holds it still
+while a save runs. Its previews use expo-image's memory cache only.
+
 ### Asking is not the same as subscribing (SW-11)
 
 `useSprayWall` asks for exactly one wall: the active board's. Every other surface
@@ -1266,7 +2011,7 @@ Bluetooth scan on a photograph. `updateBoard` refuses a change to `hasLeds` or
 `isAngleAdjustable` on a spray board (`SPRAY_WALL_HAS_NO_HARDWARE`, #5483), so the
 flag cannot be unpinned through the ordinary board door either.
 
-### The owner rows, and the sheet that is not mounted
+### Maintenance on the live wall sheet
 
 `sprayDetailRows(board)` is the gate behind the wall-maintenance rows ("Edit
 holds", "New photo"): two rows on a spray wall whose `canEdit` is true, none
@@ -1274,19 +2019,34 @@ anywhere else. It reads `canEdit` rather than `isOwned` because that is the fiel
 the spray API gates every version mutation on, so the affordance and the
 permission cannot drift.
 
-The rows are **not rendered** (`SPRAY_DETAIL_ROWS_ENABLED = false`), for two
-reasons that both have to be fixed before the flag flips (#5491):
+`SprayWallActions` renders these rows in the live `BoardSheet` list header,
+alongside sharing for public and unlisted walls. The kiosk column has no account
+actions. The Boards picker's `BoardDetailSheet` retains details, sharing and
+reporting; maintenance lives on the active wall's live sheet.
 
-1. Neither route exists yet — `/boards/spray/holds` is SW-08 and
-   `/boards/spray/reset` is SW-13 — and Expo Router sends a prefix-less miss to
-   `+not-found`, which redirects to Home. A row that lands somewhere wrong is
-   worse than no row.
-2. **`BoardDetailSheet` is not mounted by anything.** The live board sheet is
-   `board-presence/BoardSheet`, hosted by `drawer-host-provider`;
-   `BoardDetailSheet` has no production importer at all. So these rows — and
-   SW-14's `BoardShareSheet`, whose only mount is that same file — are
-   unreachable regardless of the flag. Whatever wires them up has to put them on
-   the sheet climbers actually open.
+Both routes use `wallUuid`; restored links with `boardUuid` still work. The hold
+route rechecks edit access and resumes the wall's one open draft. With no draft,
+it creates one from the current published photo using `sourceVersionId`, without
+uploading the photograph again or changing its coordinate frame. Editing saves
+the draft, then publishes it. An uncertain response is reconciled before retry;
+refreshing a successful publication never publishes a second time. Leaving
+retains the server draft, with confirmation for unsaved changes.
+
+Re-cropping a published wall's photo is not offered, on purpose. "Edit holds"
+reuses the published photo through `sourceVersionId`, which copies the photo,
+anchors and homography exactly, and the schema refuses anchors together with
+`sourceVersionId` — so there is no way to say "the same picture, cropped". A
+cropped re-upload would carry a new `photoId`, and `classifySprayDraft` reads a
+new photo as a reset, which asks for four corners and runs the reset review.
+Re-cropping needs its own draft purpose
+([#6156](https://github.com/boardsesh/boardsesh/issues/6156)). To crop
+a wall today, reset it and crop the new photo.
+
+Maintenance navigation and sharing wait for `BoardSheet.dismissAndWait()` to
+settle. `DrawerHostProvider` owns the share snapshot and sibling share sheet, so
+the panel's normal dismissal/unmount cannot lose it. A board switch, changed
+permissions/visibility or reopening cancels a pending handoff. The share payload
+stays mounted through its own closing animation.
 
 ## Resets
 
@@ -1432,6 +2192,10 @@ be deferred by the engine; a thrown refresh error is reported without turning
 an already committed reset into a failed publication. Freshness then waits for
 a later successful sync.
 
+The modern existing-wall hold editor uses the same refresh after publishing
+hold changes. The onboarding Look step retains its separate first-publication
+flow.
+
 ### Climb integrity
 
 `board_climbs.missing_hold_count` is how many of a climb's holds now carry a landed
@@ -1557,6 +2321,15 @@ so handing them to `/boards/spray/compare` would mean a module-level stash keyed
 by version id — a second source of truth for the one array whose INDICES the
 proposal is expressed in. It still gets the whole screen when it is showing.
 
+The reset's photo step has the same "Crop or rotate" detour as the add-a-wall
+flow (`adjust`, uncounted). Its copy adds one thing: keep all four corners inside
+the crop. From version 2 on the corners are mandatory (`assertResetVersionIsAnchored`),
+so a corner cut off by the crop is a corner nobody can mark, and the gate would
+hold the flow on the anchors step with no way to satisfy it but to crop again.
+The crop itself changes nothing the reset depends on: version 1's frame is
+inherited under the wall lock, and the new photo's homography is solved from its
+own anchors in its own (cropped) pixels.
+
 Three rules the client holds that the server cannot:
 
 - **Detections are built once**, in both frames, by `buildResetDetections`. A
@@ -1585,6 +2358,15 @@ wall's version token and this device is the one that moved it; until it
 re-registers, every key still names the generation the owner was looking at when
 they pressed Confirm.
 
+### Marking a reset as full
+
+The compare view has a **Full reset** switch above Confirm, off by default. When it
+is on, the commit sends `fullReset: true`, and every climb that loses a hold in
+that reset is retired: it leaves the wall's default list but stays in logbooks,
+playlists and share links (#6024). The switch sits inside the scrolling controls,
+not in the footer, so the board keeps the space `CHROME_BUDGET` gives it.
+`Spray Wall Reset Applied` carries `fullReset`.
+
 ### A climb that lost holds
 
 `Climb.missingHoldCount` reaches three mobile surfaces, and the rule across all
@@ -1597,21 +2379,133 @@ normal compatibility checks; catalogue-board hold containment remains strict.
 
 - the climb-row chip ("2 holds gone"), beside the Hidden chip and in the same
   neutral grey — colour in that row means grade and nothing else;
-- the **Holds** filter in the climb filter sheet (All / Intact only / Lost
-  holds), defaulting to All. One tap hides them; nothing hides them by default;
+- the **Holds** filter in the climb filter sheet (Current / All / Intact only /
+  Lost holds), defaulting to Current. Current sends nothing, and the server
+  then hides only climbs a full reset retired (#6024), so a climb that lost
+  holds in a partial reset stays listed. All sends `ANY` on a spray wall and
+  shows retired climbs too; Lost holds shows every climb that lost a hold,
+  retired or not;
 - the play drawer banner, which states the number and offers the one thing that
   fixes it. Remix goes through the same `useCreateClimbNavigation` handoff the
   climb-actions sheet uses, carrying the parent's frames — the create editor's
   own sanitiser drops the hold ids that are no longer on the wall, so it opens
   with exactly the holds that survived.
 
-`Climb.lostHolds` carries the geometry of those holds as they were, for drawing
-dashed ghost rings where they used to be. The field and its resolver ship here;
-the layer that draws them does not. The play drawer renders through the board
-render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot, so the
-ghosts need a seam in that pipeline, and the create editor would need the parent
-climb's holds threaded through route params that are strings. Both are follow-up
-work, and the banner already answers the question the missing holds raise.
+`Climb.lostHolds` carries the geometry of those holds as they were. The create
+editor draws it (#5493); the play drawer does not yet, because it renders through
+the board render pipeline rather than `InteractiveCreateBoard`'s `overlay` slot.
+
+### Fixing a climb that lost holds, in the editor
+
+**Set active opens the editor for someone who can fix it.** `openPlayDrawer` in
+`DrawerHostProvider` is the one door every list, queue-sheet, board-sheet and
+suggestion tap goes through, and it asks `useLostHoldsAutoEdit` first. The rule,
+`shouldAutoEditBrokenClimb`, routes to the editor in edit mode only when all of
+these hold, and otherwise the climb plays with the banner as before:
+
+- `missingHoldCount > 0` on a spray climb, on the climber's own wall;
+- the viewer can edit it (`canEditClimb`: the setter, a wall editor, or a
+  collaborator under the `'collaborators'` policy);
+- `lostHoldsEditReadiness` is `'ready'` (the device's wall agrees with the server
+  and some holds survive);
+- the open makes the climb current: not a preview, not a crew session (a tap there
+  is a look), and not the climb that is already current;
+- the opener did not opt out. Playlist and circuit activation pass
+  `autoEditBroken: false`: "Play" on a list means climb it, and dropping the
+  setter into the editor with a fresh queue behind it is not what that button
+  promises;
+- the `/play` route is not already on screen. Inside the player (a swipe, a
+  similar climb, a browse commit, a queue tap over it) the banner's Edit is one
+  tap away, and leaving the player would lose the climber's place. The iPad's
+  side pane does not count: it stays on screen under the editor, so routing
+  from it loses nothing.
+
+The routed climb is still made current, so the next open of it (the bottom bar, a
+second tap) is a reopen and plays it. That is what stops a climber who backed out
+of the editor from being sent back in. Closing the editor is a plain back to the
+list. A second tap inside 1.5 s is swallowed rather than opening the player over
+the editor. The route is counted as `Climb Edited From Broken` with
+`source: 'set_active'`.
+
+**Ghost rings.** The editor (edit, and remix through the `forkParentUuid` route
+param) asks `GetClimbLostHolds` for the climb's `lostHolds` and maps each one
+through the registered wall's inverse homography, the same map the live holds
+went through (`RegisteredSprayWall.homography`, set by both loaders). Each lost
+hold the climb used and the device's wall no longer has is a dashed ring in its
+old role's colour (`LostHoldGhostLayer`, in the `overlay` slot). The ghosts join
+the board's hit targets — a lost hold's id can never be a live hold's — so a tap
+on one opens `LostHoldSheet` instead of painting.
+
+A banner floats over the top of the board ("1 hold on this climb is gone — tap
+the dashed ring to replace it"). It floats rather than sitting above the board
+because the drawer's peek height is measured from the blocks above the fold, and a
+banner that came and went there would re-snap the sheet.
+
+**Use a hold nearby.** The sheet's first action highlights
+candidates on the board, from `rankReplacementCandidates` in
+`@boardsesh/create-climb-react`: the live hold whose `movedFromHoldId` names the
+lost one first, then the nearest free holds within eight radii, or the three
+nearest when none are that close. Holds already in the climb are never offered.
+Tapping a highlighted hold places it in every frame the lost hold was in, with the
+role it had there, as one undo step (`placeHold`). Any other tap is swallowed
+while the pick is open. If the role is full (two starts or two finishes), the
+banner says so and the pick stays open.
+
+A ghost leaves once something stands in for it: the hold picked for it this
+session, a painted hold whose `movedFromHoldId` names the lost one (its successor,
+wherever it went), or a painted hold whose centre is within the smaller of the two
+radii. The last two cover a restored autosave, which carries the paint but not
+which ghost it answered. The smaller radius keeps a small chip that happens to sit
+inside a big lost volume from clearing it. A replacement picked from further away than that shows its ghost again
+after a restore. The ghost is only a picture; Save is unaffected.
+
+**Put this hold back on the wall.** The sheet's second action, offered to whoever
+can edit the wall's holds (`viewerCanEdit`, the same rule as the hold editor). A
+removed hold's id never comes back (`upsertSprayWallHolds` refuses any id that is
+not alive), so putting a hold back is a NEW hold that names the old one in
+`movedFromHoldId`. The round trip lives in `lib/spray/lost-hold-put-back.ts`:
+
+1. The climb editor closes. Its drawer is a native sheet, and a native sheet
+   presents over any route pushed after it, so the hold editor cannot open on
+   top of it. The working copy travels in memory with the request. The autosave
+   slot cannot carry it: a new climb's and a remix's slots are keyed by the wall
+   version, publishing moves the version, and the loader then sweeps the old
+   version's slots.
+2. The hold editor opens (`/boards/spray/holds?wallUuid=…&putBack=…`). Once the
+   draft is on screen it adds a hold at the lost one's geometry, mapped through
+   the draft's homography, with `movedFromHoldId` set. It selects that hold and
+   zooms to it. A draft that already has a hold linked to the lost one selects
+   that hold instead of adding a second. A successor that was linked before the
+   trip (a reset review's) is never reused. The write plan sends a hold's
+   `movedFromHoldId` on every write: the server writes an in-place edit's link
+   as sent, so leaving it out of a nudge would wipe it.
+3. The owner nudges the hold and publishes. The wall registers its new version,
+   and the hold editor marks the request published.
+4. However the hold editor goes away (published, backed out, or failed), the
+   climb editor reopens on the same climb with `putBackRequest`. It is a new
+   mount, so it reads the new version's live holds. It restores the working copy
+   once its own seed has settled, then places the new hold in the lost hold's
+   frames and roles, and counts it as that ghost's answer wherever it was
+   nudged to. The new hold is the newest live hold linked to the lost one
+   that was not linked before the trip. A trip that was backed out places
+   nothing and the ghost is still there. If the hold's role is already full in
+   the climb (two starts or two finishes), the banner says so and the ring
+   stays. The request is cleared once it has been applied, so a remount does not
+   apply it twice.
+
+For a new climb or a remix there is a window of about one second, between the
+hold editor registering the new wall version (which sweeps the old version's
+autosave slots) and the climb editor reopening, when the working copy lives only
+in memory: killing the app then loses it. An edit is safe throughout, because its
+slot is keyed by the climb, not the version.
+
+**Offline.** The device mirrors `missing_hold_count` but not the hold history, so
+the positions need a connection. With no signal (or a failed read) the banner
+still states the count (the device's own: the climb's holds its wall no longer
+has) and says the rings need a connection. A read that answers with nothing it can
+draw — a wall this viewer cannot see answers `[]`, or the homography drops a hold —
+states the count and says the old spots cannot be shown, rather than blaming the
+connection. See `offline-reads.md`.
 
 ## Archive and reset
 
@@ -1862,6 +2756,16 @@ restart. Cleanup is best effort: failed filesystem deletion is retried by later
 withdrawal or cache sweeping; a crash during native I/O can leave a partial until
 the next cleanup.
 
+The photo steps leave JPEGs in the app's cache directory: the compressed base,
+`expo-image-picker`'s copy of the original, a turned preview per quarter turn
+the crop step drew, and each rendered edit. The crop step deletes its own
+previews when it closes (a preview that finishes rendering after that is deleted
+as it lands), and applying a new edit deletes the edit it replaced
+(`discardLocalPhoto`, best effort; a no-op in the browser build). The base and
+the original are never deleted mid-flow — the base is what a re-edit starts
+from, the original what it renders from — and are left, like the picker's other
+files, to the OS's own cache eviction.
+
 Wall photos go to the **`private`** R2 bucket and are read through **15-minute
 presigned URLs** (`presignGetObject` in `packages/backend/src/storage/s3.ts`).
 `media` is world-readable under guessable keys (`docs/user-media-storage.md`), so
@@ -1976,7 +2880,7 @@ switch.
 | `reportSprayWall(input)` | Any signed-in climber who can SEE the wall — owner, gym member, or anybody on a public or unlisted one — once per wall. Delegates to `viewerCanSeeSprayWall` rather than restating the rule, because restating it is how the gym-member path got dropped the first time. Writes one `spray_wall_reports` row; a second report from the same climber answers `ALREADY_REPORTED` and writes nothing. |
 | `spray_wall_reports` | `(wall_id, reporter_id)` unique, a closed-set `reason`, and `reviewed_at` / `reviewed_by`. No free-text field anywhere in the path. |
 | `setSprayWallHidden(input)` | Community admins (`spray`-scoped or global). Stamps or clears `spray_walls.hidden_at` / `hidden_by` and marks every pending report on the wall reviewed. |
-| `sprayWallReports(uuid)` | Admin-only pending queue, newest first, excluding deleted walls and deleted board rows. Each report includes `wallName` and a nullable `photo` preview, including private and hidden walls. The app review route ships separately in [#5953](https://github.com/boardsesh/boardsesh/pull/5953), targeting `release/next`. |
+| `sprayWallReports(uuid)` | The pending queue, newest first, excluding walls the owner has since deleted — those are no longer work. Admins only. Each report carries `wallName` and a nullable `photo` preview behind private-bucket presigned URLs. The admin route groups reports by wall. |
 | `SprayWall.hiddenAt` | Non-null only for the owner, because a hidden wall does not resolve for anybody else. The mobile banner renders off its presence. |
 
 **What hidden means: exactly what private means, for everybody but the owner.**
@@ -2051,12 +2955,24 @@ fails, so an unavailable preview does not block reviewing the remaining reports.
 Photo URLs expire after 15 minutes: clients must refresh the queue rather than
 persisting its URLs.
 
-**SW-17b (#5501)** supplies the report action in `BoardDetailSheet` and the admin
-review route in companion app PR [#5953](https://github.com/boardsesh/boardsesh/pull/5953),
-targeting `release/next`. Those app changes depend on deploying the queue schema
-and resolver additions from backend PR [#5952](https://github.com/boardsesh/boardsesh/pull/5952)
-on `main` first; this backend PR does not itself ship the app UI or change its
-spray-wall flag default.
+The Boards picker mounts `BoardDetailSheet` through a Details action on each
+spray-wall card, plus the active wall's Details control. The active control
+also covers an unlisted wall opened through a share link that is not in the
+climber's saved list. Any signed-in viewer can choose Report wall and one of
+the four fixed reasons; edit permission is not required, and there is no
+free-text field. `CREATED` and `ALREADY_REPORTED` both confirm quietly.
+
+Settings → Moderation → Spray-wall reports opens `/moderation/spray-walls`,
+a root-stack modal available to global or spray-scoped community admins. The
+queue groups pending reports by wall and shows its name, current photograph
+(or latest draft for an unpublished wall), and reasons. Hide wall and Keep
+visible/Unhide both call `setSprayWallHidden`, which reviews every pending
+report for the wall. General wall visibility rules are unchanged: privileged
+photo previews are produced only inside the admin-authorized queue query.
+
+Reporting and review both read `climb-moderation-kill`; they wait for flag
+resolution before accepting actions. Signed preview URLs remain in memory,
+are refreshed when expired, and never enter persistent storage.
 
 ## Retention: what happens to a deleted wall's photographs
 
@@ -2150,7 +3066,7 @@ its batch loses nothing — tomorrow's run takes what it missed.
 
 ## Telemetry
 
-Seven events, all in `SHARED_EVENTS` with typed builders in
+Eight events, all in `SHARED_EVENTS` with typed builders in
 `packages/shared/analytics/src/spray-wall-events.ts` (the `board-render-events.ts`
 style: each builder returns `{ name, properties }` together, so a call site
 cannot pair one event's props with another event's name). Mobile fires them
@@ -2159,13 +3075,15 @@ through `trackSprayEvent`; nothing calls `track` with a spray event name directl
 | Event | Properties | What it answers |
 | --- | --- | --- |
 | `Spray Wall Photo Picked` | `source` | Camera or library — the two feel different on a slow phone. |
-| `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt` | Whether the photo lands, and how long a climber waits for it. |
+| `Spray Wall Upload Finished` | `outcome`, `durationMs`, `determinate`, `attempt`, `cropped?`, `rotated?` | Whether the photo lands, and how long a climber waits for it. `cropped` and `rotated` say whether the photo step's crop step changed the photo (two booleans, never the rectangle or the angle); older clients omit both, so a missing value is unknown, not false. |
 | `Spray Wall Detection Finished` | `outcome`, `candidateCount`, `durationMs` | `unavailable` is a SUCCESS — the flow lands in the editor in manual mode. Read it against `ok` for the fraction of the fleet placing every hold by hand. |
 | `Spray Holds Reviewed` | `holdCount`, `candidateCount`, `hadCandidates` | Candidate and saved counts on the same event. Older clients omit candidateCount. |
+| `Spray Wall Bind Stalled` | `stage`, `elapsedMs` | A wall that published and then sat on "Setting your wall up…": `visibility`, `fetch_board` or `bind` ran past 30 s, or `navigate` was dispatched and the wizard was still on screen 1.5 s later. |
 | `Board Created` (existing) | `boardType: 'spray'` | Closes the add funnel. The SAME event every other board type fires — a spray-only variant would hide walls from every board-creation number we already watch. |
 | `Spray Wall Reset Previewed` | `keptCount`, `removedCount`, `addedCount`, `lowConfidenceCount`, `climbsAffected`, `aspectMismatch`, `detectionCount` | What the matcher found. |
 | `Spray Wall Reset Applied` | `keptCount`, `removedCount`, `addedCount`, `climbsChanged`, `moveCount` | What landed. The server's counts, not the review's. |
 | `Climb Remixed From Broken` | `lostHoldCount`, `source` | Whether a climb a reset broke is a dead end or a starting point. |
+| `Climb Edited From Broken` | `lostHoldCount`, `source` | How often the setter or a wall editor repairs a broken climb in place instead of remixing it. |
 
 Two rules, both enforced by a test in
 `packages/shared/analytics/src/__tests__/spray-wall-events.test.ts`:
@@ -2188,33 +3106,21 @@ null. It is what makes a spray session countable at all, because a wall's
 is not the same act as choosing a climb to climb. The spray-wall activation
 definition built on both is in `docs/growth-metrics.md`.
 
-## Rolling the flag out
+## Availability and detection quality
 
-The whole surface is behind the mobile flag `spray-walls`
-(`docs/feature-flags.md` → "Mobile flags"). A POSITIVE rollout flag: unresolved
-reads as off, so the tile never flickers in for the first frames of a cold open.
+Spray walls are enabled by default. The picker tile and `/boards/spray/*`
+routes do not depend on PostHog or an enablement environment variable. The old
+`spray-walls` flag and on-device overrides no longer gate these surfaces.
+Maintenance requires the additive backend `sourceVersionId` input. Deploy that
+backend contract before shipping a mobile build
+with maintenance; this deployment order is independent of wall availability.
 
-Three steps, each gated on a number rather than on a feeling:
-
-The service rollout additionally requires 24-hour observation windows, 20
-reviewed walls from five users before 10%, and ten reset previews before
-everyone. The complete, current gates are in
-[the service rollout runbook](spray-recognition-rollout.md).
-
-| Step | Audience | Gate before moving on |
-| --- | --- | --- |
-| 1 | Testers only (the on-device override, More → Feature Flags) | At least one wall photographed, reset and set on, end to end, on a real wall. |
-| 2 | 10 % | `SPRAY_ROLLOUT_GATES.detectionCorrectionRate` ≤ 0.15 over `Spray Holds Reviewed` where `hadCandidates` is true, and `Spray Wall Upload Finished` `outcome: 'ok'` ≥ 0.95. |
-| 3 | Everyone | `SPRAY_ROLLOUT_GATES.resetCommitRate` ≥ 0.6 — applied ÷ previewed. An owner who previews a reset and never applies it has been shown something they do not believe. |
-
-Both ratios are functions in `spray-wall-events.ts` rather than prose in a
-dashboard description, so the number in this doc and the number in the code
-cannot drift. The correction rate is a PROXY, not an F1: the detections are not
-stored, so a correction and a delete-plus-add are indistinguishable. It moves in
-the right direction, which is what a rollout gate needs.
-
-Step back at any point by setting the flag false — nothing the flag gates writes
-anything a rollback has to undo, and a wall already created stays created.
+The detection service has separate deployment and quality checks in
+[the service rollout runbook](spray-recognition-rollout.md). Enabling the mobile
+surface does not certify those checks or deploy a detection worker. The upload
+success, detection correction and reset commit ratios remain available through
+`SPRAY_ROLLOUT_GATES` in `spray-wall-events.ts` for monitoring. The correction
+rate is a proxy, not an F1: equal candidate and saved counts can hide corrections.
 
 ### The one public copy (SW-14)
 
@@ -2325,11 +3231,36 @@ the API is public and a server rule must not rest on a client convention.
 
 A share link is `https://www.boardsesh.com/b/<slug>/<angle>/list`, with
 `?wall=<uuid>` on an unlisted wall. iOS takes it into the app through the
-host-wide `applinks:` entitlement. **Android does not yet**: the intent filters in
-`packages/mobile/app.config.ts` cover `/join`, `/preview` and
-`/auth/reset-password` only, so a `/b/` link opens the website instead. Adding the
-filter moves the native fingerprint, so it rides the next native train rather than
-an OTA (SW-14b).
+host-wide `applinks:` entitlement. Android's verified intent filters in
+`packages/mobile/app.config.ts` include `/b/` on `www.boardsesh.com`, alongside
+`/join`, `/preview`, `/auth/reset-password` and one prefix per board name for
+classic climb links, repeated under `/es`, `/fr` and `/de`. The apex `boardsesh.com` is not claimed on Android: it
+answers `assetlinks.json` with a redirect, which fails verification.
+The native-intent handoff preserves the query string through
+`useLocalSearchParams`. Board adoption awaits `sprayWall(uuid)` with the
+complete board fields, then checks the returned wall UUID and board slug against
+the link before adopting it or seeding the rendering cache. This lets a recipient
+who neither owns the wall nor belongs to its gym open an unlisted share without
+the enumerable `boardBySlug` lookup. Denied or mismatched capabilities never
+fall back to a stored board or populate the public slug cache.
+
+The `/b/<slug>/<angle>/view/<climb>` and `/play/<climb>` routes also pass
+`wall` through board adoption. Climb reads retain their separate backend access
+rules: this wall-list share fix does not grant a nonmember access to an unlisted
+wall's individual climb link.
+
+`SprayWall.uuid` is the owning `UserBoard.uuid`: the backend resolves UUID
+lookups through `spray_walls.board_uuid` and returns `board.uuid`. The numeric
+`spray_walls.id` stays internal. Native adoption checks both UUID fields against
+the capability to prevent adopting a different board from the response.
+
+Capability links require a fresh network authorization, including previously
+opened links. Offline opens show not found without adopting cached wall content;
+reconnecting retries the lookup automatically. This keeps revoked shares from
+reopening a wall through stale cached permissions.
+
+Adding the filter moves the native fingerprint, so Android needs the new store
+binary from `release/next`; an OTA on an older binary cannot add it (SW-14b).
 
 ## Climb writes on a wall
 
@@ -2475,13 +3406,16 @@ When the wall owner selects the `'collaborators'` policy (#6025), anyone who can
 write climbs on the wall (`viewerCanWriteSprayClimbs`: gym members on gym walls,
 share-link holders on unlisted walls, or anyone on public walls) may also edit
 published climbs. Only the wall creator may change the wall's `climbEditPolicy`.
+The app no longer offers a control for it: every wall keeps the policy it has,
+and the server still applies it.
 
 Four things the rule is careful about:
 
 - **The setter stays the setter.** `updateClimb` never writes `user_id` or
   `setter_username`, and a regrade goes on the climb's stats row with
   `fa_username` left as it was. A collaborator or wall owner who fixes your climb
-  has not taken it. Who made each edit is in the revision history instead.
+  has not taken it. Who made each edit is in `board_climb_revisions`, which the
+  app does not show.
 - **A draft is its setter's alone.** Collaborators and wall editors cannot edit or
   publish somebody else's draft. Publishing announces a new climb to followers, and
   it would announce it under the wrong name.
@@ -2657,7 +3591,8 @@ a share link to an unlisted wall gets the empty list in v1. The visibility sweep
 field is proven to show the owner the history and a stranger nothing.
 
 Revisions are read-only. There is no restore, and an old revision cannot be
-queued or lit up.
+queued or lit up. The app does not show the history: a published climb is not
+versioned for climbers. The query stays until a later backend change.
 
 ### Which revision a tick was logged on
 
@@ -2725,75 +3660,40 @@ outbox retries that kind of error and a retry of the same tick uuid is safe, so
 the send arrives later with its revision, where storing it at once with NULL
 would have left it without one for good.
 
-Readers: `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
+Fields the server serves (the app selects none of them): `Tick.climbRevision`, and `climbRevision` with `climbCurrentRevision`
 (the climb's `revision_number` now) on the rows of `climbLogs`,
 `followingClimbAscents`, `userAscentsFeed` and `userGroupedAscentsFeed`.
-`Climb.revisionNumber` and `Climb.holdsRevisionNumber` come back from search,
-climb detail, favourites, playlists and the setter's climb lists. `syncTicks` and `syncClimbs` emit the three columns,
-and the phone stores them from on-device schema v11, where all three are
-nullable: a row pulled before v11 reads NULL, which means unknown and not 1.
+The server still serves `Climb.revisionNumber` and `Climb.holdsRevisionNumber`
+on search, climb detail, favourites, playlists and the setter's climb lists, but
+no app document selects either: the app reads its local copy instead.
+`syncTicks` and `syncClimbs` emit the three columns, and the phone stores them
+from on-device schema v11, where all three are nullable: a row pulled before v11
+reads NULL, which means unknown and not 1.
 
 #### What the app sends
 
-The app calls a revision a **version**. That is the only word a climber sees.
+Nothing. The app never sends `climbRevision`, so the server always stores the
+fallback above.
 
-One rule decides everything below. The server stores any in-range version the
-app sends, as sent. So a wrong version is worse than a missing one: a missing
-one gets the fallback, which is the version live at `climbedAt` and is right for
-a tick logged now, while a wrong one files the send under a version the climber
-was not on, and if the holds moved since, the send stops counting. The app sends
-a version only when it can show the number belongs to the holds on screen. When
-it cannot, it leaves the key out. It is never sent as null either: a backend
-from before the field rejects the key.
+The server therefore decides the version from the tick's date. A send logged
+today but back-dated to before a holds edit counts against the older holds, so
+it stops counting as a send of the current climb; the phone shows it as sent
+until the next sync and then agrees with the server. A send logged now from a
+phone still showing the old holds is credited on the current holds. Both are
+accepted costs of dropping the client's version, and a later backend change
+removes the holds-version rule altogether.
 
-Where the number comes from (`resolveTickClimbRevision`,
-`packages/mobile/src/lib/tick-climb-revision.ts`), in order:
-
-1. The climb on screen, when it carries `revisionNumber`. A climb only carries
-   one that was read together with its frames: a row from the phone's own
-   search or detail read, or a network row that passed the check in step 2.
-2. The phone's own copy of the climb (`board_climbs.revision_number`), but only
-   when that row's `frames` are the same string as the frames on screen
-   (`localRevisionMatchingFrames`). `useLocalClimbRevision` reads the number
-   and the frames in one primary-key statement, when the form opens for a climb
-   with no number of its own, and again whenever `['climb']` is invalidated: a
-   saved tick, a climb edit and a completed board pull all do that.
-3. Nowhere. The tick is sent with no version.
-
-The frames check is an exact string comparison. The server's `holdsMoved`
-compares parsed hold sets, so two strings that list the same holds in another
-order are equal there and different here. That only makes the app leave the
-number out more often, which is the safe side, and the parser stays on the
-server.
-
-Cases the check exists for:
-
-| The climb on screen | The phone's row | Sent |
-| --- | --- | --- |
-| A network answer after the setter moved a hold | The version before the move | Nothing |
-| A queue item from before an edit | The version after it | Nothing |
-| The editor's unsaved holds (Set Active) | The last save | Nothing |
-| The editor's first save, when a second save followed | The second save | Nothing |
-| Same holds as the phone's row | That row | Its version |
-| Anything, on a board that is not downloaded | No row | Nothing |
-
-The last-but-two row is why the create screen puts no version on the climb it
-queues, although `updateClimb` could tell it one. A local "make this current"
-for the uuid that is already current is a no-op in the queue reducer
-(`packages/shared/queue/src/reducer.ts`), so after Edit, Save, move a hold, Save
-again the queue still holds the first save's item. A version stamped on that
-item would be one behind the server, the setter's send would be stored on it,
-and it would not count. The `UpdateClimb` document does not select the two
-numbers, since nothing reads them.
-
-Offline, the version is written twice: into the local `boardsesh_ticks` row
-(`climb_revision`) and into the queued `SaveTick` payload. If the backend that
-finally receives the queued tick answers `Field "climbRevision" is not defined`,
-the outbox handler sends it once more without the field (`handlers.ts`,
-`DROPPABLE_INPUT_FIELDS`), so the send is delivered instead of dead-lettered.
-The match is on that clause and not on the field name: graphql-js prints the
-whole input in such messages, so the name alone appears in rejections that are
-about something else.
+Offline, the local `boardsesh_ticks` row is still stamped, from the phone's own
+`board_climbs.revision_number` for that climb (`writeTickLocal`), so the app's
+sent marks below count the send before the pull brings the server's value. The
+phone's row is never below its own holds version, so the stamp always agrees
+with the local check. The queued `SaveTick` payload carries no version. A tick
+queued by an older app still carries one and is replayed as stored; if the
+backend answers `Field "climbRevision" is not defined`, the outbox handler sends
+it once more without the field (`handlers.ts`, `DROPPABLE_INPUT_FIELDS`). The
+match is on that clause and not on the field name: graphql-js prints the whole
+input in such messages, so the name alone appears in rejections that are about
+something else.
 
 #### Why the version comes from the phone and not from the query
 
@@ -2805,8 +3705,8 @@ fixtures, which key a recording on the document text
 
 - A climb's numbers come from `syncClimbs` (the phone's `board_climbs` row). A
   network `SearchClimbs` page or `GetClimb` answer is filled in from it
-  (`fillClimbRevisionNumbersLocal`, one read per page): `revisionNumber` under
-  the frames check above, `holdsRevisionNumber` always. The holds number is only
+  (`fillClimbRevisionNumbersLocal`, one read per page): `revisionNumber` only
+  when the phone's row has the same frames, `holdsRevisionNumber` always. The holds number is only
   a threshold for "does this send still count", it only rises, and the phone's
   value is a past one, so it can be too low and never too high. Too low counts
   a send that should have been dropped; it cannot drop one that counts. The fill
@@ -2820,9 +3720,9 @@ fixtures, which key a recording on the document text
 - A queue item keeps `revisionNumber` and `holdsRevisionNumber` on the phone
   that queued it, and does not send them. `ClimbInput.revisionNumber` is
   accepted by the server, but no queue document returns it, so a climb that has
-  been through a shared queue arrives without it and the tick form uses step 2
-  above. `queue-climb-field-contract.test.ts` still lists the field as
-  server-ready for this reason.
+  been through a shared queue arrives without it.
+  `queue-climb-field-contract.test.ts` still lists the field as server-ready for
+  this reason.
 
 Adding the fields to those documents, and removing the local joins, is the
 follow-up once the fixtures are re-recorded.
@@ -2847,24 +3747,11 @@ are read again, and the logbook cache takes the version from the later read
 never trades a known value for less). A batch that is not on screen is read
 again the next time its climb is opened.
 
-#### Where the app says "Earlier version"
+#### No "Earlier version" tag
 
-A log shows the words **Earlier version** when its version is known and lower
-than the version the climb is on now. Any edit counts, a rename included: the
-tag says the climb has changed since, not that the send stopped counting. No
-version numbers are shown. A log with no known version shows nothing.
-
-| Surface | Source of the two versions |
-| --- | --- |
-| Play drawer, your own history (`LogbookEntryRow`) | The tick from the phone's copy; the climb's current version from the phone's `board_climbs` row. No frames check here: the tag compares against the version the climb is on now, whatever holds a queue item is showing. |
-| Play drawer, other climbers' logs (`ClimberLogRow`) | `climbRevision` and `climbCurrentRevision` on `climbLogs` and `followingClimbAscents` |
-| You tab, the flat logbook (`LogbookRow`) | The same two fields on `userAscentsFeed` |
-| You tab, the grouped logbook | No tag. `GetUserGroupedAscentsFeed` is a pinned document. |
-| Session detail and the session feed | No tag, for the same reason. |
-
-The tag is plain text. Opening the version a log was made on needs the version
-sheet from #5973, which is on `release/next` and not on `main`; making the tag a
-button is the follow-up when it lands.
+The app does not tag a log made on an earlier version of a climb. The server
+still returns `climbRevision` and `climbCurrentRevision` on the log feeds; the
+app reads a tick's version only for the sent marks below.
 
 #### The app's own "sent" marks
 
@@ -3014,46 +3901,11 @@ Known limits:
 
 ### In the app
 
-The server half (table, `updateClimb`, the `climbRevisions` query) is on `main`.
-The app half below ships with the release train (#5973 on `release/next`).
-
-The play drawer shows an **Edit history** section (`RevisionsSection`) after
-Community and before Similar climbs. It renders nothing unless the query has two
-or more rows, so most climbs never show it. Loading, failed and offline also
-render nothing. It is collapsed by default and its summary counts edits from the
-newest revision number, so pruned edits still count.
-
-Five rows show inline and "Show all" reveals the rest, up to
-`MAX_REVISIONS_PER_CLIMB`. A full history carries a one-line note with that
-number, read through `spray-cap-copy.ts`.
-
-A row opens `ClimbRevisionSheet`: board, name, grade (spray only), notes, date,
-editor, and Older / Newer. It is mounted inside `PlayDrawer` and opened by a
-handler the drawer owns, because a root sheet presents behind the `/play` modal.
-The file imports nothing from the queue, Bluetooth or the editor.
-
-The board is drawn one of two ways (`pickRevisionBoardPath`):
-
-| Revision | Drawn by |
-| --- | --- |
-| Any catalogue board | `BoardImageNative`, with the revision's frames |
-| Spray, same wall version as the registered wall | `BoardImageNative` |
-| Spray, a different wall version | `SprayRevisionBoard` |
-| Spray, no wall version on record | Nothing. One line: "This wall photo is no longer available" |
-
-`SprayRevisionBoard` fetches `sprayWallRenderData(uuid, version)` itself, under
-its own query key, and **never writes the spray registry**. The registry holds
-one version per wall and the play drawer under the sheet draws from it, so
-registering an old version would swap the photo and holds under the live player.
-It draws the photo with `expo-image` (memory cache only, the URL is a 15 minute
-signature) and the holds as rings in one SVG layer.
-
-With no connection the sheet and the old-version board show the offline placard,
-never "photo no longer available".
+The app shows no edit history. The `climbRevisions` query is still served and
+still gated, but nothing in the app calls it.
 
 ### Known limits
 
-- The old-photo preview draws plain rings, not the wall's stored look.
 - No history for edits made before this shipped.
 - The data export does not include revisions.
 - Deleting a climb deletes its revisions (the foreign key cascades).
@@ -3067,7 +3919,7 @@ holds and `getBoardCapabilities` allows authoring, and SW-07 made both true for 
 wall — so `isAuthorableBoard`
 (`packages/mobile/app/(tabs)/climbs/create.tsx`) already accepts `spray` through
 the capability, the brush bar already offers all four roles (`STATE_TO_PRIMARY_CODE.spray`),
-and start/finish still cap at two each. What is left is four rules a wall answers
+and start/finish still cap at two each. What is left is five rules a wall answers
 differently, and they live as pure functions in
 `packages/mobile/src/components/create-climb/spray-climb-rules.ts`:
 
@@ -3078,8 +3930,16 @@ differently, and they live as pure functions in
    with what `resolveDifficultyId` matches server-side). The pick rides
    `SaveClimbInput.userGrade` / `UpdateClimbInput.userGrade` as the grade NAME
    (`"6c/V5"`), the same string `board_difficulty_grades.boulder_name` stores.
-   `publishBlocked` names the missing grade under the Save button, so a disabled
-   button is never mute. `use-last-used-grade.ts` seeds a FRESH climb's picker
+   A missing grade does not disable Save (#5954). The rail is below the fold, so
+   a dead button up top gave no hint where to look: the status line under Save
+   reads "Pick your grade to publish", and tapping Save sends nothing, bumps
+   `focusGradeSignal`, and `CreateDrawer` opens the sheet and scrolls just far
+   enough to show the rail with its "Needed to publish" subtitle in the warning
+   colour. The prompt clears when a grade is picked, when the draft switch goes
+   on, and when a new climb starts. Save is still disabled while a start or a
+   finish hold is missing (`publishBlocked`). Both publish hints give their line
+   to the hold heatmap's legend while the heat is on (`yieldsToHeatmap`), since
+   on a wall one of them is up for most of an ordinary session. `use-last-used-grade.ts` seeds a FRESH climb's picker
    with what the setter last published on this board — a session on one wall
    clusters hard — and a draft, a fork and an edit all overwrite that seed with
    their own grade.
@@ -3096,6 +3956,27 @@ differently, and they live as pure functions in
    `user_boards` row. There is no angle control in this editor to hide.
 4. **`sprayWallUuid` rides every write**, from the same registry entry — see rule
    1 of "Climb writes on a wall" above for why it is sent unconditionally.
+5. **Save publishes.** `defaultIsDraft` starts the "Save as draft" switch off on a
+   wall and on everywhere else (#5954). A draft is left out of the Climbs list,
+   and on a wall a handful of people share, a climb missing from the list read as
+   a climb that was lost. It is only the switch's starting position: an edit
+   session takes the row's own value, and a restored autosave slot takes the one
+   it stored, so work in progress from before this change still restores as a
+   draft.
+
+A second save of the same climb (a draft published, a rename) refreshes every
+copy already in the queue through the queue reducer's local-only
+`REFRESH_AUTHORED_CLIMB`. `setCurrentClimb` cannot: its same-uuid branch keeps
+the current item on purpose, and it never rewrites a slot already queued. Only
+the authored fields move (name, holds, description, rules, pace, draft state);
+the queued copy's grade and send counts stay. A party peer's own queue slot is
+not rewritten; they get the new payload for the current climb from the
+`CurrentClimbChanged` broadcast.
+
+Because a draft is not in the Climbs list, every surface that does show one marks
+it with `DraftChip` (`packages/mobile/src/components/DraftChip.tsx`): the climb
+row (list, queue, actions-sheet preview), the play drawer header, and the bottom
+bar's capsule and iOS accessory row.
 
 Everything else is unchanged and deliberately so: the duplicate gate surfaces
 through the existing `isDuplicateClimbError` + `DuplicateBanner` (the server
@@ -3159,6 +4040,26 @@ carry the climb names, frames and grades of somebody's garage, and
 `searchClimbsLocal` reads reference data with no owner stamp), the photographs go
 too, and `getSprayWallLocal` refuses to serve unless the `local_user_id` stamp
 names the climber asking — the defence that survives a wipe that failed.
+
+**Offline cold starts hydrate the published registry.** The loader reads the
+owner-stamped `spray_walls` mirror while connectivity is unavailable or a
+recognized transport request fails. It requires a published generation, valid
+homography and a durable photo. Native image decoding supplies the photo's pixel
+size; reference dimensions describe the canonical frame and are not substituted.
+Canonical holds are mapped back into photo pixels before registration.
+
+The local cache identity is `local-<photo UUID>-<published number>`, separate
+from the online database row ID namespace. Published numbers never repeat, so a
+same-photo hold edit also changes geometry caches. Offline registrations expose
+read-only permission and use the durable file directly, without downloading a
+`file://` URL. Account changes withdraw them; owner and removal generations are
+checked across every read and native image decode.
+
+Reconnect forces server revalidation for every requested wall, including one
+whose local photo was missing. A reconnect during image decoding is handled by
+the completing load itself. An authoritative absent or inaccessible wall removes
+the offline registration rather than reusing the local mirror. Draft editor data
+never writes this mirror: sync emits only the wall's current published version.
 
 **One known gap, tracked as #5490.** The delete tombstone is scoped to the wall's
 owner, so a gym member or public-wall viewer who mirrored a wall never receives
@@ -3314,6 +4215,40 @@ propagating the noindex up the chain. So: no breadcrumb until a wall has an
 indexable page of its own, which is a decision about crawling somebody's home
 wall rather than a markup change.
 
+### Sharing a climb from the app (#5488)
+
+The app's Share button on a wall climb hands out the same URL this page lives at,
+`/b/{slug}/{angle}/view/{name-slug}-{uuid}`, built by `buildSprayClimbSharePath`
+(`packages/mobile/src/lib/spray/spray-share.ts`) with the climb segment www's
+`constructBoardSlugViewUrl` emits. It used to share the numeric
+`/spray/{layout}/{size}/1/{angle}/view/...` path, which www 404s by design. The
+slug, the angle and the two visibility flags come off the registered wall
+(`RegisteredSprayWall.share`, filled by the loader from `sprayWallRenderData`'s
+`wall.board`), so the share costs no request.
+
+| The wall is | What Share sends | Card warmed before the sheet opens |
+| --- | --- | --- |
+| public | the clean `/b/` link | the exact `og:image` URL this page advertises |
+| unlisted | the `/b/` link plus `?wall=<uuid>` | none (`/og/climb` answers 404) |
+| private, admin-hidden, not loaded, or no slug | the climb name alone, no link | none |
+
+**An unlisted climb link opens in the app only, for now.** The app's
+`/b/.../view/` route hands `?wall=` to `BoardRouteHandoff` (`wallUuid`), which
+resolves the wall before adopting the board, so a crew member who is not the
+owner still gets the wall's photo. On www the same link 404s for anyone but the
+owner and the gym's members: this page resolves the wall through `boardBySlug`,
+which refuses an unlisted wall to an anonymous caller (a slug is derived from
+the wall's name, so it is a guess and not a capability), and nothing on the page
+reads `?wall=` yet. Teaching www to redeem it is a follow-up PR.
+
+The registered wall is re-read whenever its owner saves the edit screen
+(`useUpdateSprayWall` calls `invalidateSprayWallRenderData`), so a visibility
+change moves what Share sends straight away instead of after the registry's
+10-minute revalidation. An admin-hidden wall (`SprayWall.hiddenAt`, only set for
+the owner) registers with no share fields at all, because hidden means exactly
+what private means. The wall-level share row (`sprayShareTarget`) reads a
+`UserBoard`, which carries no `hiddenAt`, so it does not apply that rule yet.
+
 ### The card and the sitemap
 
 `GET /og/climb?board_name=spray` composes the card from the public copy and the
@@ -3324,6 +4259,41 @@ Public walls' climbs are the only spray URLs in a sitemap, and the boards shard
 stays catalogue-only because a wall has no `/list` page to submit. The rule, the
 config source and the SQL belt behind it are in `docs/sitemap.md`.
 
+### Immutable render caches and isolated drafts (#6038)
+
+A discarded draft row can hand its `version_number` to the next draft. Mobile
+photo filenames therefore use `<layout>-v<version-row-id>.jpg`; background keys,
+render memos and overlay thumbnails carry that immutable row id too. Existing
+number-based cache entries are bypassed, so an affected phone recovers without
+manually clearing files. Presigned signature rotation leaves the identity unchanged.
+
+Published reads verify the payload number matches `wall.currentVersion.number`
+and use `wall.currentVersion.id`. Draft reads include the existing version
+history selection and verify that the requested number still belongs to the
+requested draft row id. A reused number resolving to a replacement row is
+unavailable rather than drawn under the discarded row's identity.
+
+Editors and reset comparison keep their mapped draft photo and holds locally.
+Their background and touch targets use that local payload, while the published
+registry, runtime geometry and climb thumbnails retain the published wall.
+Only initial setup, before any published version exists, registers its draft
+for the add-wall look carousel. Account and wall-removal generations also
+withdraw local draft payloads; a delayed response cannot restore them.
+
+### Hold maintenance and photo reset draft ownership
+
+The hold editor adopts only initial setup or a draft reusing the exact published
+photo and mapping. Opening it during a photo reset reports that the owner must
+finish or discard the reset first. New photo sends a saved hold-edit draft back
+to Edit holds, without offering detection or comparison.
+
+Version history is fetched fresh on reentry and invalidated when a draft is
+created, published, committed or discarded. An upload retry keeps the exact
+uploaded photo id and corners; it never silently adopts another open draft.
+If that other draft blocks creation, the owner explicitly resumes or discards
+it. Discarding returns to the selected local photo so the next attempt is visible.
+The backend protection in #6070 also refuses plain publishing of new-photo
+reset drafts from older clients.
 
 ### Newly saved climbs on downloaded walls
 

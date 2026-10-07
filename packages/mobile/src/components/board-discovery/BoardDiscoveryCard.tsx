@@ -91,6 +91,7 @@ const CORNER_BADGE_INSET = CORNER_BADGE_HIT_SLOP;
 const BOARD_ACTION_NAME = 'boardAction';
 const DOWNLOAD_ACTION_NAME = 'download';
 const PIN_ACTION_NAME = 'pin';
+const DETAILS_ACTION_NAME = 'details';
 
 /** Distance badge copy: metres under 1km, one-decimal km above. */
 function formatDistance(meters: number): string {
@@ -103,6 +104,8 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type BoardDiscoveryCardProps = {
   item: DiscoveryBoardItem;
   onPress: (item: DiscoveryBoardItem) => void;
+  /** Open this spray wall's detail sheet without activating the board. */
+  onDetails?: (item: DiscoveryBoardItem) => void;
   /**
    * Offer a one-tap download for an un-downloaded board. Passed only by the
    * carousel that renders boards the user owns or follows; Nearby (other
@@ -153,6 +156,7 @@ type BoardDiscoveryCardProps = {
 export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   item,
   onPress,
+  onDetails,
   onDownload,
   downloadLabel,
   action = null,
@@ -201,6 +205,9 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   const showEditBadge = !isEditing && action === 'edit' && onAction !== undefined;
   const showFollowingBadge = !isEditing && action === 'unfollow';
   const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
+  const canOpenDetails = !isEditing && item.boardName === 'spray' && onDetails !== undefined;
+  const detailsLabel = t('mobile.boardDetail.detailsAria', { name: item.title });
+  const handleDetails = useCallback(() => onDetails?.(item), [onDetails, item]);
   const canDownload = item.offlineState === 'off' && onDownload !== undefined;
   // Mirrors the render guard below, so the rotor never publishes an action the
   // touch surface does not offer.
@@ -243,8 +250,9 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     if (hasBoardAction && actionLabel !== undefined) nested.push({ name: BOARD_ACTION_NAME, label: actionLabel });
     if (canDownload && downloadLabel !== undefined) nested.push({ name: DOWNLOAD_ACTION_NAME, label: downloadLabel });
     if (canPin && pinLabel !== undefined) nested.push({ name: PIN_ACTION_NAME, label: pinLabel });
+    if (canOpenDetails) nested.push({ name: DETAILS_ACTION_NAME, label: detailsLabel });
     return nested.length > 0 ? rowAccessibilityActionsWith(...nested) : ACTIVATE_ACCESSIBILITY_ACTIONS;
-  }, [hasBoardAction, actionLabel, canDownload, downloadLabel, canPin, pinLabel]);
+  }, [hasBoardAction, actionLabel, canDownload, downloadLabel, canPin, pinLabel, canOpenDetails, detailsLabel]);
 
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
@@ -255,8 +263,19 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
       if (actionName === BOARD_ACTION_NAME) (showEditAction ? handleEditAction : handleAction)();
       if (actionName === DOWNLOAD_ACTION_NAME) handleDownload();
       if (actionName === PIN_ACTION_NAME) handleTogglePin();
+      if (actionName === DETAILS_ACTION_NAME && canOpenDetails) handleDetails();
     },
-    [isEditing, showEditAction, handlePress, handleAction, handleEditAction, handleDownload, handleTogglePin],
+    [
+      isEditing,
+      showEditAction,
+      handlePress,
+      handleAction,
+      handleEditAction,
+      handleDownload,
+      handleTogglePin,
+      canOpenDetails,
+      handleDetails,
+    ],
   );
 
   const activeLabel = t('mobile.discovery.activeBadge');
@@ -430,6 +449,19 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
         <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
           {item.subtitle}
         </Text>
+      ) : null}
+
+      {canOpenDetails ? (
+        <PressableSurface
+          onPress={handleDetails}
+          accessibilityRole="button"
+          accessibilityLabel={detailsLabel}
+          style={styles.editAction}
+        >
+          <Text variant="subheadline" color={brandColors.primary}>
+            {t('mobile.boardDetail.details')}
+          </Text>
+        </PressableSurface>
       ) : null}
 
       {showEditAction ? (

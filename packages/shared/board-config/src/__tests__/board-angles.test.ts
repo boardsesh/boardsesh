@@ -29,4 +29,14 @@ describe('board angles', () => {
       expect(parseBoardAngleSegment('kilter', alias)).toBeNull();
     }
   });
+
+  // #5488: the app shares a wall climb as `/b/{slug}/{angle}/view/...`, and www
+  // runs the angle segment through this parser before it renders anything. Every
+  // integer angle a wall can be set at has to route, not just the picker's
+  // 5-degree steps, or a shared link 404s.
+  it('routes every integer angle a spray wall can carry', () => {
+    for (let angle = 0; angle <= 70; angle += 1) {
+      expect(parseBoardAngleSegment('spray', String(angle))).toBe(angle);
+    }
+  });
 });

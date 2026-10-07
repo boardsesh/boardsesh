@@ -1,12 +1,13 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
 /**
- * "The app has settled": auth has resolved and the required fonts have loaded,
- * so the splash is coming down. The launch gates (OnboardingGate,
+ * "The app has settled": auth has resolved, the required fonts have loaded and
+ * the launch update gate (#6006) has stepped aside, so the splash is coming
+ * down and no reload is on its way. The launch gates (OnboardingGate,
  * ConnectivityBanner, QaTesterGate, SendRecoveryGate) wait on it before they
  * paint or push anything.
  *
- * **Why a context and not a prop (#5654).** `RootLayout` owns the two states,
+ * **Why a context and not a prop (#5654).** `RootLayout` owns these states,
  * but every gate is mounted inside `<DatabaseProvider>`, and expo-sqlite's
  * `SQLiteProvider` is `memo()`'d with a comparator that ignores `children`. A
  * `RootLayout` re-render therefore never reaches anything below it: each JSX
@@ -25,7 +26,7 @@ export function LaunchReadyProvider({ ready, children }: { ready: boolean; child
   return <LaunchReadyContext.Provider value={ready}>{children}</LaunchReadyContext.Provider>;
 }
 
-/** True once auth and fonts have both resolved. Never goes back to false. */
+/** True once auth, fonts and the launch update gate have all resolved. Never goes back to false. */
 export function useLaunchReady(): boolean {
   return useContext(LaunchReadyContext);
 }

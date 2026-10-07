@@ -34,6 +34,10 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { useTheme } from '../../src/providers/theme-provider';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
+import { sprayResetHref } from '../../src/lib/spray/spray-routes';
+import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
+import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
+import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
 
 export default function EditBoard() {
   const router = useRouter();
@@ -133,6 +137,17 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   // is what decides where visibility is saved.
   const isSprayWall = toBoardName(board.boardType) === 'spray';
 
+  // What the wall is drawn on: its photo, or a generated look. Anyone who may
+  // edit the wall may change it (the same gate as its look).
+  const backgroundEditor = useSprayWallBackgroundEditor({
+    wallUuid: board.uuid,
+    layoutId: board.layoutId,
+    enabled: isSprayWall,
+  });
+  const saveBackground = backgroundEditor.save;
+  const backgroundChanged = backgroundEditor.changed;
+  const openRetake = useCallback(() => router.push(sprayResetHref(board.uuid)), [router, board.uuid]);
+
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;
     return {
@@ -167,12 +182,14 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const defaultName = useMemo(
     () =>
       formatDefaultBoardName({
-        userName: profile?.displayName,
+        // The board OWNER's name: an admin or gym staff member editing
+        // somebody's board must not rename it after themselves (#5960).
+        userName: board.ownerDisplayName ?? profile?.displayName,
         boardName: builder.boardName,
         layoutName: builder.rawLayoutName,
         size: selectedSize,
       }),
-    [profile?.displayName, builder.boardName, builder.rawLayoutName, selectedSize],
+    [board.ownerDisplayName, profile?.displayName, builder.boardName, builder.rawLayoutName, selectedSize],
   );
 
   const [submitting, setSubmitting] = useState(false);
@@ -225,17 +242,30 @@ function EditBoardForm({ board }: { board: UserBoard }) {
         let visibilityApplied = false;
         if (visibilityChanged) {
           try {
-            await updateSprayWall.mutateAsync({
-              uuid: board.uuid,
-              isPublic: nextIsPublic,
-              isUnlisted: nextIsUnlisted,
-            });
+            await updateSprayWall.mutateAsync({ uuid: board.uuid, isPublic: nextIsPublic, isUnlisted: nextIsUnlisted });
             visibilityApplied = true;
           } catch (error) {
-            visibilityError = isSprayWallVisibilityOwnerOnlyError(error)
-              ? t('mobile.sprayVisibility.ownerOnlyError')
-              : (extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError'));
+            if (isSprayWallVisibilityOwnerOnlyError(error)) {
+              visibilityError = t('mobile.sprayVisibility.ownerOnlyError');
+            } else {
+              visibilityError = extractGraphqlMessage(error) ?? t('mobile.sprayVisibility.updateError');
+            }
           }
+        }
+
+        // The background is part of the wall's look, its own mutation again.
+        // Saved whatever happened to visibility above, and its refusal is said
+        // beside that one rather than swallowed by it.
+        if (isSprayWall && backgroundChanged) {
+          const saved = await saveBackground();
+          const backgroundError =
+            saved.outcome === 'refused'
+              ? t(`sprayBackground.${sprayArtRefusalMessageKey(saved.reason)}`)
+              : saved.outcome === 'failed'
+                ? t('sprayBackground.saveFailed')
+                : null;
+          if (backgroundError)
+            visibilityError = visibilityError ? `${visibilityError} ${backgroundError}` : backgroundError;
         }
 
         // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
@@ -358,6 +388,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       setActiveBoard,
       router,
       t,
+      backgroundChanged,
+      saveBackground,
     ],
   );
   handleUpdateRef.current = handleUpdate;
@@ -373,6 +405,18 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       lockedConfig={lockedConfig}
       lockedConfigReason={configLock ?? undefined}
       currentBoardUuid={board.uuid}
+      sprayBackgroundSection={
+        isSprayWall ? (
+          <SprayWallBackgroundPicker
+            gate={backgroundEditor.gate}
+            art={backgroundEditor.art}
+            value={backgroundEditor.value}
+            onChange={backgroundEditor.onChange}
+            disabled={submitting}
+            onRetakePhoto={openRetake}
+          />
+        ) : undefined
+      }
     />
   );
 }

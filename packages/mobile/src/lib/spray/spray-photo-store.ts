@@ -116,7 +116,8 @@ export function tryGetStoredSprayPhotoPathSync(photoKey: string | null | undefin
  * Joining the in-flight promise makes the second caller wait for the first
  * rather than fight it, which is also what it wanted: the same bytes.
  */
-const downloadsInFlight = new Map<string, Promise<string | null>>();
+type PhotoDownload = { photoKey: string; promise: Promise<string | null> };
+const downloadsInFlight = new Map<string, PhotoDownload>();
 
 /**
  * Download a wall photo into the durable store, unless it is already there.
@@ -147,12 +148,12 @@ export function storeSprayPhoto(photoKey: string, photoUrl: string, layoutId?: n
   const inFlight = downloadsInFlight.get(downloadKey);
   // The URL is deliberately not compared: two signatures over the same key are
   // the same picture, and the newer caller wants the bytes, not its own request.
-  if (inFlight) return inFlight;
+  if (inFlight) return inFlight.promise;
 
   const download = downloadSprayPhoto(photoKey, photoUrl, generation, layoutId).finally(() => {
-    if (downloadsInFlight.get(downloadKey) === download) downloadsInFlight.delete(downloadKey);
+    if (downloadsInFlight.get(downloadKey)?.promise === download) downloadsInFlight.delete(downloadKey);
   });
-  downloadsInFlight.set(downloadKey, download);
+  downloadsInFlight.set(downloadKey, { photoKey, promise: download });
   return download;
 }
 
@@ -171,6 +172,9 @@ async function downloadSprayPhoto(
     deleteQuietly(partial);
 
     const downloaded = await File.downloadFileAsync(photoUrl, partial, { idempotent: true });
+    // A teardown may have deleted .part while native I/O was still streaming.
+    // Its generation has moved, so the body is discarded; a replacement stages
+    // under its own generation-named .part and never shares this one.
     if (generation !== writeGeneration(photoKey, layoutId)) {
       deleteQuietly(partial);
       return null;
@@ -243,6 +247,14 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
   const keepNames = new Set<string>();
   for (const key of liveKeys) keepNames.add(sprayPhotoStoreFileName(key));
   if (keepNames.size === 0) return 0;
+
+  // A download still streaming for a key no wall names any more must not move
+  // its body into place after this walk has reclaimed the key.
+  for (const { photoKey } of downloadsInFlight.values()) {
+    if (!keepNames.has(sprayPhotoStoreFileName(photoKey))) {
+      keyGenerations.set(photoKey, (keyGenerations.get(photoKey) ?? 0) + 1);
+    }
+  }
 
   let deleted = 0;
   try {

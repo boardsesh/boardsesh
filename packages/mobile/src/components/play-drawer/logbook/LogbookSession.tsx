@@ -21,8 +21,6 @@ type LogbookSessionProps = {
   showDayTries: boolean;
   /** Rows shown before the rest collapse into one caption. Omit to show them all. */
   maxEntries?: number;
-  /** The version the climb is on now; see `LogbookEntryRow`. */
-  climbCurrentRevision?: number | null;
   /** The climb's board; see `LogbookEntryRow`. */
   boardName?: string | null;
 };
@@ -34,7 +32,6 @@ export const LogbookSession = memo(function LogbookSession({
   showMirrorTag,
   showDayTries,
   maxEntries,
-  climbCurrentRevision,
   boardName,
 }: LogbookSessionProps) {
   const { t } = useTranslation('session');
@@ -57,13 +54,7 @@ export const LogbookSession = memo(function LogbookSession({
         ) : null}
       </View>
       {shownEntries.map((entry) => (
-        <LogbookEntryRow
-          key={entry.uuid}
-          entry={entry}
-          showMirrorTag={showMirrorTag}
-          climbCurrentRevision={climbCurrentRevision}
-          boardName={boardName}
-        />
+        <LogbookEntryRow key={entry.uuid} entry={entry} showMirrorTag={showMirrorTag} boardName={boardName} />
       ))}
       {hiddenCount > 0 ? (
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.more}>

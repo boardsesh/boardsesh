@@ -22,6 +22,7 @@ export interface FingerprintSource {
   filePath?: unknown;
   overrideHashKey?: unknown;
   hash?: unknown;
+  contents?: unknown;
   reasons?: unknown;
 }
 
@@ -40,6 +41,21 @@ function hasAutolinkingReason(source: FingerprintSource, platform: Platform): bo
     Array.isArray(source.reasons) &&
     source.reasons.some((reason) => typeof reason === 'string' && AUTOLINKING_REASON_BY_PLATFORM[platform].has(reason))
   );
+}
+
+function parseHashedExpoConfig(contents: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(contents);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readNestedField(parent: unknown, fieldName: string): unknown {
+  return typeof parent === 'object' && parent !== null ? (parent as Record<string, unknown>)[fieldName] : undefined;
 }
 
 /** Pure invariant check for one resolver result. Empty means complete coverage. */
@@ -70,6 +86,55 @@ export function validateFingerprintSources(platform: Platform, sources: readonly
       `${platform}: ${nullNativeDirectories.length}/${nativeDirectories.length} autolinked native directories ` +
         `have null hashes (for example: ${examples})`,
     );
+  }
+
+  // fingerprint.config.js skips ExpoConfigVersions so a marketing-version bump
+  // alone keeps runtimeVersion still. If the skip stopped applying (a typo is
+  // ignored silently), the hashed Expo config would carry these fields again
+  // and every release bump would cut installed binaries off from OTAs.
+  for (const source of sources) {
+    if (source.type !== 'contents' || source.id !== 'expoConfig' || typeof source.contents !== 'string') continue;
+    const hashedConfig = parseHashedExpoConfig(source.contents);
+    if (hashedConfig === null) {
+      errors.push(`${platform}: expoConfig contents source is not a JSON object`);
+      continue;
+    }
+    const versionFields = [
+      ['version', hashedConfig.version],
+      ['ios.buildNumber', readNestedField(hashedConfig.ios, 'buildNumber')],
+      ['android.versionCode', readNestedField(hashedConfig.android, 'versionCode')],
+    ] as const;
+    for (const [fieldName, fieldValue] of versionFields) {
+      if (fieldValue !== undefined) {
+        errors.push(
+          `${platform}: expoConfig still hashes ${fieldName}; the ExpoConfigVersions skip in fingerprint.config.js is not applied`,
+        );
+      }
+    }
+  }
+
+  // Config plugins that carry a NATIVE guarantee in their file body rather than
+  // in the config they emit. with-android-minify.js holds the R8 keep rules; if
+  // its contents stopped being hashed, editing a keep rule would leave the
+  // runtimeVersion untouched, the native gate would skip the rebuild, and the fix
+  // would never reach a binary. Verified shape: @expo/fingerprint records local
+  // plugins as `{ type: 'file', filePath, reasons: ['expoConfigPlugins'] }`.
+  const expectedPluginSources = ['plugins/with-android-minify.js', 'plugins/with-android-sentry-proguard-uuid.js'];
+  for (const filePath of expectedPluginSources) {
+    const matches = sources.filter(
+      (source) =>
+        source.type === 'file' &&
+        source.filePath === filePath &&
+        Array.isArray(source.reasons) &&
+        source.reasons.includes('expoConfigPlugins'),
+    );
+    if (matches.length !== 1) {
+      errors.push(
+        `${platform}: expected exactly one expoConfigPlugins source for ${filePath}, found ${matches.length}`,
+      );
+    } else if (typeof matches[0]?.hash !== 'string') {
+      errors.push(`${platform}: ${filePath} has a null hash`);
+    }
   }
 
   const expectedExtraSources = [

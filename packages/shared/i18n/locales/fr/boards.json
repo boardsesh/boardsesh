@@ -6,7 +6,7 @@
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
     "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
     "retry": "Réessayer",
-    "manual": "Placer les prises à la main",
+    "manual": "Marquer les prises à la main",
     "resume": "Reprendre cette réinitialisation"
   },
   "mobile": {
@@ -162,6 +162,8 @@
       "location": "Emplacement",
       "locationPlaceholder": "Maison, nom de la salle ou ville",
       "useMyLocation": "Utiliser ma position",
+      "locationDeniedHint": "Boardsesh n'a pas accès à ta position. Autorise-la dans les Réglages ou tape un lieu au-dessus.",
+      "locationUnavailableHint": "Impossible de trouver où tu es. Tape plutôt un lieu au-dessus.",
       "serial": "Numéro de série du contrôleur",
       "serialPlaceholder": "p. ex. ABC-12345",
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
@@ -230,7 +232,10 @@
         "shareLink": "Partager le lien",
         "shareLinkPublicHint": "N'importe qui peut ouvrir ce mur.",
         "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
-      }
+      },
+      "details": "Détails",
+      "detailsAria": "Ouvrir les détails de {{name}}",
+      "activeSprayDetails": "{{name}} · détails du mur"
     },
     "disambiguation": {
       "title": "Sur quel mur es-tu ?",
@@ -392,6 +397,8 @@
           "title": "Pas de réseau, pas de catalogue",
           "body": "{{name}} n'est pas encore sur ton téléphone, donc il n'y a rien à chercher ici.",
           "cta": "La récupérer dès que j’ai du réseau",
+          "sprayTitle": "Pas de réseau, pas de blocs",
+          "sprayBody": "{{name}} n'est pas encore sur ton téléphone, donc ses blocs ne s'ouvrent pas ici.",
           "armedToast": "{{name}} est en file d’attente : le téléchargement démarre dès que tu es reconnecté."
         },
         "spotlight": {
@@ -412,6 +419,7 @@
       "searchPlaceholder": "Rechercher une salle",
       "noGym": "Pas dans une salle",
       "noGymHint": "Elle apparaîtra quand même sur la carte avec son propre repère.",
+      "noGymHintOffMap": "Elle reste hors de la carte tant qu'elle n'est pas publique.",
       "addNew": "Ma salle n'est pas listée",
       "empty": "Aucune salle à proximité",
       "sharedEditHint": "L'équipe de cette salle pourra modifier les infos de cette board.",
@@ -775,71 +783,165 @@
     "errorGeneric": "Une erreur s'est produite. Réessayez."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "Ce que fait ton doigt",
-      "pan": "Déplacer",
-      "add": "Ajouter",
-      "move": "Replacer",
-      "draw": "Dessiner"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Seuil de confiance",
-      "value": "Détections au-dessus de {{percent}} %"
-    },
-    "counts": {
-      "alive_one": "{{count}} prise",
-      "alive_other": "{{count}} prises",
-      "pending": "{{value}} à vérifier",
-      "hidden": "{{value}} masquées",
-      "unsaved": "{{value}} non enregistrées"
-    },
-    "actions": {
-      "merge": "Fusionner",
-      "delete": "Supprimer",
+    "bar": {
+      "holds_one": "{{count}} prise",
+      "holds_other": "{{count}} prises",
+      "maybes_one": "{{count}} incertaine",
+      "maybes_other": "{{count}} incertaines",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Annuler",
       "redo": "Rétablir",
-      "accept": "Garder",
-      "reject": "Écarter",
-      "acceptAll": "Tout garder",
-      "save": "Enregistrer le mur"
+      "menuHint": "Ouvre les options pour toutes tes prises",
+      "saved": "Prises enregistrées",
+      "addA11y": "Ajouter les prises manquantes"
     },
-    "status": {
-      "readOnly": "Ce mur n'est pas à toi, tu ne peux pas le modifier.",
-      "pan": "Fais glisser pour déplacer la photo. Touche une prise pour la choisir.",
-      "add": "Touche le mur nu pour créer une prise, ou dessine autour d'une prise.",
-      "move": "Fais glisser une prise là où elle est vraiment.",
-      "draw": "Choisis une prise, puis dessine son contour.",
-      "oneSelected": "Prise n° {{id}} choisie.",
-      "twoSelected": "Deux prises choisies. Fusionner n'en fait qu'une.",
-      "oneSelectedNew": "Ta nouvelle prise est sélectionnée.",
-      "manySelected": "{{value}} prises sélectionnées. Supprimer les retire toutes."
+    "toast": {
+      "deleted": "Prise supprimée",
+      "joined": "2 prises réunies",
+      "keptMaybes_one": "{{count}} incertaine gardée",
+      "keptMaybes_other": "{{count}} incertaines gardées",
+      "startedOver": "Tout est recommencé"
     },
+    "menu": {
+      "keepMaybes": "Garder toutes les incertaines",
+      "hideMaybes": "Masquer les incertaines",
+      "showMaybes": "Afficher les incertaines",
+      "startOver": "Tout recommencer",
+      "close": "Fermer"
+    },
+    "startOver": {
+      "title": "Tout recommencer ?",
+      "body": "Chaque prise redevient comme à l'ouverture du mur. Tu pourras annuler.",
+      "confirm": "Recommencer",
+      "cancel": "Continuer à modifier"
+    },
+    "chips": {
+      "trace": "Tracer",
+      "join": "Réunir",
+      "switchOff": "Désactiver",
+      "switchOn": "Activer",
+      "delete": "Supprimer",
+      "keep": "Garder",
+      "finish": "Terminer",
+      "refine": "Retoucher"
+    },
+    "banner": {
+      "trace": "Dessine le tour de la prise avec un doigt",
+      "join": "Touche la prise à réunir avec celle-ci",
+      "cancel": "Annuler",
+      "addDraw": "Dessine le tour d'une prise manquante, ou touche pour poser un cercle",
+      "addCorners": "Touche les coins autour d'une prise manquante",
+      "done": "Terminé",
+      "tracePencil": "Dessine le tour de la prise avec l'Apple Pencil",
+      "refineAdd": "Peins pour agrandir la prise. Pince pour zoomer.",
+      "refineErase": "Peins pour rogner la prise. Pince pour zoomer.",
+      "refineAddPencil": "Peins avec l'Apple Pencil pour agrandir la prise",
+      "refineErasePencil": "Peins avec l'Apple Pencil pour rogner la prise"
+    },
+    "addShape": {
+      "label": "Comment délimiter une prise",
+      "draw": "Dessiner",
+      "corners": "Coins"
+    },
+    "resize": {
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
+      "original": "D'origine",
+      "typical": "Typique"
+    },
+    "hints": {
+      "tap": "Touche un cercle pour le choisir. Touche-le encore pour le désactiver.",
+      "maybe": "Les cercles en pointillés sont des prises incertaines. Touche-en une, puis touche Garder.",
+      "longPress": "Appuie longuement sur un cercle, puis fais-le glisser pour le déplacer.",
+      "addHold": "Appuie longuement pour ajouter une prise.",
+      "dismiss": "Masquer l'astuce",
+      "replay": "Voir les astuces",
+      "pencil": "L'Apple Pencil ajoute et active les prises. Avec les doigts, tu te déplaces et choisis une prise."
+    },
+    "a11y": {
+      "wall": "Photo de ton mur : {{summary}}",
+      "holdValue": "Prise {{position}} sur {{total}}, {{role}}",
+      "noHold": "Aucune prise choisie",
+      "hint": "Balaie vers le haut ou le bas pour parcourir les prises. Touche deux fois pour en activer ou désactiver une.",
+      "joinHint": "Balaie vers le haut ou le bas jusqu'à la prise à réunir, puis touche deux fois.",
+      "role": {
+        "on": "activée",
+        "maybe": "incertaine",
+        "off": "désactivée"
+      },
+      "actions": {
+        "smaller": "Rendre plus petite",
+        "bigger": "Rendre plus grande",
+        "delete": "Supprimer",
+        "addHold": "Ajouter une prise au centre de la vue"
+      },
+      "revealed": "Prises trouvées : {{summary}}"
+    },
+    "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {
-      "nothingToMove": "Choisis d'abord une prise, puis fais-la glisser.",
-      "pickOneToRedraw": "Choisis une seule prise, puis dessine son contour.",
-      "mergeNeedsTwo": "Choisis deux prises pour les fusionner.",
-      "tooManyHolds": "Un mur porte jusqu'à {{max}} prises. Écarte-en quelques-unes et enregistre à nouveau.",
-      "saveFailed": "L'enregistrement du mur a échoué.",
+      "tooManyHolds": "Tu as atteint la limite de {{max}} prises. Désactive quelques prises pour en ajouter d'autres.",
+      "saveFailed": "Impossible d'enregistrer tes prises. Réessaie.",
       "strokeNotClosed": "Cette boucle rate la prise. Dessine tout le tour.",
       "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
       "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
       "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
-      "allHoldsOffWall": "Ces prises tombent en dehors du mur. Remets-les sur la photo puis enregistre à nouveau.",
-      "someHoldsOffWall_one": "{{count}} prise est tombée en dehors du mur et n'a pas été enregistrée.",
-      "someHoldsOffWall_other": "{{count}} prises sont tombées en dehors du mur et n'ont pas été enregistrées."
-    },
-    "toast": {
-      "saved_one": "{{count}} prise enregistrée",
-      "saved_other": "{{count}} prises enregistrées"
+      "someHoldsOffWall_one": "{{count}} prise tombe en dehors du mur. Remets-la sur la photo ou désactive-la.",
+      "someHoldsOffWall_other": "{{count}} prises tombent en dehors du mur. Remets-les sur la photo ou désactive-les.",
+      "cornersCross": "Deux côtés se croisent. Touche les coins dans l'ordre autour de la prise.",
+      "cornersTooFew": "Ces coins sont trop rapprochés ou alignés. Touche au moins 3 coins autour de la prise.",
+      "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise.",
+      "refineNothingLeft": "Ça effacerait toute la prise. Désactive-la plutôt.",
+      "refineTooDetailed": "Ce bord est trop détaillé pour être enregistré. Essaie un pinceau plus gros.",
+      "refineCantStore": "Ce tracé laisserait une forme impossible à enregistrer comme une seule prise, il n'a donc pas été appliqué."
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."
+    },
+    "loading": "Chargement de ton mur…",
+    "loadStalled": "Impossible de charger ton mur. Réessaie.",
+    "rail": {
+      "label": "Outils d'édition",
+      "grip": "Déplacer les outils de l'autre côté",
+      "mark": "Choisir et activer les prises",
+      "pencilOnly": "Pencil uniquement",
+      "pencilOnlyHint": "Avec les doigts, tu choisis les prises et te déplaces. Seul l'Apple Pencil modifie le mur.",
+      "fit": "Ajuster le mur à l'écran",
+      "more": "Plus d'options"
+    },
+    "inspector": {
+      "role": {
+        "on": "Activée",
+        "off": "Désactivée",
+        "maybe": "Incertaine"
+      },
+      "source": {
+        "scan": "Trouvée par le scan",
+        "scanConfidence": "Trouvée par le scan · {{percent}} %",
+        "manual": "Ajoutée par toi"
+      },
+      "size": "Taille",
+      "redraw": "Redessiner",
+      "previous": "Prise précédente",
+      "next": "Prise suivante"
+    },
+    "shortcuts": {
+      "delete": "Désactiver ou supprimer la prise"
+    },
+    "palette": {
+      "label": "Outils du Pencil",
+      "close": "Fermer les outils du Pencil",
+      "draw": "Ajouter une prise en dessinant son tour",
+      "corners": "Ajouter une prise en touchant ses coins"
+    },
+    "refine": {
+      "mode": "Pinceau",
+      "add": "Ajouter",
+      "erase": "Effacer",
+      "size": "Taille du pinceau",
+      "sizeValue": "Taille {{step}} sur {{total}}",
+      "dropped_one": "La partie principale est gardée. {{count}} morceau isolé a été retiré.",
+      "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés.",
+      "atLimit": "La prise ne peut pas grandir davantage. Tracer permet de la redessiner plus grande."
     }
   },
   "sprayWizard": {
@@ -852,19 +954,43 @@
       "namePlaceholder": "Mur du garage",
       "angle": "Angle",
       "angleHint": "Le dévers du mur, par pas de 5°. Figé une fois publié.",
-      "publicHint": "Désactivé, le mur et sa photo restent pour toi seul.",
-      "next": "Choisir une photo",
+      "next": "Suivant",
       "anglePreview": "Mur à {{angle}} degrés"
     },
     "photo": {
       "title": "Photographie le mur",
       "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
+      "helpLink": "Bien prendre la photo",
+      "helpLinkHint": "Ouvre le guide photo dans ton navigateur",
       "library": "Choisir une photo",
       "camera": "Prendre une photo",
       "pickAnother": "Choisir une autre photo",
+      "adjust": "Recadrer ou pivoter",
       "next": "Suivant",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
-      "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
+      "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre.",
+      "tip": "Recule, place-toi bien en face du mur et cadre les 4 coins."
+    },
+    "adjust": {
+      "title": "Recadre et pivote",
+      "body": "Recadre au ras des bords du mur. Pivote la photo si elle est dans le mauvais sens.",
+      "hint": "Fais glisser un bord ou un coin. Fais glisser l'intérieur du cadre pour le déplacer.",
+      "small": "Cette photo est petite. Les prises risquent d'être floues quand tu zoomes.",
+      "failed": "Impossible de recadrer cette photo. Réessaie, ou annule pour la garder telle quelle.",
+      "rotate": "Pivoter",
+      "rotateLabel": "Pivoter d'un quart de tour vers la droite",
+      "done": "Terminé",
+      "reset": "Réinitialiser",
+      "cancel": "Annuler",
+      "handleTopLeft": "Coin en haut à gauche du cadre",
+      "handleTop": "Bord du haut du cadre",
+      "handleTopRight": "Coin en haut à droite du cadre",
+      "handleRight": "Bord droit du cadre",
+      "handleBottomRight": "Coin en bas à droite du cadre",
+      "handleBottom": "Bord du bas du cadre",
+      "handleBottomLeft": "Coin en bas à gauche du cadre",
+      "handleLeft": "Bord gauche du cadre",
+      "handleMove": "Zone de recadrage"
     },
     "anchors": {
       "title": "Marque les coins",
@@ -877,7 +1003,13 @@
       "cornerBottomLeft": "Coin en bas à gauche",
       "use": "Utiliser ces coins",
       "skip": "Passer pour l'instant",
-      "clear": "Recommencer les coins"
+      "clear": "Recommencer les coins",
+      "quality": {
+        "good": "Bien en face. Le mur sera redressé proprement.",
+        "soft": "Un peu de biais. Reprends-la bien en face pour un rendu plus net.",
+        "fail": "Trop de biais pour la redresser. Ta photo reste utilisable, ou reprends-la bien en face.",
+        "small": "Cette photo est trop petite pour être redressée. Elle reste utilisable telle quelle."
+      }
     },
     "upload": {
       "title": "Téléversement de ta photo",
@@ -885,32 +1017,57 @@
       "percent": "Téléversé à {{percent}} %",
       "failed": "La photo n'est pas passée.",
       "retry": "Réessayer",
+      "offlineMode": "Le mode hors ligne est activé, ta photo ne peut donc pas être mise en ligne. Désactive-le, puis réessaie.",
+      "noSignal": "Pas de réseau, ta photo n'a donc pas été mise en ligne. Réessaie dès que tu as du réseau.",
+      "serverUnreachable": "Impossible de joindre Boardsesh pour l'instant. Ta photo est toujours là, réessaie dans une minute.",
       "checkFailed": "Impossible de savoir si ta photo est passée. Réessaie quand tu auras du réseau."
     },
     "detect": {
       "title": "Recherche des prises"
     },
+    "scan": {
+      "queued": "En file d'attente…",
+      "running": "Recherche des prises…",
+      "slow": "Les murs très chargés prennent un peu plus de temps",
+      "resumeHint": "Tu peux quitter et reprendre plus tard."
+    },
     "review": {
-      "found": "{{value}} prises à vérifier",
-      "nothingFound": "Rien trouvé. Dessine les prises toi-même.",
-      "manualOnly": "Cette version ne peut pas proposer de prises. Dessine-les toi-même.",
-      "detectionFailed": "La recherche de prises a échoué. Dessine-les toi-même.",
-      "done": "Terminé"
+      "next": "Choisir le rendu",
+      "nothingFound": "Aucune prise repérée. Touche le mur pour les ajouter.",
+      "detectionFailed": "Impossible de repérer les prises cette fois. Touche le mur pour les ajouter.",
+      "manualOnly": "Touche le mur pour ajouter tes prises.",
+      "retry": "Réessayer"
+    },
+    "look": {
+      "title": "Comment allumer tes prises ?",
+      "body": "Les grimpeurs verront ton mur comme ça, sauf ceux qui ont choisi d'utiliser leur propre rendu sur les murs de spray.",
+      "loading": "Chargement de ton mur…",
+      "unavailable": "Impossible d'afficher la photo de ton mur ici, mais tu peux quand même choisir un rendu.",
+      "saving": "Enregistrement du rendu…",
+      "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
+      "publishWithout": "Publier quand même",
+      "dimTitle": "Assombrir le reste du mur",
+      "dimOff": "Désactivé"
     },
     "publish": {
       "title": "Ajoute-le à tes boards",
-      "body": "Tes prises sont enregistrées. Publie le mur et tu peux commencer à ouvrir.",
-      "cta": "Ajouter ce mur",
-      "failed": "La publication du mur a échoué."
+      "working": "Publication de ton mur…",
+      "failed": "La publication du mur a échoué.",
+      "stalled": "Ton mur est enregistré, mais sa préparation a pris trop de temps. Réessaie.",
+      "retry": "Réessayer"
     },
     "done": {
-      "body": "Préparation de ton mur…"
+      "body": "Préparation de ton mur…",
+      "leave": "Retour à la grimpe"
     },
     "leave": {
       "title": "Laisser ce mur pour l'instant ?",
       "body": "Ton mur et sa photo sont enregistrés. Tu reprendras où tu t'es arrêté.",
       "stay": "Continuer",
-      "go": "Quitter"
+      "go": "Quitter",
+      "unsavedTitle": "Quitter sans publier ?",
+      "unsavedBody": "Tes modifications sur les prises seront perdues. Le mur et sa photo restent enregistrés.",
+      "discard": "Quitter quand même"
     },
     "resume": {
       "checking": "Recherche d'un mur commencé…",
@@ -924,6 +1081,7 @@
   },
   "sprayReset": {
     "screenTitle": "Réinitialiser le mur",
+    "loading": "Chargement de ton mur…",
     "notYours": "Ce mur n'est pas à toi, tu ne peux pas le réinitialiser.",
     "nothingPublished": "Ce mur n'est pas encore prêt. Termine de l'ajouter d'abord.",
     "openDraft": {
@@ -931,11 +1089,16 @@
       "body": "Ta photo est enregistrée pour reprendre. Le mur publié ne change pas avant ta confirmation.",
       "discard": "La jeter et recommencer",
       "discarded": "Cette réinitialisation est partie. Prends une nouvelle photo.",
-      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie."
+      "discardFailed": "Cette réinitialisation ne s'efface pas. Réessaie.",
+      "holdEditTitle": "Des modifications de prises sont en attente",
+      "holdEditBody": "Publie ou abandonne les modifications enregistrées dans Modifier les prises avant de choisir une nouvelle photo."
     },
     "photo": {
       "title": "Photographie le mur à nouveau",
       "body": "Place-toi où tu étais la première fois si tu peux. Même mur, nouvelles prises."
+    },
+    "adjust": {
+      "body": "Recadre au ras des bords du mur, en gardant les quatre coins dans le cadre. Tu les marqueras juste après."
     },
     "anchors": {
       "title": "Marque les coins",
@@ -956,6 +1119,8 @@
       "filterLabel": "Quels cercles afficher",
       "tapHint": "Touche n'importe quel cercle pour changer d'avis.",
       "confirm": "Confirmer la réinitialisation",
+      "fullReset": "Réinitialisation complète",
+      "fullResetBody": "Les blocs qui perdent une prise quittent la liste de ce mur. Ils restent dans le carnet, et Prises perdues les affiche.",
       "acceptMoves": "Accepter tous les déplacements proposés",
       "noDetections": "Rien à comparer",
       "noDetectionsBody": "Ce téléphone n'a pas trouvé les prises sur ta nouvelle photo, donc il n'y a rien à comparer. Ta photo est gardée en brouillon."
@@ -995,6 +1160,28 @@
       "toast": "{{removed}} parties, {{added}} nouvelles, {{climbs}} blocs modifiés"
     }
   },
+  "sprayMaintenance": {
+    "screenTitle": "Modifier les prises",
+    "preparing": "Ouverture de ton mur…",
+    "unavailable": "Tu ne peux pas modifier ce mur.",
+    "nothingPublished": "Termine la configuration de ce mur avant de modifier ses prises.",
+    "draftUnavailable": "Ce brouillon a changé. Rouvre le mur pour modifier ses prises.",
+    "loadFailed": "Impossible d'ouvrir l'éditeur de prises. Réessaie.",
+    "publish": "Publier les prises",
+    "publishing": "Publication de tes prises…",
+    "publishFailed": "Tes modifications sont enregistrées. Réessaie de les publier.",
+    "refreshing": "Chargement du mur mis à jour…",
+    "refreshFailed": "Tes prises sont publiées. Réessaie de charger le mur.",
+    "retry": "Réessayer",
+    "temporarilyUnavailable": "La modification des prises est indisponible pour le moment. Réessaie plus tard.",
+    "leave": {
+      "title": "Abandonner les modifications des prises non enregistrées ?",
+      "body": "Tes modifications non enregistrées seront perdues. Ton brouillon enregistré reste disponible.",
+      "stay": "Continuer à modifier",
+      "discard": "Abandonner les modifications"
+    },
+    "resetInProgress": "Termine ou abandonne la réinitialisation avec la nouvelle photo avant de modifier les prises."
+  },
   "sprayCaps": {
     "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
     "versions": "Un mur garde {{max}} réinitialisations, et celui-ci les a toutes utilisées.",
@@ -1004,5 +1191,55 @@
   "sprayHidden": {
     "body": "Quelqu’un l’a signalé et on l’a retiré de la vue des autres. Pour toi il est toujours là, et rien n’a été supprimé.",
     "title": "Ce mur est masqué"
+  },
+  "sprayModeration": {
+    "reportTitle": "Signaler le mur",
+    "reportHint": "Signaler ce mur pour une vérification administrative",
+    "submit": "Envoyer le signalement",
+    "reported": "Merci. Ton signalement est en attente de vérification.",
+    "reportOffline": "Connecte-toi à internet pour envoyer ton signalement.",
+    "reportError": "Ton signalement n’a pas été envoyé. Réessaie.",
+    "queueTitle": "Signalements de murs spray",
+    "hide": "Masquer le mur",
+    "unhide": "Afficher le mur",
+    "keepVisible": "Garder visible",
+    "hidden": "Masqué",
+    "photoLabel": "Photo de {{wall}}",
+    "noPhoto": "Aucune photo disponible",
+    "review": "Vérifier le mur",
+    "reviewError": "La décision n’a pas été enregistrée. Réessaie.",
+    "unavailable": "La modération des murs spray est indisponible pour ce compte actuellement.",
+    "loadError": "Impossible de charger les signalements.",
+    "empty": "Aucun mur en attente de vérification.",
+    "reasons": {
+      "inappropriate": "Photo ou nom inapproprié",
+      "notAWall": "Ce n’est pas un mur d’escalade",
+      "personalInfo": "Informations personnelles sur la photo",
+      "other": "Autre"
+    },
+    "reportCount_one": "{{count}} signalement",
+    "reportCount_other": "{{count}} signalements"
+  },
+  "sprayBackground": {
+    "label": "Fond du mur",
+    "photo": "Photo",
+    "wallCrop": "Mur seul",
+    "holdCutouts": "Prises seules",
+    "retake": "Reprendre la photo",
+    "previewLabel": "Aperçu : {{look}}",
+    "saveFailed": "Impossible d'enregistrer le fond. Réessaie.",
+    "notAvailable": "Cette photo est trop de biais pour ce rendu. Reprends-la bien en face.",
+    "note": {
+      "lockedNoPins": "Place les 4 coins pour le débloquer.",
+      "lockedRetake": "Reprends la photo bien en face pour le débloquer.",
+      "generating": "Génération…",
+      "failed": "Ce rendu n'a pas pu être généré. Enregistre-le à nouveau pour réessayer.",
+      "afterPublish": "Prêt environ une minute après la publication. Ta photo s'affiche d'ici là.",
+      "soft": "Reprends la photo bien en face pour un rendu plus net.",
+      "volumes": "Les volumes ne sont pas encore détourés."
+    },
+    "notAvailableNoPins": "Place d'abord les 4 coins du mur pour utiliser ce rendu.",
+    "notAvailableSmall": "Cette photo est trop petite pour être redressée. Reprends-la avec l'appareil principal en 1x.",
+    "usePhoto": "Utiliser la photo"
   }
 }

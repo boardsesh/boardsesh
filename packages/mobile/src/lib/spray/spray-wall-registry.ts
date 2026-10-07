@@ -1,3 +1,4 @@
+import type { SprayArtVariant, SprayVersionIdentity } from './spray-photo-keys';
 // The walls this session knows how to draw (issue #5440).
 //
 // Every other board's geometry is bundled: `getBoardRenderData` reads generated
@@ -33,18 +34,59 @@
 import { boardArtGeometryKey, registerRuntimeGeometry, unregisterRuntimeGeometry } from '@boardsesh/board-art-geometry';
 import type { BoardArtGeometry } from '@boardsesh/board-art-geometry/types';
 import { spraySizeIdForLayout } from '@boardsesh/board-config';
+import type { BoardRenderDefault } from '../board-render-settings';
 import type { SprayPhotoHold } from './spray-hold-geometry';
 import { revokeSprayPrivacy, sprayPrivacyGeneration, sprayMemoryGeneration } from './spray-privacy-generation';
+import { artVariantForBackground, type SprayWallBackground } from './spray-wall-background';
 
 /** The one board name a wall is ever registered under. */
 export const SPRAY_BOARD_NAME = 'spray';
+
+/**
+ * A wall's own stored default look, already sanitised
+ * (`sanitizeBoardRenderDefault`). Type-only import: the registry stays free of
+ * the settings store at runtime.
+ */
+export type SprayWallRenderSettingsValue = BoardRenderDefault;
+
+/**
+ * A generated wall look for one version, on disk and ready to draw
+ * (`sprayWallArt`, READY). Registered only once its file has downloaded, so the
+ * switch from the photo is one registry write: the image and the holds move
+ * together, never one without the other.
+ */
+export type RegisteredSprayArt = {
+  variant: SprayArtVariant;
+  /** The version the art was made from. Art for any other version is never drawn. */
+  versionId: number;
+  /**
+   * That version's published NUMBER. A local mirror of the same published
+   * version (`local-…` id, registered when a revalidation fails offline) keeps
+   * drawing the art by it: the file on disk is the same version's.
+   */
+  version: number;
+  /** The art's pixel size: the canonical frame, scaled. */
+  width: number;
+  height: number;
+  /** Art pixels per canonical pixel (`width / canonical frame width`). */
+  scale: number;
+  /** 15-minute presigned GET, re-read from here whenever the file has to be fetched again. */
+  url: string;
+  /** ISO 8601 expiry of `url`. */
+  expiresAt: string;
+  /**
+   * Alive holds in the ART's pixels: canonical coordinates times
+   * `width / canonical frame width`, with no homography.
+   */
+  holds: readonly SprayPhotoHold[];
+};
 
 /**
  * One wall at one version, in that version's photo pixels.
  *
  * `photoUrl` is a 15-minute presigned signature over an object in the PRIVATE
  * bucket, so it is never persisted anywhere — the photo cache keys on
- * `(layoutId, version)` and re-reads the URL from here whenever it has to fetch.
+ * `(layoutId, versionId)` and re-reads the URL from here whenever it has to fetch.
  */
 export type RegisteredSprayWall = {
   layoutId: number;
@@ -69,8 +111,22 @@ export type RegisteredSprayWall = {
    * with nothing the setter could do about it.
    */
   angle: number | null;
+  /**
+   * What a climb share link needs from the wall's `user_boards` row: the slug
+   * `/b/{slug}` routes on and the two visibility flags that decide whether there
+   * is a link at all (`buildSprayClimbSharePath`).
+   *
+   * Optional because only the loader knows it; a registration without it (a
+   * test fixture, or a payload whose `board` came back empty) shares no link
+   * rather than a guessed one.
+   */
+  share?: { slug: string; isPublic: boolean; isUnlisted: boolean } | null;
   /** `SprayWallVersion.number`: 1-based and dense per wall. */
   version: number;
+  /** Immutable database row id; discarded version numbers may be reused. */
+  versionId: SprayVersionIdentity;
+  /** Durable mirror file; only present on an owner-gated offline registration. */
+  localPhotoPath?: string;
   photoWidth: number;
   photoHeight: number;
   photoUrl: string;
@@ -80,6 +136,58 @@ export type RegisteredSprayWall = {
   photoExpiresAt: string;
   /** Alive holds only — `sprayWallRenderData` returns the generation alive AT this version. */
   holds: readonly SprayPhotoHold[];
+  /**
+   * This version's row-major photo→canonical homography, the matrix `holds` were
+   * mapped back through.
+   *
+   * Kept so a hold that is NOT in `holds` — one a reset took off, drawn as a
+   * ghost where a climb used it (#5493) — goes through the very same inverse and
+   * lands on the same photo the live holds do. Optional because a fixture or an
+   * older caller may register without one; a reader without it draws no ghosts.
+   */
+  homography?: readonly number[];
+  /**
+   * The look the wall's creator picked for it (`SprayWall.renderSettings`), or
+   * `null` when none was stored or the stored value was unusable.
+   *
+   * Only a viewer on `mode: 'default'` ever sees it — an explicit choice of
+   * their own always wins (`resolveEffectiveRenderSettings`). Sanitised on the
+   * way in, so the render path reads it without re-validating.
+   */
+  renderSettings: SprayWallRenderSettingsValue | null;
+  /**
+   * What the wall's owner chose to draw it on (`render_settings.background`).
+   * Missing means `photo`. Unlike `renderSettings` this applies to every viewer:
+   * it is the wall's picture, not a drawing style.
+   */
+  background?: SprayWallBackground;
+  /**
+   * The generated look for this version, when one is on disk. Only drawn while
+   * it matches `background` (`activeSprayArt`), so an owner switching back to
+   * the photo takes effect at once. Every field above stays in PHOTO pixels: the
+   * hold editor and the reset flows always work on the raw photo.
+   */
+  art?: RegisteredSprayArt | null;
+  /**
+   * Whether the signed-in viewer can edit this wall (`SprayWall.viewerCanEdit`):
+   * its owner, an owner or admin of its gym, a community admin on a public wall.
+   *
+   * Read by one thing, the Edit action on a published climb somebody else set
+   * (`canEditClimb`). It is a HINT about what the server will allow, not a
+   * permission: `updateClimb` checks `canEditBoard` itself on every save.
+   *
+   * It is an answer about one ACCOUNT, in a registry that outlives a sign-out,
+   * so it is only ever `true` for a payload fetched under the account that is
+   * signed in now. See `sprayWallViewerGeneration`. It can also be ten minutes
+   * behind a role change (the revalidation window).
+   */
+  viewerCanEdit: boolean;
+  /**
+   * Whether the signed-in viewer can edit published climbs on this wall
+   * (`SprayWall.viewerCanEditClimbs`, #6025): wall editors, plus anyone who can
+   * set climbs when the wall's climbEditPolicy is 'collaborators'.
+   */
+  viewerCanEditClimbs: boolean;
   /**
    * When this registration was made, for revalidation. Stamped by
    * `registerSprayWall`, never by the caller — a caller-supplied timestamp is a
@@ -102,6 +210,14 @@ export type RegisteredSprayWall = {
 export const REGISTERED_WALL_REVALIDATE_MS = 10 * 60 * 1000;
 
 const walls = new Map<number, RegisteredSprayWall>();
+let removalSequence = 0;
+let registryRemovalGeneration = 0;
+const wallRemovalGenerations = new Map<number, number>();
+
+/** Stamp a load before I/O; removal makes its eventual registration stale. */
+export function sprayWallRemovalGeneration(layoutId: number): number {
+  return wallRemovalGenerations.get(layoutId) ?? registryRemovalGeneration;
+}
 
 /** Listeners woken when a wall is registered, re-registered or dropped. */
 const subscribers = new Set<() => void>();
@@ -173,6 +289,47 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
 }
 
 /**
+ * The generated look a wall is drawn with right now, or `null` for its photo.
+ *
+ * Art is drawn only when it is for the registered version AND matches the
+ * owner's chosen background. Everything that draws a wall reads this one
+ * answer — the render data, the hold geometry, the cache token — so they can
+ * never disagree about which picture the holds sit on.
+ */
+export function activeSprayArt(wall: RegisteredSprayWall | null | undefined): RegisteredSprayArt | null {
+  const art = wall?.art;
+  if (!wall || !art) return null;
+  const sameVersion =
+    art.versionId === wall.versionId || (typeof wall.versionId === 'string' && art.version === wall.version);
+  if (!sameVersion) return null;
+  return artVariantForBackground(wall.background) === art.variant ? art : null;
+}
+
+/** The holds as drawn: in the art's pixels when art is active, else the photo's. */
+export function drawnSprayHolds(wall: RegisteredSprayWall): readonly SprayPhotoHold[] {
+  return activeSprayArt(wall)?.holds ?? wall.holds;
+}
+
+/**
+ * The generated look a registered wall asks for but does not have yet, or
+ * `null`. The loader reads it to decide whether a look change needs a fetch.
+ */
+export function missingSprayArtVariant(layoutId: number): SprayArtVariant | null {
+  const wall = walls.get(layoutId);
+  if (!wall || typeof wall.versionId !== 'number') return null;
+  const wanted = artVariantForBackground(wall.background);
+  if (!wanted || activeSprayArt(wall)) return null;
+  return wanted;
+}
+
+/** Whether two stored looks draw the same. Both are sanitised, so key order is fixed. */
+function sameLook(left: SprayWallRenderSettingsValue | null, right: SprayWallRenderSettingsValue | null): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
  * Publish a wall, replacing any earlier version of the same wall.
  *
  * Replacement rather than merge: version 2's hold list is the wall as it is now,
@@ -181,11 +338,98 @@ function buildWallGeometry(holds: readonly SprayPhotoHold[]): BoardArtGeometry {
  */
 export function registerSprayWall(
   layoutId: number,
-  wall: Omit<RegisteredSprayWall, 'layoutId' | 'registeredAtMs'>,
+  // `renderSettings` left out means "not known by this registration", not "no
+  // look": the render payload does not carry it (the look arrives separately,
+  // through `setSprayWallLook`), so a revalidation must not wipe the look the
+  // same wall already has. A different wall under the layout starts with none.
+  //
+  // `viewerAccess` is who-can-edit together with the viewer generation the
+  // payload was FETCHED under. Left out means "cannot edit": an answer that does
+  // not say the viewer may edit, or cannot say whose answer it is, must not put
+  // an Edit action on screen. Never carried over from the previous registration.
+  //
+  // `background` left out keeps the same wall's previous one, like the look.
+  // `art` left out keeps the previous art only while it is for this exact
+  // version; anything else starts on the photo.
+  wall: Omit<
+    RegisteredSprayWall,
+    'layoutId' | 'registeredAtMs' | 'renderSettings' | 'viewerCanEdit' | 'viewerCanEditClimbs'
+  > & {
+    renderSettings?: SprayWallRenderSettingsValue | null;
+    viewerAccess?: SprayWallViewerAccess;
+  },
 ): void {
-  walls.set(layoutId, { ...wall, layoutId, registeredAtMs: now() });
+  // An unchanged look keeps its previous identity. Every board surface on the
+  // wall subscribes to it (`sprayBoardRenderDefault`), and a ten-minute
+  // revalidation that hands back the same look must not re-resolve every row's
+  // render settings for nothing.
+  const previous = walls.get(layoutId);
+  const previousLook = previous?.wallUuid === wall.wallUuid ? previous.renderSettings : null;
+  const nextLook = wall.renderSettings === undefined ? previousLook : wall.renderSettings;
+  const renderSettings = sameLook(previousLook, nextLook) ? previousLook : nextLook;
+  const sameWall = previous?.wallUuid === wall.wallUuid;
+  const background = wall.background ?? (sameWall ? previous?.background : undefined);
+  const art =
+    wall.art !== undefined
+      ? wall.art
+      : sameWall && previous?.art && previous.art.versionId === wall.versionId
+        ? previous.art
+        : null;
+  const { viewerAccess, ...registration } = wall;
+  // A payload fetched under an account that has since changed. The wall itself
+  // is still the wall (photo and holds do not depend on who is looking), so it
+  // registers and draws. But its `viewerCanEdit` is somebody else's answer, so
+  // it is dropped, and the registration is stamped stale so the next ask goes
+  // back to the server for this account instead of waiting out the window.
+  const fetchedForAnotherViewer = viewerAccess !== undefined && viewerAccess.generation !== viewerGeneration;
+  const registered: RegisteredSprayWall = {
+    ...registration,
+    renderSettings,
+    background,
+    art,
+    viewerCanEdit: viewerAccess?.canEdit === true && !fetchedForAnotherViewer,
+    viewerCanEditClimbs: (viewerAccess?.canEditClimbs ?? viewerAccess?.canEdit) === true && !fetchedForAnotherViewer,
+    layoutId,
+    registeredAtMs: fetchedForAnotherViewer ? 0 : now(),
+  };
+  walls.set(layoutId, registered);
   loadStates.set(layoutId, { state: 'ready', settledAtMs: now() });
-  registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(wall.holds));
+  registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(drawnSprayHolds(registered)));
+  notify();
+}
+
+/**
+ * Set a registered wall's stored look without re-registering it.
+ *
+ * Ignored when no wall is registered under the layout or a different wall is
+ * (the answer is for a wall that has since been replaced), and a no-op when the
+ * look is unchanged, so subscribers only wake for a real change.
+ */
+export function setSprayWallLook(
+  layoutId: number,
+  wallUuid: string,
+  look: SprayWallRenderSettingsValue | null,
+  // Left out keeps the background the wall has: a caller that only knows the
+  // drawing style must not send the wall back to its photo.
+  background?: SprayWallBackground,
+): void {
+  const wall = walls.get(layoutId);
+  if (!wall || wall.wallUuid !== wallUuid) return;
+  const nextBackground = background ?? wall.background;
+  const lookChanged = !sameLook(wall.renderSettings, look);
+  const backgroundChanged = (nextBackground ?? 'photo') !== (wall.background ?? 'photo');
+  if (!lookChanged && !backgroundChanged) return;
+  const updated: RegisteredSprayWall = {
+    ...wall,
+    renderSettings: lookChanged ? look : wall.renderSettings,
+    background: nextBackground,
+  };
+  walls.set(layoutId, updated);
+  // The holds move with the picture: switching between the photo and a
+  // generated look changes every hold's coordinates and silhouette.
+  if (activeSprayArt(wall) !== activeSprayArt(updated)) {
+    registerRuntimeGeometry(sprayGeometryKey(layoutId), buildWallGeometry(drawnSprayHolds(updated)));
+  }
   notify();
 }
 
@@ -194,8 +438,113 @@ export function getSprayWall(layoutId: number): RegisteredSprayWall | null {
   return walls.get(layoutId) ?? null;
 }
 
+/**
+ * A board's stored default look: the registered wall's for a spray board,
+ * `null` for every catalogue board (they have none) and for a wall not
+ * registered yet.
+ *
+ * Shaped as a `useSyncExternalStore` snapshot: the same object comes back
+ * until the wall is re-registered, so a subscriber re-renders only when a
+ * registration actually lands.
+ */
+export function sprayBoardRenderDefault(boardName: string, layoutId: number): SprayWallRenderSettingsValue | null {
+  if (boardName !== SPRAY_BOARD_NAME) return null;
+  return walls.get(layoutId)?.renderSettings ?? null;
+}
+
+/**
+ * Whether the viewer can edit the wall a board config points at. `false` for
+ * every catalogue board and for a wall that is not registered.
+ *
+ * A boolean, so it is safe as a `useSyncExternalStore` snapshot as it stands.
+ */
+export function sprayWallViewerCanEdit(boardName: string, layoutId: number): boolean {
+  if (boardName !== SPRAY_BOARD_NAME) return false;
+  return walls.get(layoutId)?.viewerCanEdit === true;
+}
+
+/**
+ * Whether the viewer can edit published climbs on this wall (#6025). `false` for
+ * every catalogue board and for a wall that is not registered.
+ */
+export function sprayWallViewerCanEditClimbs(boardName: string, layoutId: number): boolean {
+  if (boardName !== SPRAY_BOARD_NAME) return false;
+  return walls.get(layoutId)?.viewerCanEditClimbs === true;
+}
+
+/**
+ * Who-can-edit, with the viewer generation its payload was fetched under.
+ * `generation` is read with `sprayWallViewerGeneration()` BEFORE the request
+ * goes out, never after it comes back.
+ */
+export type SprayWallViewerAccess = { canEdit: boolean; canEditClimbs?: boolean; generation: number };
+
+/**
+ * Counts account changes. Bumped by `resetSprayWallViewerAccess`.
+ *
+ * This is how `viewerCanEdit` is tied to an account without the registry
+ * knowing who anyone is (native auth does not hand the provider a user id).
+ * A fetch notes the generation when it STARTS; a registration is only believed
+ * about `viewerCanEdit` if the generation is still that one when it lands. So a
+ * request that left under the previous account and came back after the switch
+ * cannot put that account's Edit action in front of the next person.
+ */
+let viewerGeneration = 0;
+
+export function sprayWallViewerGeneration(): number {
+  return viewerGeneration;
+}
+
+/**
+ * The signed-in account changed, in either direction.
+ *
+ * Module state on purpose, called from the auth provider, which is the one
+ * thing that stays mounted across a sign-out. The app tree below it is REPLACED
+ * on every auth change (a redirect or the splash is rendered instead of its
+ * children), so a hook down there never sees a "before".
+ *
+ * Three things happen. The generation moves, which disowns every request in
+ * flight. `viewerCanEdit` drops to `false` on every wall at once, so a wall
+ * owner signing out does not leave Edit on screen for whoever picks the phone
+ * up next. And every registration is stamped stale, so the next ask goes back
+ * to the server and a climber who has just signed IN gets their own answer
+ * rather than the anonymous `false` for the rest of the window.
+ *
+ * The walls themselves stay registered: the photo and the holds do not depend
+ * on who is looking, and blanking every board over a sign-in would be a flash
+ * for nothing. Returns the layout ids it touched so the caller can refresh them.
+ */
+export function resetSprayWallViewerAccess({ markStale = true }: { markStale?: boolean } = {}): number[] {
+  viewerGeneration += 1;
+  if (walls.size === 0) {
+    notify();
+    return [];
+  }
+  const layoutIds: number[] = [];
+  for (const [layoutId, wall] of walls) {
+    if (wall.localPhotoPath) {
+      layoutIds.push(layoutId);
+      unregisterSprayWall(layoutId);
+      continue;
+    }
+    // `markStale: false` keeps the registration fresh, so no surface is invited
+    // to refetch the wall. For a caller that knows the account is gone but not
+    // that a request sent now would carry a token (`dropSprayWallViewerAccess`).
+    walls.set(layoutId, {
+      ...wall,
+      viewerCanEdit: false,
+      viewerCanEditClimbs: false,
+      registeredAtMs: markStale ? 0 : wall.registeredAtMs,
+    });
+    layoutIds.push(layoutId);
+  }
+  notify();
+  return layoutIds;
+}
+
 /** Drop a wall and its runtime geometry, so the render path reports no board rather than a stale one. */
 export function unregisterSprayWall(layoutId: number): void {
+  wallRemovalGenerations.set(layoutId, ++removalSequence);
   revokeSprayPrivacy(layoutId);
   notifyWithdrawal(layoutId);
   privacyCleanup?.(layoutId);
@@ -424,7 +773,7 @@ export function ensureSprayWallLoaded(layoutId: number): void {
 }
 
 /**
- * Every `(layoutId, version)` pair the session currently holds.
+ * Every `(layoutId, versionId)` pair the session currently holds.
  *
  * The cache sweeper's live-key protection reads this: a photo belonging to a wall
  * somebody is looking at right now must survive a sweep, and the sweeper has only
@@ -464,24 +813,37 @@ export function subscribeToSprayWalls(listener: () => void): () => void {
  */
 export function sprayCacheToken(boardName: string, layoutId: number): string {
   if (boardName !== SPRAY_BOARD_NAME) return '';
-  return `${sprayVersionToken(boardName, layoutId)}-pr${sprayMemoryGeneration(layoutId)}`;
-}
-
-/** Persisted editor drafts use the wall version, never a session generation. */
-export function sprayVersionToken(boardName: string, layoutId: number): string {
-  return boardName === SPRAY_BOARD_NAME ? `-sv${walls.get(layoutId)?.version ?? 0}` : '';
+  // `-bg<variant>` only while a generated look is drawn: the photo's token is
+  // byte-identical to what it was before art existed, so no overlay on disk moves.
+  const art = activeSprayArt(walls.get(layoutId));
+  const background = art ? `-bg${art.variant}` : '';
+  return `${sprayIdentityToken(boardName, layoutId)}${background}`;
 }
 
 /**
- * Forget every wall, its load state, the injected loader AND every subscriber.
- * Tests only.
- *
- * Subscribers are cleared last, after the notify: a listener left behind by an
- * earlier case would otherwise still be attached when the NEXT case runs its own
- * clear, and observe a call it never asked for — which is exactly how a
- * subscriber-call-count assertion goes green for the wrong reason.
+ * `sprayCacheToken` without the picture: the version and the privacy
+ * generation only. For keys that name what a climber is EDITING rather than
+ * what is drawn — the create screen's React key, the web draft slot — which
+ * must not move when a generated look lands mid-paint (that would remount the
+ * editor and lose its undo history). `''` for every catalogue board.
  */
+export function sprayIdentityToken(boardName: string, layoutId: number): string {
+  if (boardName !== SPRAY_BOARD_NAME) return '';
+  return `${sprayVersionToken(boardName, layoutId)}-pr${sprayMemoryGeneration(layoutId)}`;
+}
+
+/**
+ * Persisted editor drafts use the wall version, never a session generation. The
+ * version is its immutable row id: a discarded version's number can be reused.
+ */
+export function sprayVersionToken(boardName: string, layoutId: number): string {
+  return boardName === SPRAY_BOARD_NAME ? `-svid${walls.get(layoutId)?.versionId ?? 0}` : '';
+}
+
+/** Sign-out: withdraw every wall, disown loads in flight and erase private caches. */
 export function withdrawAllSprayWalls(): void {
+  registryRemovalGeneration = ++removalSequence;
+  wallRemovalGenerations.clear();
   revokeSprayPrivacy();
   notifyWithdrawal();
   privacyCleanup?.();
@@ -493,10 +855,20 @@ export function withdrawAllSprayWalls(): void {
   notify();
 }
 
+/**
+ * Forget every wall, its load state, the injected loader AND every subscriber.
+ * Tests only.
+ *
+ * Subscribers are cleared last, after the notify: a listener left behind by an
+ * earlier case would otherwise still be attached when the NEXT case runs its own
+ * clear, and observe a call it never asked for — which is exactly how a
+ * subscriber-call-count assertion goes green for the wrong reason.
+ */
 export function clearSprayWallRegistry(): void {
   withdrawAllSprayWalls();
   loaderGeneration += 1;
   sprayWallLoader = null;
+  viewerGeneration = 0;
   subscribers.clear();
   withdrawalSubscribers.clear();
 }

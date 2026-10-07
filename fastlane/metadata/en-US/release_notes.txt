@@ -1,23 +1,34 @@
-New in 2.5:
+SPRAY WALLS: YOUR OWN WALL IN BOARDSESH
 
-WORKS WITH WOODS, FRONT TO BACK
+Photograph your home wall or the spray wall at your gym and the app finds the holds. Fix what it missed, pick a look, publish, and start setting. Climbs work like on any other board: queue them, save them to playlists, and log your sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo.
 
-Got a Woods Board? Add your 12x12 or 8x10, browse 5,000+ climbs with their matching and feet rules, and light any of them over Bluetooth. Set and remix your own problems on either size (the creator only offers holds that are really on your wall), mirror a climb and the wall flips with it, and run Previous, Next and Mirror from the Lock Screen and Dynamic Island. Holds draw in the Aura look with crisper outlines.
+Keep a wall private, make it public, or share it by link or QR code and your crew can set and log on it too. Stripped the wall? Take a new photo and check what came off before anything changes. Climbs that lost a hold stay in your list with a badge, and one tap remixes them onto what's still on the wall.
 
-TAKE THE WALL, NO LEDS NEEDED
+Free, like the rest of Boardsesh.
 
-Climbing on a board with no light kit? Take the wall and everyone in the session follows the climb you put up, and so does the gym screen. Switch Lights off in the board's settings: turns keep rotating, your chosen angle stays put, and sessions on a named wall log from your watch too.
+YOUR CREW, ON EVERY CLIMB
 
-MIRROR FROM THE LOCK SCREEN
+Home shows who's climbing right now, so you can jump into their session. Open a climb and the people you follow come first: their notes, the grade they'd give it, then everyone else's logs. Follow a setter and their new climbs land in your crew feed as one card you swipe through.
 
-While your phone drives the board, the Live Activity and Dynamic Island get a Mirror button next to Previous, Next and the lightbulb. The app, your crew, the thumbnails and the LEDs all follow the mirrored climb, and it's still mirrored when you open the app.
+A REST TIMER THAT MOVES THE QUEUE ON
+
+Run boulders on the minute without picking your phone up between goes. Turn on the rest timer in the Session tab and it starts counting the moment you log a climb, then runs past zero into the red if you sit down too long. Let it move to the next climb and it lights that climb on the wall for you. Someone wants a go first? Long-press their climb and tap Play next to slot it right behind the one on the wall.
+
+ALSO NEW
+
+- Your gym's other boards sit in the wall sheet: one tap to the wall you're standing at, and the Bluetooth link and the queue come with you.
+- Turn on Use my grades and the grade you gave a climb is the one you see, sort and filter by.
+- Similar climbs and the redesigned hold heatmap run on your downloaded board, so they work with no signal.
+- Linked board logbooks now sync on their own, around the clock.
+- Export your climbing history, playlists and climbs from Settings.
+- A new board look, Aura Outline: a solid outline on each lit hold.
+- Routes play at the pace they were set: pacing now reads in seconds a frame, up to 60.
 
 FIXED
 
-- Holds draw faster: the board renderer no longer waits behind the rest of the app.
-- Your board stays dark until you ask for it. A phone that drifts back into range hours or days later no longer relights your last climb. The lightbulb, the widget and mid-climb reconnects still light it instantly.
-- The Climbs tab and its search no longer go dead after a playlist closes over them mid-session. No more force-quitting to get search back.
-- Downloaded climbs stay up to date after an app update.
-- Closing climb search no longer pops up a stray preview sheet.
+- Sends logged on a flaky connection wait for signal and sync instead of getting lost.
+- Woods: every climb shows up whatever angle it was set at, and the setter filter lists all of a board's setters.
+- MoonBoard: a problem graded at only one of the two angles now shows an estimate for the other.
+- Swiping in the play drawer stays on the list you picked from, even after logging a climb reorders that list.
 
 Free, no ads, open source.

@@ -9,7 +9,7 @@ import { Platform } from 'react-native';
 // publishes a real entry point for them.
 import { surfTo, type SurfOutcome } from '@xprem/control-center/src/surf';
 import { BRANCH_HEADER, readConfig, readLoadedState, type SurfConfig } from '@xprem/control-center/src/config';
-import { isBranchSurfingBuild } from '../legacy-ota-channel-migration';
+import { isBranchSurfingBuild } from '../ota-channel-override-cleanup';
 import { readOtaBranch } from '../ota-telemetry';
 import { getSetting, setSetting } from '../../settings';
 import {

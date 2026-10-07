@@ -49,6 +49,7 @@ function seedWall(layoutId: number) {
     wallUuid: `wall-${layoutId}`,
     angle: 40,
     version: 1,
+    versionId: 1,
     photoWidth: 10,
     photoHeight: 10,
     photoUrl: 'https://private.example/photo',
@@ -69,7 +70,8 @@ describe('spray privacy cache withdrawal', () => {
   it('removes one wall’s versions and legacy overlays, preserving another wall and catalogue art', () => {
     seedWall(42);
     seedWall(43);
-    for (const name of ['42-1.jpg', '42-2.jpg', '43-1.jpg']) disk.names.add(`file:///cache/spray-walls/${name}`);
+    // One legacy version-number name beside the version-id names in use now.
+    for (const name of ['42-1.jpg', '42-v2.jpg', '43-v1.jpg']) disk.names.add(`file:///cache/spray-walls/${name}`);
     for (const key of [overlay('spray', 42), overlay('spray', 43), overlay('kilter', 42)]) {
       const uri = `file:///cache/board-thumbnails/${key}.png`;
       disk.names.add(uri);
@@ -85,7 +87,7 @@ describe('spray privacy cache withdrawal', () => {
       [
         `file:///cache/board-thumbnails/${overlay('kilter', 42)}.png`,
         `file:///cache/board-thumbnails/${overlay('spray', 43)}.png`,
-        'file:///cache/spray-walls/43-1.jpg',
+        'file:///cache/spray-walls/43-v1.jpg',
       ].sort(),
     );
   });

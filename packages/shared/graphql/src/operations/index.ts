@@ -22,7 +22,6 @@ export * from './boardsesh-grade';
 export * from './feedback';
 export * from './qa';
 export * from './beta-links';
-export * from './climb-revisions';
 export * from './integrations';
 export * from './location-sync-admin';
 export * from './gym-owner-reassign';

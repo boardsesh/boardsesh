@@ -225,6 +225,10 @@
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
       "saveFailedFallback": "Failed to save climb. Please try again.",
+      "editConflict": "Someone else just changed this climb. Reopen it to see the latest.",
+      "editNotAllowed": "You can't edit this climb. Only its setter and the people who run the wall can.",
+      "editWindowExpired": "This climb was published more than 24 hours ago, so it can't be edited now.",
+      "editNotEditable": "This climb can't be edited any more.",
       "localRefreshFailed": "Climb saved. Your downloaded list couldn't refresh. Reconnect to refresh it."
     },
     "fields": {
@@ -411,6 +415,7 @@
     },
     "detail": {
       "notFound": "Climb not found",
+      "boardNotFound": "This board isn't here any more, or it isn't shared with you.",
       "backToHome": "Back to Home"
     },
     "logAscent": {
@@ -482,6 +487,7 @@
       },
       "holdIntegrity": {
         "label": "Holds",
+        "current": "Current",
         "any": "All",
         "intact": "Intact only",
         "broken": "Lost holds"
@@ -667,7 +673,32 @@
       "banner_one": "{{count}} hold on this climb is gone",
       "banner_other": "{{count}} holds on this climb are gone",
       "bannerBody": "Remix it onto what's on the wall now.",
-      "remix": "Remix it"
+      "bannerBodyEdit": "Edit it onto the holds that are left, or remix it.",
+      "remix": "Remix it",
+      "edit": "Edit it",
+      "editor": {
+        "tapGhost_one": "{{count}} hold on this climb is gone — tap the dashed ring to replace it",
+        "tapGhost_other": "{{count}} holds on this climb are gone — tap a dashed ring to replace one",
+        "offline_one": "{{count}} hold on this climb is gone. Connect to see where it was.",
+        "offline_other": "{{count}} holds on this climb are gone. Connect to see where they were.",
+        "pickNearby": "Tap a highlighted hold to use it instead.",
+        "roleFull": "A climb takes two start and two finish holds at most. Clear one, then tap again.",
+        "noPositions_one": "{{count}} hold on this climb is gone. Its old spot can't be shown.",
+        "noPositions_other": "{{count}} holds on this climb are gone. Their old spots can't be shown."
+      },
+      "sheet": {
+        "title": "This hold is gone",
+        "wasStart": "It was a start hold.",
+        "wasHand": "It was a hand hold.",
+        "wasFinish": "It was a finish hold.",
+        "wasFoot": "It was a foot hold.",
+        "useNearby": "Use a hold nearby",
+        "useNearbyHint": "The closest free holds light up on the board.",
+        "useNearbySuccessor": "The hold that replaced it lights up first.",
+        "noneNearby": "No free holds on the wall to swap in.",
+        "putBack": "Put this hold back on the wall",
+        "putBackHint": "Opens the hold editor where it was. Publish, and it comes back into this climb."
+      }
     },
     "climbActions": {
       "preview": "Preview",
@@ -765,6 +796,8 @@
       "autosave": {
         "onDevice": "Draft saved on this phone",
         "inAccount": "Draft saved to your account",
+        "onDevicePublish": "Saved on this phone",
+        "inAccountPublish": "Saved to your account",
         "unsyncedEdits": "Latest edits are on this phone only",
         "notStored": "Sign in to keep this draft",
         "saveFailed": "Couldn't save to your account. Tap Save to retry.",
