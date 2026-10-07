@@ -385,7 +385,8 @@
     "angleSelector": {
       "title": "Choose Angle",
       "fromVerticalHint": "Measured from vertical",
-      "diagramAria": "Board tilted to {{angle}}° from vertical"
+      "diagramAria": "Board tilted to {{angle}}° from vertical",
+      "snapToAngle": "Snap to {{angle}}°"
     },
     "queue": {
       "unknownClimb": "Unknown climb",

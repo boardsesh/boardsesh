@@ -385,7 +385,8 @@
     "angleSelector": {
       "title": "Elegir ángulo",
       "fromVerticalHint": "Medido desde la vertical",
-      "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical"
+      "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical",
+      "snapToAngle": "Ir a {{angle}}°"
     },
     "queue": {
       "unknownClimb": "Bloque desconocido",

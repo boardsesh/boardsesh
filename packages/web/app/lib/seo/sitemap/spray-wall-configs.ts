@@ -74,6 +74,8 @@ export type SitemapSprayWallConfig = PopularBoardConfig & { sprayWallSlug: strin
  *    there is nothing behind the URL — the rule SW-14 wrote for the app, applied
  *    to the crawler.
  *  - both soft-delete columns, because a deleted wall's rows stay in the table.
+ *  - `archived_at IS NULL`: a wall a reset replaced leaves every listing, and a
+ *    sitemap is a listing.
  *  - a slug, because `constructBoardSlugViewUrl` has nothing to build from
  *    without one. The column is `NOT NULL` today; the predicate is what keeps
  *    this source honest if that ever relaxes, and it costs nothing.
@@ -124,6 +126,9 @@ export function buildPublicSprayWallQuery(db: typeof dbzRead) {
         // An admin-hidden wall reads as private to everybody but its owner, and a
         // crawler is never the owner (SW-17).
         isNull(sprayWalls.hiddenAt),
+        // A wall replaced by a reset is read-only and out of every listing; its
+        // successor is the page worth crawling.
+        isNull(sprayWalls.archivedAt),
       ),
     )
     .groupBy(sprayWalls.layoutId, userBoards.slug, userBoards.name, userBoards.angle);

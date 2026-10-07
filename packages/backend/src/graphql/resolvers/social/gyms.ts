@@ -27,6 +27,7 @@ import { logger } from '../../../utils/logger';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 import { syncLocationGeography } from './location-geography';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
+import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 
 // ============================================
 // Helpers
@@ -254,11 +255,18 @@ export async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenti
       .where(eq(dbSchema.users.id, gym.ownerId))
       .limit(1),
 
-    // Count linked boards
+    // Count linked boards. Not a spray wall a reset archived: its successor is
+    // the same physical wall, and counting both would grow the gym by one per reset.
     db
       .select({ count: count() })
       .from(dbSchema.userBoards)
-      .where(and(eq(dbSchema.userBoards.gymId, gym.id), isNull(dbSchema.userBoards.deletedAt))),
+      .where(
+        and(
+          eq(dbSchema.userBoards.gymId, gym.id),
+          isNull(dbSchema.userBoards.deletedAt),
+          boardIsNotArchivedSprayWall(),
+        ),
+      ),
 
     // Distinct (board type, angle) pairs at this gym. ONE query feeds both
     // `boardTypes` (filtering + badges) and `boardSummaries` (directory board

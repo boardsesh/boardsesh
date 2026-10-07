@@ -385,7 +385,8 @@
     "angleSelector": {
       "title": "Winkel wählen",
       "fromVerticalHint": "Gemessen ab der Vertikalen",
-      "diagramAria": "Board um {{angle}}° zur Vertikalen geneigt"
+      "diagramAria": "Board um {{angle}}° zur Vertikalen geneigt",
+      "snapToAngle": "Auf {{angle}}° stellen"
     },
     "queue": {
       "unknownClimb": "Unbekannter Boulder",

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, or, isNull, asc, like, count, inArray } from 'drizzle-orm';
+import { boardIsNotArchivedSprayWall } from '../board/spray-wall-listing';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { MAX_KIOSKS_PER_GYM, emptyKioskLayout, parseKioskLayoutLenient, type KioskLayout } from '@boardsesh/kiosk';
@@ -154,6 +155,9 @@ async function resolveKioskView(
           eq(dbSchema.userBoards.gymId, kiosk.gymId),
           inArray(dbSchema.userBoards.uuid, slotUuids),
           isNull(dbSchema.userBoards.deletedAt),
+          // A spray wall a reset archived leaves its slot the way a deleted board
+          // does: nothing new can be set on it, so a kiosk must not offer it.
+          boardIsNotArchivedSprayWall(),
         ),
       );
 
@@ -289,6 +293,9 @@ async function assertLayoutBoardsInGym(gymId: number, layout: KioskLayout): Prom
         eq(dbSchema.userBoards.gymId, gymId),
         inArray(dbSchema.userBoards.uuid, [...referenced]),
         isNull(dbSchema.userBoards.deletedAt),
+        // The read side drops an archived spray wall from its slot, so a layout
+        // naming one would save a slot that can never show anything.
+        boardIsNotArchivedSprayWall(),
       ),
     );
   const alive = new Set(aliveRows.map((row) => row.uuid));
