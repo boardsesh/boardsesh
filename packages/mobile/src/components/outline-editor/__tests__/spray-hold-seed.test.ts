@@ -17,11 +17,13 @@ import {
 } from '../spray-hold-editor-reducer';
 import { buildSprayHoldWritePlan } from '../spray-hold-writes';
 import type { SprayHoldCandidate } from '../spray-hold-editor-types';
+import { SPRAY_MAYBE_FLOOR } from '../spray-hold-tools';
 
 function wallWith(version: number, holdIds: number[], registeredAtMs = 1_000): SeedableWall {
   return {
     wallUuid: 'wall-1',
     version,
+    versionId: version,
     registeredAtMs,
     holds: holdIds.map((id) => ({ id, cx: id * 10, cy: 50, r: 12 })),
   };
@@ -55,6 +57,13 @@ describe('seedReason', () => {
   it('seeds a new version of the same wall', () => {
     const next = wallWith(4, [1, 2]);
     expect(seedReason(settled(next, { seededKey: sprayEditorSeedKey(wall), seededWall: wall }))).toBe('new-version');
+  });
+
+  it('seeds a replacement draft even when its version number is reused', () => {
+    const replacement = { ...wall, versionId: 99 };
+    expect(seedReason(settled(replacement, { seededKey: sprayEditorSeedKey(wall), seededWall: wall }))).toBe(
+      'new-version',
+    );
   });
 
   it('seeds when a different detector run arrives', () => {
@@ -129,7 +138,7 @@ describe('sprayEditorSeedKey', () => {
 describe('buildEditorSeed', () => {
   const candidates: SprayHoldCandidate[] = [
     { cx: 5, cy: 5, r: 9, confidence: 0.9 },
-    { cx: 6, cy: 6, r: 9, confidence: 0.3 },
+    { cx: 6, cy: 6, r: 9, confidence: 0.65 },
   ];
 
   it('seeds stored holds clean, accepted and by their server ids', () => {
@@ -150,6 +159,7 @@ describe('buildEditorSeed', () => {
     const wall: SeedableWall = {
       wallUuid: 'wall-1',
       version: 2,
+      versionId: 2,
       holds: [
         { id: 1, cx: 10, cy: 10, r: 8, source: 'AUTO', confidence: 0.81 },
         { id: 2, cx: 20, cy: 20, r: 8, source: 'MANUAL', confidence: null },
@@ -210,6 +220,19 @@ describe('buildEditorSeed', () => {
     expect(pending.every((hold) => hold.id < -1)).toBe(true);
   });
 
+  it('never seeds a find below the maybe floor', () => {
+    const seeded = buildEditorSeed(
+      wallWith(1, []),
+      [
+        { cx: 5, cy: 5, r: 9, confidence: SPRAY_MAYBE_FLOOR },
+        { cx: 6, cy: 6, r: 9, confidence: SPRAY_MAYBE_FLOOR - 0.01 },
+        { cx: 7, cy: 7, r: 9, confidence: Number.NaN },
+      ],
+      true,
+    );
+    expect(seeded.map((hold) => hold.confidence)).toEqual([SPRAY_MAYBE_FLOOR]);
+  });
+
   it('drops the candidates once the version has been saved', () => {
     // Otherwise the accepted ones — now stored holds in `wall.holds` — would be
     // drawn twice and written again, and the rejected ones would come back.
@@ -268,7 +291,7 @@ describe('the removal seam', () => {
         type: 'LOAD',
         holds: buildEditorSeed(wallWith(2, [7, 8]), [], false),
       }),
-      { type: 'DELETE', ids: [8] },
+      { type: 'DELETE', id: 8 },
       { type: 'MOVE_HOLD', id: 7, cx: 1, cy: 1 },
     );
     expect(buildSprayHoldWritePlan(edited, IDENTITY_HOMOGRAPHY).removeIds).toEqual([8]);
@@ -292,6 +315,9 @@ describe('holdsToCarryOver', () => {
       { ...base, id: 2, source: 'MANUAL' as const, review: 'accepted' as const, dirty: false },
       // A proposal is never carried: the fresh payload brings its own.
       { ...base, id: -1, source: 'AUTO' as const, review: 'pending' as const, dirty: true },
+      // Nor is a switched-off hold: it is a decision NOT to write it.
+      { ...base, id: -2, source: 'AUTO' as const, review: 'rejected' as const, dirty: true },
+      { ...base, id: 3, source: 'MANUAL' as const, review: 'rejected' as const, dirty: true },
     ];
     expect(holdsToCarryOver(holds).map((hold) => hold.id)).toEqual([1]);
   });

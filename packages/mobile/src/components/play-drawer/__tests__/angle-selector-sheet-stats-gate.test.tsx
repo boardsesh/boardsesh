@@ -79,6 +79,7 @@ vi.mock('@boardsesh/board-config', () => {
   return {
     ANGLES: angles,
     getBoardAngleOptions: (boardName: string) => angles[boardName] ?? [],
+    MOONBOARD_ANGLES: [25, 40],
   };
 });
 

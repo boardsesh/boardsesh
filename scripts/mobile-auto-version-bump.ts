@@ -14,8 +14,7 @@ const ANDROID_PACKAGE_NAME = 'com.boardsesh.app';
 
 // App Store states that indicate Apple has accepted the submission. A version in
 // any of these states is anchored (release/* tag) so a JS fix can be backported to
-// it. We do NOT bump the marketing version on acceptance — that busts the fingerprint
-// of the binary already in the field and strands its OTAs (see main() below).
+// it. We do NOT bump the marketing version on acceptance (see main() below).
 export const ACCEPTED_APP_STORE_STATES = [
   'ACCEPTED',
   'PENDING_DEVELOPER_RELEASE',
@@ -413,12 +412,20 @@ async function main(): Promise<number> {
     emitOutput('accepted_builds', JSON.stringify(accepted));
 
     // NO marketing-version bump. We used to bump the patch here the moment the current
-    // version was accepted, but bumping the version on main busts the fingerprint of
-    // the binary already in the field — and "accepted" is not "adopted", so every
-    // install still on the previous store binary stopped receiving OTAs (production
-    // publishes resolved a fingerprint no shipped binary embeds). Version bumps are a
-    // manual decision made alongside the native build that ships them. This script only
-    // reports accepted versions for anchoring; it never writes app.config.ts.
+    // version was accepted. At the time `version` was part of the Expo fingerprint, so
+    // the bump moved main's runtimeVersion off the binary already in the field — and
+    // "accepted" is not "adopted", so every install still on the previous store binary
+    // stopped receiving OTAs (production publishes resolved a fingerprint no shipped
+    // binary embeds).
+    //
+    // That failure can no longer happen: packages/mobile/fingerprint.config.js skips
+    // `version`, `ios.buildNumber` and `android.versionCode` (sourceSkips:
+    // ExpoConfigVersions), so a version-only change keeps the fingerprint. The bump
+    // stays manual for a different reason: a new version number only reaches the
+    // stores through a native build, and a version-only push no longer starts one
+    // (its fingerprint tag already exists), so an unattended bump here would change
+    // nothing a user can see. This script only reports accepted versions for
+    // anchoring; it never writes app.config.ts.
     return 0;
   } catch (err) {
     console.error(`[mobile-auto-version-bump] ${err instanceof Error ? err.message : String(err)}`);

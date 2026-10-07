@@ -184,6 +184,25 @@ struct ResolvedBoardState {
     let holderDisplayName: String?
 }
 
+/// Orientation and queue slot for the mirror button, pushed state first with
+/// the committed App Group snapshot behind it — the same two-step
+/// `supportsMirroring` already uses.
+///
+/// The fallback matters because a content state that predates these fields, or
+/// a push that never lands, would otherwise leave the button labelled for the
+/// old orientation. Mirroring is an absolute write, so a stale label makes the
+/// next tap send the opposite orientation and undo the flip.
+@available(iOS 17.0, *)
+private func resolveMirrorState(
+    context: ActivityViewContext<ClimbSessionAttributes>
+) -> (queueItemUuid: String?, mirrored: Bool) {
+    let committed = SharedConstants.sharedDefaults.flatMap { SharedQueueState.currentItem(from: $0) }
+    return (
+        queueItemUuid: context.state.queueItemUuid ?? committed?.uuid,
+        mirrored: context.state.mirrored ?? committed?.mirrored ?? false
+    )
+}
+
 @available(iOS 17.0, *)
 private func resolveBoardState(
     context: ActivityViewContext<ClimbSessionAttributes>
@@ -574,12 +593,13 @@ struct ClimbSessionLiveActivity: Widget {
                 .activitySystemActionForegroundColor(VelvetSend.Palette.resolve(.dark).label)
         } dynamicIsland: { context in
             let state = resolveBoardState(context: context)
+            let mirrorState = resolveMirrorState(context: context)
             return DynamicIsland {
                 // Expanded Dynamic Island
                 DynamicIslandExpandedRegion(.leading) {
                     ThumbnailView(
                         climbUuid: context.state.climbUuid,
-                        mirrored: context.state.mirrored ?? false,
+                        mirrored: mirrorState.mirrored,
                         width: 48,
                         height: 60
                     )
@@ -597,8 +617,8 @@ struct ClimbSessionLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     SessionFooter(
                         sessionId: context.attributes.sessionId,
-                        queueItemUuid: context.state.queueItemUuid,
-                        mirrored: context.state.mirrored ?? false,
+                        queueItemUuid: mirrorState.queueItemUuid,
+                        mirrored: mirrorState.mirrored,
                         supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
                         state: state,
                         hasPrevious: context.state.hasPrevious,
@@ -737,11 +757,12 @@ private struct LockScreenView: View {
     private var activeView: some View {
         let palette = VelvetSend.Palette.resolve(colorScheme)
         let state = resolveBoardState(context: context)
+        let mirrorState = resolveMirrorState(context: context)
         return HStack(alignment: .top, spacing: VelvetSend.Spacing.md) {
             // Thumbnail
             ThumbnailView(
                 climbUuid: context.state.climbUuid,
-                        mirrored: context.state.mirrored ?? false,
+                mirrored: mirrorState.mirrored,
                 width: 76,
                 height: 96
             )
@@ -777,10 +798,10 @@ private struct LockScreenView: View {
                 // disconnected hide the nav controls entirely so the card
                 // shrinks instead of leaving an empty gap.
                 SessionFooter(
-                        sessionId: context.attributes.sessionId,
-                        queueItemUuid: context.state.queueItemUuid,
-                        mirrored: context.state.mirrored ?? false,
-                        supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
+                    sessionId: context.attributes.sessionId,
+                    queueItemUuid: mirrorState.queueItemUuid,
+                    mirrored: mirrorState.mirrored,
+                    supportsMirroring: context.state.supportsMirroring ?? (SharedConstants.sharedDefaults?.bool(forKey: SharedConstants.supportsMirroringKey) ?? false),
                     state: state,
                     hasPrevious: context.state.hasPrevious,
                     hasNext: context.state.hasNext

@@ -1,9 +1,9 @@
 # Climbing data exports
 
 Signed-in climbers open **Settings → Export climbing data**, select a board and
-format, then download JSON through their system browser. No linked manufacturer
-account is required. Native save/share is tracked in
-[#5892](https://github.com/boardsesh/boardsesh/issues/5892).
+format, then tap **Save or share** on iOS or Android to open the system share
+sheet. They can save the JSON file or send it to another app. Expo web keeps
+**Download JSON** through the browser. No linked manufacturer account is required.
 
 ## Formats and freshness
 
@@ -41,7 +41,7 @@ Three authenticated GraphQL operations are shared with mobile:
    omitting the period selects the current week.
 2. `requestUserDataExport(boardType)` coalesces generation with existing work.
 3. `userDataExportDownload(boardType, period, format)` issues a fresh five-minute
-   private browser-download link.
+   private download link.
 
 Identity always comes from authentication. The service verifies the account
 still exists, including on retained legacy Aurora HTTP export/download routes.
@@ -106,6 +106,30 @@ preserving all unrelated rules. Unreadable policies, duplicate IDs, and conflict
 prefix ownership block changes. Link issuance enforces the 14-day age while R2's
 physical cleanup is pending. Only generated copies expire; source records remain.
 
+## Native save/share and local retention
+
+Each tap requests a fresh link and downloads directly into an operation-specific
+private app-cache directory. Both Boardsesh and Aurora exports share a named
+`.json` file with MIME type `application/json` (and iOS type `public.json`). The
+file is not read or parsed into JavaScript. The action stays busy through download
+and sharing; dismissing the share sheet is normal completion.
+
+Download, share, unavailable-sharing, and cleanup failures show separate guidance.
+A retry requests another fresh link. Native errors do not expose signed URLs,
+cache paths, or archive contents in mutation state or telemetry.
+
+Startup sweeps leftover export files before new downloads. Failed and aborted
+downloads are removed once their native download tasks settle. iOS removes files
+after the share sheet is dismissed. Android keeps completed files for 60 active
+seconds after sharing, pausing that timer while Boardsesh is backgrounded so a
+recipient can finish reading. Logout or an account switch aborts pending work and
+requests cleanup immediately; pending downloads are removed once their tasks
+settle. Cleanup remains scoped to each operation.
+Failed cleanup is retried on foreground and startup. Saving or sharing a copy puts
+that copy under the destination app's retention rules.
+
+`expo-sharing` requires new native binaries; an OTA update alone cannot add it.
+
 ## Rollout
 
 1. Apply generated indexes and rerun worker grants with the
@@ -118,11 +142,12 @@ physical cleanup is pending. Only generated copies expire; source records remain
    blocked policy before enabling exports.
 4. The family starts with the backend deploy; hold it with
    `BATCH_FAMILIES_DISABLED` until steps 1-3 are done. Deploy
-   backend/mobile; verify a named browser download and repeated-download cache reuse.
+   backend/mobile with compatible native binaries; verify named downloads and
+   repeated-download snapshot reuse.
    Until this step, status reads answer `unavailable` instead of offering Prepare
    or Retry; this week's finished files stay downloadable.
 5. Observe duration, bytes, cache reuse, and failures. Validate large logbooks and
-   actual iOS/Android browser downloads before completing device QA.
+   actual iOS/Android save/share destinations before completing device QA.
 
 See [user-media-storage.md](./user-media-storage.md) for bucket configuration and
 [background-workers.md](./background-workers.md) for queue/grant deployment.

@@ -26,6 +26,7 @@ function wallPayload(version: number) {
     wallUuid: `wall-${version}`,
     angle: 40,
     version,
+    versionId: version,
     photoWidth: 1200,
     photoHeight: 1600,
     photoUrl: `https://private.example/photo?sig=${version}`,

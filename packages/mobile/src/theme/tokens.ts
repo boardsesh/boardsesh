@@ -108,6 +108,18 @@ export const opacity = {
 export const overlays = {
   scrim: 'rgba(0, 0, 0, 0.6)',
   onScrim: '#FFFFFF',
+  /**
+   * A light dim laid over a photograph, under whatever is drawn on top of it
+   * (the spray editor's rings), so a busy multicoloured wall recedes and the
+   * marks read. `photoDimFocused` is the same dim doubled, for while one mark
+   * is picked out.
+   */
+  photoDim: 'rgba(0, 0, 0, 0.15)',
+  photoDimFocused: 'rgba(0, 0, 0, 0.3)',
+  /** The heavier dim under the spray scan band, while the photo waits on the detector. */
+  photoDimScan: 'rgba(0, 0, 0, 0.4)',
+  /** Behind the spray loupe's magnified photo, showing where it runs past the photo's edge. */
+  loupeBackdrop: '#000000',
 } as const;
 
 /** Shared bottom-sheet handle and background styles used by QueueSheet, AngleSelectorSheet, and PlayDrawer. */

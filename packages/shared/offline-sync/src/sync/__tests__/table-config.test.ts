@@ -78,7 +78,7 @@ describe('captureOnDelete', () => {
   });
 
   it('is declared for spray_walls, whose row is the only thing that names its photo', () => {
-    expect([...(TABLE_CONFIGS.spray_walls.captureOnDelete ?? [])]).toEqual(['layout_id', 'photo_key']);
+    expect([...(TABLE_CONFIGS.spray_walls.captureOnDelete ?? [])]).toEqual(['layout_id', 'board_uuid', 'photo_key']);
   });
 });
 

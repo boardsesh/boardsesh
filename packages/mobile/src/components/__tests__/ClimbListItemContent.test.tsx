@@ -442,8 +442,8 @@ describe('ClimbListItemContent personal grade', () => {
   });
 });
 
-// SW-13 (#5446): a spray wall reset under a climb. The row has to say so, or the
-// climber taps into a problem whose holds are no longer bolted to the wall.
+// A spray climb that lost a hold is listed like any other, with a badge, so the
+// climber knows before tapping in that a hold it names is gone.
 describe('ClimbListItemContent lost-holds chip', () => {
   beforeEach(() => {
     resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
@@ -519,6 +519,52 @@ describe('ClimbListItemContent lost-holds chip', () => {
   it('stays in the row neutral grey — colour is the grade’s alone', () => {
     const { container } = renderWith(1);
     expect(chipIcon(container)?.getAttribute('data-color')).toBe('#8E8E93');
+  });
+});
+
+// #5954: a draft is left out of the Climbs list, so every row that does show one
+// (Open drafts, your queue, the actions sheet preview) marks it with a chip.
+describe('ClimbListItemContent draft chip', () => {
+  beforeEach(() => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+    liveStatsOverride.current = null;
+  });
+
+  const chip = (container: HTMLElement) => container.querySelector('[aria-label="createClimbForm.draftBadge"]');
+
+  const renderWith = (isDraft: boolean | null | undefined, primarySubtitleOverride?: string) =>
+    render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, is_draft: isDraft, setter_username: 'marco' }}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+        primarySubtitleOverride={primarySubtitleOverride}
+      />,
+    );
+
+  it('marks a draft', () => {
+    const { container } = renderWith(true);
+    expect(chip(container)?.textContent).toBe('createClimbForm.draftBadge');
+  });
+
+  it('says it once: the subtitle no longer repeats the word', () => {
+    const { container } = renderWith(true);
+    expect(container.textContent?.split('createClimbForm.draftBadge').length).toBe(2);
+    expect(container.textContent).toContain('marco');
+  });
+
+  it('still marks a draft whose subtitle a caller replaced', () => {
+    // A queue row passes its own subtitle, which used to drop the only draft marker.
+    expect(chip(renderWith(true, 'Added by Sam').container)).not.toBeNull();
+  });
+
+  it('leaves a published climb unmarked, and one that does not say', () => {
+    expect(chip(renderWith(false).container)).toBeNull();
+    expect(chip(renderWith(null).container)).toBeNull();
+    expect(chip(renderWith(undefined).container)).toBeNull();
   });
 });
 

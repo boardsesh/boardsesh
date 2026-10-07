@@ -78,13 +78,18 @@ vi.mock('../PaintedHoldsLayer', () => ({
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8 } }));
 
 import { InteractiveCreateBoard } from '../InteractiveCreateBoard';
+import { resolveHoldAtPoint, type HoldHitTarget } from '../holdLayout';
 
 const holdTargets: BoardHoldTarget[] = [
   { id: 10, cx: 100, cy: 100, r: 20 },
   { id: 20, cx: 120, cy: 100, r: 8 },
 ];
 
-function renderBoard(onPaint = vi.fn(), onLongPressHold = vi.fn()) {
+function renderBoard(
+  onPaint = vi.fn(),
+  onLongPressHold = vi.fn(),
+  ghosts?: { ghostTargets: BoardHoldTarget[]; onGhostPress: (lostHoldId: number) => void },
+) {
   const result = render(
     <InteractiveCreateBoard
       frames="p1r12"
@@ -100,6 +105,8 @@ function renderBoard(onPaint = vi.fn(), onLongPressHold = vi.fn()) {
       onLongPressHold={onLongPressHold}
       renderWidth={300}
       renderHeight={400}
+      ghostTargets={ghosts?.ghostTargets}
+      onGhostPress={ghosts?.onGhostPress}
     />,
   );
   return { ...result, onPaint, onLongPressHold };
@@ -128,8 +135,10 @@ describe('InteractiveCreateBoard hold taps', () => {
   it('feeds the at-rest overlay one hit circle per hold plus both hold handlers', () => {
     const { onPaint, onLongPressHold } = renderBoard();
     const restOptions = restTapCalls.at(-1);
-    expect(restOptions?.onTap).toBe(onPaint);
-    expect(restOptions?.onLongPress).toBe(onLongPressHold);
+    (restOptions?.onTap as (holdId: number) => void)(10);
+    (restOptions?.onLongPress as (holdId: number) => void)(20);
+    expect(onPaint).toHaveBeenCalledWith(10);
+    expect(onLongPressHold).toHaveBeenCalledWith(20);
     expect(restOptions?.hitTargets).toHaveLength(holdTargets.length);
     // Same circles the zoomed overlay resolves against, so both zoom levels
     // agree on which hold a point belongs to.
@@ -138,6 +147,51 @@ describe('InteractiveCreateBoard hold taps', () => {
     // rests on the overlay.
     expect(restOptions?.pinchRef).toBeDefined();
     expect(restOptions?.isPinchingSV).toBeDefined();
+  });
+
+  it("adds a remix's grey rings to the hit circles and sends their taps to onGhostPress", () => {
+    const onGhostPress = vi.fn();
+    const { onPaint, onLongPressHold } = renderBoard(vi.fn(), vi.fn(), {
+      ghostTargets: [{ id: 99, cx: 300, cy: 300, r: 10 }],
+      onGhostPress,
+    });
+    const restOptions = restTapCalls.at(-1);
+    expect(restOptions?.hitTargets).toHaveLength(holdTargets.length + 1);
+    (restOptions?.onTap as (holdId: number) => void)(99);
+    (restOptions?.onLongPress as (holdId: number) => void)(99);
+    expect(onGhostPress).toHaveBeenCalledTimes(2);
+    expect(onPaint).not.toHaveBeenCalled();
+    expect(onLongPressHold).not.toHaveBeenCalled();
+    // A live hold still paints.
+    (zoomedTapCalls.at(-1)?.onTap as (holdId: number) => void)(10);
+    expect(onPaint).toHaveBeenCalledWith(10);
+  });
+
+  // A ring often sits exactly under the live hold that replaced it (a resize or
+  // a traced outline keeps the centre). The tap must take the ring away rather
+  // than paint the hold, or the ring could never be dismissed and Save would
+  // never come back.
+  it('gives a ring under a live hold the first tap, and the hold the next one', () => {
+    const onGhostPress = vi.fn();
+    const ghost = { id: 99, cx: 120, cy: 100, r: 8 };
+    const withRing = renderBoard(vi.fn(), vi.fn(), { ghostTargets: [ghost], onGhostPress });
+    const ringTargets = restTapCalls.at(-1)?.hitTargets as HoldHitTarget[];
+    const live = ringTargets.find((target) => target.holdId === 20);
+    if (!live) throw new Error('live hold 20 has no hit target');
+    const tapRing = resolveHoldAtPoint(live.x, live.y, ringTargets);
+    expect(tapRing).toBe(99);
+    (restTapCalls.at(-1)?.onTap as (holdId: number) => void)(tapRing as number);
+    expect(onGhostPress).toHaveBeenCalledExactlyOnceWith(99);
+    expect(withRing.onPaint).not.toHaveBeenCalled();
+    withRing.unmount();
+
+    // The ring is gone; the same spot now paints the live hold.
+    const withoutRing = renderBoard(vi.fn(), vi.fn(), { ghostTargets: [], onGhostPress });
+    const liveTargets = restTapCalls.at(-1)?.hitTargets as HoldHitTarget[];
+    const tapHold = resolveHoldAtPoint(live.x, live.y, liveTargets);
+    expect(tapHold).toBe(20);
+    (restTapCalls.at(-1)?.onTap as (holdId: number) => void)(tapHold as number);
+    expect(withoutRing.onPaint).toHaveBeenCalledExactlyOnceWith(20);
   });
 
   it('swaps the at-rest overlay for the pan overlay once zoomed', () => {

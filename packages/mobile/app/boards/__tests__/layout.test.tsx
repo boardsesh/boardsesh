@@ -13,13 +13,19 @@ import commonCatalog from '@boardsesh/i18n/locales/en-US/common.json';
 
 type Children = { children?: ReactNode };
 type HeaderLeft = (props: { tintColor?: string }) => ReactNode;
-type ScreenOptions = { title?: string; headerLeft?: HeaderLeft };
+type ScreenOptions = {
+  title?: string;
+  headerLeft?: HeaderLeft;
+  presentation?: string;
+  autoHideHomeIndicator?: boolean;
+};
 type ScreenProps = {
   name: string;
   options?: ScreenOptions | ((props: { route: { params?: object } }) => ScreenOptions);
 };
 
-const routerMock = vi.hoisted(() => ({ back: vi.fn(), dismissTo: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ back: vi.fn(), dismissTo: vi.fn(), canGoBack: vi.fn(() => true) }));
+const platformMock = vi.hoisted(() => ({ OS: 'ios', isPad: false }));
 const noteCloseTappedMock = vi.hoisted(() => vi.fn());
 const screens = vi.hoisted(() => ({ byName: new Map<string, ScreenProps>() }));
 
@@ -29,9 +35,15 @@ vi.mock('expo-router', () => {
     screens.byName.set(props.name, props);
     return null;
   };
-  return { Stack, router: routerMock };
+  return { Stack, router: routerMock, useRouter: () => routerMock };
 });
+// The launch hold is covered by its own suite; here the screen renders as is.
+vi.mock('../../../src/components/launch-update/hold-until-launch-ready', () => ({
+  holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
+}));
+
 vi.mock('react-native', () => ({
+  Platform: platformMock,
   Pressable: ({
     children,
     onPress,
@@ -77,6 +89,9 @@ function renderIndexHeaderLeft(params: object | undefined) {
 beforeEach(() => {
   vi.clearAllMocks();
   screens.byName.clear();
+  platformMock.OS = 'ios';
+  platformMock.isPad = false;
+  routerMock.canGoBack.mockReturnValue(true);
 });
 
 afterEach(() => {
@@ -137,5 +152,110 @@ describe('the board picker header X', () => {
     cleanup();
     renderIndexHeaderLeft({ source: 'onboarding', firstBoard: 1 });
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+  });
+});
+
+// #5960: the live board sheet opens a reset as the first screen of this modal,
+// where there is no back chevron. Edit holds is another flow's to change.
+describe('boards stack header on the spray wizard opened as a reset', () => {
+  it('gives the reset a close button that leaves through navigation', () => {
+    vi.clearAllMocks();
+    const { headerLeft } = optionsFor('spray/new', { resetOf: 'wall-uuid' });
+    if (!headerLeft) throw new Error('spray/new has no headerLeft');
+    render(createElement('div', null, headerLeft({ tintColor: '#000' })));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('titles the wizard as a reset only when it carries resetOf', () => {
+    expect(optionsFor('spray/new', { resetOf: 'wall-uuid' }).title).toBe('Reset this wall');
+    expect(optionsFor('spray/new').title).toBe('Add a spray wall');
+  });
+});
+
+/** The options a screen declares, resolved the way the stack would. */
+function optionsFor(name: string, params: object = {}): ScreenOptions {
+  render(createElement(BoardsLayout));
+  const declared = screens.byName.get(name)?.options;
+  cleanup();
+  if (!declared) throw new Error(`${name} options not captured`);
+  return typeof declared === 'function' ? declared({ route: { params } }) : declared;
+}
+
+const SPRAY_SCREENS = ['spray/new', 'spray/holds'];
+
+describe('the spray screens on iPad', () => {
+  it.each(SPRAY_SCREENS)('%s covers the screen and fades the home indicator', (name) => {
+    platformMock.isPad = true;
+    const options = optionsFor(name);
+    expect(options.presentation).toBe('fullScreenModal');
+    expect(options.autoHideHomeIndicator).toBe(true);
+  });
+
+  // Full screen means no swipe down and, as a modal, no back chevron.
+  it.each(['spray/new', 'spray/holds'])('%s has an X that goes back through the leave guard', (name) => {
+    platformMock.isPad = true;
+    const { headerLeft } = optionsFor(name);
+    if (!headerLeft) throw new Error(`${name} has no headerLeft`);
+    render(createElement('div', null, headerLeft({ tintColor: '#000' })));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    // router.back is what the screens' own Back buttons call, so the
+    // usePreventRemove guard sees the same action.
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(routerMock.dismissTo).not.toHaveBeenCalled();
+  });
+
+  it('leaves a cold-linked screen for Climbs when there is nothing to go back to', () => {
+    platformMock.isPad = true;
+    routerMock.canGoBack.mockReturnValue(false);
+    const { headerLeft } = optionsFor('spray/holds');
+    if (!headerLeft) throw new Error('spray/holds has no headerLeft');
+    render(createElement('div', null, headerLeft({ tintColor: '#000' })));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(routerMock.dismissTo).toHaveBeenCalledWith('/(tabs)/climbs');
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
+});
+
+describe('the spray screens on a phone', () => {
+  // Not even an undefined key: it would override the stack's screenOptions.
+  it.each([
+    ['iOS', 'ios'],
+    ['Android', 'android'],
+  ])('add no presentation or home indicator keys on %s', (_label, os) => {
+    platformMock.OS = os;
+    for (const name of SPRAY_SCREENS) {
+      const options = optionsFor(name);
+      expect(Object.keys(options)).not.toContain('presentation');
+      expect(Object.keys(options)).not.toContain('autoHideHomeIndicator');
+    }
+    // Edit holds keeps its back chevron on a phone; the iPad X is iPad only.
+    expect(Object.keys(optionsFor('spray/holds'))).not.toContain('headerLeft');
+  });
+
+  // The #5960 X on a reset is not an iPad addition: every platform keeps it.
+  it.each([
+    ['iOS', 'ios'],
+    ['Android', 'android'],
+  ])('keeps the reset close button on %s', (_label, os) => {
+    platformMock.OS = os;
+    expect(Object.keys(optionsFor('spray/new', { resetOf: 'wall-uuid' }))).toEqual([
+      'title',
+      'headerBackButtonMenuEnabled',
+      'headerLeft',
+    ]);
+  });
+
+  // isPad is an iOS-only field; Android never reads it as an iPad.
+  it('ignores a stray isPad on Android', () => {
+    platformMock.OS = 'android';
+    platformMock.isPad = true;
+    expect(Object.keys(optionsFor('spray/holds'))).toEqual(['title', 'headerBackButtonMenuEnabled']);
   });
 });

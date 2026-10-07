@@ -1,5 +1,5 @@
-// Spray wall telemetry (epic #5346, SW-17): the add-a-wall funnel, the reset
-// funnel, and the remix offer that catches a climb a reset broke.
+// Spray wall telemetry (epic #5346, SW-17): the add-a-wall funnel, and the reset
+// that opens it on a clone of a wall.
 //
 // The contract, one paragraph, mirrors board-render-events.ts:
 //
@@ -12,7 +12,8 @@
 //  * **Outcomes, not gestures.** PostHog is past the 1M-event tier
 //    (`docs/posthog-cost-audit`-era rule), so every event here fires once per
 //    wall per step — picking the photo, the upload landing, detection settling,
-//    the holds being saved, a reset previewed, a reset applied. Nothing fires
+//    the holds being saved, a reset started, used holds removed, a broken
+//    climb remixed. Nothing fires
 //    per tap, per frame, or per hold.
 //  * **Nothing identifies the wall or what is on it.** No photo, no URI, no
 //    file name, no wall name, no gym, no hold coordinates, no free text. A wall
@@ -23,7 +24,8 @@
 //  * `Board Created` with `boardType: 'spray'` closes the add funnel and is the
 //    SAME event every other board type fires — a spray-only variant would hide
 //    walls from every board-creation number we already watch, so there is no
-//    builder for it here.
+//    builder for it here. A wall built through a reset says so with
+//    `isReset`, so activation numbers can leave clones out.
 //
 // Full contract and the rollout gates read off these: `docs/spray-walls.md`
 // ("Telemetry" and "Rolling the flag out").
@@ -60,6 +62,14 @@ export type SprayWallUploadFinishedProps = {
   determinate: boolean;
   /** 1 for the first try. A retry is a different population; never pool them. */
   attempt: number;
+  /**
+   * Whether the climber cropped the photo before uploading it ("Crop or rotate"
+   * on the photo step). Omitted by clients that predate the step, so read a
+   * missing value as unknown, not as false.
+   */
+  cropped?: boolean;
+  /** Whether they turned it a quarter turn or more. Same omission rule as `cropped`. */
+  rotated?: boolean;
 };
 
 export function sprayWallUploadFinished(
@@ -110,56 +120,71 @@ export function sprayHoldsReviewed(
   return { name: SHARED_EVENTS.SprayHoldsReviewed, properties };
 }
 
-export type SprayWallResetPreviewedProps = {
-  keptCount: number;
-  removedCount: number;
-  addedCount: number;
-  /** Matches the gate let through at low confidence — the ones worth eyeballing. */
-  lowConfidenceCount: number;
-  /** Climbs whose integrity the reset would move. Never which climbs. */
-  climbsAffected: number;
-  /** The new photo is a different shape from the wall's frame. */
-  aspectMismatch: boolean;
-  /** How many holds the new photo's detector found, before matching. */
-  detectionCount: number;
+/**
+ * Which part of the post-publish bind did not finish. `navigate` is the dismiss
+ * that was dispatched and did not land; the other three ran past their deadline.
+ */
+export type SprayBindStage = 'visibility' | 'fetch_board' | 'bind' | 'navigate';
+
+export type SprayWallBindStalledProps = {
+  stage: SprayBindStage;
+  /** From the publish landing to the moment the stall was called. */
+  elapsedMs: number;
 };
 
-export function sprayWallResetPreviewed(
-  properties: SprayWallResetPreviewedProps,
-): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetPreviewed, SprayWallResetPreviewedProps> {
-  return { name: SHARED_EVENTS.SprayWallResetPreviewed, properties };
+export function sprayWallBindStalled(
+  properties: SprayWallBindStalledProps,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallBindStalled, SprayWallBindStalledProps> {
+  return { name: SHARED_EVENTS.SprayWallBindStalled, properties };
 }
 
-export type SprayWallResetAppliedProps = {
-  keptCount: number;
-  removedCount: number;
-  addedCount: number;
-  climbsChanged: number;
-  /**
-   * How many "same hold, moved here" pairings the owner confirmed — the only
-   * thing that makes remix able to suggest a successor months later.
-   */
-  moveCount: number;
+/**
+ * Where the owner confirmed a reset: the wall sheet's "Reset this wall" row, or
+ * the edit screen's "Reset wall with a new photo" under a photo too skewed for
+ * a generated look.
+ */
+export type SprayResetSurface = 'board_sheet' | 'board_edit';
+
+export type SprayWallResetStartedProps = { source: SprayResetSurface };
+
+/**
+ * The owner confirmed "Reset this wall?": once per confirm tap, never from the
+ * wizard (reopening an unfinished reset or starting it over fires nothing).
+ * Against `Board Created` with `isReset: true` it reads as confirms per
+ * completed reset.
+ */
+export function sprayWallResetStarted(
+  source: SprayResetSurface,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetStarted, SprayWallResetStartedProps> {
+  return { name: SHARED_EVENTS.SprayWallResetStarted, properties: { source } };
+}
+
+export type SprayWallHoldsRemovedInUseProps = {
+  /** How many holds the confirm was about. Never which. */
+  holdCount: number;
+  /** Published climbs that use them; 0 when the usage read failed. */
+  publishedClimbCount: number;
+  /** False when the usage read failed and the confirm used its generic wording. */
+  usageKnown: boolean;
 };
 
-export function sprayWallResetApplied(
-  properties: SprayWallResetAppliedProps,
-): SprayWallPayload<typeof SHARED_EVENTS.SprayWallResetApplied, SprayWallResetAppliedProps> {
-  return { name: SHARED_EVENTS.SprayWallResetApplied, properties };
+/** The owner confirmed removing (or moving) holds that published climbs use. */
+export function sprayWallHoldsRemovedInUse(
+  properties: SprayWallHoldsRemovedInUseProps,
+): SprayWallPayload<typeof SHARED_EVENTS.SprayWallHoldsRemovedInUse, SprayWallHoldsRemovedInUseProps> {
+  return { name: SHARED_EVENTS.SprayWallHoldsRemovedInUse, properties };
 }
 
-/** Which surface offered the remix. One today; named so a second is legible. */
+/** Which surface offered the remix. One today; a union so a second is legible. */
 export type SprayRemixSurface = 'play_drawer';
 
 export type ClimbRemixedFromBrokenProps = {
-  /** Holds this climb lost to a reset. Never which holds. */
+  /** Holds this climb lost. Never which holds. */
   lostHoldCount: number;
-  // Deliberately no successor count: `remixClimb`'s suggestions are not read on
-  // this path (SW-13), and a property that is always absent reads as "no
-  // successors were offered" rather than "nobody asked".
   source: SprayRemixSurface;
 };
 
+/** A climber took the Remix on a climb that lost a hold. */
 export function climbRemixedFromBroken(
   properties: ClimbRemixedFromBrokenProps,
 ): SprayWallPayload<typeof SHARED_EVENTS.ClimbRemixedFromBroken, ClimbRemixedFromBrokenProps> {
@@ -167,7 +192,7 @@ export function climbRemixedFromBroken(
 }
 
 /**
- * The two ratios the flag rollout is gated on (`docs/feature-flags.md`).
+ * The ratio the flag rollout is gated on (`docs/feature-flags.md`).
  *
  * Exported as functions rather than written into a dashboard description so the
  * numbers in the doc and the numbers in the code cannot drift, and so a reader
@@ -187,13 +212,5 @@ export const SPRAY_ROLLOUT_GATES = {
   detectionCorrectionRate(detected: number, saved: number): number {
     if (detected <= 0) return 0;
     return Math.abs(saved - detected) / detected;
-  },
-  /**
-   * Reset satisfaction: applied / previewed. An owner who previews a reset and
-   * never applies it has been shown something they do not believe. Gate: >= 0.6.
-   */
-  resetCommitRate(previewed: number, applied: number): number {
-    if (previewed <= 0) return 0;
-    return applied / previewed;
   },
 } as const;

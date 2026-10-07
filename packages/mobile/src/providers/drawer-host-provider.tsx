@@ -40,10 +40,13 @@ import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
+import { useStoredUserId } from '../hooks/use-current-user-id';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
 import { useAuth } from './auth-provider';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { useSprayWall, useSprayWallLoader } from '../lib/spray/use-spray-wall';
+import { useSprayWallSheetActions } from '../lib/spray/use-spray-wall-sheet-actions';
+import { BoardShareSheet } from '../components/board-discovery/BoardShareSheet';
 import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
@@ -120,17 +123,6 @@ export type LogAscentInput = {
   // without being preselected. Optional — callers that don't have a
   // freshly fetched climb can omit it.
   consensusGradeName?: string;
-  /**
-   * The version of the climb the caller is showing (`Climb.revisionNumber`),
-   * stamped on the tick. Omit it when the climb carries none: the tick form
-   * then asks the phone's own copy of the climb (#6023).
-   */
-  climbRevision?: number | null;
-  /**
-   * The frames the caller is showing (`Climb.frames`). The tick form uses the
-   * phone's copy of the climb's version only when that copy has these holds.
-   */
-  climbFrames?: string | null;
 };
 
 export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig | null): boolean {
@@ -401,7 +393,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // to the `/play` route instead of a paneTarget that lands in an unmounted pane.
   // Folding it into `usesDetailPane` also makes the effect below clear a stale
   // paneTarget when the wall tab becomes focused.
-  const onWallTab = tabsActiveSegment(useSegments()) === 'wall';
+  const routeSegments = useSegments();
+  const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
   const usesDetailPane =
     resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane' && !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);
@@ -483,6 +476,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const boardPresenceBoardIdRef = useRef(boardPresenceBoardId);
   boardPresenceBoardIdRef.current = boardPresenceBoardId;
   const { data: profile } = useProfile();
+  // Who owns a spray wall decides its reset rows. The profile is the fresher
+  // answer but it is network-only, so fall back to the id the signed token
+  // carries, as My Boards does: a failed profile read must not take the owner's
+  // reset away.
+  const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
+  const sprayViewerUserId = profile?.id ?? storedUserId ?? null;
   // Read at the app root (resolved by interaction time) and passed to the reaction
   // menu so its mount-time enter animation uses the real value, not the hook's
   // conservative `true` default.
@@ -762,20 +761,24 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
 
+  const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
+  const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
+    return dismissManagedSheetAndWait(boardSheetRef.current);
+  }, []);
+  const sprayWallActions = useSprayWallSheetActions(activeBoard ?? null, dismissBoardSheetAndWait, sprayViewerUserId);
+  const cancelPendingSprayAction = sprayWallActions.cancelPendingAction;
+
   // Board sheet: present imperatively via the ref, exactly like the queue sheet
   // and Play Drawer. gorhom's present() from a `visible`-prop effect is a silent
   // no-op in this build.
   const openBoardSheet = useCallback(() => {
+    cancelPendingSprayAction();
     track(SHARED_EVENTS.BoardSheetOpened, {
       boardId: boardPresenceBoardIdRef.current ?? undefined,
       source: 'board_pill',
     });
     boardSheetRef.current?.present();
-  }, []);
-  const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
-  const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
-    return dismissManagedSheetAndWait(boardSheetRef.current);
-  }, []);
+  }, [cancelPendingSprayAction]);
   // Snackbar "Open": dismiss the snackbar, then open the queue sheet.
   const handleSnackbarOpen = useCallback(() => {
     dismissSnackbar();
@@ -1170,8 +1173,6 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               setIds={logAscentData.setIds}
               sessionId={logAscentData.sessionId}
               consensusGradeName={logAscentData.consensusGradeName}
-              climbRevision={logAscentData.climbRevision}
-              climbFrames={logAscentData.climbFrames}
             />
           ) : null}
           {betaVideoData ? (
@@ -1229,12 +1230,25 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onClose={requestCloseBoardSheet}
             onSwitchBoard={handleSwitchBoardFromSheet}
             activeBoard={activeBoard ?? null}
+            onOpenSprayMaintenance={sprayWallActions.openMaintenance}
+            onShareSprayWall={sprayWallActions.openShare}
+            viewerUserId={sprayViewerUserId}
             onSelectGymWall={handleSelectGymWall}
             onClimbPress={handleBoardSheetClimbPress}
             onAddToQueue={handleBoardSheetAddToQueue}
             onOpenPlaylist={handleBoardSheetOpenPlaylist}
             onOpenActions={handleBoardSheetModalOpenActions}
           />
+          {sprayWallActions.shareSnapshot ? (
+            <BoardShareSheet
+              visible={sprayWallActions.shareVisible}
+              onDismiss={sprayWallActions.closeShare}
+              onFullyDismissed={sprayWallActions.clearShareSnapshot}
+              shareUrl={sprayWallActions.shareSnapshot.url}
+              wallName={sprayWallActions.shareSnapshot.wallName}
+              visibility={sprayWallActions.shareSnapshot.visibility}
+            />
+          ) : null}
           {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
           later sibling and floats above them when a row inside those sheets is
           long-pressed (RN-screens doesn't strictly guarantee cross-overlay z-order). */}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EDIT_WINDOW_MS, computeCanUpdate, computeEditLocked, buildInitialFrames } from '../helpers';
+import { EDIT_WINDOW_MS, computeCanUpdate, computeEditLocked, canEditClimb, buildInitialFrames } from '../helpers';
 
 const NOW = Date.parse('2026-06-03T12:00:00.000Z');
 const within = new Date(NOW - 60 * 60 * 1000).toISOString(); // 1h ago
@@ -49,6 +49,128 @@ describe('computeEditLocked', () => {
 
   it('EDIT_WINDOW_MS is 24h', () => {
     expect(EDIT_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+  });
+});
+
+// A spray climb follows the same rule as Kilter and Tension: its setter edits
+// it, in place, for 24 hours after first publish.
+describe('a spray climb has the same 24-hour window', () => {
+  const sprayRow = (publishedAt: string | null, isDraft = false) => ({
+    uuid: 'a',
+    boardType: 'spray',
+    createdAt: null,
+    publishedAt,
+    isDraft,
+  });
+
+  it('updates in place within the window and not after it', () => {
+    expect(computeCanUpdate(sprayRow(within), 'spray', NOW)).toBe(true);
+    expect(computeCanUpdate(sprayRow(expired), 'spray', NOW)).toBe(false);
+  });
+
+  it('locks after the window and not before it', () => {
+    expect(computeEditLocked(sprayRow(within), NOW)).toBe(false);
+    expect(computeEditLocked(sprayRow(expired), NOW)).toBe(true);
+  });
+
+  it('keeps a draft open for good', () => {
+    expect(computeCanUpdate(sprayRow(null, true), 'spray', NOW)).toBe(true);
+    expect(computeEditLocked(sprayRow(null, true), NOW)).toBe(false);
+  });
+
+  it('does not update a published climb whose publish date is missing', () => {
+    expect(computeCanUpdate(sprayRow(null), 'spray', NOW)).toBe(false);
+  });
+
+  it('still refuses to update a spray row from another board', () => {
+    expect(computeCanUpdate(sprayRow(within), 'kilter', NOW)).toBe(false);
+  });
+});
+
+// The window's edge, on both sides, on every board. `now - publishedAt` equal to
+// the window is still inside it; one millisecond more is outside.
+describe('the 24-hour edge', () => {
+  const atEdge = new Date(NOW - EDIT_WINDOW_MS).toISOString();
+  const pastEdge = new Date(NOW - EDIT_WINDOW_MS - 1).toISOString();
+
+  it.each(['kilter', 'spray'])('is editable at exactly 24 hours and locked a millisecond later on %s', (boardType) => {
+    const row = (publishedAt: string) => ({ uuid: 'a', boardType, createdAt: null, publishedAt, isDraft: false });
+    expect(computeCanUpdate(row(atEdge), boardType, NOW)).toBe(true);
+    expect(computeEditLocked(row(atEdge), NOW)).toBe(false);
+    expect(computeCanUpdate(row(pastEdge), boardType, NOW)).toBe(false);
+    expect(computeEditLocked(row(pastEdge), NOW)).toBe(true);
+
+    const climb = (publishedAt: string) => ({
+      uuid: 'c',
+      userId: 'setter-1',
+      is_draft: false,
+      published_at: publishedAt,
+    });
+    expect(canEditClimb({ climb: climb(atEdge), boardType, currentUserId: 'setter-1', now: NOW })).toBe(true);
+    expect(canEditClimb({ climb: climb(pastEdge), boardType, currentUserId: 'setter-1', now: NOW })).toBe(false);
+  });
+});
+
+describe('canEditClimb', () => {
+  const SETTER = 'setter-1';
+  const OTHER = 'someone-else';
+  const draft = { uuid: 'c', userId: SETTER, is_draft: true, published_at: null };
+  const fresh = { uuid: 'c', userId: SETTER, is_draft: false, published_at: within };
+  const old = { uuid: 'c', userId: SETTER, is_draft: false, published_at: expired };
+  const othersDraft = { ...draft, userId: OTHER };
+
+  type Case = {
+    label: string;
+    climb: { uuid: string; userId?: string | null; is_draft?: boolean | null; published_at?: string | null };
+    boardType: string;
+    currentUserId: string | null;
+    expected: boolean;
+  };
+
+  // The same matrix on every board: the setter, a draft for good, a published
+  // climb for 24 hours, nobody else. The wall's owner is "nobody else" on a
+  // climb somebody else set.
+  const cases: Case[] = ['kilter', 'spray'].flatMap((boardType) => [
+    { label: `${boardType} draft, setter`, climb: draft, boardType, currentUserId: SETTER, expected: true },
+    { label: `${boardType} within 24h, setter`, climb: fresh, boardType, currentUserId: SETTER, expected: true },
+    { label: `${boardType} after 24h, setter`, climb: old, boardType, currentUserId: SETTER, expected: false },
+    {
+      label: `${boardType} within 24h, not the setter`,
+      climb: fresh,
+      boardType,
+      currentUserId: OTHER,
+      expected: false,
+    },
+    { label: `${boardType} after 24h, not the setter`, climb: old, boardType, currentUserId: OTHER, expected: false },
+    {
+      label: `${boardType} draft, not the setter`,
+      climb: othersDraft,
+      boardType,
+      currentUserId: SETTER,
+      expected: false,
+    },
+    { label: `${boardType} within 24h, signed out`, climb: fresh, boardType, currentUserId: null, expected: false },
+    {
+      label: `${boardType} with no setter on record`,
+      climb: { ...fresh, userId: null },
+      boardType,
+      currentUserId: OTHER,
+      expected: false,
+    },
+  ]);
+
+  it.each(cases)('$label -> $expected', ({ climb, boardType, currentUserId, expected }) => {
+    expect(canEditClimb({ climb, boardType, currentUserId, now: NOW })).toBe(expected);
+  });
+
+  it('is false with no climb', () => {
+    expect(canEditClimb({ climb: null, boardType: 'spray', currentUserId: SETTER })).toBe(false);
+  });
+
+  it('treats a climb with no draft flag as published', () => {
+    const climb = { uuid: 'c', userId: SETTER, published_at: expired };
+    expect(canEditClimb({ climb, boardType: 'kilter', currentUserId: SETTER, now: NOW })).toBe(false);
+    expect(canEditClimb({ climb, boardType: 'spray', currentUserId: SETTER, now: NOW })).toBe(false);
   });
 });
 

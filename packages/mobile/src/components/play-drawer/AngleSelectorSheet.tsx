@@ -4,6 +4,7 @@ import { BottomSheetModal, BottomSheetView } from '@expo/ui/community/bottom-she
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { MOONBOARD_ANGLES } from '@boardsesh/board-config';
 import { Text } from '../Text';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
@@ -53,6 +54,16 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   // and offline, unlike a per-board query. MoonBoard swaps in the full
   // Kilter/Tension-style range when the moonboard-wide-angles flag is on.
   const angles = useBoardAngleOptions(boardName as BoardName);
+  // Moon grades every problem at 25° and 40°, so on the wide MoonBoard range
+  // those two get one-tap buttons. Without the wide range the slider already
+  // has only those two stops.
+  const snapAngles = useMemo(
+    () =>
+      boardName === 'moonboard' && angles.length > MOONBOARD_ANGLES.length
+        ? MOONBOARD_ANGLES.filter((angle) => angles.includes(angle))
+        : [],
+    [boardName, angles],
+  );
 
   // Live preview angle. Applied to the board only when "Done" is pressed; the
   // diagram, grade, stars and sends all reflect this as the user slides.
@@ -146,6 +157,35 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
           {t('mobile.angleSelector.fromVerticalHint')}
         </Text>
 
+        {snapAngles.length > 0 ? (
+          <View style={styles.snapRow}>
+            {snapAngles.map((angle) => {
+              const isSelected = angle === selectedAngle;
+              return (
+                <Pressable
+                  key={angle}
+                  onPress={() => setSelectedAngle(angle)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={t('mobile.angleSelector.snapToAngle', { angle })}
+                  style={({ pressed }) => [
+                    styles.snapButton,
+                    { backgroundColor: isSelected ? brandColors.primary : systemColors.fill },
+                    pressed && styles.snapButtonPressed,
+                  ]}
+                >
+                  <Text
+                    variant="headline"
+                    style={[styles.snapText, { color: isSelected ? iosSystemColors.white : systemColors.label }]}
+                  >
+                    {angle}°
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
         <View style={styles.sliderWrap}>
           <AngleSlider angles={angles} value={selectedAngle} onChange={setSelectedAngle} />
         </View>
@@ -195,6 +235,25 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginTop: spacing[1],
+  },
+  snapRow: {
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[4],
+  },
+  snapButton: {
+    minWidth: 88,
+    height: 44,
+    paddingHorizontal: spacing[4],
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snapButtonPressed: {
+    opacity: 0.85,
+  },
+  snapText: {
+    fontWeight: '600',
   },
   sliderWrap: {
     width: '100%',

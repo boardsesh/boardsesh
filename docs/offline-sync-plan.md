@@ -1105,7 +1105,82 @@ recovery attempt by an obsolete failure.
 The retraction hung off the provider (`DatabaseHandleLifecycle`) does NOT beat the
 close: expo-sqlite enters `closeAsync()` synchronously from the parent's cleanup, which
 React runs before this child's. What it buys is the window after the unmount commit —
-queries already in flight are carried by the process-lifetime reference (#5300).
+queries already in flight are carried by the process-lifetime reference (#5300)
+and the async-operation drain described below (#5851).
+
+### Statement cleanup and async close (#5851)
+
+The pinned `expo-sqlite@57.0.2` patch tracks active async native helper calls,
+convenience queries (`runAsync`, `getFirstAsync`, `getAllAsync`, `getEachAsync`), and
+exclusive transactions until their work and helper-owned cleanup finish.
+`closeAsync()` is single-flight for each JavaScript wrapper: it stops accepting new
+tracked operations, waits for admitted work to drain, then closes that wrapper's
+native reference. Cleanup has no timeout; closing first
+would invalidate the statement it is still finalizing. If a native call never
+settles, restarting the app is the recovery path; this wrapper cannot safely
+force-close a connection while that call still owns it. Cached wrappers retain
+independent close lifetimes, and exclusive-transaction connections use the same drain
+before closing. Existing process-lifetime retention and strong wrapper pinning remain
+necessary for cached native connections. A raw `prepareAsync` call is tracked only
+until preparation returns: prepared-statement lifetimes, sessions, and backup
+operations remain the caller's responsibility. Finish their work and release their
+resources before closing the database.
+
+**Synchronous teardown audit.** There are no production `closeSync()` calls in
+`packages/mobile/`; the only calls are in the installed-patch lifecycle tests,
+which exercise successful closes and assert guard errors. `SQLiteProvider` uses `closeAsync()` in
+its effect teardown, and the dev lock holder awaits `closeAsync()` after its
+transaction finishes. The patch deliberately rejects `closeSync()` while async
+work is active or the wrapper is closing/closed. Future synchronous cleanup must
+start an observed `closeAsync()` instead of assuming `closeSync()` cannot throw.
+
+**Foreground/background ownership.** The shared offline-sync package accepts an
+injected database; it never opens or closes one. Mobile AppState listeners only
+set the background guard and trigger foreground sync. They neither close the
+provider's wrapper nor await a close promise. Provider cleanup retracts the
+published handle synchronously without awaiting the drain. A remount publishes a
+new wrapper through `useOfflineDatabase()`, and the bridge's database dependency
+stops the old scheduler and starts its replacement. Scheduler teardown removes
+listeners, retry alarms, and its queued follow-up; it does not await SQLite close.
+
+Strong pinning intentionally keeps old cached wrappers reachable across these
+transitions, including a wrapper whose close is stalled. That protects the shared
+Android native binding from garbage collection; it does **not** publish the old
+wrapper again or make the replacement wait for its close promise. The dedicated
+retention wrapper is never queried or closed. Exclusive-transaction wrappers
+(`useNewConnection: true`) are not pinned. If an admitted sync operation itself
+never settles, the shared scheduler's single-flight cycle can also remain active
+and defer replacement/foreground runs indefinitely. A new wrapper cannot repair
+frozen native I/O; restart remains the recovery path. No timeout force-closes or
+clears that latch while the old operation can still write.
+
+Each convenience-query statement is finalized once. SQLite frees the statement even
+when `sqlite3_finalize` reports a non-success result, so both Android and iOS mark the
+native statement finalized before throwing that error. If execution or reading
+already failed, cleanup preserves that primary error and attaches secondary cleanup
+failures for diagnosis. A cleanup failure after an otherwise successful operation
+still rejects the operation. This includes `UPDATE ... RETURNING`: receiving a row
+does not prove the write committed successfully.
+
+Lock recovery retries the whole local write or transaction using the existing
+`runLocalWriteWithRetry` ladders. It never retries finalization on a statement SQLite
+has already destroyed. Tick rows and their outbox entries, and pulled rows and their
+checkpoints, must succeed atomically on each attempt. Transaction rollback or close
+failures also preserve the transaction's primary error so lock classification can
+still reach those retry ladders.
+
+Installed-source guards check the source and compiled JavaScript helpers plus the
+native finalize/state/error sequence. The native changes alter the app fingerprint
+and require rebuilt Android and iOS binaries; an OTA alone cannot deliver them.
+
+Automated validation combines installed JavaScript lifecycle tests with
+`scripts/__tests__/expo-sqlite-native-finalize.test.ts`, which compiles Expo's
+vendored SQLite engine using a host C compiler. Real competing connections prove
+that BUSY and constraint failures still destroy finalized statements, and that a
+successful `RETURNING` row can precede a failed commit during finalization. The
+iOS build gate also requires proof that the patched `SQLiteModule.swift` compiled.
+These checks run without a physical device; they do not exercise the Android JNI
+or Swift bridge at runtime or reproduce operating-system lifecycle timing.
 
 ### When the native handle dies under us (#5410)
 

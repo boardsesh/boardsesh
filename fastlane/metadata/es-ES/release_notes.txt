@@ -1,23 +1,34 @@
-Novedades de 2.5:
+MUROS DE SPRAY: TU PROPIO MURO EN BOARDSESH
 
-COMPATIBLE CON WOODS, DE PRINCIPIO A FIN
+Fotografía tu muro de casa o el muro de spray de tu rocódromo y la app encuentra las presas. Corrige lo que se le haya pasado, elige un aspecto, publica y empieza a montar. Los bloques funcionan como en cualquier otro plafón: ponlos en cola, guárdalos en playlists y registra tus encadenes en el mismo logbook que tus demás plafones. No hacen falta LED: las presas se resaltan sobre tu foto.
 
-¿Tienes un Woods Board? Añade tu 12x12 o tu 8x10, explora más de 5.000 bloques con sus reglas de igualar y de pies, y enciende cualquiera por Bluetooth. Crea y remezcla tus propios bloques en cualquiera de los dos tamaños (el editor solo ofrece presas que están de verdad en tu muro), espejea un bloque y el muro lo sigue, y usa Anterior, Siguiente y Espejo desde la pantalla de bloqueo y la Dynamic Island. Las presas se dibujan con el aspecto Aura y contornos más nítidos.
+Mantén un muro privado, hazlo público o compártelo por enlace o código QR y tu crew también podrá montar y registrar en él. ¿Has desmontado el muro? Resetéalo: haz una foto nueva, marca las presas y tu muro anterior se archiva con todos sus bloques y encadenes. Cambia una sola presa y cada bloque que la usaba queda marcado, listo para remezclar.
 
-TOMA EL MURO, SIN LEDS
+Gratis, como el resto de Boardsesh.
 
-¿Escalas en un plafón sin kit de luces? Toma el muro y toda la sesión sigue el bloque que pones, y la pantalla del rocódromo también. Desactiva Luces en los ajustes del plafón: los turnos siguen rotando, tu ángulo se mantiene y las sesiones en un muro con nombre también se registran desde el reloj.
+TU CREW, EN CADA BLOQUE
 
-ESPEJO DESDE LA PANTALLA DE BLOQUEO
+Inicio muestra quién está escalando ahora mismo para que entres en su sesión. Abre un bloque y primero ves a la gente que sigues: sus notas, el grado que le pondrían, y después los registros de todos los demás. Sigue a un setter y sus bloques nuevos llegan al feed de tu crew como una tarjeta que deslizas.
 
-Mientras tu teléfono controla el plafón, la actividad en vivo y la Dynamic Island tienen un botón Espejo junto a Anterior, Siguiente y la bombilla. La app, tu gente, las miniaturas y los LED siguen el bloque espejeado, y sigue en espejo cuando abres la app.
+UN TEMPORIZADOR DE DESCANSO QUE MUEVE LA COLA
+
+Haz bloques al minuto sin tocar el teléfono entre intentos. Activa el temporizador de descanso en la pestaña Sesión y empieza a contar en cuanto registras un bloque; si te quedas sentado de más, sigue contando en rojo. Deja que pase al siguiente bloque y te lo enciende en el muro. ¿Alguien quiere ir antes? Mantén pulsado su bloque y toca Poner a continuación para colocarlo justo detrás del que está en el muro.
+
+TAMBIÉN NUEVO
+
+- Los demás plafones de tu rocódromo están en el panel del muro: un toque al muro que tienes delante, y el Bluetooth y la cola se van contigo.
+- Activa Usar mis grados y el grado que le diste a un bloque es el que ves, y por el que ordenas y filtras.
+- Los bloques similares y el nuevo mapa de calor de presas funcionan con tu plafón descargado, así que van sin cobertura.
+- Los logbooks vinculados de los plafones se sincronizan solos, a todas horas.
+- Exporta tu historial de escalada, tus playlists y tus bloques desde Ajustes.
+- Nuevo aspecto del plafón, Aura contorno: un contorno sólido en cada presa encendida.
+- Las vías suenan al ritmo con que se montaron: el ritmo se lee en segundos por fotograma, hasta 60.
 
 CORREGIDO
 
-- Las presas se dibujan más rápido: el renderizado del plafón ya no espera al resto de la app.
-- Tu plafón se queda apagado hasta que tú lo pidas. Un teléfono que vuelve a entrar en alcance horas o días después ya no enciende tu último bloque. La bombilla, el widget y las reconexiones a mitad de bloque lo encienden al instante, como siempre.
-- La pestaña Bloques y su búsqueda ya no se quedan colgadas después de cerrar una lista encima a mitad de sesión. Se acabó forzar el cierre de la app para recuperar la búsqueda.
-- Los bloques descargados se mantienen al día tras actualizar la app.
-- Cerrar la búsqueda de bloques ya no hace aparecer un panel de vista previa.
+- Los encadenes registrados con mala conexión esperan a tener cobertura y se sincronizan, en vez de perderse.
+- Woods: todos los bloques aparecen sea cual sea el ángulo al que se montaron, y el filtro de setters lista a todos los de un plafón.
+- MoonBoard: un problema graduado en solo uno de los dos ángulos ahora muestra una estimación para el otro.
+- Los deslizamientos en el panel de juego siguen en la lista de la que elegiste, aunque registrar un bloque reordene esa lista.
 
 Gratis, sin anuncios, código abierto.

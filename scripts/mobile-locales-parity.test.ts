@@ -3,9 +3,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { APP_LOCALIZATIONS, localeStringsPath } from '../packages/mobile/app.config';
+import buildExpoConfig, { APP_LOCALIZATIONS, localeStringsPath } from '../packages/mobile/app.config';
 import { SUPPORTED_LOCALES } from '../packages/shared/i18n/src/config';
 
 // Adding a language touches three places that must agree, and nothing but this
@@ -111,6 +111,25 @@ describe('mobile locale parity', () => {
         keys: baseKeys,
       });
     }
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps the base photo-library prompt in step with the expo-image-picker plugin string', () => {
+    // `photosPermission` is the development-region string Expo writes into
+    // Info.plist; locales/en.json overrides it in en.lproj. If they drift, a
+    // device whose language has no .lproj shows a different prompt from English.
+    // An empty TAILSCALE_HOSTS makes app.config.ts skip its `tailscale status`
+    // subprocess, so building the config here stays hermetic on a dev machine.
+    vi.stubEnv('TAILSCALE_HOSTS', '');
+    const config = buildExpoConfig({ config: {}, projectRoot: MOBILE_ROOT } as Parameters<typeof buildExpoConfig>[0]);
+    const imagePicker = (config.plugins ?? []).find(
+      (plugin) => Array.isArray(plugin) && plugin[0] === 'expo-image-picker',
+    ) as [string, { photosPermission?: string }] | undefined;
+    expect(imagePicker?.[1].photosPermission).toBeTruthy();
+    expect(readLocaleStrings('en').NSPhotoLibraryUsageDescription).toBe(imagePicker?.[1].photosPermission);
   });
 
   // Load-bearing beyond the leak it names: Expo's iOS Locales plugin bails with an

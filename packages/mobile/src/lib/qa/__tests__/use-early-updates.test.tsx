@@ -32,7 +32,7 @@ vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 vi.mock('@xprem/control-center/src/surf', () => ({ surfTo: vi.fn() }));
 vi.mock('@xprem/control-center/src/config', () => ({ BRANCH_HEADER: 'xprem-branch' }));
-vi.mock('../../legacy-ota-channel-migration', () => ({ isBranchSurfingBuild: () => true }));
+vi.mock('../../ota-channel-override-cleanup', () => ({ isBranchSurfingBuild: () => true }));
 vi.mock('../../../settings', () => ({ getSetting: () => null, setSetting: vi.fn() }));
 vi.mock('../../analytics', () => ({ track: vi.fn() }));
 vi.mock('../qa-surf', async (importOriginal) => ({

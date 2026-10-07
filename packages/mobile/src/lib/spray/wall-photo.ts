@@ -10,18 +10,48 @@
 // things depending on who is reading it.
 
 import * as ImagePicker from 'expo-image-picker';
-import { compressPickedImage } from '../image-compression';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { compressPickedImageWithSize } from '../image-compression';
+import { reportError } from '../error-reporting';
+import {
+  isIdentityEdit,
+  planWallPhotoRender,
+  renderableOriginalSize,
+  rotatedSize,
+  type EditableWallPhoto,
+  type PixelSize,
+  type QuarterTurns,
+  type WallPhotoEdit,
+  type WallPhotoFile,
+} from './photo-edit';
 
-/** Longest edge of an uploaded wall photo. */
-export const WALL_PHOTO_MAX_DIMENSION = 2048;
+/**
+ * Longest edge of an uploaded wall photo.
+ *
+ * 4096, not the 2048 the wall is drawn at (#5911). The server keeps a 2048 px
+ * base for the canonical frame, the detector and the climb view, and stores this
+ * larger copy beside it for the hold editor to swap in once it zooms past 3x.
+ * A 12 MP phone photo (4032x3024) goes up unscaled. Eight sample wall photos
+ * came to 1.5–2.6 MB at JPEG 0.85 and at most 4.7 MB at 0.95, and even pure
+ * noise at 4096x3072 stays under 13 MB, so the handler's 15 MB cap needs no
+ * second, lower-quality pass.
+ */
+export const WALL_PHOTO_MAX_DIMENSION = 4096;
 /** JPEG quality. The hold editor traces silhouettes on these pixels. */
 export const WALL_PHOTO_QUALITY = 0.85;
 
-export type PickedWallPhotoFile = {
-  uri: string;
-  width: number;
-  height: number;
-};
+/**
+ * What the pickers answer: the compressed photo, plus what the crop step needs
+ * to re-edit it later (`photo-edit.ts`). `edit` is always null straight out of
+ * the picker.
+ */
+export type PickedWallPhotoFile = EditableWallPhoto;
+
+/**
+ * Longest edge of a rotated preview on the crop step. It is only ever drawn a
+ * few hundred points wide, so there is no reason to hold a full-size bitmap.
+ */
+const ROTATED_PREVIEW_MAX_DIMENSION = 1600;
 
 /**
  * The size `compressPickedImage` will leave a photo at.
@@ -76,12 +106,116 @@ export type WallPhotoLibraryResult = { outcome: 'picked'; photo: PickedWallPhoto
 export type WallPhotoCameraResult = WallPhotoLibraryResult | { outcome: 'denied' };
 
 async function compressAsset(asset: ImagePicker.ImagePickerAsset): Promise<PickedWallPhotoFile> {
-  const uri = await compressPickedImage(asset.uri, asset.width, asset.height, {
+  const compressed = await compressPickedImageWithSize(asset.uri, asset.width, asset.height, {
     maxDimension: WALL_PHOTO_MAX_DIMENSION,
     quality: WALL_PHOTO_QUALITY,
   });
-  const size = predictCompressedSize(asset.width, asset.height);
-  return { uri, width: size.width, height: size.height };
+  // The rendered size when the platform reports one: it is measured after the
+  // orientation was baked in, which the picker's own numbers are not on every
+  // Android build. The prediction is the fallback, as it always was.
+  const measured = compressed.width > 0 && compressed.height > 0;
+  const size = measured
+    ? { width: compressed.width, height: compressed.height }
+    : predictCompressedSize(asset.width, asset.height);
+  const base: WallPhotoFile = { uri: compressed.uri, width: size.width, height: size.height };
+  const pickedLongSide = Math.max(asset.width, asset.height);
+  return {
+    ...base,
+    base,
+    original: { uri: asset.uri, longSide: Number.isFinite(pickedLongSide) && pickedLongSide > 0 ? pickedLongSide : 0 },
+    edit: null,
+  };
+}
+
+type ManipulatorContext = ReturnType<typeof ImageManipulator.manipulate>;
+
+/** Render a context and save it as a JPEG, answering with the rendered image's real size. */
+async function saveRendered(context: ManipulatorContext, quality: number, expected: PixelSize): Promise<WallPhotoFile> {
+  const image = await context.renderAsync();
+  try {
+    const saved = await image.saveAsync({ compress: quality, format: SaveFormat.JPEG });
+    // The rendered `ImageRef`'s size, not the plan's: the plan is arithmetic on
+    // a size that was itself derived, and the uploaded file's pixels are what
+    // the anchors are tapped in.
+    const measured = image.width > 0 && image.height > 0;
+    return {
+      uri: saved.uri,
+      width: measured ? image.width : expected.width,
+      height: measured ? image.height : expected.height,
+    };
+  } finally {
+    image.release();
+  }
+}
+
+async function renderEditFrom(uri: string, sourceSize: PixelSize, edit: WallPhotoEdit): Promise<WallPhotoFile> {
+  const plan = planWallPhotoRender(edit, sourceSize, WALL_PHOTO_MAX_DIMENSION);
+  const context = ImageManipulator.manipulate(uri);
+  for (const op of plan.ops) {
+    if (op.type === 'rotate') context.rotate(op.degrees);
+    else if (op.type === 'crop') context.crop(op.rect);
+    else context.resize('width' in op ? { width: op.width } : { height: op.height });
+  }
+  return saveRendered(context, WALL_PHOTO_QUALITY, plan.output);
+}
+
+/**
+ * Apply a crop-and-rotate edit, in one pass: rotate, crop, then shrink to
+ * `WALL_PHOTO_MAX_DIMENSION` and encode at `WALL_PHOTO_QUALITY`.
+ *
+ * Reads the picker's ORIGINAL where it can, so a crop keeps the camera's own
+ * pixels rather than enlarging a compressed copy. Falls back to the base — the
+ * same edit, planned against the base's size — when the original is too big to
+ * decode safely (`ORIGINAL_RENDER_MAX_PIXELS`), has gone from the cache, or
+ * fails to render for any other reason (an Android crop that reaches past a
+ * bitmap whose real size differs from the derived one throws). The identity
+ * edit renders nothing: the base IS that photo.
+ *
+ * The output is bounded like the compressor's: at most 4096 px on the long
+ * side, so at most 4096 x 4096 for a square crop of a 24 MP photo. That is a
+ * third more pixels than a 4096 x 3072 photo, which puts a real wall photo at
+ * about 3.5 MB against the upload's 15 MB cap, the same headroom a square
+ * original gets from the compressor.
+ *
+ * Throws only when the base cannot be rendered either.
+ */
+export async function renderWallPhotoEdit(photo: EditableWallPhoto, edit: WallPhotoEdit): Promise<WallPhotoFile> {
+  if (isIdentityEdit(edit)) return { uri: photo.base.uri, width: photo.base.width, height: photo.base.height };
+  const original = renderableOriginalSize(photo.base, photo.original.longSide);
+  if (original) {
+    try {
+      return await renderEditFrom(photo.original.uri, original, edit);
+    } catch (error) {
+      // Reported so an Android orientation surprise is visible, then absorbed:
+      // the base gives the same crop at a little less detail.
+      reportError(error);
+    }
+  }
+  return renderEditFrom(photo.base.uri, photo.base, edit);
+}
+
+/**
+ * The base turned `turns` quarter turns clockwise, for the crop step to draw.
+ *
+ * A rendered file rather than a view transform, because a rotated view hands
+ * gesture translations back in ITS axes: every drag on the crop box would need
+ * un-rotating, per frame, on the UI thread. With a real rotated image the crop
+ * maths only ever works in the space the climber sees. No turn is the base
+ * itself.
+ */
+export async function renderRotatedPreview(base: WallPhotoFile, turns: QuarterTurns): Promise<string> {
+  if (turns === 0) return base.uri;
+  const context = ImageManipulator.manipulate(base.uri).rotate(turns * 90);
+  const turned = rotatedSize(base, turns);
+  if (Math.max(turned.width, turned.height) > ROTATED_PREVIEW_MAX_DIMENSION) {
+    context.resize(
+      turned.width >= turned.height
+        ? { width: ROTATED_PREVIEW_MAX_DIMENSION }
+        : { height: ROTATED_PREVIEW_MAX_DIMENSION },
+    );
+  }
+  const preview = await saveRendered(context, 0.8, turned);
+  return preview.uri;
 }
 
 /**

@@ -43,10 +43,6 @@ type LogAscentSheetProps = {
   setIds?: string;
   sessionId?: string | null;
   consensusGradeName?: string;
-  /** `Climb.revisionNumber` of the climb being logged, when the caller has it. */
-  climbRevision?: number | null;
-  /** `Climb.frames` of the climb being logged; see `QuickTickFormInput.climbFrames`. */
-  climbFrames?: string | null;
 };
 
 export function LogAscentSheet({
@@ -65,8 +61,6 @@ export function LogAscentSheet({
   setIds,
   sessionId,
   consensusGradeName,
-  climbRevision,
-  climbFrames,
 }: LogAscentSheetProps) {
   const { t } = useTranslation('climbs');
 
@@ -111,8 +105,6 @@ export function LogAscentSheet({
     setIds,
     sessionId,
     consensusGradeName,
-    climbRevision,
-    climbFrames,
     onDismiss: handleClose,
     savedRef,
     fieldSnapshotRef,

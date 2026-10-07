@@ -1,5 +1,7 @@
-New in 2.5:
-- Works with Woods, front to back: add your 12x12 or 8x10, browse 5,000+ climbs with their rules, light them over Bluetooth, set and remix your own, and mirror a climb so the wall flips with it.
-- Take the wall on a board with no LEDs: your crew and the gym screen follow the climb you put up.
-- Mirror your climb from the Android notification; the app, your crew and the LEDs follow.
-- Holds draw faster. Downloaded climbs stay current after an app update.
+New in 2.6:
+- Spray walls: photograph your home wall or your gym's spray wall, the app finds the holds, then set, queue and log climbs on it. No LEDs needed.
+- See your crew's live sessions on Home, and their logs on every climb.
+- A rest timer that starts when you log a climb and can move the queue on.
+- Play next: long-press a climb to jump the queue.
+- Your gym's other boards are one tap away in the wall sheet.
+- Shared climb links open straight in the app.

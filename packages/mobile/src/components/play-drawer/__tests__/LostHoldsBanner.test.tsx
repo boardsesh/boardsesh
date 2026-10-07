@@ -4,21 +4,16 @@ import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 /**
- * The play drawer's "holds are gone" banner.
+ * The play drawer's "This climb lost a hold" banner.
  *
- * Every suite that renders the drawer stubs this component out — it reaches the
- * design-system Button, which reaches native modules those suites have no runtime
- * for — so without this file the banner had no coverage at all. What is worth
- * pinning is not its layout but its three rules, each of which is a decision
- * somebody could quietly reverse:
+ * Every suite that renders the drawer stubs this component out (it reaches the
+ * design-system Button, which reaches native modules those suites have no
+ * runtime for), so this file is its coverage. Three rules worth pinning:
  *
- *  1. it says nothing at all when nothing is missing, so an intact climb pays no
- *     strip of chrome;
- *  2. it counts through i18n's plural machinery rather than concatenating, so
- *     "1 hold" is not "1 holds";
- *  3. the Remix action is OPTIONAL — the drawer has surfaces (the iPad pane, the
- *     signed-out web view) that can show the banner and cannot reach the create
- *     route, and offering a button that goes nowhere is worse than offering none.
+ *  1. it says nothing when nothing is missing;
+ *  2. it offers exactly one action, Remix: no Edit, no put-back;
+ *  3. Remix is optional: on an archived wall the sentence stays and the button
+ *     goes, because a button that leads nowhere is worse than none.
  */
 
 const translate = vi.fn((key: string, options?: { count?: number }) =>
@@ -71,38 +66,25 @@ describe('LostHoldsBanner', () => {
     expect(container.querySelector('[data-testid="lost-holds-banner"]')).toBeNull();
   });
 
-  it('renders nothing for a negative or absent count rather than "-1 holds gone"', () => {
-    // `missingHoldCount` is nullable on the wire and materialised by a recompute,
-    // so a nonsense value is a wire problem — not a thing to render.
+  it('renders nothing for a negative count', () => {
     const { container } = render(createElement(LostHoldsBanner, { count: -1 }));
     expect(container.querySelector('[data-testid="lost-holds-banner"]')).toBeNull();
   });
 
-  it('states the count through the plural key', () => {
-    const { getByTestId } = render(createElement(LostHoldsBanner, { count: 3, onRemix: vi.fn() }));
-
-    // `count` reaches i18next as `count`, which is what selects `_one` / `_other`.
-    // Concatenating the number into the sentence here would read "1 holds are
-    // gone" in English and be unfixable in German.
-    expect(getByTestId('lost-holds-banner').textContent).toContain('mobile.lostHolds.banner#3');
-    expect(translate).toHaveBeenCalledWith('mobile.lostHolds.banner', { count: 3 });
-  });
-
-  it('offers Remix and calls it once, only when the host can navigate', () => {
+  it('says the climb lost a hold and offers Remix, once, and nothing else', () => {
     const onRemix = vi.fn();
-    const { getByRole } = render(createElement(LostHoldsBanner, { count: 2, onRemix }));
+    const { getByRole, getAllByRole, getByTestId } = render(createElement(LostHoldsBanner, { count: 2, onRemix }));
 
-    const action = getByRole('button', { name: 'mobile.lostHolds.remix' });
-    action.click();
+    expect(getByTestId('lost-holds-banner').textContent).toContain('mobile.lostHolds.banner');
+    expect(getAllByRole('button')).toHaveLength(1);
+    getByRole('button', { name: 'mobile.lostHolds.remix' }).click();
     expect(onRemix).toHaveBeenCalledTimes(1);
   });
 
-  it('is informational with no Remix handler — no dead button, no dead sentence', () => {
+  it('keeps the sentence and drops the button without a Remix handler', () => {
     const { getByTestId, queryByRole } = render(createElement(LostHoldsBanner, { count: 2 }));
 
-    expect(getByTestId('lost-holds-banner').textContent).toContain('mobile.lostHolds.banner#2');
+    expect(getByTestId('lost-holds-banner').textContent).toContain('mobile.lostHolds.banner');
     expect(queryByRole('button')).toBeNull();
-    // The body line only makes sense next to the action it describes.
-    expect(getByTestId('lost-holds-banner').textContent).not.toContain('mobile.lostHolds.bannerBody');
   });
 });

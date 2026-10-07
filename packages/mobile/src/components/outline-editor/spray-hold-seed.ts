@@ -22,13 +22,16 @@
  * waiting for its payload.
  */
 
+import type { SprayVersionIdentity } from '../../lib/spray/spray-photo-keys';
 import type { SprayHoldCandidate } from './spray-hold-editor-types';
 import type { SprayEditorHold } from './spray-hold-editor-reducer';
+import { SPRAY_MAYBE_FLOOR } from './spray-hold-tools';
 
 /** The shape this module needs off a registered wall — nothing more. */
 export type SeedableWall = {
   wallUuid: string;
   version: number;
+  versionId: SprayVersionIdentity;
   /** When the registry took this payload. Distinguishes a post-save refetch from a photo refresh. */
   registeredAtMs?: number;
   holds: readonly {
@@ -40,6 +43,8 @@ export type SeedableWall = {
     /** Absent on a payload written before provenance was carried; manual is the honest default. */
     source?: 'MANUAL' | 'AUTO';
     confidence?: number | null;
+    /** The removed hold this one replaced, when an older reset linked them. */
+    movedFromHoldId?: number;
   }[];
 };
 
@@ -107,12 +112,17 @@ export function seedIncludesCandidates(reason: SeedReason): boolean {
  * candidates back into the pending list.
  */
 export function sprayEditorSeedKey(wall: SeedableWall | null): string | null {
-  return wall ? `${wall.wallUuid}:${wall.version}` : null;
+  return wall ? `${wall.wallUuid}:${wall.versionId}` : null;
 }
 
 /**
  * The editor's starting holds: the wall's own, plus the detector's proposals,
  * plus anything this session has changed that the server has not taken yet.
+ *
+ * Proposals below `SPRAY_MAYBE_FLOOR` are dropped here and never reach the
+ * screen: they are not holds the climber is asked to rule on, and drawing them
+ * as ghosts would bury the wall in rings. Everything at or above it arrives
+ * `pending`, and the reducer's `holdRole` reads it as ON or MAYBE.
  *
  * Stored holds arrive clean and accepted — they ARE the wall — and carry the
  * provenance the server has for them. Hardcoding MANUAL here would mean that
@@ -150,6 +160,7 @@ export function buildEditorSeed(
       confidence: hold.confidence ?? null,
       review: 'accepted',
       dirty: false,
+      ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
     });
   }
 
@@ -163,6 +174,7 @@ export function buildEditorSeed(
     // is being unique within one seed.
     let nextLocalId = lowestLocalId(byId, carryOver) - 1;
     for (const candidate of candidates) {
+      if (!(candidate.confidence >= SPRAY_MAYBE_FLOOR)) continue;
       const id = nextLocalId--;
       byId.set(id, {
         id,
@@ -208,9 +220,10 @@ function lowestLocalId(seeded: Map<number, SprayEditorHold>, carryOver: readonly
  * The holds a re-seed has to carry: everything this session changed that the
  * last save did not take.
  *
- * A pending candidate is never carried — it is a proposal, and the fresh payload
- * brings its own.
+ * Only accepted holds are carried. A pending find is a proposal, and the fresh
+ * payload brings its own; a switched-off one is a decision NOT to write it, so
+ * there is nothing of it to keep.
  */
 export function holdsToCarryOver(holds: readonly SprayEditorHold[]): SprayEditorHold[] {
-  return holds.filter((hold) => hold.dirty && hold.review !== 'pending');
+  return holds.filter((hold) => hold.dirty && hold.review === 'accepted');
 }

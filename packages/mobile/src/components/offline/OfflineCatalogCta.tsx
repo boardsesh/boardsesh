@@ -50,11 +50,18 @@ export function OfflineCatalogCta({ board, style }: OfflineCatalogCtaProps) {
 
   if (!nudge.visible || !board) return null;
 
+  // A spray wall has climbs, not a catalog to search (#5960).
+  const isSprayWall = board.boardType === 'spray';
+
   return (
     <OfflineNudgeCard
       testID="offline-catalog-cta"
-      title={t('mobile.offline.nudge.noCatalog.title')}
-      body={t('mobile.offline.nudge.noCatalog.body', { name: board.name })}
+      title={isSprayWall ? t('mobile.offline.nudge.noCatalog.sprayTitle') : t('mobile.offline.nudge.noCatalog.title')}
+      body={
+        isSprayWall
+          ? t('mobile.offline.nudge.noCatalog.sprayBody', { name: board.name })
+          : t('mobile.offline.nudge.noCatalog.body', { name: board.name })
+      }
       primaryLabel={t('mobile.offline.nudge.noCatalog.cta')}
       onPrimary={handleArm}
       style={style}

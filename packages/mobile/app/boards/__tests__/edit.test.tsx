@@ -25,10 +25,19 @@ const trackMock = vi.hoisted(() => vi.fn());
 const alertMock = vi.hoisted(() => vi.fn());
 const buildUpdateInputMock = vi.hoisted(() => vi.fn());
 const updateSprayWallMock = vi.hoisted(() => vi.fn());
+const pushMock = vi.hoisted(() => vi.fn());
+const confirmResetMock = vi.hoisted(() => vi.fn());
+const trackSprayMock = vi.hoisted(() => vi.fn());
+const picker = vi.hoisted(() => ({ props: null as null | { onRetakePhoto?: () => void } }));
+const background = vi.hoisted(() => ({
+  changed: false,
+  save: vi.fn(async (): Promise<{ outcome: string; reason?: string | null }> => ({ outcome: 'saved' })),
+}));
 
 // What each test varies: the gym on file, the gym the picker is showing, and
 // whether the board being edited is also the active one.
 const state = vi.hoisted(() => ({
+  ownerDisplayName: undefined as string | undefined,
   boardGymUuid: null as string | null,
   selectedGym: null as { uuid: string; name: string } | null,
   activeBoardUuid: null as string | null,
@@ -39,16 +48,21 @@ const state = vi.hoisted(() => ({
   boardIsUnlisted: false,
   builderIsPublic: false,
   builderIsUnlisted: false,
+  // The "Reset wall with a new photo" gate: who is looking, and the archive.
+  profileId: 'owner-id' as string | null,
+  wallArchived: false,
 }));
 
 const board = {
   uuid: 'board-uuid',
+  ownerId: 'owner-id',
   layoutId: 3,
   sizeId: 1,
   setIds: '5,6,7',
   name: 'Klimmuur MoonBoard',
   gymUuid: null,
   canEdit: true,
+  isOwned: true,
 } as unknown as UserBoard;
 
 /** A graphql-request ClientError carrying the server's duplicate rejection. */
@@ -72,7 +86,7 @@ const ownerDuplicate = duplicateError({
 const strippedDuplicate = duplicateError({ code: 'BOARD_DUPLICATE_CONFIG' });
 
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: backMock }),
+  useRouter: () => ({ back: backMock, push: pushMock }),
   useLocalSearchParams: () => ({ boardUuid: 'board-uuid' }),
 }));
 
@@ -90,10 +104,11 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
       gymUuid: state.boardGymUuid,
       isPublic: state.boardIsPublic,
       isUnlisted: state.boardIsUnlisted,
+      ownerDisplayName: state.ownerDisplayName,
     },
     isLoading: false,
   }),
-  useProfile: () => ({ data: { displayName: 'Marco' } }),
+  useProfile: () => ({ data: state.profileId ? { id: state.profileId, displayName: 'Marco' } : undefined }),
   useUpdateBoard: () => ({ mutateAsync: updateBoardMock }),
   useLinkBoardToGym: () => ({ mutateAsync: linkBoardToGymMock }),
   useUpdateSprayWall: () => ({ mutateAsync: updateSprayWallMock }),
@@ -130,14 +145,23 @@ vi.mock('../../../src/components/board-discovery/use-board-builder', () => ({
 }));
 
 vi.mock('../../../src/components/board-discovery/board-builder-labels', () => ({
-  formatDefaultBoardName: () => 'Default name',
+  formatDefaultBoardName: ({ userName }: { userName?: string | null }) => `${userName ?? 'nobody'}'s board`,
 }));
 
 vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
-  BoardForm: ({ onSubmit, errorMessage }: { onSubmit: () => void; errorMessage?: string | null }) =>
+  BoardForm: ({
+    onSubmit,
+    errorMessage,
+    sprayBackgroundSection,
+  }: {
+    onSubmit: () => void;
+    errorMessage?: string | null;
+    sprayBackgroundSection?: ReactNode;
+  }) =>
     createElement('div', null, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
+      createElement('div', { key: 'background' }, sprayBackgroundSection),
     ]),
 }));
 
@@ -151,7 +175,10 @@ vi.mock('../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { background: '#000' } }),
 }));
 
-vi.mock('@boardsesh/board-config', () => ({ toBoardName: (value: string) => value }));
+vi.mock('@boardsesh/board-config', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/board-config')>()),
+  toBoardName: (value: string) => value,
+}));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -160,6 +187,31 @@ vi.mock('react-native', () => ({
   Alert: { alert: (...args: unknown[]) => alertMock(...args) },
   View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+}));
+
+vi.mock('../../../src/components/spray-wall/SprayWallBackgroundPicker', () => ({
+  SprayWallBackgroundPicker: (props: { onRetakePhoto?: () => void }) => {
+    picker.props = props;
+    return null;
+  },
+}));
+vi.mock('../../../src/lib/spray/confirm-spray-wall-reset', () => ({ confirmSprayWallReset: confirmResetMock }));
+vi.mock('../../../src/lib/spray/spray-telemetry', () => ({ trackSprayEvent: trackSprayMock }));
+vi.mock('../../../src/lib/spray/use-spray-wall-archive', () => ({
+  useSprayWallIsArchived: () => state.wallArchived,
+}));
+vi.mock('../../../src/hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: null }),
+}));
+vi.mock('../../../src/components/spray-wall/use-spray-wall-background-editor', () => ({
+  useSprayWallBackgroundEditor: () => ({
+    gate: { kind: 'unsupported' },
+    art: null,
+    value: 'photo',
+    onChange: () => {},
+    changed: background.changed,
+    save: background.save,
+  }),
 }));
 
 const { default: EditBoard } = await import('../edit');
@@ -179,6 +231,12 @@ beforeEach(() => {
   state.boardIsUnlisted = false;
   state.builderIsPublic = false;
   state.builderIsUnlisted = false;
+  state.ownerDisplayName = undefined;
+  state.profileId = 'owner-id';
+  state.wallArchived = false;
+  picker.props = null;
+  background.changed = false;
+  background.save.mockResolvedValue({ outcome: 'saved' });
   buildUpdateInputMock.mockReturnValue({ boardUuid: 'board-uuid', name: 'Klimmuur MoonBoard' });
   updateSprayWallMock.mockResolvedValue({ uuid: 'board-uuid', layoutId: 4242 });
   updateBoardMock.mockResolvedValue({ uuid: 'board-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -195,6 +253,31 @@ describe('EditBoard', () => {
       expect.objectContaining({ currentConfig: { layoutId: 3, sizeId: 1, setIds: '5,6,7' } }),
     );
     expect(updateBoardMock.mock.calls[0][0].allowDuplicateConfig).toBeUndefined();
+  });
+
+  // #5960 review: an admin clearing somebody's board name must not rename it
+  // after themselves. The signed-in profile here is "Marco".
+  it("falls back to the OWNER's name, not the editor's, for a cleared name", async () => {
+    state.ownerDisplayName = 'Test User';
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(buildUpdateInputMock).toHaveBeenCalledTimes(1));
+    expect(buildUpdateInputMock).toHaveBeenCalledWith(
+      'board-uuid',
+      expect.objectContaining({ fallbackName: "Test User's board" }),
+    );
+  });
+
+  it("uses the editor's name when the board carries no owner name", async () => {
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(buildUpdateInputMock).toHaveBeenCalledTimes(1));
+    expect(buildUpdateInputMock).toHaveBeenCalledWith(
+      'board-uuid',
+      expect.objectContaining({ fallbackName: "Marco's board" }),
+    );
   });
 
   it('asks instead of failing when the config collides with a sibling board', async () => {
@@ -465,5 +548,113 @@ describe('EditBoard — spray wall visibility', () => {
     await waitFor(() => expect(updateBoardMock).toHaveBeenCalledTimes(1));
     expect(updateBoardMock.mock.calls[0][0].isPublic).toBe(true);
     expect(updateSprayWallMock).not.toHaveBeenCalled();
+  });
+
+  it('saves a changed wall background and leaves on success', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+    expect(background.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the background alone when it did not change', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
+    expect(background.save).not.toHaveBeenCalled();
+  });
+
+  it('says why when the server refuses a generated look, and stays', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'keystone' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('sprayBackground.notAvailable');
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('still saves the background when visibility was refused, and says both', async () => {
+    editSprayWall({ isPublic: true, isUnlisted: false });
+    updateSprayWallMock.mockRejectedValueOnce({
+      response: { errors: [{ message: 'nope', extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } }] },
+    });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'keystone' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(background.save).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('error').textContent).toBe(
+      'mobile.sprayVisibility.ownerOnlyError sprayBackground.notAvailable',
+    );
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('names the missing corner pins when that is why the look was refused', async () => {
+    editSprayWall({ isPublic: false, isUnlisted: false });
+    background.changed = true;
+    background.save.mockResolvedValueOnce({ outcome: 'refused', reason: 'no-pins' });
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByText('submit'));
+
+    await waitFor(() => expect(screen.getByTestId('error')).toBeTruthy());
+    expect(screen.getByTestId('error').textContent).toBe('sprayBackground.notAvailableNoPins');
+  });
+});
+
+// A photo too skewed for a generated look offers a reset with a new photo. It
+// is a reset like every other entry: the owner's alone, never on an archived
+// wall, and behind the "Reset this wall?" confirm.
+describe('EditBoard — reset wall with a new photo', () => {
+  beforeEach(() => {
+    state.boardType = 'spray';
+  });
+
+  it('offers it to the owner, behind the confirm, and counts the confirm', async () => {
+    confirmResetMock.mockResolvedValueOnce(true);
+    render(createElement(EditBoard));
+    expect(picker.props?.onRetakePhoto).toBeTypeOf('function');
+
+    picker.props?.onRetakePhoto?.();
+    await waitFor(() => expect(pushMock).toHaveBeenCalledExactlyOnceWith('/boards/spray/new?resetOf=board-uuid'));
+    expect(confirmResetMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ title: 'sprayResetConfirm.title', start: 'sprayResetConfirm.start' }),
+    );
+    expect(trackSprayMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ properties: { source: 'board_edit' } }),
+    );
+  });
+
+  it('goes nowhere and counts nothing when the owner cancels', async () => {
+    confirmResetMock.mockResolvedValueOnce(false);
+    render(createElement(EditBoard));
+    picker.props?.onRetakePhoto?.();
+    await waitFor(() => expect(confirmResetMock).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(trackSprayMock).not.toHaveBeenCalled();
+  });
+
+  it('is not offered to an editor who does not own the wall', () => {
+    state.profileId = 'gym-admin';
+    render(createElement(EditBoard));
+    expect(picker.props).not.toBeNull();
+    expect(picker.props?.onRetakePhoto).toBeUndefined();
+  });
+
+  it('is not offered on an archived wall', () => {
+    state.wallArchived = true;
+    render(createElement(EditBoard));
+    expect(picker.props).not.toBeNull();
+    expect(picker.props?.onRetakePhoto).toBeUndefined();
   });
 });

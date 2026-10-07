@@ -155,7 +155,10 @@ export type WasmRenderConfig = {
   glow_falloff?: GlowFalloff;
   /** Glow geometry — the Rust `GlowTuning` fields. Omitted fields stay at their neutral defaults. */
   glow?: GlowTuningFields;
-  /** The role-colour fill drawn over the silhouette (`fill` and `glow-fill`). */
+  /**
+   * The role-colour fill drawn over the silhouette (`fill` and `glow-fill`).
+   * Under `outline` its opacity is the outline stroke's alpha instead.
+   */
   fill?: FillConfig;
   glyphs?: GlyphsMode;
   led_cover?: LedCoverConfig;

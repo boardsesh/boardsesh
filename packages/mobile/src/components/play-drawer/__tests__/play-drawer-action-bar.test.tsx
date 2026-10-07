@@ -182,6 +182,15 @@ describe('PlayDrawerActionBar', () => {
     expect(container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
   });
 
+  // #5960: the drawer passes no onShare for a draft, which only its setter can open.
+  it('draws the share button only when there is something to share', () => {
+    const withShare = render(createElement(PlayDrawerActionBar, baseProps));
+    expect(withShare.container.querySelector('[data-label="mobile.climbRow.share"]')).not.toBeNull();
+
+    const draft = render(createElement(PlayDrawerActionBar, { ...baseProps, onShare: undefined }));
+    expect(draft.container.querySelector('[data-label="mobile.climbRow.share"]')).toBeNull();
+  });
+
   it('keeps the 32pt angle pill tappable at the 44pt floor via hit-slop', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
     const anglePill = container.querySelector('[data-label="mobile.angleSelector.title"]') as HTMLElement;

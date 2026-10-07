@@ -14,7 +14,8 @@ const state = vi.hoisted(() => ({
 vi.mock('../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
 vi.mock('../../settings', () => ({
   rememberOfflineBoards: (boards: unknown) => rememberOfflineBoardsMock(boards),
-  pruneOfflineBoards: (uuids: unknown) => pruneOfflineBoardsMock(uuids),
+  pruneOfflineBoards: (uuids: unknown, options?: unknown) =>
+    options === undefined ? pruneOfflineBoardsMock(uuids) : pruneOfflineBoardsMock(uuids, options),
   useSetting: () => [state.enabledBoards, vi.fn()],
   offlineBoardKeyForBoard: (input: { boardType: string; layoutId: number; sizeId: number }) =>
     `${input.boardType}:${input.layoutId}:${input.sizeId}`,
@@ -90,7 +91,7 @@ describe('useRememberDownloadedBoards', () => {
 
     // Deleted / unfollowed on another device: nothing local fires, so the complete
     // list is the only signal that the board is gone.
-    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage']);
+    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
   });
 
   it('never prunes from a truncated page', () => {
@@ -134,5 +135,17 @@ describe('useRememberDownloadedBoards', () => {
     // settings store (and with it every useSetting consumer app-wide).
     expect(rememberOfflineBoardsMock).toHaveBeenCalledTimes(1);
     expect(pruneOfflineBoardsMock).toHaveBeenCalledTimes(1);
+  });
+
+  // An archived spray wall is not in `myBoards`; its download card must survive
+  // a complete list, or the wall could not be opened offline.
+  it('keeps the cards of archived walls the caller names', () => {
+    renderHook(() => useRememberDownloadedBoards(connection([garage]), ['old-wall']));
+    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage', 'old-wall']);
+  });
+
+  it('prunes no spray card when the archived list is unknown', () => {
+    renderHook(() => useRememberDownloadedBoards(connection([garage])));
+    expect(pruneOfflineBoardsMock).toHaveBeenCalledWith(['garage'], { keepBoardType: 'spray' });
   });
 });

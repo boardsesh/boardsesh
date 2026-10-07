@@ -45,6 +45,8 @@ import type {
 } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { GymWallSwitcher } from './GymWallSwitcher';
+import { SprayWallActions } from '../board-discovery/SprayWallActions';
+import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -182,6 +184,10 @@ export type NowOnTheWallPanelProps = {
    * whose other boards the switcher lists.
    */
   activeBoard?: UserBoard | null;
+  onOpenSprayMaintenance?: (wallUuid: string, action: SprayDetailRowKey) => void;
+  onShareSprayWall?: (wallUuid: string) => void;
+  /** The signed-in climber's id. A spray wall's reset rows are its owner's alone. */
+  viewerUserId?: string | null;
   /**
    * Hop to another board at the same gym. Sheet variant only — the same panel
    * renders the iPad wall kiosk, and a board switcher on a display mounted to a
@@ -207,6 +213,9 @@ function NowOnTheWallPanelComponent(
     dismissAndWait,
     onSwitchBoard,
     activeBoard,
+    onOpenSprayMaintenance,
+    onShareSprayWall,
+    viewerUserId,
     onSelectGymWall,
     onClimbPress,
     onAddToQueue,
@@ -626,6 +635,14 @@ function NowOnTheWallPanelComponent(
         {canSwitchGymWall && gymWallsExpanded && onSelectGymWall ? (
           <GymWallSwitcher activeBoard={activeBoard ?? null} onSelectBoard={onSelectGymWall} />
         ) : null}
+        {variant === 'sheet' ? (
+          <SprayWallActions
+            board={activeBoard ?? null}
+            onOpenMaintenance={onOpenSprayMaintenance}
+            onShare={onShareSprayWall}
+            viewerUserId={viewerUserId}
+          />
+        ) : null}
         {/* Showcase anchors (screenshot mode): the board sheet only, never the
             iPad kiosk column or the Wall tab, so one panel reports each name. */}
         <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'}>
@@ -750,6 +767,9 @@ function NowOnTheWallPanelComponent(
     onClimbPress,
     variant,
     activeBoard,
+    onOpenSprayMaintenance,
+    onShareSprayWall,
+    viewerUserId,
     onSelectGymWall,
     canSwitchGymWall,
     gymWallsExpanded,

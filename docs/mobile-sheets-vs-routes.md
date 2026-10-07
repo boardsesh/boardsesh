@@ -206,7 +206,7 @@ work and native QA before claiming that contract works on Android.
 | _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` / `setters` filters                                                           |
 | **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`                                                                                 |
 | **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
-| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | none today (`onboarding` moved to `transparentModal` in #5654)                                                                        |
+| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | the spray-wall flows, **on iPad only** (see the worked example); nothing on a phone (`onboarding` moved to `transparentModal` in #5654) |
 
 ## The decision tree
 
@@ -256,6 +256,11 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    live behind it (never snapshotted), so the accessory stays mounted and stable. The player
    paints its own opaque `View` under its `GlassSurface` so the live tabs screen doesn't show
    through. See `isTabsChromeRoute` in `src/lib/route-segments.ts`.
+
+   The rule is about `NativeTabs`, so it is iPhone-only: iPad never mounts them
+   (`app/(tabs)/_layout.tsx` returns the JS `Tabs` for a tablet), and a
+   `fullScreenModal` gated on `Platform.isPad` has no accessory to snapshot. The
+   spray-wall flows rely on that; see the worked example.
 
    A **pushed route** under `NativeTabs` keeps the native tab bar — and therefore keeps the
    `NativeTabs.BottomAccessory` **host mounted**. The accessory is a child of the bar, so a
@@ -484,6 +489,23 @@ climb changes reuse the carousel without restarting the opening placeholder.
   nested navigator costs you the back-swipe and the inherited header for nothing — the depth is
   already expressed by the route names. Reach for the same shape for any settings screen that grows
   sub-pages.
+- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`) — pushed routes on the
+  `boards` modal everywhere (rule 3: their corner markers and hold editor are pan-and-pinch
+  boards), but on iPad the `boards` page card is a box in the middle of the screen, the wrong size
+  for an editor. So on iPad, and only there, they are a `fullScreenModal`. Rule 2 does not apply:
+  iPad never mounts `NativeTabs`, so there is no bottom accessory for the cover to snapshot. Two
+  details carry the case. First, **a stack's first screen ignores its own `presentation`**: the
+  live wall sheet opens `/boards/spray/holds` straight onto an empty `boards` stack, so the holds
+  screen IS that stack's root and its own `fullScreenModal` does nothing. The root `boards` screen
+  in `app/_layout.tsx` therefore takes an options function and picks `fullScreenModal` when
+  `opensIntoSprayFlow(route)` says the modal was opened on a spray screen. It reads the ENTRY
+  screen (`params.screen`, then the first route of a cold link's state), never the top one, so the
+  presentation cannot change while the modal is up. Second, a full-screen modal has neither a swipe
+  down nor a back chevron, so every such screen needs a header X that goes through `router.back()`
+  and therefore through its `usePreventRemove` guard. Phones and Android keep the `modal` card and
+  push, key for key: the nested options add no `presentation` key at all there, because an
+  explicit `undefined` would override the stack's `screenOptions`. Details in
+  `docs/spray-walls.md`, "Full screen on iPad".
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js

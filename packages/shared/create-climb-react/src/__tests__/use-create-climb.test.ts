@@ -483,6 +483,32 @@ describe('useCreateClimb', () => {
       });
       expect(result.current.litUpHoldsMap).toEqual({});
     });
+
+    // Editing a published climb seeds through `loadFrames` once the row arrives,
+    // not through `initialFrames`. The server refuses any save of a spray climb
+    // that still names a removed hold, so an edit that kept them could never be
+    // saved and the climber had no way to tap them off (#6024).
+    it('drops holds no longer on the wall when an edit loads its frames', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter', { availableHoldIds: new Set([100, 400]) }));
+
+      act(() => {
+        result.current.loadFrames(PARENT_FRAMES);
+      });
+
+      expect(Object.keys(result.current.litUpHoldsMap).sort()).toEqual(['100', '400']);
+      expect(result.current.totalHolds).toBe(2);
+      expect(result.current.generateFramesString()).toBe('p100r42p400r44');
+    });
+
+    it('keeps every loaded hold on a catalogue board', () => {
+      const { result } = renderHook(() => useCreateClimb('kilter'));
+
+      act(() => {
+        result.current.loadFrames(PARENT_FRAMES);
+      });
+
+      expect(Object.keys(result.current.litUpHoldsMap).sort()).toEqual(['100', '200', '300', '400']);
+    });
   });
 
   describe('initialFrames', () => {

@@ -209,19 +209,18 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
       'characteristics',
       'hold_fingerprint',
       // Spray-wall hold integrity (SW-15, #5448): how many of this climb's holds
-      // have since come off the wall, so `search-climbs-local.ts` can answer the
-      // Intact / Lost-holds filter instead of declining it.
+      // have since come off the wall, so `search-climbs-local.ts` can keep a
+      // published climb that lost a hold out of the listings, as the server does.
       //
       // ADDED WITHOUT BUMPING `refreshRevision` / `refreshColumns`, on purpose.
       // A bump means "every already-downloaded scope must re-crawl to backfill
       // this field" — that is every enabled Kilter and Tension catalogue, tens of
       // thousands of rows each, to fill in a column that is NULL on all of them
-      // (holds do not come off a catalogue board; only a spray wall publish that
-      // removes a hold writes it).
+      // (holds do not come off a catalogue board; only a spray hold edit writes it).
       // Spray scopes are new in this release, so no checkpoint predating this
-      // column can exist for one, and the local predicate is NULL-safe
-      // (`COALESCE(missing_hold_count, 0)`) for every row pulled before it — the
-      // same "unknown reads as intact" rule the server's `holdIntegrityCondition`
+      // column can exist for one, and every local reader is NULL-safe (NULL reads
+      // as no hold lost, so no badge) for every row pulled before it — the same
+      // "unknown reads as intact" rule the server's `holdIntegrityCondition`
       // applies. The two conditions a bump exists to protect are therefore both
       // already met, and paying for it would be a catalogue replay for nothing.
       'missing_hold_count',
@@ -339,7 +338,7 @@ const TABLE_SYNC_DEFINITIONS: Record<string, TableSyncDefinition> = {
     transientColumns: ['photo_url'],
     // A wall tombstone has to take the photograph with it; the row is the only
     // thing that names the file.
-    captureOnDelete: ['layout_id', 'photo_key'],
+    captureOnDelete: ['layout_id', 'board_uuid', 'photo_key'],
   },
 };
 

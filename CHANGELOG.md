@@ -4,6 +4,26 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-07
+
+### New
+
+- Stripped your spray wall? Reset it: take a new photo, mark the holds, and the old wall is archived with every climb and send. ([#6190](https://github.com/boardsesh/boardsesh/pull/6190))
+  Swap a hold that climbs use and those climbs get flagged, ready to remix onto the wall as it is now.
+  Fix a spray climb for 24 hours after you publish it, the same as on every other board.
+- Spray wall climbs are simpler: one version of each climb, no edit history to dig through. ([#6180](https://github.com/boardsesh/boardsesh/pull/6180))
+- Jump the MoonBoard angle straight to 25° or 40° with one tap ([#6189](https://github.com/boardsesh/boardsesh/pull/6189))
+- Show your spray wall straightened and cropped, or just the holds on a clean board ([#6179](https://github.com/boardsesh/boardsesh/pull/6179))
+  See right away if your wall photo is straight-on enough to flatten
+- Import your MoonBoard logbook from Moon's newer exports, now matched by problem name ([#6187](https://github.com/boardsesh/boardsesh/pull/6187))
+  Logs from the 25° board keep their angle, and your comments come along too
+
+### Fixed
+
+- Saving a climb with no name now tells you "Name it to save" instead of just jumping to the field. ([#6194](https://github.com/boardsesh/boardsesh/pull/6194))
+- Sends synced from Kilter now show the grade you gave them, not the setter's grade ([#6186](https://github.com/boardsesh/boardsesh/pull/6186))
+- MoonBoard grades now match the MoonBoard app: 6A shows as V2, and the easy grades read V1 to V4 ([#6188](https://github.com/boardsesh/boardsesh/pull/6188))
+
 ## 2026-10-06
 
 ### App update
@@ -12,15 +32,41 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
-- Spray wall owners can show their wall straightened out, or just the holds on a clean background, like an LED board. ([#6178](https://github.com/boardsesh/boardsesh/pull/6178))
+- Server half only: the picker ships in the app with #6179, so nobody sees this until then. The climber-facing note lives on #6179. ([#6178](https://github.com/boardsesh/boardsesh/pull/6178))
+- Wall owners can put a missing hold back from the climb editor: tap its dashed ring, place it, publish, and it slots back into the climb ([#6175](https://github.com/boardsesh/boardsesh/pull/6175))
+- Climbs that lost holds in a wall reset now open in the editor for their setter, with a dashed ring where each missing hold was ([#6174](https://github.com/boardsesh/boardsesh/pull/6174))
+  Tap a ring to swap in a hold nearby; the hold that replaced it on the wall is offered first
+- Touch up a hold's outline with a brush: paint to add, erase to trim. ([#6173](https://github.com/boardsesh/boardsesh/pull/6173))
+- Edit your spray wall faster on iPad with keyboard shortcuts: ⌘Z to undo, Delete to switch off, [ and ] to step through holds. ([#6171](https://github.com/boardsesh/boardsesh/pull/6171))
+  Double-tap your Apple Pencil to swap between marking and adding holds; squeeze a Pencil Pro for a tool palette.
+- Crop and rotate your spray wall photo before it uploads, so the wall fills the frame. ([#6160](https://github.com/boardsesh/boardsesh/pull/6160))
+- On iPad, Apple Pencil marks holds on your spray wall: tap to switch one, draw round any the scan missed. Fingers pick holds and move around. ([#6167](https://github.com/boardsesh/boardsesh/pull/6167))
+  iPad gets a side toolbar you can drag to either edge, and a card for the hold you picked.
+- Resetting your spray wall? Mark it a full reset and the old set leaves the list, still in your logbook. ([#6166](https://github.com/boardsesh/boardsesh/pull/6166))
+  The Holds filter's new "All" brings retired climbs back.
+- When you draw, place or move a hold, a magnifier above your finger shows exactly where it lands. ([#6168](https://github.com/boardsesh/boardsesh/pull/6168))
+- Zoom deep into your spray wall photo and holds stay sharp while you mark them ([#6162](https://github.com/boardsesh/boardsesh/pull/6162))
+- Not sure how to photograph your spray wall? The photo step now links to a short video guide ([#6141](https://github.com/boardsesh/boardsesh/pull/6141))
 - The hold heatmap moved to the hold filter: pick holds with the heat showing where climbs go ([#6144](https://github.com/boardsesh/boardsesh/pull/6144))
 - Get the app straight from a climb page, a climb list or the gym directory on boardsesh.com ([#6083](https://github.com/boardsesh/boardsesh/pull/6083))
   iPhone Safari now offers to open the page you're on in the app
+- Choose whether anyone who climbs on your spray wall can edit published climbs. ([#6121](https://github.com/boardsesh/boardsesh/pull/6121))
 
 ### Fixed
 
+- Slide to pick a brush size, and zoom in for finer touch-ups ([#6176](https://github.com/boardsesh/boardsesh/pull/6176))
 - Share your unlisted spray wall and friends without the app can open the link in a browser ([#6165](https://github.com/boardsesh/boardsesh/pull/6165))
+- Press and hold with a stylus adds a hold again in Split View and on Android ([#6172](https://github.com/boardsesh/boardsesh/pull/6172))
+- Adding a spray wall no longer gets stuck on "Setting your wall up" ([#6158](https://github.com/boardsesh/boardsesh/pull/6158))
+- Spray walls drop the buttons that only made sense on LED boards: no kickboard rule, no Bluetooth bulb while setting, and no Benchmarks or Routes filters ([#6151](https://github.com/boardsesh/boardsesh/pull/6151))
+  Your own drafts no longer offer Share or Report
+- Sharing a climb from your spray wall now sends a link your crew can open on the web ([#6148](https://github.com/boardsesh/boardsesh/pull/6148))
+- Adding a spray wall is clearer: pick Private, Link only or Public in one place, and an offline upload tells you why it failed ([#6153](https://github.com/boardsesh/boardsesh/pull/6153))
+  Reset the wall has a close button, and Resume is the big button again
+  Board picker tiles show their full names, and a shared link to a deleted wall says the wall is gone
+- Lost holds after a reset? Edit the climb onto the holds still on the wall. ([#6149](https://github.com/boardsesh/boardsesh/pull/6149))
 - Data export now says it's unavailable up front instead of offering a button that can't work ([#6138](https://github.com/boardsesh/boardsesh/pull/6138))
+- Read spray-wall hold counts in every language, reach Publish, and keep portrait Look previews above their page dots. ([#6123](https://github.com/boardsesh/boardsesh/pull/6123))
 - Spray walls load again on the 2.6.0 beta, and you can create new ones. ([#6142](https://github.com/boardsesh/boardsesh/pull/6142))
 - Delete your account even if you created a spray wall. Your walls and photos go away; other climbers keep their logged sends. ([#6115](https://github.com/boardsesh/boardsesh/pull/6115))
 - Writes to spray walls you can't see are now refused at the server — private walls' climbs no longer accept strangers' proposals, reports, or log ticks, and a draft's or private wall's climb details stop leaking into other people's activity feeds. ([#6118](https://github.com/boardsesh/boardsesh/pull/6118))
@@ -48,15 +94,26 @@ A new version shipped to the App Store and Play Store.
 - Keep editing your spray wall when you cancel a leave prompt. ([#6114](https://github.com/boardsesh/boardsesh/pull/6114))
 - See the reset summary and framing warning above your wall photo. ([#6116](https://github.com/boardsesh/boardsesh/pull/6116))
 - Read climb names beside lost-holds labels, and refresh downloaded climbs after publishing a reset. ([#6122](https://github.com/boardsesh/boardsesh/pull/6122))
+- Tap or hold still in Draw to add a circle around a small hold. ([#6125](https://github.com/boardsesh/boardsesh/pull/6125))
+- Leave spray-wall setup from its header, reach photo controls, and choose a Look even when its preview cannot load. ([#6120](https://github.com/boardsesh/boardsesh/pull/6120))
 - Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back. ([#6128](https://github.com/boardsesh/boardsesh/pull/6128))
 - Photographing a wall no longer closes the app on devices with no camera ([#6108](https://github.com/boardsesh/boardsesh/pull/6108))
 - Scan a gym poster with your iPhone and land on that gym's page, not the app's Home tab. ([#6068](https://github.com/boardsesh/boardsesh/pull/6068))
 - Your new climbs appear immediately on downloaded spray walls, without restarting the app. ([#6088](https://github.com/boardsesh/boardsesh/pull/6088))
+- Downloaded wall photos and hold rings return after an offline restart. Going online refreshes the wall without another restart. ([#6084](https://github.com/boardsesh/boardsesh/pull/6084))
 - Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch. ([#6093](https://github.com/boardsesh/boardsesh/pull/6093))
+- French and German wall-photo reset messages use the right wording. ([#6095](https://github.com/boardsesh/boardsesh/pull/6095))
+- Your spray wall shows the right photo after throwing away a reset. ([#6065](https://github.com/boardsesh/boardsesh/pull/6065))
+  Opening a reset keeps your published climbs on their current wall.
+- Keep hold edits and new wall photos in their own workflows. ([#6072](https://github.com/boardsesh/boardsesh/pull/6072))
+  Resume or discard unfinished photos without replacing your chosen photo.
 - Tap a shared climb before signing in and it opens once you're in. ([#6074](https://github.com/boardsesh/boardsesh/pull/6074))
 - Log, queue and favourite your spray climbs after holds come off the wall. ([#6063](https://github.com/boardsesh/boardsesh/pull/6063))
 - Your board picker shows walls ready to climb. Resume unfinished walls in Add a wall, and close an editor when its wall photo cannot load. ([#6082](https://github.com/boardsesh/boardsesh/pull/6082))
+- Shared climb links now open straight in the Android app ([#6066](https://github.com/boardsesh/boardsesh/pull/6066))
+  Tap a link from a mate and the climb is on your screen, ready to light up
 - Delete your spray wall without its last climb lingering on the bar. ([#6067](https://github.com/boardsesh/boardsesh/pull/6067))
+- Read spray-wall editing actions clearly in light mode, including Cancel and reporting. ([#6081](https://github.com/boardsesh/boardsesh/pull/6081))
 - Your new unlisted or public wall has its share link as soon as you publish it. ([#6076](https://github.com/boardsesh/boardsesh/pull/6076))
 - Browse and search downloaded climbs after relaunching offline, including spray walls. ([#6079](https://github.com/boardsesh/boardsesh/pull/6079))
 - Keep unfinished wall photos separate from hold edits. ([#6070](https://github.com/boardsesh/boardsesh/pull/6070))
@@ -70,7 +127,10 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- The app now grabs the latest version as it opens, so you start every session on current fixes ([#6009](https://github.com/boardsesh/boardsesh/pull/6009))
+  New installs sign in on the newest version instead of the one that shipped to the store
 - Queue a playlist after your current climbs, including playlists from setters. ([#4731](https://github.com/boardsesh/boardsesh/pull/4731))
+- Save your climbing history to Files or share it straight from Boardsesh. ([#5909](https://github.com/boardsesh/boardsesh/pull/5909))
 - See how everyone got on with a climb, with the people you follow always first. ([#5975](https://github.com/boardsesh/boardsesh/pull/5975))
   Open "See all logs" on any climb for the newest log from every climber, with filters for your angle, notes and sends.
 - See how a climb went for the people you follow. ([#5974](https://github.com/boardsesh/boardsesh/pull/5974))
@@ -86,11 +146,18 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- While your wall loads after the hold scan, your photo stays on screen with a line saying what's happening ([#6030](https://github.com/boardsesh/boardsesh/pull/6030))
+  If your wall can't load, you get a Try again button instead of an endless spinner
 - Notes and suggestions on a climb you deleted from a private wall no longer show up for other climbers ([#6034](https://github.com/boardsesh/boardsesh/pull/6034))
 - Pick a wall photo, profile picture or feedback screenshot without sharing your whole photo library. ([#6028](https://github.com/boardsesh/boardsesh/pull/6028))
+- The photo permission prompt now says what your photo is for: profile picture, wall photo or feedback screenshot. ([#6026](https://github.com/boardsesh/boardsesh/pull/6026))
 - All four corner rings stay on screen while you mark your spray wall. ([#6029](https://github.com/boardsesh/boardsesh/pull/6029))
   The area you marked is outlined between the rings.
+- Downloaded spray walls leave your device when their owner makes them private or removes your access. Your ticks and other board downloads stay with you. ([#5992](https://github.com/boardsesh/boardsesh/pull/5992))
 - Pan a zoomed-in climb without the play drawer sliding away. ([#4593](https://github.com/boardsesh/boardsesh/pull/4593))
+- New climbs on a spray wall are published when you tap Save, so they show up in the wall's list straight away. ([#5972](https://github.com/boardsesh/boardsesh/pull/5972))
+  Tap Save without a grade and the editor takes you to the grade picker.
+  Drafts now carry a Draft chip in lists, the play view and the bottom bar.
 - Close a climb and return to the playlist you were browsing. ([#5927](https://github.com/boardsesh/boardsesh/pull/5927))
   Generated playlist names and climb counts have room to show.
 - Your crew now follows Next and Previous from Android's session notification. ([#5928](https://github.com/boardsesh/boardsesh/pull/5928))
@@ -101,6 +168,19 @@ A new version shipped to the App Store and Play Store.
 
 A new version shipped to the App Store and Play Store.
 
+### New
+
+- On a spray wall, the setter and the wall's editors can now edit a climb at any time. ([#5973](https://github.com/boardsesh/boardsesh/pull/5973))
+  Every edit is kept. Open a climb and scroll to Revisions to see earlier versions, on the wall photo they were set on.
+- Report a spray wall from its Details sheet. ([#5953](https://github.com/boardsesh/boardsesh/pull/5953))
+  Spray walls are ready without turning on a feature flag.
+- Set how much the rest of your spray wall dims around the lit holds. ([#5944](https://github.com/boardsesh/boardsesh/pull/5944))
+- Spray walls now show the look their creator picked for the photo. ([#5941](https://github.com/boardsesh/boardsesh/pull/5941))
+  Prefer your own look? Turn on Use my look on spray walls in Board look.
+  Adding a spray wall no longer gets stuck when its look can't be saved.
+- When you create a spray wall, you can now preview how its holds light up and pick a look before you publish it. ([#5937](https://github.com/boardsesh/boardsesh/pull/5937))
+- New board look: Aura Outline puts a solid outline around each lit hold, with a tight glow. ([#5936](https://github.com/boardsesh/boardsesh/pull/5936))
+
 ### Improved
 
 - Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably. ([#5890](https://github.com/boardsesh/boardsesh/pull/5890))
@@ -110,8 +190,14 @@ A new version shipped to the App Store and Play Store.
 - The Logbook line on a climb updates as soon as you log a tick ([#5963](https://github.com/boardsesh/boardsesh/pull/5963))
   Scrolling a climb no longer runs text under the clock
   The Download button under Similar Climbs fits its card
+- Open your crew’s spray-wall links straight in Boardsesh on Android. ([#5949](https://github.com/boardsesh/boardsesh/pull/5949))
+  Add your spray wall without enabling a feature flag.
+- Edit your spray wall's holds, replace its photo, and share it from the board sheet. ([#5962](https://github.com/boardsesh/boardsesh/pull/5962))
+  Spray walls are available by default.
 - Find gyms and boards without losing your results when searches need to wait. ([#5948](https://github.com/boardsesh/boardsesh/pull/5948))
+- Aura Outline keeps a big hold's glow off the holds around it. ([#5945](https://github.com/boardsesh/boardsesh/pull/5945))
 - Keep your offline logbook available when storage reconnects during recovery. ([#5946](https://github.com/boardsesh/boardsesh/pull/5946))
+- Keep offline sends and board downloads reliable while navigating and switching accounts. ([#5895](https://github.com/boardsesh/boardsesh/pull/5895))
 - Empty beta-thumbnail downloads no longer become blank pictures in the feed. ([#4273](https://github.com/boardsesh/boardsesh/pull/4273))
   Broken images served through the backend proxy show a fallback instead of an empty image.
 - Playlist sync now explains when another Boardsesh account owns a circuit and shows how to recover. ([#4094](https://github.com/boardsesh/boardsesh/pull/4094))
@@ -134,6 +220,14 @@ A new version shipped to the App Store and Play Store.
 ### New
 
 - See Boardsesh in action at the top of boardsesh.com: a one-minute tour of lighting climbs, sharing a queue and logging sends. ([#5908](https://github.com/boardsesh/boardsesh/pull/5908))
+- Add holds the scan missed: tap +, then draw round a hold or tap its corners ([#5910](https://github.com/boardsesh/boardsesh/pull/5910))
+  Zoom in twice as far when reviewing your spray wall's holds
+- Watch your wall get scanned for holds, then see them sweep in ([#5902](https://github.com/boardsesh/boardsesh/pull/5902))
+  First-time tips show you how to fix holds, then get out of the way
+- Adding a spray wall is now tap and go: we mark the holds, you fix our mistakes ([#5898](https://github.com/boardsesh/boardsesh/pull/5898))
+  Tap a ring to switch a hold off or on, tap bare wall to add one
+  Press and hold a hold to resize it, trace its shape, or join two together
+  One Publish button, no more save-then-done-then-add
 - Download your climbing history from Settings, across every board. ([#5893](https://github.com/boardsesh/boardsesh/pull/5893))
   Keep a Boardsesh archive or download Aurora JSON where available.
 
@@ -256,6 +350,7 @@ A new version shipped to the App Store and Play Store.
 ### Fixed
 
 - Choose whether PR previews open when Boardsesh starts. ([#5684](https://github.com/boardsesh/boardsesh/pull/5684))
+- iOS: clearer heads-up when your board won't connect — points you at what's actually wrong (move closer, try again) instead of a generic error. ([#5354](https://github.com/boardsesh/boardsesh/pull/5354))
 - Link your board account with clearer instructions and correctly spelled board names. ([#5231](https://github.com/boardsesh/boardsesh/pull/5231))
 
 ## 2026-09-21
@@ -396,6 +491,7 @@ A new version shipped to the App Store.
 ### New
 
 - Chip in for the server bills: a new support page explains what Boardsesh costs to run and how to help, through GitHub Sponsors or a one-off donation. ([#5521](https://github.com/boardsesh/boardsesh/pull/5521))
+- No user-facing surface; the only code path near the limit is a tester-only screen. ([#5524](https://github.com/boardsesh/boardsesh/pull/5524))
 - See who's climbing right now on Home and jump into their session. ([#5518](https://github.com/boardsesh/boardsesh/pull/5518))
   The board sheet shows sessions happening on that wall, ready to join.
   Keep a session to yourself: turn off "Show this session live" when you start.
@@ -422,7 +518,9 @@ A new version shipped to the App Store.
   Filtering by grade range now works at angles nobody's climbed yet, instead
   of coming back empty.
 - A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout. ([#5507](https://github.com/boardsesh/boardsesh/pull/5507))
+- Tester-only screen behind Development; never reaches a climber. ([#5519](https://github.com/boardsesh/boardsesh/pull/5519))
 - Board art on the web now fills in once a slow load finishes, instead of leaving you with rings. ([#5502](https://github.com/boardsesh/boardsesh/pull/5502))
+- Tester-only screen behind Development; never reaches a climber. ([#5517](https://github.com/boardsesh/boardsesh/pull/5517))
 
 ## 2026-09-15
 
@@ -432,6 +530,8 @@ A new version shipped to the App Store.
 
 ### Fixed
 
+- Mirror a climb from the lock screen and the wall flips with it, straight away. ([#5391](https://github.com/boardsesh/boardsesh/pull/5391))
+- Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix. ([#5361](https://github.com/boardsesh/boardsesh/pull/5361))
 - The Climbs tab no longer crashes when you pick a board ([#5459](https://github.com/boardsesh/boardsesh/pull/5459))
 
 ## 2026-09-14

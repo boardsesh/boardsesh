@@ -56,7 +56,10 @@ export const UPDATE_TICK_INPUT_FIELDS = [
  *
  * A field belongs here only when leaving it out gives a correct write:
  * `SaveTickInput.climbRevision` is optional, and without it the server stores
- * the version that was live when the climb was climbed (#6023).
+ * the version that was live when the climb was climbed (#6023). The app no
+ * longer sends it, but a tick queued by an earlier bundle still carries it in
+ * its stored payload and is replayed as stored, so the entry stays until no
+ * such outbox row can be left.
  */
 const DROPPABLE_INPUT_FIELDS: Record<string, readonly string[]> = {
   SaveTick: ['climbRevision'],

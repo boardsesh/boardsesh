@@ -72,7 +72,6 @@ vi.mock('../../../../hooks/use-grade-format', () => ({
 vi.mock('../../../../lib/clock', () => ({ nowMs: () => Date.parse('2026-06-22T12:00:00Z') }));
 vi.mock('../../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => false }));
 vi.mock('../../../../hooks/use-local-climb-ticks', () => ({ useLocalClimbTicks: () => undefined }));
-vi.mock('../../../../hooks/use-local-climb-revision', () => ({ useLocalClimbRevision: () => undefined }));
 
 const rows = vi.hoisted(() => ({ uuids: [] as string[] }));
 vi.mock('../../LogbookEntryRow', () => ({

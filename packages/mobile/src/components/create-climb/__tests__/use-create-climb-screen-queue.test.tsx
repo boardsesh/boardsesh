@@ -25,7 +25,11 @@ const board = vi.hoisted(() => ({
   isDuplicateClimbError: vi.fn((_err: unknown) => false),
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const cache = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
+const draftStore = vi.hoisted(() => ({ clearDraft: vi.fn(async () => {}) }));
+/** The climb `useClimb` answers with when the editor is opened on an existing one. */
+const edit = vi.hoisted(() => ({ climb: undefined as Record<string, unknown> | undefined }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 
 const createClimb = vi.hoisted(() => ({
@@ -63,7 +67,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: cryptoMock.randomUUID }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => ({ invalidateQueries: cache.invalidateQueries }),
 }));
 // Partial: the controller now reads @boardsesh/board-config too, which imports
 // this package for real (SUPPORTED_BOARDS). A total mock breaks that import.
@@ -94,10 +98,13 @@ vi.mock('../../../providers/auth-provider', () => ({
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Tester' } }),
-  useClimb: () => ({ data: undefined }),
+  useClimb: () => ({ data: edit.climb }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => null,
@@ -109,7 +116,7 @@ vi.mock('../../../providers/toast-provider', () => ({
 vi.mock('../../../lib/create-climb-draft-store', () => ({
   loadDraft: vi.fn(async () => null),
   saveDraft: vi.fn(async () => {}),
-  clearDraft: vi.fn(async () => {}),
+  clearDraft: draftStore.clearDraft,
   createClimbDraftKey: () => 'draft-key',
   createClimbEditDraftKey: (boardType: string, uuid: string) => `edit:${boardType}:${uuid}`,
   createClimbForkDraftKey: (boardKey: string) => `fork:${boardKey}`,
@@ -124,10 +131,16 @@ vi.mock('../brush-roles', () => ({
   getPaintRoles: () => ['HAND', 'STARTING', 'FINISH'],
 }));
 
-import { initialState, queueReducer, type Climb, type ClimbQueueItem, type QueueState } from '@boardsesh/queue';
+import {
+  initialState,
+  queueReducer,
+  type Climb,
+  type ClimbAuthoredPatch,
+  type ClimbQueueItem,
+  type QueueState,
+} from '@boardsesh/queue';
 import { DEFAULT_PACE_MS } from '@boardsesh/playback-react';
 import { climbToQueueItem, toClimbInput } from '../../../lib/climb-to-queue-item';
-import { resolveTickClimbRevision } from '../../../lib/tick-climb-revision';
 import { useCreateClimbScreen } from '../use-create-climb-screen';
 
 const kilterBoard = { boardName: 'kilter' as const, layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
@@ -140,7 +153,8 @@ function lastQueuedItem(): ClimbQueueItem {
 
 beforeEach(() => {
   toast.showToast.mockClear();
-  queue.setCurrentClimb.mockClear();
+  queue.setCurrentClimb.mockReset();
+  queue.refreshAuthoredClimb.mockReset();
   router.push.mockClear();
   cryptoMock.randomUUID.mockClear();
   board.isAuthenticated = true;
@@ -148,8 +162,10 @@ beforeEach(() => {
   board.saveClimb.mockReset();
   board.updateClimb.mockReset();
   createClimb.frameCount = 1;
+  edit.climb = undefined;
+  cache.invalidateQueries.mockClear();
+  draftStore.clearDraft.mockClear();
   createClimb.generateFramesString.mockReturnValue('p1r12p2r13p3r14');
-  queue.setCurrentClimb.mockReset();
 });
 
 describe('create-climb queue hand-off carries board identity', () => {
@@ -283,6 +299,170 @@ describe('create-climb queue hand-off carries board identity', () => {
 // The creator wrote `frames_pace: 0` on every save, so a published route always
 // played at the 750ms default however the setter set the transport — the speed
 // control authored nothing. These pin the value actually reaching the wire.
+describe('editing a climb somebody else set (#5955)', () => {
+  // The server never rewrites `user_id` / `setter_username` on an update, so
+  // the queue row the editor builds must not either: with the saver's id on it,
+  // the play drawer would credit the saver and offer the real setter nothing.
+  const someoneElsesClimb = {
+    uuid: 'climb-9',
+    name: 'Left Arete',
+    frames: 'p1r12p2r13p3r14',
+    description: '',
+    difficulty: null,
+    userId: 'setter-1',
+    setter_username: 'Original Setter',
+    is_draft: false,
+    published_at: '2020-01-01T00:00:00.000Z',
+    created_at: '2020-01-01T00:00:00.000Z',
+  };
+
+  it('queues the edited climb under its original setter, not the editor', () => {
+    edit.climb = someoneElsesClimb;
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    act(() => result.current.handleSetActive());
+
+    const { climb } = lastQueuedItem();
+    expect(climb.userId).toBe('setter-1');
+    expect(climb.setter_username).toBe('Original Setter');
+  });
+
+  it('keeps the original setter on the row a save syncs into the queue', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockResolvedValue({
+      uuid: 'climb-9',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      publishedAt: '2020-01-01T00:00:00.000Z',
+      isDraft: false,
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb).not.toHaveBeenCalled();
+    const { climb } = lastQueuedItem();
+    expect(climb.uuid).toBe('climb-9');
+    expect(climb.userId).toBe('setter-1');
+    expect(climb.setter_username).toBe('Original Setter');
+  });
+
+  it("says in the climber's language that a spray edit was not allowed", async () => {
+    // The client gate ran on a stale read of who can edit the wall. Nothing is
+    // lost and the reason is on screen, translated. The server's own sentence
+    // is never shown.
+    // A spray climb publishes with its setter's grade, so the edit carries one.
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      response: {
+        errors: [{ message: 'You can only update your own climbs', extensions: { code: 'CLIMB_EDIT_NOT_ALLOWED' } }],
+      },
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editNotAllowed', 'error');
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['CLIMB_EDIT_WINDOW_EXPIRED', 'createClimbForm.alerts.editWindowExpired'],
+    ['CLIMB_NOT_EDITABLE', 'createClimbForm.alerts.editNotEditable'],
+  ])('translates %s on a catalogue board', async (code, key) => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({ extensions: { code }, message: 'server prose' });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith(key, 'error');
+  });
+
+  it('never shows server prose: a failure with no known code gets the generic line, on spray too', async () => {
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'Some new refusal', extensions: { code: 'SOMETHING_NEWER' } }] },
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+  });
+
+  it('says somebody else changed the climb when the server reports an edit conflict', async () => {
+    // Two editors, one climb: the save was decided on a row the other edit has
+    // replaced. One translated line, no second attempt, and the work stays put.
+    edit.climb = { ...someoneElsesClimb, difficulty: '6a/V3' };
+    board.updateClimb.mockRejectedValue({
+      extensions: { code: 'CLIMB_EDIT_CONFLICT' },
+      message: 'This climb changed while you were editing it. Reload it and try again.',
+    });
+    const sprayBoard = { boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1', angle: 40 };
+    const { result } = renderHook(() => useCreateClimbScreen({ board: sprayBoard, editClimbUuid: 'climb-9' }));
+    act(() => result.current.setName('Left Arete, fixed'));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+    expect(board.saveClimb).not.toHaveBeenCalled();
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    // The working copy is still what the climber typed.
+    expect(result.current.name).toBe('Left Arete, fixed');
+    expect(draftStore.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it('recognises the conflict code on a raw GraphQL response too, on any board', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({
+      response: { errors: [{ message: 'changed', extensions: { code: 'CLIMB_EDIT_CONFLICT' } }] },
+    });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.editConflict', 'error');
+  });
+
+  it('keeps the generic failure line for a refusal from a server that predates the codes', async () => {
+    edit.climb = someoneElsesClimb;
+    board.updateClimb.mockRejectedValue({ response: { errors: [{ message: 'The 24 hour edit window has expired' }] } });
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard, editClimbUuid: 'climb-9' }));
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('createClimbForm.alerts.saveFailedFallback', 'error');
+  });
+
+  it('still gives a brand-new climb to the climber making it', () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.handleSetActive());
+
+    expect(lastQueuedItem().climb.userId).toBe('user-1');
+  });
+});
+
 describe('authored pace reaches the queue and the server', () => {
   it('publishes the pace the setter dialled on a route', async () => {
     createClimb.frameCount = 3;
@@ -495,34 +675,129 @@ describe('climbToQueueItem board identity at the queue boundary', () => {
   });
 });
 
-// #6023. The climb the editor puts on the queue is what the tick form reads when
-// the setter logs a send, and the server stores any in-range version the app
-// sends, as sent. So the question this block answers is: after the editor has
-// touched a climb, what version does the NEXT tick name?
+// A climb saved twice. `setCurrentClimb` reaches the reducer as a LOCAL
+// DELTA_UPDATE_CURRENT_CLIMB, whose same-uuid branch deliberately keeps the item
+// it already has, and whose add is skipped for a slot already in the queue. So
+// the second save used to leave the first save's copy in place — and with it the
+// Draft chip on a climb that had just gone public (#5954 review).
+//
+// Runs the REAL queue reducer, driven the way the provider drives it. A mocked
+// `setCurrentClimb` cannot see this bug: it records the fresh item it was handed,
+// which is exactly the item the reducer throws away.
+describe('a re-saved climb is refreshed in the queue', () => {
+  let queueState: QueueState;
+  let correlationCounter = 0;
+
+  beforeEach(() => {
+    queueState = initialState({});
+    correlationCounter = 0;
+    // What the provider's setCurrentClimb dispatches (see dispatchSetCurrent).
+    queue.setCurrentClimb.mockImplementation((item: ClimbQueueItem) => {
+      queueState = queueReducer(queueState, {
+        type: 'DELTA_UPDATE_CURRENT_CLIMB',
+        payload: {
+          item,
+          shouldAddToQueue: true,
+          insertAfterCurrent: true,
+          isServerEvent: false,
+          correlationId: `corr-${++correlationCounter}`,
+        },
+      });
+    });
+    queue.refreshAuthoredClimb.mockImplementation((climbUuid: string, patch: ClimbAuthoredPatch) => {
+      queueState = queueReducer(queueState, { type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
+    });
+    board.saveClimb.mockResolvedValue({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: true });
+    board.updateClimb.mockResolvedValue({
+      uuid: 'saved-1',
+      createdAt: null,
+      publishedAt: '2026-10-03T10:00:00.000Z',
+      isDraft: false,
+    });
+  });
+
+  async function saveDraftThenPublish(betweenSaves: () => void = () => {}) {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
+
+    act(() => result.current.setName('Slab problem'));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(queueState.currentClimbQueueItem?.climb.is_draft).toBe(true);
+
+    betweenSaves();
+
+    act(() => {
+      result.current.setName('Slab problem, final');
+      result.current.setIsDraft(false);
+    });
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(board.updateClimb).toHaveBeenCalledTimes(1);
+  }
+
+  it('drops the draft state from the current item and its slot when the draft is current', async () => {
+    await saveDraftThenPublish();
+
+    expect(queueState.currentClimbQueueItem?.climb).toMatchObject({
+      uuid: 'saved-1',
+      name: 'Slab problem, final',
+      is_draft: false,
+      published_at: '2026-10-03T10:00:00.000Z',
+    });
+    expect(queueState.queue).toHaveLength(1);
+    expect(queueState.queue[0].climb).toMatchObject({ name: 'Slab problem, final', is_draft: false });
+  });
+
+  it('drops it from the queue slot too when the draft is queued but not current', async () => {
+    const somethingElse = climbToQueueItem(
+      { uuid: 'other-climb', name: 'Warm up', frames: 'p9r12', angle: 40 } as Climb,
+      { uuid: 'other-slot' },
+    );
+
+    await saveDraftThenPublish(() => {
+      // The climber moved on to another climb between the two saves.
+      queue.setCurrentClimb(somethingElse);
+      expect(queueState.currentClimbQueueItem?.uuid).toBe('other-slot');
+      expect(queueState.queue.map((item) => item.climb.uuid)).toContain('saved-1');
+    });
+
+    // The publish makes it current again, and no stale copy is left behind it.
+    expect(queueState.currentClimbQueueItem?.climb).toMatchObject({ uuid: 'saved-1', is_draft: false });
+    const copies = queueState.queue.filter((item) => item.climb.uuid === 'saved-1');
+    expect(copies).toHaveLength(1);
+    expect(copies[0].climb).toMatchObject({
+      name: 'Slab problem, final',
+      is_draft: false,
+      published_at: '2026-10-03T10:00:00.000Z',
+    });
+  });
+
+  it('seeds the echo-suppression id for the re-save, as a re-assert of the current climb always has', async () => {
+    await saveDraftThenPublish();
+    // One id per setCurrentClimb. The second came through the same-uuid branch.
+    expect(queueState.pendingCurrentClimbUpdates).toEqual(['corr-1', 'corr-2']);
+  });
+});
+
+// #6023. After the editor has touched a climb, the queue item must carry no
+// version: the item's holds are what the editor holds, which no saved version
+// may hold, and the sent marks compare the item's holds version with ticks.
 //
 // It runs through the REAL queue reducer. An earlier version of these tests
 // asserted on the item handed to a mocked `setCurrentClimb`, and passed on an
 // item the reducer throws away: a local set-current for the uuid that is
 // already current is a no-op, so the second save's item never reaches the
-// queue. The tick is resolved by the real `resolveTickClimbRevision`, the same
-// function the tick form calls.
-describe('create-climb queue hand-off: the version the next tick names (#6023)', () => {
+// queue. What does reach it is the refresh that follows every save, which
+// patches the authored fields (the holds included) and no version.
+describe('create-climb queue hand-off: no version on the queued climb (#6023)', () => {
   const FIRST_SAVE_FRAMES = 'p1r12p2r13p3r14';
   const SECOND_SAVE_FRAMES = 'p1r12p2r13p9r14';
   const WIP_FRAMES = 'p1r12p2r13p7r14';
 
   let queueState: QueueState<Record<string, never>>;
   let correlationCounter = 0;
-
-  /** What the tick form would send for the climb the queue is showing. */
-  function versionTheNextTickNames(local: { frames: string | null; revisionNumber: number | null } | undefined) {
-    const displayed = queueState.currentClimbQueueItem?.climb;
-    return resolveTickClimbRevision({
-      displayedRevision: displayed?.revisionNumber,
-      displayedFrames: displayed?.frames,
-      local,
-    });
-  }
 
   beforeEach(() => {
     queueState = initialState({});
@@ -544,6 +819,10 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
         },
       });
     });
+    // And the action `refreshAuthoredClimb` dispatches after it.
+    queue.refreshAuthoredClimb.mockImplementation((climbUuid: string, patch: ClimbAuthoredPatch) => {
+      queueState = queueReducer(queueState, { type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
+    });
   });
 
   async function saveWithFrames(
@@ -558,7 +837,7 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     });
   }
 
-  it('edit, save, move a hold, save again, then tick: no stale version is sent', async () => {
+  it('edit, save, move a hold, save again: the queued climb drops its version', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'climb-x', createdAt: null, publishedAt: null, isDraft: true });
     board.updateClimb.mockResolvedValue({ uuid: 'climb-x', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
@@ -569,40 +848,26 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     // Both saves offered the queue an item.
     expect(queue.setCurrentClimb).toHaveBeenCalledTimes(2);
 
-    // The reducer kept the FIRST save's item: same uuid, already current.
+    // The reducer kept the FIRST save's item (same uuid, already current) and
+    // the refresh put the second save's holds on it.
     const current = queueState.currentClimbQueueItem;
     expect(current?.climb.uuid).toBe('climb-x');
-    expect(current?.climb.frames).toBe(FIRST_SAVE_FRAMES);
+    expect(current?.climb.frames).toBe(SECOND_SAVE_FRAMES);
     expect(queueState.queue).toHaveLength(1);
-    // And it carries no version of its own.
-    expect(current?.climb.revisionNumber).toBeUndefined();
-    expect(current?.climb.holdsRevisionNumber).toBeUndefined();
-
-    // The server is on the second save now (version N+2, holds moved at N+2),
-    // and the phone's copy was refreshed to match. The queue still shows the
-    // first save's holds, so the phone's version is not theirs: nothing is
-    // sent, and the server stores the version live when the climb was climbed.
-    expect(versionTheNextTickNames({ frames: SECOND_SAVE_FRAMES, revisionNumber: 3 })).toBeNull();
-    // Same answer when the phone's copy was never refreshed (the board is not
-    // downloaded, so the save was not mirrored) and still holds an older state.
-    expect(versionTheNextTickNames({ frames: 'p1r12p2r13', revisionNumber: 1 })).toBeNull();
-    // And when the phone has no copy at all.
-    expect(versionTheNextTickNames(undefined)).toBeNull();
+    // The refresh moved the holds, so the reducer cleared the item's version.
+    expect(current?.climb.holdsRevisionNumber).toBeNull();
   });
 
-  it('after one save, a tick names the phone’s version only because the holds match', async () => {
+  it('after one save, the queued climb carries no version', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'climb-y', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
 
     await saveWithFrames(result, 'Only Save', FIRST_SAVE_FRAMES);
 
-    expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
-    // The phone's copy is the row this save wrote: same holds, so its version
-    // is the version on screen.
-    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 1 })).toBe(1);
+    expect(queueState.currentClimbQueueItem?.climb.holdsRevisionNumber).toBeUndefined();
   });
 
-  it('Set Active with unsaved work-in-progress holds: no version is sent', async () => {
+  it('Set Active with unsaved work-in-progress holds: no version on the item', async () => {
     board.saveClimb.mockResolvedValue({ uuid: 'climb-z', createdAt: null, publishedAt: null, isDraft: true });
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
     await saveWithFrames(result, 'Saved Once', FIRST_SAVE_FRAMES);
@@ -625,14 +890,10 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     const current = queueState.currentClimbQueueItem;
     expect(current?.climb.uuid).toBe('climb-z');
     expect(current?.climb.frames).toBe(WIP_FRAMES);
-    expect(current?.climb.revisionNumber).toBeUndefined();
-
-    // The phone holds the SAVED holds at version 1. The wall shows the unsaved
-    // ones. No version.
-    expect(versionTheNextTickNames({ frames: FIRST_SAVE_FRAMES, revisionNumber: 1 })).toBeNull();
+    expect(current?.climb.holdsRevisionNumber).toBeUndefined();
   });
 
-  it('Set Active on a climb that was never saved: no version is sent', () => {
+  it('Set Active on a climb that was never saved: no version on the item', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
     createClimb.generateFramesString.mockReturnValue(WIP_FRAMES);
 
@@ -640,8 +901,7 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     act(() => result.current.handleSetActive());
 
     expect(queueState.currentClimbQueueItem?.climb.frames).toBe(WIP_FRAMES);
-    expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
-    expect(versionTheNextTickNames(undefined)).toBeNull();
+    expect(queueState.currentClimbQueueItem?.climb.holdsRevisionNumber).toBeUndefined();
   });
 
   it('the editor never puts a version on the climb it queues, whatever updateClimb returns', async () => {
@@ -661,7 +921,7 @@ describe('create-climb queue hand-off: the version the next tick names (#6023)',
     await saveWithFrames(result, 'Second Save', SECOND_SAVE_FRAMES);
 
     for (const [item] of queue.setCurrentClimb.mock.calls as Array<[ClimbQueueItem]>) {
-      expect(item.climb.revisionNumber).toBeUndefined();
+      expect('revisionNumber' in item.climb).toBe(false);
       expect(item.climb.holdsRevisionNumber).toBeUndefined();
     }
   });

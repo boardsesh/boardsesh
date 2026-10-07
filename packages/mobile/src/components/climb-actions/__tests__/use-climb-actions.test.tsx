@@ -7,7 +7,7 @@ import type { ClimbActionId } from '../use-climb-actions';
 // Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
 // one-action and injected-dismiss handoff end to end.
 const ctrl = vi.hoisted(() => ({
-  canUpdate: false,
+  wallArchived: false,
   sessionId: null as string | null,
   moderationEnabled: true,
   activeClimbUuid: null as string | null,
@@ -31,7 +31,12 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }));
-vi.mock('@boardsesh/create-climb-react', () => ({ computeCanUpdate: () => ctrl.canUpdate }));
+// The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
+// the wall's viewer flags are stubbed, since the registry behind them has its
+// own tests.
+vi.mock('../../../lib/spray/use-spray-wall-archive', () => ({
+  useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
+}));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
@@ -84,6 +89,7 @@ const ownerClimb = { ...climb, userId: 'user-1', is_draft: true } as unknown as 
 
 const kilterBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
 const tensionBoard = { ...kilterBoard, boardName: 'tension' };
+const sprayBoard = { ...kilterBoard, boardName: 'spray', layoutId: 4200, sizeId: 4200, setIds: '1' };
 const woodsBoard = { ...kilterBoard, boardName: 'woods', layoutId: 1, sizeId: 2, setIds: '1' };
 
 // `onSelectPlaylist` is required on the hook — it MUST host the playlist picker
@@ -104,7 +110,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 }
 
 beforeEach(() => {
-  ctrl.canUpdate = false;
+  ctrl.wallArchived = false;
   ctrl.sessionId = null;
   ctrl.moderationEnabled = true;
   ctrl.activeClimbUuid = null;
@@ -170,6 +176,27 @@ describe('useClimbActions gating', () => {
     expect(signedIn[signedIn.length - 1]).toBe('report');
   });
 
+  // #5960: a draft is visible to its setter alone, and nobody reports themselves.
+  it("offers neither Share nor Report on the viewer's own draft", () => {
+    const own = ids({ climb: ownerClimb, boardConfig: sprayBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(own).not.toContain('share');
+    expect(own).not.toContain('report');
+  });
+
+  it("drops Report but keeps Share on the viewer's own published climb", () => {
+    const published = { ...ownerClimb, is_draft: false } as unknown as Climb;
+    const own = ids({ climb: published, boardConfig: kilterBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(own).toContain('share');
+    expect(own).not.toContain('report');
+  });
+
+  it("keeps Report on somebody else's published climb", () => {
+    const theirs = { ...climb, userId: 'setter-2', is_draft: false } as unknown as Climb;
+    const viewed = ids({ climb: theirs, boardConfig: kilterBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(viewed).toContain('share');
+    expect(viewed).toContain('report');
+  });
+
   it('drops "Report climb" when the moderation kill switch is flipped', () => {
     ctrl.moderationEnabled = false;
     expect(ids({ climb, boardConfig: kilterBoard, isAuthenticated: true })).not.toContain('report');
@@ -187,7 +214,6 @@ describe('useClimbActions gating', () => {
   });
 
   it('adds owner-only "Edit" only when the climb is editable by the current user', () => {
-    ctrl.canUpdate = true;
     expect(
       ids({ climb: ownerClimb, boardConfig: kilterBoard, isAuthenticated: false, currentUserId: 'user-1' }),
     ).toContain('edit');
@@ -197,8 +223,52 @@ describe('useClimbActions gating', () => {
     ).not.toContain('edit');
   });
 
+  it('stops offering Edit on a catalogue board 24 hours after publishing', () => {
+    const publishedLongAgo = { ...climb, userId: 'user-1', is_draft: false, published_at: '2020-01-01T00:00:00.000Z' };
+    expect(
+      ids({
+        climb: publishedLongAgo as unknown as Climb,
+        boardConfig: kilterBoard,
+        isAuthenticated: true,
+        currentUserId: 'user-1',
+      }),
+    ).not.toContain('edit');
+  });
+
+  // A spray climb follows the catalogue rule: the setter, a draft for good, a
+  // published climb for 24 hours after first publish. Nobody else, the wall's
+  // owner included.
+  describe('spray walls', () => {
+    const publishedHoursAgo = (hoursAgo: number) =>
+      ({
+        ...climb,
+        userId: 'setter-1',
+        is_draft: false,
+        published_at: new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString(),
+      }) as unknown as Climb;
+    const draftClimb = { ...publishedHoursAgo(30), is_draft: true, published_at: null } as unknown as Climb;
+    const asViewer = (viewedClimb: Climb, currentUserId: string) =>
+      ids({ climb: viewedClimb, boardConfig: sprayBoard, isAuthenticated: true, currentUserId });
+
+    it('offers the setter Edit within 24 hours of publishing', () => {
+      expect(asViewer(publishedHoursAgo(2), 'setter-1')).toContain('edit');
+    });
+
+    it('stops offering the setter Edit 24 hours after publishing', () => {
+      expect(asViewer(publishedHoursAgo(30), 'setter-1')).not.toContain('edit');
+    });
+
+    it('keeps Edit on a draft for its setter', () => {
+      expect(asViewer(draftClimb, 'setter-1')).toContain('edit');
+    });
+
+    it("does not offer the wall's owner Edit on a climb somebody else set", () => {
+      expect(asViewer(publishedHoursAgo(2), 'wall-owner')).not.toContain('edit');
+      expect(asViewer(draftClimb, 'wall-owner')).not.toContain('edit');
+    });
+  });
+
   it('offers Fork and Edit on Woods with the usual ownership rules', () => {
-    ctrl.canUpdate = true;
     const woodsIds = ids({
       climb: ownerClimb,
       boardConfig: woodsBoard,
@@ -208,7 +278,21 @@ describe('useClimbActions gating', () => {
 
     expect(woodsIds).toContain('fork');
     expect(woodsIds).toContain('edit');
-    expect(woodsIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'favorite', 'tick', 'share']));
+    expect(woodsIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'favorite', 'tick']));
+  });
+
+  // An archived wall keeps its climbs, but takes no new climb and no edit.
+  it('offers neither Fork nor Edit on an archived spray wall, and keeps the rest', () => {
+    ctrl.wallArchived = true;
+    const archivedIds = ids({
+      climb: ownerClimb,
+      boardConfig: sprayBoard,
+      isAuthenticated: true,
+      currentUserId: 'user-1',
+    });
+    expect(archivedIds).not.toContain('fork');
+    expect(archivedIds).not.toContain('edit');
+    expect(archivedIds).toEqual(expect.arrayContaining(['preview', 'queue', 'playlist', 'tick']));
   });
 
   it('returns nothing without a climb or board config', () => {
@@ -435,6 +519,8 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
         // The parent's grade rides along so a remix on a board that publishes
         // with the setter's own grade (a spray wall) opens at it (#5443).
         forkDifficulty: 'V4',
+        // The parent, so the editor can draw the holds it lost.
+        forkParentUuid: climb.uuid,
         boardName: 'kilter',
         layoutId: '1',
         sizeId: '10',
@@ -445,7 +531,6 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
   });
 
   it('edit.run pushes create with the climb uuid, not the fork frames', () => {
-    ctrl.canUpdate = true;
     const { result } = renderActions({
       climb: ownerClimb,
       boardConfig: kilterBoard,

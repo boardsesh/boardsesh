@@ -183,25 +183,6 @@ diagnostic) applies on native. The whole surface lives in three files:
   connect-step state, takes effect right away for the signed-in account
   (`FirstConnectHost` re-enrols when the override changes), and tags the
   exposure `arm_forced: true`.
-  `spray-walls` is a POSITIVE rollout flag (read through
-  `useSprayWallsEnabled`, unresolved = off) covering the whole spray wall
-  surface: the "Add a spray wall" tile on the boards picker and the
-  `/boards/spray/*` routes behind it. Off is the direction that matters — a tile
-  that flickers in for the first frames of a cold open is worse than one that
-  arrives a beat late.
-
-  **The rollout, and what gates each step.** Testers first (the on-device
-  override, More → Feature Flags), then 10 %, then everyone. Step 2 needs
-  `SPRAY_ROLLOUT_GATES.detectionCorrectionRate` ≤ 0.15 over `Spray Holds
-  Reviewed` where `hadCandidates` is true, plus `Spray Wall Upload Finished`
-  `outcome: 'ok'` ≥ 0.95; step 3 needs `SPRAY_ROLLOUT_GATES.resetCommitRate`
-  ≥ 0.6 — resets applied ÷ resets previewed, because an owner who previews a
-  reset and never applies it has been shown something they do not believe. Both
-  ratios are functions in `packages/shared/analytics/src/spray-wall-events.ts`
-  rather than prose in a dashboard description, so the doc and the code cannot
-  drift. Stepping back is just setting the flag false: nothing it gates writes
-  anything a rollback has to undo, and a wall already created stays created.
-  Full table: `docs/spray-walls.md` → "Rolling the flag out".
   `early-updates` is a POSITIVE rollout flag for the "Get updates early" switch
   in More (see `docs/mobile-ota-updates.md` → "Early updates"). It is read
   through `useEarlyUpdatesFlagState`, the one hook that returns three answers,
@@ -241,6 +222,17 @@ the same rendered UI. `useAnonymousClimbViewEnabled`'s kill-switch inversion
 above is the sharpest example of this rule; the two render-mode flags below are
 a plainer one — the shipped defaults ARE the unresolved reading, so there is
 nothing to invert.
+
+### Spray walls are enabled by default
+
+The former `spray-walls` rollout flag has been retired. The boards picker and
+`/boards/spray/*` routes are available without a PostHog flag or an environment
+override, including before flags resolve and when PostHog is unreachable. Old
+PostHog values and saved on-device overrides for `spray-walls` no longer control
+these surfaces. No dashboard change is required for the new release.
+
+Detection-worker deployment and quality checks remain in
+[the service rollout runbook](spray-recognition-rollout.md).
 
 ### A flag that sets a SETTING's default, not a gate
 

@@ -11,7 +11,7 @@
 export const SPRAY_PHOTO_CACHE_DIR_NAME = 'spray-walls';
 
 /**
- * Background manifest keys for a wall look like `spray/<layoutId>/<version>.jpg`.
+ * Background manifest keys for a wall look like `spray/<layoutId>/v<versionId>.jpg`.
  *
  * A path rather than a flat name so it can never collide with a bundled board's
  * manifest key, which is always `<boardName>/...` for one of the eight catalogue
@@ -20,17 +20,62 @@ export const SPRAY_PHOTO_CACHE_DIR_NAME = 'spray-walls';
  */
 export const SPRAY_BACKGROUND_KEY_PREFIX = 'spray/';
 
-export type SprayPhotoIdentity = { layoutId: number; version: number };
+/** Local published mirrors have no database row id; their photo UUID and published number are immutable together. */
+export type SprayVersionIdentity = number | `local-${string}`;
 
-export function sprayBackgroundKey(layoutId: number, version: number): string {
-  return `${SPRAY_BACKGROUND_KEY_PREFIX}${layoutId}/${version}.jpg`;
+/**
+ * A generated wall look stored beside a version's photo (`sprayWallArt`):
+ * `crop` is "Wall only" (a JPEG), `cutout` is "Holds only" (a WebP with alpha).
+ * Absent on an identity means the raw photo.
+ */
+export type SprayArtVariant = 'crop' | 'cutout';
+
+export type SprayPhotoIdentity = {
+  layoutId: number;
+  versionId: SprayVersionIdentity;
+  /** Left out for the raw photo, so every key and name the photo had before art existed is unchanged. */
+  variant?: SprayArtVariant;
+};
+
+/** What a variant's file name ends in. The photo's own suffix is `.jpg`. */
+const VARIANT_SUFFIX: Record<SprayArtVariant, string> = { crop: '-crop.jpg', cutout: '-cutout.webp' };
+
+function variantSuffix(variant: SprayArtVariant | undefined): string {
+  return variant ? VARIANT_SUFFIX[variant] : '.jpg';
 }
 
-/** Parse a `spray/<layoutId>/<version>.jpg` key, or `null` when it is not one. */
+export function isSprayVersionIdentity(identity: SprayVersionIdentity): boolean {
+  if (typeof identity === 'number') return Number.isSafeInteger(identity) && identity > 0;
+  const match = /^local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-([1-9]\d*)$/i.exec(identity);
+  return match != null && Number.isSafeInteger(Number(match[1]));
+}
+
+/**
+ * `spray/<layoutId>/v<versionId>.jpg` for the photo, and
+ * `spray/<layoutId>/v<versionId>-crop.jpg` / `-cutout.webp` for a generated look.
+ */
+export function sprayBackgroundKey(
+  layoutId: number,
+  versionId: SprayVersionIdentity,
+  variant?: SprayArtVariant,
+): string {
+  return `${SPRAY_BACKGROUND_KEY_PREFIX}${layoutId}/v${versionId}${variantSuffix(variant)}`;
+}
+
+/** Parse a key `sprayBackgroundKey` wrote, or `null` when it is not one. */
 export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoIdentity | null {
-  const match = /^spray\/(\d+)\/(\d+)\.jpg$/.exec(backgroundImageKey);
+  const match =
+    /^spray\/(\d+)\/v(\d+|local-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[1-9]\d*)(\.jpg|-crop\.jpg|-cutout\.webp)$/i.exec(
+      backgroundImageKey,
+    );
   if (!match) return null;
-  return { layoutId: Number(match[1]), version: Number(match[2]) };
+  const versionId = match[2].startsWith('local-') ? (match[2] as SprayVersionIdentity) : Number(match[2]);
+  if (!isSprayVersionIdentity(versionId)) return null;
+  const suffix = match[3].toLowerCase();
+  // Generated looks only exist for a server version: a local mirror has no art.
+  if (suffix === '.jpg') return { layoutId: Number(match[1]), versionId };
+  if (typeof versionId !== 'number') return null;
+  return { layoutId: Number(match[1]), versionId, variant: suffix === '-crop.jpg' ? 'crop' : 'cutout' };
 }
 
 /**
@@ -39,7 +84,7 @@ export function parseSprayBackgroundKey(backgroundImageKey: string): SprayPhotoI
  * two different photographs and must never share a file.
  */
 export function sprayPhotoFileName(identity: SprayPhotoIdentity): string {
-  return `${identity.layoutId}-${identity.version}.jpg`;
+  return `${identity.layoutId}-v${identity.versionId}${variantSuffix(identity.variant)}`;
 }
 
 /**

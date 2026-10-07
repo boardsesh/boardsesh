@@ -143,6 +143,8 @@ export const iconMap = {
 
   // Status
   info: { ios: 'info.circle', android: 'information-outline' },
+  // The spray editor's replay-the-hints button.
+  help: { ios: 'questionmark', android: 'help' },
   warning: { ios: 'exclamationmark.triangle', android: 'alert-outline' },
   error: { ios: 'xmark.circle', android: 'alert-circle-outline' },
   success: { ios: 'checkmark.circle', android: 'check-circle-outline' },
@@ -210,6 +212,14 @@ export const iconMap = {
   sort: { ios: 'arrow.up.arrow.down', android: 'sort-variant' },
   refresh: { ios: 'arrow.clockwise', android: 'refresh' },
   'crop.free': { ios: 'viewfinder', android: 'crop-free' },
+  // The spray editor's iPad tool rail: the resting pick-and-switch tool, the
+  // Pencil only toggle, and fit-the-wall (the zoom reset).
+  'hand.tap': { ios: 'hand.tap', android: 'gesture-tap' },
+  'pencil.tip': { ios: 'pencil.tip', android: 'draw-pen' },
+  'fit.screen': { ios: 'arrow.down.right.and.arrow.up.left', android: 'arrow-collapse' },
+  // The two ways to outline a missed hold, on the Apple Pencil squeeze palette.
+  'shape.draw': { ios: 'scribble', android: 'gesture' },
+  'shape.corners': { ios: 'pentagon', android: 'vector-polygon' },
   photo: { ios: 'photo', android: 'image-outline' },
   camera: { ios: 'camera', android: 'camera-outline' },
   video: { ios: 'video', android: 'video-outline' },

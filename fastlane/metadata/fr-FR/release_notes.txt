@@ -1,23 +1,34 @@
-Nouveautés de la version 2.5 :
+MURS DE SPRAY : TON PROPRE MUR DANS BOARDSESH
 
-COMPATIBLE WOODS, DE BOUT EN BOUT
+Photographie ton mur de chez toi ou le mur de spray de ta salle et l'app trouve les prises. Corrige ce qu'elle a raté, choisis un look, publie, et commence à ouvrir. Les blocs fonctionnent comme sur n'importe quelle autre board : mets-les dans la file, garde-les dans des playlists, et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo.
 
-Tu as une Woods Board ? Ajoute ta 12x12 ou ta 8x10, parcours plus de 5 000 blocs avec leurs règles de mains et de pieds, et allume n'importe lequel en Bluetooth. Ouvre et remixe tes propres blocs sur l'une ou l'autre taille (l'éditeur ne propose que les prises vraiment présentes sur ton mur), mets un bloc en miroir et le mur suit, et pilote Précédent, Suivant et Miroir depuis l'écran verrouillé et la Dynamic Island. Les prises s'affichent avec le look Aura et des contours plus nets.
+Garde un mur privé, rends-le public, ou partage-le par lien ou QR code et ton crew peut y ouvrir des blocs et les enregistrer aussi. Mur reconfiguré ? Réinitialise-le : prends une nouvelle photo, marque les prises, et ton ancien mur est archivé avec tous ses blocs et toutes ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
 
-PRENDS LE MUR, MÊME SANS LED
+Gratuit, comme le reste de Boardsesh.
 
-Tu grimpes sur une board sans kit LED ? Prends le mur : toute la session suit le bloc que tu mets, et l'écran de la salle aussi. Désactive l'Éclairage dans les réglages de la board : le tour de rôle continue, ton angle reste en place, et les sessions sur un mur nommé se loguent aussi depuis la montre.
+TON CREW, SUR CHAQUE BLOC
 
-MIROIR DEPUIS L'ÉCRAN VERROUILLÉ
+Accueil montre qui grimpe en ce moment, pour que tu rejoignes sa séance. Ouvre un bloc et les gens que tu suis passent en premier : leurs notes, la cotation qu'ils lui donneraient, puis les carnets de tous les autres. Suis un ouvreur ou une ouvreuse et ses nouveaux blocs arrivent dans le fil de ton crew sous forme d'une seule carte que tu swipes.
 
-Quand ton téléphone pilote la board, l'activité en direct et la Dynamic Island ont un bouton Miroir à côté de Précédent, Suivant et l'ampoule. L'app, ton crew, les vignettes et les LED suivent le bloc en miroir, et il l'est encore quand tu ouvres l'app.
+UN MINUTEUR DE REPOS QUI FAIT AVANCER LA FILE
+
+Enchaîne des blocs à la minute sans toucher ton téléphone entre deux essais. Active le minuteur de repos dans l'onglet Session : il démarre dès que tu enregistres un bloc, puis continue dans le rouge si tu traînes. Laisse-le passer au bloc suivant et il l'allume sur le mur pour toi. Quelqu'un veut passer en premier ? Appui long sur son bloc, puis touche Mettre juste après pour le placer juste derrière celui qui est sur le mur.
+
+AUSSI AU PROGRAMME
+
+- Les autres boards de ta salle sont dans la feuille du mur : un tap vers le mur devant lequel tu es, et le Bluetooth et la file te suivent.
+- Active Utiliser mes cotations et la cotation que tu as donnée à un bloc est celle que tu vois, selon laquelle tu tries et filtres.
+- Les blocs similaires et la carte de chaleur refondue marchent sur ta board téléchargée, donc sans réseau.
+- Les carnets de boards liés se synchronisent tout seuls, en continu.
+- Exporte ton historique de grimpe, tes playlists et tes blocs depuis Paramètres.
+- Nouveau look de board, Aura contour : un contour net sur chaque prise lumineuse.
+- Les voies se jouent au rythme où elles ont été ouvertes : le rythme se lit en secondes par image, jusqu'à 60.
 
 CORRIGÉ
 
-- Les prises s'affichent plus vite : le rendu de la board n'attend plus le reste de l'app.
-- Ta board reste éteinte tant que tu ne demandes rien. Un téléphone qui repasse à portée des heures ou des jours plus tard ne rallume plus ton dernier bloc. L'ampoule, le widget et les reconnexions en plein bloc l'allument toujours instantanément.
-- L'onglet Blocs et sa recherche ne restent plus figés après la fermeture d'une playlist par-dessus en pleine session. Plus besoin de forcer la fermeture de l'app pour retrouver la recherche.
-- Les blocs téléchargés restent à jour après une mise à jour de l'app.
-- Fermer la recherche de blocs ne fait plus surgir une feuille d'aperçu.
+- Les croix enregistrées avec une connexion capricieuse attendent le réseau et se synchronisent au lieu de se perdre.
+- Woods : tous les blocs apparaissent quel que soit l'angle auquel ils ont été ouverts, et le filtre d'ouvreurs les liste tous.
+- MoonBoard : un bloc coté à un seul des deux angles affiche maintenant une estimation pour l'autre.
+- Les swipes dans le tiroir de lecture restent sur la liste d'où tu es parti, même quand enregistrer un bloc réordonne cette liste.
 
 Gratuit, sans pub, open source.

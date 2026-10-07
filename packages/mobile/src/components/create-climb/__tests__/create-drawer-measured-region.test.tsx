@@ -67,6 +67,8 @@ vi.mock('../CreateDrawerHeader', () => ({
 vi.mock('../CreateDrawerActionBar', () => ({
   CreateDrawerActionBar: () => createElement('div', { 'data-node': 'action-bar' }),
 }));
+// The lost-hold ring layer draws through react-native-svg and has its own suite.
+vi.mock('../LostHoldGhostLayer', () => ({ LostHoldGhostLayer: () => null }));
 vi.mock('../CreateDrawerForm', () => ({ CreateDrawerForm: () => createElement('div', { 'data-node': 'form' }) }));
 vi.mock('../OpenDraftsSection', () => ({ OpenDraftsSection: () => createElement('div', { 'data-node': 'drafts' }) }));
 vi.mock('../InlineConfirmBanner', () => ({
@@ -74,6 +76,9 @@ vi.mock('../InlineConfirmBanner', () => ({
 }));
 vi.mock('../DuplicateBanner', () => ({
   DuplicateBanner: () => createElement('div', { 'data-node': 'duplicate-banner' }),
+}));
+vi.mock('../NameRequiredHint', () => ({
+  NameRequiredHint: () => createElement('div', { 'data-node': 'name-required-hint' }),
 }));
 // The real slot mounts PlaybackControls at 2+ frames, which drags Reanimated and
 // a GestureDetector into jsdom. What matters here is only WHERE it sits.
@@ -239,6 +244,16 @@ describe('CreateDrawer measured above-fold region', () => {
     });
     expect(duplicate.node('duplicate-banner')).toBeTruthy();
     expect(duplicate.measured.some((block) => block.contains(duplicate.node('duplicate-banner')))).toBe(false);
+  });
+
+  it('keeps the name-required line out of the measured region, and mounts it only after a blocked Save', () => {
+    const hidden = renderDrawer({});
+    expect(hidden.node('name-required-hint')).toBeNull();
+
+    const shown = renderDrawer({ nameMissingHint: true });
+    expect(shown.node('name-required-hint')).toBeTruthy();
+    expect(shown.measured.some((block) => block.contains(shown.node('name-required-hint')))).toBe(false);
+    expect(measuredNodeNames(shown)).toEqual(measuredNodeNames(hidden));
   });
 
   it('measures the same nodes whether or not a banner is showing', () => {

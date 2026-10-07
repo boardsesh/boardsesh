@@ -6,7 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import type { AuroraBoardName, BoardName, Climb } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
-import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
+import { canEditClimb } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ModalSheet } from './ModalSheet';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from './create-climb/use-create-climb-navigation';
@@ -18,6 +18,7 @@ import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { CLIMB_SHARE_BASE_URL } from '../lib/env';
 import { track } from '../lib/analytics';
+import { useSprayWallIsArchived } from '../lib/spray/use-spray-wall-archive';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 
 type ClimbActionsSheetProps = {
@@ -208,26 +209,18 @@ function ClimbActionsSheet({
   }, [climb, boardName, layoutId, sizeId, setIds, angle, openEdit, onClose]);
 
   // Fork opens the create-climb editor with the climb's holds pre-painted, so it
-  // is only offered where climbs can be set at all (not on Woods).
-  const canFork = getBoardCapabilities(boardName).climbCreation;
+  // is only offered where climbs can be set at all (not on Woods, and not on an
+  // archived spray wall, which keeps its climbs but takes no new ones).
+  const wallArchived = useSprayWallIsArchived(boardName, layoutId);
+  const canFork = getBoardCapabilities(boardName).climbCreation && !wallArchived;
 
-  // Edit is owner-only, and only while the climb is still a draft OR within
-  // 24h of first publish (the backend enforces the same window). `userId`
-  // is null for Aurora-synced climbs that predate Boardsesh accounts.
+  // Who may edit is one shared rule (`canEditClimb`): the setter, a draft for
+  // good and a published climb for 24 hours, on every board a spray wall
+  // included. A hint only; the server decides.
   const canEdit = useMemo(() => {
-    if (!getBoardCapabilities(boardName).climbCreation) return false;
-    if (!climb || !currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
-    const snapshot: SavedClimbSnapshot = {
-      uuid: climb.uuid,
-      boardType: boardName,
-      createdAt: climb.created_at ?? null,
-      publishedAt: climb.published_at ?? null,
-      isDraft: climb.is_draft ?? false,
-    };
-    // `computeCanUpdate` already returns true for drafts, so no separate
-    // is_draft guard is needed — keep the draft rule in one place.
-    return computeCanUpdate(snapshot, boardName);
-  }, [climb, currentUserId, boardName]);
+    if (!getBoardCapabilities(boardName).climbCreation || wallArchived) return false;
+    return canEditClimb({ climb, boardType: boardName, currentUserId });
+  }, [climb, currentUserId, boardName, wallArchived]);
 
   // Sized for the climb preview row plus the action list (a couple more rows show
   // for owners / Aurora-app climbs); the modal pans down to close.
@@ -338,12 +331,14 @@ function ClimbActionsSheet({
             showSeparator
           />
         )}
-        <ListRow
-          title={t('mobile.climbActions.copyLink')}
-          leading={<Icon name="copy" size={22} color={accentActionIconColor} />}
-          onPress={handleCopyLink}
-          showSeparator={!!auroraAppUrl || !!onReportClimb}
-        />
+        {climb?.is_draft !== true && (
+          <ListRow
+            title={t('mobile.climbActions.copyLink')}
+            leading={<Icon name="copy" size={22} color={accentActionIconColor} />}
+            onPress={handleCopyLink}
+            showSeparator={!!auroraAppUrl || !!onReportClimb}
+          />
+        )}
         {auroraAppUrl && (
           <ListRow
             title={t('mobile.climbActions.openInApp')}

@@ -40,6 +40,7 @@
           "aura": "Aura",
           "auraBold": "Aura Bold",
           "auraSubtle": "Aura Subtle",
+          "auraOutline": "Aura Outline",
           "modernClassic": "Modern Classic",
           "maxContrast": "Max contrast",
           "descriptions": {
@@ -48,6 +49,7 @@
             "modernClassic": "The circles you know, on a quietened wall.",
             "maxContrast": "The strongest wash and filled holds.",
             "auraBold": "A wider, harder glow that carries across the room.",
+            "auraOutline": "A solid outline on each hold, with a tight glow.",
             "classic": "The circle markers Boardsesh has always drawn.",
             "custom": "Tune every part of the look yourself."
           },
@@ -103,12 +105,16 @@
             "options": {
               "glow": "Glow",
               "glowFill": "Glow + fill",
-              "fill": "Fill"
+              "fill": "Fill",
+              "outline": "Outline"
             }
           },
           "fillOpacity": {
             "title": "Fill strength",
             "value": "{{value}}%"
+          },
+          "outlineOpacity": {
+            "title": "Outline strength"
           },
           "softDisc": {
             "label": "Soft disc",
@@ -179,6 +185,11 @@
           },
           "dismiss": "Not now",
           "dismissAccessibility": "Dismiss this suggestion"
+        },
+        "sprayWalls": {
+          "title": "Spray walls",
+          "useOwnLook": "Use my look on spray walls",
+          "footer": "Spray walls show the look their creator picked for the photo. Turn this on to see your own look there instead."
         }
       },
       "accessibility": {
@@ -548,6 +559,9 @@
         "title": "Couldn't check for updates",
         "message": "Something went wrong getting the latest version. Try again in a bit."
       }
+    },
+    "launchUpdate": {
+      "message": "Checking for the latest version"
     },
     "connectivity": {
       "serverDown": {

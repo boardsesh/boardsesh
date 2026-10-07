@@ -17,6 +17,7 @@
 
 import { isConvexQuad, type Quad } from '@boardsesh/spray-wall-geometry';
 import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
+import type { EditableWallPhoto } from '../../lib/spray/photo-edit';
 
 /**
  * Where the climber is.
@@ -25,23 +26,28 @@ import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-typ
  * version exists" — the wall row, the multipart POST and `createSprayWallVersion`
  * — because none of the three is separately actionable: they retry together and
  * they fail into the same place.
+ *
+ * `adjust` is the photo step's "Crop or rotate", a detour rather than a stop on
+ * the way: it is opened from `photo`, always returns there, and is not counted.
  */
 export type AddWallStep =
   | 'resuming'
   | 'meta'
   | 'photo'
+  | 'adjust'
   | 'anchors'
   | 'upload'
   | 'detect'
   | 'review'
+  | 'look'
   | 'publish'
   | 'done';
 
-/** A photo as the picker and the compressor left it: a local JPEG and its pixels. */
-export type PickedWallPhoto = {
-  uri: string;
-  width: number;
-  height: number;
+/**
+ * A photo as the picker and the compressor left it (a local JPEG and its
+ * pixels), plus what the crop step needs to re-edit it (`photo-edit.ts`).
+ */
+export type PickedWallPhoto = EditableWallPhoto & {
   /** Which affordance produced it. Telemetry only. */
   source: 'library' | 'camera';
 };
@@ -118,15 +124,20 @@ export type AddWallState = {
     error: string | null;
   };
   /**
-   * Whether the editor has ever reported a successful save.
-   *
-   * LATCHED, and that is the point: the summary reports what ONE save applied,
-   * so a second save that only deletes holds writes zero — and a gate on the
-   * count would re-lock "Done" on a wall that is finished. What unlocks
-   * publishing is that the draft has been written to at all.
+   * The look step's save is in flight. Busy like an upload or a publish: its
+   * success moves the flow on to publish, so nothing may leave under it.
    */
-  hasSavedHolds: boolean;
-  /** What the most recent save wrote. Display only — it is not the wall's total. */
+  lookSaving: boolean;
+  /**
+   * The crop step is rendering the edited photo. Busy like an upload: Back and
+   * leaving wait for it, so the render cannot land on a step that has moved on.
+   */
+  photoProcessing: boolean;
+  /**
+   * How many holds the draft carries: what a resumed draft already had, then
+   * what the editor's commit left on it. Display and telemetry only — the
+   * editor itself refuses to commit an empty wall.
+   */
   savedHoldCount: number;
 };
 
@@ -138,6 +149,12 @@ export type AddWallAction =
   | { type: 'META_DONE' }
   | { type: 'PHOTO_PICKED'; photo: PickedWallPhoto }
   | { type: 'PHOTO_CONFIRMED' }
+  /** "Crop or rotate" on the photo step. */
+  | { type: 'ADJUST_OPENED' }
+  | { type: 'PHOTO_PROCESSING_STARTED' }
+  /** The edit rendered; `photo` is the new upload, still carrying its base and original. */
+  | { type: 'PHOTO_ADJUSTED'; photo: PickedWallPhoto }
+  | { type: 'PHOTO_PROCESSING_FAILED' }
   | { type: 'ANCHORS_SET'; anchors: Quad }
   | { type: 'ANCHORS_CLEARED' }
   | { type: 'ANCHORS_DONE' }
@@ -151,8 +168,12 @@ export type AddWallAction =
   | { type: 'DETECTION_FINISHED'; candidates: readonly SprayHoldCandidate[] }
   | { type: 'DETECTION_UNAVAILABLE' }
   | { type: 'DETECTION_FAILED' }
-  | { type: 'HOLDS_SAVED'; holdCount: number }
-  | { type: 'REVIEW_DONE' }
+  /** The editor saved every hold onto the draft; the look is all that is left before publishing. */
+  | { type: 'REVIEW_COMMITTED'; holdCount: number }
+  | { type: 'LOOK_SAVE_STARTED' }
+  | { type: 'LOOK_SAVE_FAILED' }
+  /** The wall's look is stored on the server; publishing is all that is left. */
+  | { type: 'LOOK_CONFIRMED' }
   | { type: 'PUBLISH_STARTED' }
   | { type: 'PUBLISH_FAILED'; message: string }
   | { type: 'PUBLISHED' }
@@ -172,7 +193,8 @@ export function initialAddWallState(): AddWallState {
     upload: { running: false, progress: null, error: null, attempts: 0 },
     detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
     publish: { running: false, error: null },
-    hasSavedHolds: false,
+    lookSaving: false,
+    photoProcessing: false,
     savedHoldCount: 0,
   };
 }
@@ -180,21 +202,43 @@ export function initialAddWallState(): AddWallState {
 /**
  * Where `BACK` goes from each step.
  *
- * `detect`, `review` and `publish` are absent on purpose. By then the wall and
- * its draft version exist on the server and the photo has been adopted; stepping
- * back into `photo` would offer to upload a second photo onto a draft that
- * already has one, which `runUpload` declines outright — so the step would sit
- * there doing nothing at all, which is worse than having no way back. The way out
- * of those three is leaving the flow, which keeps the draft for later.
+ * `detect`, `review`, `look` and `publish` are absent on purpose. By then the
+ * wall and its draft version exist on the server and the photo has been adopted;
+ * stepping back into `photo` would offer to upload a second photo onto a draft
+ * that already has one, which `runUpload` declines outright — so the step would
+ * sit there doing nothing at all, which is worse than having no way back. `look`
+ * cannot step back into `review` either: the holds are already committed, and the
+ * editor would reopen on them with nothing to ask. The way out of those four is
+ * leaving the flow, which keeps the draft for later.
  *
  * `upload` keeps its way back because a draft cannot exist there: the action that
  * creates one is also the action that leaves the step.
  */
 const BACK_TARGET: Partial<Record<AddWallStep, AddWallStep>> = {
   photo: 'meta',
+  // Back on the crop step is Cancel: the edit is dropped, the photo is as it was.
+  adjust: 'photo',
   anchors: 'photo',
   upload: 'photo',
 };
+
+/**
+ * Whether the footer's Back LEAVES the flow rather than stepping back inside it.
+ *
+ * `meta` is the first step, so there is nothing behind it. `review`, `look` and
+ * `publish` have no step behind them either — the draft is on the server by
+ * then (see `BACK_TARGET`) — and any state holding a draft is past the point
+ * where stepping back could do anything. Leaving keeps the draft.
+ */
+export function backLeavesFlow(state: AddWallState): boolean {
+  return (
+    state.draft != null ||
+    state.step === 'meta' ||
+    state.step === 'review' ||
+    state.step === 'look' ||
+    state.step === 'publish'
+  );
+}
 
 /**
  * Whether this step is somewhere a climber may leave without losing work they
@@ -242,7 +286,73 @@ export function shouldConfirmLeave(state: AddWallState): boolean {
 
 /** Whether the flow is mid-request and a back gesture should be declined. */
 export function isBusy(state: AddWallState): boolean {
-  return state.upload.running || state.publish.running;
+  return state.upload.running || state.publish.running || state.lookSaving || state.photoProcessing;
+}
+
+/** What the hold editor knows that the machine does not, read at the moment of leaving. */
+export type EditorLeaveState = {
+  /** It holds decisions it has not written. */
+  dirty: boolean;
+  /**
+   * Its commit is in flight, or the publish moment is playing before it hands
+   * over. The holds may already be saved, and the wall is about to publish.
+   */
+  handingOver: boolean;
+};
+
+/**
+ * What a way out does right now.
+ *
+ * `block` swallows the removal with no dialog. It covers the editor's save and
+ * its publish moment: a dialog there would ask about work the climber has just
+ * been told is saved, and whichever answer they gave would race the hand-over
+ * (leave early and the wall is never published; leave late and the stale
+ * answer pops the route mid-publish). The moment is short, so a second swipe
+ * after it gets the ordinary question.
+ *
+ * `confirmDiscard` is the editor's unwritten changes; `confirm` is the generic
+ * "the draft is kept" question; `leave` goes without asking.
+ */
+export type LeaveDecision = 'leave' | 'block' | 'confirm' | 'confirmDiscard';
+
+export function leaveDecision(state: AddWallState, editor: EditorLeaveState): LeaveDecision {
+  // The wall is published; all that is left is the bind and the dismiss, and
+  // both of those ARE leaving. Said first and outright, not left to fall out of
+  // `shouldConfirmLeave`: a detection flag left running, or a stale editor
+  // ref, must never put a dialog — or a block — between the climber and the way
+  // out of a step whose only control is that way out.
+  if (state.step === 'done') return 'leave';
+  if (state.step === 'review' && editor.handingOver) return 'block';
+  // The look step's save is the same kind of moment: its success publishes.
+  if (state.step === 'look' && state.lookSaving) return 'block';
+  if (state.step === 'review' && editor.dirty && !isBusy(state)) return 'confirmDiscard';
+  return shouldConfirmLeave(state) ? 'confirm' : 'leave';
+}
+
+/** Where the flow stood when a leave dialog was put up. */
+export type LeaveCheckpoint = {
+  step: AddWallStep;
+  publishRunning: boolean;
+};
+
+export function leaveCheckpoint(state: AddWallState): LeaveCheckpoint {
+  return { step: state.step, publishRunning: state.publish.running };
+}
+
+/**
+ * Whether a "Leave" pressed on a dialog may still go through.
+ *
+ * The dialog's answer is a closure over the flow as it was when it opened. If
+ * the flow has since started publishing (the editor handed over under it, or
+ * the auto-publish kicked off), popping the route now would strand the publish
+ * the climber never agreed to abandon, so the answer is dropped and the next
+ * swipe asks again about what is really happening.
+ */
+export function leaveStillApplies(askedAt: LeaveCheckpoint, state: AddWallState, editor: EditorLeaveState): boolean {
+  if (leaveDecision(state, editor) === 'block') return false;
+  const enteredPublish = askedAt.step !== state.step && (state.step === 'publish' || state.step === 'done');
+  const publishStarted = state.publish.running && !askedAt.publishRunning;
+  return !enteredPublish && !publishStarted;
 }
 
 export function addWallReducer(state: AddWallState, action: AddWallAction): AddWallState {
@@ -265,12 +375,8 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       // A draft version with a photo: the holds are the only thing left. No
       // second detector run — the candidates from the first pass were either
       // ruled on or are gone, and re-suggesting over saved holds would draw
-      // every one of them twice.
-      //
-      // Holds already on the draft ARE saved holds, and saying so is what
-      // unlocks Done. The editor loads them clean, so its Save is disabled
-      // (nothing dirty) — a Done still waiting for a save of its own would leave
-      // the climber unable to publish without a pointless edit.
+      // every one of them twice. The editor loads the saved holds ON, so its
+      // Publish goes straight through without a pointless edit.
       const resumedHolds = Math.max(0, action.savedHoldCount ?? 0);
       return {
         ...state,
@@ -282,7 +388,6 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         },
         draft: action.draft,
         detection: { outcome: 'idle', done: 0, total: 0, candidates: NO_CANDIDATES },
-        hasSavedHolds: state.hasSavedHolds || resumedHolds > 0,
         savedHoldCount: resumedHolds,
       };
     }
@@ -304,6 +409,40 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
 
     case 'PHOTO_CONFIRMED':
       return state.photo ? { ...state, step: 'anchors' } : state;
+
+    case 'ADJUST_OPENED':
+      // Only from the photo step, and only with a photo to adjust. Never once a
+      // draft exists: its photo is already on the server, and the crop would
+      // describe a picture nobody is going to upload.
+      if (state.step !== 'photo' || !state.photo || state.draft) return state;
+      return { ...state, step: 'adjust' };
+
+    case 'PHOTO_PROCESSING_STARTED':
+      if (state.step !== 'adjust') return state;
+      return { ...state, photoProcessing: true };
+
+    case 'PHOTO_ADJUSTED':
+      // Back to the photo step with the edited file, which invalidates exactly
+      // what a newly picked photo does. The anchors are CLEARED rather than
+      // carried through the crop: a quarter turn changes which corner is the
+      // top-left, and a quad mapped through it would come out in the wrong
+      // order (a bow-tie the convexity check refuses at best, a mirrored wall
+      // at worst).
+      if (state.step !== 'adjust') return state;
+      return {
+        ...state,
+        step: 'photo',
+        photo: action.photo,
+        photoProcessing: false,
+        anchors: null,
+        anchorRejection: null,
+        upload: { running: false, progress: null, error: null, attempts: 0 },
+      };
+
+    case 'PHOTO_PROCESSING_FAILED':
+      // Stays on the crop step with the climber's edit intact, so Done can be
+      // tried again or the edit cancelled.
+      return state.photoProcessing ? { ...state, photoProcessing: false } : state;
 
     case 'ANCHORS_SET': {
       // The one validation the client owes the server. A bow-tie quad has a
@@ -393,23 +532,41 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
         },
       };
 
-    case 'HOLDS_SAVED':
-      // Stays on `review`. Saving is not leaving: a climber who has just written
-      // forty holds very often wants to keep going, and advancing out from under
-      // them would make the editor's own Save feel like a commit it is not. What
-      // it does is unlock "Done".
-      return { ...state, hasSavedHolds: true, savedHoldCount: action.holdCount };
+    case 'REVIEW_COMMITTED':
+      // The editor's commit is the save; the wall's look is the one question
+      // left before publishing. Refused off the review step, and for an empty
+      // wall — publishing a version with no holds creates a wall that cannot
+      // hold a climb, and a look picked over no holds previews nothing.
+      if (state.step !== 'review' || !(action.holdCount > 0)) return state;
+      return {
+        ...state,
+        step: 'look',
+        savedHoldCount: action.holdCount,
+        publish: { running: false, error: null },
+      };
 
-    case 'REVIEW_DONE':
-      // Refused with nothing saved. Publishing a version with no holds creates a
-      // wall that cannot hold a climb, and the draft is still there to be
-      // finished — so the honest answer is "save your holds first", which is
-      // what the disabled action says.
-      if (state.step !== 'review' || !state.hasSavedHolds) return state;
-      return { ...state, step: 'publish', publish: { running: false, error: null } };
+    case 'LOOK_CONFIRMED':
+      // The look is already stored on the wall by the time this lands (the
+      // screen writes it, then confirms), so landing on `publish` starts the
+      // publish exactly as the editor's commit used to (the screen runs it from
+      // an effect). Refused off the look step: a stray confirm must not skip
+      // the editor's own guard on an empty wall.
+      if (state.step !== 'look') return state;
+      return { ...state, step: 'publish', lookSaving: false, publish: { running: false, error: null } };
+
+    case 'LOOK_SAVE_STARTED':
+      if (state.step !== 'look') return state;
+      return { ...state, lookSaving: true };
+
+    case 'LOOK_SAVE_FAILED':
+      return state.lookSaving ? { ...state, lookSaving: false } : state;
 
     case 'PUBLISH_STARTED':
-      return { ...state, step: 'publish', publish: { running: true, error: null } };
+      // Only from the publish step: the look step is the only way in, and a
+      // publish started anywhere else would skip it (and the editor's guard on
+      // an empty wall). The screen's two callers both run on this step.
+      if (state.step !== 'publish') return state;
+      return { ...state, publish: { running: true, error: null } };
 
     case 'PUBLISH_FAILED':
       // Back onto the publish step so the retry is reachable — including when
@@ -418,6 +575,9 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       return { ...state, step: 'publish', publish: { running: false, error: action.message } };
 
     case 'PUBLISHED':
+      // Also dispatched by a retry whose version had already published, so the
+      // re-bind runs on `done` like the first one: on `publish` with `running`
+      // set, its own dismiss would be held by the leave guard's busy dialog.
       return { ...state, step: 'done', published: true, publish: { running: false, error: null } };
 
     case 'BACK': {

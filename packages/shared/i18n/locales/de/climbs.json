@@ -218,13 +218,18 @@
       "boardCannotAuthor": "An diesem Board kannst du noch keine Boulder bauen.",
       "boardConfigIncomplete": "Die Board-Angaben fehlen oder sind ungültig. Wähl das Board erneut, um deinen Boulder zu bauen.",
       "noUsableBoard": "Wähl erst ein Board, dann bau deinen Boulder.",
-      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board."
+      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board.",
+      "wallArchived": "Diese Wand ist archiviert. Die Boulder und Begehungen darauf bleiben, aber du kannst nichts Neues mehr daran bauen."
     },
     "alerts": {
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
       "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
+      "editConflict": "Dieser Boulder wurde woanders geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
+      "editNotAllowed": "Du kannst diesen Boulder nicht bearbeiten. Das kann nur, wer ihn geschraubt hat.",
+      "editWindowExpired": "Dieser Boulder wurde vor mehr als 24 Stunden veröffentlicht und lässt sich nicht mehr bearbeiten.",
+      "editNotEditable": "Dieser Boulder lässt sich nicht mehr bearbeiten.",
       "localRefreshFailed": "Boulder gespeichert. Die heruntergeladene Liste konnte nicht aktualisiert werden. Verbinde dich erneut, um sie zu aktualisieren."
     },
     "fields": {
@@ -411,6 +416,7 @@
     },
     "detail": {
       "notFound": "Boulder nicht gefunden",
+      "boardNotFound": "Dieses Board gibt es nicht mehr, oder es wurde nicht mit dir geteilt.",
       "backToHome": "Zurück zum Start"
     },
     "logAscent": {
@@ -479,12 +485,6 @@
       "collection": {
         "label": "Sammlung",
         "any": "Beliebig"
-      },
-      "holdIntegrity": {
-        "label": "Griffe",
-        "any": "Alle",
-        "intact": "Nur intakte",
-        "broken": "Fehlende Griffe"
       },
       "pin": "An Schnellzugriff anpinnen",
       "unpin": "Aus Schnellzugriff entfernen",
@@ -664,10 +664,10 @@
       "chip_other": "{{count}} Griffe weg",
       "chipAria_one": "{{count}} Griff ist nicht mehr an der Wand",
       "chipAria_other": "{{count}} Griffe sind nicht mehr an der Wand",
-      "banner_one": "{{count}} Griff von diesem Boulder ist weg",
-      "banner_other": "{{count}} Griffe von diesem Boulder sind weg",
-      "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
-      "remix": "Remixen"
+      "banner": "Diesem Boulder fehlt ein Griff. Remixe ihn mit den Griffen, die jetzt an der Wand sind.",
+      "remix": "Remixen",
+      "editorHint_one": "Entferne den grauen Griff, um zu speichern",
+      "editorHint_other": "Entferne die grauen Griffe, um zu speichern"
     },
     "climbActions": {
       "preview": "Vorschau",
@@ -752,7 +752,8 @@
         "ariaLabel": "Boulder bauen"
       },
       "header": {
-        "newClimb": "Neuer Boulder"
+        "newClimb": "Neuer Boulder",
+        "nameRequired": "Gib ihm einen Namen zum Speichern"
       },
       "save": {
         "idle": "Speichern",
@@ -765,6 +766,8 @@
       "autosave": {
         "onDevice": "Entwurf auf diesem Handy gespeichert",
         "inAccount": "Entwurf in deinem Konto gespeichert",
+        "onDevicePublish": "Auf diesem Handy gespeichert",
+        "inAccountPublish": "In deinem Konto gespeichert",
         "unsyncedEdits": "Die neuesten Änderungen sind nur auf diesem Handy",
         "notStored": "Melde dich an, um diesen Entwurf zu behalten",
         "saveFailed": "Speichern in deinem Konto fehlgeschlagen. Tippe auf Speichern, um es nochmal zu versuchen.",

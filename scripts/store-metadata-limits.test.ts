@@ -114,6 +114,99 @@ describe('App Store listing copy', () => {
   });
 });
 
+// docs/i18n-spanish-glossary.md keeps the brand product names in English and in
+// FULL: `Kilter Board`, `Tension Board`, `MoonBoard`. The 2.6 release notes said
+// «Un Kilter junto a un Tension», which uses a shortened trademark as a noun —
+// the exact usage LEGAL.md and /legal say we do not make. Only the determiner
+// form is checked: a keyword list ("Kilter,Tension,MoonBoard") and a compound
+// («la app Kilter Board») are both fine, and Apple counts every character of
+// keywords.txt, so padding those out would cost a keyword.
+const SPANISH_LOCALES = ['es-ES', 'es-MX', 'es-419'];
+
+/**
+ * Determiners that turn the following word into a noun.
+ *
+ * Matched in both cases, because the motivating line — «Un Kilter junto a un
+ * Tension» — starts a sentence, and a case-sensitive list would have let exactly
+ * that form back in. The trademark itself stays case-sensitive: lower-case
+ * `la tension` is the ordinary Spanish word, not the board.
+ */
+const SPANISH_DETERMINERS = [
+  'un',
+  'una',
+  'el',
+  'la',
+  'los',
+  'las',
+  'del',
+  'al',
+  'este',
+  'esta',
+  'ese',
+  'esa',
+  'tu',
+  'mi',
+];
+
+/** `un Kilter` / `El Tension` with no `Board` after it. */
+const SHORTENED_TRADEMARK = new RegExp(
+  `\\b(?:${SPANISH_DETERMINERS.flatMap((determiner) => [
+    determiner,
+    `${determiner.charAt(0).toUpperCase()}${determiner.slice(1)}`,
+  ])
+    // Longest first, so `una Kilter` is not left to alternation backtracking.
+    .sort((left, right) => right.length - left.length)
+    .join('|')})\\s+(Kilter|Tension)\\b(?!\\s+Board)`,
+  'g',
+);
+
+function shortenedTrademarks(source: string): string[] {
+  return [...source.matchAll(SHORTENED_TRADEMARK)].map((match) => match[0]);
+}
+
+describe('Spanish listing copy', () => {
+  const spanishFiles = [
+    ...SPANISH_LOCALES.flatMap((locale) =>
+      existsSync(join(APPLE_METADATA, locale))
+        ? fileSet(APPLE_METADATA, locale).map((name) => ({
+            path: join(APPLE_METADATA, locale, name),
+            file: `${locale}/${name}`,
+          }))
+        : [],
+    ),
+    ...SPANISH_LOCALES.flatMap((locale) =>
+      existsSync(join(PLAY_METADATA, locale))
+        ? fileSet(PLAY_METADATA, locale).map((name) => ({
+            path: join(PLAY_METADATA, locale, name),
+            file: `android/${locale}/${name}`,
+          }))
+        : [],
+    ),
+  ];
+
+  it('has Spanish copy to check', () => {
+    expect(spanishFiles.length).toBeGreaterThan(0);
+  });
+
+  it.each(spanishFiles.map(({ path, file }) => [file, path]))(
+    'spells the board trademarks in full in %s',
+    (file, path) => {
+      const found = shortenedTrademarks(readFileSync(path, 'utf8'));
+      expect({ file, found }).toEqual({ file, found: [] });
+    },
+  );
+
+  // The check above only earns its keep if it catches the line that motivated
+  // it, including at the start of a sentence where the determiner is capitalised.
+  it('catches the shortened forms and leaves the legitimate ones alone', () => {
+    expect(shortenedTrademarks('Un Kilter junto a un Tension')).toEqual(['Un Kilter', 'un Tension']);
+    expect(shortenedTrademarks('El Kilter y La Tension')).toEqual(['El Kilter', 'La Tension']);
+    expect(shortenedTrademarks('Una Kilter cerca')).toEqual(['Una Kilter']);
+    expect(shortenedTrademarks('la app Kilter Board y el Tension Board')).toEqual([]);
+    expect(shortenedTrademarks('Kilter,Tension,MoonBoard')).toEqual([]);
+  });
+});
+
 describe('Play listing copy', () => {
   it('has locale folders to check', () => {
     expect(playLocales().length).toBeGreaterThan(0);

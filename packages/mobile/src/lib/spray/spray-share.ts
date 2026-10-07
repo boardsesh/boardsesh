@@ -12,6 +12,7 @@
 //     work: holding it is the proof you were given the link. A public wall needs
 //     no capability and gets a clean URL.
 
+import { generateSlugFromText } from '@boardsesh/play-view/readable-url-utils';
 import { WEB_BASE_URL } from '../env';
 
 export type SprayWallVisibility = 'private' | 'unlisted' | 'public';
@@ -60,4 +61,63 @@ export function buildSprayWallShareUrl({
   const url = angle == null ? board : `${board}/${encodeURIComponent(String(angle))}/list`;
 
   return visibility === 'unlisted' ? `${url}?wall=${encodeURIComponent(wallUuid)}` : url;
+}
+
+export type SprayClimbShareTarget = {
+  /** The wall's board slug, or null/undefined when the app does not hold it yet. */
+  slug: string | null | undefined;
+  angle: number;
+  climbUuid: string;
+  climbName?: string | null;
+  wallUuid: string;
+  isPublic: boolean;
+  isUnlisted: boolean;
+};
+
+/**
+ * The path (no origin) that opens one climb on a wall: `/b/{slug}/{angle}/view/{name-slug}-{uuid}`.
+ *
+ * A wall has no config-tuple URL that www can render — `/spray/{layout}/...`
+ * 404s there by design — so the board slug is the only address a climb on it
+ * has. The climb segment is byte-for-byte what www's `constructBoardSlugViewUrl`
+ * emits for the page's canonical: an empty name reads as `spray Climb` first
+ * (www's `resolveClimbDisplayName`), and a name that slugs to nothing falls back
+ * to the bare uuid. Both hosts read the uuid back out with
+ * `extractUuidFromClimbSegment`, so every form resolves.
+ *
+ * The rules {@link buildSprayWallShareUrl} follows, plus the missing-slug case:
+ *  - `null` for a private wall. www answers 404 for it, so the link would only
+ *    promise something nobody else can open.
+ *  - `null` without a slug. Falling back to the numeric path would hand out the
+ *    exact dead link this exists to replace.
+ *  - An unlisted wall carries `?wall=`. Today that link opens only in the app
+ *    (Universal Link), which redeems the uuid so a crew member who is not the
+ *    owner still gets the wall's photo. On www it 404s for anyone but the owner
+ *    and the gym's members: the page resolves the wall through `boardBySlug`,
+ *    which refuses an unlisted wall to an anonymous caller because a slug is a
+ *    guess, not a capability. Teaching www to redeem `?wall=` is a follow-up PR.
+ *
+ * An admin-hidden wall reads as private; the loader withholds its share fields
+ * (`RegisteredSprayWall.share`), so it never reaches here.
+ */
+export function buildSprayClimbSharePath({
+  slug,
+  angle,
+  climbUuid,
+  climbName,
+  wallUuid,
+  isPublic,
+  isUnlisted,
+}: SprayClimbShareTarget): string | null {
+  if (!slug) return null;
+  const visibility = sprayWallVisibility({ isPublic, isUnlisted });
+  if (visibility === 'private') return null;
+
+  // www's `resolveClimbDisplayName(name, 'spray')`, then `constructBoardSlugViewUrl`.
+  const displayName = climbName || 'spray Climb';
+  const nameSlug = displayName.trim() ? generateSlugFromText(displayName.trim()) : '';
+  const climbSegment = nameSlug ? `${nameSlug}-${climbUuid}` : climbUuid;
+  const path = `/b/${encodeURIComponent(slug)}/${encodeURIComponent(String(angle))}/view/${encodeURIComponent(climbSegment)}`;
+
+  return visibility === 'unlisted' ? `${path}?wall=${encodeURIComponent(wallUuid)}` : path;
 }

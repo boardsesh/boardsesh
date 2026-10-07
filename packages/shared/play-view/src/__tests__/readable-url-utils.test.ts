@@ -714,8 +714,11 @@ describe("the Kilter 12 x 14 'Commerical' spelling correction (#4554)", () => {
 
 describe('the spray board', () => {
   // A spray wall's layout and size are created at runtime from one climber's own
-  // wall, so there is no layout name, size name or hold-set name to slug. The
-  // numeric path is the canonical one, and there is no readable form to parse.
+  // wall, so there is no layout name, size name or hold-set name to slug, and
+  // there is no readable form to parse. The numeric path below is what in-app
+  // navigation and stored session paths use; it is NOT a share link — www 404s
+  // `/spray/...` by design, so the app shares a wall climb as its
+  // `/b/{slug}/{angle}/view/...` URL instead (`buildSprayClimbSharePath`, #5488).
   const SPRAY = { boardName: 'spray', layoutId: 900, sizeId: 900, setIds: '1', angle: 40 } as const;
 
   it('emits the numeric climb-view path, never a readable one', () => {

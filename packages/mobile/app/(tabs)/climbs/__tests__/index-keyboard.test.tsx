@@ -157,6 +157,11 @@ vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
 }));
 // The connect-step card has its own suite; it reaches the Bluetooth provider,
 // which this suite has no reason to load.
+// The archived-wall notice is its own component with its own tests; these cases
+// are about the keyboard.
+vi.mock('../../../../src/components/spray-wall/SprayWallArchivedBanner', () => ({
+  SprayWallArchivedBanner: () => null,
+}));
 vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
   FirstConnectCard: () => null,
   useFirstConnectCardExpected: () => false,

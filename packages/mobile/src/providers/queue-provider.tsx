@@ -27,6 +27,7 @@ import {
 } from '@boardsesh/queue';
 import type {
   Climb,
+  ClimbAuthoredPatch,
   QueueSearchParams,
   ClimbQueueItem,
   PlaylistSuggestionSource,
@@ -1920,6 +1921,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [dispatchSetCurrent],
   );
 
+  // The editor saved a climb that is already in the queue. See the reducer's
+  // REFRESH_AUTHORED_CLIMB for why this is not folded into setCurrentClimb.
+  const refreshAuthoredClimb = useCallback((climbUuid: string, patch: ClimbAuthoredPatch) => {
+    dispatch({ type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
+  }, []);
+
   // One skip run gets one notice. A held swipe can fire nextClimb twice for the
   // same current item before the dispatch commits — that is one run — so latch
   // it here and clear the latch whenever the current climb changes, which is the
@@ -2086,6 +2093,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   );
 
   const mirrorRequestRef = useRef(false);
+  /**
+   * Resolves true only when the server accepted the orientation. A widget tap
+   * replayed from the lock screen is retired on that answer, so a refused or
+   * failed attempt has to be distinguishable from a successful one — a toast
+   * alone would let an offline retry be thrown away.
+   */
   const mirrorCurrentClimb = useCallback(
     async (mirrored: boolean, queueItemUuid: string) => {
       if (
@@ -2093,14 +2106,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         stateRef.current.currentClimbQueueItem?.uuid !== queueItemUuid ||
         mirrorRequestRef.current
       )
-        return;
+        return false;
       mirrorRequestRef.current = true;
       try {
         await mutations.mirrorCurrentClimb(mirrored, queueItemUuid);
         // Subscription confirmation normally arrives first; refresh also covers a lost echo.
         await resyncQueueFromServerRef.current();
+        return true;
       } catch (error) {
         showQueueMutationErrorToast(error, t, showToast);
+        return false;
       } finally {
         mirrorRequestRef.current = false;
       }
@@ -2183,6 +2198,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       getQueueSnapshot,
       appendQueueItems,
       setCurrentClimb,
+      refreshAuthoredClimb,
       nextClimb,
       previousClimb,
       dispatchWidgetNavigation,
@@ -2211,6 +2227,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       getQueueSnapshot,
       appendQueueItems,
       setCurrentClimb,
+      refreshAuthoredClimb,
       nextClimb,
       previousClimb,
       dispatchWidgetNavigation,

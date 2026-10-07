@@ -45,6 +45,7 @@ import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
 import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
+import { SPRAY_BOARD_NAME } from '../../../src/lib/spray/spray-wall-registry';
 import {
   getCollectionFilter,
   getClimbTypeFilter,
@@ -62,6 +63,7 @@ import {
   type DimensionLockState,
   type LockedDimensions,
 } from '../../../src/lib/dimension-chips';
+import { shouldShowQuickActionsTip } from '../../../src/lib/onboarding/quick-actions-tip';
 import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost, usePreviewedClimbUuid } from '../../../src/providers/drawer-host-provider';
 import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provider';
@@ -107,6 +109,8 @@ import { resolveScreenshotBoard } from '../../../src/lib/screenshot-board-select
 import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
+import { useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
+import { SprayWallArchivedBanner } from '../../../src/components/spray-wall/SprayWallArchivedBanner';
 import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
 import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
@@ -501,10 +505,6 @@ function ClimbListInner() {
     }, []),
   );
   const dismissQuickActionsTip = useCallback(() => setQuickActionsTipArmed(false), []);
-  const showQuickActionsTip = quickActionsTipArmed && !showRevealTip && !connectCardVisible;
-  useEffect(() => {
-    if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
-  }, [showQuickActionsTip]);
 
   // Screenshot mode: a second board-view shot renders a different wall via
   // ?screenshotBoardIndex=1 — slot 1 of SCREENSHOT_BOARDS, resolved by name so it
@@ -527,6 +527,8 @@ function ClimbListInner() {
   const angle = activeBoard?.angle ?? 0;
 
   const hasBoardConfig = !!activeBoard;
+  // An archived spray wall keeps its climbs, but nothing new is set on it.
+  const wallArchived = useSprayWallIsArchived(boardName, hasBoardConfig ? layoutId : null);
 
   // Reactive connectivity, for the offline-only empty state below.
   const isOffline = useIsOffline();
@@ -749,6 +751,17 @@ function ClimbListInner() {
     }
     return climbs;
   }, [searchPages?.pages]);
+
+  // Waits for a climb row to exist: the tip teaches a gesture on one (#5960).
+  const showQuickActionsTip = shouldShowQuickActionsTip({
+    armed: quickActionsTipArmed,
+    revealTipShowing: showRevealTip,
+    connectCardVisible,
+    climbCount: visibleClimbs.length,
+  });
+  useEffect(() => {
+    if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
+  }, [showQuickActionsTip]);
 
   const firstSearchPage = searchPages?.pages[0];
 
@@ -1542,6 +1555,7 @@ function ClimbListInner() {
           collection={getCollectionFilter(filters, boardFilters)}
           onChangeCollection={handleChangeCollection}
           canFilterDrafts={isAuthenticated}
+          isSprayWall={boardName === SPRAY_BOARD_NAME}
           sortBy={filters.sortBy}
           sortActive={sortActive}
           onChangeSort={handleChangeSort}
@@ -1596,6 +1610,11 @@ function ClimbListInner() {
           boardHasLights={connectCardBoardHasLights}
           style={styles.revealBanner}
         />
+        <SprayWallArchivedBanner
+          boardName={boardName}
+          layoutId={hasBoardConfig ? layoutId : null}
+          style={styles.revealBanner}
+        />
         {showRevealTip ? (
           <OnboardingTipBanner
             text={tCommon('mobile.onboarding.boardRevealTip')}
@@ -1644,6 +1663,9 @@ function ClimbListInner() {
       name,
       handleApplyRecentFilter,
       handleClearRecentFilters,
+      boardName,
+      hasBoardConfig,
+      layoutId,
     ],
   );
 
@@ -1806,7 +1828,8 @@ function ClimbListInner() {
   const isEmpty = visibleClimbs.length === 0 && !isClimbsLoading && !isPlaceholderData && !isBoardResolving;
   // Whether the climber may set a climb on the active board at all. Hoisted out
   // of the chrome below so the wall's empty state offers exactly the same door.
-  const canCreateClimb = isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation;
+  const canCreateClimb =
+    isAuthenticated && hasBoardConfig && getBoardCapabilities(boardName).climbCreation && !wallArchived;
   // A wall nobody has set on yet is a different fact from "no climbs found":
   // nothing is wrong with the search, the wall is simply new. The query/filter
   // gates inside are the honest part — see `shouldShowUnsetWallEmptyState`.

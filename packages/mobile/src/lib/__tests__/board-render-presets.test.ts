@@ -47,6 +47,7 @@ describe('BOARD_RENDER_PRESETS', () => {
       'aura',
       'aura-bold',
       'aura-subtle',
+      'aura-outline',
       'modern-classic',
       'max-contrast',
     ]);
@@ -77,6 +78,28 @@ describe('BOARD_RENDER_PRESETS', () => {
       glowReach: 0.8,
       veil: 'soft',
     });
+  });
+
+  it('aura-outline preset: outline mark on the silhouette, tightest soft glow, near-solid stroke', () => {
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-outline')!;
+    expect(preset.values.mode).toBe('aura');
+    expect(preset.values.boardsesh).toEqual({
+      ...DEFAULT_BOARDSESH_RENDER_SETTINGS,
+      markStyle: 'outline',
+      holdShape: 'silhouette',
+      glowFalloff: 'soft',
+      glowReach: 0.5,
+      fillOpacity: 0.9,
+    });
+    // The veil is inherited, not pinned: the shipped `auto` wash is part of
+    // what keeps this reading as Aura.
+    expect(preset.values.boardsesh.veil).toBe(DEFAULT_BOARDSESH_RENDER_SETTINGS.veil);
+  });
+
+  it('aura-outline sits at the Glow-reach floor rather than below it', async () => {
+    const { BOARD_RENDER_SETTING_BOUNDS } = await import('../board-render-settings');
+    const preset = BOARD_RENDER_PRESETS.find((entry) => entry.id === 'aura-outline')!;
+    expect(preset.values.boardsesh.glowReach).toBe(BOARD_RENDER_SETTING_BOUNDS.glowReach.min);
   });
 
   it('modern-classic preset: Aura, drawn on the placement circle', () => {

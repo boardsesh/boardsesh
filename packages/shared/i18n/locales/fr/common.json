@@ -40,6 +40,7 @@
           "aura": "Aura",
           "auraBold": "Aura intense",
           "auraSubtle": "Aura discrète",
+          "auraOutline": "Aura contour",
           "modernClassic": "Classique moderne",
           "maxContrast": "Contraste max",
           "descriptions": {
@@ -48,6 +49,7 @@
             "modernClassic": "Les cercles habituels, sur un mur assourdi.",
             "maxContrast": "Le voile le plus fort et des prises pleines.",
             "auraBold": "Une lueur plus large et plus dure, visible de loin.",
+            "auraOutline": "Un contour net sur chaque prise, avec une lueur serrée.",
             "classic": "Les marqueurs ronds que Boardsesh a toujours dessinés.",
             "custom": "Règle toi-même chaque partie du rendu."
           },
@@ -103,12 +105,16 @@
             "options": {
               "glow": "Lueur",
               "glowFill": "Lueur + remplissage",
-              "fill": "Remplissage"
+              "fill": "Remplissage",
+              "outline": "Contour"
             }
           },
           "fillOpacity": {
             "title": "Intensité du remplissage",
             "value": "{{value}}%"
+          },
+          "outlineOpacity": {
+            "title": "Intensité du contour"
           },
           "softDisc": {
             "label": "Disque doux",
@@ -179,6 +185,11 @@
           },
           "dismiss": "Pas maintenant",
           "dismissAccessibility": "Ignorer cette suggestion"
+        },
+        "sprayWalls": {
+          "title": "Murs de spray",
+          "useOwnLook": "Utiliser mon rendu sur les murs de spray",
+          "footer": "Les murs de spray s'affichent avec le rendu choisi par leur créateur pour la photo. Active cette option pour y voir ton propre rendu."
         }
       },
       "accessibility": {
@@ -548,6 +559,9 @@
         "title": "Impossible de rechercher des mises à jour",
         "message": "Une erreur s'est produite lors de la récupération de la dernière version. Réessayez dans un instant."
       }
+    },
+    "launchUpdate": {
+      "message": "Recherche de la dernière version"
     },
     "connectivity": {
       "serverDown": {

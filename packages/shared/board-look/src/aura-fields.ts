@@ -11,8 +11,14 @@ import {
 /** The glow's alpha curve. The renderer defaults to `soft` when omitted. */
 export type GlowFalloff = 'soft' | 'plateau';
 
-/** How a lit hold is marked. The renderer defaults to `glow` when omitted. */
-export type MarkStyle = 'glow' | 'glow-fill' | 'fill' | 'none';
+/**
+ * How a lit hold is marked. The renderer defaults to `glow` when omitted.
+ *
+ * `outline` and `none` are different marks: `none` draws nothing on the hold,
+ * `outline` draws the glow plus a hollow stroke along the silhouette edge. A
+ * renderer that predates `outline` reads it as unknown and draws `glow`.
+ */
+export type MarkStyle = 'glow' | 'glow-fill' | 'fill' | 'outline' | 'none';
 
 /** Role glyph (shape-per-role) overlay inside the glow. */
 export type GlyphsMode = 'off' | 'role';
@@ -39,7 +45,10 @@ export type GlowTuningFields = {
   fringe_deepen?: number;
 };
 
-/** The role-colour fill drawn over the silhouette (`fill` and `glow-fill`). */
+/**
+ * The role-colour fill drawn over the silhouette (`fill` and `glow-fill`). Under
+ * `outline` its `opacity` is the outline stroke's alpha instead.
+ */
 export type FillConfig = { opacity: number };
 
 /** Everything an Aura render config carries that a classic one does not. */
@@ -112,7 +121,9 @@ export function buildAuraRenderFields({
     ...(veilOpacity > 0 ? { veil: { color: fieldColor, opacity: veilOpacity } } : {}),
     // `'fill'` maps to `'glow-fill'`, not a bare fill, on purpose: the spike
     // measured the filled thumbnail WITH its own small glow (the "veil + tint"
-    // arm) as the winner, not the fill alone.
+    // arm) as the winner, not the fill alone. Full size passes the setting
+    // straight through, `'outline'` included; a thumbnail never sees it, the
+    // same way every other full-size mark collapses to the thumbnail style.
     mark_style: thumbnail ? (settings.thumbnailStyle === 'glow' ? 'glow' : 'glow-fill') : settings.markStyle,
     glow_falloff: glowFalloff === 'default' ? 'soft' : glowFalloff,
     glow: {
@@ -126,6 +137,10 @@ export function buildAuraRenderFields({
       small_hold_max_boost: settings.smallHoldBoost ? BOARDSESH_SMALL_HOLD_MAX_BOOST : BOARDSESH_SMALL_HOLD_NO_BOOST,
       ...(thumbnail ? {} : AURA_GLOW_TUNING),
     },
+    // Under `outline` this is the outline STROKE's alpha, not a fill's — not a
+    // crossed wire. Outline and fill are mutually exclusive mark styles, so the
+    // renderer never reads this field for both in one render, and the climber's
+    // one "how strong is the mark" slider drives whichever mark is on.
     fill: { opacity: settings.fillOpacity },
     glyphs: settings.roleGlyphs ? 'role' : 'off',
     // `{}` takes the renderer's own tuned cover. Sent only where the board art

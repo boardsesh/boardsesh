@@ -29,6 +29,7 @@ import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
+import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
@@ -50,7 +51,7 @@ import { useRememberDownloadedBoards } from '../../src/offline/use-remember-down
 import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
 import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
 import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
-import { useOfflineDownloadsEnabled, useSprayWallsEnabled } from '../../src/providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
@@ -140,6 +141,12 @@ export default function BoardSelection() {
   // `presentation: 'modal'` route, so it cannot survive a dismiss: every one of
   // the twelve places that open this picker gets it switched off.
   const [isEditingBoards, setIsEditingBoards] = useState(false);
+  const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
+  const detailPickSource = useRef<BoardPickSource>('your_boards');
+  const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
+  useEffect(() => {
+    if (!isAuthenticated) closeBoardDetails();
+  }, [isAuthenticated, closeBoardDetails]);
 
   // Pins the climber toggled since this modal opened, so the glyph flips under
   // the finger without waiting for a refetch. Deliberately does NOT reorder: the
@@ -324,10 +331,45 @@ export default function BoardSelection() {
   const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
   const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);
   const onSelectOfflineBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'offline'), [activateItem]);
+  const detailBoardsByUuid = useMemo(() => {
+    const boards = new Map<string, UserBoard>();
+    for (const board of myBoards) boards.set(board.uuid, board);
+    for (const board of nearby?.boards ?? []) boards.set(board.uuid, board);
+    if (activeBoard) boards.set(activeBoard.uuid, activeBoard);
+    return boards;
+  }, [myBoards, nearby?.boards, activeBoard]);
+  const openBoardDetails = useCallback(
+    (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
+      const board = detailBoardsByUuid.get(item.key);
+      if (!board) return;
+      detailPickSource.current = pickSource;
+      setDetailBoard(board);
+    },
+    [detailBoardsByUuid],
+  );
+  const onMyBoardDetails = useCallback(
+    (item: DiscoveryBoardItem) => openBoardDetails(item, 'your_boards'),
+    [openBoardDetails],
+  );
+  const onNearbyBoardDetails = useCallback(
+    (item: DiscoveryBoardItem) => openBoardDetails(item, 'nearby'),
+    [openBoardDetails],
+  );
+  const onActiveBoardDetails = useCallback(() => {
+    if (activeBoard) setDetailBoard(activeBoard);
+  }, [activeBoard]);
+  const onSetActiveFromDetails = useCallback(
+    (board: UserBoard) => {
+      closeBoardDetails();
+      void activateBoard(board, { pickSource: detailPickSource.current });
+    },
+    [activateBoard, closeBoardDetails],
+  );
+
   const nearbySection =
     nearbyItems.length > 0 ? (
       <Section title={t('mobile.discovery.nearbyTitle')}>
-        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} />
+        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} onDetails={onNearbyBoardDetails} />
       </Section>
     ) : null;
   // Tap-to-download, scoped to boards the user owns or follows. Gated on the
@@ -581,6 +623,7 @@ export default function BoardSelection() {
         <BoardCarousel
           items={myBoardItems}
           onSelect={onSelectMyBoardCard}
+          onDetails={onMyBoardDetails}
           onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
           downloadLabelFor={downloadLabelFor}
           actionFor={canEditBoards ? myBoardActionFor : undefined}
@@ -641,10 +684,7 @@ export default function BoardSelection() {
     router.push({ pathname: '/boards/create', params: { returnTo: boardReturnTo, source } });
   }, [router, boardReturnTo, source]);
 
-  // The wall front door (epic #5346, SW-09). Flag-gated, and unresolved reads as
-  // off, so the tile never flickers into the row for the first frames of a cold
-  // open on a fleet the feature is dark for.
-  const sprayWallsEnabled = useSprayWallsEnabled();
+  // The wall front door: photograph a wall instead of choosing a catalogue board.
   const onModeAddWall = useCallback(() => {
     router.push({ pathname: '/boards/spray/new', params: { returnTo: boardReturnTo } });
   }, [router, boardReturnTo]);
@@ -698,7 +738,7 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     onModeBluetooth();
   }, [chooseFirstBoardPath, onModeBluetooth]);
-  // Climbs' no-board entry only, with the spray-walls flag on: the tile row it
+  // Climbs' no-board entry only: the tile row it
   // replaced carried the spray wall tile, and My own board's builder cannot
   // make one. Not on the launch gate's showing, because the wall wizard binds
   // without the onboarding `source` and so would leave first-run open.
@@ -706,7 +746,7 @@ export default function BoardSelection() {
     chooseFirstBoardPath('spray_wall');
     onModeAddWall();
   }, [chooseFirstBoardPath, onModeAddWall]);
-  const offerSprayWall = sprayWallsEnabled && firstBoardChoiceEntry === 'no_board';
+  const offerSprayWall = firstBoardChoiceEntry === 'no_board';
   const onFirstBoardGymMap = useCallback(() => {
     chooseFirstBoardPath('gym_map');
     onModeFindGym();
@@ -854,6 +894,14 @@ export default function BoardSelection() {
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
+        {activeBoard?.boardType === 'spray' ? (
+          <Pressable onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
+            <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
+              {t('mobile.boardDetail.activeSprayDetails', { name: activeBoard.name })}
+            </Text>
+            <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+          </Pressable>
+        ) : null}
         {showFirstBoardChoice ? (
           <>
             <FirstBoardChoice
@@ -906,9 +954,7 @@ export default function BoardSelection() {
               {/* Next to "Create board", because that is the question it answers: the
                   other tile is for a catalogue board you pick a layout for, this one
                   is for a wall you photograph. */}
-              {sprayWallsEnabled ? (
-                <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
-              ) : null}
+              <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
             </View>
 
             {/* Find nearby's answer when it has no list to show. Not while it
@@ -945,6 +991,13 @@ export default function BoardSelection() {
           </>
         )}
       </ScrollView>
+
+      <BoardDetailSheet
+        board={detailBoard}
+        visible={detailBoard !== null}
+        onClose={closeBoardDetails}
+        onSetActive={onSetActiveFromDetails}
+      />
 
       <BluetoothQuickstartSheet
         ref={bluetoothSheetRef}
@@ -1000,7 +1053,9 @@ const styles = StyleSheet.create({
   },
   modeRow: {
     flexDirection: 'row',
-    gap: spacing[3],
+    // 8 dp, not 12: five tiles share the row, and every point of gap is a
+    // point the labels lose (#5960).
+    gap: spacing[2],
     paddingHorizontal: spacing[4],
   },
   section: {

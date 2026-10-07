@@ -191,10 +191,9 @@ vi.mock('../AngleSelectorSheet', () => ({
   },
 }));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
-// The lost-holds banner and the Remix handoff behind it, stubbed like every
+// The lost-hold banner and the Remix handoff behind it, stubbed like every
 // other collaborator above. Both reach native modules this suite has no runtime
-// for — the banner through the design-system Button, the handoff through
-// Sentry — and neither is what is under test here.
+// for: the banner through the design-system Button, the handoff through Sentry.
 vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
 vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
@@ -229,6 +228,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   // The preview angle re-anchor asks for the climb at the live angle; nothing
   // here pins a preview at another angle, so it never resolves.
   useClimb: () => ({ data: undefined }),
+  useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useFavoriteStatus: (boardName: string, uuid: string | null, angle: number) => {
     recorded.favoriteStatus.push({ boardName, uuid, angle });

@@ -40,6 +40,11 @@ export type BoardLookModelInput = {
   suggestion: BoardLookSuggestion | null;
   onApplySuggestion: () => void;
   onDismissSuggestion: () => void;
+  /**
+   * The "use my look on spray walls" switch, or `null` to leave the section out
+   * (spray walls not enabled for this climber).
+   */
+  sprayWalls: { useOwnLook: boolean; onUseOwnLookChange: (useOwnLook: boolean) => void } | null;
 };
 
 export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
@@ -143,6 +148,24 @@ export function buildBoardLookModel(input: BoardLookModelInput): MoreFormModel {
   ];
 
   sections.push({ key: 'destinations', rows: destinations });
+
+  if (input.sprayWalls) {
+    const { useOwnLook, onUseOwnLookChange } = input.sprayWalls;
+    sections.push({
+      key: 'sprayWalls',
+      title: t('mobile.settings.boardLook.sprayWalls.title'),
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'sprayWallsUseOwnLook',
+          label: t('mobile.settings.boardLook.sprayWalls.useOwnLook'),
+          value: useOwnLook,
+          onValueChange: onUseOwnLookChange,
+        },
+      ],
+      footer: t('mobile.settings.boardLook.sprayWalls.footer'),
+    });
+  }
 
   sections.push({
     key: 'reset',

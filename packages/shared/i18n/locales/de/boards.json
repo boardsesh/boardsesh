@@ -6,8 +6,7 @@
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
     "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
     "retry": "Erneut versuchen",
-    "manual": "Griffe selbst platzieren",
-    "resume": "Dieses Zurücksetzen fortsetzen"
+    "manual": "Griffe selbst markieren"
   },
   "mobile": {
     "edit": {
@@ -162,6 +161,8 @@
       "location": "Standort",
       "locationPlaceholder": "Zuhause, Hallenname oder Stadt",
       "useMyLocation": "Meinen Standort nutzen",
+      "locationDeniedHint": "Boardsesh kann deinen Standort nicht sehen. Erlaube ihn in den Einstellungen oder gib oben einen Ort ein.",
+      "locationUnavailableHint": "Wir konnten deinen Standort nicht finden. Gib stattdessen oben einen Ort ein.",
       "serial": "Controller-Seriennummer",
       "serialPlaceholder": "z. B. ABC-12345",
       "serialHint": "Optional — dein Controller verknüpft sich beim ersten Verbinden selbst.",
@@ -225,12 +226,15 @@
         "kind": "Spraywall",
         "editHolds": "Griffe bearbeiten",
         "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
-        "newPhoto": "Neues Foto",
-        "newPhotoHint": "Fotografiere dein Board nach einem Umbau neu.",
+        "resetWall": "Wand zurücksetzen",
+        "resetWallHint": "Mach ein neues Foto und markier die Griffe neu.",
         "shareLink": "Link teilen",
         "shareLinkPublicHint": "Jede*r kann dieses Board öffnen.",
         "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
-      }
+      },
+      "details": "Details",
+      "detailsAria": "Details für {{name}} öffnen",
+      "activeSprayDetails": "{{name}} · Wanddetails"
     },
     "disambiguation": {
       "title": "An welchem Board bist du?",
@@ -392,6 +396,8 @@
           "title": "Kein Netz, kein Katalog",
           "body": "{{name}} ist noch nicht auf deinem Handy, hier unten gibt es also nichts zu durchsuchen.",
           "cta": "Holen, sobald ich Netz habe",
+          "sprayTitle": "Kein Netz, keine Boulder",
+          "sprayBody": "{{name}} ist noch nicht auf deinem Handy, deshalb lassen sich die Boulder hier unten nicht öffnen.",
           "armedToast": "{{name}} steht in der Warteschlange und lädt, sobald du wieder online bist."
         },
         "spotlight": {
@@ -412,6 +418,7 @@
       "searchPlaceholder": "Hallen suchen",
       "noGym": "Nicht in einer Halle",
       "noGymHint": "Es erscheint trotzdem als eigener Pin auf der Karte.",
+      "noGymHintOffMap": "Erscheint nicht auf der Karte, solange es nicht öffentlich ist.",
       "addNew": "Meine Halle fehlt in der Liste",
       "empty": "Keine Hallen in der Nähe",
       "sharedEditHint": "Das Team dieser Halle kann die Details dieses Boards bearbeiten.",
@@ -775,71 +782,165 @@
     "errorGeneric": "Da ging etwas schief. Versuch es nochmal."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "Was dein Finger macht",
-      "pan": "Schwenken",
-      "add": "Hinzufügen",
-      "move": "Verschieben",
-      "draw": "Zeichnen"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Konfidenz-Schwelle",
-      "value": "Zeigt Funde über {{percent}} %"
-    },
-    "counts": {
-      "alive_one": "{{count}} Griff",
-      "alive_other": "{{count}} Griffe",
-      "pending": "{{value}} zu prüfen",
-      "hidden": "{{value}} ausgeblendet",
-      "unsaved": "{{value}} nicht gespeichert"
-    },
-    "actions": {
-      "merge": "Zusammenführen",
-      "delete": "Löschen",
+    "bar": {
+      "holds_one": "{{count}} Griff",
+      "holds_other": "{{count}} Griffe",
+      "maybes_one": "{{count}} unsicherer",
+      "maybes_other": "{{count}} unsichere",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Rückgängig",
-      "redo": "Wiederherstellen",
-      "accept": "Behalten",
-      "reject": "Verwerfen",
-      "acceptAll": "Alle behalten",
-      "save": "Wand speichern"
+      "redo": "Wiederholen",
+      "menuHint": "Öffnet Optionen für alle deine Griffe",
+      "saved": "Griffe gespeichert",
+      "addA11y": "Fehlende Griffe hinzufügen"
     },
-    "status": {
-      "readOnly": "Diese Wand gehört dir nicht, du kannst sie nicht bearbeiten.",
-      "pan": "Zieh, um das Foto zu bewegen. Tippe einen Griff an, um ihn zu wählen.",
-      "add": "Tippe auf nackte Wand für einen Griff, oder zeichne um einen herum.",
-      "move": "Zieh einen Griff dahin, wo er wirklich ist.",
-      "draw": "Wähle einen Griff und zeichne seine Kante nach.",
-      "oneSelected": "Griff Nr. {{id}} ist gewählt.",
-      "twoSelected": "Zwei gewählt. Zusammenführen macht einen daraus.",
-      "oneSelectedNew": "Dein neuer Griff ist ausgewählt.",
-      "manySelected": "{{value}} Griffe ausgewählt. Löschen entfernt sie alle."
+    "toast": {
+      "deleted": "Griff gelöscht",
+      "joined": "2 Griffe verbunden",
+      "keptMaybes_one": "{{count}} unsicheren behalten",
+      "keptMaybes_other": "{{count}} unsichere behalten",
+      "startedOver": "Neu angefangen"
     },
+    "menu": {
+      "keepMaybes": "Alle unsicheren behalten",
+      "hideMaybes": "Unsichere ausblenden",
+      "showMaybes": "Unsichere einblenden",
+      "startOver": "Neu anfangen",
+      "close": "Schließen"
+    },
+    "startOver": {
+      "title": "Neu anfangen?",
+      "body": "Alle Griffe werden auf den Stand vom Öffnen der Wand zurückgesetzt. Du kannst das rückgängig machen.",
+      "confirm": "Neu anfangen",
+      "cancel": "Weiter bearbeiten"
+    },
+    "chips": {
+      "trace": "Umranden",
+      "join": "Verbinden",
+      "switchOff": "Ausschalten",
+      "switchOn": "Einschalten",
+      "delete": "Löschen",
+      "keep": "Behalten",
+      "finish": "Abschließen",
+      "refine": "Nachbessern"
+    },
+    "banner": {
+      "trace": "Zeichne mit einem Finger um den Griff",
+      "join": "Tippe auf den Griff, mit dem er verbunden wird",
+      "cancel": "Abbrechen",
+      "addDraw": "Zeichne um einen fehlenden Griff oder tippe, um einen Kreis zu setzen",
+      "addCorners": "Tippe auf die Ecken um einen fehlenden Griff",
+      "done": "Fertig",
+      "tracePencil": "Zeichne mit dem Apple Pencil um den Griff",
+      "refineAdd": "Male, um den Griff zu vergrößern. Mit zwei Fingern zoomen.",
+      "refineErase": "Male, um vom Griff wegzunehmen. Mit zwei Fingern zoomen.",
+      "refineAddPencil": "Male mit dem Apple Pencil, um den Griff zu vergrößern",
+      "refineErasePencil": "Male mit dem Apple Pencil, um vom Griff wegzunehmen"
+    },
+    "addShape": {
+      "label": "So umrandest du einen Griff",
+      "draw": "Zeichnen",
+      "corners": "Ecken"
+    },
+    "resize": {
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
+      "original": "Original",
+      "typical": "Typisch"
+    },
+    "hints": {
+      "tap": "Tippe auf einen Kreis, um ihn auszuwählen. Tippe noch mal, um ihn auszuschalten.",
+      "maybe": "Gestrichelte Kreise sind unsichere Griffe. Tippe auf einen und dann auf Behalten.",
+      "longPress": "Halte einen Kreis gedrückt und zieh ihn, um ihn zu verschieben.",
+      "addHold": "Halte gedrückt, um einen Griff hinzuzufügen.",
+      "dismiss": "Tipp ausblenden",
+      "replay": "Tipps zeigen",
+      "pencil": "Der Apple Pencil fügt Griffe hinzu und schaltet sie. Mit den Fingern bewegst du dich und wählst einen Griff aus."
+    },
+    "a11y": {
+      "wall": "Foto deiner Wand: {{summary}}",
+      "holdValue": "Griff {{position}} von {{total}}, {{role}}",
+      "noHold": "Kein Griff ausgewählt",
+      "hint": "Wisch nach oben oder unten, um durch die Griffe zu gehen. Tippe doppelt, um einen an- oder auszuschalten.",
+      "joinHint": "Wisch nach oben oder unten zu dem Griff, mit dem er verbunden wird, und tippe dann doppelt.",
+      "role": {
+        "on": "an",
+        "maybe": "unsicher",
+        "off": "aus"
+      },
+      "actions": {
+        "smaller": "Kleiner machen",
+        "bigger": "Größer machen",
+        "delete": "Löschen",
+        "addHold": "Griff in der Mitte der Ansicht hinzufügen"
+      },
+      "revealed": "Gefundene Griffe: {{summary}}"
+    },
+    "readOnly": "Du kannst diese Wand nicht bearbeiten.",
     "errors": {
-      "nothingToMove": "Wähle erst einen Griff, dann zieh ihn.",
-      "pickOneToRedraw": "Wähle genau einen Griff und zeichne seine Kante nach.",
-      "mergeNeedsTwo": "Wähle zwei Griffe, um sie zusammenzuführen.",
-      "tooManyHolds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
-      "saveFailed": "Die Wand konnte nicht gespeichert werden.",
+      "tooManyHolds": "Das ist das Limit von {{max}} Griffen. Schalte ein paar aus, um mehr hinzuzufügen.",
+      "saveFailed": "Deine Griffe konnten nicht gespeichert werden. Versuch es noch mal.",
       "strokeNotClosed": "Diese Schlaufe verfehlt den Griff. Zeichne einmal ganz herum.",
       "strokeTooBig": "Diese Schlaufe ist viel größer als ein Griff. Zoom hinein und fahre den Griff selbst nach.",
       "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
       "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
-      "allHoldsOffWall": "Diese Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto und speichere erneut.",
-      "someHoldsOffWall_one": "{{count}} Griff lag außerhalb der Wand und wurde nicht gespeichert.",
-      "someHoldsOffWall_other": "{{count}} Griffe lagen außerhalb der Wand und wurden nicht gespeichert."
-    },
-    "toast": {
-      "saved_one": "{{count}} Griff gespeichert",
-      "saved_other": "{{count}} Griffe gespeichert"
+      "someHoldsOffWall_one": "{{count}} Griff liegt außerhalb der Wand. Schieb ihn zurück aufs Foto oder schalte ihn aus.",
+      "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus.",
+      "cornersCross": "Zwei Seiten kreuzen sich. Tippe die Ecken der Reihe nach um den Griff.",
+      "cornersTooFew": "Diese Ecken liegen zu nah beieinander oder auf einer Linie. Tippe mindestens 3 um den Griff.",
+      "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs.",
+      "refineNothingLeft": "Damit wäre der ganze Griff weg. Schalte ihn lieber aus.",
+      "refineTooDetailed": "Dieser Rand ist zu detailliert zum Speichern. Nimm einen größeren Pinsel.",
+      "refineCantStore": "Dieser Strich würde eine Form hinterlassen, die sich nicht als ein Griff speichern lässt, deshalb wurde er nicht übernommen."
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
+    },
+    "loading": "Deine Wand wird geladen…",
+    "loadStalled": "Deine Wand konnte nicht geladen werden. Versuch es erneut.",
+    "rail": {
+      "label": "Bearbeitungswerkzeuge",
+      "grip": "Werkzeuge auf die andere Seite verschieben",
+      "mark": "Griffe auswählen und schalten",
+      "pencilOnly": "Nur Pencil",
+      "pencilOnlyHint": "Mit den Fingern wählst du Griffe aus und bewegst dich. Nur der Apple Pencil ändert die Wand.",
+      "fit": "Wand an den Bildschirm anpassen",
+      "more": "Weitere Optionen"
+    },
+    "inspector": {
+      "role": {
+        "on": "An",
+        "off": "Aus",
+        "maybe": "Unsicher"
+      },
+      "source": {
+        "scan": "Vom Scan gefunden",
+        "scanConfidence": "Vom Scan gefunden · {{percent}} %",
+        "manual": "Von dir hinzugefügt"
+      },
+      "size": "Größe",
+      "redraw": "Neu zeichnen",
+      "previous": "Vorheriger Griff",
+      "next": "Nächster Griff"
+    },
+    "shortcuts": {
+      "delete": "Griff ausschalten oder löschen"
+    },
+    "palette": {
+      "label": "Pencil-Werkzeuge",
+      "close": "Pencil-Werkzeuge schließen",
+      "draw": "Griff hinzufügen, indem du ihn umrandest",
+      "corners": "Griff hinzufügen, indem du auf seine Ecken tippst"
+    },
+    "refine": {
+      "mode": "Pinsel",
+      "add": "Hinzufügen",
+      "erase": "Radieren",
+      "size": "Pinselgröße",
+      "sizeValue": "Größe {{step}} von {{total}}",
+      "dropped_one": "Der Hauptteil bleibt. {{count}} loses Stück wurde entfernt.",
+      "dropped_other": "Der Hauptteil bleibt. {{count}} lose Stücke wurden entfernt.",
+      "atLimit": "Weiter kann dieser Griff nicht wachsen. Mit Umranden zeichnest du ihn größer neu."
     }
   },
   "sprayWizard": {
@@ -852,19 +953,43 @@
       "namePlaceholder": "Garagenwand",
       "angle": "Winkel",
       "angleHint": "Wie weit die Wand überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
-      "publicHint": "Aus bleiben die Wand und ihr Foto nur bei dir.",
-      "next": "Foto wählen",
+      "next": "Weiter",
       "anglePreview": "Wand mit {{angle}} Grad"
     },
     "photo": {
       "title": "Fotografiere die Wand",
       "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Wand ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
+      "helpLink": "So gelingt das Foto",
+      "helpLinkHint": "Öffnet die Foto-Anleitung in deinem Browser",
       "library": "Foto wählen",
       "camera": "Foto aufnehmen",
       "pickAnother": "Anderes Foto wählen",
+      "adjust": "Zuschneiden oder drehen",
       "next": "Weiter",
       "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
-      "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes."
+      "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes.",
+      "tip": "Geh ein Stück zurück, stell dich frontal zur Wand und hol alle 4 Ecken ins Bild."
+    },
+    "adjust": {
+      "title": "Zuschneiden und drehen",
+      "body": "Schneide bis an die Ränder der Wand zu. Dreh das Foto, falls es quer liegt.",
+      "hint": "Zieh an einer Kante oder Ecke. Zieh innerhalb des Rahmens, um ihn zu verschieben.",
+      "small": "Dieses Foto ist klein. Griffe können beim Zoomen unscharf wirken.",
+      "failed": "Das Foto ließ sich nicht zuschneiden. Versuch es noch mal oder brich ab, um es so zu lassen.",
+      "rotate": "Drehen",
+      "rotateLabel": "Eine Vierteldrehung im Uhrzeigersinn drehen",
+      "done": "Fertig",
+      "reset": "Zurücksetzen",
+      "cancel": "Abbrechen",
+      "handleTopLeft": "Obere linke Ecke des Ausschnitts",
+      "handleTop": "Obere Kante des Ausschnitts",
+      "handleTopRight": "Obere rechte Ecke des Ausschnitts",
+      "handleRight": "Rechte Kante des Ausschnitts",
+      "handleBottomRight": "Untere rechte Ecke des Ausschnitts",
+      "handleBottom": "Untere Kante des Ausschnitts",
+      "handleBottomLeft": "Untere linke Ecke des Ausschnitts",
+      "handleLeft": "Linke Kante des Ausschnitts",
+      "handleMove": "Ausschnitt"
     },
     "anchors": {
       "title": "Markiere die Ecken",
@@ -877,7 +1002,13 @@
       "cornerBottomLeft": "Ecke unten links",
       "use": "Diese Ecken nehmen",
       "skip": "Erstmal überspringen",
-      "clear": "Ecken neu setzen"
+      "clear": "Ecken neu setzen",
+      "quality": {
+        "good": "Schön frontal. Die Wand lässt sich sauber entzerren.",
+        "soft": "Etwas schräg. Nimm es frontal neu auf, dann wird es schärfer.",
+        "fail": "Zu schräg zum Entzerren. Dein Foto funktioniert trotzdem, oder nimm es frontal neu auf.",
+        "small": "Dieses Foto ist zu klein zum Entzerren. Es funktioniert trotzdem so, wie es ist."
+      }
     },
     "upload": {
       "title": "Dein Foto wird hochgeladen",
@@ -885,32 +1016,57 @@
       "percent": "{{percent}} % hochgeladen",
       "failed": "Das Foto ist nicht durchgekommen.",
       "retry": "Nochmal versuchen",
+      "offlineMode": "Der Offline-Modus ist an, deshalb kann dein Foto nicht hochgeladen werden. Schalte ihn aus und versuch es noch mal.",
+      "noSignal": "Kein Netz, dein Foto wurde nicht hochgeladen. Versuch es noch mal, sobald du wieder online bist.",
+      "serverUnreachable": "Boardsesh ist gerade nicht erreichbar. Dein Foto ist noch da, versuch es in einer Minute noch mal.",
       "checkFailed": "Unklar, ob dein Foto durchgekommen ist. Versuch es mit Empfang nochmal."
     },
     "detect": {
       "title": "Suche nach Griffen"
     },
+    "scan": {
+      "queued": "In der Warteschlange…",
+      "running": "Suche nach Griffen…",
+      "slow": "Wände mit vielen Griffen dauern etwas länger",
+      "resumeHint": "Du kannst später weitermachen."
+    },
     "review": {
-      "found": "{{value}} Griffe zum Prüfen",
-      "nothingFound": "Nichts gefunden. Zeichne die Griffe selbst.",
-      "manualOnly": "Diese Version kann keine Griffe vorschlagen. Zeichne sie selbst.",
-      "detectionFailed": "Die Griffsuche ist schiefgegangen. Zeichne sie selbst.",
-      "done": "Fertig"
+      "next": "Look wählen",
+      "nothingFound": "Keine Griffe gefunden. Tippe auf die Wand, um sie hinzuzufügen.",
+      "detectionFailed": "Die Griffsuche hat diesmal nicht geklappt. Tippe auf die Wand, um Griffe hinzuzufügen.",
+      "manualOnly": "Tippe auf die Wand, um deine Griffe hinzuzufügen.",
+      "retry": "Erneut versuchen"
+    },
+    "look": {
+      "title": "Wie sollen deine Griffe leuchten?",
+      "body": "Alle sehen deine Wand so, außer wer für Spraywände den eigenen Look gewählt hat.",
+      "loading": "Deine Wand wird geladen…",
+      "unavailable": "Das Foto deiner Wand lässt sich hier nicht zeigen, aber du kannst trotzdem einen Look wählen.",
+      "saving": "Dein Look wird gespeichert…",
+      "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal oder veröffentliche trotzdem.",
+      "publishWithout": "Trotzdem veröffentlichen",
+      "dimTitle": "Rest der Wand abdunkeln",
+      "dimOff": "Aus"
     },
     "publish": {
       "title": "Ab zu deinen Boards",
-      "body": "Deine Griffe sind gespeichert. Veröffentliche die Wand und du kannst schrauben.",
-      "cta": "Diese Wand hinzufügen",
-      "failed": "Die Wand konnte nicht veröffentlicht werden."
+      "working": "Deine Wand wird veröffentlicht…",
+      "failed": "Die Wand konnte nicht veröffentlicht werden.",
+      "stalled": "Deine Wand ist gespeichert, aber das Einrichten hat zu lange gedauert. Versuch es noch mal.",
+      "retry": "Erneut versuchen"
     },
     "done": {
-      "body": "Deine Wand wird eingerichtet…"
+      "body": "Deine Wand wird eingerichtet…",
+      "leave": "Zurück zum Klettern"
     },
     "leave": {
       "title": "Diese Wand erstmal liegen lassen?",
       "body": "Deine Wand und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
       "stay": "Weitermachen",
-      "go": "Verlassen"
+      "go": "Verlassen",
+      "unsavedTitle": "Ohne Veröffentlichen verlassen?",
+      "unsavedBody": "Deine Änderungen an den Griffen gehen verloren. Die Wand und ihr Foto bleiben gespeichert.",
+      "discard": "Trotzdem verlassen"
     },
     "resume": {
       "checking": "Suche nach einer angefangenen Wand…",
@@ -920,89 +1076,131 @@
       "startOver": "Neu anfangen",
       "checkFailed": "Diese Wand ließ sich nicht prüfen. Versuch es nochmal.",
       "retry": "Nochmal versuchen"
+    },
+    "reset": {
+      "screenTitle": "Wand zurücksetzen",
+      "starting": "Deine neue Wand wird vorbereitet…",
+      "startFailed": "Das Zurücksetzen ließ sich nicht starten. Versuch es nochmal.",
+      "resumeTitle": "Ein Zurücksetzen ist noch offen",
+      "resumeBody": "Das neue Foto von „{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an. Die Wand bleibt live, bis die neue online ist.",
+      "photoTitle": "Fotografiere die Wand, wie sie jetzt ist",
+      "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Wand und markier dann jeden Griff.",
+      "archiveNotice": "Sobald diese Wand live ist, wird die alte archiviert. Die Boulder und Begehungen darauf bleiben."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Wand zurücksetzen",
-    "notYours": "Diese Wand gehört dir nicht, du kannst sie nicht zurücksetzen.",
-    "nothingPublished": "Diese Wand ist noch nicht fertig eingerichtet. Schließ das Hinzufügen erst ab.",
-    "openDraft": {
-      "title": "Ein Zurücksetzen ist halb fertig",
-      "body": "Dein gespeichertes Foto wartet auf dich. Die veröffentlichte Wand ändert sich erst, wenn du das Zurücksetzen bestätigst.",
-      "discard": "Wegwerfen und neu anfangen",
-      "discarded": "Das Zurücksetzen ist weg. Mach ein neues Foto.",
-      "discardFailed": "Das Zurücksetzen ließ sich nicht löschen. Versuch es nochmal."
-    },
-    "photo": {
-      "title": "Fotografiere die Wand nochmal",
-      "body": "Stell dich hin, wo du beim ersten Mal standest, wenn es geht. Gleiche Wand, neue Griffe."
-    },
-    "anchors": {
-      "title": "Markiere die Ecken",
-      "body": "Zieh die vier Ringe auf die Ecken der Wand. Das ist nicht optional: nur so passt dein neues Foto zu jedem Boulder, der schon auf der Wand steht.",
-      "use": "Diese Ecken nehmen"
-    },
+  "sprayResetConfirm": {
+    "title": "Wand zurücksetzen?",
+    "body": "Mach ein neues Foto und markier die Griffe von vorn. Sobald die neue Wand live ist, wird diese archiviert. Die Boulder und Begehungen darauf bleiben in Routenbüchern und Playlists, und niemand kann mehr Boulder daran bauen.",
+    "start": "Zurücksetzen starten",
+    "cancel": "Nicht jetzt"
+  },
+  "sprayArchive": {
+    "banner": "Archiviert am {{date}}. Boulder und Begehungen bleiben, Neues wird hier nicht mehr gebaut.",
+    "bannerUndated": "Archiviert. Boulder und Begehungen bleiben, Neues wird hier nicht mehr gebaut.",
+    "switchToNew": "Zur neuen Wand wechseln",
+    "openFailed": "Diese Wand ließ sich nicht öffnen. Versuch es nochmal.",
+    "manageHeader": "Archiviert",
+    "manageRow": "Archiviert am {{date}}",
+    "manageRowUndated": "Archiviert",
+    "deleteMessage": "„{{name}}“ löschen? Das Foto wird gelöscht. Die Boulder und alle Begehungen darauf verschwinden aus Routenbüchern und Playlists. Das lässt sich nicht rückgängig machen."
+  },
+  "sprayWallErrors": {
+    "archived": "Diese Wand ist archiviert. Die Boulder und Begehungen darauf bleiben, aber du kannst nichts Neues mehr daran bauen.",
+    "resetRetired": "Wände änderst du jetzt, indem du sie zurücksetzt. Aktualisier die App und setz die Wand dann zurück.",
+    "resetOwnerOnly": "Nur wer die Wand angelegt hat, kann sie zurücksetzen.",
+    "resetSourceUnpublished": "Richte diese Wand fertig ein, bevor du sie zurücksetzt.",
+    "archiveLimitReached": "Du kannst {{max}} archivierte Wände behalten. Lösch eine im Bereich „Archiviert“, um diese Wand zurückzusetzen."
+  },
+  "sprayMaintenance": {
+    "screenTitle": "Griffe bearbeiten",
+    "preparing": "Deine Wand wird geöffnet…",
+    "unavailable": "Du kannst diese Wand nicht bearbeiten.",
+    "nothingPublished": "Richte diese Wand fertig ein, bevor du ihre Griffe bearbeitest.",
+    "draftUnavailable": "Dieser Entwurf hat sich geändert. Öffne die Wand erneut, um ihre Griffe zu bearbeiten.",
+    "loadFailed": "Der Griffeditor konnte nicht geöffnet werden. Versuch es erneut.",
+    "publish": "Griffe veröffentlichen",
+    "publishing": "Deine Griffe werden veröffentlicht…",
+    "publishFailed": "Deine Griffänderungen sind gespeichert. Versuch erneut, sie zu veröffentlichen.",
+    "refreshing": "Die aktualisierte Wand wird geladen…",
+    "refreshFailed": "Deine Griffe sind veröffentlicht. Versuch erneut, die Wand zu laden.",
+    "retry": "Nochmal versuchen",
+    "temporarilyUnavailable": "Die Griffbearbeitung ist gerade nicht verfügbar. Versuch es später erneut.",
     "leave": {
-      "title": "Zurücksetzen verlassen?",
-      "body": "Dein neues Foto bleibt als Entwurf. An der Wand ändert sich nichts, bis du bestätigst."
+      "title": "Ungespeicherte Griffänderungen verwerfen?",
+      "body": "Deine ungespeicherten Änderungen gehen verloren. Dein gespeicherter Entwurf bleibt verfügbar.",
+      "stay": "Weiter bearbeiten",
+      "discard": "Änderungen verwerfen"
     },
-    "compare": {
-      "working": "Wir rechnen aus, was sich geändert hat…",
-      "unavailable": "Wir konnten nicht ausrechnen, was sich an dieser Wand geändert hat.",
-      "counts": "{{kept}} geblieben · {{removed}} weg · {{added}} neu",
-      "climbsAffected_one": "{{count}} Boulder verliert einen Griff",
-      "climbsAffected_other": "{{count}} Boulder verlieren Griffe",
-      "aspectWarning": "Dieses Foto ist anders gerahmt als das letzte. Prüf, ob die Ecken auf den Ecken liegen.",
-      "filterLabel": "Welche Ringe zeigen",
-      "tapHint": "Tipp auf einen Ring, um es dir anders zu überlegen.",
-      "confirm": "Zurücksetzen bestätigen",
-      "acceptMoves": "Alle vorgeschlagenen Umzüge übernehmen",
-      "noDetections": "Nichts zu vergleichen",
-      "noDetectionsBody": "Dieses Handy hat auf deinem neuen Foto keine Griffe gefunden, also gibt es nichts zu vergleichen. Dein Foto bleibt als Entwurf gespeichert."
-    },
-    "commit": {
-      "failed": "Das Zurücksetzen ist nicht durchgegangen. An der Wand hat sich nichts geändert."
-    },
-    "filter": {
-      "all": "Alle",
-      "kept": "Geblieben {{value}}",
-      "removed": "Weg {{value}}",
-      "new": "Neu {{value}}",
-      "unsure": "Unsicher {{value}}"
-    },
-    "hold": {
-      "kept": "Griff {{id}} — noch an der Wand",
-      "removed": "Griff {{id}} — kommt ab",
-      "unsure": "Griff {{id}} — schau nochmal hin",
-      "stillHere": "Er ist noch da",
-      "gone": "Er ist weg"
-    },
-    "detection": {
-      "new": "Ein Griff, der vorher nicht da war",
-      "rejected": "Kein Griff",
-      "accept": "Doch, ein Griff",
-      "reject": "Kein Griff"
-    },
-    "pairing": {
-      "start": "Gleicher Griff, hierher versetzt",
-      "prompt": "Tipp auf den Ring, wo dieser Griff vorher war.",
-      "cancel": "Doch nicht",
-      "paired": "Ersetzt Griff {{id}}",
-      "unpair": "Das ist nicht der Griff",
-      "useSuggestion": "Ersetzt Griff {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} weg, {{added}} neu, {{climbs}} Boulder geändert"
-    }
+    "leftoverPhoto": "An dieser Wand liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
+    "discardLeftover": "Unfertiges Foto verwerfen",
+    "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
+  },
+  "sprayHoldUsage": {
+    "title": "Einen Griff entfernen, den Boulder nutzen?",
+    "body_one": "{{count}} veröffentlichter Boulder nutzt diese Griffe. Er wird als Boulder mit fehlendem Griff markiert, bis ihn jemand remixt.",
+    "body_other": "{{count}} veröffentlichte Boulder nutzen diese Griffe. Sie werden als Boulder mit fehlendem Griff markiert, bis sie jemand remixt.",
+    "bodyUnknown": "Vielleicht nutzen Boulder diese Griffe. Sie werden als Boulder mit fehlendem Griff markiert, bis sie jemand remixt.",
+    "removeAnyway": "Trotzdem entfernen",
+    "keep": "Griffe behalten"
   },
   "sprayCaps": {
     "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
-    "versions": "Eine Wand behält {{max}} Zurücksetzungen, und diese hat alle verbraucht.",
+    "versions": "Eine Wand behält bis zu {{max}} Versionen ihrer Griffe, eine pro veröffentlichter Änderung, und diese hat alle verbraucht. Setz die Wand zurück, um neu anzufangen.",
     "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
     "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
   },
   "sprayHidden": {
     "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
     "title": "Diese Wand ist ausgeblendet"
+  },
+  "sprayModeration": {
+    "reportTitle": "Wand melden",
+    "reportHint": "Diese Wand zur Prüfung durch Admins melden",
+    "submit": "Meldung abschicken",
+    "reported": "Danke. Deine Meldung wartet auf Prüfung.",
+    "reportOffline": "Verbinde dich mit dem Internet, um die Meldung abzuschicken.",
+    "reportError": "Deine Meldung wurde nicht abgeschickt. Versuch es erneut.",
+    "queueTitle": "Spraywall-Meldungen",
+    "hide": "Wand ausblenden",
+    "unhide": "Wand einblenden",
+    "keepVisible": "Sichtbar lassen",
+    "hidden": "Ausgeblendet",
+    "photoLabel": "Foto von {{wall}}",
+    "noPhoto": "Kein Foto verfügbar",
+    "review": "Wand prüfen",
+    "reviewError": "Die Entscheidung wurde nicht gespeichert. Versuch es erneut.",
+    "unavailable": "Die Spraywall-Moderation ist für dieses Konto gerade nicht verfügbar.",
+    "loadError": "Die Meldungen konnten nicht geladen werden.",
+    "empty": "Keine Wände warten auf Prüfung.",
+    "reasons": {
+      "inappropriate": "Unangemessenes Foto oder unangemessener Name",
+      "notAWall": "Keine Kletterwand",
+      "personalInfo": "Persönliche Informationen im Foto",
+      "other": "Sonstiges"
+    },
+    "reportCount_one": "{{count}} Meldung",
+    "reportCount_other": "{{count}} Meldungen"
+  },
+  "sprayBackground": {
+    "label": "Wandhintergrund",
+    "photo": "Foto",
+    "wallCrop": "Nur Wand",
+    "holdCutouts": "Nur Griffe",
+    "retake": "Wand mit neuem Foto zurücksetzen",
+    "previewLabel": "Vorschau: {{look}}",
+    "saveFailed": "Der Hintergrund konnte nicht gespeichert werden. Versuch es noch mal.",
+    "notAvailable": "Dieses Foto ist zu schräg für diesen Look. Nimm es frontal neu auf.",
+    "note": {
+      "lockedNoPins": "Setz die 4 Ecken, um das freizuschalten.",
+      "lockedRetake": "Setz die Wand mit einem frontalen Foto zurück, um das freizuschalten.",
+      "generating": "Wird erstellt…",
+      "failed": "Dieser Look ließ sich nicht erstellen. Speicher ihn noch mal, um es erneut zu versuchen.",
+      "afterPublish": "Etwa eine Minute nach dem Veröffentlichen fertig. Bis dahin siehst du dein Foto.",
+      "soft": "Nimm das Foto frontal neu auf, dann wird es schärfer.",
+      "volumes": "Volumen werden noch nicht ausgeschnitten."
+    },
+    "notAvailableNoPins": "Setz zuerst die 4 Ecken der Wand, um diesen Look zu nutzen.",
+    "notAvailableSmall": "Dieses Foto ist zu klein zum Entzerren. Nimm es mit der Hauptkamera bei 1x neu auf.",
+    "usePhoto": "Foto nehmen"
   }
 }

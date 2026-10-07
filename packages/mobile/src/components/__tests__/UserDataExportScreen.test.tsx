@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { BOARD_DISPLAY_ORDER, type UserDataExportStatus } from '@boardsesh/shared-schema';
 
 const mocks = vi.hoisted(() => ({
+  platform: 'ios',
+  downloadPending: false,
   authenticated: true,
   profileId: 'climber-a',
   profileError: false,
@@ -29,7 +31,12 @@ vi.mock('react-native', () => ({
   ScrollView: ({ children }: ComponentProps) => createElement('div', null, children),
   ActivityIndicator: () => createElement('div', { role: 'progressbar' }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios },
+  Platform: {
+    get OS() {
+      return mocks.platform;
+    },
+    select: (options: Record<string, unknown>) => options[mocks.platform],
+  },
   PlatformColor: (name: string) => name,
 }));
 vi.mock('react-i18next', () => ({
@@ -66,7 +73,9 @@ vi.mock('../../lib/graphql/extract-error-message', () => ({
 }));
 vi.mock('../../lib/graphql/hooks/use-user-data-export', () => ({
   UserDataExportActionError: class UserDataExportActionError extends Error {
-    reason = 'offline';
+    constructor(public reason: string) {
+      super(reason);
+    }
   },
   useUserDataExport: (userId: string, boardType: string) => {
     mocks.useExport(userId, boardType);
@@ -78,7 +87,7 @@ vi.mock('../../lib/graphql/hooks/use-user-data-export', () => ({
         isFetching: false,
       },
       requestMutation: { mutateAsync: mocks.request, isPending: false },
-      downloadMutation: { mutateAsync: mocks.download, isPending: false },
+      downloadMutation: { mutateAsync: mocks.download, isPending: mocks.downloadPending },
       refresh: mocks.refresh,
       pollLimitReached: mocks.pollStopped,
       isOffline: mocks.offline,
@@ -118,6 +127,7 @@ vi.mock('../RadioGroup', () => ({
 }));
 
 import { UserDataExportScreen } from '../UserDataExportScreen';
+import { UserDataExportActionError } from '../../lib/graphql/hooks/use-user-data-export';
 
 function exportStatus(overrides: Partial<UserDataExportStatus> = {}): UserDataExportStatus {
   return {
@@ -145,6 +155,8 @@ function readyExport(overrides: Partial<UserDataExportStatus> = {}): UserDataExp
 }
 
 beforeEach(() => {
+  mocks.platform = 'ios';
+  mocks.downloadPending = false;
   mocks.authenticated = true;
   mocks.profileId = 'climber-a';
   mocks.profileError = false;
@@ -271,6 +283,9 @@ describe('generation preflight', () => {
 });
 
 describe('cached export states and browser download', () => {
+  beforeEach(() => {
+    mocks.platform = 'web';
+  });
   it('shows the snapshot dates and downloads the default Boardsesh file without regenerating', async () => {
     mocks.status = readyExport();
     render(<UserDataExportScreen />);
@@ -355,5 +370,97 @@ describe('cached export states and browser download', () => {
     fireEvent.click(screen.getByRole('button', { name: 'export.download' }));
     await waitFor(() => expect(screen.getByText('export.downloadFailed')).not.toBeNull());
     expect((screen.getByRole('button', { name: 'export.download' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('native export save/share', () => {
+  it.each(['ios', 'android'])('offers saving or sharing on %s without a browser download button', async (platform) => {
+    mocks.platform = platform;
+    mocks.status = readyExport();
+    render(<UserDataExportScreen />);
+    expect(screen.queryByRole('button', { name: 'export.download' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    await waitFor(() => expect(mocks.download).toHaveBeenCalledWith({ period: '2026-W40', format: 'boardsesh' }));
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
+
+  it('shares the selected Aurora JSON when available', async () => {
+    const ready = readyExport();
+    mocks.status = {
+      ...ready,
+      files: [...ready.files, { ...ready.files[0], format: 'aurora', filename: 'kilter-aurora.json' }],
+    };
+    render(<UserDataExportScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'export.auroraFormat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    await waitFor(() => expect(mocks.download).toHaveBeenCalledWith({ period: '2026-W40', format: 'aurora' }));
+  });
+
+  it.each([
+    ['download_failed', 'export.nativeDownloadFailed'],
+    ['share_failed', 'export.shareFailed'],
+    ['sharing_unavailable', 'export.sharingUnavailable'],
+    ['cleanup_failed', 'export.cleanupFailed'],
+    ['offline', 'export.offline'],
+  ] as const)('shows actionable guidance for %s and allows a retry', async (reason, copy) => {
+    mocks.status = readyExport();
+    mocks.download.mockRejectedValue(new UserDataExportActionError(reason));
+    render(<UserDataExportScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    await waitFor(() => expect(screen.getByText(copy)).not.toBeNull());
+    expect((screen.getByRole('button', { name: 'export.saveOrShare' }) as HTMLButtonElement).disabled).toBe(false);
+    mocks.download.mockResolvedValue(undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    await waitFor(() => expect(mocks.download).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(copy)).toBeNull();
+  });
+
+  it('keeps actions disabled and selection guarded until sharing finishes', async () => {
+    mocks.status = readyExport();
+    let finishSharing: (() => void) | undefined;
+    mocks.download.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSharing = resolve;
+        }),
+    );
+    const { rerender } = render(<UserDataExportScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    mocks.downloadPending = true;
+    rerender(<UserDataExportScreen />);
+    expect((screen.getByRole('button', { name: 'export.saveOrShare' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'export.refresh' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'tension' }));
+    expect(mocks.useExport).toHaveBeenLastCalledWith('climber-a', 'kilter');
+    await act(async () => {
+      finishSharing?.();
+    });
+    expect(mocks.download).toHaveBeenCalledTimes(1);
+    mocks.downloadPending = false;
+    rerender(<UserDataExportScreen />);
+    expect((screen.getByRole('button', { name: 'export.saveOrShare' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('treats a dismissed share sheet as normal completion', async () => {
+    mocks.status = readyExport();
+    render(<UserDataExportScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    });
+    expect(mocks.download).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('export.shareFailed')).toBeNull();
+    expect(screen.queryByText('export.nativeDownloadFailed')).toBeNull();
+  });
+
+  it('silently discards a session ownership change', async () => {
+    mocks.status = readyExport();
+    mocks.download.mockRejectedValue(new UserDataExportActionError('session_changed'));
+    render(<UserDataExportScreen />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'export.saveOrShare' }));
+    });
+    expect(mocks.download).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('export.nativeDownloadFailed')).toBeNull();
+    expect(screen.queryByText('export.shareFailed')).toBeNull();
   });
 });

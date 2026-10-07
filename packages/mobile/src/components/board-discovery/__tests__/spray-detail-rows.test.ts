@@ -1,54 +1,100 @@
 import { describe, expect, it } from 'vitest';
-import { sprayDetailRows } from '../spray-detail-rows';
-import { SPRAY_HOLD_EDITOR_PATH, SPRAY_RESET_PATH } from '../../../lib/spray/spray-routes';
+import { sprayDetailRows, viewerOwnsSprayWall, type SprayDetailRowContext } from '../spray-detail-rows';
+import { SPRAY_HOLD_EDITOR_PATH, SPRAY_NEW_WALL_PATH } from '../../../lib/spray/spray-routes';
+import { LIVE_SPRAY_WALL_ARCHIVE_STATE } from '../../../lib/spray/spray-wall-registry';
 
-const wall = { uuid: 'wall-uuid-1', boardType: 'spray', canEdit: true };
+const wall = { uuid: 'wall-uuid-1', boardType: 'spray', canEdit: true, ownerId: 'owner-1' };
+
+const free = LIVE_SPRAY_WALL_ARCHIVE_STATE;
+const archived = {
+  ...LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  archivedAt: '2026-10-01T09:00:00.000Z',
+  replacedByWallUuid: 'new-wall',
+};
+
+const asOwner = (archive: SprayDetailRowContext['archive']): SprayDetailRowContext => ({
+  viewerUserId: 'owner-1',
+  archive,
+});
+const asEditor = (archive: SprayDetailRowContext['archive']): SprayDetailRowContext => ({
+  viewerUserId: 'gym-admin',
+  archive,
+});
+
+const resetHref = `${SPRAY_NEW_WALL_PATH}?resetOf=wall-uuid-1`;
+const editHref = `${SPRAY_HOLD_EDITOR_PATH}?wallUuid=wall-uuid-1`;
 
 describe('sprayDetailRows', () => {
-  it('offers the hold editor and a new photo on a wall the viewer may edit', () => {
-    const rows = sprayDetailRows(wall);
-
-    expect(rows.map((row) => row.key)).toEqual(['editHolds', 'newPhoto']);
-    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?boardUuid=wall-uuid-1`);
-    expect(rows[1].href).toBe(`${SPRAY_RESET_PATH}?boardUuid=wall-uuid-1`);
+  // The matrix the sheet is built from: who is looking, and whether the wall is
+  // live. A live wall's holds stay editable, published climbs or not.
+  it.each([
+    ['the owner of a live wall', wall, asOwner(free), ['editHolds', 'resetWall']],
+    ['an editor who is not the owner', wall, asEditor(free), ['editHolds']],
+    ['a climber who only follows the wall', { ...wall, canEdit: false }, asEditor(free), []],
+    ['the owner of an archived wall', wall, asOwner(archived), []],
+    ['an editor of an archived wall', wall, asEditor(archived), []],
+    // An unpublished wall never registers from a published version, so the
+    // registry has no archive state for it and nothing is offered.
+    ['the owner of a wall that has not published', wall, asOwner(null), []],
+    // No signed-in id at all (profile and stored id both missing): nobody is
+    // the owner, so no reset, and edit access alone decides the hold rows.
+    ['a viewer whose id is unknown', wall, { viewerUserId: undefined, archive: free }, ['editHolds']],
+  ])('offers %s exactly the right rows', (_label, board, context, keys) => {
+    expect(sprayDetailRows(board, context).map((row) => row.key)).toEqual(keys);
   });
 
-  // The gate. Every one of these rows leads into a screen the server refuses for
-  // anyone else, so offering it is a dead end at best.
-  it('offers nothing on a wall the viewer may only climb on', () => {
-    expect(sprayDetailRows({ ...wall, canEdit: false })).toEqual([]);
+  it('opens the hold editor, and puts the reset behind a confirm', () => {
+    const rows = sprayDetailRows(wall, asOwner(free));
+    expect(rows[0]).toEqual({ key: 'editHolds', icon: 'edit', href: editHref, confirmsReset: false });
+    expect(rows[1]).toEqual({ key: 'resetWall', icon: 'camera', href: resetHref, confirmsReset: true });
   });
 
-  // `canEdit` is optional on UserBoard — a partial board built from an offline
-  // snapshot or a board path carries no answer, and "no answer" must not open the
-  // owner's doors.
-  it('offers nothing when edit access is unknown', () => {
-    expect(sprayDetailRows({ uuid: 'wall-uuid-1', boardType: 'spray' })).toEqual([]);
+  // Reset is owner-only on the server (`SPRAY_WALL_RESET_OWNER_ONLY`): edit
+  // rights alone never show it, and ownership shows it on a row whose edit
+  // answer is missing.
+  it('decides reset on ownership, not on edit access', () => {
+    expect(sprayDetailRows({ ...wall, canEdit: false }, asOwner(free)).map((row) => row.key)).toEqual(['resetWall']);
+    expect(sprayDetailRows({ ...wall, ownerId: undefined }, asOwner(free)).map((row) => row.key)).toEqual([
+      'editHolds',
+    ]);
+  });
+
+  // `canEdit` is optional on UserBoard: "no answer" must not open the hold editor.
+  it('offers no hold editor when edit access is unknown', () => {
+    expect(sprayDetailRows({ uuid: 'wall-uuid-1', boardType: 'spray' }, asEditor(free))).toEqual([]);
   });
 
   it('offers nothing on a catalogue board, however much access the viewer has', () => {
     for (const boardType of ['kilter', 'tension', 'moonboard', 'woods']) {
-      expect(sprayDetailRows({ ...wall, boardType })).toEqual([]);
+      expect(sprayDetailRows({ ...wall, boardType }, asOwner(free))).toEqual([]);
     }
   });
 
-  // An unrecognised board string is not a wall. `toBoardName` is what decides,
-  // rather than a bare `=== 'spray'`, so a board type we cannot name never
-  // reaches a wall-only screen.
+  // `toBoardName` decides, rather than a bare `=== 'spray'`.
   it('offers nothing for an unknown board type', () => {
-    expect(sprayDetailRows({ ...wall, boardType: 'sprayy' })).toEqual([]);
-    expect(sprayDetailRows({ ...wall, boardType: '' })).toEqual([]);
+    expect(sprayDetailRows({ ...wall, boardType: 'sprayy' }, asOwner(free))).toEqual([]);
+    expect(sprayDetailRows({ ...wall, boardType: '' }, asOwner(free))).toEqual([]);
   });
 
   it('offers nothing when there is no board at all', () => {
-    expect(sprayDetailRows(null)).toEqual([]);
-    expect(sprayDetailRows(undefined)).toEqual([]);
+    expect(sprayDetailRows(null, asOwner(free))).toEqual([]);
+    expect(sprayDetailRows(undefined, asOwner(free))).toEqual([]);
   });
 
-  // A uuid is a uuid today, but the href is a URL either way and a raw `&` in it
-  // would silently split into a second query parameter.
+  // A raw `&` in the uuid would silently split into a second query parameter.
   it('escapes the uuid it puts in the query string', () => {
-    const rows = sprayDetailRows({ ...wall, uuid: 'a&b=c' });
-    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?boardUuid=a%26b%3Dc`);
+    const rows = sprayDetailRows({ ...wall, uuid: 'a&b=c' }, asOwner(free));
+    expect(rows[0].href).toBe(`${SPRAY_HOLD_EDITOR_PATH}?wallUuid=a%26b%3Dc`);
+    expect(rows[1].href).toBe(`${SPRAY_NEW_WALL_PATH}?resetOf=a%26b%3Dc`);
+  });
+});
+
+describe('viewerOwnsSprayWall', () => {
+  it('needs both ids, and equal ones', () => {
+    expect(viewerOwnsSprayWall({ ownerId: 'owner-1' }, 'owner-1')).toBe(true);
+    expect(viewerOwnsSprayWall({ ownerId: 'owner-1' }, 'someone')).toBe(false);
+    expect(viewerOwnsSprayWall({ ownerId: 'owner-1' }, null)).toBe(false);
+    expect(viewerOwnsSprayWall({ ownerId: '' }, '')).toBe(false);
+    expect(viewerOwnsSprayWall({}, undefined)).toBe(false);
   });
 });

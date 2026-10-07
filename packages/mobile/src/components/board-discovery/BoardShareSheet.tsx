@@ -18,6 +18,7 @@ import type { SprayWallVisibility } from '../../lib/spray/spray-share';
 type BoardShareSheetProps = {
   visible: boolean;
   onDismiss: () => void;
+  onFullyDismissed?: () => void;
   /** The wall's share URL — already built, and never null (a private wall has none). */
   shareUrl: string;
   wallName: string;
@@ -43,14 +44,21 @@ const QR_TILE_BACKGROUND = '#FFFFFF';
  * title is the important part — an unlisted link is a capability and a public
  * wall is on the open web, and those are different promises.
  */
-export function BoardShareSheet({ visible, onDismiss, shareUrl, wallName, visibility }: BoardShareSheetProps) {
+export function BoardShareSheet({
+  visible,
+  onDismiss,
+  onFullyDismissed,
+  shareUrl,
+  wallName,
+  visibility,
+}: BoardShareSheetProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetMethods>(null);
 
-  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss });
+  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss, onFullyDismissed });
 
   // A lone '60%' makes @expo/ui's Material sheet skip the partial state and open
   // full-screen on Android; androidSafeSnapPoints adds the full detent.
@@ -86,7 +94,9 @@ export function BoardShareSheet({ visible, onDismiss, shareUrl, wallName, visibi
         <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
           {wallName}
         </Text>
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.subtitle}>
+        {/* Full label colour, not secondary: on the glass sheet the grey body
+            and URL were hard to read (#5960). */}
+        <Text variant="footnote" color={systemColors.label} style={styles.subtitle}>
           {visibility === 'public' ? t('mobile.sprayShare.publicBody') : t('mobile.sprayShare.unlistedBody')}
         </Text>
 
@@ -98,7 +108,7 @@ export function BoardShareSheet({ visible, onDismiss, shareUrl, wallName, visibi
           <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
         </View>
 
-        <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={2} style={styles.url}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
           {shareUrl}
         </Text>
 
@@ -145,6 +155,8 @@ const styles = StyleSheet.create({
   },
   url: {
     textAlign: 'center',
+    // Breathing room above the buttons; the URL sat right against them.
+    marginBottom: spacing[3],
   },
   buttonRow: {
     flexDirection: 'row',

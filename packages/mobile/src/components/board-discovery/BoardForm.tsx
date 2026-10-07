@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   View,
   ScrollView,
@@ -24,17 +24,21 @@ import { boardTypeLabel, cleanLayoutName, formatSizeLabel } from './board-builde
 import { BoardImageNative } from '../BoardImageNative';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
-import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { SwitchRow } from '../SwitchRow';
-import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { TimerPairingSheet } from '../ble/TimerPairingSheet';
 import { GymPickerSheet } from './GymPickerSheet';
-import { BoardIdentityFields, BoardVisibilityFields, BuilderTextInput, SectionLabel } from './BoardMetaFields';
+import {
+  BoardIdentityFields,
+  BoardVisibilityFields,
+  BuilderTextInput,
+  SectionLabel,
+  SprayWallVisibilityField,
+} from './BoardMetaFields';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 
@@ -72,6 +76,8 @@ type BoardFormProps = {
    * warning so editing your own board never warns about its own serial.
    */
   currentBoardUuid?: string;
+  /** A spray wall's background picker, drawn under its visibility rows. */
+  sprayBackgroundSection?: ReactNode;
 };
 
 /**
@@ -91,6 +97,7 @@ export function BoardForm({
   lockedConfigReason = 'permission',
   errorMessage = null,
   currentBoardUuid,
+  sprayBackgroundSection,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -173,25 +180,6 @@ export function BoardForm({
   // screen was the sharp edge: flipping it would put a Bluetooth scan and a
   // device picker on a photograph.
   const isSprayWall = builder.boardName === 'spray';
-  const sprayVisibility = sprayWallVisibility(builder);
-  const { setIsPublic, setIsUnlisted } = builder;
-  // One control, two flags. Public wins over unlisted on read (`sprayWallVisibility`),
-  // so writing the pair exclusively is what keeps the round trip honest.
-  const onSelectVisibility = useCallback(
-    (next: SprayWallVisibility) => {
-      setIsPublic(next === 'public');
-      setIsUnlisted(next === 'unlisted');
-    },
-    [setIsPublic, setIsUnlisted],
-  );
-  const visibilityOptions = useMemo(
-    () => [
-      { key: 'private' as const, label: t('mobile.sprayVisibility.private') },
-      { key: 'unlisted' as const, label: t('mobile.sprayVisibility.unlisted') },
-      { key: 'public' as const, label: t('mobile.sprayVisibility.public') },
-    ],
-    [t],
-  );
   const showPreview = builder.layoutId != null && builder.sizeId != null && builder.setIds.length > 0;
   const setIdsWire = builder.setIds.join(',');
   // Account for both the scroll content padding and the preview tile's padding.
@@ -321,20 +309,8 @@ export function BoardForm({
                 public" reachable, which is a state nobody meant to pick. */}
             {isSprayWall ? (
               <>
-                <SectionLabel>{t('mobile.sprayVisibility.label')}</SectionLabel>
-                <SegmentedControl<SprayWallVisibility>
-                  options={visibilityOptions}
-                  selectedKey={sprayVisibility}
-                  onSelect={onSelectVisibility}
-                  accessibilityLabel={t('mobile.sprayVisibility.label')}
-                />
-                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
-                  {sprayVisibility === 'public'
-                    ? t('mobile.sprayVisibility.publicHint')
-                    : sprayVisibility === 'unlisted'
-                      ? t('mobile.sprayVisibility.unlistedHint')
-                      : t('mobile.sprayVisibility.privateHint')}
-                </Text>
+                <SprayWallVisibilityField builder={builder} />
+                {sprayBackgroundSection}
               </>
             ) : null}
           </>
@@ -465,6 +441,7 @@ export function BoardForm({
         <GymPickerSheet
           selectedUuid={builder.selectedGym?.uuid ?? null}
           boardCoords={builder.coords}
+          showsOnMap={builder.isPublic}
           onSelect={(gym) => {
             builder.setSelectedGym(gym);
             setGymPickerOpen(false);
@@ -615,10 +592,6 @@ const styles = StyleSheet.create({
   },
   serialHint: {
     marginTop: spacing[1],
-  },
-  visibilityHint: {
-    marginTop: spacing[2],
-    lineHeight: 18,
   },
   timerRow: {
     flexDirection: 'row',

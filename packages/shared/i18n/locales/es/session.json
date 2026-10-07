@@ -195,8 +195,6 @@
       "tries_other": "{{count}} intentos",
       "originalTag": "Original",
       "mirroredTag": "Espejo",
-      "earlierVersionTag": "Versión anterior",
-      "earlierVersionA11y": "escalado en una versión anterior de este bloque",
       "lifetimeTries_one": "{{count}} intento",
       "lifetimeTries_other": "{{count}} intentos",
       "lifetimeSessions_one": "en {{count}} sesión",
@@ -262,8 +260,6 @@
       "earlierShort_one": "+{{count}} anterior",
       "earlierShort_other": "+{{count}} anteriores",
       "earlierA11y": "{{name}}, {{logs}}",
-      "earlierVersionTag": "Versión anterior",
-      "earlierVersionA11y": "escalado en una versión anterior de este bloque",
       "foldSends_one": "{{count}} encadene más en 1 intento",
       "foldSends_other": "{{count}} encadenes más en 1 intento",
       "foldSendsAtAngle_one": "{{count}} encadene más en 1 intento a {{angle}}°",
@@ -389,7 +385,8 @@
     "angleSelector": {
       "title": "Elegir ángulo",
       "fromVerticalHint": "Medido desde la vertical",
-      "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical"
+      "diagramAria": "Plafón inclinado a {{angle}}° desde la vertical",
+      "snapToAngle": "Ir a {{angle}}°"
     },
     "queue": {
       "unknownClimb": "Bloque desconocido",

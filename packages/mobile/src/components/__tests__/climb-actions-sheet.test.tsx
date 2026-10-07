@@ -16,7 +16,7 @@ const sheet = vi.hoisted(() => ({
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
-  canUpdate: false,
+  wallArchived: false,
 }));
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn() }));
@@ -65,7 +65,12 @@ vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn() }));
 vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
   buildReadableClimbViewPath: urlBuilder.buildReadableClimbViewPath,
 }));
-vi.mock('@boardsesh/create-climb-react', () => ({ computeCanUpdate: () => ctrl.canUpdate }));
+// The REAL edit rule (`canEditClimb`): the gate is the thing under test. Only
+// the wall's archive state is stubbed, since the registry behind it has its own
+// tests.
+vi.mock('../../lib/spray/use-spray-wall-archive', () => ({
+  useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
+}));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../providers/theme-provider', () => ({
@@ -104,6 +109,12 @@ const ownerClimb = {
   is_draft: true,
 } as unknown as Climb;
 
+const publishedOwnerClimb = {
+  ...ownerClimb,
+  is_draft: false,
+  published_at: new Date().toISOString(),
+} as unknown as Climb;
+
 const baseProps = {
   climb,
   boardName: 'kilter' as const,
@@ -122,7 +133,7 @@ beforeEach(() => {
   urlBuilder.buildReadableClimbViewPath.mockClear();
   preview.props = null;
   ctrl.variant = 'liquidGlass';
-  ctrl.canUpdate = false;
+  ctrl.wallArchived = false;
   nav.push.mockClear();
 });
 
@@ -168,12 +179,11 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
   });
 
   it('uses neutral adaptive icons for ordinary Liquid Glass action rows', () => {
-    ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet
         visible={true}
         {...baseProps}
-        climb={ownerClimb}
+        climb={publishedOwnerClimb}
         boardName="tension"
         currentUserId="user-1"
         onAddToQueue={vi.fn()}
@@ -195,12 +205,11 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
   it('keeps Material action rows on their semantic/action colors', () => {
     ctrl.variant = 'material';
-    ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet
         visible={true}
         {...baseProps}
-        climb={ownerClimb}
+        climb={publishedOwnerClimb}
         boardName="tension"
         currentUserId="user-1"
         onAddToQueue={vi.fn()}
@@ -221,24 +230,84 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
   });
 
   it('offers Fork and Edit on Woods now that authoring is supported', () => {
-    ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} boardName="woods" currentUserId="user-1" />,
     );
 
     expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).not.toBeNull();
     expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).not.toBeNull();
-    expect(container.querySelector('[data-row="mobile.climbActions.copyLink"]')).not.toBeNull();
+  });
+
+  it('offers Copy link on a published climb but not on a draft (#5960)', () => {
+    const published = { ...ownerClimb, is_draft: false } as unknown as Climb;
+    const copyRow = (container: HTMLElement) => container.querySelector('[data-row="mobile.climbActions.copyLink"]');
+
+    const first = render(<ClimbActionsSheet visible={true} {...baseProps} climb={published} />);
+    expect(copyRow(first.container)).not.toBeNull();
+    first.unmount();
+
+    const second = render(<ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} />);
+    expect(copyRow(second.container)).toBeNull();
   });
 
   it('keeps Fork and Edit on a board that can', () => {
-    ctrl.canUpdate = true;
     const { container } = render(
       <ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} currentUserId="user-1" />,
     );
 
     expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).not.toBeNull();
     expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).not.toBeNull();
+  });
+
+  it('offers neither Fork nor Edit on an archived spray wall', () => {
+    ctrl.wallArchived = true;
+    const sprayProps = { ...baseProps, boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1' };
+    const { container } = render(
+      <ClimbActionsSheet visible={true} {...sprayProps} climb={ownerClimb} currentUserId="user-1" />,
+    );
+    expect(container.querySelector('[data-row="mobile.climbActions.fork"]')).toBeNull();
+    expect(container.querySelector('[data-row="mobile.climbActions.edit"]')).toBeNull();
+  });
+
+  // The same rule on every board: the setter, a draft for good, a published
+  // climb for 24 hours after first publish. The wall's owner gets no Edit on a
+  // climb somebody else set.
+  describe('who is offered Edit', () => {
+    const publishedAt = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 60 * 60 * 1000).toISOString();
+    const published = (hoursAgo: number) =>
+      ({ ...climb, userId: 'setter-1', is_draft: false, published_at: publishedAt(hoursAgo) }) as unknown as Climb;
+    const draft = { ...published(1), is_draft: true, published_at: null } as unknown as Climb;
+    const sprayProps = { ...baseProps, boardName: 'spray' as const, layoutId: 4200, sizeId: 4200, setIds: '1' };
+    const editRow = (container: HTMLElement) => container.querySelector('[data-row="mobile.climbActions.edit"]');
+
+    it.each([
+      ['a spray wall', sprayProps],
+      ['Kilter', baseProps],
+    ])('offers the setter Edit within 24 hours of publishing on %s, and not after', (_label, props) => {
+      const fresh = render(
+        <ClimbActionsSheet visible={true} {...props} climb={published(2)} currentUserId="setter-1" />,
+      );
+      expect(editRow(fresh.container)).not.toBeNull();
+      fresh.unmount();
+      const old = render(
+        <ClimbActionsSheet visible={true} {...props} climb={published(30)} currentUserId="setter-1" />,
+      );
+      expect(editRow(old.container)).toBeNull();
+    });
+
+    it('keeps Edit on a spray draft for its setter, however old', () => {
+      const { container } = render(
+        <ClimbActionsSheet visible={true} {...sprayProps} climb={draft} currentUserId="setter-1" />,
+      );
+      expect(editRow(container)).not.toBeNull();
+    });
+
+    it("does not offer the wall's owner Edit on a spray climb somebody else set", () => {
+      const { container } = render(
+        <ClimbActionsSheet visible={true} {...sprayProps} climb={published(2)} currentUserId="wall-owner" />,
+      );
+      expect(editRow(container)).toBeNull();
+    });
   });
 
   it('shows add to playlist, and no report row unless the host wires one', () => {
@@ -377,6 +446,8 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
         // The parent's grade rides along so a remix on a board that publishes
         // with the setter's own grade (a spray wall) opens at it (#5443).
         forkDifficulty: 'V4',
+        // The parent, so the editor can draw the holds it lost.
+        forkParentUuid: climb.uuid,
         boardName: 'kilter',
         layoutId: '1',
         sizeId: '10',
@@ -387,7 +458,6 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
   });
 
   it('pushes create in edit mode from the owner-only Edit row', async () => {
-    ctrl.canUpdate = true;
     const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
     render(
       <ClimbActionsSheet

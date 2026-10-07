@@ -8,6 +8,10 @@ export {
   EDIT_WINDOW_MS,
   computeCanUpdate,
   computeEditLocked,
+  canEditClimb,
   buildInitialFrames,
   type SavedClimbSnapshot,
+  type EditableClimb,
+  type CanEditClimbInput,
 } from './helpers';
+export { applyHoldState, MAX_HOLDS_PER_CAPPED_ROLE } from './hold-paint';

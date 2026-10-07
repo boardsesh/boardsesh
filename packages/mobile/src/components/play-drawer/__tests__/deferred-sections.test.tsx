@@ -290,6 +290,29 @@ describe('DeferredSections', () => {
     expect(screen.getByTestId('similar-climbs')).not.toBeNull();
   });
 
+  it('puts Similar climbs straight after Community, with the Logbook still first', () => {
+    deferred.ready = true;
+    const { container } = render(
+      <DeferredSections
+        climb={climb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={10}
+        setIds="1,2"
+        angle={40}
+        enabled
+        contentEnabled
+        onSimilarClimbPress={vi.fn()}
+      />,
+    );
+
+    const order = [...container.querySelectorAll('[data-testid]')]
+      .map((node) => node.getAttribute('data-testid'))
+      .filter((id) => id !== 'text');
+    expect(order[0]).toBe('logbook');
+    expect(order.indexOf('similar-climbs')).toBe(order.indexOf('community') + 1);
+  });
+
   it('hides the Boardsesh grade section when the flag is off', () => {
     deferred.ready = true;
     flags.boardseshGrade = false;

@@ -19,7 +19,7 @@ const bluetooth = vi.hoisted(() => ({
   disconnect: vi.fn(),
 }));
 
-const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn() }));
+const queue = vi.hoisted(() => ({ setCurrentClimb: vi.fn(), refreshAuthoredClimb: vi.fn() }));
 const boardActions = vi.hoisted(() => ({
   saveClimb: vi.fn(async () => ({ uuid: 'saved-1', createdAt: null, publishedAt: null, isDraft: true })),
   updateClimb: vi.fn(),
@@ -98,7 +98,10 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useClimb: () => ({ data: undefined }),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ setCurrentClimb: queue.setCurrentClimb }),
+  useQueueActions: () => ({
+    setCurrentClimb: queue.setCurrentClimb,
+    refreshAuthoredClimb: queue.refreshAuthoredClimb,
+  }),
 }));
 vi.mock('../../../providers/bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => bluetooth,

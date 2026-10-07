@@ -3,7 +3,15 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import buildExpoConfig, {
+  ANDROID_BOARD_LINK_PREFIXES,
+  ANDROID_LINK_LOCALE_SEGMENTS,
+  ANDROID_LOCALISED_BOARD_LINK_PREFIXES,
+} from '../packages/mobile/app.config';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from '../packages/shared/i18n/src/config';
+import { SUPPORTED_BOARDS } from '../packages/shared-schema/src/types/board-config';
 
 // Guards the env the three mobile workflows share, for two reasons:
 //
@@ -258,7 +266,6 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
   it('keeps retired Android preview links as a compatibility ingress', () => {
     const appConfig = readFileSync(resolve(REPO_ROOT, 'packages/mobile/app.config.ts'), 'utf8');
     expect(appConfig).toContain("host: 'www.boardsesh.com', pathPrefix: '/preview'");
-    expect(appConfig).toContain("host: 'boardsesh.com', pathPrefix: '/preview'");
   });
 
   it('preserves the legacy channel env when resolving frozen release anchors', () => {
@@ -468,6 +475,9 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
 
       expect(cacheKeyStep, `${workflowName} must retain its CocoaPods cache key`).toBeTruthy();
       expect(cacheKeyStep).not.toContain("'packages/mobile/assets/**'");
+      expect(cacheKeyStep, `${workflowName} must invalidate Pods when autolinking overrides change`).toContain(
+        "'packages/mobile/react-native.config.js'",
+      );
       for (const nativeAppImage of nativeAppImages) {
         expect(cacheKeyStep, `${workflowName} must invalidate Pods when ${nativeAppImage} changes`).toContain(
           `'${nativeAppImage}'`,
@@ -738,7 +748,7 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // give one message. Containment is the free signal: origin/main is already
     // fetched for the baseline worktree.
     const preview = readWorkflow(OTA_PREVIEW);
-    expect(preview).toContain('git merge-base --is-ancestor origin/main HEAD');
+    expect(preview).toContain('git merge-base --is-ancestor "origin/$BASELINE" HEAD');
     expect(preview).toContain('behind_main: ${{ steps.behind.outputs.behind_main }}');
     // Three-valued on purpose. --is-ancestor exits >1 on a real error, and folding
     // that into "not contained" would tell a genuinely native PR to rebase — the
@@ -749,8 +759,23 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     // main AND add native code of its own, and containment cannot separate those
     // without a third fingerprint resolve. Promising a rebase is sufficient would
     // be wrong in that overlap.
-    expect(preview).toContain('behind a native change on `main` — rebase, then re-check');
+    expect(preview).toContain('behind a native change on \\`${baseline}\\` — rebase, then re-check');
     expect(preview).toContain('needs a TestFlight/Play build');
+  });
+
+  it('compares a release-train PR against release/next, not main', () => {
+    // A PR into release/next ships to the train's TestFlight build, whose fingerprint
+    // is the train's. Diffing it against main reported every train PR as "behind a
+    // native change on main" and published nothing (#5898). The base comes from the
+    // API before any PR-author code runs, and is allowlisted so a PR aimed anywhere
+    // else still compares against main.
+    const preview = readWorkflow(OTA_PREVIEW);
+    expect(preview).toContain("const ref = ['main', 'release/next'].includes(pr.base.ref) ? pr.base.ref : 'main';");
+    expect(preview).toContain('git worktree add "$RUNNER_TEMP/main-baseline" "origin/$BASELINE"');
+    expect(preview).not.toContain('git worktree add "$RUNNER_TEMP/main-baseline" origin/main');
+    expect(preview.indexOf('- name: Resolve the baseline branch')).toBeLessThan(
+      preview.indexOf('- name: Install dependencies (PR tree)'),
+    );
   });
 
   it('lists the sweep inventory with the dashboard admin session, not the eoo_ key', () => {
@@ -881,5 +906,107 @@ describe('mobile OTA preview branch isolation + S3 lifecycle coupling', () => {
     const preview = readWorkflow(OTA_PREVIEW);
     expect(preview).toMatch(/GOOGLE_MAPS_API_KEY:\s*\$\{\{\s*secrets\.GOOGLE_MAPS_API_KEY\s*\}\}/);
     expect((preview.match(/GOOGLE_MAPS_API_KEY:/g) ?? []).length).toBe(1);
+  });
+});
+
+describe('Android App Links (verified intent filters)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  type LinkData = { scheme?: string; host?: string; pathPrefix?: string; pathPattern?: string; path?: string };
+
+  function verifiedLinkData(): LinkData[] {
+    // An empty TAILSCALE_HOSTS makes app.config.ts skip its `tailscale status`
+    // subprocess, so building the config here stays hermetic on a dev machine.
+    vi.stubEnv('TAILSCALE_HOSTS', '');
+    const config = buildExpoConfig({
+      config: {},
+      projectRoot: resolve(REPO_ROOT, 'packages/mobile'),
+    } as Parameters<typeof buildExpoConfig>[0]);
+    return (config.android?.intentFilters ?? [])
+      .filter((filter) => filter.autoVerify === true)
+      .flatMap((filter) => (Array.isArray(filter.data) ? filter.data : filter.data ? [filter.data] : []));
+  }
+
+  it('claims one prefix per supported board, and nothing else from that list', () => {
+    // A shared climb is https://www.boardsesh.com/{board}/.../view/{climb}. A board
+    // missing here means its share links open Chrome instead of the app, with no
+    // failing build to say so.
+    expect([...ANDROID_BOARD_LINK_PREFIXES].sort()).toEqual(SUPPORTED_BOARDS.map((board) => `/${board}/`).sort());
+  });
+
+  it.each([...SUPPORTED_BOARDS])('opens www %s climb and list links in the app', (board) => {
+    expect(verifiedLinkData()).toContainEqual({
+      scheme: 'https',
+      host: 'www.boardsesh.com',
+      pathPrefix: `/${board}/`,
+    });
+  });
+
+  it('claims one locale segment per non-default web locale', () => {
+    // Web serves the default locale at the root and every other one under its
+    // own path segment. A locale missing here means that site's climb links open
+    // Chrome on Android while the same link opens the app on iOS.
+    const prefixedLocales = SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE);
+    expect([...ANDROID_LINK_LOCALE_SEGMENTS].sort()).toEqual([...prefixedLocales].sort());
+    expect(ANDROID_LOCALISED_BOARD_LINK_PREFIXES).toHaveLength(prefixedLocales.length * SUPPORTED_BOARDS.length);
+  });
+
+  it('opens a locale-prefixed climb link for every board and locale', () => {
+    const linkData = verifiedLinkData();
+    for (const locale of SUPPORTED_LOCALES.filter((candidate) => candidate !== DEFAULT_LOCALE)) {
+      for (const board of SUPPORTED_BOARDS) {
+        expect(linkData).toContainEqual({
+          scheme: 'https',
+          host: 'www.boardsesh.com',
+          pathPrefix: `/${locale}/${board}/`,
+        });
+      }
+    }
+  });
+
+  it('claims nothing under a locale except board links', () => {
+    // /es/auth/..., /es/b/... and the bare /es/ landing stay in the browser: the
+    // app's locale retry drops the query string an unlisted wall link needs, and
+    // a locale-wide prefix would be a catch-all for a quarter of the site.
+    const boardSegments = new Set<string>(SUPPORTED_BOARDS);
+    const localeSegments = new Set<string>(SUPPORTED_LOCALES);
+    for (const { pathPrefix } of verifiedLinkData()) {
+      const [, firstSegment, secondSegment] = (pathPrefix ?? '').split('/');
+      if (!localeSegments.has(firstSegment ?? '')) continue;
+      expect(boardSegments.has(secondSegment ?? ''), `${pathPrefix} is not a board link`).toBe(true);
+      expect(pathPrefix?.endsWith('/')).toBe(true);
+    }
+  });
+
+  it('keeps the join, spray wall, preview and password-reset links', () => {
+    const prefixes = verifiedLinkData().map((entry) => entry.pathPrefix);
+    expect(prefixes).toEqual(expect.arrayContaining(['/join', '/b/', '/preview', '/auth/reset-password']));
+  });
+
+  it('claims www only, because the apex cannot be verified', () => {
+    // https://boardsesh.com/.well-known/assetlinks.json is a 301 to www, which
+    // Google's verifier rejects. On Android 11 and older one unverified host
+    // fails verification for every host, so an apex entry here would stop the
+    // www links opening the app on those phones.
+    const hosts = new Set(verifiedLinkData().map((entry) => entry.host));
+    expect([...hosts]).toEqual(['www.boardsesh.com']);
+  });
+
+  it('never claims a path that carries the OAuth callback', () => {
+    // #1797: a catch-all prefix pulled /api/auth/callback/google into the app and
+    // broke Google sign-in. Every entry must be a prefix, and none may be a
+    // prefix of the callback or of the native OAuth start page.
+    const browserOnlyPaths = ['/api/auth/callback/google', '/api/auth/native/callback', '/auth/native-start'];
+    for (const entry of verifiedLinkData()) {
+      expect(entry.pathPattern).toBeUndefined();
+      expect(entry.path).toBeUndefined();
+      const { pathPrefix } = entry;
+      expect(pathPrefix, 'an entry without a pathPrefix claims the whole host').toBeTruthy();
+      for (const browserOnlyPath of browserOnlyPaths) {
+        expect(browserOnlyPath.startsWith(pathPrefix ?? ''), `${pathPrefix} captures ${browserOnlyPath}`).toBe(false);
+      }
+    }
   });
 });

@@ -1,7 +1,7 @@
-// The review bar's string, rendered for real (epic #5346, SW-09).
+// The editor's counted strings, rendered for real (epic #5346, SW-09).
 //
 // This exists because of a bug that every type in the codebase was happy with:
-// the screen interpolated `{ count }` while all four catalogs write `{{value}}`.
+// a screen interpolated `{ count }` while all four catalogs wrote `{{value}}`.
 // i18next does not fall back for an unmatched placeholder — it leaves it in the
 // string — so what shipped to a climber was the literal text
 // "{{value}} holds to check".
@@ -30,20 +30,33 @@ function translator(locale: keyof typeof CATALOGS) {
   return instance;
 }
 
-describe('the review bar count', () => {
-  it.each(Object.keys(CATALOGS) as (keyof typeof CATALOGS)[])('renders the number in %s', (locale) => {
-    const rendered = translator(locale).t('sprayWizard.review.found', { value: 12 });
-    expect(rendered).toContain('12');
-    // The failure this test is here for: an unmatched placeholder survives into
-    // the string a climber reads.
-    expect(rendered).not.toContain('{{');
+describe('the editor bar count', () => {
+  it.each(Object.keys(CATALOGS) as (keyof typeof CATALOGS)[])('renders both numbers in %s', (locale) => {
+    const { t } = translator(locale);
+    for (const count of [1, 12]) {
+      const rendered = t('sprayEditor.bar.withMaybes', {
+        holds: t('sprayEditor.bar.holds', { count }),
+        maybes: t('sprayEditor.bar.maybes', { count: count + 1 }),
+      });
+      expect(rendered).toContain(String(count));
+      expect(rendered).toContain(String(count + 1));
+      // The failure this test is here for: an unmatched placeholder survives into
+      // the string a climber reads.
+      expect(rendered).not.toContain('{{');
+    }
   });
 
   it('leaves the placeholder in when the wrong name is passed', () => {
     // Pinning the behaviour that makes the bug possible, so the assertion above
     // is known to be load-bearing rather than vacuous.
-    const rendered = translator('en-US').t('sprayWizard.review.found', { count: 12 });
-    expect(rendered).toContain('{{value}}');
+    const rendered = translator('en-US').t('sprayEditor.bar.withMaybes', { value: 12 });
+    expect(rendered).toContain('{{holds}}');
+  });
+
+  it.each(Object.keys(CATALOGS) as (keyof typeof CATALOGS)[])('says the hold cap with its number in %s', (locale) => {
+    const rendered = translator(locale).t('sprayEditor.errors.tooManyHolds', { max: 1500 });
+    expect(rendered).toContain('1500');
+    expect(rendered).not.toContain('{{');
   });
 });
 

@@ -73,6 +73,21 @@ describe('buildAuraRenderFields', () => {
     expect(buildAuraRenderFields({ ...baseInput, settings, thumbnail: true }).mark_style).toBe('glow');
   });
 
+  it('passes the outline mark straight through, with fillOpacity as the stroke alpha', () => {
+    // `fill.opacity` is the outline stroke's alpha under `outline` — the two
+    // marks never draw together — so it must arrive unchanged, not reset to
+    // the fill default or dropped because no fill is drawn.
+    const settings = { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, markStyle: 'outline' as const, fillOpacity: 0.9 };
+    const fields = buildAuraRenderFields({ ...baseInput, settings });
+    expect(fields.mark_style).toBe('outline');
+    expect(fields.fill).toEqual({ opacity: 0.9 });
+  });
+
+  it('collapses the outline mark to the thumbnail style like every other mark', () => {
+    const settings = { ...DEFAULT_BOARDSESH_RENDER_SETTINGS, markStyle: 'outline' as const };
+    expect(buildAuraRenderFields({ ...baseInput, settings, thumbnail: true }).mark_style).toBe('glow-fill');
+  });
+
   it('omits the veil at zero rather than sending opacity 0', () => {
     // A light-mode field is brighter than every board's wall, so there is
     // nothing to quiet — and `opacity: 0` would still cost a cache variant.

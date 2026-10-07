@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, createRef, forwardRef, useImperativeHandle, type ReactNode, type Ref } from 'react';
-import type { BoardPresenceClimb, BoardPresenceStats, Climb } from '@boardsesh/shared-schema';
+import type { BoardPresenceClimb, BoardPresenceStats, Climb, UserBoard } from '@boardsesh/shared-schema';
 
 const presence = vi.hoisted(() => ({
   currentClimb: null as BoardPresenceClimb | null,
@@ -355,6 +355,29 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 import { BoardSheet, type BoardSheetHandle } from '../BoardSheet';
+import {
+  clearSprayWallRegistry,
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  registerSprayWall,
+  type SprayWallArchiveState,
+} from '../../../lib/spray/spray-wall-registry';
+
+/** Register a spray wall in the real registry, so the sheet knows whether it is archived. */
+function registerSprayWallFixture(layoutId: number, wallUuid: string, archive: Partial<SprayWallArchiveState> = {}) {
+  registerSprayWall(layoutId, {
+    wallUuid,
+    angle: 40,
+    version: 1,
+    versionId: 1,
+    photoWidth: 100,
+    photoHeight: 100,
+    photoUrl: 'https://example.invalid/wall.jpg',
+    photoThumbUrl: null,
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
+    holds: [],
+    archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, ...archive },
+  });
+}
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { GET_CLIMB } from '../../../lib/graphql/operations';
 
@@ -449,6 +472,62 @@ describe('BoardSheet', () => {
 
     ref.current?.dismiss();
     expect(sheetModal.dismiss).toHaveBeenCalled();
+  });
+
+  it('forwards the active spray wall actions from the presented panel', () => {
+    const activeSprayWall: UserBoard = {
+      uuid: '2ad0c896-6d22-47b4-875e-3f2221942d0a',
+      slug: 'garage-wall',
+      ownerId: 'owner-1',
+      boardType: 'spray',
+      layoutId: 4242,
+      sizeId: 4242,
+      setIds: '4242',
+      name: 'Garage wall',
+      isPublic: false,
+      isUnlisted: true,
+      hideLocation: false,
+      isOwned: true,
+      angle: 40,
+      isAngleAdjustable: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      totalAscents: 0,
+      uniqueClimbers: 0,
+      followerCount: 0,
+      commentCount: 0,
+      isFollowedByMe: false,
+      canEdit: true,
+    };
+    clearSprayWallRegistry();
+    registerSprayWallFixture(4242, activeSprayWall.uuid);
+    const ref = createRef<BoardSheetHandle>();
+    const onOpenSprayMaintenance = vi.fn();
+    const onShareSprayWall = vi.fn();
+    const { getByLabelText, queryByLabelText } = render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: activeSprayWall.name,
+        onClose: noop,
+        onSwitchBoard: noop,
+        boardConfig: { ...boardConfig, boardName: 'spray', layoutId: 4242, sizeId: 4242, setIds: '4242' },
+        activeBoard: activeSprayWall,
+        onOpenSprayMaintenance,
+        onShareSprayWall,
+        viewerUserId: 'owner-1',
+      }),
+    );
+    expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
+
+    act(() => ref.current?.present());
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.resetWall'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.shareLink'));
+
+    expect(onOpenSprayMaintenance.mock.calls).toEqual([
+      [activeSprayWall.uuid, 'editHolds'],
+      [activeSprayWall.uuid, 'resetWall'],
+    ]);
+    expect(onShareSprayWall).toHaveBeenCalledExactlyOnceWith(activeSprayWall.uuid);
   });
 
   // The sheet used to pass its colour unconditionally. That was meant to darken

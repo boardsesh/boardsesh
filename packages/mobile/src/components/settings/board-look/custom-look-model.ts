@@ -163,13 +163,17 @@ export function buildCustomLookModel(input: CustomLookModelInput): MoreFormModel
   ];
 
   if (boardsesh.markStyle !== 'glow') {
+    // Under `outline` the same `fillOpacity` field drives the outline STROKE's
+    // alpha (the fill never draws with it), so the slider is relabelled rather
+    // than duplicated: a "Fill strength" control on a look with no fill would
+    // read as broken.
+    const strengthLabel =
+      boardsesh.markStyle === 'outline'
+        ? t('mobile.settings.boardLook.marks.outlineOpacity.title')
+        : t('mobile.settings.boardLook.marks.fillOpacity.title');
     marksRows.push(
-      slider(
-        'fillOpacity',
-        t('mobile.settings.boardLook.marks.fillOpacity.title'),
-        BOARD_RENDER_SETTING_BOUNDS.fillOpacity,
-        0.05,
-        (v) => t('mobile.settings.boardLook.marks.fillOpacity.value', { value: Math.round(v * 100) }),
+      slider('fillOpacity', strengthLabel, BOARD_RENDER_SETTING_BOUNDS.fillOpacity, 0.05, (v) =>
+        t('mobile.settings.boardLook.marks.fillOpacity.value', { value: Math.round(v * 100) }),
       ),
     );
   }

@@ -2,22 +2,30 @@
 //
 // Kept out of the component so the gate is one pure function with one test,
 // rather than a `&&` chain inside JSX that no test can reach without mounting a
-// bottom sheet. The gate is the interesting part: these rows expose the two
-// destructive-ish things you can do to a wall, and showing them to a climber who
-// merely follows someone's wall is a route into a screen the server will refuse.
+// bottom sheet. The gate is the interesting part: these rows lead into screens
+// the server refuses for anyone it does not allow, so showing one to a climber
+// who merely follows someone's wall is a dead end.
 //
-// Why `canEdit` and not `isOwned`: `canEdit` is the server's own answer to
-// "may this viewer change this board" — the owner, a gym owner/admin of the gym
-// the wall is attached to, or a community admin. The spray API gates every
-// version mutation on exactly that rule (`canEditBoard` in
-// `packages/backend/src/graphql/resolvers/board/spray-walls.ts`), so reading the
-// same field is what keeps the affordance and the permission from drifting apart.
-// `isOwned` is a different question entirely — it means "this is my wall, not one
-// I follow" and is true for boards the viewer cannot edit.
+// Two different permissions, on purpose:
+//
+//  - Editing holds reads `canEdit`, the server's own answer to "may this viewer
+//    change this board": the owner, a gym owner/admin of the gym the wall is
+//    attached to, or a community admin (`canEditBoard` in
+//    `packages/backend/src/graphql/resolvers/board/spray-walls.ts`).
+//  - Resetting is the OWNER's call alone (`SPRAY_WALL_RESET_OWNER_ONLY`): it
+//    replaces the wall and archives this one. So it reads `ownerId` against the
+//    signed-in viewer. `isOwned` is a different question ("I own the physical
+//    board") and is never used here.
+//
+// And one rule from the wall itself (`docs/spray-walls.md`, "Archive and reset"):
+// an archived wall offers none of these: it is read-only. A live wall's holds
+// stay editable, published climbs or not; the editor asks before it removes a
+// hold that published climbs use.
 
 import { toBoardName } from '@boardsesh/board-config';
 import type { IconName } from '../icon-map';
-import { sprayHoldEditorHref, sprayResetHref } from '../../lib/spray/spray-routes';
+import { sprayHoldEditorHref, sprayResetWizardHref } from '../../lib/spray/spray-routes';
+import type { SprayWallArchiveState } from '../../lib/spray/spray-wall-registry';
 import { buildSprayWallShareUrl, sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
 
 /** The board fields the gate reads. Structural so a partial board works uncast. */
@@ -25,6 +33,21 @@ export type SprayDetailRowBoard = {
   uuid: string;
   boardType: string;
   canEdit?: boolean;
+  /** The wall owner's user id. Reset is offered only when it is the viewer's. */
+  ownerId?: string;
+};
+
+/**
+ * What the rows need beyond the board row: who is looking, and the wall's
+ * archive state from the registry (`useSprayWallArchiveState`).
+ *
+ * `archive` is null until the wall has registered from its published version,
+ * and every row waits for it: whether the wall is archived is not something to
+ * guess.
+ */
+export type SprayDetailRowContext = {
+  viewerUserId: string | null | undefined;
+  archive: SprayWallArchiveState | null;
 };
 
 /** The board fields the share gate reads, on top of the ones above. */
@@ -73,37 +96,62 @@ export function sprayShareTarget(board: SprayShareBoard | null | undefined): Spr
   return url ? { url, visibility } : null;
 }
 
-export type SprayDetailRowKey = 'editHolds' | 'newPhoto';
+/**
+ * - `editHolds`: open the hold editor.
+ * - `resetWall`: the owner's reset, behind a confirm.
+ */
+export type SprayDetailRowKey = 'editHolds' | 'resetWall';
 
 export type SprayDetailRow = {
   key: SprayDetailRowKey;
   icon: IconName;
-  /** Where the row navigates. */
+  /** Where the row leads once it is confirmed. */
   href: string;
+  /** The row asks "Reset this wall?" before it navigates. */
+  confirmsReset: boolean;
 };
 
+/** Whether the signed-in viewer owns this wall. False when either id is missing. */
+export function viewerOwnsSprayWall(
+  board: Pick<SprayDetailRowBoard, 'ownerId'>,
+  viewerUserId: string | null | undefined,
+): boolean {
+  return typeof board.ownerId === 'string' && board.ownerId.length > 0 && board.ownerId === viewerUserId;
+}
+
 /**
- * The owner rows for one board: two on a spray wall the viewer may edit, none
- * anywhere else.
+ * The maintenance rows for one board, in display order. None on a catalogue
+ * board, on a wall not registered yet, or on an archived wall.
+ *
+ * | Viewer            | Rows        |
+ * | ----------------- | ----------- |
+ * | owner             | edit, reset |
+ * | editor, not owner | edit        |
+ * | anyone else       | none        |
  *
  * Returns a fresh array, so call it from the sheet's `useMemo` rather than from a
- * row. It is O(1) either way — the cost that matters is the re-render, not the
- * allocation.
+ * row. It is O(1) either way.
  */
-export function sprayDetailRows(board: SprayDetailRowBoard | null | undefined): SprayDetailRow[] {
-  if (!board) return [];
+export function sprayDetailRows(
+  board: SprayDetailRowBoard | null | undefined,
+  { viewerUserId, archive }: SprayDetailRowContext,
+): SprayDetailRow[] {
+  if (!board || !archive) return [];
   if (toBoardName(board.boardType) !== 'spray') return [];
-  if (board.canEdit !== true) return [];
-  return [
-    {
-      key: 'editHolds',
-      icon: 'edit',
-      href: sprayHoldEditorHref(board.uuid),
-    },
-    {
-      key: 'newPhoto',
+  if (archive.archivedAt != null) return [];
+  const isOwner = viewerOwnsSprayWall(board, viewerUserId);
+  const canEdit = board.canEdit === true;
+  const rows: SprayDetailRow[] = [];
+  if (canEdit) {
+    rows.push({ key: 'editHolds', icon: 'edit', href: sprayHoldEditorHref(board.uuid), confirmsReset: false });
+  }
+  if (isOwner) {
+    rows.push({
+      key: 'resetWall',
       icon: 'camera',
-      href: sprayResetHref(board.uuid),
-    },
-  ];
+      href: sprayResetWizardHref(board.uuid),
+      confirmsReset: true,
+    });
+  }
+  return rows;
 }

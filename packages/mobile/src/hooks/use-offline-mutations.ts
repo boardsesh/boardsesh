@@ -13,7 +13,6 @@ import {
   type OfflineDatabase,
   type SqlExecutor,
 } from '@boardsesh/offline-sync';
-import { knownClimbRevision } from '@boardsesh/logbook';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { reportEnqueueRevived, reportEnqueueSuppressed } from '../offline/outbox-telemetry';
 import { notifyOutboxChanged } from '../offline/outbox-store';
@@ -186,11 +185,22 @@ export async function writeTickLocal(
       // attempt already committed: a `SQLITE_BUSY` can surface at COMMIT, which
       // makes "the transaction landed and still threw" a real shape. `uuid` is
       // the PRIMARY KEY, and every other statement here is already idempotent.
+      //
+      // `climb_revision` is stamped from the phone's own copy of the climb, and
+      // never sent: the server picks the version itself. The stamp is for the
+      // local sent marks only. They count a tick when its version is at or past
+      // the climb's `holds_revision_number` (`tickOnCurrentHoldsLocalSql`), and
+      // a NULL reads as version 1, so an unstamped send on a climb whose holds
+      // moved would show as not sent until the pull brings the server's value.
+      // The phone's row is never below its own holds version, so the stamp
+      // always agrees with the local check. NULL when the board is not on the
+      // phone, where no local sent mark reads it.
       await txn.runAsync(
         `INSERT OR IGNORE INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status,
        attempt_count, quality, difficulty, comment, climbed_at, session_id, is_mirror, is_benchmark,
        created_at, updated_at, climb_revision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+         (SELECT revision_number FROM board_climbs WHERE uuid = ? AND board_type = ?))`,
         [
           tickUuid,
           ownerUserId,
@@ -208,11 +218,8 @@ export async function writeTickLocal(
           input.isBenchmark ? 1 : 0,
           now,
           now,
-          // The version of the climb the climber was looking at, so the local
-          // row answers "which version was this on" before the server has it.
-          // NULL when the app did not know: the pull fills it in once the
-          // server has stored its own answer (#6023).
-          knownClimbRevision(input.climbRevision),
+          input.climbUuid,
+          input.boardType,
         ],
       );
 

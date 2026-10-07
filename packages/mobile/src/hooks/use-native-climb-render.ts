@@ -34,7 +34,15 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
-import { ensureSprayWallLoaded, sprayCacheToken, subscribeToSprayWalls } from '../lib/spray/spray-wall-registry';
+import {
+  activeSprayArt,
+  ensureSprayWallLoaded,
+  getSprayWall,
+  sprayBoardRenderDefault,
+  sprayCacheToken,
+  subscribeToSprayWalls,
+} from '../lib/spray/spray-wall-registry';
+import { useSprayWallsUseOwnLook } from '../lib/spray-wall-look-preference';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
@@ -79,6 +87,7 @@ import {
 import { buildAuraRenderFields } from '@boardsesh/board-look';
 import {
   boardFieldColorForScheme,
+  boardLookForRender,
   buildBoardRenderSignature,
   requestedBoardRenderMode,
   resolveEffectiveRenderSettings,
@@ -303,6 +312,13 @@ type NativeClimbRenderResult = {
    * be visible-broken to the user instead of invisibly-broken.
    */
   missingBackgroundCount: number;
+  /**
+   * Paint this under `backgroundPaths` (`LayeredClimbImage`'s `baseColor`), or
+   * nothing when undefined. Set only for a spray wall drawn on its "Holds only"
+   * look, whose image is transparent everywhere but the holds: the field colour
+   * of the current scheme goes behind it, so one image serves light and dark.
+   */
+  backgroundBaseColor: string | undefined;
   /**
    * The drawing this render actually used, after the climber's settings, the
    * rollout flags and the installed library have all had their say. Surfaced so
@@ -1958,16 +1974,40 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     getBoardseshSupportRevision,
     getBoardseshSupportRevision,
   );
-  // Two native renders per launch, so only for someone whose settings or
-  // rollout flag ask for the mode.
-  if (requestedBoardRenderMode(boardRenderSettings) === 'aura') {
+  // The board's own stored look — a spray wall's, `null` for every catalogue
+  // board. It wins over the climber's own look unless they chose their own on
+  // spray walls. A preview card's bundle and a heatmap's mark override are
+  // asking for one specific drawing, so the wall's look never applies to them.
+  // Its own subscription rather than a ride on `sprayVersionToken` below: that
+  // token only moves with the wall's VERSION, and a look stored without a reset
+  // would never reach a surface mounted before it. The registry keeps an
+  // unchanged look's identity across re-registrations, so a revalidation costs
+  // no re-resolve.
+  const storedBoardLook = useSyncExternalStore(
+    subscribeToSprayWalls,
+    useCallback(() => sprayBoardRenderDefault(boardName, layoutId), [boardName, layoutId]),
+  );
+  const useOwnLookOnSprayWalls = useSprayWallsUseOwnLook();
+  const boardRenderDefault = boardLookForRender({
+    storedLook: storedBoardLook,
+    useOwnLook: useOwnLookOnSprayWalls,
+    hasSettingsOverride: renderSettingsOverride !== undefined,
+    hasMarkStyleOverride: markStyleOverride !== undefined,
+  });
+  // Two native renders per launch, so only for someone whose settings — or
+  // whose board's stored look — ask for the mode.
+  if (requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura') {
     ensureBoardseshSupportProbed();
   }
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(boardRenderSettings, getBoardseshRendererSupport() === true);
-  }, [boardRenderSettings, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(
+      boardRenderSettings,
+      getBoardseshRendererSupport() === true,
+      boardRenderDefault,
+    );
+  }, [boardRenderSettings, boardseshSupportTick, boardRenderDefault]);
 
   // The play field the veil washes toward. Baked into the PNG, so it is part of
   // the cache key: a light-mode overlay reused in dark mode would show a wall
@@ -3014,6 +3054,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // (FlashList row recycle case) must not bleed through to the new climb.
   const backgroundPaths = storedBackgrounds?.key === currentBoardKey ? storedBackgrounds.paths : [];
   const missingBackgroundCount = storedBackgrounds?.key === currentBoardKey ? storedBackgrounds.missingCount : 0;
+  // Read off the same registry answer the background key came from, and
+  // re-read whenever the spray token moves (it carries `-bg<variant>`).
+  const backgroundBaseColor = useMemo(() => {
+    void sprayVersionToken;
+    return boardName === 'spray' && activeSprayArt(getSprayWall(layoutId))?.variant === 'cutout'
+      ? fieldColor
+      : undefined;
+  }, [boardName, layoutId, fieldColor, sprayVersionToken]);
   return {
     overlayUri,
     overlayLoadKey,
@@ -3023,6 +3071,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayForNativeUse,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundBaseColor,
     effectiveRenderSettings,
     boardseshRendererAvailable: getBoardseshRendererSupport(),
     rendererUnavailable: rendererGaveUp || isNativeRendererUnavailable(),
@@ -3037,10 +3086,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
  * Kicks the capability probe on the same terms the render path does, so opening
  * the screen is enough to find out whether the mode is available at all.
  */
-export function useEffectiveBoardRenderSettings(): {
+export function useEffectiveBoardRenderSettings(boardDefault: BoardRenderSettings | null = null): {
   effectiveRenderSettings: EffectiveBoardRenderSettings;
   boardseshRendererAvailable: boolean | null;
 } {
+  // `boardDefault` is a board's own stored look (a spray wall's). Every caller
+  // today describes the climber's OWN preference — the settings screen, the
+  // onboarding gate — so none passes one, and the answer is board-agnostic.
   const { settings } = useBoardRenderSettings();
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
@@ -3048,12 +3100,12 @@ export function useEffectiveBoardRenderSettings(): {
     getBoardseshSupportRevision,
   );
 
-  if (requestedBoardRenderMode(settings) === 'aura') ensureBoardseshSupportProbed();
+  if (requestedBoardRenderMode(settings, boardDefault) === 'aura') ensureBoardseshSupportProbed();
 
   const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    return resolveEffectiveRenderSettings(settings, getBoardseshRendererSupport() === true);
-  }, [settings, boardseshSupportTick]);
+    return resolveEffectiveRenderSettings(settings, getBoardseshRendererSupport() === true, boardDefault);
+  }, [settings, boardseshSupportTick, boardDefault]);
 
   return { effectiveRenderSettings, boardseshRendererAvailable: getBoardseshRendererSupport() };
 }

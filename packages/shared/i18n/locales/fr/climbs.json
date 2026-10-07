@@ -218,13 +218,18 @@
       "boardCannotAuthor": "Tu ne peux pas encore ouvrir de blocs sur cette board.",
       "boardConfigIncomplete": "Les détails de la board sont manquants ou invalides. Choisis à nouveau la board pour ouvrir ton bloc.",
       "noUsableBoard": "Choisis d'abord une board, puis ouvre ton bloc.",
-      "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board."
+      "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board.",
+      "wallArchived": "Ce mur est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc."
     },
     "alerts": {
       "publishDuplicateNamed": "Cette configuration de prises correspond à « {{name}} ». Activez Brouillon pour l'enregistrer sans la publier, ou changez une prise.",
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
       "viewMatchingClimb": "Voir le bloc correspondant",
       "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer.",
+      "editConflict": "Ce bloc a changé ailleurs. Rouvre-le pour voir la dernière version.",
+      "editNotAllowed": "Tu ne peux pas modifier ce bloc. Seul son ouvreur ou son ouvreuse le peut.",
+      "editWindowExpired": "Ce bloc a été publié il y a plus de 24 heures, il ne peut plus être modifié.",
+      "editNotEditable": "Ce bloc ne peut plus être modifié.",
       "localRefreshFailed": "Voie enregistrée. La liste téléchargée n’a pas été actualisée. Reconnecte-toi pour l’actualiser."
     },
     "fields": {
@@ -411,6 +416,7 @@
     },
     "detail": {
       "notFound": "Bloc introuvable",
+      "boardNotFound": "Cette board n'existe plus ou n'est pas partagée avec toi.",
       "backToHome": "Retour à l'accueil"
     },
     "logAscent": {
@@ -479,12 +485,6 @@
       "collection": {
         "label": "Collection",
         "any": "Toutes"
-      },
-      "holdIntegrity": {
-        "label": "Prises",
-        "any": "Toutes",
-        "intact": "Intacts seulement",
-        "broken": "Prises perdues"
       },
       "pin": "Épingler comme raccourci",
       "unpin": "Retirer des raccourcis",
@@ -664,10 +664,10 @@
       "chip_other": "{{count}} prises en moins",
       "chipAria_one": "{{count}} prise n'est plus sur le mur",
       "chipAria_other": "{{count}} prises ne sont plus sur le mur",
-      "banner_one": "{{count}} prise de ce bloc n'est plus là",
-      "banner_other": "{{count}} prises de ce bloc ne sont plus là",
-      "bannerBody": "Remixe-le avec ce qu'il y a sur le mur maintenant.",
-      "remix": "Remixer"
+      "banner": "Ce bloc a perdu une prise. Remixe-le avec les prises qui sont sur le mur maintenant.",
+      "remix": "Remixer",
+      "editorHint_one": "Retire la prise grise pour enregistrer",
+      "editorHint_other": "Retire les prises grises pour enregistrer"
     },
     "climbActions": {
       "preview": "Aperçu",
@@ -752,7 +752,8 @@
         "ariaLabel": "Créer une voie"
       },
       "header": {
-        "newClimb": "Nouvelle voie"
+        "newClimb": "Nouvelle voie",
+        "nameRequired": "Donnez-lui un nom pour enregistrer"
       },
       "save": {
         "idle": "Enregistrer",
@@ -765,6 +766,8 @@
       "autosave": {
         "onDevice": "Brouillon enregistré sur ce téléphone",
         "inAccount": "Brouillon enregistré sur votre compte",
+        "onDevicePublish": "Enregistré sur ce téléphone",
+        "inAccountPublish": "Enregistré sur votre compte",
         "unsyncedEdits": "Les dernières modifications sont uniquement sur ce téléphone",
         "notStored": "Connectez-vous pour garder ce brouillon",
         "saveFailed": "Impossible d'enregistrer sur votre compte. Touchez Enregistrer pour réessayer.",

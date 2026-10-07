@@ -6,8 +6,7 @@
     "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
     "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
     "retry": "Intentar de nuevo",
-    "manual": "Colocar las presas a mano",
-    "resume": "Continuar este reseteo"
+    "manual": "Marcar las presas a mano"
   },
   "mobile": {
     "edit": {
@@ -162,6 +161,8 @@
       "location": "Ubicación",
       "locationPlaceholder": "Casa, nombre del rocódromo o ciudad",
       "useMyLocation": "Usar mi ubicación",
+      "locationDeniedHint": "Boardsesh no puede ver tu ubicación. Actívala en Ajustes o escribe un lugar arriba.",
+      "locationUnavailableHint": "No hemos podido encontrar dónde estás. Escribe un lugar arriba.",
       "serial": "Número de serie del controlador",
       "serialPlaceholder": "p. ej. ABC-12345",
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
@@ -224,13 +225,16 @@
       "spray": {
         "kind": "Plafón de presas",
         "editHolds": "Editar presas",
-        "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
-        "newPhoto": "Nueva foto",
-        "newPhotoHint": "Fotografía el plafón otra vez después de un cambio de presas.",
+        "editHoldsHint": "Añade, mueve o borra las presas de tu muro.",
+        "resetWall": "Resetear este muro",
+        "resetWallHint": "Haz una foto nueva y marca las presas otra vez.",
         "shareLink": "Compartir enlace",
-        "shareLinkPublicHint": "Cualquiera puede abrir este plafón.",
+        "shareLinkPublicHint": "Cualquiera puede abrir este muro.",
         "shareLinkUnlistedHint": "Solo quien reciba el enlace."
-      }
+      },
+      "details": "Detalles",
+      "detailsAria": "Abrir los detalles de {{name}}",
+      "activeSprayDetails": "{{name}} · detalles del plafón"
     },
     "disambiguation": {
       "title": "¿En qué plafón estás?",
@@ -392,6 +396,8 @@
           "title": "Sin cobertura y sin catálogo",
           "body": "Todavía no tienes {{name}} en el móvil, así que aquí abajo no hay nada que buscar.",
           "cta": "Descargarlo cuando tenga cobertura",
+          "sprayTitle": "Sin cobertura y sin bloques",
+          "sprayBody": "Todavía no tienes {{name}} en el móvil, así que sus bloques no se abren aquí abajo.",
           "armedToast": "{{name}} está en cola: se descarga en cuanto vuelvas a tener conexión."
         },
         "spotlight": {
@@ -412,6 +418,7 @@
       "searchPlaceholder": "Buscar rocódromos",
       "noGym": "No está en un rocódromo",
       "noGymHint": "Seguirá apareciendo en el mapa con su propio marcador.",
+      "noGymHintOffMap": "No sale en el mapa mientras no sea público.",
       "addNew": "Mi rocódromo no aparece",
       "empty": "No hay rocódromos cerca",
       "sharedEditHint": "El personal de este rocódromo podrá editar los datos de este plafón.",
@@ -775,71 +782,165 @@
     "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "Qué hace tu dedo",
-      "pan": "Desplazar",
-      "add": "Añadir",
-      "move": "Mover",
-      "draw": "Dibujar"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Umbral de confianza",
-      "value": "Mostrando hallazgos por encima del {{percent}} %"
-    },
-    "counts": {
-      "alive_one": "{{count}} presa",
-      "alive_other": "{{count}} presas",
-      "pending": "{{value}} por revisar",
-      "hidden": "{{value}} ocultas",
-      "unsaved": "{{value}} sin guardar"
-    },
-    "actions": {
-      "merge": "Fusionar",
-      "delete": "Eliminar",
+    "bar": {
+      "holds_one": "{{count}} presa",
+      "holds_other": "{{count}} presas",
+      "maybes_one": "{{count}} dudosa",
+      "maybes_other": "{{count}} dudosas",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Deshacer",
       "redo": "Rehacer",
-      "accept": "Conservar",
-      "reject": "Descartar",
-      "acceptAll": "Conservar todas",
-      "save": "Guardar el muro"
+      "menuHint": "Abre las opciones para todas tus presas",
+      "saved": "Presas guardadas",
+      "addA11y": "Añadir presas que faltan"
     },
-    "status": {
-      "readOnly": "Este muro no es tuyo, no puedes editarlo.",
-      "pan": "Arrastra para mover la foto. Toca una presa para elegirla.",
-      "add": "Toca el muro vacío para crear una presa, o dibuja alrededor de una.",
-      "move": "Arrastra una presa hasta donde está de verdad.",
-      "draw": "Elige una presa y dibuja su contorno.",
-      "oneSelected": "Presa n.º {{id}} elegida.",
-      "twoSelected": "Dos elegidas. Fusionar las convierte en una.",
-      "oneSelectedNew": "Tu presa nueva está seleccionada.",
-      "manySelected": "{{value}} presas seleccionadas. Al eliminar se quitan todas."
+    "toast": {
+      "deleted": "Presa eliminada",
+      "joined": "2 presas unidas",
+      "keptMaybes_one": "{{count}} dudosa conservada",
+      "keptMaybes_other": "{{count}} dudosas conservadas",
+      "startedOver": "Has empezado de nuevo"
     },
+    "menu": {
+      "keepMaybes": "Conservar todas las dudosas",
+      "hideMaybes": "Ocultar dudosas",
+      "showMaybes": "Mostrar dudosas",
+      "startOver": "Empezar de nuevo",
+      "close": "Cerrar"
+    },
+    "startOver": {
+      "title": "¿Empezar de nuevo?",
+      "body": "Todas las presas vuelven a como estaban al abrir el muro. Puedes deshacerlo.",
+      "confirm": "Empezar de nuevo",
+      "cancel": "Seguir editando"
+    },
+    "chips": {
+      "trace": "Trazar",
+      "join": "Unir",
+      "switchOff": "Desactivar",
+      "switchOn": "Activar",
+      "delete": "Eliminar",
+      "keep": "Conservar",
+      "finish": "Terminar",
+      "refine": "Retocar"
+    },
+    "banner": {
+      "trace": "Dibuja con un dedo alrededor de la presa",
+      "join": "Toca la presa con la que unirla",
+      "cancel": "Cancelar",
+      "addDraw": "Dibuja alrededor de una presa que falta, o toca para poner un círculo",
+      "addCorners": "Toca las esquinas alrededor de una presa que falta",
+      "done": "Listo",
+      "tracePencil": "Dibuja con el Apple Pencil alrededor de la presa",
+      "refineAdd": "Pinta para ampliar la presa. Pellizca para hacer zoom.",
+      "refineErase": "Pinta para recortar la presa. Pellizca para hacer zoom.",
+      "refineAddPencil": "Pinta con el Apple Pencil para ampliar la presa",
+      "refineErasePencil": "Pinta con el Apple Pencil para recortar la presa"
+    },
+    "addShape": {
+      "label": "Cómo perfilar una presa",
+      "draw": "Dibujar",
+      "corners": "Esquinas"
+    },
+    "resize": {
+      "bigger": "+{{percent}} %",
+      "smaller": "−{{percent}} %",
+      "original": "Original",
+      "typical": "Típico"
+    },
+    "hints": {
+      "tap": "Toca un círculo para elegirlo. Vuelve a tocarlo para desactivarlo.",
+      "maybe": "Los círculos discontinuos son presas dudosas. Toca una y luego toca Conservar.",
+      "longPress": "Mantén pulsado un círculo y deslízalo para moverlo.",
+      "addHold": "Mantén pulsado para añadir una presa.",
+      "dismiss": "Ocultar consejo",
+      "replay": "Ver consejos",
+      "pencil": "El Apple Pencil añade y activa presas. Con los dedos te mueves y eliges una presa."
+    },
+    "a11y": {
+      "wall": "Foto de tu muro: {{summary}}",
+      "holdValue": "Presa {{position}} de {{total}}, {{role}}",
+      "noHold": "Ninguna presa elegida",
+      "hint": "Desliza hacia arriba o abajo para recorrer las presas. Toca dos veces para activar o desactivar una.",
+      "joinHint": "Desliza hacia arriba o abajo hasta la presa con la que unirla y toca dos veces.",
+      "role": {
+        "on": "activa",
+        "maybe": "dudosa",
+        "off": "desactivada"
+      },
+      "actions": {
+        "smaller": "Hacer más pequeña",
+        "bigger": "Hacer más grande",
+        "delete": "Eliminar",
+        "addHold": "Añadir una presa en el centro de la vista"
+      },
+      "revealed": "Presas encontradas: {{summary}}"
+    },
+    "readOnly": "No puedes editar este muro.",
     "errors": {
-      "nothingToMove": "Elige primero una presa y luego arrástrala.",
-      "pickOneToRedraw": "Elige una sola presa y dibuja su contorno.",
-      "mergeNeedsTwo": "Elige dos presas para fusionarlas.",
-      "tooManyHolds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-      "saveFailed": "No se pudo guardar el muro.",
+      "tooManyHolds": "Has llegado al límite de {{max}} presas. Desactiva algunas para añadir más.",
+      "saveFailed": "No se pudieron guardar tus presas. Inténtalo de nuevo.",
       "strokeNotClosed": "Ese trazo no rodea la presa. Dibuja la vuelta entera a su alrededor.",
       "strokeTooBig": "Ese trazo es mucho más grande que una presa. Amplía y repasa la presa misma.",
       "strokeTooDetailed": "Ese trazo tiene demasiado detalle para guardarlo. Repasa el contorno de una sola pasada.",
       "strokeTooShort": "Ese trazo es demasiado corto. Dibuja un bucle completo alrededor de la presa.",
-      "allHoldsOffWall": "Esas presas caen fuera del muro. Vuelve a colocarlas sobre la foto y guarda otra vez.",
-      "someHoldsOffWall_one": "{{count}} presa cayó fuera del muro y no se guardó.",
-      "someHoldsOffWall_other": "{{count}} presas cayeron fuera del muro y no se guardaron."
-    },
-    "toast": {
-      "saved_one": "{{count}} presa guardada",
-      "saved_other": "{{count}} presas guardadas"
+      "someHoldsOffWall_one": "{{count}} presa cae fuera del muro. Devuélvela a la foto o desactívala.",
+      "someHoldsOffWall_other": "{{count}} presas caen fuera del muro. Devuélvelas a la foto o desactívalas.",
+      "cornersCross": "Dos lados se cruzan. Toca las esquinas en orden alrededor de la presa.",
+      "cornersTooFew": "Esas esquinas están demasiado juntas o en línea. Toca al menos 3 alrededor de la presa.",
+      "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa.",
+      "refineNothingLeft": "Eso borraría la presa entera. Mejor desactívala.",
+      "refineTooDetailed": "Ese borde queda demasiado detallado para guardarlo. Prueba con un pincel más grande.",
+      "refineCantStore": "Ese trazo dejaría una forma que no se puede guardar como una sola presa, así que no se ha aplicado."
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."
+    },
+    "loading": "Cargando tu muro…",
+    "loadStalled": "No pudimos cargar tu muro. Inténtalo de nuevo.",
+    "rail": {
+      "label": "Herramientas de edición",
+      "grip": "Mover las herramientas al otro lado",
+      "mark": "Elegir y activar presas",
+      "pencilOnly": "Solo Pencil",
+      "pencilOnlyHint": "Con los dedos eliges presas y te mueves. Solo el Apple Pencil cambia el muro.",
+      "fit": "Ajustar el muro a la pantalla",
+      "more": "Más opciones"
+    },
+    "inspector": {
+      "role": {
+        "on": "Activa",
+        "off": "Desactivada",
+        "maybe": "Dudosa"
+      },
+      "source": {
+        "scan": "Encontrada por el escaneo",
+        "scanConfidence": "Encontrada por el escaneo · {{percent}} %",
+        "manual": "Añadida por ti"
+      },
+      "size": "Tamaño",
+      "redraw": "Redibujar",
+      "previous": "Presa anterior",
+      "next": "Presa siguiente"
+    },
+    "shortcuts": {
+      "delete": "Desactivar o eliminar presa"
+    },
+    "palette": {
+      "label": "Herramientas del Pencil",
+      "close": "Cerrar herramientas del Pencil",
+      "draw": "Añadir una presa dibujando a su alrededor",
+      "corners": "Añadir una presa tocando sus esquinas"
+    },
+    "refine": {
+      "mode": "Pincel",
+      "add": "Añadir",
+      "erase": "Borrar",
+      "size": "Tamaño del pincel",
+      "sizeValue": "Tamaño {{step}} de {{total}}",
+      "dropped_one": "Se conservó la parte principal. Se descartó {{count}} trozo suelto.",
+      "dropped_other": "Se conservó la parte principal. Se descartaron {{count}} trozos sueltos.",
+      "atLimit": "La presa no puede crecer más por ahí. Con Trazar puedes redibujarla más grande."
     }
   },
   "sprayWizard": {
@@ -852,19 +953,43 @@
       "namePlaceholder": "Muro del garaje",
       "angle": "Ángulo",
       "angleHint": "Cuánto se inclina el muro, en pasos de 5°. Queda fijo al publicar.",
-      "publicHint": "Apagado, el muro y su foto son solo tuyos.",
-      "next": "Elegir una foto",
+      "next": "Siguiente",
       "anglePreview": "Muro a {{angle}} grados"
     },
     "photo": {
       "title": "Fotografía el muro",
       "body": "Ponte de frente, dispara a 1x y encuadra el muro entero. Cada presa que pongas vive en estos píxeles.",
+      "helpLink": "Cómo hacer la foto",
+      "helpLinkHint": "Abre la guía de fotos en tu navegador",
       "library": "Elegir una foto",
       "camera": "Hacer una foto",
       "pickAnother": "Elegir otra foto",
+      "adjust": "Recortar o girar",
       "next": "Siguiente",
       "cameraDenied": "Boardsesh necesita tu cámara para fotografiar un muro.",
-      "failed": "Esa foto no se abre. Prueba con otra."
+      "failed": "Esa foto no se abre. Prueba con otra.",
+      "tip": "Aléjate, ponte de frente al muro y encuadra las 4 esquinas."
+    },
+    "adjust": {
+      "title": "Recorta y gira",
+      "body": "Recorta hasta los bordes del muro. Gira la foto si salió de lado.",
+      "hint": "Arrastra un borde o una esquina. Arrastra dentro del recuadro para moverlo.",
+      "small": "Esta foto es pequeña. Las presas pueden verse borrosas al hacer zoom.",
+      "failed": "No se pudo recortar esa foto. Inténtalo de nuevo o cancela para dejarla como estaba.",
+      "rotate": "Girar",
+      "rotateLabel": "Girar un cuarto de vuelta a la derecha",
+      "done": "Listo",
+      "reset": "Restablecer",
+      "cancel": "Cancelar",
+      "handleTopLeft": "Esquina superior izquierda del recorte",
+      "handleTop": "Borde superior del recorte",
+      "handleTopRight": "Esquina superior derecha del recorte",
+      "handleRight": "Borde derecho del recorte",
+      "handleBottomRight": "Esquina inferior derecha del recorte",
+      "handleBottom": "Borde inferior del recorte",
+      "handleBottomLeft": "Esquina inferior izquierda del recorte",
+      "handleLeft": "Borde izquierdo del recorte",
+      "handleMove": "Zona de recorte"
     },
     "anchors": {
       "title": "Marca las esquinas",
@@ -877,7 +1002,13 @@
       "cornerBottomLeft": "Esquina inferior izquierda",
       "use": "Usar estas esquinas",
       "skip": "Saltar por ahora",
-      "clear": "Empezar las esquinas de nuevo"
+      "clear": "Empezar las esquinas de nuevo",
+      "quality": {
+        "good": "Bien de frente. El muro se enderezará limpio.",
+        "soft": "Un poco inclinada. Repítela de frente para un aspecto más nítido.",
+        "fail": "Demasiado inclinada para enderezarla. Tu foto sigue sirviendo, o repítela de frente.",
+        "small": "Esta foto es demasiado pequeña para enderezarla. Tu foto sigue sirviendo tal cual."
+      }
     },
     "upload": {
       "title": "Subiendo tu foto",
@@ -885,32 +1016,57 @@
       "percent": "Subido {{percent}} %",
       "failed": "La foto no llegó a subirse.",
       "retry": "Reintentar",
+      "offlineMode": "El modo sin conexión está activado, así que tu foto no puede subirse. Desactívalo y vuelve a intentarlo.",
+      "noSignal": "Sin cobertura, así que tu foto no se ha subido. Vuelve a intentarlo cuando tengas conexión.",
+      "serverUnreachable": "Ahora mismo no se puede conectar con Boardsesh. Tu foto sigue aquí, así que vuelve a intentarlo en un minuto.",
       "checkFailed": "No se pudo saber si tu foto llegó. Inténtalo cuando tengas cobertura."
     },
     "detect": {
       "title": "Buscando presas"
     },
+    "scan": {
+      "queued": "Esperando turno…",
+      "running": "Buscando presas…",
+      "slow": "Los muros con muchas presas tardan un poco más",
+      "resumeHint": "Puedes salir y continuar más tarde."
+    },
     "review": {
-      "found": "{{value}} presas por revisar",
-      "nothingFound": "No se encontró nada. Dibuja tú las presas.",
-      "manualOnly": "Esta versión no puede sugerir presas. Dibújalas tú.",
-      "detectionFailed": "La búsqueda de presas falló. Dibújalas tú.",
-      "done": "Listo"
+      "next": "Elegir el aspecto",
+      "nothingFound": "No se encontraron presas. Toca el muro para añadirlas.",
+      "detectionFailed": "Esta vez no pudimos encontrar presas. Toca el muro para añadirlas.",
+      "manualOnly": "Toca el muro para añadir tus presas.",
+      "retry": "Reintentar"
+    },
+    "look": {
+      "title": "¿Cómo quieres que se iluminen tus presas?",
+      "body": "Los escaladores verán tu muro así, salvo quienes hayan elegido usar su propio aspecto en los muros de spray.",
+      "loading": "Cargando tu muro…",
+      "unavailable": "Aquí no se puede mostrar la foto de tu muro, pero puedes elegir el aspecto igualmente.",
+      "saving": "Guardando el aspecto…",
+      "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
+      "publishWithout": "Publicar igualmente",
+      "dimTitle": "Oscurecer el resto del muro",
+      "dimOff": "Desactivado"
     },
     "publish": {
       "title": "Añádelo a tus plafones",
-      "body": "Tus presas están guardadas. Publica el muro y ya puedes empezar a equipar.",
-      "cta": "Añadir este muro",
-      "failed": "No se pudo publicar el muro."
+      "working": "Publicando tu muro…",
+      "failed": "No se pudo publicar el muro.",
+      "stalled": "Tu muro está guardado, pero prepararlo tardó demasiado. Inténtalo de nuevo.",
+      "retry": "Reintentar"
     },
     "done": {
-      "body": "Preparando tu muro…"
+      "body": "Preparando tu muro…",
+      "leave": "Volver a escalar"
     },
     "leave": {
       "title": "¿Dejar este muro por ahora?",
       "body": "Tu muro y su foto están guardados. Retómalo donde lo dejaste.",
       "stay": "Seguir",
-      "go": "Salir"
+      "go": "Salir",
+      "unsavedTitle": "¿Salir sin publicar?",
+      "unsavedBody": "Tus cambios en las presas no se guardarán. El muro y su foto siguen guardados.",
+      "discard": "Salir igualmente"
     },
     "resume": {
       "checking": "Buscando un muro que empezaste…",
@@ -920,89 +1076,131 @@
       "startOver": "Empezar de nuevo",
       "checkFailed": "No se pudo comprobar ese muro. Inténtalo otra vez.",
       "retry": "Reintentar"
+    },
+    "reset": {
+      "screenTitle": "Resetear este muro",
+      "starting": "Preparando tu muro nuevo…",
+      "startFailed": "No se pudo empezar el reseteo. Inténtalo otra vez.",
+      "resumeTitle": "Tienes un reseteo a medias",
+      "resumeBody": "La foto nueva de «{{name}}» no está terminada. Retómala donde la dejaste o empieza de nuevo. El muro sigue activo hasta que se publique el nuevo.",
+      "photoTitle": "Fotografía el muro tal como está ahora",
+      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa.",
+      "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Resetear el muro",
-    "notYours": "Este muro no es tuyo para resetearlo.",
-    "nothingPublished": "Este muro todavía no está montado. Termina de añadirlo primero.",
-    "openDraft": {
-      "title": "Hay un reseteo a medias",
-      "body": "Tu foto está guardada para continuar. El muro publicado no cambia hasta que confirmes el reseteo.",
-      "discard": "Tírala y empezar de nuevo",
-      "discarded": "Ese reseteo ya no está. Haz una foto nueva.",
-      "discardFailed": "Ese reseteo no se pudo borrar. Inténtalo otra vez."
-    },
-    "photo": {
-      "title": "Fotografía el muro otra vez",
-      "body": "Colócate donde te colocaste la primera vez si puedes. Mismo muro, presas nuevas."
-    },
-    "anchors": {
-      "title": "Marca las esquinas",
-      "body": "Arrastra los cuatro círculos a las esquinas del muro. Esto no es opcional: es lo que alinea tu foto nueva con cada bloque que ya vive en el muro.",
-      "use": "Usar estas esquinas"
-    },
+  "sprayResetConfirm": {
+    "title": "¿Resetear este muro?",
+    "body": "Haz una foto nueva y marca las presas desde cero. Cuando el muro nuevo se publique, este se archiva. Sus bloques y encadenes se quedan en los logbooks y las playlists, y ya nadie podrá montar bloques en él.",
+    "start": "Empezar el reseteo",
+    "cancel": "Ahora no"
+  },
+  "sprayArchive": {
+    "banner": "Archivado el {{date}}. Los bloques y encadenes se quedan, pero aquí ya no se monta nada nuevo.",
+    "bannerUndated": "Archivado. Los bloques y encadenes se quedan, pero aquí ya no se monta nada nuevo.",
+    "switchToNew": "Ir al muro nuevo",
+    "openFailed": "No se pudo abrir ese muro. Inténtalo otra vez.",
+    "manageHeader": "Archivados",
+    "manageRow": "Archivado el {{date}}",
+    "manageRowUndated": "Archivado",
+    "deleteMessage": "¿Eliminar «{{name}}»? Se elimina su foto, y sus bloques y todos los encadenes registrados en ellos desaparecen de los logbooks y las playlists. No se puede deshacer."
+  },
+  "sprayWallErrors": {
+    "archived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
+    "resetRetired": "Ahora los muros se cambian reseteándolos. Actualiza la app y luego resetea el muro.",
+    "resetOwnerOnly": "Solo quien creó el muro puede resetearlo.",
+    "resetSourceUnpublished": "Termina de configurar este muro antes de resetearlo.",
+    "archiveLimitReached": "Puedes guardar {{max}} muros archivados. Borra uno de la sección Archivados para resetear este muro."
+  },
+  "sprayMaintenance": {
+    "screenTitle": "Editar presas",
+    "preparing": "Abriendo tu muro…",
+    "unavailable": "No puedes editar este muro.",
+    "nothingPublished": "Termina de configurar este muro antes de editar sus presas.",
+    "draftUnavailable": "Este borrador ha cambiado. Vuelve a abrir el muro para editar sus presas.",
+    "loadFailed": "No se ha podido abrir el editor de presas. Inténtalo de nuevo.",
+    "publish": "Publicar presas",
+    "publishing": "Publicando tus presas…",
+    "publishFailed": "Los cambios de tus presas están guardados. Intenta publicarlos de nuevo.",
+    "refreshing": "Cargando el muro actualizado…",
+    "refreshFailed": "Tus presas están publicadas. Intenta cargar el muro de nuevo.",
+    "retry": "Reintentar",
+    "temporarilyUnavailable": "La edición de presas no está disponible ahora. Inténtalo más tarde.",
     "leave": {
-      "title": "¿Dejar el reseteo?",
-      "body": "Tu foto nueva se queda como borrador. En el muro no cambia nada hasta que confirmes."
+      "title": "¿Descartar los cambios en las presas sin guardar?",
+      "body": "Los cambios sin guardar no se conservarán. Tu borrador guardado seguirá disponible.",
+      "stay": "Seguir editando",
+      "discard": "Descartar cambios"
     },
-    "compare": {
-      "working": "Calculando qué ha cambiado…",
-      "unavailable": "No pudimos calcular qué ha cambiado en este muro.",
-      "counts": "{{kept}} siguen · {{removed}} fuera · {{added}} nuevas",
-      "climbsAffected_one": "{{count}} bloque pierde una presa",
-      "climbsAffected_other": "{{count}} bloques pierden presas",
-      "aspectWarning": "Esta foto está encuadrada distinto que la anterior. Comprueba que las esquinas cayeron en las esquinas.",
-      "filterLabel": "Qué círculos mostrar",
-      "tapHint": "Toca cualquier círculo para cambiar de opinión.",
-      "confirm": "Confirmar el reseteo",
-      "acceptMoves": "Aceptar todos los cambios de sitio",
-      "noDetections": "Nada que comparar",
-      "noDetectionsBody": "Este móvil no pudo encontrar las presas en tu foto nueva, así que no hay nada con qué comparar. Tu foto queda guardada como borrador."
-    },
-    "commit": {
-      "failed": "El reseteo no se aplicó. En el muro no ha cambiado nada."
-    },
-    "filter": {
-      "all": "Todas",
-      "kept": "Siguen {{value}}",
-      "removed": "Fuera {{value}}",
-      "new": "Nuevas {{value}}",
-      "unsure": "Dudosas {{value}}"
-    },
-    "hold": {
-      "kept": "Presa {{id}} — sigue en el muro",
-      "removed": "Presa {{id}} — se va",
-      "unsure": "Presa {{id}} — mírala bien",
-      "stillHere": "Sigue aquí",
-      "gone": "Ya no está"
-    },
-    "detection": {
-      "new": "Una presa que antes no estaba",
-      "rejected": "No es una presa",
-      "accept": "Sí es una presa",
-      "reject": "No es una presa"
-    },
-    "pairing": {
-      "start": "La misma presa, movida aquí",
-      "prompt": "Toca el círculo donde estaba esa presa antes.",
-      "cancel": "Déjalo",
-      "paired": "Sustituye a la presa {{id}}",
-      "unpair": "No es esa presa",
-      "useSuggestion": "Sustituye a la presa {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} fuera, {{added}} nuevas, {{climbs}} bloques cambiados"
-    }
+    "leftoverPhoto": "Este muro tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
+    "discardLeftover": "Descartar la foto sin terminar",
+    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
+  },
+  "sprayHoldUsage": {
+    "title": "¿Quitar una presa que usan bloques?",
+    "body_one": "{{count}} bloque publicado usa estas presas. Quedará marcado como que le falta una presa hasta que alguien lo remezcle.",
+    "body_other": "{{count}} bloques publicados usan estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
+    "bodyUnknown": "Puede que algunos bloques usen estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
+    "removeAnyway": "Quitar igualmente",
+    "keep": "Mantener las presas"
   },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-    "versions": "Un muro guarda {{max}} reseteos, y este ya los ha gastado todos.",
+    "versions": "Un muro guarda hasta {{max}} versiones de sus presas, una por cada edición publicada, y este ya las ha gastado todas. Resetea el muro para empezar de cero.",
     "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
     "wallsHint": "Puedes tener hasta {{max}} muros."
   },
   "sprayHidden": {
     "body": "Alguien lo reportó y lo hemos quitado de la vista de los demás. Para ti sigue aquí, y no se ha borrado nada.",
     "title": "Este muro está oculto"
+  },
+  "sprayModeration": {
+    "reportTitle": "Denunciar plafón",
+    "reportHint": "Marcar este plafón para revisión administrativa",
+    "submit": "Enviar denuncia",
+    "reported": "Gracias. Tu denuncia está pendiente de revisión.",
+    "reportOffline": "Conéctate a internet para enviar tu denuncia.",
+    "reportError": "No se pudo enviar tu denuncia. Inténtalo de nuevo.",
+    "queueTitle": "Denuncias de plafones spray",
+    "hide": "Ocultar plafón",
+    "unhide": "Mostrar plafón",
+    "keepVisible": "Mantener visible",
+    "hidden": "Oculto",
+    "photoLabel": "Foto de {{wall}}",
+    "noPhoto": "No hay foto disponible",
+    "review": "Revisar plafón",
+    "reviewError": "No se guardó la decisión. Inténtalo de nuevo.",
+    "unavailable": "La moderación de plafones spray no está disponible para esta cuenta ahora.",
+    "loadError": "No se pudieron cargar las denuncias.",
+    "empty": "No hay plafones pendientes de revisión.",
+    "reasons": {
+      "inappropriate": "Foto o nombre inapropiado",
+      "notAWall": "No es un muro de escalada",
+      "personalInfo": "Información personal en la foto",
+      "other": "Otro"
+    },
+    "reportCount_one": "{{count}} denuncia",
+    "reportCount_other": "{{count}} denuncias"
+  },
+  "sprayBackground": {
+    "label": "Fondo del muro",
+    "photo": "Foto",
+    "wallCrop": "Solo el muro",
+    "holdCutouts": "Solo las presas",
+    "retake": "Resetear el muro con una foto nueva",
+    "previewLabel": "Vista previa de {{look}}",
+    "saveFailed": "No se pudo guardar el fondo. Inténtalo de nuevo.",
+    "notAvailable": "Esta foto está demasiado inclinada para ese aspecto. Repítela de frente.",
+    "note": {
+      "lockedNoPins": "Marca las 4 esquinas para desbloquearlo.",
+      "lockedRetake": "Resetea el muro con una foto de frente para desbloquearlo.",
+      "generating": "Generando…",
+      "failed": "Ese aspecto no se pudo generar. Guárdalo otra vez para reintentarlo.",
+      "afterPublish": "Listo más o menos un minuto después de publicar. Hasta entonces se ve tu foto.",
+      "soft": "Repite la foto de frente para un aspecto más nítido.",
+      "volumes": "Los volúmenes todavía no se recortan."
+    },
+    "notAvailableNoPins": "Marca primero las 4 esquinas del muro para usar este aspecto.",
+    "notAvailableSmall": "Esta foto es demasiado pequeña para enderezarla. Repítela con la cámara principal a 1x.",
+    "usePhoto": "Usar la foto"
   }
 }

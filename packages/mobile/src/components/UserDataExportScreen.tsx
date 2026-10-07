@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
   AURORA_BOARDS,
@@ -23,7 +23,17 @@ import { RadioGroup } from './RadioGroup';
 import { SectionHeader } from './SectionHeader';
 import { Text } from './Text';
 
-type ExportActionError = 'outbox' | 'request' | 'download' | 'offline' | 'rate_limited' | null;
+type ExportActionError =
+  | 'outbox'
+  | 'request'
+  | 'download'
+  | 'native_download'
+  | 'share'
+  | 'sharing_unavailable'
+  | 'cleanup'
+  | 'offline'
+  | 'rate_limited'
+  | null;
 
 export function UserDataExportScreen() {
   const { isAuthenticated } = useAuth();
@@ -152,12 +162,32 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
       await downloadMutation.mutateAsync({ period: exportStatus.period, format });
     } catch (error) {
       if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return;
+      if (error instanceof UserDataExportActionError) {
+        switch (error.reason) {
+          case 'session_changed':
+            return;
+          case 'offline':
+            setActionError('offline');
+            return;
+          case 'browser_failed':
+            setActionError('download');
+            return;
+          case 'download_failed':
+            setActionError('native_download');
+            return;
+          case 'share_failed':
+            setActionError('share');
+            return;
+          case 'sharing_unavailable':
+            setActionError('sharing_unavailable');
+            return;
+          case 'cleanup_failed':
+            setActionError('cleanup');
+            return;
+        }
+      }
       setActionError(
-        error instanceof UserDataExportActionError && error.reason === 'offline'
-          ? 'offline'
-          : isGraphqlRateLimitedError(error)
-            ? 'rate_limited'
-            : 'download',
+        isGraphqlRateLimitedError(error) ? 'rate_limited' : Platform.OS === 'web' ? 'download' : 'native_download',
       );
     } finally {
       actionInFlight.current = false;
@@ -172,6 +202,14 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
         return t('export.requestFailed');
       case 'download':
         return t('export.downloadFailed');
+      case 'native_download':
+        return t('export.nativeDownloadFailed');
+      case 'share':
+        return t('export.shareFailed');
+      case 'sharing_unavailable':
+        return t('export.sharingUnavailable');
+      case 'cleanup':
+        return t('export.cleanupFailed');
       case 'offline':
         return t('export.offline');
       case 'rate_limited':
@@ -255,7 +293,7 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
             )}
             {exportStatus ? <Text>{t('export.refreshAt', { date: formatDate(exportStatus.refreshAt) })}</Text> : null}
             <Button
-              title={t('export.download')}
+              title={Platform.OS === 'web' ? t('export.download') : t('export.saveOrShare')}
               loading={downloadMutation.isPending}
               disabled={busy || isOffline || !selectedFile || fileExpired}
               onPress={() => void downloadExport()}

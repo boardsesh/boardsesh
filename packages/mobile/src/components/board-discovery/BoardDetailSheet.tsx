@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet, type ColorValue } from 'react-native';
-import BottomSheet from '@expo/ui/community/bottom-sheet';
-import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { toBoardName } from '@boardsesh/board-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
@@ -13,9 +12,10 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardDetailFields, isActiveBoard } from './board-detail-fields';
-import { sprayDetailRows, sprayShareTarget, type SprayDetailRow, type SprayShareTarget } from './spray-detail-rows';
-import { SPRAY_DETAIL_ROWS_ENABLED } from '../../lib/spray/spray-routes';
+import { sprayShareTarget, type SprayShareTarget } from './spray-detail-rows';
 import { BoardShareSheet } from './BoardShareSheet';
+import { ReportSprayWallSheet } from '../spray-wall/ReportSprayWallSheet';
+import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
 
 type BoardDetailSheetProps = {
   board: UserBoard | null;
@@ -28,43 +28,22 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const { data: activeBoard } = useActiveBoard();
-  const router = useRouter();
-  const sheetRef = useRef<BottomSheet>(null);
-
-  // Empty for every board that is not a spray wall the viewer may edit, which is
-  // what keeps this a no-op on the eight catalogue boards — and empty for ALL of
-  // them until the two screens the rows lead to exist. See
-  // `SPRAY_DETAIL_ROWS_ENABLED`; the gate below is live and tested either way.
-  const wallRows = useMemo(() => (SPRAY_DETAIL_ROWS_ENABLED ? sprayDetailRows(board) : []), [board]);
+  const { canReport } = useSprayModerationAccess();
+  const [reportTarget, setReportTarget] = useState<{ uuid: string; name: string } | null>(null);
+  const closeReport = useCallback(() => setReportTarget(null), []);
+  const openReport = useCallback(() => {
+    if (board && canReport) setReportTarget({ uuid: board.uuid, name: board.name });
+  }, [board, canReport]);
 
   // Null on a catalogue board and on a PRIVATE wall — a private wall's link
   // resolves for nobody, so the row is absent rather than disabled. The edit
   // screen is where a wall is made shareable.
   const shareTarget = useMemo(() => sprayShareTarget(board), [board]);
-  const [shareOpen, setShareOpen] = useState(false);
-  const openShare = useCallback(() => setShareOpen(true), []);
-  const closeShare = useCallback(() => setShareOpen(false), []);
-
-  // Close first, then navigate: the sheet is always mounted and these rows push a
-  // full route, so leaving it open would stack a screen under an open sheet.
-  const openWallRow = useCallback(
-    (href: string) => {
-      onClose();
-      router.push(href);
-    },
-    [onClose, router],
-  );
-
-  // Always-mounted sheet: open/close imperatively off the visible+board state.
-  // Selecting a different board while the sheet is open re-runs snapToIndex(0)
-  // (board is a dep) — harmless; the sheet no-ops if already at that stop.
-  useEffect(() => {
-    if (visible && board) {
-      sheetRef.current?.snapToIndex(0);
-    } else {
-      sheetRef.current?.close();
-    }
-  }, [visible, board]);
+  const [shareSnapshot, setShareSnapshot] = useState<{ target: SprayShareTarget; wallName: string } | null>(null);
+  const openShare = useCallback(() => {
+    if (board && shareTarget) setShareSnapshot({ target: shareTarget, wallName: board.name });
+  }, [board, shareTarget]);
+  const closeShare = useCallback(() => setShareSnapshot(null), []);
 
   const footer = board ? (
     isActiveBoard(board, activeBoard?.uuid) ? (
@@ -82,7 +61,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   return (
     <>
       <Sheet
-        ref={sheetRef}
+        visible={visible && !!board}
         snapPoints={['55%', '90%']}
         onClose={onClose}
         scrollable
@@ -94,22 +73,25 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
             board={board}
             systemColors={systemColors}
             t={t}
-            wallRows={wallRows}
-            onOpenWallRow={openWallRow}
             shareTarget={shareTarget}
             onOpenShare={openShare}
+            canReport={canReport && toBoardName(board.boardType) === 'spray'}
+            onOpenReport={openReport}
           />
         ) : null}
       </Sheet>
+      {reportTarget ? (
+        <ReportSprayWallSheet wallUuid={reportTarget.uuid} wallName={reportTarget.name} onClose={closeReport} />
+      ) : null}
       {/* A sibling of the detail sheet, not a child: it is its own native sheet,
         and the coordinator serialises the two presentations. */}
-      {shareOpen && board && shareTarget ? (
+      {shareSnapshot ? (
         <BoardShareSheet
           visible
           onDismiss={closeShare}
-          shareUrl={shareTarget.url}
-          wallName={board.name}
-          visibility={shareTarget.visibility}
+          shareUrl={shareSnapshot.target.url}
+          wallName={shareSnapshot.wallName}
+          visibility={shareSnapshot.target.visibility}
         />
       ) : null}
     </>
@@ -123,18 +105,18 @@ function BoardDetailBody({
   board,
   systemColors,
   t,
-  wallRows,
-  onOpenWallRow,
   shareTarget,
   onOpenShare,
+  canReport,
+  onOpenReport,
 }: {
   board: UserBoard;
   systemColors: SystemColors;
   t: TFn;
-  wallRows: SprayDetailRow[];
-  onOpenWallRow: (href: string) => void;
   shareTarget: SprayShareTarget | null;
   onOpenShare: () => void;
+  canReport: boolean;
+  onOpenReport: () => void;
 }) {
   const { subLocation, setNames, sizeText } = getBoardDetailFields(board);
 
@@ -190,10 +172,6 @@ function BoardDetailBody({
         </Text>
       ) : null}
 
-      {/* Wall maintenance, owner/editor only. Empty on every catalogue board, so
-          the card and its separator never render there. Literal translation keys
-          per row — a computed `t(row.key)` is rejected by the i18n linter and
-          hides the string from the catalogue scanners either way. */}
       {shareTarget ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
           <WallRow
@@ -211,27 +189,16 @@ function BoardDetailBody({
         </View>
       ) : null}
 
-      {wallRows.length > 0 ? (
+      {canReport ? (
         <View style={[styles.wallRows, { backgroundColor: systemColors.tertiaryBackground }]}>
-          {wallRows.map((row, index) => (
-            <WallRow
-              key={row.key}
-              icon={row.icon}
-              label={
-                row.key === 'editHolds'
-                  ? t('mobile.boardDetail.spray.editHolds')
-                  : t('mobile.boardDetail.spray.newPhoto')
-              }
-              hint={
-                row.key === 'editHolds'
-                  ? t('mobile.boardDetail.spray.editHoldsHint')
-                  : t('mobile.boardDetail.spray.newPhotoHint')
-              }
-              showSeparator={index > 0}
-              systemColors={systemColors}
-              onPress={() => onOpenWallRow(row.href)}
-            />
-          ))}
+          <WallRow
+            icon="warning"
+            label={t('sprayModeration.reportTitle')}
+            hint={t('sprayModeration.reportHint')}
+            showSeparator={false}
+            systemColors={systemColors}
+            onPress={onOpenReport}
+          />
         </View>
       ) : null}
     </>
@@ -246,7 +213,7 @@ function WallRow({
   systemColors,
   onPress,
 }: {
-  icon: SprayDetailRow['icon'];
+  icon: Parameters<typeof Icon>[0]['name'];
   label: string;
   hint: string;
   showSeparator: boolean;

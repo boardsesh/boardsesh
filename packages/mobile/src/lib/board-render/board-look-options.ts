@@ -6,8 +6,11 @@ import {
   type BoardRenderPresetId,
 } from '../board-render-presets';
 import {
+  BOARD_RENDER_SETTING_BOUNDS,
   DEFAULT_BOARDSESH_RENDER_SETTINGS,
+  VEIL_SETTING_OPACITY,
   setBoardRenderModePreference,
+  type BoardRenderDefault,
   type BoardRenderSettings,
 } from '../board-render-settings';
 
@@ -86,6 +89,26 @@ const AURA_SUBTLE_OPTION: BoardLookOption = {
   requiresBoardseshRenderer: true,
 };
 
+const AURA_OUTLINE_OPTION: BoardLookOption = {
+  id: 'aura-outline',
+  labelI18nKey: 'mobile.settings.boardLook.presets.auraOutline',
+  descriptionI18nKey: 'mobile.settings.boardLook.presets.descriptions.auraOutline',
+  previewSettings: presetValues('aura-outline'),
+  placeholderOverlay: false,
+  requiresBoardseshRenderer: true,
+};
+
+/**
+ * The look a new spray wall starts on.
+ *
+ * Outline, because a spray wall's holds are traced from the climber's own
+ * photo: a solid edge shows exactly which blob was lit, where a soft glow on
+ * a busy home wall blurs into its neighbours. The spray-wall creation step
+ * reads this as its default selection, so the id must stay a real option in
+ * both rails (pinned by a test).
+ */
+export const DEFAULT_SPRAY_WALL_LOOK_OPTION_ID: BoardLookOptionId = AURA_OUTLINE_OPTION.id;
+
 const MODERN_CLASSIC_OPTION: BoardLookOption = {
   id: 'modern-classic',
   labelI18nKey: 'mobile.settings.boardLook.presets.modernClassic',
@@ -151,15 +174,19 @@ const CUSTOM_SETTINGS_OPTION: BoardLookOption = {
  * adjacent.
  *
  * The rail reads as a dimmer switch rather than a menu — Aura, then its quieter
- * variant, then the two looks that draw circles instead of traced holds (Modern
- * Classic keeps the veil, Classic drops it), then the strongest wash. Modern
- * Classic sits immediately before Classic on purpose: a climber who came here
- * for the circles they already know meets the veiled version of them first, and
- * the pair can be compared with one swipe. Custom is last.
+ * variant, then the stroke-forward looks: Aura Outline (a solid edge on the
+ * traced hold), then the two looks that draw circles instead of traced holds
+ * (Modern Classic keeps the veil, Classic drops it), then the strongest wash.
+ * Outline sits with the defined-edge looks rather than the soft Aura variants
+ * because that is what it reads as. Modern Classic sits immediately before
+ * Classic on purpose: a climber who came here for the circles they already know
+ * meets the veiled version of them first, and the pair can be compared with one
+ * swipe. Custom is last.
  */
 export const BOARD_LOOK_ONBOARDING_OPTIONS: readonly BoardLookOption[] = [
   AURA_OPTION,
   AURA_SUBTLE_OPTION,
+  AURA_OUTLINE_OPTION,
   MODERN_CLASSIC_OPTION,
   CLASSIC_OPTION,
   MAX_CONTRAST_OPTION,
@@ -175,11 +202,102 @@ export const BOARD_LOOK_SETTINGS_OPTIONS: readonly BoardLookOption[] = [
   AURA_OPTION,
   AURA_SUBTLE_OPTION,
   AURA_BOLD_OPTION,
+  AURA_OUTLINE_OPTION,
   MODERN_CLASSIC_OPTION,
   CLASSIC_OPTION,
   MAX_CONTRAST_OPTION,
   CUSTOM_SETTINGS_OPTION,
 ];
+
+/**
+ * The looks a spray wall's creator picks between in the add-a-wall flow.
+ *
+ * The onboarding rail without its Custom card: Custom means "go and build your
+ * own in Board look", which is a climber's personal settings screen, not a look
+ * that can be stored on a wall for everyone else.
+ */
+export const SPRAY_WALL_LOOK_OPTIONS: readonly BoardLookOption[] = BOARD_LOOK_ONBOARDING_OPTIONS.filter(
+  (option) => option.id !== 'custom',
+);
+
+/**
+ * The bundle a wall stores when its creator picks a card, or `null` for a card
+ * that has none to store.
+ *
+ * The card's own frozen `previewSettings` — the preset's values verbatim, or the
+ * classic bundle — and deliberately NOT merged with the creator's accessibility
+ * fields the way `applyBoardLookOption` merges them for a climber's own
+ * preference. A wall look is for every other climber on the wall; each of them
+ * gets THEIR accessibility floor raised onto it when it is resolved
+ * (`resolveEffectiveRenderSettings`), so baking the creator's in would only force
+ * role glyphs on climbers who never asked for them.
+ */
+export function boardLookOptionWallDefault(
+  id: BoardLookOptionId,
+  options: readonly BoardLookOption[] = SPRAY_WALL_LOOK_OPTIONS,
+): BoardRenderDefault | null {
+  const settings = options.find((option) => option.id === id)?.previewSettings;
+  if (!settings || settings.mode === 'default') return null;
+  return { mode: settings.mode, boardsesh: settings.boardsesh };
+}
+
+/** The spray look step's dimming slider: 0 (off) to the veil's own ceiling. */
+export const SPRAY_WALL_DIM_RANGE = BOARD_RENDER_SETTING_BOUNDS.veilOpacity;
+export const SPRAY_WALL_DIM_STEP = 0.05;
+
+/**
+ * How hard a look dims the rest of a spray wall, 0–0.9, or `null` for a look
+ * with nothing to dim (Classic draws no veil).
+ *
+ * `auto` reads 0: it sizes the veil from a measured wall brightness, and a
+ * spray wall has none, so on a photo it draws nothing (`resolveVeilOpacity`).
+ */
+export function sprayWallDimLevel(option: BoardLookOption): number | null {
+  const settings = option.previewSettings;
+  if (!settings || settings.mode === 'classic') return null;
+  const { veil, veilOpacity } = settings.boardsesh;
+  switch (veil) {
+    case 'soft':
+      return VEIL_SETTING_OPACITY.soft;
+    case 'strong':
+      return VEIL_SETTING_OPACITY.strong;
+    case 'custom':
+      return veilOpacity;
+    case 'off':
+    case 'auto':
+      return 0;
+  }
+}
+
+/**
+ * The spray look options with the creator's dimming applied to every look that
+ * has a veil, or unchanged for `dim: null` (the slider not touched yet, so each
+ * card keeps its own).
+ *
+ * Applied to the options themselves so the preview cards and the stored bundle
+ * (`boardLookOptionWallDefault`) cannot disagree. 0 stores `veil: 'off'` rather
+ * than a zero-strength custom veil, which reads the same and says what it means.
+ * Callers memoize on `dim`: each option's `previewSettings` identity feeds a
+ * card's render, and a fresh one redraws it.
+ */
+export function withSprayWallDim(options: readonly BoardLookOption[], dim: number | null): readonly BoardLookOption[] {
+  if (dim === null) return options;
+  return options.map((option) => {
+    const settings = option.previewSettings;
+    if (!settings || settings.mode === 'classic') return option;
+    return {
+      ...option,
+      previewSettings: {
+        ...settings,
+        boardsesh: {
+          ...settings.boardsesh,
+          veil: dim > 0 ? 'custom' : 'off',
+          veilOpacity: dim > 0 ? dim : settings.boardsesh.veilOpacity,
+        },
+      },
+    };
+  });
+}
 
 /**
  * Per-card preview settings, with every accessibility-owned field raised to the

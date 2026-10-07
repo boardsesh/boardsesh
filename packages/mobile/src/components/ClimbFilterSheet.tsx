@@ -17,7 +17,7 @@ import {
   hasActiveClimbFilters,
   hasActiveBoardFilters,
   applyStatusChange,
-  normalizeRetiredStatus,
+  normalizeRetiredFilters,
   formatMinAscentsFilterCount,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   countFilteredHolds,
@@ -34,7 +34,6 @@ import {
   newSortSeed,
   type BoardSearchConfig,
   type ProgressFilter,
-  type HoldIntegrityFilterValue,
 } from '@boardsesh/climb-filters';
 import { Text } from './Text';
 import { Button } from './Button';
@@ -43,6 +42,7 @@ import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
 import { PinToggle } from './search/PinToggle';
+import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
 import { getCollectionFilter, getClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
@@ -227,9 +227,14 @@ export function ClimbFilterSheet({
   const { data: grades } = useGrades(boardName);
   // Kilter's app counts one row per (climb, angle); see docs/kilter-sync.md.
   const showCountNote = boardName === 'kilter';
+  // A spray wall has no benchmarks and no routes: every climb on it is a
+  // one-frame problem set by a climber (#5960). The two controls stay only while
+  // they carry a non-default answer, so a filter picked on another board can
+  // still be undone from here.
+  const isSprayWall = boardName === SPRAY_BOARD_NAME;
 
   const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
-    withLockedDimensions(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated), lockedDimensions),
+    withLockedDimensions(statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated), lockedDimensions),
   );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
   // The name field's own draft — seeded from the committed `searchName` prop.
@@ -290,7 +295,7 @@ export function ClimbFilterSheet({
     // parent prop sync should not mark committed state as an in-flight edit.
     setLocalFilters(
       withLockedDimensions(
-        statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+        statusForAuth(normalizeRetiredFilters(currentFilters), isAuthenticated),
         lockedDimensionsRef.current,
       ),
     );
@@ -506,30 +511,16 @@ export function ClimbFilterSheet({
     },
     [updateLocalBoardFilters, handleStatusChange, localFilters.status],
   );
+  const collectionFilter = getCollectionFilter(localFilters, localBoardFilters);
+  const offerBenchmarks = !isSprayWall || collectionFilter === 'benchmarks';
   const collectionOptions = useMemo(
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
-      { key: 'benchmarks' as const, label: t('mobile.filter.benchmark') },
+      ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: t('mobile.filter.benchmark') }] : []),
       // My drafts is auth-only, matching the old drafts toggle's gating.
       ...(isAuthenticated ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
     ],
-    [t, isAuthenticated],
-  );
-  // Hold integrity (SW-13) — on a spray wall, whether a climb still has every
-  // hold it was set on. 'any' is the default and sends nothing, so a climb that
-  // lost holds stays findable until the climber asks otherwise. 'broken' is an
-  // honest empty list on a catalogue board, where holds don't come off.
-  const handleHoldIntegrityChange = useCallback(
-    (value: HoldIntegrityFilterValue) => setFiltersPatch({ holdIntegrity: value === 'any' ? undefined : value }),
-    [setFiltersPatch],
-  );
-  const holdIntegrityOptions = useMemo(
-    () => [
-      { key: 'any' as const, label: t('mobile.filter.holdIntegrity.any') },
-      { key: 'intact' as const, label: t('mobile.filter.holdIntegrity.intact') },
-      { key: 'broken' as const, label: t('mobile.filter.holdIntegrity.broken') },
-    ],
-    [t],
+    [t, isAuthenticated, offerBenchmarks],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -565,6 +556,7 @@ export function ClimbFilterSheet({
   // toClimbSearchInput). "Both" = show everything; boulders-only is the default.
   // Same derivation as the chip row (getClimbTypeFilter) so they never disagree.
   const climbTypeKey = getClimbTypeFilter(localFilters);
+  const showClimbTypeControl = !isSprayWall || climbTypeKey !== 'boulders';
   const handleClimbTypeChange = useCallback(
     (key: string) => {
       if (key === 'routes') setFiltersPatch({ boulders: false, routes: true });
@@ -1078,21 +1070,9 @@ export function ClimbFilterSheet({
               <View style={styles.controlGap} />
               <SegmentedControl
                 options={collectionOptions}
-                selectedKey={getCollectionFilter(localFilters, localBoardFilters)}
+                selectedKey={collectionFilter}
                 onSelect={handleCollectionChange}
                 accessibilityLabel={t('mobile.filter.collection.label')}
-              />
-
-              <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.holdIntegrity.label')}
-              </Text>
-              <View style={styles.controlGap} />
-              <SegmentedControl
-                options={holdIntegrityOptions}
-                selectedKey={localFilters.holdIntegrity ?? 'any'}
-                onSelect={handleHoldIntegrityChange}
-                accessibilityLabel={t('mobile.filter.holdIntegrity.label')}
               />
 
               <View style={styles.subsectionGap} />
@@ -1148,20 +1128,24 @@ export function ClimbFilterSheet({
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.theClimb')}
               </Text>
-              <View style={styles.pinnableLabelRow}>
-                <Text variant="footnote" style={styles.subsectionLabel}>
-                  {t('mobile.filter.climbType.label')}
-                </Text>
-                <PinToggle kind="climbType" />
-              </View>
-              <View style={styles.controlGap} />
-              <SegmentedControl
-                options={climbTypeOptions}
-                selectedKey={climbTypeKey}
-                onSelect={handleClimbTypeChange}
-                textVariant="footnote"
-                trackColor={trackColor}
-              />
+              {showClimbTypeControl ? (
+                <>
+                  <View style={styles.pinnableLabelRow}>
+                    <Text variant="footnote" style={styles.subsectionLabel}>
+                      {t('mobile.filter.climbType.label')}
+                    </Text>
+                    <PinToggle kind="climbType" />
+                  </View>
+                  <View style={styles.controlGap} />
+                  <SegmentedControl
+                    options={climbTypeOptions}
+                    selectedKey={climbTypeKey}
+                    onSelect={handleClimbTypeChange}
+                    textVariant="footnote"
+                    trackColor={trackColor}
+                  />
+                </>
+              ) : null}
 
               {showOtherAnglesControl ? (
                 <>

@@ -16,6 +16,18 @@ export interface RunDetectionOptions extends TilePlanOptions {
    */
   scoreThreshold: number;
   fit?: LetterboxFit;
+  /**
+   * Per-channel normalisation, defaulting to the ImageNet statistics RF-DETR was
+   * pretrained with.
+   *
+   * Exposed rather than assumed because the model manifest PUBLISHES
+   * `input.normalization` (SW-01's `ml/holds/model-manifest.schema.json`), and a
+   * caller that has read a manifest must be able to honour it. Feeding a graph
+   * the wrong mean/std does not fail — it silently shifts every activation, and
+   * the only symptom is worse detections.
+   */
+  mean?: readonly [number, number, number];
+  std?: readonly [number, number, number];
   /** IoU above which two tiles are taken to have seen the same hold. */
   nmsIou?: number;
   /** Called after each tile, so a phone can draw a progress bar over four passes. */
@@ -46,12 +58,12 @@ export async function runDetection(
   image: RgbaImage,
   options: RunDetectionOptions,
 ): Promise<DetectionRun> {
-  const { size, scoreThreshold, fit = 'stretch', nmsIou = 0.5, onProgress, ...planOptions } = options;
+  const { size, scoreThreshold, fit = 'stretch', mean, std, nmsIou = 0.5, onProgress, ...planOptions } = options;
   const plan = planTiles(image.width, image.height, planOptions);
 
   const perTile: Detection[][] = [];
   for (const [tileIndex, rect] of plan.tiles.entries()) {
-    const { tensor, mapping } = letterbox(image, rect, { size, fit });
+    const { tensor, mapping } = letterbox(image, rect, { size, fit, mean, std });
     const outputs = await runtime.run(tensor, size);
     perTile.push(
       decodeRfDetr(outputs, { scoreThreshold, tileIndex }).map((detection) => ({

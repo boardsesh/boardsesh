@@ -1,1 +1,1 @@
-MoonBoard,Kilter,Tension,kilterboard,bloc,beta,send,grimpe,carnet,led,entrainement,ouvreur,Woods
+MoonBoard,Kilter,Tension,kilterboard,moon,escalade,grimpe,bloc,led,ouvreur,Woods,spray,wall,pan,mur

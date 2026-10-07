@@ -1,13 +1,18 @@
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { accumulateFramesToMaps } from '@boardsesh/board-constants/hold-states';
 
-/** Window after first publish during which a non-draft climb can still be edited. */
+/**
+ * Window after first publish during which the setter can still edit a published
+ * climb, on every board a spray wall included. The app is stricter than the
+ * current server here: `updateClimb` still exempts spray climbs from the window
+ * until #6183 ships, so for a spray climb this is the app's rule alone.
+ */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The minimal record of a saved climb the editor tracks so subsequent saves
  * can update the same row (vs. creating a new one) and so the edit lock can be
- * computed. Mirrors the web form's `SavedClimbState`.
+ * computed.
  */
 export type SavedClimbSnapshot = {
   uuid: string;
@@ -20,8 +25,8 @@ export type SavedClimbSnapshot = {
 
 /**
  * Can the tracked row be updated in place rather than creating a new one?
- * Mirrors web `create-climb-form.tsx` `canUpdate`: same board, and either still
- * a draft (editable indefinitely) or published within the 24h edit window.
+ * Same board, and either still a draft (editable indefinitely) or published
+ * within the 24h window. The server enforces the same rule in `updateClimb`.
  */
 export function computeCanUpdate(
   saved: SavedClimbSnapshot | null,
@@ -38,12 +43,63 @@ export function computeCanUpdate(
 
 /**
  * Is the tracked row published and past the 24h window (no further edits)?
- * Mirrors web `editLocked`. Drafts are never locked.
+ * Drafts are never locked.
  */
 export function computeEditLocked(saved: SavedClimbSnapshot | null, now: number = Date.now()): boolean {
   if (!saved || saved.isDraft || !saved.publishedAt) return false;
   const publishedMs = Date.parse(saved.publishedAt);
   return Number.isFinite(publishedMs) && now - publishedMs > EDIT_WINDOW_MS;
+}
+
+/** The fields of a climb the edit rule reads. A `Climb` satisfies it as is. */
+export type EditableClimb = {
+  uuid: string;
+  /** Null for Aurora-synced climbs that predate Boardsesh accounts. */
+  userId?: string | null;
+  is_draft?: boolean | null;
+  published_at?: string | null;
+  created_at?: string | null;
+};
+
+export type CanEditClimbInput = {
+  climb: EditableClimb | null | undefined;
+  /** The board the climb is being looked at on. */
+  boardType: string;
+  /** Null when signed out. */
+  currentUserId: string | null | undefined;
+  now?: number;
+};
+
+/**
+ * Should this viewer be offered Edit on this climb? The whole client rule, in
+ * one place, so the action menus cannot drift. The same on every board, a spray
+ * wall included:
+ *
+ * | The climb is | Who        | For how long                 |
+ * | ------------ | ---------- | ---------------------------- |
+ * | a draft      | its setter | always                       |
+ * | published    | its setter | 24 hours after first publish |
+ *
+ * A hint, not a permission: `updateClimb` decides, and a viewer this gets wrong
+ * meets the server's refusal in the editor.
+ */
+export function canEditClimb({ climb, boardType, currentUserId, now = Date.now() }: CanEditClimbInput): boolean {
+  if (!climb || !currentUserId) return false;
+  const isDraft = climb.is_draft ?? false;
+  const isSetter = !!climb.userId && climb.userId === currentUserId;
+  if (!isSetter) return false;
+
+  return computeCanUpdate(
+    {
+      uuid: climb.uuid,
+      boardType,
+      createdAt: climb.created_at ?? null,
+      publishedAt: climb.published_at ?? null,
+      isDraft,
+    },
+    boardType,
+    now,
+  );
 }
 
 /**

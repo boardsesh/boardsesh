@@ -289,8 +289,9 @@ composite-keyed sync table must keep this true (or version the encoding).
 - `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall, written when
   a hold-edit publish removes a hold the climb uses — and is
   spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a
-  Kilter. It is what lets `search-climbs-local.ts` answer the Intact / Lost-holds filter (SW-12) offline instead
-  of declining it.
+  Kilter. It carries the "N holds gone" row chip on a downloaded wall's list. A climb that lost a hold is listed
+  online and off; only a climb a full reset retired leaves the default list, through `retired_by_reset` (schema
+  v12), mirroring the server's `retiredByResetCondition`, so the phone answers the search instead of declining it.
 - It was added **without** bumping `refreshRevision`, the exception noted in "Casing & types". A bump means every
   already-downloaded scope must re-crawl to backfill the field, which is every enabled Kilter and Tension
   catalogue — tens of thousands of rows each — replayed to fill in a column that is NULL on all of them. Spray
@@ -304,13 +305,13 @@ composite-keyed sync table must keep this true (or version the encoding).
   retired the server no longer moves either number, and `syncClimbs` keeps shipping the stored values.
 - They were also added **without** bumping `refreshRevision`. Only an edit (before the retirement) moved either
   number off 1, and an edit bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
-  never re-delivered is a climb nobody has edited. Its local NULL costs nothing: a tick logged from it sends no
-  revision and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
+  never re-delivered is a climb nobody has edited. Its local NULL costs nothing: the app never sends a tick's
+  revision, and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
   climb.
 - A local reader that STAMPS a tick must treat NULL as unknown, not as 1. A climb edited while the phone ran a
   bundle older than v11 was re-delivered to code that dropped the two fields, and it stays NULL until its next
-  edit. The server's by-date fallback stamps a tick on that climb correctly; a reader that assumed 1 would not.
-  The tick form does this: a NULL `revision_number` sends no `climbRevision` at all.
+  edit. `writeTickLocal` stamps the local tick row with `revision_number` as it is, NULL included; the app sends
+  no `climbRevision`, so the server's by-date fallback stamps the server's row.
 - The local "sent" comparison is the one place NULL reads as 1, on both sides
   (`tickOnCurrentHoldsLocalSql`, `packages/mobile/src/db/queries/climb-revisions-local.ts`). A NULL
   `holds_revision_number` then lets every tick count, which is how the list behaved before the column. The cost is
@@ -376,6 +377,16 @@ bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has 
   a different shape — so nothing tells a caller which layout ids are private walls, and a page carries at most the
   one wall its scope key resolves to.
 - Local PK: **`layout_id`**. table-config: `['layout_id']`.
+- Revoked mirrors (#5490): an empty page for an explicitly requested scope with
+  a local wall triggers `sprayWallByLayout(layoutId) { uuid }` confirmation. Only
+  an explicit `null` permits retirement: empty deltas also represent unchanged
+  walls, and cursor-free sync pages still exclude recently edited rows. At the
+  successful cycle tail, a guarded transaction removes the entire downloaded
+  spray scope and its markers, followed by stored-photo deletion through the
+  existing deleted-row sink. Failures, cancellation and purge must not turn an
+  unanswered request into absence. A failed or malformed confirmation fails the
+  cycle, preserving downloads until a later successful cycle. Personal ticks and enabled-board settings
+  survive so restored visibility can download the scope afresh.
 - Del: migration `0228`. A wall is only ever SOFT-deleted (deleting the row would strand every climb set on it), so
   the trigger fires on `deleted_at` going NULL → NOT NULL and emits `record_id = OLD.layout_id::text` (1 seg) — the
   layout id, not the server bigserial, because `(board_type, layout_id)` is the only wall identity a phone can match

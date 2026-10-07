@@ -38,6 +38,7 @@ vi.mock('../../lib/env', () => ({
 }));
 
 import { useShareClimb } from '../use-share-climb';
+import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 
 const climb = {
   uuid: 'climb-uuid-123',
@@ -163,6 +164,93 @@ describe('useShareClimb', () => {
         await result.current();
       });
       expect(shareMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // #5488: a spray wall has no config-tuple URL www can render (`/spray/...`
+  // 404s there), so the link has to be the wall's `/b/{slug}` view.
+  describe('spray wall', () => {
+    const SPRAY_LAYOUT_ID = 4321;
+    const sprayArgs = {
+      boardName: 'spray',
+      layoutId: SPRAY_LAYOUT_ID,
+      sizeId: SPRAY_LAYOUT_ID,
+      setIds: '1',
+      angle: 25,
+    };
+    const sprayClimb = {
+      uuid: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      name: 'Blue Traverse',
+      frames: 'p12r42',
+    } as unknown as Parameters<typeof useShareClimb>[0]['climb'];
+
+    function registerWall(flags: { isPublic: boolean; isUnlisted: boolean } | null) {
+      registerSprayWall(SPRAY_LAYOUT_ID, {
+        wallUuid: '11111111-2222-3333-4444-555555555555',
+        angle: 40,
+        version: 1,
+        versionId: 1,
+        photoWidth: 1200,
+        photoHeight: 1600,
+        photoUrl: 'https://private.example/photo',
+        photoThumbUrl: null,
+        photoExpiresAt: '2099-01-01T00:00:00.000Z',
+        holds: [],
+        share: flags ? { slug: 'brewery-spray', ...flags } : null,
+      });
+    }
+
+    afterEach(() => {
+      clearSprayWallRegistry();
+    });
+
+    async function shareOnce() {
+      const { result } = renderHook(() => useShareClimb({ climb: sprayClimb, ...sprayArgs }));
+      await act(async () => {
+        await result.current();
+      });
+      const firstCall = shareMock.mock.calls[0];
+      if (!firstCall) throw new Error('Share.share was not called');
+      return firstCall[0];
+    }
+
+    it("shares a public wall's climb as its /b/ view at the wall's own angle", async () => {
+      registerWall({ isPublic: true, isUnlisted: false });
+      const payload = await shareOnce();
+      const expected =
+        'https://www.boardsesh.com/b/brewery-spray/40/view/blue-traverse-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+      expect(payload).toEqual({ message: 'Blue Traverse', url: expected });
+      // The public card is warmed with exactly the URL www advertises.
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        `https://ws.boardsesh.com/og/climb?board_name=spray&layout_id=${SPRAY_LAYOUT_ID}&size_id=${SPRAY_LAYOUT_ID}&set_ids=1&frames=p12r42&format=jpeg`,
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(2, expected, expect.anything());
+    });
+
+    it('carries the wall capability for an unlisted wall and warms no card', async () => {
+      registerWall({ isPublic: false, isUnlisted: true });
+      const payload = await shareOnce();
+      expect(payload).toEqual({
+        message: 'Blue Traverse',
+        url: 'https://www.boardsesh.com/b/brewery-spray/40/view/blue-traverse-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?wall=11111111-2222-3333-4444-555555555555',
+      });
+      // Only the page: an unlisted wall has no card to warm.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares the name alone for a private wall, never a link that 404s', async () => {
+      registerWall({ isPublic: false, isUnlisted: false });
+      expect(await shareOnce()).toEqual({ message: 'Blue Traverse' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('shares the name alone when the wall is not loaded or carries no slug', async () => {
+      expect(await shareOnce()).toEqual({ message: 'Blue Traverse' });
+      shareMock.mockClear();
+      registerWall(null);
+      expect(await shareOnce()).toEqual({ message: 'Blue Traverse' });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 

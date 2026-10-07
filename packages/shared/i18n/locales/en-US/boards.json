@@ -6,8 +6,7 @@
     "failed": "We couldn't finish finding holds. Your photo is saved.",
     "resumeHint": "You can leave and resume later. Your published wall stays unchanged.",
     "retry": "Try again",
-    "manual": "Place holds myself",
-    "resume": "Resume this reset"
+    "manual": "Mark holds myself"
   },
   "mobile": {
     "edit": {
@@ -162,6 +161,8 @@
       "location": "Location",
       "locationPlaceholder": "Home, gym name, or city",
       "useMyLocation": "Use my location",
+      "locationDeniedHint": "Boardsesh can't see your location. Allow it in Settings, or type a place above.",
+      "locationUnavailableHint": "Couldn't find where you are. Type a place above instead.",
       "serial": "Controller serial",
       "serialPlaceholder": "e.g. ABC-12345",
       "serialHint": "Optional — your controller links itself the first time you connect.",
@@ -225,12 +226,15 @@
         "kind": "Spray wall",
         "editHolds": "Edit holds",
         "editHoldsHint": "Add, move or delete the holds on your wall.",
-        "newPhoto": "New photo",
-        "newPhotoHint": "Shoot the wall again after a reset.",
+        "resetWall": "Reset this wall",
+        "resetWallHint": "Take a new photo and mark the holds again.",
         "shareLink": "Share link",
         "shareLinkPublicHint": "Anyone can open this wall.",
         "shareLinkUnlistedHint": "Only the climbers you send it to."
-      }
+      },
+      "details": "Details",
+      "detailsAria": "Open details for {{name}}",
+      "activeSprayDetails": "{{name}} · wall details"
     },
     "disambiguation": {
       "title": "Which board are you on?",
@@ -392,6 +396,8 @@
           "title": "No signal, no catalog",
           "body": "{{name}} isn't on your phone yet, so there's nothing to search down here.",
           "cta": "Grab it when I have signal",
+          "sprayTitle": "No signal, no climbs",
+          "sprayBody": "{{name}} isn't on your phone yet, so its climbs can't open down here.",
           "armedToast": "{{name}} is queued — it downloads the moment you're back online."
         },
         "spotlight": {
@@ -412,6 +418,7 @@
       "searchPlaceholder": "Search gyms",
       "noGym": "Not at a gym",
       "noGymHint": "It'll still show on the map as its own pin.",
+      "noGymHintOffMap": "It stays off the map while it isn't public.",
       "addNew": "My gym isn't listed",
       "empty": "No gyms nearby",
       "sharedEditHint": "This gym's staff will be able to edit this board's details.",
@@ -775,71 +782,165 @@
     "errorGeneric": "Something went wrong. Try again."
   },
   "sprayEditor": {
-    "tools": {
-      "label": "What your finger does",
-      "pan": "Pan",
-      "add": "Add",
-      "move": "Move",
-      "draw": "Draw"
-    },
-    "size": {
-      "s": "S",
-      "m": "M",
-      "l": "L",
-      "xl": "XL"
-    },
-    "threshold": {
-      "label": "Confidence cut-off",
-      "value": "Showing finds above {{percent}}%"
-    },
-    "counts": {
-      "alive_one": "{{count}} hold",
-      "alive_other": "{{count}} holds",
-      "pending": "{{value}} to review",
-      "hidden": "{{value}} hidden",
-      "unsaved": "{{value}} unsaved"
-    },
-    "actions": {
-      "merge": "Merge",
-      "delete": "Delete",
+    "bar": {
+      "holds_one": "{{count}} hold",
+      "holds_other": "{{count}} holds",
+      "maybes_one": "{{count}} maybe",
+      "maybes_other": "{{count}} maybes",
+      "withMaybes": "{{holds}} · {{maybes}}",
       "undo": "Undo",
       "redo": "Redo",
-      "accept": "Keep",
-      "reject": "Drop",
-      "acceptAll": "Keep all",
-      "save": "Save the wall"
+      "menuHint": "Opens options for all your holds",
+      "saved": "Holds saved",
+      "addA11y": "Add missing holds"
     },
-    "status": {
-      "readOnly": "This wall isn't yours to edit.",
-      "pan": "Drag to move the photo. Tap a hold to pick it.",
-      "add": "Tap bare wall for a hold, or draw round one.",
-      "move": "Drag a hold to where it really is.",
-      "draw": "Pick a hold, then draw its edge.",
-      "oneSelected": "Hold #{{id}} is picked.",
-      "twoSelected": "Two picked. Merge makes them one.",
-      "oneSelectedNew": "Your new hold is picked.",
-      "manySelected": "{{value}} holds picked. Delete takes them all off."
+    "toast": {
+      "deleted": "Hold deleted",
+      "joined": "Joined 2 holds",
+      "keptMaybes_one": "Kept {{count}} maybe",
+      "keptMaybes_other": "Kept {{count}} maybes",
+      "startedOver": "Started over"
     },
+    "menu": {
+      "keepMaybes": "Keep all maybes",
+      "hideMaybes": "Hide maybes",
+      "showMaybes": "Show maybes",
+      "startOver": "Start over",
+      "close": "Close"
+    },
+    "startOver": {
+      "title": "Start over?",
+      "body": "Every hold goes back to how it was when you opened the wall. You can undo this.",
+      "confirm": "Start over",
+      "cancel": "Keep editing"
+    },
+    "chips": {
+      "trace": "Trace",
+      "join": "Join",
+      "switchOff": "Switch off",
+      "switchOn": "Switch on",
+      "delete": "Delete",
+      "keep": "Keep",
+      "finish": "Finish",
+      "refine": "Refine"
+    },
+    "banner": {
+      "trace": "Draw round the hold with one finger",
+      "join": "Tap the hold to join it with",
+      "cancel": "Cancel",
+      "addDraw": "Draw round a missing hold, or tap to drop a circle",
+      "addCorners": "Tap round the corners of a missing hold",
+      "done": "Done",
+      "tracePencil": "Draw round the hold with Apple Pencil",
+      "refineAdd": "Paint to add to the hold. Pinch to zoom.",
+      "refineErase": "Paint to trim the hold. Pinch to zoom.",
+      "refineAddPencil": "Paint with Apple Pencil to add to the hold",
+      "refineErasePencil": "Paint with Apple Pencil to trim the hold"
+    },
+    "addShape": {
+      "label": "How to outline a hold",
+      "draw": "Draw",
+      "corners": "Corners"
+    },
+    "resize": {
+      "bigger": "+{{percent}}%",
+      "smaller": "−{{percent}}%",
+      "original": "Original",
+      "typical": "Typical"
+    },
+    "hints": {
+      "tap": "Tap a ring to pick it. Tap it again to switch it off.",
+      "maybe": "Dashed rings are maybes. Tap one, then tap Keep.",
+      "longPress": "Press and hold a ring, then slide to move it.",
+      "addHold": "Press and hold to add a hold.",
+      "dismiss": "Hide tip",
+      "replay": "Show tips",
+      "pencil": "Apple Pencil adds and switches holds. Fingers move around and pick a hold."
+    },
+    "a11y": {
+      "wall": "Your wall photo: {{summary}}",
+      "holdValue": "Hold {{position}} of {{total}}, {{role}}",
+      "noHold": "No hold picked",
+      "hint": "Swipe up or down to move through the holds. Double-tap to switch one on or off.",
+      "joinHint": "Swipe up or down to the hold to join with, then double-tap.",
+      "role": {
+        "on": "on",
+        "maybe": "maybe",
+        "off": "off"
+      },
+      "actions": {
+        "smaller": "Make smaller",
+        "bigger": "Make bigger",
+        "delete": "Delete",
+        "addHold": "Add a hold in the middle of the view"
+      },
+      "revealed": "Holds found: {{summary}}"
+    },
+    "readOnly": "This wall isn't yours to edit.",
     "errors": {
-      "nothingToMove": "Pick a hold first, then drag it.",
-      "pickOneToRedraw": "Pick one hold, then draw its edge.",
-      "mergeNeedsTwo": "Pick two holds to merge them.",
-      "tooManyHolds": "A wall carries up to {{max}} holds. Drop a few and save again.",
-      "saveFailed": "Saving the wall failed.",
+      "tooManyHolds": "That's the {{max}} hold limit. Switch some off to add more.",
+      "saveFailed": "Couldn't save your holds. Try again.",
       "strokeNotClosed": "That loop missed the hold. Draw all the way round it.",
       "strokeTooBig": "That loop is far bigger than a hold. Zoom in and trace the hold itself.",
       "strokeTooDetailed": "That stroke has too much detail to store. Trace the edge in one pass.",
       "strokeTooShort": "That stroke is too short. Draw a full loop round the hold.",
-      "allHoldsOffWall": "Those holds land off the wall. Move them back onto the photo and save again.",
-      "someHoldsOffWall_one": "{{count}} hold landed off the wall and wasn't saved.",
-      "someHoldsOffWall_other": "{{count}} holds landed off the wall and weren't saved."
-    },
-    "toast": {
-      "saved_one": "Saved {{count}} hold",
-      "saved_other": "Saved {{count}} holds"
+      "someHoldsOffWall_one": "{{count}} hold lands off the wall. Move it back onto the photo or switch it off.",
+      "someHoldsOffWall_other": "{{count}} holds land off the wall. Move them back onto the photo or switch them off.",
+      "cornersCross": "Two sides cross. Tap the corners in order round the hold.",
+      "cornersTooFew": "Those corners are too close together or in a line. Tap at least 3 round the hold.",
+      "cornersHollow": "That shape is too hollow. Tap the corners round the outside of the hold.",
+      "refineNothingLeft": "That would erase the whole hold. Switch it off instead.",
+      "refineTooDetailed": "That leaves an edge too fiddly to save. Try a bigger brush.",
+      "refineCantStore": "That stroke would leave a shape that can't be saved as one hold, so it wasn't kept."
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."
+    },
+    "loading": "Loading your wall…",
+    "loadStalled": "Couldn't load your wall. Try again.",
+    "rail": {
+      "label": "Editing tools",
+      "grip": "Move the tools to the other side",
+      "mark": "Pick and switch holds",
+      "pencilOnly": "Pencil only",
+      "pencilOnlyHint": "Fingers pick holds and move around. Only Apple Pencil changes the wall.",
+      "fit": "Fit the wall to the screen",
+      "more": "More options"
+    },
+    "inspector": {
+      "role": {
+        "on": "On",
+        "off": "Off",
+        "maybe": "Maybe"
+      },
+      "source": {
+        "scan": "Found by scan",
+        "scanConfidence": "Found by scan · {{percent}}%",
+        "manual": "Added by you"
+      },
+      "size": "Size",
+      "redraw": "Redraw",
+      "previous": "Previous hold",
+      "next": "Next hold"
+    },
+    "shortcuts": {
+      "delete": "Switch off or delete hold"
+    },
+    "palette": {
+      "label": "Pencil tools",
+      "close": "Close Pencil tools",
+      "draw": "Add a hold by drawing round it",
+      "corners": "Add a hold by tapping its corners"
+    },
+    "refine": {
+      "mode": "Brush",
+      "add": "Add",
+      "erase": "Erase",
+      "size": "Brush size",
+      "sizeValue": "Size {{step}} of {{total}}",
+      "dropped_one": "Kept the main part. {{count}} stray bit was dropped.",
+      "dropped_other": "Kept the main part. {{count}} stray bits were dropped.",
+      "atLimit": "That's as far as this hold can grow. Trace redraws it bigger."
     }
   },
   "sprayWizard": {
@@ -852,19 +953,43 @@
       "namePlaceholder": "Garage wall",
       "angle": "Angle",
       "angleHint": "How far the wall leans back, in 5° steps. Fixed once you publish.",
-      "publicHint": "Off keeps the wall and its photo to you.",
-      "next": "Pick a photo",
+      "next": "Next",
       "anglePreview": "Wall at {{angle}} degrees"
     },
     "photo": {
       "title": "Photograph the wall",
       "body": "Stand square on, shoot at 1x, and get the whole wall in frame. Every hold you set lives on these pixels.",
+      "helpLink": "How to shoot it",
+      "helpLinkHint": "Opens the photo guide in your browser",
       "library": "Choose a photo",
       "camera": "Take a photo",
       "pickAnother": "Choose a different photo",
+      "adjust": "Crop or rotate",
       "next": "Next",
       "cameraDenied": "Boardsesh needs your camera to photograph a wall.",
-      "failed": "That photo wouldn't open. Try another one."
+      "failed": "That photo wouldn't open. Try another one.",
+      "tip": "Stand back, face the wall square-on, fit all 4 corners in."
+    },
+    "adjust": {
+      "title": "Crop and rotate",
+      "body": "Crop to the edges of the wall. Turn it round if it came out sideways.",
+      "hint": "Drag an edge or a corner. Drag inside the box to move it.",
+      "small": "This photo is small. Holds may look soft when you zoom in.",
+      "failed": "That photo wouldn't crop. Try again, or cancel to keep it as it was.",
+      "rotate": "Rotate",
+      "rotateLabel": "Rotate a quarter turn clockwise",
+      "done": "Done",
+      "reset": "Reset",
+      "cancel": "Cancel",
+      "handleTopLeft": "Top left corner of the crop",
+      "handleTop": "Top edge of the crop",
+      "handleTopRight": "Top right corner of the crop",
+      "handleRight": "Right edge of the crop",
+      "handleBottomRight": "Bottom right corner of the crop",
+      "handleBottom": "Bottom edge of the crop",
+      "handleBottomLeft": "Bottom left corner of the crop",
+      "handleLeft": "Left edge of the crop",
+      "handleMove": "Crop area"
     },
     "anchors": {
       "title": "Mark the corners",
@@ -877,7 +1002,13 @@
       "cornerBottomLeft": "Bottom left corner",
       "use": "Use these corners",
       "skip": "Skip for now",
-      "clear": "Start the corners again"
+      "clear": "Start the corners again",
+      "quality": {
+        "good": "Nice and square. The wall will flatten cleanly.",
+        "soft": "A bit angled. Retake front-on for a sharper look.",
+        "fail": "Too angled to flatten. Your photo still works, or retake it face-on.",
+        "small": "This photo is too small to flatten. Your photo still works as it is."
+      }
     },
     "upload": {
       "title": "Uploading your photo",
@@ -885,32 +1016,57 @@
       "percent": "Uploaded {{percent}}%",
       "failed": "The photo didn't make it up.",
       "retry": "Try again",
+      "offlineMode": "Offline mode is on, so your photo can't go up. Turn it off, then try again.",
+      "noSignal": "No signal, so your photo didn't go up. Try again once you're back online.",
+      "serverUnreachable": "Boardsesh can't be reached right now. Your photo is still here, so try again in a minute.",
       "checkFailed": "Couldn't tell whether your photo made it. Try again when you've signal."
     },
     "detect": {
       "title": "Looking for holds"
     },
+    "scan": {
+      "queued": "Getting in line…",
+      "running": "Looking for holds…",
+      "slow": "Busy walls take a little longer",
+      "resumeHint": "You can leave and resume later."
+    },
     "review": {
-      "found": "{{value}} holds to check",
-      "nothingFound": "Nothing found. Draw the holds yourself.",
-      "manualOnly": "This build can't suggest holds. Draw them yourself.",
-      "detectionFailed": "Finding holds went wrong. Draw them yourself.",
-      "done": "Done"
+      "next": "Pick a look",
+      "nothingFound": "No holds spotted. Tap the wall to add them.",
+      "detectionFailed": "Couldn't spot holds this time. Tap the wall to add them.",
+      "manualOnly": "Tap the wall to add your holds.",
+      "retry": "Try again"
+    },
+    "look": {
+      "title": "How should your holds light up?",
+      "body": "Climbers see your wall like this, unless they've chosen to use their own look on spray walls.",
+      "loading": "Loading your wall…",
+      "unavailable": "Your wall's photo can't be shown here, but you can still pick a look.",
+      "saving": "Saving your look…",
+      "failed": "Couldn't save the look. Try again, or publish anyway.",
+      "publishWithout": "Publish anyway",
+      "dimTitle": "Dim the rest of the wall",
+      "dimOff": "Off"
     },
     "publish": {
       "title": "Put it on your boards",
-      "body": "Your holds are saved. Publish the wall and you can start setting.",
-      "cta": "Add this wall",
-      "failed": "Publishing the wall failed."
+      "working": "Publishing your wall…",
+      "failed": "Publishing the wall failed.",
+      "stalled": "Your wall is saved, but setting it up took too long. Try again.",
+      "retry": "Try again"
     },
     "done": {
-      "body": "Setting your wall up…"
+      "body": "Setting your wall up…",
+      "leave": "Back to climbing"
     },
     "leave": {
       "title": "Leave this wall for now?",
       "body": "Your wall and its photo are saved. Pick it up where you left off.",
       "stay": "Keep going",
-      "go": "Leave"
+      "go": "Leave",
+      "unsavedTitle": "Leave without publishing?",
+      "unsavedBody": "Your hold changes won't be kept. The wall and its photo stay saved.",
+      "discard": "Leave anyway"
     },
     "resume": {
       "checking": "Looking for a wall you started…",
@@ -920,89 +1076,131 @@
       "startOver": "Start over",
       "checkFailed": "Couldn't check that wall. Try again.",
       "retry": "Try again"
+    },
+    "reset": {
+      "screenTitle": "Reset this wall",
+      "starting": "Getting your new wall ready…",
+      "startFailed": "Couldn't start the reset. Try again.",
+      "resumeTitle": "You have a reset in progress",
+      "resumeBody": "The new photo of “{{name}}” isn't finished. Pick up where you left off, or start over. The wall stays live until the new one goes live.",
+      "photoTitle": "Photograph the wall as it is now",
+      "photoBody": "Same name and angle as before. Shoot the whole wall, then mark every hold.",
+      "archiveNotice": "When this wall goes live, the old one is archived. Its climbs and sends stay."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Reset the wall",
-    "notYours": "This wall isn't yours to reset.",
-    "nothingPublished": "This wall isn't set up yet. Finish adding it first.",
-    "openDraft": {
-      "title": "There's a reset half done",
-      "body": "Your saved photo is ready to resume. Nothing on the published wall changes until you confirm the reset.",
-      "discard": "Throw it away and start again",
-      "discarded": "That reset is gone. Take a new photo.",
-      "discardFailed": "That reset wouldn't clear. Try again."
-    },
-    "photo": {
-      "title": "Photograph the wall again",
-      "body": "Stand where you stood the first time if you can. Same wall, new holds."
-    },
-    "anchors": {
-      "title": "Mark the corners",
-      "body": "Drag the four rings onto the corners of the wall. This one isn't optional — it's what lines your new photo up with every climb already on the wall.",
-      "use": "Use these corners"
-    },
+  "sprayResetConfirm": {
+    "title": "Reset this wall?",
+    "body": "Take a new photo and mark the holds from scratch. When the new wall goes live, this one is archived. Its climbs and sends stay in logbooks and playlists, and nobody can set on it any more.",
+    "start": "Start reset",
+    "cancel": "Not now"
+  },
+  "sprayArchive": {
+    "banner": "Archived {{date}}. Climbs and sends stay, but nothing new can be set here.",
+    "bannerUndated": "Archived. Climbs and sends stay, but nothing new can be set here.",
+    "switchToNew": "Switch to the new wall",
+    "openFailed": "Couldn't open that wall. Try again.",
+    "manageHeader": "Archived",
+    "manageRow": "Archived {{date}}",
+    "manageRowUndated": "Archived",
+    "deleteMessage": "Delete “{{name}}”? Its photo goes. Its climbs, and every send logged on them, leave logbooks and playlists. This can't be undone."
+  },
+  "sprayWallErrors": {
+    "archived": "This wall is archived. Its climbs and sends stay, but nothing new can be set on it.",
+    "resetRetired": "Walls change by resetting them now. Update the app, then reset the wall.",
+    "resetOwnerOnly": "Only the wall's owner can reset it.",
+    "resetSourceUnpublished": "Finish setting up this wall before you reset it.",
+    "archiveLimitReached": "You can keep {{max}} archived walls. Delete one under Archived to reset this wall."
+  },
+  "sprayMaintenance": {
+    "screenTitle": "Edit holds",
+    "preparing": "Opening your wall…",
+    "unavailable": "You can't edit this wall.",
+    "nothingPublished": "Finish setting up this wall before editing its holds.",
+    "draftUnavailable": "This draft has changed. Reopen the wall to edit its holds.",
+    "loadFailed": "Couldn't open the hold editor. Try again.",
+    "publish": "Publish holds",
+    "publishing": "Publishing your holds…",
+    "publishFailed": "Your hold changes are saved. Try publishing again.",
+    "refreshing": "Loading the updated wall…",
+    "refreshFailed": "Your holds are published. Try loading the wall again.",
+    "retry": "Try again",
+    "temporarilyUnavailable": "Hold editing isn't available right now. Try again later.",
     "leave": {
-      "title": "Leave the reset?",
-      "body": "Your new photo stays as a draft. Nothing changes on the wall until you confirm."
+      "title": "Discard unsaved hold changes?",
+      "body": "Your unsaved changes won't be kept. Your saved draft stays available.",
+      "stay": "Keep editing",
+      "discard": "Discard changes"
     },
-    "compare": {
-      "working": "Working out what changed…",
-      "unavailable": "We couldn't work out what changed on this wall.",
-      "counts": "{{kept}} kept · {{removed}} gone · {{added}} new",
-      "climbsAffected_one": "{{count}} climb loses a hold",
-      "climbsAffected_other": "{{count}} climbs lose holds",
-      "aspectWarning": "This photo is framed differently from the last one. Check the corners landed on the corners.",
-      "filterLabel": "Which rings to show",
-      "tapHint": "Tap any ring to change your mind about it.",
-      "confirm": "Confirm the reset",
-      "acceptMoves": "Take every suggested move",
-      "noDetections": "Nothing to compare",
-      "noDetectionsBody": "This phone couldn't spot the holds in your new photo, so there's nothing to check against. Your photo is saved as a draft."
-    },
-    "commit": {
-      "failed": "The reset didn't land. Nothing on the wall has changed."
-    },
-    "filter": {
-      "all": "All",
-      "kept": "Kept {{value}}",
-      "removed": "Gone {{value}}",
-      "new": "New {{value}}",
-      "unsure": "Unsure {{value}}"
-    },
-    "hold": {
-      "kept": "Hold {{id}} — still on the wall",
-      "removed": "Hold {{id}} — coming off",
-      "unsure": "Hold {{id}} — worth a look",
-      "stillHere": "It's still here",
-      "gone": "It's gone"
-    },
-    "detection": {
-      "new": "A hold that wasn't here before",
-      "rejected": "Not a hold",
-      "accept": "It's a hold",
-      "reject": "Not a hold"
-    },
-    "pairing": {
-      "start": "Same hold, moved here",
-      "prompt": "Tap the ring where that hold used to be.",
-      "cancel": "Never mind",
-      "paired": "Replaces hold {{id}}",
-      "unpair": "It's not that hold",
-      "useSuggestion": "Replaces hold {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} gone, {{added}} new, {{climbs}} climbs changed"
-    }
+    "leftoverPhoto": "This wall has an unfinished new photo from an older version of the app. Discard it to edit the holds.",
+    "discardLeftover": "Discard the unfinished photo",
+    "discardLeftoverFailed": "That photo wouldn't clear. Try again."
+  },
+  "sprayHoldUsage": {
+    "title": "Remove a hold that climbs use?",
+    "body_one": "{{count}} published climb uses these holds. It'll be marked as missing a hold until someone remixes it.",
+    "body_other": "{{count}} published climbs use these holds. They'll be marked as missing a hold until someone remixes them.",
+    "bodyUnknown": "Some climbs may use these holds. They'll be marked as missing a hold until someone remixes them.",
+    "removeAnyway": "Remove anyway",
+    "keep": "Keep holds"
   },
   "sprayCaps": {
     "holds": "A wall carries up to {{max}} holds. Drop a few and save again.",
-    "versions": "A wall keeps {{max}} resets, and this one has used them all.",
+    "versions": "A wall keeps up to {{max}} versions of its holds, one per published hold edit, and this one has used them all. Reset the wall to start fresh.",
     "walls": "You can keep {{max}} walls. Delete one to make room.",
     "wallsHint": "You can keep up to {{max}} walls."
   },
   "sprayHidden": {
     "body": "Someone reported it and we took it out of everyone else’s view. It’s still here for you, and nothing on it was deleted.",
     "title": "This wall is hidden"
+  },
+  "sprayModeration": {
+    "reportTitle": "Report wall",
+    "reportHint": "Flag this wall for admin review",
+    "submit": "Submit report",
+    "reported": "Thanks. Your report is in the review queue.",
+    "reportOffline": "Connect to the internet to submit your report.",
+    "reportError": "Your report didn’t go through. Try again.",
+    "queueTitle": "Spray-wall reports",
+    "hide": "Hide wall",
+    "unhide": "Unhide wall",
+    "keepVisible": "Keep visible",
+    "hidden": "Hidden",
+    "photoLabel": "Photo of {{wall}}",
+    "noPhoto": "No photo available",
+    "review": "Review wall",
+    "reviewError": "The decision didn’t save. Try again.",
+    "unavailable": "Spray-wall moderation is unavailable for this account right now.",
+    "loadError": "Couldn’t load wall reports.",
+    "empty": "No walls waiting for review.",
+    "reasons": {
+      "inappropriate": "Inappropriate photo or name",
+      "notAWall": "Not a climbing wall",
+      "personalInfo": "Personal information in the photo",
+      "other": "Other"
+    },
+    "reportCount_one": "{{count}} report",
+    "reportCount_other": "{{count}} reports"
+  },
+  "sprayBackground": {
+    "label": "Wall background",
+    "photo": "Photo",
+    "wallCrop": "Wall only",
+    "holdCutouts": "Holds only",
+    "retake": "Reset wall with a new photo",
+    "previewLabel": "Preview of {{look}}",
+    "saveFailed": "Couldn't save the background. Try again.",
+    "notAvailable": "This photo is too angled for that look. Retake it face-on.",
+    "note": {
+      "lockedNoPins": "Pin the 4 corners to unlock.",
+      "lockedRetake": "Reset the wall with a face-on photo to unlock.",
+      "generating": "Generating…",
+      "failed": "That look didn't render. Save it again to retry.",
+      "afterPublish": "Ready a minute or so after you publish. Your photo shows until then.",
+      "soft": "Retake front-on for a sharper look.",
+      "volumes": "Volumes aren't cut out yet."
+    },
+    "notAvailableNoPins": "Pin the 4 corners of the wall first to use this look.",
+    "notAvailableSmall": "This photo is too small to flatten. Retake it with your phone's main camera at 1x.",
+    "usePhoto": "Use the photo"
   }
 }

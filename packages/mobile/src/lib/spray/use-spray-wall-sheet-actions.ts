@@ -1,0 +1,164 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { router } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { sprayWallResetStarted } from '@boardsesh/analytics';
+import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
+import {
+  sprayDetailRows,
+  sprayShareTarget,
+  type SprayDetailRowKey,
+  type SprayShareTarget,
+} from '../../components/board-discovery/spray-detail-rows';
+import { confirmSprayWallReset } from './confirm-spray-wall-reset';
+import { sprayWallArchiveState } from './spray-wall-registry';
+import { trackSprayEvent } from './spray-telemetry';
+
+type ShareSnapshot = SprayShareTarget & { wallUuid: string; wallName: string };
+
+function boardActionSignature(board: UserBoard | null): string {
+  return board
+    ? JSON.stringify([
+        board.uuid,
+        board.boardType,
+        board.canEdit,
+        board.isPublic,
+        board.isUnlisted,
+        board.slug,
+        board.angle,
+        board.name,
+        board.ownerId,
+      ])
+    : '';
+}
+
+/**
+ * Own action lifetimes above the panel, which unmounts after normal dismissal.
+ *
+ * `viewerUserId` is who is signed in: a reset is the wall owner's alone, so the
+ * reset rows compare it with the board's `ownerId`.
+ */
+export function useSprayWallSheetActions(
+  board: UserBoard | null,
+  dismissAndWait: () => Promise<DismissAndWaitResult>,
+  viewerUserId: string | null | undefined,
+) {
+  const { t } = useTranslation('boards');
+  const boardRef = useRef(board);
+  boardRef.current = board;
+  const viewerUserIdRef = useRef(viewerUserId);
+  viewerUserIdRef.current = viewerUserId;
+  const signature = useMemo(() => boardActionSignature(board), [board]);
+  const signatureRef = useRef(signature);
+  signatureRef.current = signature;
+  const mountedRef = useRef(false);
+  const requestRef = useRef(0);
+  const pendingRef = useRef(false);
+  const [shareSnapshot, setShareSnapshot] = useState<ShareSnapshot | null>(null);
+  const [shareVisible, setShareVisible] = useState(false);
+  const shareVisibleRef = useRef(shareVisible);
+  shareVisibleRef.current = shareVisible;
+
+  const cancelPendingAction = useCallback(() => {
+    requestRef.current += 1;
+    pendingRef.current = false;
+  }, []);
+  useEffect(() => {
+    cancelPendingAction();
+    setShareVisible(false);
+  }, [signature, cancelPendingAction]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelPendingAction();
+    };
+  }, [cancelPendingAction]);
+
+  const openAction = useCallback(
+    async (wallUuid: string, action: SprayDetailRowKey | 'share') => {
+      const activeWall = boardRef.current;
+      if (pendingRef.current || !activeWall || activeWall.uuid !== wallUuid) return;
+      // Re-derived at the tap, from the registry as it is now: a wall archived
+      // since the sheet rendered must not open a door it no longer has.
+      const row =
+        action === 'share'
+          ? null
+          : sprayDetailRows(activeWall, {
+              viewerUserId: viewerUserIdRef.current,
+              archive: sprayWallArchiveState(activeWall.boardType, activeWall.layoutId),
+            }).find((candidate) => candidate.key === action);
+      const href = row?.href ?? null;
+      const target = action === 'share' ? sprayShareTarget(activeWall) : null;
+      if (action === 'share' ? !target : !href) return;
+      const snapshot = target ? { ...target, wallUuid, wallName: activeWall.name } : null;
+      const startingSignature = signatureRef.current;
+      const request = ++requestRef.current;
+      pendingRef.current = true;
+      try {
+        if (row?.confirmsReset) {
+          const confirmed = await confirmSprayWallReset({
+            title: t('sprayResetConfirm.title'),
+            body: t('sprayResetConfirm.body'),
+            start: t('sprayResetConfirm.start'),
+            cancel: t('sprayResetConfirm.cancel'),
+          });
+          if (
+            !confirmed ||
+            !mountedRef.current ||
+            request !== requestRef.current ||
+            startingSignature !== signatureRef.current
+          )
+            return;
+          // Once per confirm tap. Read against `Board Created` with `isReset`,
+          // the ratio is confirms per completed reset.
+          trackSprayEvent(sprayWallResetStarted('board_sheet'));
+        }
+        const result = await dismissAndWait();
+        if (
+          result.status !== 'dismissed' ||
+          !mountedRef.current ||
+          request !== requestRef.current ||
+          startingSignature !== signatureRef.current
+        )
+          return;
+        if (snapshot) {
+          setShareSnapshot(snapshot);
+          setShareVisible(true);
+        } else if (href) {
+          router.push(href);
+        }
+      } finally {
+        if (request === requestRef.current) pendingRef.current = false;
+      }
+    },
+    [dismissAndWait, t],
+  );
+
+  const openMaintenance = useCallback(
+    (wallUuid: string, action: SprayDetailRowKey) => {
+      void openAction(wallUuid, action);
+    },
+    [openAction],
+  );
+  const openShare = useCallback(
+    (wallUuid: string) => {
+      void openAction(wallUuid, 'share');
+    },
+    [openAction],
+  );
+  const closeShare = useCallback(() => setShareVisible(false), []);
+  const clearShareSnapshot = useCallback(() => {
+    if (!shareVisibleRef.current) setShareSnapshot(null);
+  }, []);
+
+  return {
+    openMaintenance,
+    openShare,
+    cancelPendingAction,
+    shareSnapshot,
+    shareVisible,
+    closeShare,
+    clearShareSnapshot,
+  };
+}

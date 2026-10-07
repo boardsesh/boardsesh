@@ -30,6 +30,7 @@ import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
 import { setOfflineMode } from '../lib/connectivity/connectivity-store';
 import { clearStoredSessionId } from '../lib/session-store';
+import { clearUserDataExportDownloads } from '../lib/user-data-export-download';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { clearFirstBoardPickerShowCount } from '../lib/onboarding/first-board-picker-store';
 import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
@@ -46,8 +47,9 @@ import {
 import { clearUserData, purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
+import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards } from '../settings';
+import { setSetting, clearOfflineBoards, clearSprayWallArchives } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -118,6 +120,37 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const queryClient = useQueryClient();
   const authStateRef = useRef({ isAuthenticated: false, isLoading: true });
   authStateRef.current = { isAuthenticated, isLoading };
+  // Whether a spray wall may be edited is an answer about one account, kept in
+  // a module-level registry that outlives every sign-out. It is disowned HERE,
+  // on any change of the resolved auth state, because this provider is the one
+  // component that stays mounted across it: everything below is swapped for a
+  // redirect or the splash, so a hook down there never sees a "before" (which
+  // is exactly how the first version of this, in the drawer host, never fired).
+  // The first resolved value is the launch session, not a change.
+  //
+  // The two edges are not symmetric. Signing IN re-reads every wall, under the
+  // new token. Going signed-OUT only drops the answer and fetches nothing: not
+  // every such flip is a sign-out (a native keychain that fails for a moment
+  // flips here with no cleanup), and a request sent then carries no token, so a
+  // private wall would resolve null and be withdrawn from the live player. A
+  // real sign-out's re-read is the cleanup's (`runSignedOutCleanup`), after the
+  // client is reset. When that cleanup already ran for this flip, the drop here
+  // is skipped, so the read it started is not disowned and sent twice.
+  const resolvedAuthForSprayRef = useRef<boolean | null>(null);
+  const sprayAccessResetByCleanupRef = useRef(false);
+  useEffect(() => {
+    if (isLoading) return;
+    const previous = resolvedAuthForSprayRef.current;
+    resolvedAuthForSprayRef.current = isAuthenticated;
+    // Consumed on every resolved pass, changed or not, so a cleanup that was
+    // not followed by a flip (one account replacing another on web) cannot
+    // leave the flag up to swallow a later, unrelated drop.
+    const cleanupAlreadyReset = sprayAccessResetByCleanupRef.current;
+    sprayAccessResetByCleanupRef.current = false;
+    if (previous === null || previous === isAuthenticated) return;
+    if (isAuthenticated) refreshSprayWallViewerAccess();
+    else if (!cleanupAlreadyReset) dropSprayWallViewerAccess();
+  }, [isAuthenticated, isLoading]);
   const authTransitionEpochRef = useRef(0);
   const authTransitionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const anonymousSessionIsolatedRef = useRef(false);
@@ -207,33 +240,41 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // These are the only sign-out leftovers that can carry a previous user across
   // a cold start on a shared device, so a signed-out checkAuth clears them even
   // when there's no live in-session cache to wipe (see handleSignedOutTransition).
-  const clearPersistedUserStores = useCallback((owner?: UserStorageOwner | null) => {
-    // This is the shared confirmed account boundary for manual/forced sign-out,
-    // expiry, remote sign-out, and authenticated identity changes. Invalidate
-    // cached tombstone checks before the coordinated clear synchronously bumps
-    // the active-board write generation, so neither validation nor storage
-    // state can leak into the next account.
-    resetActiveBoardSelfHealValidationCache();
-    // Stop an account A dismissal click from writing after this account boundary
-    // has removed the shared key. The clear is queued behind any pre-existing
-    // write and is awaited before account B is published.
-    suspendLinkEmptyDismissalWrites();
-    return Promise.allSettled([
-      clearStoredSessionId(owner),
-      clearStoredActiveBoardCoordinated(owner),
-      clearStoredQueueSnapshot(owner),
-      // How many times the launch gate opened the first-board picker (#5654).
-      // Keyed by account already; cleared here too so a shared phone never
-      // carries one climber's first-run state into the next session.
-      clearFirstBoardPickerShowCount(),
-      clearLinkEmptyPromptDismissal(),
-      // Create-climb and session-recap drafts are wiped for account
-      // isolation only on web (the new surface). Native sign-out keeps its
-      // origin behavior and leaves these drafts intact, so shipping this via
-      // OTA doesn't change what a native sign-out touches.
-      ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
-    ]);
-  }, []);
+  const clearPersistedUserStores = useCallback(
+    (owner: UserStorageOwner | null | undefined, exportCredentialGeneration: number) => {
+      // This is the shared confirmed account boundary for manual/forced sign-out,
+      // expiry, remote sign-out, and authenticated identity changes. Invalidate
+      // cached tombstone checks before the coordinated clear synchronously bumps
+      // the active-board write generation, so neither validation nor storage
+      // state can leak into the next account.
+      resetActiveBoardSelfHealValidationCache();
+      // Stop an account A dismissal click from writing after this account boundary
+      // has removed the shared key. The clear is queued behind any pre-existing
+      // write and is awaited before account B is published.
+      suspendLinkEmptyDismissalWrites();
+      // What the server last said about which walls are archived (the offline
+      // loader's copy). Some of it is per account: who replaced a wall is only
+      // shown to a viewer who may see the replacement.
+      clearSprayWallArchives();
+      return Promise.allSettled([
+        clearUserDataExportDownloads(exportCredentialGeneration),
+        clearStoredSessionId(owner),
+        clearStoredActiveBoardCoordinated(owner),
+        clearStoredQueueSnapshot(owner),
+        // How many times the launch gate opened the first-board picker (#5654).
+        // Keyed by account already; cleared here too so a shared phone never
+        // carries one climber's first-run state into the next session.
+        clearFirstBoardPickerShowCount(),
+        clearLinkEmptyPromptDismissal(),
+        // Create-climb and session-recap drafts are wiped for account
+        // isolation only on web (the new surface). Native sign-out keeps its
+        // origin behavior and leaves these drafts intact, so shipping this via
+        // OTA doesn't change what a native sign-out touches.
+        ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
+      ]);
+    },
+    [],
+  );
 
   const drainLocalMutationQueueBestEffort = useCallback(async () => {
     const localDb = getDatabaseHandle();
@@ -350,6 +391,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // longer be joined to the account that lost the writes. Sitting in
       // runSignedOutCleanup rather than in the manual signOut covers all three
       // paths — manual, forced 401, and proactive expiry.
+      const exportCredentialGeneration = captureAuthCredentialGeneration();
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetOfflineUsageSignal();
@@ -357,7 +399,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
       else await stopTokenCleanup;
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
-      const persistedStoreCleanup = clearPersistedUserStores(storageOwner);
+      const persistedStoreCleanup = clearPersistedUserStores(storageOwner, exportCredentialGeneration);
       if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
       else await persistedStoreCleanup;
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
@@ -424,6 +466,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // would otherwise paper over the cross-user leak. Doing this at the auth
       // boundary keeps the rest of the hooks simple.
       queryClient.clear();
+      // The spray registry is module state, so `clear()` does not reach it, and
+      // it holds one per-account answer: whether the viewer can edit each wall.
+      // After the client reset above, so the re-read is the next viewer's.
+      // Flagged while the effect below has not yet seen the signed-out flip, so
+      // that when it does it will not disown this read; when the flip came
+      // first there is nothing left for the effect to skip.
+      if (resolvedAuthForSprayRef.current === true) sprayAccessResetByCleanupRef.current = true;
+      refreshSprayWallViewerAccess();
       return true;
     },
     [clearPersistedUserStores, clearLocalOfflineUserData, isAuthTransitionCurrent, queryClient],
@@ -444,6 +494,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     ): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
       updateNativeSessionDegraded(false);
+      const exportCredentialGeneration = captureAuthCredentialGeneration();
       const previousStorageOwner = Platform.OS === 'web' ? authenticatedStorageOwnerRef.current : undefined;
       if (Platform.OS === 'web' && !forceFullCleanup && anonymousSessionIsolatedRef.current) {
         authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
@@ -476,7 +527,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();
-        const persistedStoreCleanup = clearPersistedUserStores(previousStorageOwner);
+        const persistedStoreCleanup = clearPersistedUserStores(previousStorageOwner, exportCredentialGeneration);
         if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
         else await persistedStoreCleanup;
         completed = isAuthTransitionCurrent(transitionEpoch);

@@ -218,13 +218,18 @@
       "boardCannotAuthor": "You can't set climbs on this board yet.",
       "boardConfigIncomplete": "The board details are missing or invalid. Pick the board again to set your climb.",
       "noUsableBoard": "Pick a board first, then set your climb.",
-      "boardTypeUnsupported": "This app version can't set climbs on that board yet. Pick another board."
+      "boardTypeUnsupported": "This app version can't set climbs on that board yet. Pick another board.",
+      "wallArchived": "This wall is archived. Its climbs and sends stay, but nothing new can be set on it."
     },
     "alerts": {
       "publishDuplicateNamed": "This hold pattern matches \"{{name}}\". Toggle Draft to save it without publishing, or change a hold.",
       "publishDuplicateUnnamed": "This hold pattern matches an existing climb. Toggle Draft to save it without publishing, or change a hold.",
       "viewMatchingClimb": "View matching climb",
       "saveFailedFallback": "Failed to save climb. Please try again.",
+      "editConflict": "This climb changed somewhere else. Reopen it to see the latest.",
+      "editNotAllowed": "You can't edit this climb. Only its setter can.",
+      "editWindowExpired": "This climb was published more than 24 hours ago, so it can't be edited now.",
+      "editNotEditable": "This climb can't be edited any more.",
       "localRefreshFailed": "Climb saved. Your downloaded list couldn't refresh. Reconnect to refresh it."
     },
     "fields": {
@@ -411,6 +416,7 @@
     },
     "detail": {
       "notFound": "Climb not found",
+      "boardNotFound": "This board isn't here any more, or it isn't shared with you.",
       "backToHome": "Back to Home"
     },
     "logAscent": {
@@ -479,12 +485,6 @@
       "collection": {
         "label": "Collection",
         "any": "Any"
-      },
-      "holdIntegrity": {
-        "label": "Holds",
-        "any": "All",
-        "intact": "Intact only",
-        "broken": "Lost holds"
       },
       "pin": "Pin to shortcuts",
       "unpin": "Remove from shortcuts",
@@ -664,10 +664,10 @@
       "chip_other": "{{count}} holds gone",
       "chipAria_one": "{{count}} hold is no longer on the wall",
       "chipAria_other": "{{count}} holds are no longer on the wall",
-      "banner_one": "{{count}} hold on this climb is gone",
-      "banner_other": "{{count}} holds on this climb are gone",
-      "bannerBody": "Remix it onto what's on the wall now.",
-      "remix": "Remix it"
+      "banner": "This climb lost a hold. Remix it onto the holds that are on the wall now.",
+      "remix": "Remix",
+      "editorHint_one": "Remove the grey hold to save",
+      "editorHint_other": "Remove the grey holds to save"
     },
     "climbActions": {
       "preview": "Preview",
@@ -752,7 +752,8 @@
         "ariaLabel": "Create a climb"
       },
       "header": {
-        "newClimb": "New climb"
+        "newClimb": "New climb",
+        "nameRequired": "Name it to save"
       },
       "save": {
         "idle": "Save",
@@ -765,6 +766,8 @@
       "autosave": {
         "onDevice": "Draft saved on this phone",
         "inAccount": "Draft saved to your account",
+        "onDevicePublish": "Saved on this phone",
+        "inAccountPublish": "Saved to your account",
         "unsyncedEdits": "Latest edits are on this phone only",
         "notStored": "Sign in to keep this draft",
         "saveFailed": "Couldn't save to your account. Tap Save to retry.",

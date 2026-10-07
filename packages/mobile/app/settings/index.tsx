@@ -1047,7 +1047,7 @@ export default function MoreScreen() {
         onPress: navAction(() => router.push('/settings/outline-editor')),
       });
     }
-    if (profile?.isTester) {
+    if (__DEV__ || profile?.isTester) {
       devRows.push({
         kind: 'nav',
         key: 'sentryDiagnostics',

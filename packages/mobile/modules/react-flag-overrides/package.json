@@ -1,0 +1,6 @@
+{
+  "name": "@boardsesh/react-flag-overrides-module",
+  "version": "0.1.0",
+  "description": "iOS-only runtime override of one React Native C++ feature flag (enableSchedulerDelegateInvalidation, #5293). Runs against the prebuilt React.xcframework, so no react-native source patch is needed.",
+  "license": "MIT"
+}

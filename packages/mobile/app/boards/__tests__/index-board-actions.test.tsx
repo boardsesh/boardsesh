@@ -6,7 +6,7 @@
 // three things that move: the per-card ownership action, Edit/Done, and the fact
 // that a picker opened mid-session must still switch boards when the identity
 // lookup fails.
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -17,6 +17,7 @@ type CarouselItem = { key: string; title: string; isViewerOwner?: boolean; isPin
 type CarouselProps = {
   items: CarouselItem[];
   onSelect: (item: CarouselItem) => void;
+  onDetails?: (item: CarouselItem) => void;
   actionFor?: (item: CarouselItem) => string | null;
   actionLabelFor?: (item: CarouselItem) => string;
   onAction?: (item: CarouselItem) => void;
@@ -43,6 +44,13 @@ const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
 // The last props the carousel was handed, so ownership can be asserted on the
 // ITEMS (stamped once at list build) rather than inferred from what rendered.
+type DetailProps = {
+  board: UserBoard | null;
+  visible: boolean;
+  onClose: () => void;
+  onSetActive: (board: UserBoard) => void;
+};
+const detailProps = vi.hoisted(() => ({ last: null as DetailProps | null }));
 const carouselProps = vi.hoisted(() => ({ last: null as CarouselProps | null }));
 const trackMock = vi.hoisted(() => vi.fn());
 // The Bluetooth quickstart sheet's props, so a scan pick can be driven directly.
@@ -51,6 +59,7 @@ const bluetoothSheetProps = vi.hoisted(() => ({
 }));
 
 const state = vi.hoisted(() => ({
+  isAuthenticated: true,
   source: undefined as string | undefined,
   profile: { id: 'me' } as { id: string } | undefined,
   storedUserId: undefined as string | undefined,
@@ -213,7 +222,7 @@ vi.mock('../../../src/lib/onboarding/link-step-answered', () => ({
   hasAnsweredLinkStep: vi.fn(async () => false),
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
+  useAuth: () => ({ isAuthenticated: state.isAuthenticated, refreshAuthState: vi.fn() }),
 }));
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => toastMock }));
 vi.mock('../../../src/providers/dialog-provider', () => ({ useConfirm: () => confirmMock }));
@@ -242,14 +251,9 @@ vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCat
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
   useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true), armWithoutConfirm: vi.fn() }),
 }));
-// The spray-wall tile is behind its own flag (epic #5346, SW-09). Off by default
-// so the existing cases keep describing the board row they were written for; the
-// tile's own describe block below flips it.
-const flagState = { sprayWalls: false };
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlag: () => false,
   useOfflineDownloadsEnabled: () => true,
-  useSprayWallsEnabled: () => flagState.sprayWalls,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -286,6 +290,13 @@ vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () =
 vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 // Captures the props rather than rendering a card, so the item flags and the
 // resolved per-card action are both assertable.
+vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({
+  BoardDetailSheet: (props: DetailProps) => {
+    detailProps.last = props;
+    return null;
+  },
+}));
+
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: CarouselProps) => {
     carouselProps.last = props;
@@ -317,6 +328,8 @@ beforeEach(() => {
   unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(true);
   carouselProps.last = null;
+  detailProps.last = null;
+  state.isAuthenticated = true;
   bluetoothSheetProps.last = null;
   state.activeBoardGeneration = 0;
   state.source = undefined;
@@ -735,22 +748,15 @@ describe('identity resolution never blocks the switcher', () => {
 });
 
 describe('the spray-wall tile', () => {
-  afterEach(() => {
-    flagState.sprayWalls = false;
-  });
-
-  it('is absent while the flag is off', () => {
-    render(createElement(BoardSelection));
-    expect(screen.queryByText('Spray wall')).toBeNull();
-  });
-
-  it('renders next to the other mode cards when the flag is on', () => {
-    flagState.sprayWalls = true;
+  it('renders next to the other mode cards and opens the wizard', () => {
     render(createElement(BoardSelection));
     expect(screen.getByText('Spray wall')).toBeTruthy();
-    // Next to the create tile, not instead of it: the two answer different
-    // questions (this harness leaves an unmapped key as itself).
     expect(screen.getByText('mobile.discovery.createTile')).toBeTruthy();
+    fireEvent.click(screen.getByText('Spray wall'));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/spray/new',
+      params: { returnTo: '/(tabs)/climbs' },
+    });
   });
 });
 
@@ -801,5 +807,46 @@ describe('where a pick came from', () => {
       pathname: '/gyms',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
+  });
+});
+
+describe('spray-wall detail sheet reachability', () => {
+  it('opens a saved wall without activating it', () => {
+    const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
+    state.myBoards = [wall];
+    render(createElement(BoardSelection));
+    const carousel = carouselProps.last!;
+    act(() => carousel.onDetails?.(carousel.items[0]));
+    expect(detailProps.last?.visible).toBe(true);
+    expect(detailProps.last?.board?.uuid).toBe(wall.uuid);
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    act(() => detailProps.last?.onClose());
+    expect(detailProps.last?.visible).toBe(false);
+  });
+
+  it('opens an active share-link wall absent from saved and nearby lists', () => {
+    state.myBoards = [];
+    state.nearbyBoards = [];
+    const wall = board({ uuid: 'shared-wall', name: 'Shared wall', boardType: 'spray' });
+    state.activeBoard = wall;
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByText('mobile.boardDetail.activeSprayDetails'));
+    expect(detailProps.last?.board?.uuid).toBe(wall.uuid);
+    expect(detailProps.last?.visible).toBe(true);
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
+  it('closes an open detail sheet when the account signs out', () => {
+    const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
+    state.myBoards = [wall];
+    const mounted = render(createElement(BoardSelection));
+    const carousel = carouselProps.last!;
+    act(() => carousel.onDetails?.(carousel.items[0]));
+    state.isAuthenticated = false;
+    mounted.rerender(createElement(BoardSelection));
+    state.isAuthenticated = true;
+    mounted.rerender(createElement(BoardSelection));
+    expect(detailProps.last?.visible).toBe(false);
+    expect(detailProps.last?.board).toBeNull();
   });
 });

@@ -19,6 +19,43 @@ export function localeStringsPath(language: string): string {
   return `./locales/${language}.json`;
 }
 
+// One Android App Link prefix per board name, so a shared climb or list link
+// (https://www.boardsesh.com/{board}/{layout}/{size}/{sets}/{angle}/view/{climb})
+// opens the app. The trailing slash keeps a prefix to whole path segments:
+// '/spray/' must not claim '/spray-walls'. Never collapse these into a catch-all
+// '/': that pulled /api/auth/callback/google out of Chrome Custom Tabs and broke
+// Google sign-in (#1797).
+//
+// Hardcoded rather than imported from SUPPORTED_BOARDS: this file is evaluated
+// by Expo's config loader, EAS and the fingerprint tooling, which do not all
+// resolve TypeScript-source workspace packages, and today it imports nothing
+// outside node builtins. scripts/mobile-ci-env-parity.test.ts fails when the two
+// lists differ, so a tenth board cannot ship without its prefix.
+export const ANDROID_BOARD_LINK_PREFIXES = [
+  '/kilter/',
+  '/tension/',
+  '/moonboard/',
+  '/decoy/',
+  '/touchstone/',
+  '/grasshopper/',
+  '/soill/',
+  '/woods/',
+  '/spray/',
+] as const;
+
+// The web app keeps a non-default locale in the path, so a climber on the
+// Spanish site copies https://www.boardsesh.com/es/kilter/.../view/{climb}.
+// app/+not-found.tsx already strips that segment and retries, which is how iOS
+// opens these links; Android has to claim each one by name. Board links only:
+// the retry drops the query string, and an unlisted wall's /b/ link needs its
+// ?wall= to open. Hardcoded for the same reason as the board list above, and
+// held to SUPPORTED_LOCALES minus the default by the same parity test.
+export const ANDROID_LINK_LOCALE_SEGMENTS = ['es', 'fr', 'de'] as const;
+
+export const ANDROID_LOCALISED_BOARD_LINK_PREFIXES: readonly string[] = ANDROID_LINK_LOCALE_SEGMENTS.flatMap((locale) =>
+  ANDROID_BOARD_LINK_PREFIXES.map((boardPrefix) => `/${locale}${boardPrefix}`),
+);
+
 type WebPlatformResolution = {
   platforms: NonNullable<ExpoConfig['platforms']>;
   web?: NonNullable<ExpoConfig['web']>;
@@ -315,7 +352,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     name: appName,
     slug: 'boardsesh',
     owner: 'boardsesh',
-    version: '2.5.0',
+    version: '2.6.0',
     scheme: 'com.boardsesh.app',
     orientation: 'portrait',
     icon: iconPath,
@@ -464,9 +501,19 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     android: {
       package: androidPackage,
       playStoreUrl: ANDROID_PLAY_STORE_URL,
-      // App Links for the multiplayer join flow and retired OTA preview links:
+      // App Links for board shares, the multiplayer join flow and retired OTA preview links:
+      // https://www.boardsesh.com/b/{slug}/{angle}/list (including ?wall= for unlisted walls),
       // https://www.boardsesh.com/join/{sessionId} and
-      // https://www.boardsesh.com/preview/pr-N (plus the apex domain).
+      // https://www.boardsesh.com/preview/pr-N, plus every classic board link
+      // (https://www.boardsesh.com/{board}/.../{angle}/list and .../view/{climb})
+      // through ANDROID_BOARD_LINK_PREFIXES, and the same links under /es, /fr
+      // and /de. A board path the app has no route for falls through
+      // +not-found to Home.
+      // www only, never the apex: boardsesh.com answers assetlinks.json with a
+      // 301 to www, which Google's verifier rejects, and on Android 11 and older
+      // one unverified host fails verification for every host in the app. No
+      // share builder emits an apex link. iOS keeps applinks:boardsesh.com
+      // because Apple's CDN follows that redirect.
       // The preview ingress remains for old shared links; +native-intent maps it
       // to What's New, where xprem's marker is the only branch picker.
       // autoVerify lets Android open the link directly in the app once the
@@ -480,19 +527,20 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           autoVerify: true,
           data: [
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/join' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/join' },
             { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/preview' },
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/b/' },
+            ...[...ANDROID_BOARD_LINK_PREFIXES, ...ANDROID_LOCALISED_BOARD_LINK_PREFIXES].map((pathPrefix) => ({
+              scheme: 'https',
+              host: 'www.boardsesh.com',
+              pathPrefix,
+            })),
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },
         {
           action: 'VIEW',
           autoVerify: true,
-          data: [
-            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/auth/reset-password' },
-            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/auth/reset-password' },
-          ],
+          data: [{ scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/auth/reset-password' }],
           category: ['BROWSABLE', 'DEFAULT'],
         },
       ],
@@ -524,6 +572,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'FOREGROUND_SERVICE',
         'FOREGROUND_SERVICE_CONNECTED_DEVICE',
         'POST_NOTIFICATIONS',
+        // Photographing a spray wall (epic #5346, SW-09). expo-image-picker's
+        // plugin already adds CAMERA when `cameraPermission` is set below, but
+        // that string is also what turns the iOS prompt on, so the Android name
+        // is listed here too: the two knobs are independent and a future edit to
+        // one should not silently drop the other.
+        'CAMERA',
       ],
       // BLUETOOTH_SCAN needs `android:usesPermissionFlags="neverForLocation"` on
       // Android 12+ or the OS silently drops every scan result for a caller
@@ -613,15 +667,26 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       ],
       'expo-updates',
       'expo-web-browser',
-      // Photo-library access for picking a profile avatar (Edit Profile screen).
-      // Library-only — the editor doesn't open the camera, so we don't request
-      // NSCameraUsageDescription. Adds NSPhotoLibraryUsageDescription on iOS and
-      // the READ_MEDIA_IMAGES permission on Android; native change, ships on the
-      // next build (not OTA).
+      // Photo-library access for picking a profile avatar (Edit Profile screen),
+      // a spray wall photo and a feedback screenshot, plus camera access for
+      // photographing a spray wall (epic #5346, SW-09).
+      // Adds NSPhotoLibraryUsageDescription + NSCameraUsageDescription on iOS. On
+      // Android (expo-image-picker 57.0.14) the config plugin adds only RECORD_AUDIO;
+      // CAMERA and READ/WRITE_EXTERNAL_STORAGE (maxSdkVersion 32) come from the
+      // library's own AndroidManifest.xml through manifest merge, and there is no
+      // READ_MEDIA_IMAGES. Native change, ships on the next build (not OTA).
+      // The camera permission landed ahead of the UI that opens it, so that JS slice
+      // could ship by OTA into a fleet whose binary already declares it.
+      //
+      // These are the base/en strings. The localized prompts come from
+      // locales/<lang>.json (the `locales` map above), kept in step by
+      // scripts/mobile-locales-parity.test.ts.
       [
         'expo-image-picker',
         {
-          photosPermission: 'Boardsesh uses your photo library so you can pick a profile picture.',
+          photosPermission:
+            'Boardsesh uses your photo library so you can pick a profile picture, a photo of your wall, or a screenshot to send with feedback.',
+          cameraPermission: 'Boardsesh uses your camera so you can photograph a wall and set climbs on it.',
         },
       ],
       'react-native-ble-plx',
@@ -699,6 +764,20 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Caps Gradle heap + parallel workers so the heavy native build (CMake ×4
       // ABIs + Kotlin + JS bundle + R8) doesn't OOM-kill the daemon. EAS-safe.
       './plugins/with-android-gradle-memory',
+      // Turns R8 on for the `release` build type (minify + obfuscate + optimize)
+      // and injects the keep rules the reflective call sites need. Google Play's
+      // App optimisation report scored us at Obfuscation 1% (threshold 25%)
+      // because the Expo template defaults minifyEnabled off and nothing set the
+      // property. The plugin THROWS if a future SDK renames that property, so
+      // this can never silently revert to shipping unobfuscated. EAS-safe, and
+      // registered unconditionally: an EAS preview that differs from production
+      // in minification is exactly what hides an R8 bug until it's in the store.
+      './plugins/with-android-minify',
+      // Bakes the io.sentry.proguard-uuid the release workflow mints into the
+      // manifest, so Sentry can match the R8 mapping that workflow uploads and
+      // deobfuscate Java/Kotlin frames. No-op when the env var is unset (local
+      // prebuild, PR builds); never moves the fingerprint (env isn't hashed).
+      './plugins/with-android-sentry-proguard-uuid',
       // Pins the generated Android wrapper below Gradle 9 until React Native's
       // included Foojay toolchain resolver plugin is compatible with Gradle 9.
       './plugins/with-android-gradle-wrapper-version',
@@ -735,6 +814,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // entitlement-merge ordering concern like the share-intent dedup above —
       // it sets its own distinct keys.
       './plugins/with-healthkit',
+      // #5293 (BOARDSESH-8S): calls modules/react-flag-overrides from the
+      // generated AppDelegate.swift, between the React Native factory init and
+      // startReactNative, to turn on the SchedulerDelegate invalidation guard.
+      // iOS-only mod. Throws at prebuild if the Expo template's anchors move.
+      './plugins/with-scheduler-delegate-invalidation',
       // AppCheckCore (pulled in by Google Sign-In) is a Swift pod that depends
       // on GoogleUtilities and RecaptchaInterop, which don't define modules by
       // default. Without this fix CocoaPods refuses to link them as static

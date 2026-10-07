@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PAGE_READ_TIMEOUT_MS, extractOgImageUrl, prewarmShareCaches } from '../share-prewarm';
+import { BACKEND_URL } from '../env';
+import { PAGE_READ_TIMEOUT_MS, buildOgImageUrl, extractOgImageUrl, prewarmShareCaches } from '../share-prewarm';
 
 /**
  * The app cannot compute the card URL www advertises — that angle comes from
@@ -241,13 +242,57 @@ describe('prewarmShareCaches', () => {
     await expect(prewarmShareCaches(PAGE, FALLBACK)).resolves.toBeUndefined();
   });
 
+  it('warms a card once when the page advertises the fallback itself', async () => {
+    // A public spray wall: the app builds the very URL www advertises, so the
+    // page read finds a request already in flight.
+    const fetched = stubFetch((url) => (url === PAGE ? htmlAdvertising(FALLBACK) : ({ ok: true } as Response)));
+
+    await prewarmShareCaches(PAGE, FALLBACK);
+
+    expect(fetched.filter((url) => url === FALLBACK)).toHaveLength(1);
+  });
+
   it('does nothing further when there is no card to warm at all', async () => {
-    // Spray walls: the renderer cannot draw one, so buildOgImageUrl returns
-    // null and there is nothing to fall back to.
+    // An unlisted or private spray wall: www advertises no card for it and
+    // buildOgImageUrl returns null, so there is nothing to fall back to.
     const fetched = stubFetch(() => ({ ok: true, text: async () => '<head></head>' }) as Response);
 
     await prewarmShareCaches(PAGE, null);
 
     expect(fetched).toEqual([PAGE]);
+  });
+});
+
+describe('buildOgImageUrl for a spray wall', () => {
+  const SPRAY = { boardName: 'spray', layoutId: 4321, sizeId: 4321, setIds: '1', frames: 'p12r42p19r43' } as const;
+
+  // What www's `buildSprayOgImageUrl` puts in a public wall's og:image. Rebuilt
+  // here with URLSearchParams, as web builds it, so a drift in either the order
+  // or the encoding fails this test instead of quietly warming a second entry.
+  function webSprayCardUrl(layoutId: number, frames: string): string {
+    const params = new URLSearchParams({
+      board_name: 'spray',
+      layout_id: String(layoutId),
+      size_id: String(layoutId),
+      set_ids: '1',
+      frames,
+      format: 'jpeg',
+    });
+    return `${BACKEND_URL}/og/climb?${params}`;
+  }
+
+  it('builds exactly the card www advertises for a public wall', () => {
+    expect(buildOgImageUrl({ ...SPRAY, sprayVisibility: 'public' })).toBe(webSprayCardUrl(4321, 'p12r42p19r43'));
+  });
+
+  it('warms nothing for an unlisted, private or unknown wall', () => {
+    // `/og/climb` answers 404 for anything but a public wall, by design.
+    expect(buildOgImageUrl({ ...SPRAY, sprayVisibility: 'unlisted' })).toBeNull();
+    expect(buildOgImageUrl({ ...SPRAY, sprayVisibility: 'private' })).toBeNull();
+    expect(buildOgImageUrl({ ...SPRAY })).toBeNull();
+  });
+
+  it('warms nothing for a climb without frames', () => {
+    expect(buildOgImageUrl({ ...SPRAY, frames: null, sprayVisibility: 'public' })).toBeNull();
   });
 });

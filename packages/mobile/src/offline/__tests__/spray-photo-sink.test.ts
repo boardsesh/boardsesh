@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getCheckpoint, getCheckpointKey, runMigrations, setCheckpoint } from '@boardsesh/offline-sync';
+import {
+  clearSprayWallRegistry,
+  getSprayWall,
+  registerSprayWall,
+  sprayGeometryKey,
+  unregisterSprayWall,
+} from '../../lib/spray/spray-wall-registry';
+import { getRuntimeGeometry } from '@boardsesh/board-art-geometry';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 const clearPrivateCaches = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearPrivateCaches }));
@@ -72,7 +80,10 @@ const pull = (documents: Record<string, unknown>[], tableName = 'spray_walls') =
   sprayWallPhotoSink({ tableName, documents, db });
 
 beforeEach(async () => {
-  clearPrivateCaches.mockClear();
+  clearSprayWallRegistry();
+  // The real cleanup withdraws the wall from the registry and erases its files;
+  // the files are `spray-privacy-cleanup.test.ts`'s business, the withdrawal is not.
+  clearPrivateCaches.mockReset().mockImplementation((layoutId: number) => unregisterSprayWall(layoutId));
   db = createTestDatabase();
   await runMigrations(db);
   stored.length = 0;
@@ -229,6 +240,70 @@ describe('sprayWallPhotoSink', () => {
 });
 
 describe('sprayWallDeletedSink', () => {
+  it('clears an orphan retry marker whose photo differs from the deleted capture', async () => {
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      `spray-photo-pending:${LAYOUT_ID}`,
+      JSON.stringify({ photoKey: 'previous-photo-generation', attempts: 3 }),
+    ]);
+
+    await sprayWallDeletedSink({
+      tableName: 'spray_walls',
+      rows: [{ layout_id: LAYOUT_ID, photo_key: PHOTO_KEY }],
+      db,
+    });
+
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`spray-photo-pending:${LAYOUT_ID}`]),
+    ).toBeNull();
+  });
+
+  it('withdraws registered geometry and erases only the deleted wall’s private caches', async () => {
+    const registration = {
+      wallUuid: 'wall-4',
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: PHOTO_URL,
+      photoThumbUrl: null,
+      photoExpiresAt: 'later',
+      holds: [],
+    };
+    registerSprayWall(LAYOUT_ID, registration);
+    registerSprayWall(9, { ...registration, wallUuid: 'wall-9' });
+
+    await sprayWallDeletedSink({
+      tableName: 'spray_walls',
+      rows: [{ layout_id: LAYOUT_ID, photo_key: PHOTO_KEY }],
+      db,
+    });
+
+    expect(getSprayWall(LAYOUT_ID)).toBeNull();
+    expect(getRuntimeGeometry(sprayGeometryKey(LAYOUT_ID))).toBeNull();
+    expect(getSprayWall(9)).not.toBeNull();
+    expect(clearPrivateCaches.mock.calls).toEqual([[LAYOUT_ID]]);
+  });
+
+  it.each([PHOTO_KEY, null])('preserves a recreated wall retry after deleting photo %s', async (deletedKey) => {
+    const replacementKey = 'replacement-photo';
+    await insertWallRow(LAYOUT_ID, replacementKey);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', [
+      `spray-photo-pending:${LAYOUT_ID}`,
+      JSON.stringify({ photoKey: replacementKey, attempts: 2 }),
+    ]);
+
+    await sprayWallDeletedSink({
+      tableName: 'spray_walls',
+      rows: [{ layout_id: LAYOUT_ID, photo_key: deletedKey }],
+      db,
+    });
+
+    expect(
+      await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`spray-photo-pending:${LAYOUT_ID}`]),
+    ).not.toBeNull();
+  });
+
   it('deletes the photograph a tombstone orphaned', async () => {
     // The row is already gone, so this capture is the only thing that still
     // names the file — board teardown and the prune both look at rows.

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { createClimbScreenKey } from '../../../src/lib/create-climb-screen-key';
 import { useUnsupportedBoardExit } from '../../../src/lib/routing/use-unsupported-board-exit';
 import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
+import { useSprayWallArchiveSettled, useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
 
 type CreateClimbParams = {
   boardName?: string | string[];
@@ -25,6 +26,8 @@ type CreateClimbParams = {
   forkCharacteristics?: string;
   /** The source climb's grade, as a name on the shared scale ("6c/V5"). */
   forkDifficulty?: string;
+  /** The remixed climb's uuid, so the editor can draw the holds it lost. */
+  forkParentUuid?: string;
   editClimbUuid?: string;
 };
 
@@ -89,20 +92,33 @@ function resolveEditorBoard(params: CreateClimbParams, activeBoard: UserBoard | 
   return { boardName, layoutId, sizeId, setIds, angle };
 }
 
-type CreateExitReason = 'boardCannotAuthor' | 'boardConfigIncomplete' | 'boardTypeUnsupported' | 'noUsableBoard';
+type CreateExitReason =
+  | 'boardCannotAuthor'
+  | 'boardConfigIncomplete'
+  | 'boardTypeUnsupported'
+  | 'noUsableBoard'
+  | 'wallArchived';
 
-/** Resolve failures separately from a pending active-board read. */
+/**
+ * Resolve failures separately from a pending active-board read.
+ *
+ * `wallArchived` is the resolved spray wall's archive state from the registry:
+ * an archived wall keeps its climbs but takes no new climb and no edit, so a
+ * deep link, a stale sheet or a queue item cannot open the editor on it.
+ */
 function createExitReason(
   params: CreateClimbParams,
   activeBoard: UserBoard | null | undefined,
   activeBoardPending: boolean,
   resolvedBoard: EditorBoard | null,
+  wallArchived = false,
 ): CreateExitReason | null {
   const linkedBoard = supportedBoardName(params.boardName);
   if (linkedBoard != null && !getBoardCapabilities(linkedBoard).climbCreation) return 'boardCannotAuthor';
 
   if (resolvedBoard != null) {
     if (!getBoardCapabilities(resolvedBoard.boardName).climbCreation) return 'boardCannotAuthor';
+    if (wallArchived) return 'wallArchived';
     return isAuthorableBoard(resolvedBoard) ? null : 'boardConfigIncomplete';
   }
 
@@ -134,10 +150,22 @@ export default function CreateClimbRoute() {
   // been and gone past. Subscribing here is what makes the key move when the wall
   // arrives. `''` for every catalogue board.
   useSprayWallToken(resolvedBoard?.boardName, resolvedBoard?.layoutId);
+  const wallArchived = useSprayWallIsArchived(resolvedBoard?.boardName, resolvedBoard?.layoutId ?? null);
+  // A spray wall's archive state has to be known before the editor shows, or a
+  // cold deep link onto an archived wall flashes the editor for a frame and then
+  // leaves. "Known" includes a wall whose archive query failed (read as live)
+  // and a wall that did not load at all (not archived): the server still refuses.
+  const wallArchiveSettled = useSprayWallArchiveSettled(resolvedBoard?.boardName, resolvedBoard?.layoutId ?? null);
+  // Once the editor is open, an archive learned later (a save refused as
+  // archived re-reads the wall) is the save's to explain, in one message. The
+  // route must not also leave with a second one.
+  // A ref, not state: noting it must not cost the route a second render.
+  const editorOpenedRef = useRef(false);
+  const refuseArchivedWall = wallArchived && !editorOpenedRef.current;
 
   const exitReason = useMemo(
-    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard),
-    [params, activeBoard, activeBoardPending, resolvedBoard],
+    () => createExitReason(params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall),
+    [params, activeBoard, activeBoardPending, resolvedBoard, refuseArchivedWall],
   );
   const exitMessage = useMemo(() => {
     switch (exitReason) {
@@ -149,11 +177,18 @@ export default function CreateClimbRoute() {
         return t('createClimbForm.cannotOpen.boardTypeUnsupported');
       case 'noUsableBoard':
         return t('createClimbForm.cannotOpen.noUsableBoard');
+      case 'wallArchived':
+        return t('createClimbForm.cannotOpen.wallArchived');
       default:
         return undefined;
     }
   }, [exitReason, t]);
   useUnsupportedBoardExit(exitReason != null, exitMessage);
+
+  const showEditor = exitReason == null && resolvedBoard != null && wallArchiveSettled;
+  useEffect(() => {
+    if (showEditor) editorOpenedRef.current = true;
+  }, [showEditor]);
 
   // Leave the climb list visible under the transparent modal while it dismisses.
   // Still claim the picker while dismissing: dropping the claim here would let
@@ -163,8 +198,9 @@ export default function CreateClimbRoute() {
     return <DevicePickerSheetHost registerExternal />;
   }
 
-  // The only honest spinner left: the active-board query hasn't answered yet.
-  if (!resolvedBoard) {
+  // The only honest spinners left: the active-board query hasn't answered yet,
+  // or a spray wall has not said whether it is archived.
+  if (!resolvedBoard || !wallArchiveSettled) {
     return (
       <>
         <View style={styles.loading}>
@@ -190,6 +226,7 @@ export default function CreateClimbRoute() {
         forkDescription={params.forkDescription}
         forkCharacteristics={params.forkCharacteristics}
         forkDifficulty={params.forkDifficulty}
+        forkParentUuid={params.forkParentUuid}
         editClimbUuid={params.editClimbUuid}
       />
       {/* Host the BLE device picker from inside this route so a connect from the

@@ -193,8 +193,6 @@
       "tries_other": "{{count}} essais",
       "originalTag": "Original",
       "mirroredTag": "Miroir",
-      "earlierVersionTag": "Version précédente",
-      "earlierVersionA11y": "grimpé sur une version précédente de ce bloc",
       "lifetimeTries_one": "{{count}} essai",
       "lifetimeTries_other": "{{count}} essais",
       "lifetimeSessions_one": "sur {{count}} session",
@@ -262,8 +260,6 @@
       "earlierShort_one": "+{{count}} plus ancienne",
       "earlierShort_other": "+{{count}} plus anciennes",
       "earlierA11y": "{{name}}, {{logs}}",
-      "earlierVersionTag": "Version précédente",
-      "earlierVersionA11y": "grimpé sur une version précédente de ce bloc",
       "foldSends_one": "{{count}} autre croix en 1 essai",
       "foldSends_other": "{{count}} autres croix en 1 essai",
       "foldSendsAtAngle_one": "{{count}} autre croix en 1 essai à {{angle}}°",
@@ -389,7 +385,8 @@
     "angleSelector": {
       "title": "Choisir l'angle",
       "fromVerticalHint": "Mesuré depuis la verticale",
-      "diagramAria": "Board inclinée à {{angle}}° depuis la verticale"
+      "diagramAria": "Board inclinée à {{angle}}° depuis la verticale",
+      "snapToAngle": "Passer à {{angle}}°"
     },
     "queue": {
       "unknownClimb": "Bloc inconnu",

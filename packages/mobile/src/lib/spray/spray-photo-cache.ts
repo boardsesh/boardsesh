@@ -10,7 +10,7 @@
 //
 //  1. **The URL is never the cache key.** A presigned signature changes on every
 //     read and stops working fifteen minutes later. The file is named
-//     `<layoutId>-<version>.jpg`, which is the identity that actually decides
+//     `<layoutId>-v<versionId>.jpg`, which is the identity that actually decides
 //     whether two reads are the same picture, and the URL is looked up from the
 //     registry at fetch time.
 //  2. **The sync resolver never fetches.** It answers "on disk" or "not yet", the
@@ -28,6 +28,7 @@ import {
   sprayPhotoFileName,
   type SprayPhotoIdentity,
 } from './spray-photo-keys';
+import type { RegisteredSprayWall } from './spray-wall-registry';
 
 // Names live in a leaf module so the render path and the sweeper can use them
 // without importing `expo-file-system`; re-exported here because this is where
@@ -38,21 +39,45 @@ export {
   parseSprayBackgroundKey,
   sprayBackgroundKey,
   sprayPhotoFileName,
+  type SprayArtVariant,
   type SprayPhotoIdentity,
 } from './spray-photo-keys';
 
 /**
  * Filenames the sweeper must not delete: one per wall this session has
- * registered.
+ * registered, plus its generated look when it has one.
  *
  * Deleting the photo of a wall somebody is looking at right now would blank the
  * board until the download ran again, which is the opposite of what a cache
  * sweep is for.
  */
 export function liveSprayPhotoFileNames(): Set<string> {
-  return new Set(
-    listRegisteredSprayWalls().map((wall) => sprayPhotoFileName({ layoutId: wall.layoutId, version: wall.version })),
-  );
+  const names = new Set<string>();
+  for (const wall of listRegisteredSprayWalls()) {
+    names.add(sprayPhotoFileName({ layoutId: wall.layoutId, versionId: wall.versionId }));
+    if (wall.art) {
+      names.add(
+        sprayPhotoFileName({ layoutId: wall.layoutId, versionId: wall.art.versionId, variant: wall.art.variant }),
+      );
+    }
+  }
+  return names;
+}
+
+/** A presigned GET and its expiry: where a file is fetched from. */
+export type SprayFileSource = { url: string; expiresAt: string };
+
+/**
+ * Where the registry says a file comes from: the photo's signature, or the
+ * registered art's when the identity names a generated look of this version.
+ */
+function registeredSource(wall: RegisteredSprayWall, identity: SprayPhotoIdentity): SprayFileSource | null {
+  if (!identity.variant) {
+    return wall.versionId === identity.versionId ? { url: wall.photoUrl, expiresAt: wall.photoExpiresAt } : null;
+  }
+  const art = wall.art;
+  if (!art || art.variant !== identity.variant || art.versionId !== identity.versionId) return null;
+  return { url: art.url, expiresAt: art.expiresAt };
 }
 
 /** Paths we have confirmed on disk this session, so a hit costs no filesystem call. */
@@ -110,6 +135,15 @@ function toPath(uri: string): string {
  * initialiser.
  */
 export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string | null {
+  if (typeof identity.versionId === 'string') {
+    const wall = getSprayWall(identity.layoutId);
+    if (!wall || wall.versionId !== identity.versionId || !wall.localPhotoPath) return null;
+    try {
+      return new File(`file://${wall.localPhotoPath}`).exists ? wall.localPhotoPath : null;
+    } catch {
+      return null;
+    }
+  }
   const key = sprayPhotoFileName(identity);
   const cached = resolvedPaths.get(key);
   if (cached) return cached;
@@ -136,36 +170,55 @@ export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string |
  * `missingCount` contract: broken has to be visible, and there is no second
  * source to fall back to.
  */
-export async function ensureSprayPhotoCached(identity: SprayPhotoIdentity): Promise<string | null> {
+export async function ensureSprayPhotoCached(
+  identity: SprayPhotoIdentity,
+  // A signature the caller already holds, for a file the registry cannot name
+  // yet: the loader downloads a generated look BEFORE registering it, so the
+  // switch from the photo happens only once the file is on disk.
+  source?: SprayFileSource,
+): Promise<string | null> {
   const generation = sprayPrivacyGeneration(identity.layoutId);
   const key = `${generation}:${sprayPhotoFileName(identity)}`;
   const alreadyOnDisk = tryGetSprayPhotoPathSync(identity);
   if (alreadyOnDisk) return alreadyOnDisk;
+  // Local mirrors never download or loop on their deliberately expired URL.
+  if (typeof identity.versionId === 'string') return null;
 
   const inFlight = pendingDownloads.get(key);
   if (inFlight) return inFlight;
 
-  const download = downloadSprayPhoto(identity, generation).finally(() => {
+  const download = downloadSprayPhoto(identity, generation, source).finally(() => {
     if (pendingDownloads.get(key) === download) pendingDownloads.delete(key);
   });
   pendingDownloads.set(key, download);
   return download;
 }
 
-async function downloadSprayPhoto(identity: SprayPhotoIdentity, generation: string): Promise<string | null> {
+async function downloadSprayPhoto(
+  identity: SprayPhotoIdentity,
+  generation: string,
+  explicitSource: SprayFileSource | undefined,
+): Promise<string | null> {
   // The registry is the only holder of a live signature. A wall that has been
   // unregistered — or whose version moved on while this was queued — has no URL
   // worth fetching, and guessing one is not possible by design.
+  //
+  // A caller-held signature skips that lookup: the loader fetches a generated
+  // look for a wall it has not registered yet. The privacy-generation check
+  // after the transfer still discards it if the wall was withdrawn meanwhile.
   const wall = getSprayWall(identity.layoutId);
-  if (!wall || wall.version !== identity.version) return null;
+  const source = explicitSource ?? (wall ? registeredSource(wall, identity) : null);
+  if (!source) return null;
 
   // A signature that has already expired cannot be fetched with, and retrying it
   // would 403 on every pass for the rest of the session while the board showed a
   // placeholder. Ask for a fresh payload — only the render query can mint one —
   // and answer "no photo yet"; the registration that follows re-runs this with a
   // live URL.
-  if (isExpired(wall.photoExpiresAt)) {
-    refreshSprayWall(identity.layoutId);
+  if (isExpired(source.expiresAt)) {
+    // A caller-held signature is the caller's to renew; only a registered one
+    // means the payload in hand is dead.
+    if (!explicitSource) refreshSprayWall(identity.layoutId);
     return null;
   }
 
@@ -181,7 +234,9 @@ async function downloadSprayPhoto(identity: SprayPhotoIdentity, generation: stri
     deleteQuietly(partial);
     deleteQuietly(destination);
 
-    await runRetainedDownload(wall.photoUrl, partial);
+    await runRetainedDownload(source.url, partial);
+    // A withdrawal while native I/O was streaming: the wall's generation moved,
+    // so this body belongs to a revoked wall and must never reach its real name.
     if (generation !== sprayPrivacyGeneration(identity.layoutId)) {
       deleteQuietly(partial);
       return null;
@@ -266,8 +321,12 @@ export function deleteCachedSprayPhotos(layoutId?: number): void {
     if (!directory.exists) return;
     if (layoutId == null) directory.delete();
     else {
-      // Match legacy names and the producer's nonce/session/wall staging prefix.
-      const wallPhotoPattern = new RegExp(`^(?:[a-z0-9]+-\\d+-\\d+-)?${layoutId}-\\d+\\.jpg(?:\\.part)?$`);
+      // Match version-id names (`<layoutId>-v<versionId>.jpg`), the generated
+      // looks beside them (`-crop.jpg`, `-cutout.webp`), legacy version-number
+      // names, and the producer's nonce/session/wall staging prefix.
+      const wallPhotoPattern = new RegExp(
+        `^(?:[a-z0-9]+-\\d+-\\d+-)?${layoutId}-v?\\d+(?:\\.jpg|-crop\\.jpg|-cutout\\.webp)(?:\\.part)?$`,
+      );
       for (const entry of directory.list()) {
         if (wallPhotoPattern.test(entry.name)) {
           try {

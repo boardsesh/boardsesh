@@ -28,13 +28,14 @@ type Seed = {
   hidden?: number | null;
   framesCount?: number;
   angle?: number | null;
+  missingHoldCount?: number | null;
 };
 
 let seq = 0;
 
-/** Kilter frames: first hold STARTING (r12), the rest HAND (r13). Woods: r4 / r2. */
+/** Kilter frames: first hold STARTING (r12), the rest HAND (r13). Woods: r4 / r2. Spray: r1 / r2. */
 function framesFor(boardType: string, holds: number[]): string {
-  const [start, hand] = boardType === 'woods' ? [4, 2] : [12, 13];
+  const [start, hand] = boardType === 'woods' ? [4, 2] : boardType === 'spray' ? [1, 2] : [12, 13];
   return holds.map((holdId, index) => `p${holdId}r${index === 0 ? start : hand}`).join('');
 }
 
@@ -44,8 +45,8 @@ async function insertClimb(db: TestSqliteDb, seed: Seed): Promise<void> {
   await db.runAsync(
     `INSERT INTO board_climbs
        (uuid, board_type, layout_id, name, setter_username, compatible_size_ids, characteristics, frames,
-        frames_count, is_listed, is_draft, is_hidden, angle, updated_at, sync_seq)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        frames_count, is_listed, is_draft, is_hidden, angle, missing_hold_count, updated_at, sync_seq)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       seed.uuid,
       boardType,
@@ -60,6 +61,7 @@ async function insertClimb(db: TestSqliteDb, seed: Seed): Promise<void> {
       seed.draft ?? 0,
       seed.hidden === undefined ? 0 : seed.hidden,
       seed.angle ?? null,
+      seed.missingHoldCount ?? null,
       '2026-09-01T00:00:00.000Z',
       seq,
     ],
@@ -253,5 +255,25 @@ describe('getSimilarClimbsLocal', () => {
     await buildIndex(db, KILTER);
     const result = await getSimilarClimbsLocal(db, { ...KILTER, sizeId: 6, climbUuid: 'target' }, parseHoldRows);
     expect(result.map(({ uuid }) => uuid)).toEqual(['bigger-wall-only']);
+  });
+
+  // A spray climb that lost a hold is listed like any other, and the strip under
+  // a climb is one more list: it keeps it, with the climbs that are whole.
+  it('keeps a spray climb that lost a hold in the strip', async () => {
+    const SPRAY = { boardType: 'spray', layoutId: 4200, sizeId: 4200 };
+    const onWall = { boardType: 'spray', layoutId: 4200, sizes: [4200] };
+    await insertClimb(db, { uuid: 's-target', holds: [1, 2, 3, 4], ...onWall });
+    await insertClimb(db, { uuid: 's-whole', holds: [1, 2, 3, 4, 5], ...onWall, missingHoldCount: 0 });
+    await insertClimb(db, { uuid: 's-unknown', holds: [1, 2, 3, 4, 6], ...onWall });
+    await insertClimb(db, { uuid: 's-lost', holds: [1, 2, 3, 4, 7], ...onWall, missingHoldCount: 1 });
+    await buildIndex(db, SPRAY);
+    const spray = await getSimilarClimbsLocal(db, { ...SPRAY, climbUuid: 's-target' }, parseHoldRows);
+    expect(spray.map(({ uuid }) => uuid).sort()).toEqual(['s-lost', 's-unknown', 's-whole']);
+
+    await insertClimb(db, { uuid: 'target', holds: [1, 2, 3, 4] });
+    await insertClimb(db, { uuid: 'kilter-counted', holds: [1, 2, 3, 4, 5], missingHoldCount: 2 });
+    await buildIndex(db, KILTER);
+    const kilter = await getSimilarClimbsLocal(db, { ...KILTER, climbUuid: 'target' }, parseHoldRows);
+    expect(kilter.map(({ uuid }) => uuid)).toEqual(['kilter-counted']);
   });
 });

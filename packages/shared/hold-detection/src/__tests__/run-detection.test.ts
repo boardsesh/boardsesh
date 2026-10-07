@@ -232,3 +232,39 @@ describe('runDetection against the real ONNX', () => {
     }
   }, 120_000);
 });
+
+describe('runDetection normalisation', () => {
+  it('feeds the runtime the mean and std it was given, not the ImageNet default', async () => {
+    // The manifest publishes `input.normalization`; a caller that has read one
+    // must be able to honour it. Without the pass-through this test sees the
+    // ImageNet tensor and the model silently runs on shifted activations.
+    const seen: Float32Array[] = [];
+    const runtime: DetectionRuntime = {
+      run(input) {
+        seen.push(Float32Array.from(input));
+        return {
+          boxes: new Float32Array(0),
+          boxesShape: [1, 0, 4],
+          logits: new Float32Array(0),
+          logitsShape: [1, 0, 1],
+        };
+      },
+    };
+    const image: RgbaImage = {
+      width: 4,
+      height: 4,
+      rgba: new Uint8ClampedArray(4 * 4 * 4).fill(255),
+    };
+
+    await runDetection(runtime, image, {
+      size: 2,
+      scoreThreshold: 0.5,
+      mean: [0, 0, 0],
+      std: [1, 1, 1],
+    });
+
+    // A white photo with mean 0 / std 1 is exactly 1.0 everywhere; under the
+    // ImageNet default the same pixels come out near 2.2.
+    expect(Array.from(seen[0])).toEqual(new Array(3 * 2 * 2).fill(1));
+  });
+});

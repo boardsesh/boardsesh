@@ -19,6 +19,7 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
+import { useLostHoldGhosts } from './use-lost-hold-ghosts';
 import { CreateDrawer } from './CreateDrawer';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
@@ -36,6 +37,8 @@ type CreateClimbScreenProps = {
   forkCharacteristics?: string;
   /** The remixed climb's grade, as a name on the shared scale ("6c/V5"). */
   forkDifficulty?: string;
+  /** The remixed climb's uuid, so the editor can draw the holds it lost. */
+  forkParentUuid?: string;
   editClimbUuid?: string;
 };
 
@@ -53,6 +56,7 @@ export function CreateClimbScreen({
   forkDescription,
   forkCharacteristics,
   forkDifficulty,
+  forkParentUuid,
   editClimbUuid,
 }: CreateClimbScreenProps) {
   const { t } = useTranslation('climbs');
@@ -104,6 +108,16 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+
+  // A remix of a climb that lost holds: a grey ring where each one was, and
+  // Save waits until the climber has tapped them away. Never on an edit in place.
+  const lostHolds = useLostHoldGhosts({
+    board,
+    parentClimbUuid: editClimbUuid ? null : (forkParentUuid ?? null),
+    sourceFrames: controller.remixSourceFrames,
+    availableHoldIds: controller.availableHoldIds,
+    sprayWallToken,
+  });
 
   // The hold heatmap over the whole board (the create board has no list filters
   // to follow), counting the role the active brush paints: the downloaded board
@@ -301,6 +315,7 @@ export function CreateClimbScreen({
         onClose={handleClose}
         onViewDuplicate={handleViewDuplicate}
         heatmap={heatmap}
+        lostHolds={lostHolds}
       />
 
       <HoldRoleSheet

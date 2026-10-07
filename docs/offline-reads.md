@@ -40,7 +40,6 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | ---------------------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------ |
 | `['searchClimbs']`, `['infiniteSearchClimbs']`, `['searchClimbsCount']`                  | SQLite                      | Registered today                                                   |
 | `['climb', …]`                                                                           | SQLite                      | Registered today                                                   |
-| `['climb', uuid, 'localRevision', board]`                                                | SQLite                      | `board_climbs.revision_number` / `holds_revision_number` for one climb (#6023). Board data, no owner gate. See "Climb versions" below |
 | `['setterStats', …]`                                                                     | SQLite                      | Registered today (#5407)                                           |
 | `['boardseshGrade']`, `['boardseshGradesForAngles']`                                     | SQLite                      | Registered today                                                   |
 | `['climbStatsHistory', board, uuid]`                                                     | SQLite                      | `board_climb_stats`, once a scope the climb belongs to (its layout, at a size it fits) finished downloading; server otherwise |
@@ -59,12 +58,14 @@ These have "now" semantics or are unbounded, so a stale copy is worse than an ho
 | `['publicProfile', selfId]`                                                              | Persisted cache             | Own profile only, 24 h                                             |
 | `['userTicks', userId]`                                                                  | Neither (for now)           | See "Deliberately deferred". Refetches only on focus after a tick invalidation, or past 30 min |
 | `['activityFeed']`, `['sessionGroupedFeed']`, `['sessionDetail', …]`                     | Neither                     | "Now" semantics                                                    |
+| `['climbLostHolds', …]`                                                                  | Neither, by design          | Where a remixed spray climb's lost holds were, for the editor's grey rings (`GET_CLIMB_LOST_HOLDS`). Network only: the mirror keeps `missing_hold_count` but not the hold history. Offline it fails at once and the editor draws no rings, so Save is not held back |
+| `sprayWallHoldUsage` — no query key                                                      | Neither, by design          | Asked once per hold-editor save that takes holds off a live wall. Network only; a failed read still shows the "Remove a hold that climbs use?" confirm, in its generic wording |
+| `GET_SPRAY_WALL_ARCHIVE` — no query key                                                  | MMKV for archived walls     | The archive answer is cached in memory for the revalidation window. Offline, a downloaded wall's archive time comes from `offlineSprayWallArchiveV1` (archived walls only, cleared at the account boundary); a live wall reads as live |
 | `['followingClimbLogs', viewerId, board, uuid]`                                          | Neither, by design          | Other climbers' logs on a climb (play drawer "Climber logs"). Network only, never persisted, no local reader: the server decides per request who may see a spray wall's logs. Offline shows a placard in the card |
 | `['climbLogs', ...]`, `['climbLogsPreview', ...]`                                        | Neither, by design          | Everyone's logs on a climb (the "Everyone" section of the Climber logs list, and the card's fall-through rows). Same rule as the row above: network only, never persisted. Offline, the list shows no Everyone section and sends no request |
 | `['crewFeed', viewerId]`                                                               | Neither                     | Viewer-scoped live feed; no persisted cache                        |
 | `['searchUsers', …]`, `['gymMembers', …]`, `['comments', …]`, `['bulkVoteSummaries', …]` | Neither                     | Unbounded or live                                                  |
 | `['nearbyBoards']`, `['nearbyGyms']`, `['betaLinkPreview', …]`                           | Neither                     | Location/link-scoped, useless stale                                |
-| `['climbRevisions', board, uuid]`, `['sprayWallRevisionRenderData', wall, version]`      | Neither                     | Edit history (#5955). The play-drawer section renders nothing offline; the revision sheet and its old-wall-photo board show the placard |
 | `['activeBoard']`                                                                        | Neither (already persisted) | AsyncStorage-backed in `use-active-board.ts` — do not double-store |
 
 ## The auth-scoping contract
@@ -92,29 +93,66 @@ reference table gated at all — and its three layers are not the three above:
 
 The wall's **climbs** are wiped on the same argument. A `spray_walls` row is not the only private thing a mirrored wall leaves on disk: its `board_climbs`, `board_climb_stats` and `board_climb_grades` rows carry the climb names, descriptions, frames and grades of somebody's garage, and `searchClimbsLocal` reads board reference data with no owner stamp — deliberately, because a Kilter catalogue is a shared cache. So the selective wipe also deletes those three tables' `board_type = 'spray'` rows (`SPRAY_SCOPED_BOARD_TABLES` in `connection.ts`), together with every spray scope's markers so no cursor outlives its rows. The catalogue boards stay, which is the whole point of the selective wipe.
 
+### Revoked spray-wall downloads (#5490)
+
+The owner's deletion tombstone is owner-scoped. A gym member or a climber who
+downloaded a public wall does not receive it, so the pull also checks for revoked
+access when an explicitly scoped `syncSprayWalls` page is empty and that wall
+still exists locally.
+
+An empty delta is not proof of revoked access: an unchanged wall returns the same
+page. A cursor-free sync request is ambiguous too, because recently edited rows
+are excluded by sync's 30-second stability window. The client confirms with the
+existing `sprayWallByLayout(layoutId) { uuid }` query, through the network fetch
+seam rather than a cached or offline read. Only an explicit `null` confirms that
+the wall is unavailable. Failed or malformed confirmations fail the cycle and
+preserve the download; they do not skip just the affected wall.
+
+Confirmed removals wait until the cycle finishes successfully. One guarded
+transaction then removes the wall, its downloaded climbs, stats, grades and
+derived holds index, together with the scope's checkpoints and download markers.
+A failed cycle or an interruption before commit does not retire the download.
+The deleted-row sink removes the stored photograph after commit and clears its
+pending-photo retry marker; an in-flight photograph must not recreate the file or
+retry bookkeeping after removal.
+
+The mobile sink also unregisters the wall's render geometry, removes cached
+photograph versions, and cancels and removes the wall's React Query entries.
+Pending render and editor loads are fenced by the wall's removal generation, so
+a response started before revocation cannot register the wall again afterwards.
+
+Personal ticks, unrelated board downloads, the global deletions cursor and the
+enabled-board setting remain. If access returns, the cleared markers allow a
+fresh download. This is device-cache removal: server walls continue to use soft
+deletion and retain the existing recovery window. Owner tombstones still take
+their existing path, and a wall already removed by a tombstone is not retired
+again.
+
+Reference-safe reaping of unreferenced server records is tracked separately in
+[#5951](https://github.com/boardsesh/boardsesh/issues/5951). The existing server
+photo reaper and its 30-day recovery window remain in place.
+
 The read is deliberately **not** gated on `isUserDataComplete`. That marker is about the user tables having reached their tail, and a downloaded wall is board data — gating on it would refuse a wall that is fully on disk.
 
 The persisted cache adds its own layer on top: the blob carries a `userId` stamp validated against resolved auth on every transition, it is deleted inside the single `clearPersistedUserStores` call site rather than by a parallel delete, and `needsFullCleanup` has to fire on a logged-out cold start **when a blob exists** — the "the cache is empty" comment that justifies skipping cleanup today is only true because nothing hydrates yet.
 
 ### Climb versions are read from the phone, even for a network answer
 
-A tick records which version of the climb it was logged on (#6023, `docs/spray-walls.md` → "Which revision a tick was logged on"). The documents that would carry the numbers (`SearchClimbs`, `GetClimb`, `GetTicks`, the queue documents) are pinned by the App Store screenshot fixtures and cannot select them yet, so the phone's own tables answer instead. Four reads, all in `packages/mobile/src/db/queries/climb-revisions-local.ts`:
+A tick records which version of the climb it was logged on (#6023, `docs/spray-walls.md` → "Which revision a tick was logged on"). The documents that would carry the numbers (`SearchClimbs`, `GetClimb`, `GetTicks`, the queue documents) are pinned by the App Store screenshot fixtures and cannot select them yet, so the phone's own tables answer instead. Three reads, all in `packages/mobile/src/db/queries/climb-revisions-local.ts`:
 
 | Read | Table | Gate |
 | --- | --- | --- |
-| `fillClimbRevisionNumbersLocal`: fills `revisionNumber` / `holdsRevisionNumber` on a **network** `SearchClimbs` page or `GetClimb` answer (`OfflineOperation.enrichNetworkResponse`) | `board_climbs`, by primary key, one statement per page, `frames` included | None on ownership: board reference data, the same rows `searchClimbsLocal` serves. Skipped when the offline engine is off or there is no handle. Races a 150 ms budget (`NETWORK_ENRICHMENT_BUDGET_MS`); past it, or on a throw, the network answer goes out as it came |
-| `useLocalClimbRevision`: the same row for one climb, for the tick form and the play drawer's Logbook card | `board_climbs`, by primary key | None, for the same reason. Keyed under `['climb', uuid]`, so it is read again after a saved tick, a climb edit and a board pull |
+| `fillClimbRevisionNumbersLocal`: fills `holdsRevisionNumber` on a **network** `SearchClimbs` page or `GetClimb` answer (`OfflineOperation.enrichNetworkResponse`) | `board_climbs`, by primary key, one statement per page | None on ownership: board reference data, the same rows `searchClimbsLocal` serves. Skipped when the offline engine is off or there is no handle. Races a 150 ms budget (`NETWORK_ENRICHMENT_BUDGET_MS`); past it, or on a throw, the network answer goes out as it came |
 | `readTickRevisionsLocal` (`BoardAdapter.readLocalTickRevisions`): which version each of the climber's own ticks was on, joined onto the `GetTicks` rows by tick uuid | `boardsesh_ticks`, through `idx_ticks_climb`, one statement per logbook batch, with a `pending_mutations` probe for rows that have no version | Row predicate only (`user_id = ? OR user_id IS NULL`, bound to the stamp). No owner assertion and no completeness gate, and that is deliberate: the map is only ever joined onto ticks the server just returned for the signed-in climber, by a uuid that is unique across accounts, so a row another account left behind cannot match one. An incomplete table costs a missing version, never a wrong row |
 | `tickOnCurrentHoldsLocalSql`: the "logged on the holds the climb has now" predicate inside `searchClimbsLocal` | `boardsesh_ticks` ⋈ `board_climbs` | The search's existing ones. It only narrows the tick subqueries that were already there |
 
-None of the four is a new answer to "what did this climber do": the rows themselves still come from the server or from the readers documented above. They add one number to rows that already passed their own gate.
+None of the three is a new answer to "what did this climber do": the rows themselves still come from the server or from the readers documented above. They add one number to rows that already passed their own gate.
 
-**The phone's row is a witness only for the holds it has.** `board_climbs` is one past state of a climb, and the climb on screen can be another (a network answer newer than the last pull, a queue item from before an edit, unsaved work in the editor). The server stores whatever in-range version a tick names, so the version from the phone's row is used for a tick only when that row's `frames` equal the frames on screen, as exact strings (`localRevisionMatchingFrames`, `packages/mobile/src/lib/tick-climb-revision.ts`). Otherwise no version is sent and the server works it out. `holdsRevisionNumber` is filled without that check: it is a threshold that only rises, so the phone's older value can count a send that should have been dropped and can never drop one that counts.
+**The phone's row is one past state of the climb.** The climb on screen can be another (a network answer newer than the last pull, a queue item from before an edit, unsaved work in the editor). `holdsRevisionNumber` is filled anyway: it is a threshold that only rises, so the phone's older value can count a send that should have been dropped and can never drop one that counts. The climb's own `revisionNumber` is not filled: nothing on the phone reads it.
 
 What a missing number means, by reader:
 
-- **Stamping a tick.** Unknown. The tick form sends no `climbRevision` and the server stores the version that was live when the climb was climbed.
-- **The "Earlier version" tag.** Unknown, and no tag is shown.
+- **Stamping a tick.** The app never sends `climbRevision`; the server stores the version that was live when the climb was climbed. The local `boardsesh_ticks` row is stamped from the phone's `board_climbs.revision_number` (`writeTickLocal`), NULL when the phone has no row or the row has no number.
 - **Counting a tick as sent in local search.** Both columns are on rows the phone holds, so a NULL is "the server delivered this row without one" and reads as version 1 on both sides. Every tick counts on a climb with no holds version, exactly as before the columns existed.
 - **Counting a tick as sent on a list row** (the sent glyph, from the `GetTicks` logbook). Three cases, kept apart:
 
@@ -126,9 +164,9 @@ What a missing number means, by reader:
 
   The last case is a fresh sign-in or a second phone, where `GetTicks` lands before the tick pull has written the row. It used to read as version 1, which turned a send on the current holds into "not sent" until restart.
 
-**When a later read knows more.** The join runs each time a logbook batch is fetched. A completed tick pull invalidates `['logbook']` (`TABLE_INVALIDATE_KEYS`), which refetches the batches on screen, and `mergeLogbookEntries` gives a row already in the accumulated cache the version the later read has. It only ever adds knowledge: a number replaces anything, "has none" replaces "not known", and nothing is replaced by "not known". A batch that is not on screen when the pull lands is read again the next time one of its climbs is opened. A tick saved on this phone keeps the version it was sent with from the moment it is saved; a tick it sent without one stays "not known" (and counted) until the pull brings the server's answer back.
+**When a later read knows more.** The join runs each time a logbook batch is fetched. A completed tick pull invalidates `['logbook']` (`TABLE_INVALIDATE_KEYS`), which refetches the batches on screen, and `mergeLogbookEntries` gives a row already in the accumulated cache the version the later read has. It only ever adds knowledge: a number replaces anything, "has none" replaces "not known", and nothing is replaced by "not known". A batch that is not on screen when the pull lands is read again the next time one of its climbs is opened. A tick saved on this phone has no version in the logbook cache when it is saved, so it counts; the next read joins the version its local row was stamped with.
 
-One window is left. A tick this phone logged without a version, already delivered (so no longer in `pending_mutations`) and not yet pulled back, has a local row with a NULL version and no outbox row. If its logbook batch is read in that window it reads as version 1, and on a climb whose holds have moved it reads unsent until the pull lands and the batch is read again. The drain triggers that pull itself, so the window is the length of one sync cycle.
+A tick this phone logged on a climb it holds is stamped with that row's version, which is never below the row's holds version, so against the phone's own copy it reads as sent from the moment it is written. On the phone a climb's holds version only ever comes from `board_climbs` (no client document selects `holdsRevisionNumber`; a queue item carries the number its source row had), so a tick logged with no local climb row is NULL-stamped against a climb that has no holds version either, and it counts. One window is left: a NULL-stamped tick whose climb row lands (a board download finishing) before the tick itself is pulled back. Until then it reads as version 1, and on a climb whose holds moved it reads unsent. Ticks are pulled before the board tables in a sync cycle, so once the tick has drained the window lasts at most one cycle.
 
 ### The holds index is derived on the device, not synced
 

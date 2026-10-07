@@ -17,7 +17,7 @@ import { randomUUID } from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
 import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
-import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
+import { canEditClimb } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
@@ -29,6 +29,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
+import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
 
 export type ClimbActionId =
   | 'preview'
@@ -158,6 +159,9 @@ export function useClimbActions({
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
   const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
+  // An archived wall keeps its climbs readable, but the server refuses every
+  // edit and new climb on it, so neither Edit nor Fork is offered there.
+  const wallArchived = useSprayWallIsArchived(boardConfig?.boardName, boardConfig?.layoutId ?? null);
   const { actionColors } = useTheme();
   const { addToQueue, playNext } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
@@ -216,21 +220,13 @@ export function useClimbActions({
     const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
     const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
 
-    // Edit is owner-only, and only while the climb is still a draft OR within 24h of
-    // first publish (the backend enforces the same window). `userId` is null for
-    // Aurora-synced climbs that predate Boardsesh accounts.
-    const canEdit = (() => {
-      if (!getBoardCapabilities(boardName).climbCreation) return false;
-      if (!currentUserId || !climb.userId || climb.userId !== currentUserId) return false;
-      const snapshot: SavedClimbSnapshot = {
-        uuid: climb.uuid,
-        boardType: boardName,
-        createdAt: climb.created_at ?? null,
-        publishedAt: climb.published_at ?? null,
-        isDraft: climb.is_draft ?? false,
-      };
-      return computeCanUpdate(snapshot, boardName);
-    })();
+    // Who may edit is one shared rule (`canEditClimb`): the setter, a draft for
+    // good and a published climb for 24 hours, on every board a spray wall
+    // included. A hint only; the server decides.
+    const canEdit =
+      getBoardCapabilities(boardName).climbCreation &&
+      !wallArchived &&
+      canEditClimb({ climb, boardType: boardName, currentUserId });
 
     const items: ClimbActionItem[] = [];
 
@@ -362,8 +358,6 @@ export function useClimbActions({
             setIds,
             consensusGradeName: climb.difficulty,
             sessionId,
-            climbRevision: climb.revisionNumber,
-            climbFrames: climb.frames,
           });
         }
         after();
@@ -415,8 +409,8 @@ export function useClimbActions({
     }
 
     // Fork drops into the create-climb editor, so it only appears on boards that
-    // can have climbs set on them.
-    if (getBoardCapabilities(boardName).climbCreation) {
+    // can have climbs set on them, and never on an archived wall.
+    if (getBoardCapabilities(boardName).climbCreation && !wallArchived) {
       items.push({
         id: 'fork',
         title: t('mobile.climbActions.fork'),
@@ -429,25 +423,30 @@ export function useClimbActions({
       });
     }
 
-    items.push({
-      id: 'share',
-      title: t('share.actionLabel'),
-      icon: 'share',
-      color: accentColor,
-      run: () => {
-        // Dismiss the overlay, then open the native share sheet (same as the play
-        // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
-        after();
-        track(SHARED_EVENTS.ClimbShared, {
-          method: 'share',
-          source: 'climb_actions_menu',
-          climbUuid: climb.uuid,
-          boardName,
-          layoutId,
-        });
-        void shareClimb().catch(() => {});
-      },
-    });
+    // A draft is visible to its setter alone, so a link to it opens nowhere for
+    // anyone it is sent to (#5960).
+    const isDraft = climb.is_draft === true;
+    if (!isDraft) {
+      items.push({
+        id: 'share',
+        title: t('share.actionLabel'),
+        icon: 'share',
+        color: accentColor,
+        run: () => {
+          // Dismiss the overlay, then open the native share sheet (same as the play
+          // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
+          after();
+          track(SHARED_EVENTS.ClimbShared, {
+            method: 'share',
+            source: 'climb_actions_menu',
+            climbUuid: climb.uuid,
+            boardName,
+            layoutId,
+          });
+          void shareClimb().catch(() => {});
+        },
+      });
+    }
 
     if (auroraAppUrl) {
       items.push({
@@ -468,7 +467,10 @@ export function useClimbActions({
 
     // Last in the list, and last for a reason: it is the one action that acts
     // AGAINST the climb, so it sits below everything a climber came here to do.
-    if (isAuthenticated && moderationEnabled) {
+    // Not on the viewer's own climb: reporting yourself to the crew has no
+    // outcome, and the setter already has Edit for anything they want changed.
+    const isOwnClimb = !!currentUserId && climb.userId === currentUserId;
+    if (isAuthenticated && moderationEnabled && !isOwnClimb) {
       items.push({
         id: 'report',
         title: t('mobile.climbActions.report'),
@@ -492,6 +494,7 @@ export function useClimbActions({
     queueItemUuid,
     activeClimbUuid,
     currentUserId,
+    wallArchived,
     isAuthenticated,
     onEditEntry,
     onSelectPlaylist,

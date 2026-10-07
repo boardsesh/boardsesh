@@ -249,10 +249,9 @@ vi.mock('../SwitchBoardOverlay', () => ({ SwitchBoardOverlay: () => null }));
 vi.mock('../AngleSelectorSheet', () => ({ AngleSelectorSheet: () => null }));
 vi.mock('../../LogAscentSheet', () => ({ LogAscentSheet: () => null }));
 vi.mock('../../ClimbActionsSheet', () => ({ ClimbActionsSheet: () => null }));
-// The lost-holds banner and the Remix handoff behind it, stubbed like every
+// The lost-hold banner and the Remix handoff behind it, stubbed like every
 // other collaborator above. Both reach native modules this suite has no runtime
-// for — the banner through the design-system Button, the handoff through
-// Sentry — and neither is what is under test here.
+// for: the banner through the design-system Button, the handoff through Sentry.
 vi.mock('../LostHoldsBanner', () => ({ LostHoldsBanner: () => null }));
 vi.mock('../../create-climb/use-create-climb-navigation', () => ({
   useCreateClimbNavigation: () => ({ openRemix: vi.fn(), openEdit: vi.fn(), resetActionGuard: vi.fn() }),
@@ -280,6 +279,7 @@ vi.mock('../use-wall-climb', () => ({ useWallClimb: () => wall }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: false }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/graphql/hooks', () => ({
+  useProfile: () => ({ data: undefined }),
   useToggleFavorite: () => ({ mutate: vi.fn() }),
   useFavoriteStatus: (_boardName: string, _uuid: string | null, _angle: number, options?: Props) => {
     recorded.favoriteStatus.push(options ?? {});

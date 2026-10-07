@@ -10,6 +10,7 @@ import { useTheme } from '../src/providers/theme-provider';
 import { useVariantValue } from '../src/theme/variants';
 import { useBoardPreviewClimb } from '../src/hooks/use-board-preview-climb';
 import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-render';
+import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 /**
  * The onboarding route, which hosts the walkthrough (issue #4961). Since #5654
@@ -42,7 +43,7 @@ import { useEffectiveBoardRenderSettings } from '../src/hooks/use-native-climb-r
  * The steps are variant-agnostic — this route resolves the palette from the
  * active UI variant (Liquid Glass / HIG vs Material 3) and injects it.
  */
-export default function OnboardingScreen() {
+function OnboardingScreen() {
   const { step } = useLocalSearchParams<{ step?: string }>();
   const { systemColors } = useTheme();
   const paperTheme = usePaperTheme();
@@ -186,3 +187,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+// iOS presents this route as a native modal, above the launch update
+// placeholder, and a URL can open it on a cold start. Held until launch is
+// ready so a gate reload cannot land mid-tap (#6006).
+export default holdUntilLaunchReady(OnboardingScreen);

@@ -7,6 +7,7 @@ import {
   applyStatusChange,
   toClimbSearchInput,
   newSortSeed,
+  normalizeRetiredFilters,
   type ClimbFilterState,
   type BoardSearchConfig,
   type SearchPagination,
@@ -367,5 +368,28 @@ describe('toClimbSearchInput personal grades', () => {
   it('stays off entirely when the kill switch is off', () => {
     expect(build({ minGrade: 24 }, false).useMyGrades).toBeUndefined();
     expect(build({ sortBy: 'difficulty' }, false).useMyGrades).toBeUndefined();
+  });
+});
+
+// The spray-wall "Holds" filter is gone. A search input built from a stored
+// state that still carries it must neither send it nor count it.
+describe('a stored filter state from before the Holds filter was removed', () => {
+  const spray: BoardSearchConfig = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
+  const legacy = { ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity: 'broken' } as ClimbFilterState;
+
+  it('sends no holdIntegrity and counts as no active filter', () => {
+    expect(toClimbSearchInput(legacy, spray, pagination).holdIntegrity).toBeUndefined();
+    expect(hasActiveClimbFilters(legacy)).toBe(false);
+  });
+
+  it('drops the stored value on read and keeps everything else', () => {
+    const normalized = normalizeRetiredFilters({ ...legacy, minGrade: 12 });
+    expect('holdIntegrity' in normalized).toBe(false);
+    expect(normalized.minGrade).toBe(12);
+    expect(normalized.status).toBe('any');
+  });
+
+  it('returns the same state when nothing needs dropping', () => {
+    expect(normalizeRetiredFilters(DEFAULT_CLIMB_FILTER_STATE)).toBe(DEFAULT_CLIMB_FILTER_STATE);
   });
 });

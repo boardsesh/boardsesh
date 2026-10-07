@@ -106,6 +106,37 @@ describe('useCreateClimbNavigation serialized handoff', () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  it('accepts the next action once a dismissal aborted', async () => {
+    const dismissPlayerAndWait = vi
+      .fn<() => Promise<{ status: 'aborted' | 'dismissed' }>>()
+      .mockResolvedValueOnce({ status: 'aborted' })
+      .mockResolvedValueOnce({ status: 'dismissed' });
+    const { result } = renderHook(() => useCreateClimbNavigation({ dismissPlayerAndWait }));
+
+    result.current.openRemix(climb, board);
+    await act(async () => {});
+    expect(router.push).not.toHaveBeenCalled();
+
+    result.current.openRemix(climb, board);
+    await act(async () => {});
+    expect(router.push).toHaveBeenCalledTimes(1);
+  });
+
+  // A surface that outlives the handoff (the play drawer's banner, an iPad
+  // pane) takes a second action after the first one landed.
+  it('accepts the next action once the route was pushed', async () => {
+    const { result } = renderHook(() =>
+      useCreateClimbNavigation({ dismissPlayerAndWait: async () => ({ status: 'dismissed' }) }),
+    );
+
+    result.current.openRemix(climb, board);
+    await act(async () => {});
+    result.current.openRemix({ ...climb, uuid: 'another-climb' }, board);
+    await act(async () => {});
+
+    expect(router.push).toHaveBeenCalledTimes(2);
+  });
+
   it('pushes immediately when no native source or player callback was injected (including iPad panes)', () => {
     const { result } = renderHook(() => useCreateClimbNavigation());
 
@@ -162,6 +193,7 @@ describe('useCreateClimbNavigation params', () => {
         forkFrames: 'p1129r15p1130r12',
         forkName: 'Sloper Traverse',
         forkDescription: 'Start matched on the jug',
+        forkParentUuid: climb.uuid,
         boardName: 'kilter',
         layoutId: '8',
         sizeId: '17',
