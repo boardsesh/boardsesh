@@ -1,18 +1,12 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { computeBottomChromeMetrics, type BottomChromeInputs } from '../../hooks/bottom-chrome-metrics';
-import type { BottomChromeMetrics } from '../../hooks/bottom-chrome-metrics';
 
 // Controls the resolved UI variant the Toast branches on.
 const ctrl = vi.hoisted(() => ({
   variant: 'material' as 'material' | 'liquidGlass',
   colorScheme: 'light' as 'light' | 'dark',
-  // What BottomChromeMetricsProvider would publish; each test builds it with
-  // the real computeBottomChromeMetrics so the asserted offsets are the ones a
-  // device gets.
-  metrics: null as BottomChromeMetrics | null,
 }));
 
 type ViewMockProps = { children?: ReactNode; accessibilityRole?: string; pointerEvents?: string; style?: unknown };
@@ -80,11 +74,8 @@ vi.mock('react-native-paper', () => ({
     ),
 }));
 
-vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => {
-    if (!ctrl.metrics) throw new Error('test did not set ctrl.metrics');
-    return ctrl.metrics;
-  },
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
 }));
 
 vi.mock('../Text', () => ({
@@ -128,24 +119,9 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 
 import { Toast } from '../Toast';
+import { publishToastBottomOffset, resetToastBottomOffsetForTests } from '../../lib/toast-offset-store';
 
 const toast = { id: 't1', message: 'Saved tick', variant: 'success' as const, duration: 3000 };
-
-// A top-level tab with no climb on the wall, root inset 34 (Face ID iPhone; the
-// same number stands in for an Android gesture bar so the cases compare).
-const BASE_INPUTS: BottomChromeInputs = {
-  uiVariant: 'material',
-  usesNativeTabBar: false,
-  insetsBottom: 34,
-  insideTabs: true,
-  onAccessorySurface: true,
-  hasCurrentClimb: false,
-  nativeAccessoryPresented: false,
-};
-
-function setChrome(overrides: Partial<BottomChromeInputs> = {}) {
-  ctrl.metrics = computeBottomChromeMetrics({ ...BASE_INPUTS, uiVariant: ctrl.variant, ...overrides });
-}
 
 type HexChannels = [red: number, green: number, blue: number];
 
@@ -189,7 +165,7 @@ describe('Toast', () => {
   beforeEach(() => {
     ctrl.variant = 'material';
     ctrl.colorScheme = 'light';
-    setChrome();
+    resetToastBottomOffsetForTests();
   });
 
   it('renders a Paper Snackbar on the Material variant', () => {
@@ -311,83 +287,19 @@ describe('Toast', () => {
     expect(container.querySelector('[data-paper-snackbar]')).toBeNull();
   });
 
-  // Offsets in pt a climber gets, root inset 34. Each one is the shared
-  // floatingControlBottom plus the 8pt gap the queue snackbars leave, so a toast
-  // and a snackbar never sit at different heights over the same chrome.
-  it.each([
-    {
-      name: 'Material, no climb: clears the 80dp nav bar, reserves no queue bar',
-      variant: 'material' as const,
-      chrome: {},
-      bottom: 34 + 80 + 8,
+  it.each(['material' as const, 'liquidGlass' as const])(
+    'floats at the offset ToastOffsetPublisher published on %s',
+    (variant) => {
+      ctrl.variant = variant;
+      act(() => publishToastBottomOffset(170));
+      const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
+      expect(readToastBottom(container)).toBe(170);
     },
-    {
-      name: 'Material, climb on the wall: also clears the 48dp queue bar',
-      variant: 'material' as const,
-      chrome: { hasCurrentClimb: true },
-      bottom: 34 + 80 + 48 + 8,
-    },
-    {
-      name: 'Material, pushed tab route: no queue bar there, so none reserved',
-      variant: 'material' as const,
-      chrome: { hasCurrentClimb: true, onAccessorySurface: false },
-      bottom: 34 + 80 + 8,
-    },
-    {
-      // Keyed on the bar actually rendered: the JS fallback bar is 80pt tall, not
-      // the 49pt native one the old variant-keyed math assumed.
-      name: 'Liquid Glass JS fallback, climb: 80pt JS bar + 66pt floating queue bar',
-      variant: 'liquidGlass' as const,
-      chrome: { hasCurrentClimb: true },
-      bottom: 34 + 80 + 66 + 8,
-    },
-    {
-      name: 'iOS 26 NativeTabs, no climb, measured 83pt in-tab inset',
-      variant: 'liquidGlass' as const,
-      chrome: { usesNativeTabBar: true, nativeAccessoryPresented: true, measuredTabContentInsetBottom: 83 },
-      bottom: 83 + 8,
-    },
-    {
-      name: 'iOS 26 NativeTabs, accessory up, measured 139pt (DEVICE_VERIFIED iPhone 17 Pro)',
-      variant: 'liquidGlass' as const,
-      chrome: {
-        usesNativeTabBar: true,
-        nativeAccessoryPresented: true,
-        hasCurrentClimb: true,
-        measuredTabContentInsetBottom: 139,
-      },
-      bottom: 139 + 8,
-    },
-    {
-      name: 'iOS 26 NativeTabs, accessory up, before the probe publishes: still clears the platter',
-      variant: 'liquidGlass' as const,
-      chrome: { usesNativeTabBar: true, nativeAccessoryPresented: true, hasCurrentClimb: true },
-      bottom: 34 + 49 + 56 + 8,
-    },
-    {
-      name: 'Material, rest timer armed: lifts over the 54pt pill',
-      variant: 'material' as const,
-      chrome: { restTimerArmed: true },
-      bottom: 34 + 80 + 54 + 8,
-    },
-    {
-      name: 'off the tabs: home indicator + gap only, even with the timer armed',
-      variant: 'material' as const,
-      chrome: { insideTabs: false, onAccessorySurface: false, hasCurrentClimb: true, restTimerArmed: true },
-      bottom: 34 + 8,
-    },
-    {
-      name: 'connectivity banner showing: lifts over its measured height',
-      variant: 'material' as const,
-      chrome: { connectivityBannerHeight: 40 },
-      bottom: 34 + 80 + 40 + 8,
-    },
-  ])('$name', ({ variant, chrome, bottom }) => {
-    ctrl.variant = variant;
-    setChrome(chrome);
+  );
+
+  it('sits on the root inset plus its 8pt gap before anything is published', () => {
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
-    expect(readToastBottom(container)).toBe(bottom);
-    expect(readToastBottom(container)).toBe(ctrl.metrics!.floatingControlBottom + 8);
+    expect(readToastBottom(container)).toBe(34 + 8);
   });
 
   it('auto-dismisses via timer on the Liquid Glass variant', () => {

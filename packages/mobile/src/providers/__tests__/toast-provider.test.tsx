@@ -32,10 +32,17 @@ vi.mock('react-native-reanimated', () => ({
   FadeOut: { duration: () => ({}) },
 }));
 
-// ToastHost reads the shared bottom-chrome metrics; the offset arithmetic is
-// covered in Toast's own test, so any value will do here.
-vi.mock('../../hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => ({ floatingControlBottom: 120 }),
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ bottom: 34, left: 0, right: 0, top: 0 }),
+}));
+
+vi.mock('expo-router', () => ({
+  useSegments: () => ['(tabs)', 'climbs'],
+}));
+
+vi.mock('../../hooks/use-bottom-accessory', () => ({
+  isBottomAccessoryAvailable: () => false,
+  useNativeTabBar: () => false,
 }));
 
 vi.mock('../../components/Icon', () => ({
@@ -60,7 +67,7 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-import { ToastHost, ToastProvider, useToast } from '../toast-provider';
+import { ToastProvider, useToast } from '../toast-provider';
 
 function ToastLauncher({ variant = 'success' }: { variant?: 'success' | 'error' | 'info' }) {
   const { showToast } = useToast();
@@ -83,28 +90,10 @@ describe('ToastProvider', () => {
     const { container } = render(
       <ToastProvider>
         <ToastLauncher />
-        <ToastHost />
       </ToastProvider>,
     );
 
     expect(container.textContent).toContain('Saved');
-  });
-
-  it('renders nothing itself: toasts appear only where ToastHost is mounted', () => {
-    // The overlay moved below BottomChromeMetricsProvider so a toast can read
-    // the shared bottom offsets; the provider must not draw a second copy.
-    const { container } = render(
-      <ToastProvider>
-        <ToastLauncher />
-      </ToastProvider>,
-    );
-
-    expect(container.textContent).not.toContain('Saved');
-  });
-
-  it('throws when ToastHost is mounted outside ToastProvider', () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() => render(<ToastHost />)).toThrow('ToastHost must be used within ToastProvider');
   });
 });
 

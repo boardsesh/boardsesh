@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import type { IconName } from './icon-map';
@@ -9,7 +10,7 @@ import { blendOpaque, withAlpha } from '../theme/colors';
 import { borderRadius, spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent } from '../theme/variants';
-import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
+import { usePublishedToastBottomOffset } from '../lib/toast-offset-store';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
@@ -44,20 +45,15 @@ const VARIANT_CONFIG: Record<ToastVariant, { icon: IconName; colorKey: 'success'
 export const Toast = createVariantComponent('Toast', { liquidGlass: ToastGlass, material: ToastMaterial });
 
 /**
- * Where a toast floats: the shared `floatingControlBottom` plus the same 8pt gap
- * the queue-added and undo-wall snackbars leave, so every bottom message lands
- * on one line. That one offset already clears the rendered tab bar (native or
- * JS, keyed on the bar actually on screen rather than the variant), a queue bar
- * or accessory platter only while one is showing, the rest-timer pill and the
- * connectivity banner.
- *
- * Toasts render from `ToastHost`, mounted at the app root INSIDE
- * `BottomChromeMetricsProvider`, so this reads the root-sampled metrics — the
- * same sampling point the snackbars use (see the contract in
- * bottom-chrome-metrics.ts).
+ * Where a toast floats, as `ToastOffsetPublisher` computed it from the shared
+ * bottom-chrome metrics (see that file for the rules). Toasts render from
+ * ToastProvider, above BottomChromeMetricsProvider, so the value arrives
+ * through a module store. Before the first publish, sit on the root inset.
  */
 function useToastBottomOffset(): number {
-  return useBottomChromeMetrics().floatingControlBottom + spacing[2];
+  const published = usePublishedToastBottomOffset();
+  const insets = useSafeAreaInsets();
+  return published ?? insets.bottom + spacing[2];
 }
 
 function ToastMaterial({ toast, onDismiss }: ToastProps) {

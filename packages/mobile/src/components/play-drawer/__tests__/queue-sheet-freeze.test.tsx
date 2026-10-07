@@ -49,6 +49,7 @@ const platform = vi.hoisted(() => ({ os: 'ios' }));
 // capture so a test can drive edit mode + selection to reveal the bulk bar.
 const safeArea = vi.hoisted(() => ({ bottom: 0 }));
 const sheetCallbacks = vi.hoisted(() => ({
+  clearAll: null as (() => void) | null,
   toggleEditMode: null as (() => void) | null,
   toggleSelect: null as ((uuid: string) => void) | null,
 }));
@@ -120,12 +121,16 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 vi.mock('../QueueSheetHeader', () => ({
-  QueueSheetHeader: ({ onToggleEditMode }: { onToggleEditMode: () => void }) => {
+  QueueSheetHeader: ({ onToggleEditMode, onClearAll }: { onToggleEditMode: () => void; onClearAll: () => void }) => {
+    sheetCallbacks.clearAll = onClearAll;
     sheetCallbacks.toggleEditMode = onToggleEditMode;
     return null;
   },
 }));
-vi.mock('../../UndoSnackbar', () => ({ UndoSnackbar: () => null }));
+vi.mock('../../UndoSnackbar', () => ({
+  UndoSnackbar: ({ bottom }: { bottom: number }) =>
+    createElement('div', { 'data-testid': 'undo-snackbar', 'data-bottom': bottom }),
+}));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('div', null, children) }));
 
 vi.mock('../QueueList', async () => {
@@ -153,7 +158,7 @@ const queueActions = vi.hoisted(() => ({
   clearQueue: vi.fn(),
   reorderQueue: vi.fn(),
   setQueue: vi.fn(),
-  getQueueSnapshot: vi.fn(() => ({ queue: [], currentClimbQueueItem: null })),
+  getQueueSnapshot: vi.fn(() => queueData.current ?? { queue: [], currentClimbQueueItem: null }),
   setPlaylistSuggestionSource: vi.fn(),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
@@ -313,5 +318,15 @@ describe('QueueSheet bulk-remove bar', () => {
     const styles = [...container.querySelectorAll('[data-style]')].map((node) => node.getAttribute('data-style') ?? '');
     const bulkBarStyle = styles.find((style) => style.includes('"paddingBottom"'));
     expect(bulkBarStyle).toContain('"paddingBottom":46');
+  });
+
+  it('keeps Undo above the window inset after clearing the queue', () => {
+    safeArea.bottom = 139;
+    act(() => publishWindowInsetBottom(34));
+    const { getByTestId } = renderSheet(createRef<QueueSheetHandle>());
+
+    act(() => sheetCallbacks.clearAll?.());
+
+    expect(getByTestId('undo-snackbar').getAttribute('data-bottom')).toBe('46');
   });
 });
