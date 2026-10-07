@@ -659,7 +659,8 @@ describe('references written after or during the delete', () => {
     count(sql`SELECT count(*)::int AS n FROM playlist_climbs WHERE climb_uuid = ${climbUuid}`);
   const commentsOn = (climbUuid: string) =>
     count(sql`SELECT count(*)::int AS n FROM comments WHERE entity_id = ${climbUuid}`);
-  const votesOn = (climbUuid: string) => count(sql`SELECT count(*)::int AS n FROM votes WHERE entity_id = ${climbUuid}`);
+  const votesOn = (climbUuid: string) =>
+    count(sql`SELECT count(*)::int AS n FROM votes WHERE entity_id = ${climbUuid}`);
 
   /**
    * Park `deleteClimb` after it has locked the climb and swept favourites,
