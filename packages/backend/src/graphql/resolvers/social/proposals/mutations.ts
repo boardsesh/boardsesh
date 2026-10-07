@@ -21,6 +21,7 @@ import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
 import {
   addWeightedUpvote,
   assertAngleForType,
+  assertSprayProposalAllowed,
   assertNotFrozen,
   findOpenProposal,
   flipVoteToUpvote,
@@ -58,6 +59,7 @@ export const socialProposalMutations = {
 
     const target = await loadTargetClimb(climbUuid, boardType, proposerId);
     await assertNotFrozen(climbUuid, angle ?? null, boardType);
+    await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 
     const currentValue = await resolveCurrentValue({
       type,
@@ -202,6 +204,7 @@ export const socialProposalMutations = {
 
     const target = await loadTargetClimb(climbUuid, boardType, reporterId);
     await assertNotFrozen(climbUuid, angle, boardType);
+    await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 
     const outcome = await withProposalLock(climbUuid, type, async (tx) => {
       const openProposal = await findOpenProposal({ climbUuid, boardType, type, angle, proposedValue, executor: tx });

@@ -13,6 +13,8 @@ import { applyProposalEffect, publishVoteGradedClimbStats } from './effects';
 import { checkAutoApproval, resolveApprovalThreshold } from './grade-analysis';
 import { assertClimbBoardType } from './climb-board-type';
 import crypto from 'crypto';
+import { GraphQLError } from 'graphql';
+import { SPRAY_WALL_ARCHIVED_CODE, SPRAY_WALL_ARCHIVED_MESSAGE } from '../../../../services/spray-wall-archive';
 
 /**
  * Proposal lifecycle helpers.
@@ -148,6 +150,56 @@ export async function loadTargetClimb(
   }
 
   return climb;
+}
+
+/** `extensions.code` of a spray grade proposal whose label is not on the spray scale. */
+export const SPRAY_GRADE_NOT_ON_SCALE_CODE = 'SPRAY_GRADE_NOT_ON_SCALE';
+
+/**
+ * The spray-only refusals a new proposal gets, before anything is written (#5971):
+ *
+ *  - a grade, benchmark or classic proposal on a climb of an ARCHIVED wall. An
+ *    archived wall is read-only (#6181), and an approved grade would re-grade
+ *    it. A hide report still lands: it is moderation, not a change to the wall;
+ *  - a grade whose label is not on the spray scale. The proposal schema takes
+ *    any board's labels (MoonBoard's 6a/V2, say), and the spray grade rule
+ *    matches the label against spray's own scale, so an unknown label would be
+ *    approved and then change nothing.
+ */
+export async function assertSprayProposalAllowed(
+  params: { climbUuid: string; boardType: string; type: ProposalTypeName; proposedValue: string },
+  executor: ProposalExecutor = db,
+): Promise<void> {
+  const { climbUuid, boardType, type, proposedValue } = params;
+  if (boardType !== 'spray' || type === 'hide') return;
+
+  const [wall] = await executor
+    .select({ archivedAt: dbSchema.sprayWalls.archivedAt })
+    .from(dbSchema.boardClimbs)
+    .innerJoin(dbSchema.sprayWalls, eq(dbSchema.sprayWalls.layoutId, dbSchema.boardClimbs.layoutId))
+    .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, 'spray')))
+    .limit(1);
+  if (wall?.archivedAt != null) {
+    throw new GraphQLError(SPRAY_WALL_ARCHIVED_MESSAGE, { extensions: { code: SPRAY_WALL_ARCHIVED_CODE } });
+  }
+
+  if (type !== 'grade') return;
+  const [onScale] = await executor
+    .select({ difficulty: dbSchema.boardDifficultyGrades.difficulty })
+    .from(dbSchema.boardDifficultyGrades)
+    .where(
+      and(
+        eq(dbSchema.boardDifficultyGrades.boardType, 'spray'),
+        // The same match the grade rule makes (climber-vote-grade.ts).
+        sql`LOWER(${dbSchema.boardDifficultyGrades.boulderName}) = LOWER(TRIM(${proposedValue}))`,
+      ),
+    )
+    .limit(1);
+  if (!onScale) {
+    throw new GraphQLError(`${proposedValue} is not a spray wall grade`, {
+      extensions: { code: SPRAY_GRADE_NOT_ON_SCALE_CODE },
+    });
+  }
 }
 
 /** Refuse new proposals on a climb an admin has frozen. */
@@ -410,7 +462,8 @@ export async function flipVoteToUpvote(
  * Is `userId` the owner of the spray wall this climb is on?
  *
  * Board climbs → `spray_walls` by the wall's layout → the wall's `user_boards`
- * row. False for a climb on any other board, which has no wall.
+ * row. False for a climb on any other board, which has no wall, and for a wall
+ * that is deleted or archived.
  */
 export async function isSprayWallOwnerOfClimb(
   climbUuid: string,
@@ -427,6 +480,10 @@ export async function isSprayWallOwnerOfClimb(
         eq(dbSchema.boardClimbs.uuid, climbUuid),
         eq(dbSchema.boardClimbs.boardType, 'spray'),
         eq(dbSchema.userBoards.ownerId, userId),
+        // A deleted or archived wall is no live wall to own (#6181): no instant approval.
+        isNull(dbSchema.userBoards.deletedAt),
+        isNull(dbSchema.sprayWalls.deletedAt),
+        isNull(dbSchema.sprayWalls.archivedAt),
       ),
     )
     .limit(1);

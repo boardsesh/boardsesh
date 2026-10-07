@@ -126,13 +126,26 @@ both clients reach the same verdict from the same rows.
 An approved grade proposal writes `climb_community_status.community_grade` at its angle. On most
 boards nothing reads that column outside the proposal screens. On spray walls it is the first thing
 the climb's grade rule reads, so approving or reverting one recomputes the climb in the same
-transaction, and the pinned grade reaches lists, search, the offline copy and the play drawer
-through `board_climb_stats.display_difficulty` (#5971, `docs/spray-walls.md`).
+transaction, and the pinned grade reaches lists, search and the offline copy through
+`board_climb_stats.display_difficulty` (#5971, `docs/spray-walls.md`). After that transaction commits,
+`runAutoApproval`, `resolveProposal` and `deleteProposal` queue the debounced stats pass
+(`queueClimbStatsRecompute`), whose `climbStatsUpdated` publish is what moves the grade in a play
+drawer that is already open.
 
 Two spray-only rules: a grade proposal the wall's owner files (through `createProposal` or
 `reportClimb`, opening it or joining it) is approved at once, without the vote. A vote from the owner
 on someone else's proposal is an ordinary vote. And `setterOverrideCommunityStatus` is refused on a
 spray climb for everyone, so the grade has one way to change.
+
+`createProposal` and `reportClimb` also refuse two spray proposals before writing anything:
+
+- a grade, benchmark or classic proposal on a climb of an archived wall (`SPRAY_WALL_ARCHIVED`). An
+  archived wall is read-only (#6181). A hide report still lands, because it is moderation, not a
+  change to the wall. The owner of a deleted or archived wall gets no instant approval either.
+- a grade whose label is not on the spray scale in `board_difficulty_grades`
+  (`SPRAY_GRADE_NOT_ON_SCALE`). The proposal schema takes any board's labels, such as MoonBoard's
+  `6a/V2`, and the grade rule would match nothing, so such a proposal would be approved and change
+  nothing.
 
 ---
 
