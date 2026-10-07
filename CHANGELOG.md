@@ -21,6 +21,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Grade pickers no longer show "V0 V0 V0": each chip names the grade it stands for. ([#6203](https://github.com/boardsesh/boardsesh/pull/6203))
+- Hold outlines finish themselves when you draw back to where you started ([#6202](https://github.com/boardsesh/boardsesh/pull/6202))
 - Saving a climb with no name now tells you "Name it to save" instead of just jumping to the field. ([#6194](https://github.com/boardsesh/boardsesh/pull/6194))
 - Sends synced from Kilter now show the grade you gave them, not the setter's grade ([#6186](https://github.com/boardsesh/boardsesh/pull/6186))
 - MoonBoard grades now match the MoonBoard app: 6A shows as V2, and the easy grades read V1 to V4 ([#6188](https://github.com/boardsesh/boardsesh/pull/6188))

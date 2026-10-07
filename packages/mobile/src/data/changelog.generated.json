@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-10-07T10:18:21.567Z",
+  "generatedAt": "2026-10-07T13:27:20.403Z",
   "entries": [
+    {
+      "prNumber": 6203,
+      "category": "fixed",
+      "title": "Grade pickers no longer show \"V0 V0 V0\": each chip names the grade it stands for.",
+      "mergedAt": "2026-10-07T12:01:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6203"
+    },
+    {
+      "prNumber": 6202,
+      "category": "fixed",
+      "title": "Hold outlines finish themselves when you draw back to where you started",
+      "mergedAt": "2026-10-07T12:00:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6202"
+    },
     {
       "prNumber": 6197,
       "category": "new",
