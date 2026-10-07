@@ -40,6 +40,16 @@ vi.mock('../storage/s3', () => ({
     return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
   }),
   uploadToS3: vi.fn(async (_bucket: string, _body: Buffer, key: string) => ({ key })),
+  // A public wall's publish copies the photo to the public bucket. Without these
+  // the copy fails and retries in the background, and a retry still running when
+  // the next test's TRUNCATE starts deadlocks against it.
+  copyObjectBetweenBuckets: vi.fn(
+    async (_source: string, _sourceKey: string, _destination: string, destinationKey: string) => ({
+      key: destinationKey,
+    }),
+  ),
+  deleteFromS3: vi.fn(async () => undefined),
+  getPublicUrl: vi.fn((_bucket: string, key: string) => `https://media.example/${key}`),
 }));
 
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
