@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   View,
   ScrollView,
@@ -76,6 +76,8 @@ type BoardFormProps = {
    * warning so editing your own board never warns about its own serial.
    */
   currentBoardUuid?: string;
+  /** A spray wall's background picker, drawn under its visibility rows. */
+  sprayBackgroundSection?: ReactNode;
 };
 
 /**
@@ -95,6 +97,7 @@ export function BoardForm({
   lockedConfigReason = 'permission',
   errorMessage = null,
   currentBoardUuid,
+  sprayBackgroundSection,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -304,7 +307,12 @@ export function BoardForm({
                 carry it on a catalogue board are hidden below for spray: three
                 states expressed as two independent booleans made "unlisted and
                 public" reachable, which is a state nobody meant to pick. */}
-            {isSprayWall ? <SprayWallVisibilityField builder={builder} /> : null}
+            {isSprayWall ? (
+              <>
+                <SprayWallVisibilityField builder={builder} />
+                {sprayBackgroundSection}
+              </>
+            ) : null}
           </>
         ) : null}
 

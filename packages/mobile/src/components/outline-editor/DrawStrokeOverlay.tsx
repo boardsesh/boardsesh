@@ -93,6 +93,13 @@ type DrawStrokeOverlayProps = {
    * listened for is fixed at mount.
    */
   onStylusSeen?: () => void;
+  /**
+   * OPT-IN. Written with the board's zoom on the UI thread when a stroke
+   * starts, before its first sample, for a tool whose brush is sized in screen
+   * points at that zoom (spray Refine): its preview and its commit then read
+   * the same zoom, even if a pinch moves the board mid-stroke.
+   */
+  strokeZoomSV?: SharedValue<number>;
 };
 
 /** No hit list: the selection's grab radius alone decides a decline. */
@@ -165,6 +172,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   declineOnSelectionSV,
   declineHitHoldsSV,
   onStylusSeen,
+  strokeZoomSV,
 }: DrawStrokeOverlayProps) {
   // Mirrored into a shared value rather than captured: a captured number would
   // have to be a gesture dependency, and rebuilding a live RNGH gesture
@@ -297,6 +305,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
           strokeIsStylusSV.value = isStylus;
           strokeDownAtSV.value = Date.now();
           isDrawingSV.value = true;
+          if (strokeZoomSV) strokeZoomSV.value = scaleSV.value;
           pointsSV.value = [];
           appendSample(pointer.x, pointer.y);
           followWithLoupe(pointer.x, pointer.y);
@@ -395,6 +404,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         const centreY = containerHeightSV.value / 2;
         const renderX = (event.x - translateXSV.value - centreX) / scaleSV.value + centreX;
         const renderY = (event.y - translateYSV.value - centreY) / scaleSV.value + centreY;
+        if (strokeZoomSV) strokeZoomSV.value = scaleSV.value;
         pointsSV.value = [renderX * boardScaleSV.value, renderY * boardScaleSV.value];
         followWithLoupe(event.x, event.y);
         runOnJS(handleStart)();
@@ -459,6 +469,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     stylusReportedSV,
     declineOnSelectionSV,
     declineHitHoldsSV,
+    strokeZoomSV,
     pinchRef,
   ]);
 

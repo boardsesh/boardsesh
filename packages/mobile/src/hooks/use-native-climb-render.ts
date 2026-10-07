@@ -35,7 +35,9 @@ import {
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
 import {
+  activeSprayArt,
   ensureSprayWallLoaded,
+  getSprayWall,
   sprayBoardRenderDefault,
   sprayCacheToken,
   subscribeToSprayWalls,
@@ -310,6 +312,13 @@ type NativeClimbRenderResult = {
    * be visible-broken to the user instead of invisibly-broken.
    */
   missingBackgroundCount: number;
+  /**
+   * Paint this under `backgroundPaths` (`LayeredClimbImage`'s `baseColor`), or
+   * nothing when undefined. Set only for a spray wall drawn on its "Holds only"
+   * look, whose image is transparent everywhere but the holds: the field colour
+   * of the current scheme goes behind it, so one image serves light and dark.
+   */
+  backgroundBaseColor: string | undefined;
   /**
    * The drawing this render actually used, after the climber's settings, the
    * rollout flags and the installed library have all had their say. Surfaced so
@@ -3045,6 +3054,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // (FlashList row recycle case) must not bleed through to the new climb.
   const backgroundPaths = storedBackgrounds?.key === currentBoardKey ? storedBackgrounds.paths : [];
   const missingBackgroundCount = storedBackgrounds?.key === currentBoardKey ? storedBackgrounds.missingCount : 0;
+  // Read off the same registry answer the background key came from, and
+  // re-read whenever the spray token moves (it carries `-bg<variant>`).
+  const backgroundBaseColor = useMemo(() => {
+    void sprayVersionToken;
+    return boardName === 'spray' && activeSprayArt(getSprayWall(layoutId))?.variant === 'cutout'
+      ? fieldColor
+      : undefined;
+  }, [boardName, layoutId, fieldColor, sprayVersionToken]);
   return {
     overlayUri,
     overlayLoadKey,
@@ -3054,6 +3071,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayForNativeUse,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundBaseColor,
     effectiveRenderSettings,
     boardseshRendererAvailable: getBoardseshRendererSupport(),
     rendererUnavailable: rendererGaveUp || isNativeRendererUnavailable(),

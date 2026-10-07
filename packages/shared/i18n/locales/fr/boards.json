@@ -937,9 +937,8 @@
       "mode": "Pinceau",
       "add": "Ajouter",
       "erase": "Effacer",
-      "sizeSmall": "Petit pinceau",
-      "sizeMedium": "Pinceau moyen",
-      "sizeLarge": "Gros pinceau",
+      "size": "Taille du pinceau",
+      "sizeValue": "Taille {{step}} sur {{total}}",
       "dropped_one": "La partie principale est gardée. {{count}} morceau isolé a été retiré.",
       "dropped_other": "La partie principale est gardée. {{count}} morceaux isolés ont été retirés.",
       "atLimit": "La prise ne peut pas grandir davantage. Tracer permet de la redessiner plus grande."
@@ -969,7 +968,8 @@
       "adjust": "Recadrer ou pivoter",
       "next": "Suivant",
       "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
-      "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre."
+      "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre.",
+      "tip": "Recule, place-toi bien en face du mur et cadre les 4 coins."
     },
     "adjust": {
       "title": "Recadre et pivote",
@@ -1003,7 +1003,13 @@
       "cornerBottomLeft": "Coin en bas à gauche",
       "use": "Utiliser ces coins",
       "skip": "Passer pour l'instant",
-      "clear": "Recommencer les coins"
+      "clear": "Recommencer les coins",
+      "quality": {
+        "good": "Bien en face. Le mur sera redressé proprement.",
+        "soft": "Un peu de biais. Reprends-la bien en face pour un rendu plus net.",
+        "fail": "Trop de biais pour la redresser. Ta photo reste utilisable, ou reprends-la bien en face.",
+        "small": "Cette photo est trop petite pour être redressée. Elle reste utilisable telle quelle."
+      }
     },
     "upload": {
       "title": "Téléversement de ta photo",
@@ -1213,5 +1219,27 @@
     },
     "reportCount_one": "{{count}} signalement",
     "reportCount_other": "{{count}} signalements"
+  },
+  "sprayBackground": {
+    "label": "Fond du mur",
+    "photo": "Photo",
+    "wallCrop": "Mur seul",
+    "holdCutouts": "Prises seules",
+    "retake": "Reprendre la photo",
+    "previewLabel": "Aperçu : {{look}}",
+    "saveFailed": "Impossible d'enregistrer le fond. Réessaie.",
+    "notAvailable": "Cette photo est trop de biais pour ce rendu. Reprends-la bien en face.",
+    "note": {
+      "lockedNoPins": "Place les 4 coins pour le débloquer.",
+      "lockedRetake": "Reprends la photo bien en face pour le débloquer.",
+      "generating": "Génération…",
+      "failed": "Ce rendu n'a pas pu être généré. Enregistre-le à nouveau pour réessayer.",
+      "afterPublish": "Prêt environ une minute après la publication. Ta photo s'affiche d'ici là.",
+      "soft": "Reprends la photo bien en face pour un rendu plus net.",
+      "volumes": "Les volumes ne sont pas encore détourés."
+    },
+    "notAvailableNoPins": "Place d'abord les 4 coins du mur pour utiliser ce rendu.",
+    "notAvailableSmall": "Cette photo est trop petite pour être redressée. Reprends-la avec l'appareil principal en 1x.",
+    "usePhoto": "Utiliser la photo"
   }
 }

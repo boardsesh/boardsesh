@@ -13,8 +13,9 @@ import {
 } from '@boardsesh/create-climb-react';
 import type { ClimbLostHold, GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
 import { useClimbLostHolds } from '../../lib/graphql/hooks/use-climb-lost-holds';
-import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
-import { mapCanonicalHoldsToPhoto, type SprayPhotoHold } from '../../lib/spray/spray-hold-geometry';
+import { drawnSprayHolds, getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import type { SprayPhotoHold } from '../../lib/spray/spray-hold-geometry';
+import { mapCanonicalHoldsForDrawnWall } from '../../lib/spray/spray-drawn-geometry';
 import { hapticSelection, hapticSuccess, hapticWarning } from '../../lib/haptics';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import type { CreateClimbBoard } from './use-create-climb-screen';
@@ -169,16 +170,18 @@ export function useLostHoldGhosts({
   );
   const wallHoldById = useMemo(() => {
     const byId = new Map<number, SprayPhotoHold>();
-    for (const hold of wall?.holds ?? []) byId.set(hold.id, hold);
+    for (const hold of wall ? drawnSprayHolds(wall) : []) byId.set(hold.id, hold);
     return byId;
   }, [wall]);
 
   const allGhosts = useMemo(() => {
-    if (lostHoldsQuery.status !== 'ready' || !parsedSourceFrames || !availableHoldIds || !wall?.homography) {
+    if (lostHoldsQuery.status !== 'ready' || !parsedSourceFrames || !availableHoldIds || !wall) {
       return NO_GHOSTS;
     }
-    const photoHolds = mapCanonicalHoldsToPhoto(
-      wall.homography,
+    // Onto the picture the live holds are drawn on: the photo through the
+    // inverse homography, or a generated look by its scale.
+    const photoHolds = mapCanonicalHoldsForDrawnWall(
+      wall,
       lostHoldsQuery.lostHolds.map((lostHold) => ({
         id: lostHold.id,
         cx: lostHold.cx,

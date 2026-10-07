@@ -937,9 +937,8 @@
       "mode": "Brush",
       "add": "Add",
       "erase": "Erase",
-      "sizeSmall": "Small brush",
-      "sizeMedium": "Medium brush",
-      "sizeLarge": "Large brush",
+      "size": "Brush size",
+      "sizeValue": "Size {{step}} of {{total}}",
       "dropped_one": "Kept the main part. {{count}} stray bit was dropped.",
       "dropped_other": "Kept the main part. {{count}} stray bits were dropped.",
       "atLimit": "That's as far as this hold can grow. Trace redraws it bigger."
@@ -969,7 +968,8 @@
       "adjust": "Crop or rotate",
       "next": "Next",
       "cameraDenied": "Boardsesh needs your camera to photograph a wall.",
-      "failed": "That photo wouldn't open. Try another one."
+      "failed": "That photo wouldn't open. Try another one.",
+      "tip": "Stand back, face the wall square-on, fit all 4 corners in."
     },
     "adjust": {
       "title": "Crop and rotate",
@@ -1003,7 +1003,13 @@
       "cornerBottomLeft": "Bottom left corner",
       "use": "Use these corners",
       "skip": "Skip for now",
-      "clear": "Start the corners again"
+      "clear": "Start the corners again",
+      "quality": {
+        "good": "Nice and square. The wall will flatten cleanly.",
+        "soft": "A bit angled. Retake front-on for a sharper look.",
+        "fail": "Too angled to flatten. Your photo still works, or retake it face-on.",
+        "small": "This photo is too small to flatten. Your photo still works as it is."
+      }
     },
     "upload": {
       "title": "Uploading your photo",
@@ -1213,5 +1219,27 @@
     },
     "reportCount_one": "{{count}} report",
     "reportCount_other": "{{count}} reports"
+  },
+  "sprayBackground": {
+    "label": "Wall background",
+    "photo": "Photo",
+    "wallCrop": "Wall only",
+    "holdCutouts": "Holds only",
+    "retake": "Retake photo",
+    "previewLabel": "Preview of {{look}}",
+    "saveFailed": "Couldn't save the background. Try again.",
+    "notAvailable": "This photo is too angled for that look. Retake it face-on.",
+    "note": {
+      "lockedNoPins": "Pin the 4 corners to unlock.",
+      "lockedRetake": "Retake the photo face-on to unlock.",
+      "generating": "Generating…",
+      "failed": "That look didn't render. Save it again to retry.",
+      "afterPublish": "Ready a minute or so after you publish. Your photo shows until then.",
+      "soft": "Retake front-on for a sharper look.",
+      "volumes": "Volumes aren't cut out yet."
+    },
+    "notAvailableNoPins": "Pin the 4 corners of the wall first to use this look.",
+    "notAvailableSmall": "This photo is too small to flatten. Retake it with your phone's main camera at 1x.",
+    "usePhoto": "Use the photo"
   }
 }

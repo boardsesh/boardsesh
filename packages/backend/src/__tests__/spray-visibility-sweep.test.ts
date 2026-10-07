@@ -576,6 +576,10 @@ function scannableSentinels(argumentValues: Record<string, unknown>): Sentinel[]
  * improvement, not a rule change.
  */
 const NOT_APPLICABLE: Record<string, string> = {
+  // --- carried on release/next without its resolver ---------------------------
+  'Query.sprayWallArt':
+    "schema carried from #6178 for the mobile client; the resolver and its exercised sweep case land with #6178 on main; take main's version of this file when main merges into the train",
+
   // --- readers scoped to another board type entirely ---------------------------
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",

@@ -30,6 +30,7 @@ import { getHttpClient } from '../graphql/client';
 import type { BoardRenderDefault } from '../board-render-settings';
 import { clearSprayWallPrivateCaches } from './spray-privacy-cleanup';
 import { primeSprayWallLook } from './spray-wall-loader';
+import type { SprayWallBackground } from './spray-wall-background';
 import { sprayWallWithVersionsQueryKey } from './use-spray-wall-reset';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
@@ -226,7 +227,10 @@ export function useSetSprayWallRenderSettings() {
     }: {
       layoutId: number;
       uuid: string;
-      renderSettings: BoardRenderDefault;
+      // `background` only when the owner picked a generated look, or is
+      // changing away from one: a backend older than generated looks validates
+      // this object strictly and refuses a key it does not know.
+      renderSettings: BoardRenderDefault & { background?: SprayWallBackground };
     }): Promise<SetRenderSettingsResult> => {
       const response = await getHttpClient().request<SetRenderSettingsResponse>(SET_SPRAY_WALL_RENDER_SETTINGS, {
         input: { uuid, renderSettings },
