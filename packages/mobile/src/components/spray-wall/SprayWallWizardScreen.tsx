@@ -112,6 +112,7 @@ import {
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
 import { useSprayWallTrainingConsent } from '../../lib/spray/use-spray-wall-training-consent';
+import { SprayWallTrainingConsentRow } from './SprayWallTrainingConsentRow';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties, type WallCreatedMeta } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
@@ -1727,8 +1728,7 @@ export function SprayWallWizardScreen({
               photo ? styles.tilePicked : [styles.tileEmpty, emptyTileColors],
             ]}
           >
-            <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
-          {photo ? (
+            {photo ? (
               <Image
                 source={{ uri: photo.uri }}
                 style={StyleSheet.absoluteFill}
@@ -1856,6 +1856,11 @@ export function SprayWallWizardScreen({
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
                 {t('sprayWizard.photo.tip')}
               </Text>
+              {photoTrainsHoldFinding ? (
+                <Text variant="footnote" color={systemColors.secondaryLabel}>
+                  {t('sprayWizard.photo.trainingNote')}
+                </Text>
+              ) : null}
               <PressableSurface
                 onPress={openPhotoGuide}
                 hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
