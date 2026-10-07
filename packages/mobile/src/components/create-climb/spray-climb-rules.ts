@@ -6,11 +6,8 @@
 // they live here as pure functions so the controller reads as one branch per rule
 // and every branch is table-testable without a renderer:
 //
-//  1. **A setter grade is required to publish.** `crowdGrade: false` means there
-//     is no consensus grade to converge on — a handful of people ever climb a
-//     home wall — so a published climb with no grade stays ungraded forever. The
-//     server refuses it (`assertSprayGradeOnPublish`); this is the client half,
-//     which says so BEFORE the round trip.
+//  1. **No setter grade.** The first ascent grades a spray climb, and the
+//     climbers' grades move it after that (#5971), so the editor asks for none.
 //  2. **Feet are open by default.** A spray wall is a field of holds with no
 //     "kicker" and no set-piece feet, and the overwhelming convention on one is
 //     that anything goes for feet. The toggle stays visible — a setter can mark
@@ -36,17 +33,6 @@ import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-regis
 /** True for the one board type these rules apply to. */
 export function isSprayBoard(boardName: string): boolean {
   return boardName === SPRAY_BOARD_NAME;
-}
-
-/**
- * Whether publishing on this board needs the setter's own grade.
- *
- * Spray only. MoonBoard has no crowd grade either, but its climbs are authored
- * through `saveMoonBoardClimb`, which carries its own grade field and its own
- * form — this editor never publishes one.
- */
-export function requiresSetterGrade(boardName: string): boolean {
-  return isSprayBoard(boardName);
 }
 
 /** Where the "any feet" switch starts on a fresh climb. */

@@ -797,8 +797,7 @@
         }
       },
       "publish": {
-        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen",
-        "gradeBlocked": "Wähle deine Schwierigkeit zum Veröffentlichen"
+        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
       },
       "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten.",
       "routeMenu": {
@@ -806,11 +805,6 @@
         "makeRoute": "Zur Route machen",
         "makeBoulder": "Zum Boulder machen",
         "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
-      },
-      "grade": {
-        "label": "Deine Schwierigkeit",
-        "required": "Zum Veröffentlichen nötig",
-        "optional": "Bei einem Entwurf optional"
       }
     },
     "holdFilter": {

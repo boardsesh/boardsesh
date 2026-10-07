@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
-import { View, StyleSheet, type LayoutChangeEvent, type TextStyle } from 'react-native';
+import { View, StyleSheet, type TextStyle } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { SwitchRow } from '../SwitchRow';
-import { SetterGradeRow } from './SetterGradeRow';
 import { offersNoKickboardRule } from './spray-climb-rules';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -12,23 +11,8 @@ import { spacing, borderRadius } from '../../theme/tokens';
 const DESCRIPTION_MAX = 500;
 
 type CreateDrawerFormProps = {
-  /** The board being authored on — the grade row needs its scale. */
+  /** The board being authored on — decides which rule rows it offers. */
   boardName: string;
-  /**
-   * True on a board with no crowd grade, where the setter's own grade is what
-   * the climb is published with (a spray wall). False hides the row entirely:
-   * everywhere else the grade comes from ticks or the Aurora sync, and offering
-   * a field that goes nowhere would be a lie.
-   */
-  showSetterGrade: boolean;
-  setterGradeDifficultyId: number | null;
-  onChangeSetterGrade: (next: number | null) => void;
-  /** True while publishing is selected and the grade is still missing. */
-  setterGradeRequired: boolean;
-  /** Bumped by a Save tap that needs the grade first; see `SetterGradeRow`. */
-  setterGradeHighlightSignal: number;
-  /** The grade row's box within this form, for the drawer's scroll-to-grade. */
-  onSetterGradeLayout: (event: LayoutChangeEvent) => void;
   description: string;
   onChangeDescription: (next: string) => void;
   noMatch: boolean;
@@ -54,12 +38,6 @@ type CreateDrawerFormProps = {
  */
 export function CreateDrawerForm({
   boardName,
-  showSetterGrade,
-  setterGradeDifficultyId,
-  onChangeSetterGrade,
-  setterGradeRequired,
-  setterGradeHighlightSignal,
-  onSetterGradeLayout,
   description,
   onChangeDescription,
   noMatch,
@@ -91,17 +69,6 @@ export function CreateDrawerForm({
 
   return (
     <View style={styles.body}>
-      {showSetterGrade ? (
-        <SetterGradeRow
-          boardName={boardName}
-          difficultyId={setterGradeDifficultyId}
-          onSelect={onChangeSetterGrade}
-          required={setterGradeRequired}
-          highlightSignal={setterGradeHighlightSignal}
-          onLayout={onSetterGradeLayout}
-        />
-      ) : null}
-
       <Text variant="footnote" style={styles.label}>
         {t('createClimbForm.fields.description')}
       </Text>

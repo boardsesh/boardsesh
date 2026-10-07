@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
+import type { HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { clearSprayWallRegistry, registerSprayWall } from '../../../lib/spray/spray-wall-registry';
 import { getDifficultyIdForGradeName } from '../../../lib/grade-label';
 import { getPaintRoles, computeRoleCapacity } from '../brush-roles';
@@ -12,7 +12,6 @@ import {
   nextAnyFeetForFeetChange,
   offersBoardLightbulb,
   offersNoKickboardRule,
-  requiresSetterGrade,
   shouldAwaitWall,
   sprayWallUuidFor,
 } from '../spray-climb-rules';
@@ -78,15 +77,6 @@ describe('roles a wall paints', () => {
   it('leaves room while only one start and one finish are placed', () => {
     const oneEach: LitUpHoldsMap = { 1: hold('STARTING'), 2: hold('FINISH') };
     expect(computeRoleCapacity(oneEach, 9, false)).toEqual({ STARTING: false, FINISH: false, FOOT: false });
-  });
-});
-
-describe('the setter grade', () => {
-  it('is required on a spray wall and nowhere else', () => {
-    expect(requiresSetterGrade('spray')).toBe(true);
-    for (const boardName of ['kilter', 'tension', 'moonboard', 'woods'] satisfies BoardName[]) {
-      expect(requiresSetterGrade(boardName)).toBe(false);
-    }
   });
 });
 
@@ -205,16 +195,16 @@ describe('waiting for a wall', () => {
   });
 });
 
-describe('the grade name a remix inherits', () => {
+describe('a grade name back to its difficulty id', () => {
   it('resolves the canonical name the server actually sends', () => {
     // `Climb.difficulty` comes out of the server's `getGradeLabel`, which writes
-    // "6b/V4". This is the string the fork seed has to understand.
+    // "6b/V4". This is the string the tick sheet resolves.
     expect(getDifficultyIdForGradeName('6b/V4')).toBe(18);
     expect(getDifficultyIdForGradeName('7a/V6')).toBe(22);
   });
 
   it('refuses a display label, which names more than one grade', () => {
-    // "V4" is both 6b and 6b+; guessing would re-grade the remix.
+    // "V4" is both 6b and 6b+; guessing would re-grade the climb.
     expect(getDifficultyIdForGradeName('V4')).toBeNull();
     expect(getDifficultyIdForGradeName('6b')).toBeNull();
     expect(getDifficultyIdForGradeName('')).toBeNull();

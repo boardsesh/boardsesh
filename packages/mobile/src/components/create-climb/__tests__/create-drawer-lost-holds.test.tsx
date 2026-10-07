@@ -15,8 +15,6 @@ const MEASURED_HEIGHTS: Record<string, number> = {
   'create-drawer-measured-header': 60,
   'create-drawer-measured-board-block': 640,
 };
-/** Where the form says the grade rail sits inside it. */
-const GRADE_BOX = { y: 0, height: 84 };
 
 vi.mock('react-native', () => ({
   View: ({ children, onLayout, testID }: ViewMockProps) => {
@@ -85,29 +83,14 @@ const formProps = vi.hoisted(() => ({ last: null as null | Record<string, unknow
 // The lost-hold ring layer draws through react-native-svg and has its own suite.
 vi.mock('../LostHoldGhostLayer', () => ({ LostHoldGhostLayer: () => null }));
 vi.mock('../CreateDrawerForm', () => ({
-  CreateDrawerForm: (props: { onSetterGradeLayout?: (event: LayoutEvent) => void } & Record<string, unknown>) => {
+  CreateDrawerForm: (props: Record<string, unknown>) => {
     formProps.last = props;
-    const { onSetterGradeLayout } = props;
-    // The real form forwards the grade row's own onLayout.
-    useEffect(() => {
-      onSetterGradeLayout?.({ nativeEvent: { layout: { x: 0, width: 373, ...GRADE_BOX } } });
-    }, [onSetterGradeLayout]);
     return createElement('div', { 'data-node': 'form' });
   },
 }));
 vi.mock('../OpenDraftsSection', () => ({ OpenDraftsSection: () => createElement('div', { 'data-node': 'drafts' }) }));
-// The real banners report the space they take (their own root's onLayout, top
-// margin included). Stand-ins do the same with fixed numbers.
-function footprintBanner(footprint: number) {
-  return function BannerMock({ onFootprint }: { onFootprint?: (height: number) => void }) {
-    useEffect(() => {
-      onFootprint?.(footprint);
-    }, [onFootprint]);
-    return createElement('div', { 'data-node': 'banner' });
-  };
-}
-vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: footprintBanner(96) }));
-vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: footprintBanner(70) }));
+vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: () => createElement('div', { 'data-node': 'banner' }) }));
+vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: () => createElement('div', { 'data-node': 'banner' }) }));
 vi.mock('../CreateRoutePlaybackSlot', () => ({
   CreateRoutePlaybackSlot: () => createElement('div', { 'data-node': 'route-slot' }),
 }));
@@ -124,7 +107,6 @@ const controller = {
   name: 'Old blue remix',
   setName: vi.fn(),
   focusNameSignal: 0,
-  focusGradeSignal: 0,
   litUpHoldsMap: {},
   frameCount: 1,
   currentFrameIndex: 0,
@@ -132,9 +114,6 @@ const controller = {
   supportsMultiFrame: true,
   routeMode: false,
   showRouteTransport: false,
-  showSetterGrade: true,
-  setterGradeMissing: false,
-  setterGradeDifficultyId: 12,
   playback: {},
   saveState: 'ready',
   handleSave: vi.fn(),

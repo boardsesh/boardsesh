@@ -77,23 +77,6 @@ describe('deriveDraftStatusView', () => {
     });
   });
 
-  it('asks for the grade in the warning tone while Save stays enabled', () => {
-    // Not a blocked publish any more (#5954): the button is live and its tap
-    // opens the grade rail. This line is the passive half of that prompt.
-    expect(deriveDraftStatusView({ ...base, gradeNeededToPublish: true }, identity)).toEqual({
-      text: 'mobile.create.publish.gradeBlocked',
-      tone: 'warning',
-      announce: true,
-      yieldsToHeatmap: true,
-    });
-  });
-
-  it('names the holds before the grade when both are missing', () => {
-    expect(deriveDraftStatusView({ ...base, publishBlocked: true, gradeNeededToPublish: true }, identity)?.text).toBe(
-      'mobile.create.publish.blocked',
-    );
-  });
-
   it('does not call the work a draft while Save is set to publish', () => {
     // A spray wall opens with the draft switch off, so "Draft saved…" was the
     // first thing the line said about a climb that was never going to be one.
@@ -117,12 +100,11 @@ describe('deriveDraftStatusView', () => {
     expect(deriveDraftStatusView(base, identity)?.text).toBe('mobile.create.autosave.onDevice');
   });
 
-  it('lets only the publish hints give their line to the heatmap', () => {
+  it('lets only the publish hint give its line to the heatmap', () => {
     // "What a publish still needs" is ordinary work in progress. A failed save
     // and "nothing is being stored" are not, and keep the line.
     const yields = (state: DraftStatusState) => deriveDraftStatusView(state, identity)?.yieldsToHeatmap === true;
     expect(yields({ ...base, publishBlocked: true })).toBe(true);
-    expect(yields({ ...base, gradeNeededToPublish: true })).toBe(true);
     expect(yields({ ...base, saveFailed: true })).toBe(false);
     expect(yields({ ...base, localPersistenceAvailable: false })).toBe(false);
     // A failed save still outranks a publish hint that is also true.

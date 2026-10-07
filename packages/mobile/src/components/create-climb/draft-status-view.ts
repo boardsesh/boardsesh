@@ -21,10 +21,10 @@ export type DraftStatusView = {
   announce: boolean;
   /**
    * True for a warning that only says what a PUBLISH still needs (a start and a
-   * finish, or the setter grade). It describes ordinary work in progress rather
+   * finish). It describes ordinary work in progress rather
    * than something that went wrong, so it gives its line box up to the hold
    * heatmap's legend while the heat is on. On a spray wall, where Save publishes
-   * by default, one of these is up from the first hold until the climb is
+   * by default, it is up from the first hold until the climb is
    * complete — which is exactly when the heatmap is in use.
    */
   yieldsToHeatmap?: boolean;
@@ -42,13 +42,6 @@ export type DraftStatusState = {
   saveFailed: boolean;
   /** Publishing is selected but the climb has no start or no finish hold. */
   publishBlocked: boolean;
-  /**
-   * The holds are fine and the setter grade is what is still missing (a spray
-   * wall, which has no crowd grade to fall back on). Not a blocked publish: Save
-   * stays enabled and its tap opens the grade rail (#5954). This line is the
-   * passive half of that prompt, for anyone who reads before they tap.
-   */
-  gradeNeededToPublish?: boolean;
   /**
    * Where the "Save as draft" switch sits. Decides only the wording of the two
    * "it is saved" lines: with the switch off, calling a climb a draft is wrong —
@@ -88,15 +81,6 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   if (state.publishBlocked) {
     return {
       text: t('mobile.create.publish.blocked'),
-      tone: 'warning',
-      announce: true,
-      yieldsToHeatmap: true,
-    };
-  }
-
-  if (state.gradeNeededToPublish) {
-    return {
-      text: t('mobile.create.publish.gradeBlocked'),
       tone: 'warning',
       announce: true,
       yieldsToHeatmap: true,

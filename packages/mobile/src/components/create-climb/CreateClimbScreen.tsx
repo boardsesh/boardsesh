@@ -11,7 +11,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { getCreateBoardHolds } from '../../lib/create-board-holds';
-import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 import { useSprayWall } from '../../lib/spray/use-spray-wall';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { isSprayBoard, shouldAwaitWall } from './spray-climb-rules';
@@ -35,8 +34,6 @@ type CreateClimbScreenProps = {
   forkDescription?: string;
   /** JSON-encoded `characteristics` of the climb being remixed (#4832). */
   forkCharacteristics?: string;
-  /** The remixed climb's grade, as a name on the shared scale ("6c/V5"). */
-  forkDifficulty?: string;
   /** The remixed climb's uuid, so the editor can draw the holds it lost. */
   forkParentUuid?: string;
   editClimbUuid?: string;
@@ -55,7 +52,6 @@ export function CreateClimbScreen({
   forkName,
   forkDescription,
   forkCharacteristics,
-  forkDifficulty,
   forkParentUuid,
   editClimbUuid,
 }: CreateClimbScreenProps) {
@@ -97,10 +93,6 @@ export function CreateClimbScreen({
     forkName,
     forkDescription,
     forkCharacteristics,
-    // Resolved here rather than in the controller so the route param stays a
-    // plain string: null for a grade the shared scale does not name, which opens
-    // the picker unset instead of snapping the remix to a neighbouring grade.
-    forkDifficultyId: getDifficultyIdForGradeName(forkDifficulty),
     sprayWallToken,
     editClimbUuid,
     onPublished: () => router.back(),

@@ -27,7 +27,6 @@ vi.mock('../../Text', () => ({
 vi.mock('../../SwitchRow', () => ({
   SwitchRow: ({ label }: { label: string }) => createElement('div', { 'data-testid': 'switch-row' }, label),
 }));
-vi.mock('../SetterGradeRow', () => ({ SetterGradeRow: () => null }));
 
 import { CreateDrawerForm } from '../CreateDrawerForm';
 
@@ -36,12 +35,6 @@ function renderForm(boardName: string) {
   return render(
     <CreateDrawerForm
       boardName={boardName}
-      showSetterGrade={false}
-      setterGradeDifficultyId={null}
-      onChangeSetterGrade={noop}
-      setterGradeRequired={false}
-      setterGradeHighlightSignal={0}
-      onSetterGradeLayout={noop}
       description=""
       onChangeDescription={noop}
       noMatch={false}
