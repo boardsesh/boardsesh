@@ -9,6 +9,7 @@ import {
   isServerUnavailableError,
   isServerFailureSignal,
   getErrorStatus,
+  isClimbReferenceToDeletedClimb,
 } from './error-classification';
 import { isDatabaseLockedError } from '../db/lock-errors';
 import { runLocalWriteWithRetry } from '../db/write-retry';
@@ -633,6 +634,23 @@ export async function drainMutationQueue(
           if (_isSigningOut || _globalWipeEpoch !== startEpoch || _isBackgrounded) {
             networkStop = true;
             break;
+          }
+
+          if (isClimbReferenceToDeletedClimb(mutation.table_name, mutation.operation, error)) {
+            // A favourite or playlist add whose climb its setter has deleted
+            // (#5960). Nothing is left to write and no retry can change that, so
+            // clear the row as delivered: a dead letter would sit in the "needs
+            // retry" list with a Retry that can never work. The next pull drops
+            // the local copy through the climb's tombstone.
+            await runLocalWriteWithRetry(() => markCompleted(db, mutation.id));
+            invalidateForTable(queryClient, mutation.table_name);
+            notifyMutationStatus(options, {
+              tableName: mutation.table_name,
+              operation: mutation.operation,
+              idempotencyKey: mutation.idempotency_key,
+              status: 'acknowledged',
+            });
+            continue;
           }
 
           if (isRetryable(error)) {

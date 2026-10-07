@@ -492,9 +492,35 @@ export const PERMANENT_GRAPHQL_ERROR_CODES: ReadonlySet<string> = new Set([
   // never succeed on any retry. Without this entry the row would burn all ten
   // FIFO-blocking attempts before landing in the same dead letter.
   // `addFavorite` and `addClimbToPlaylist` answer it too for a spray climb its
-  // setter has deleted since the write was queued (`deleteClimb`, #5960).
+  // setter has deleted since the write was queued (`deleteClimb`, #5960); the
+  // drainer settles those as acknowledged first (`isClimbReferenceToDeletedClimb`).
   'CLIMB_NOT_FOUND',
 ]);
+
+/**
+ * Outbox tables whose CREATE only points at a climb: a favourite, a playlist
+ * entry. Ticks are deliberately absent: a refused tick is a lost logbook entry
+ * the climber must hear about, so it keeps dead-lettering.
+ */
+const CLIMB_REFERENCE_CREATE_TABLES: ReadonlySet<string> = new Set(['user_favorites', 'playlist_climbs']);
+
+/**
+ * Is this the server saying "that climb is gone" to a queued favourite or
+ * playlist add? A setter can hard-delete their spray climb (`deleteClimb`,
+ * #5960), and the backend then refuses these writes with `CLIMB_NOT_FOUND`.
+ * The write's intent is moot rather than failed: there is nothing left to star,
+ * and no Retry can ever succeed. The drainer settles it as acknowledged instead
+ * of parking it in the "needs retry" list.
+ *
+ * Same transport rule as `isPermanentRejection`: only a body that is a
+ * resolver's answer (no status, or a 2xx) counts.
+ */
+export function isClimbReferenceToDeletedClimb(tableName: string, operation: string, error: unknown): boolean {
+  if (operation !== 'create' || !CLIMB_REFERENCE_CREATE_TABLES.has(tableName)) return false;
+  const status = getErrorStatus(error);
+  if (status !== null && (status < 200 || status >= 300)) return false;
+  return hasGraphqlErrorCode(error, 'CLIMB_NOT_FOUND');
+}
 
 /**
  * Did a server positively reject THIS request in a way a replay cannot fix?

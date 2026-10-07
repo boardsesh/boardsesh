@@ -3439,7 +3439,10 @@ insert transaction. Without it a favourite or playlist entry drained after the
 delete, or a comment landing between the delete's sweep and its commit, would
 point at a climb that is gone. A favourite counts as spray when the client sends
 `boardName: 'spray'` or the catalogue row says so. Catalogue climbs keep the
-old fail-open behaviour.
+old fail-open behaviour. The offline drainer settles a queued favourite or
+playlist add refused this way as delivered, with no "needs retry" entry: there is
+nothing left to star, and a Retry could never succeed. A refused tick still
+dead-letters.
 `packages/backend/src/__tests__/spray-climb-delete.test.ts` drives both orders.
 
 ### Turning a wall private has to RETRACT, not just stop
