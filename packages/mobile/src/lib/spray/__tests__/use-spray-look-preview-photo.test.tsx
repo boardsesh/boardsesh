@@ -49,4 +49,29 @@ describe('useSprayLookPreviewPhoto', () => {
     expect(result.current).toBeNull();
     expect(renderHook(() => useSprayLookPreviewPhoto(null)).result.current).toBeNull();
   });
+
+  it('tries again when a lapsed link is replaced by a fresh one for the same version', async () => {
+    cache.ensure.mockResolvedValueOnce(null);
+    const { result, rerender } = renderHook(({ source }) => useSprayLookPreviewPhoto(source), {
+      initialProps: { source: { ...SOURCE, photoExpiresAt: '2026-10-07T10:00:00Z' } },
+    });
+    await waitFor(() => expect(cache.ensure).toHaveBeenCalledOnce());
+    expect(result.current).toBeNull();
+    // The same stale link again is not worth another request.
+    rerender({ source: { ...SOURCE, photoExpiresAt: '2026-10-07T10:00:00Z' } });
+    expect(cache.ensure).toHaveBeenCalledOnce();
+    rerender({
+      source: {
+        ...SOURCE,
+        photoUrl: 'https://private.example/photo.jpg?sig=2',
+        photoExpiresAt: '2026-10-07T10:30:00Z',
+      },
+    });
+    await waitFor(() => expect(result.current).toBe('file:///cache/spray-walls/9-v3.jpg'));
+    expect(cache.ensure).toHaveBeenCalledTimes(2);
+    expect(cache.ensure).toHaveBeenLastCalledWith(
+      { layoutId: 9, versionId: 3 },
+      { url: 'https://private.example/photo.jpg?sig=2', expiresAt: '2026-10-07T10:30:00Z' },
+    );
+  });
 });

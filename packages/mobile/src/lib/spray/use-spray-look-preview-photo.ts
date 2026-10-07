@@ -20,26 +20,41 @@ export function useSprayLookPreviewPhoto(source: SprayLookPreviewSource | null):
   const layoutId = source?.layoutId ?? null;
   const versionId = source?.versionId ?? null;
   // The newest signature, read when a download starts. A refreshed signature
-  // for the same version is the same file, so it is not a reason to re-run.
+  // for the same version is the same file, so on its own it is not a reason to
+  // re-run; after a miss it is (below).
   const signature = useRef<{ url: string; expiresAt: string } | null>(null);
   signature.current = source ? { url: source.photoUrl, expiresAt: source.photoExpiresAt } : null;
-  const [resolved, setResolved] = useState<{ key: string; uri: string | null } | null>(null);
+  const [resolved, setResolved] = useState<{ key: string; uri: string | null; expiresAt: string } | null>(null);
+  // Read by the effect to skip work it has already done: a file it found, or a
+  // link it already failed with.
+  const resolvedRef = useRef(resolved);
+  resolvedRef.current = resolved;
   const key = layoutId != null && versionId != null ? `${layoutId}:${versionId}` : null;
+  // A miss is retried once the payload brings a DIFFERENT signature: the
+  // likeliest miss is a link that lapsed (15 min) before the file was fetched,
+  // and the refetched payload for the same version is the way out.
+  const failedWith = resolved && resolved.key === key && resolved.uri === null ? resolved.expiresAt : null;
+  const retryWith =
+    failedWith !== null && source?.photoExpiresAt != null && source.photoExpiresAt !== failedWith
+      ? source.photoExpiresAt
+      : null;
 
   useEffect(() => {
     const current = signature.current;
     if (layoutId == null || versionId == null || !current?.url) return;
-    let live = true;
     const ownKey = `${layoutId}:${versionId}`;
+    const last = resolvedRef.current;
+    if (last && last.key === ownKey && (last.uri !== null || last.expiresAt === current.expiresAt)) return;
+    let live = true;
     void ensureSprayPhotoCached({ layoutId, versionId }, current)
       .catch(() => null)
       .then((path) => {
-        if (live) setResolved({ key: ownKey, uri: cachedPhotoUri(path) });
+        if (live) setResolved({ key: ownKey, uri: cachedPhotoUri(path), expiresAt: current.expiresAt });
       });
     return () => {
       live = false;
     };
-  }, [layoutId, versionId]);
+  }, [layoutId, versionId, retryWith]);
 
   return resolved && resolved.key === key ? resolved.uri : null;
 }

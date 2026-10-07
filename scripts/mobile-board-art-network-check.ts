@@ -85,22 +85,32 @@ const RULES: readonly Rule[] = [
  * picker's Android mesh (`docs/spray-walls.md`, "Previewing a look on the
  * phone"), which has to draw the owner's photo under an affine transform a
  * React Native view cannot apply on Android. It is not board art, and it is
- * never a network image: the file must refuse anything but a device-local
- * `file:///` URI (the `isLocalFileUri(` guard) and must contain no http(s)
- * literal at all. react-native-svg disk-caches network images, so a remote
- * href here would also leak a private photo into a cache nothing clears.
+ * never a network image. react-native-svg disk-caches network images, so a
+ * remote href here would also leak a private photo into a cache nothing
+ * clears. Read with comments stripped, the file must:
+ *
+ * - carry the exact runtime guard `if (!isLocalFileUri(photoUri)) return null;`
+ *   as a statement of its own (text in a comment does not count);
+ * - give every `href=` exactly `{photoUri}`, the value that guard checks;
+ * - contain no http(s) literal.
  */
 const SVG_IMAGE_LOCAL_FILE_EXEMPTIONS: ReadonlySet<string> = new Set([
   'packages/mobile/src/components/spray-wall/FlattenedSprayPhoto.tsx',
 ]);
-const LOCAL_FILE_GUARD = 'isLocalFileUri(';
+const LOCAL_FILE_GUARD_STATEMENT = /^[ \t]*if \(!isLocalFileUri\(photoUri\)\) return null;[ \t]*$/m;
+
+/** Source with block and line comments removed (`://` in a string is kept). */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
 
 function isExemptLocalSvgImageFile(sourceFile: SourceFile): boolean {
-  return (
-    SVG_IMAGE_LOCAL_FILE_EXEMPTIONS.has(sourceFile.path) &&
-    sourceFile.text.includes(LOCAL_FILE_GUARD) &&
-    !/https?:\/\//.test(sourceFile.text)
-  );
+  if (!SVG_IMAGE_LOCAL_FILE_EXEMPTIONS.has(sourceFile.path)) return false;
+  const code = stripComments(sourceFile.text);
+  if (!LOCAL_FILE_GUARD_STATEMENT.test(code)) return false;
+  if (/https?:\/\//.test(code)) return false;
+  const hrefs = code.match(/\bhref=\S*/g) ?? [];
+  return hrefs.length > 0 && hrefs.every((href) => href === 'href={photoUri}');
 }
 
 function shouldScanPath(filePath: string): boolean {

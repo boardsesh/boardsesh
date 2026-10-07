@@ -122,7 +122,8 @@ function MeshFlattenedPhoto({ source, photoUri, tile }: FlattenedSprayPhotoProps
   }, [source, tile]);
   // Local files only: see the header. A remote URL here would land in
   // react-native-svg's disk cache.
-  if (triangles.length === 0 || !isLocalFileUri(photoUri)) return null;
+  if (!isLocalFileUri(photoUri)) return null;
+  if (triangles.length === 0) return null;
   return (
     <Svg width={tile.width} height={tile.height} style={StyleSheet.absoluteFill}>
       <Defs>
