@@ -969,6 +969,18 @@ export const schemaSQL = `
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "board_follows_unique_user_board" ON "board_follows" ("user_id", "board_uuid");
 
+  -- "Tell me about new climbs on this layout" (migration 0050). A spray reset
+  -- carries these from the archived wall's layout to its successor's.
+  CREATE TABLE IF NOT EXISTS "new_climb_subscriptions" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_type" text NOT NULL,
+    "layout_id" integer NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "new_climb_subscriptions_unique_user_board_layout"
+    ON "new_climb_subscriptions" ("user_id", "board_type", "layout_id");
+
   -- Auto-recorded serial→config rows + the user's remembered board choice for a
   -- serial (board_uuid). Resolver reads this to skip the disambiguation prompt.
   CREATE TABLE IF NOT EXISTS "user_board_serials" (
@@ -1785,7 +1797,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     -- SW-17 retention: when the purge swept this wall's storage prefix. Explicit
     -- state, because a purged wall's row is never deleted and a wall can own
     -- objects no version row names (an abandoned wizard upload).
-    "photos_purged_at" timestamp
+    "photos_purged_at" timestamp,
+    -- Archive and reset (migration 0258): when a reset clone's first publish
+    -- replaced this wall, and the wall a clone was made from.
+    "archived_at" timestamp,
+    "reset_from_wall_id" bigint REFERENCES "spray_walls"("id") ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS "spray_wall_versions" (
@@ -1820,6 +1836,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   -- whole table.
   CREATE INDEX IF NOT EXISTS "spray_walls_deleted_at_idx"
     ON "spray_walls" ("deleted_at") WHERE "deleted_at" IS NOT NULL AND "photos_purged_at" IS NULL;
+  CREATE INDEX IF NOT EXISTS "spray_walls_reset_from_wall_idx"
+    ON "spray_walls" ("reset_from_wall_id") WHERE "reset_from_wall_id" IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS "spray_wall_holds" (
     "wall_id" bigint NOT NULL REFERENCES "spray_walls"("id") ON DELETE CASCADE,

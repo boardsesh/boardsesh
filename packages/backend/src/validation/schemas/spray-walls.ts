@@ -137,6 +137,20 @@ export const CreateSprayWallInputSchema = z.object({
   // never taken from a client. See docs/spray-walls.md.
 });
 
+/** Most holds one `sprayWallHoldUsage` call may ask about: a hold editor removes a few at a time. */
+export const MAX_HOLD_USAGE_HOLD_IDS = 500;
+
+/** `sprayWallHoldUsage`'s two arguments, validated together. */
+export const SprayWallHoldUsageArgsSchema = z.object({
+  wallUuid: UUIDSchema,
+  holdIds: z.array(z.number().int().positive()).max(MAX_HOLD_USAGE_HOLD_IDS),
+});
+
+/** `resetSprayWall`: the wall to clone. Everything else is copied from it server-side. */
+export const ResetSprayWallInputSchema = z.object({
+  wallUuid: UUIDSchema,
+});
+
 export const CreateSprayWallVersionInputSchema = z
   .object({
     wallUuid: UUIDSchema,

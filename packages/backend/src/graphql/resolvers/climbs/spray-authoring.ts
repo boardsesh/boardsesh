@@ -5,7 +5,12 @@ import { SPRAY_SET, spraySizeIdForLayout } from '@boardsesh/board-config';
 import { aliveHolds, populateDenormalizedColumns } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
-import { lockWallForWrite, viewerCanWriteSprayClimbs } from '../board/spray-walls';
+import {
+  assertSprayWallNotArchivedUnderLock,
+  lockWallForWrite,
+  sprayWallArchivedError,
+  viewerCanWriteSprayClimbs,
+} from '../board/spray-walls';
 
 /**
  * What `saveClimb` / `updateClimb` have to know that no other board needs.
@@ -102,6 +107,12 @@ export type SprayClimbTarget = {
    * can allow collaborators when the policy is 'collaborators'.
    */
   climbEditPolicy: typeof dbSchema.sprayWalls.$inferSelect.climbEditPolicy;
+  /**
+   * When a reset archived the wall, or null. Read before the write transaction,
+   * for the early refusal in `assertSprayTargetNotArchived`; the deciding read is
+   * `assertSprayWallAcceptsClimbsUnderLock`.
+   */
+  archivedAt: Date | null;
 };
 
 /**
@@ -182,7 +193,19 @@ export async function findVisibleSprayWall(
     publishesFeedEvents: row.board.isPublic && row.wall.hiddenAt == null,
     board: row.board,
     climbEditPolicy: row.wall.climbEditPolicy,
+    archivedAt: row.wall.archivedAt,
   };
+}
+
+/**
+ * Refuse a climb write to an archived wall, early, from the pre-transaction read.
+ *
+ * A fast answer before any work, not the decision: an archive can land between
+ * this read and the write, which is what `assertSprayWallAcceptsClimbsUnderLock`
+ * re-checks under the wall lock.
+ */
+export function assertSprayTargetNotArchived(target: Pick<SprayClimbTarget, 'archivedAt'>): void {
+  if (target.archivedAt != null) throw sprayWallArchivedError();
 }
 
 /**
@@ -232,6 +255,24 @@ export async function sprayWallMayAnnounceUnderLock(executor: DrizzleExecutor, w
     .where(and(eq(dbSchema.sprayWalls.id, wallId), isNull(dbSchema.sprayWalls.deletedAt)))
     .limit(1);
   return row?.isPublic === true && row.hiddenAt == null;
+}
+
+/**
+ * Refuse a climb write to an archived wall, read UNDER THE WALL LOCK.
+ *
+ * The archive is stamped by the replacing wall's first publish, under this wall's
+ * lock. Checking here, under the same lock, means a `saveClimb` or `updateClimb`
+ * either commits before the archive or sees it — a climb cannot land on a wall
+ * in the instant after it was archived.
+ *
+ * Never for ticks, and never for deleting a draft: those stay allowed on an
+ * archived wall, and the offline drainer dead-letters a refused tick.
+ */
+export async function assertSprayWallAcceptsClimbsUnderLock(
+  executor: Parameters<typeof assertSprayWallNotArchivedUnderLock>[0],
+  wallId: number,
+): Promise<void> {
+  await assertSprayWallNotArchivedUnderLock(executor, wallId);
 }
 
 /**
