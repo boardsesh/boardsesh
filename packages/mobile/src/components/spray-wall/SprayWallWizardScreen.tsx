@@ -44,7 +44,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS, sprayHoldsReviewed, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
-import type { UserBoard, SprayDetectionCandidate } from '@boardsesh/shared-schema';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -57,6 +57,8 @@ import {
   type SprayEditorNotice,
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
+import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
+import { SprayTrainingConsentField } from '../board-discovery/BoardMetaFields';
 import { useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
@@ -109,6 +111,7 @@ import {
   useUpdateSprayWallVisibility,
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
+import { useSprayWallTrainingConsent } from '../../lib/spray/use-spray-wall-training-consent';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties, type WallCreatedMeta } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
@@ -293,6 +296,9 @@ export function SprayWallWizardScreen({
   );
   // Offline mode, said on the photo step before an upload tries and fails
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
+  const consentWallUuid = state.step === 'photo' ? (state.wall?.wallUuid ?? null) : null;
+  const storedTrainingConsent = useSprayWallTrainingConsent(consentWallUuid, consentWallUuid != null);
+  const photoTrainsHoldFinding = state.wall ? storedTrainingConsent.data === true : builder.trainingConsent;
   const connectivityReason = useConnectivityField(selectConnectivityReason);
   const offlineModeOn = sprayUploadNotice(connectivityReason) === 'offlineMode';
   // Read at the moment a late answer lands (the resume prompt, a leave dialog).
@@ -861,7 +867,7 @@ export function SprayWallWizardScreen({
   // ============================================
 
   const runDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
-  const detectionCompleted = useCallback((candidates: SprayDetectionCandidate[]) => {
+  const detectionCompleted = useCallback((candidates: SprayHoldCandidate[]) => {
     dispatch({ type: 'DETECTION_FINISHED', candidates });
   }, []);
   const useManualEditor = useCallback(() => dispatch({ type: 'DETECTION_UNAVAILABLE' }), []);
@@ -1721,7 +1727,8 @@ export function SprayWallWizardScreen({
               photo ? styles.tilePicked : [styles.tileEmpty, emptyTileColors],
             ]}
           >
-            {photo ? (
+            <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
+          {photo ? (
               <Image
                 source={{ uri: photo.uri }}
                 style={StyleSheet.absoluteFill}

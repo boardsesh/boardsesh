@@ -49,6 +49,26 @@ export type SprayEditorHoldSource = 'MANUAL' | 'AUTO';
  */
 export type SprayHoldReview = 'pending' | 'accepted' | 'rejected';
 
+/**
+ * What the climber did with a detector suggestion, in the wire's spelling
+ * (`SprayHoldAutoReview`, SW-20 #5471). AUTO holds only.
+ *
+ * - `ACCEPTED`: kept as found, by Publish's accept-defaults or Keep all maybes.
+ * - `CONFIRMED`: a maybe (or a switched-off find) the climber tapped on.
+ * - `EDITED`: its shape changed after the detector drew it.
+ *
+ * Ordered: a hold only ever moves UP this list (`raiseAutoReview`), because each
+ * step says more about the suggestion than the one before. The server keeps the
+ * highest of what it is sent and what it has, so the app never has to send one
+ * it already knows.
+ */
+export type SprayEditorAutoReview = 'ACCEPTED' | 'CONFIRMED' | 'EDITED';
+
+const AUTO_REVIEW_RANK: Record<SprayEditorAutoReview, number> = { ACCEPTED: 1, CONFIRMED: 2, EDITED: 3 };
+
+/** Which detection run, and which find in its full list, an AUTO hold started as. */
+export type SprayEditorHoldOrigin = { detectionId: string; candidateIndex: number };
+
 export type SprayEditorHold = HoldGeometry & {
   /**
    * The server's hold id, or a NEGATIVE id this session minted for a hold that
@@ -69,6 +89,14 @@ export type SprayEditorHold = HoldGeometry & {
    * sent and leaving it out would wipe the link. Nothing in the app sets it now.
    */
   movedFromHoldId?: number;
+  /** What the climber did with this suggestion. AUTO holds only; absent until they do something. */
+  autoReview?: SprayEditorAutoReview;
+  /**
+   * The detector find this hold started as, stamped by the seed. Only on a
+   * suggestion this session offered: a stored hold leaves it out, and the server
+   * keeps what it already records.
+   */
+  origin?: SprayEditorHoldOrigin;
 };
 
 export type SprayEditorPresent = {
@@ -195,12 +223,34 @@ function withId(ids: readonly number[], id: number): readonly number[] {
 }
 
 /**
+ * The hold with its review raised to at least `level`, never lowered: an edited
+ * find stays EDITED however it is switched on afterwards. A hand-drawn hold is
+ * handed back untouched, because there is no suggestion to review.
+ */
+export function raiseAutoReview(hold: SprayEditorHold, level: SprayEditorAutoReview): SprayEditorHold {
+  if (hold.source !== 'AUTO') return hold;
+  if (hold.autoReview != null && AUTO_REVIEW_RANK[hold.autoReview] >= AUTO_REVIEW_RANK[level]) return hold;
+  return { ...hold, autoReview: level };
+}
+
+/** The hold with no detector provenance left on it. */
+function withoutProvenance(hold: SprayEditorHold): SprayEditorHold {
+  if (hold.autoReview == null && hold.origin == null) return hold;
+  const bare = { ...hold };
+  delete bare.autoReview;
+  delete bare.origin;
+  return bare;
+}
+
+/**
  * The same hold, changed by hand. Editing a hold is keeping it: nobody fixes the
  * outline of a hold they want off the wall, so every geometry change also turns
- * the hold ON and marks it for the next upsert.
+ * the hold ON and marks it for the next upsert. A detector hold whose shape
+ * changed is recorded as EDITED, the strongest thing the training review can
+ * learn about a suggestion.
  */
 function touched(hold: SprayEditorHold, changes: Partial<SprayEditorHold>): SprayEditorHold {
-  return { ...hold, ...changes, review: 'accepted', dirty: true };
+  return raiseAutoReview({ ...hold, ...changes, review: 'accepted', dirty: true }, 'EDITED');
 }
 
 /** Commit one edited hold, taking a stored one back off the removal list. */
@@ -218,7 +268,10 @@ function commitEdit(state: SprayEditorState, hold: SprayEditorHold): SprayEditor
  * correction would supersede its id for no reason.
  */
 function switchOn(state: SprayEditorState, hold: SprayEditorHold): SprayEditorState {
-  return commitEdit(state, { ...hold, review: 'accepted', dirty: hold.id > 0 ? hold.dirty : true });
+  return commitEdit(
+    state,
+    raiseAutoReview({ ...hold, review: 'accepted', dirty: hold.id > 0 ? hold.dirty : true }, 'CONFIRMED'),
+  );
 }
 
 /**
@@ -335,12 +388,16 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       const victimId = survivorId === firstId ? secondId : firstId;
       const holds = { ...state.holds };
       delete holds[victimId];
-      holds[survivorId] = touched(state.holds[survivorId], {
-        ...geometry,
-        // A join of a find and a hand-drawn hold is hand-drawn work.
-        source: 'MANUAL',
-        confidence: null,
-      });
+      // A join of a find and a hand-drawn hold is hand-drawn work, so it keeps
+      // no claim to either suggestion: training on it as one would teach the
+      // detector a shape it never proposed.
+      holds[survivorId] = withoutProvenance(
+        touched(state.holds[survivorId], {
+          ...geometry,
+          source: 'MANUAL',
+          confidence: null,
+        }),
+      );
       return commit(state, {
         holds,
         removedIds: withId(withoutId(state.removedIds, survivorId), victimId),
@@ -356,7 +413,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
         holds ??= { ...state.holds };
         // `dirty` too: a find has never been written, so accepting it is exactly
         // what puts it in the upsert.
-        holds[hold.id] = { ...hold, review: 'accepted', dirty: true };
+        holds[hold.id] = raiseAutoReview({ ...hold, review: 'accepted', dirty: true }, 'ACCEPTED');
       }
       return holds ? { ...state, holds } : state;
     }
@@ -366,7 +423,7 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
       for (const hold of Object.values(state.holds)) {
         if (holdRole(hold) !== 'maybe') continue;
         holds ??= { ...state.holds };
-        holds[hold.id] = { ...hold, review: 'accepted', dirty: true };
+        holds[hold.id] = raiseAutoReview({ ...hold, review: 'accepted', dirty: true }, 'ACCEPTED');
       }
       return holds ? commit(state, { ...snapshotOf(state), holds }) : state;
     }

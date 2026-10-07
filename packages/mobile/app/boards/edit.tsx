@@ -41,6 +41,7 @@ import { useSprayWallIsArchived } from '../../src/lib/spray/use-spray-wall-archi
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { viewerOwnsSprayWall } from '../../src/components/board-discovery/spray-detail-rows';
 import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
+import { SprayWallTrainingConsentRow } from '../../src/components/spray-wall/SprayWallTrainingConsentRow';
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
 import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
 
@@ -161,7 +162,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
   const viewerUserId = profile?.id ?? storedUserId ?? null;
   const wallArchived = useSprayWallIsArchived(board.boardType, board.layoutId);
-  const canResetWall = isSprayWall && !wallArchived && viewerOwnsSprayWall(board, viewerUserId);
+  const viewerOwnsWall = isSprayWall && viewerOwnsSprayWall(board, viewerUserId);
+  const canResetWall = viewerOwnsWall && !wallArchived;
   const resetPendingRef = useRef(false);
   const openRetake = useCallback(() => {
     if (resetPendingRef.current) return;
@@ -445,6 +447,9 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       lockedConfig={lockedConfig}
       lockedConfigReason={configLock ?? undefined}
       currentBoardUuid={board.uuid}
+      sprayTrainingSection={
+        viewerOwnsWall ? <SprayWallTrainingConsentRow wallUuid={board.uuid} isOwner={viewerOwnsWall} /> : undefined
+      }
       sprayBackgroundSection={
         isSprayWall ? (
           <SprayWallBackgroundPicker

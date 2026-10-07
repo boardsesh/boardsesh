@@ -319,6 +319,9 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   },
 }));
 
+const trainingConsentMock = vi.hoisted(() => vi.fn((_wallUuid: string | null, _enabled: boolean) => ({ data: undefined as boolean | null | undefined })));
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({ useSprayWallTrainingConsent: trainingConsentMock }));
+vi.mock('../../board-discovery/BoardMetaFields', () => ({ SprayTrainingConsentField: () => null }));
 vi.mock('../../Text', () => ({
   Text: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('span', { 'data-testid': testID }, children),

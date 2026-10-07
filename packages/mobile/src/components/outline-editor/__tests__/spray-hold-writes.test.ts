@@ -74,13 +74,13 @@ describe('buildSprayHoldWritePlan', () => {
     expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).upsert).toEqual([]);
   });
 
-  it('sends an accepted find as AUTO, with its confidence intact', () => {
+  it('sends an accepted find as AUTO, with its confidence intact and the tap recorded as CONFIRMED', () => {
     const state = run([storedHold(-1, { source: 'AUTO', confidence: 0.3, review: 'pending' })], {
       type: 'TOGGLE_HOLD',
       id: -1,
     });
     expect(buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY).upsert).toEqual([
-      { cx: 100, cy: 200, r: 20, outline: null, source: 'AUTO', confidence: 0.3 },
+      { cx: 100, cy: 200, r: 20, outline: null, source: 'AUTO', confidence: 0.3, autoReview: 'CONFIRMED' },
     ]);
   });
 

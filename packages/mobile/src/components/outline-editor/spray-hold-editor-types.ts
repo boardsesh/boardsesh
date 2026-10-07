@@ -21,6 +21,17 @@ export type SprayHoldCandidate = {
   outline?: number[] | null;
   /** 0–1. Decides whether the find opens ON, as a maybe, or not at all (`spray-hold-tools.ts`). */
   confidence: number;
+  /**
+   * The detection run this find came from, stamped where the run is read
+   * (`SprayDetectionStep`). With `index`, it lets the training review (SW-20,
+   * #5471) point a saved hold back at the exact suggestion it started as.
+   */
+  detectionId?: string;
+  /**
+   * The find's position in that run's FULL candidate list, before the seed
+   * drops anything below the maybe floor. Never a loop counter downstream.
+   */
+  index?: number;
 };
 
 /** What one commit actually applied, as the server counted it. */
