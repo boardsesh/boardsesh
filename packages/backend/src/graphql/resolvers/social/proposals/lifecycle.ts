@@ -9,7 +9,7 @@ import { publishSocialEvent } from '../../../../events/index';
 import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { getUserVoteWeight } from '../roles';
 import { resolveCommunitySetting } from '../community-settings';
-import { applyProposalEffect } from './effects';
+import { applyProposalEffect, publishVoteGradedClimbStats } from './effects';
 import { checkAutoApproval, resolveApprovalThreshold } from './grade-analysis';
 import { assertClimbBoardType } from './climb-board-type';
 import crypto from 'crypto';
@@ -490,6 +490,7 @@ export async function runAutoApproval(
   proposal.resolvedAt = approved.resolvedAt;
 
   void notifyClimbRevalidated(proposal.climbUuid);
+  publishVoteGradedClimbStats(proposal);
 
   publishSocialEvent({
     type: 'proposal.approved',

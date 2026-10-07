@@ -16,7 +16,7 @@ import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
 import { requireAdminOrLeader, getUserVoteWeight } from '../roles';
 import { insertComment, publishCommentAddedLive } from '../comments';
 import { enrichProposal } from './enrichment';
-import { applyProposalEffect, revertProposalEffect } from './effects';
+import { applyProposalEffect, publishVoteGradedClimbStats, revertProposalEffect } from './effects';
 import { setterOverrideCommunityStatus, freezeClimb } from './setter-overrides';
 import {
   addWeightedUpvote,
@@ -377,6 +377,7 @@ export const socialProposalMutations = {
 
     if (status === 'approved') {
       void notifyClimbRevalidated(proposal.climbUuid);
+      publishVoteGradedClimbStats(proposal);
     }
 
     const eventType = status === 'approved' ? 'proposal.approved' : 'proposal.rejected';
@@ -428,6 +429,7 @@ export const socialProposalMutations = {
       await tx.delete(dbSchema.climbProposals).where(eq(dbSchema.climbProposals.id, proposal.id));
     });
     void notifyClimbRevalidated(proposal.climbUuid);
+    publishVoteGradedClimbStats(proposal);
 
     // Publish deleted event
     publishSocialEvent({

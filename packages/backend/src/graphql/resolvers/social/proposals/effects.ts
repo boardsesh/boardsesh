@@ -2,6 +2,7 @@ import { eq, and, sql, desc, isNull } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { CLIMBER_VOTE_GRADE_BOARDS, recomputeClimbStats } from '@boardsesh/db/queries';
+import { queueClimbStatsRecompute } from '../../ticks/debounced-climb-stats-publisher';
 import type { ProposalExecutor } from './lifecycle';
 
 /**
@@ -15,9 +16,29 @@ async function recomputeVoteGradedClimb(
   proposal: typeof dbSchema.climbProposals.$inferSelect,
   executor: ProposalExecutor,
 ): Promise<void> {
-  if (proposal.type !== 'grade' || proposal.angle == null) return;
-  if (!(CLIMBER_VOTE_GRADE_BOARDS as readonly string[]).includes(proposal.boardType)) return;
-  await recomputeClimbStats(executor, proposal.boardType, proposal.climbUuid, proposal.angle);
+  const angle = voteGradedAngle(proposal);
+  if (angle == null) return;
+  await recomputeClimbStats(executor, proposal.boardType, proposal.climbUuid, angle);
+}
+
+/** The angle of a grade proposal on a climbers'-vote board, or null for any other proposal. */
+function voteGradedAngle(proposal: typeof dbSchema.climbProposals.$inferSelect): number | null {
+  if (proposal.type !== 'grade' || proposal.angle == null) return null;
+  if (!(CLIMBER_VOTE_GRADE_BOARDS as readonly string[]).includes(proposal.boardType)) return null;
+  return proposal.angle;
+}
+
+/**
+ * Tell open play drawers about a grade an approval or a revert just changed.
+ * Call it AFTER the transaction that applied the effect has committed: the
+ * debounced pass re-reads the row and publishes `climbStatsUpdated`, which is
+ * how a session's drawers learn the new grade. The recompute is idempotent, so
+ * running it again over the row the effect already wrote changes nothing.
+ */
+export function publishVoteGradedClimbStats(proposal: typeof dbSchema.climbProposals.$inferSelect): void {
+  const angle = voteGradedAngle(proposal);
+  if (angle == null) return;
+  queueClimbStatsRecompute(proposal.boardType, proposal.climbUuid, angle);
 }
 
 /**

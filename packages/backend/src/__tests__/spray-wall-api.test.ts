@@ -86,6 +86,13 @@ vi.mock('../events', () => ({
   }),
 }));
 
+// A pass-through spy: the debounced recompute still runs, and a test can see
+// that a grade approval queued the live `climbStatsUpdated` publish (#5971).
+vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../graphql/resolvers/ticks/debounced-climb-stats-publisher')>();
+  return { ...actual, queueClimbStatsRecompute: vi.fn(actual.queueClimbStatsRecompute) };
+});
+
 vi.mock('../lib/web-revalidate', () => ({
   notifyClimbRevalidated: vi.fn(async () => undefined),
 }));
@@ -113,6 +120,7 @@ const { activityFeedQueries } = await import('../graphql/resolvers/social/activi
 const { sessionFeedQueries } = await import('../graphql/resolvers/social/session-feed');
 const { smartPlaylist } = await import('../graphql/resolvers/playlists/queries/smart-playlists');
 const { tickMutations } = await import('../graphql/resolvers/ticks/mutations');
+const { queueClimbStatsRecompute } = await import('../graphql/resolvers/ticks/debounced-climb-stats-publisher');
 const { generateSessionSummary } = await import('../graphql/resolvers/sessions/session-summary');
 const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/favorite-climbs-query');
 const { playlistQueries } = await import('../graphql/resolvers/playlists/queries');
@@ -4516,6 +4524,71 @@ describe('a spray climb\u2019s grade is the climbers\u2019 vote (#5971)', () => 
         ctxFor(STRANGER),
       ),
     ).rejects.toThrow(/through a proposal/i);
+  });
+
+  it('tells open play drawers when a grade is approved, and when it is reverted', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    await sendTick(climbUuid, STRANGER, 10);
+
+    vi.mocked(queueClimbStatsRecompute).mockClear();
+    await reportGrade(climbUuid, OWNER, '7a/V6');
+    expect(vi.mocked(queueClimbStatsRecompute).mock.calls).toEqual([['spray', climbUuid, 40]]);
+
+    // An admin deleting the approved proposal reverts the grade: drawers hear that too.
+    await db.execute(sql`INSERT INTO community_roles (user_id, role, board_type) VALUES (${OUTSIDER}, 'admin', NULL)`);
+    const [proposal] = (await db.execute(sql`
+      SELECT uuid FROM climb_proposals WHERE climb_uuid = ${climbUuid} AND status = 'approved'
+    `)) as unknown as Array<{ uuid: string }>;
+    vi.mocked(queueClimbStatsRecompute).mockClear();
+    await socialProposalMutations.deleteProposal({}, { input: { proposalUuid: proposal.uuid } }, ctxFor(OUTSIDER));
+    expect(vi.mocked(queueClimbStatsRecompute).mock.calls).toEqual([['spray', climbUuid, 40]]);
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(10);
+  });
+
+  it('refuses a grade that is not on the spray grade scale', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    // 6a/V2 is a MoonBoard label; spray's 6a is V3.
+    await expect(reportGrade(climbUuid, OWNER, '6a/V2')).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_GRADE_NOT_ON_SCALE' },
+    });
+    await expect(
+      socialProposalMutations.createProposal(
+        {},
+        { input: { climbUuid, boardType: 'spray', angle: 40, type: 'grade', proposedValue: '6a/V2' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'SPRAY_GRADE_NOT_ON_SCALE' } });
+    const [{ count: proposals }] = (await db.execute(sql`
+      SELECT count(*)::int AS count FROM climb_proposals WHERE climb_uuid = ${climbUuid}
+    `)) as unknown as Array<{ count: number }>;
+    expect(proposals).toBe(0);
+  });
+
+  it('refuses grade proposals on an archived wall, the owner’s included, but still takes a report', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    await sendTick(climbUuid, STRANGER, 10);
+    const wall = climbWalls.get(climbUuid)!;
+    await db.execute(sql`UPDATE spray_walls SET archived_at = now() WHERE board_uuid = ${wall.uuid}`);
+
+    await expect(reportGrade(climbUuid, OWNER, '7a/V6')).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_ARCHIVED' },
+    });
+    await expect(
+      socialProposalMutations.createProposal(
+        {},
+        { input: { climbUuid, boardType: 'spray', angle: 40, type: 'grade', proposedValue: '7a/V6' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_ARCHIVED' } });
+    expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(10);
+
+    // A hide report is moderation, not a change to the wall: it still lands.
+    const report = (await socialProposalMutations.reportClimb(
+      {},
+      { input: { climbUuid, boardType: 'spray', kind: 'hide', reason: 'Offensive climb name here' } },
+      ctxFor(OUTSIDER),
+    )) as { status: string };
+    expect(report.status).toBe('created');
   });
 });
 
