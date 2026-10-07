@@ -47,6 +47,7 @@
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/pr-body": "workspace:*",
     "@boardsesh/queue": "workspace:*",
+    "@boardsesh/rate-limit": "workspace:*",
     "@boardsesh/session-inference": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/spray-wall-geometry": "workspace:*",

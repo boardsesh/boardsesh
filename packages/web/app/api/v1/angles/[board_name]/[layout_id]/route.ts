@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { isAuroraBoardName, AURORA_BOARD_NAMES } from '@/app/lib/board-constants';
 import { ANGLES } from '@/app/lib/board-data';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 
 export async function GET(req: Request, props: { params: Promise<{ board_name: string; layout_id: string }> }) {
+  const rateLimitedResponse = await enforcePublicApiRateLimit(req);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const params = await props.params;
   const { board_name } = params;
 

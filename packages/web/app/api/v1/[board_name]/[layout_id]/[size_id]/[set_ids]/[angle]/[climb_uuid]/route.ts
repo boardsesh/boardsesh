@@ -1,6 +1,7 @@
 // api/v1/[board_name]/[layout_id]/[size_id]/[set_ids]/[climb_uuid]
 import { convertLitUpHoldsStringToMap } from '@/app/components/board-renderer/util';
 import { getClimb } from '@/app/lib/data/queries';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 import type { BoardRouteParametersWithUuid, ErrorResponse, FetchCurrentProblemResponse } from '@/app/lib/types';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { NextResponse } from 'next/server';
@@ -9,6 +10,9 @@ export async function GET(
   req: Request,
   props: { params: Promise<BoardRouteParametersWithUuid> },
 ): Promise<NextResponse<FetchCurrentProblemResponse | ErrorResponse>> {
+  const rateLimitedResponse = await enforcePublicApiRateLimit(req);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const params = await props.params;
   try {
     const parsedParams = await parseBoardRouteParamsWithSlugs(params);

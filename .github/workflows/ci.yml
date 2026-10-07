@@ -286,7 +286,7 @@ jobs:
             # rather than a convenient `packages/**`:
             #
             #   * `packages/web/**` — the app itself, next.config.mjs included.
-            #   * the 37 workspace packages @boardsesh/web transitively depends
+            #   * the 38 workspace packages @boardsesh/web transitively depends
             #     on, taken from the same dependencies/optionalDependencies/
             #     peerDependencies walk create-service-docker-context.mjs runs.
             #     scripts/__tests__/ci-docker-web-workflow.test.ts re-derives
@@ -356,6 +356,7 @@ jobs:
               - 'packages/shared/playlist-generator/**'
               - 'packages/shared/playlists-react/**'
               - 'packages/shared/profile-stats/**'
+              - 'packages/shared/rate-limit/**'
               - 'packages/shared/queue/**'
               - 'packages/shared/queue-react/**'
               - 'packages/shared/queue-runtime/**'
