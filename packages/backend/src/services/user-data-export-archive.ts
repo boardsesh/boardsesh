@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import {
@@ -9,6 +9,8 @@ import {
   playlistClimbs,
   playlistOwnership,
   playlists,
+  sprayWalls,
+  userBoards,
   userFavorites,
   users,
 } from '@boardsesh/db/schema';
@@ -85,6 +87,20 @@ export type ArchiveClimb = {
   characteristics: string[] | null;
 };
 
+/**
+ * One spray wall the climber owns, with the training choice they made for it
+ * (SW-20, #5471). `trainingConsentAt` is when "Help train hold finding" was last
+ * switched on, or null while it is off.
+ */
+export type ArchiveSprayWall = {
+  uuid: string;
+  name: string;
+  layoutId: number;
+  createdAt: string;
+  archivedAt: string | null;
+  trainingConsentAt: string | null;
+};
+
 /** Personal climbing records, not a catalogue or an authentication backup. */
 export type BoardseshUserDataArchive = {
   schemaVersion: 1;
@@ -96,6 +112,8 @@ export type BoardseshUserDataArchive = {
   favorites: ArchiveFavorite[];
   playlists: ArchivePlaylist[];
   climbs: ArchiveClimb[];
+  /** Spray exports only: the walls the climber owns. */
+  sprayWalls?: ArchiveSprayWall[];
 };
 
 // Query and upload limits are deliberately all-or-nothing: an oversized history
@@ -383,7 +401,28 @@ export async function buildUserDataArchive(
     .where(and(eq(boardClimbs.userId, userId), eq(boardClimbs.boardType, boardType), climbVisibility))
     .orderBy(asc(boardClimbs.createdAt), asc(boardClimbs.uuid))
     .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1);
-  checkedRowCount(loadedRows, climbs);
+  loadedRows = checkedRowCount(loadedRows, climbs);
+  signal?.throwIfAborted();
+  // Capped per account (MAX_SPRAY_WALLS_PER_USER plus the archive cap), so this
+  // never threatens the row budget; counted anyway so the limit stays honest.
+  const ownedSprayWalls =
+    boardType === 'spray'
+      ? await database
+          .select({
+            uuid: sprayWalls.boardUuid,
+            name: userBoards.name,
+            layoutId: sprayWalls.layoutId,
+            createdAt: sprayWalls.createdAt,
+            archivedAt: sprayWalls.archivedAt,
+            trainingConsentAt: sprayWalls.trainingConsentAt,
+          })
+          .from(sprayWalls)
+          .innerJoin(userBoards, eq(userBoards.uuid, sprayWalls.boardUuid))
+          .where(and(eq(userBoards.ownerId, userId), isNull(sprayWalls.deletedAt), isNull(userBoards.deletedAt)))
+          .orderBy(asc(sprayWalls.createdAt), asc(sprayWalls.id))
+          .limit(MAX_USER_DATA_EXPORT_ROWS - loadedRows + 1)
+      : [];
+  checkedRowCount(loadedRows, ownedSprayWalls);
   signal?.throwIfAborted();
   const archivedPlaylists = new Map<string, ArchivePlaylist>();
   for (const row of playlistRows) {
@@ -437,6 +476,18 @@ export async function buildUserDataArchive(
     })),
     playlists: [...archivedPlaylists.values()],
     climbs: climbs.map((climb) => ({ ...climb, updatedAt: timestamp(climb.updatedAt) })),
+    ...(boardType === 'spray'
+      ? {
+          sprayWalls: ownedSprayWalls.map((wall) => ({
+            uuid: wall.uuid,
+            name: wall.name,
+            layoutId: wall.layoutId,
+            createdAt: timestamp(wall.createdAt),
+            archivedAt: wall.archivedAt ? timestamp(wall.archivedAt) : null,
+            trainingConsentAt: wall.trainingConsentAt ? timestamp(wall.trainingConsentAt) : null,
+          })),
+        }
+      : {}),
   };
 }
 

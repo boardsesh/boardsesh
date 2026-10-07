@@ -18,6 +18,7 @@ import { holdOutlineMutations, holdOutlineQueries } from './board/hold-outline-o
 import { sprayWallMutations, sprayWallQueries } from './board/spray-walls';
 import { sprayDetectionMutations, sprayDetectionQueries } from './board/spray-detection';
 import { sprayWallModerationMutations, sprayWallModerationQueries } from './board/spray-wall-moderation';
+import { sprayTrainingMutations, sprayTrainingQueries } from './board/spray-training';
 import { tickQueries } from './ticks/queries';
 import { tickBoardQueries } from './ticks/board-options';
 import { tickMutations } from './ticks/mutations';
@@ -119,6 +120,7 @@ export const resolvers = {
     ...sprayWallQueries,
     ...sprayDetectionQueries,
     ...sprayWallModerationQueries,
+    ...sprayTrainingQueries,
     ...climbQueries,
     ...tickQueries,
     ...tickBoardQueries,
@@ -176,6 +178,7 @@ export const resolvers = {
     ...sprayWallMutations,
     ...sprayDetectionMutations,
     ...sprayWallModerationMutations,
+    ...sprayTrainingMutations,
     ...pushTokenMutations,
     ...queueMutations,
     ...tickMutations,

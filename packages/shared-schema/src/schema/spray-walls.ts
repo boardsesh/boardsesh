@@ -19,6 +19,19 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   }
 
   """
+  What the climber did with a detector suggestion before saving it as an AUTO
+  hold. Ranked ACCEPTED < CONFIRMED < EDITED; a hold never moves down.
+  """
+  enum SprayHoldAutoReview {
+    "Kept as found, through accept-defaults or keep-maybes."
+    ACCEPTED
+    "A maybe the climber switched on by itself."
+    CONFIRMED
+    "Its shape changed after the detector drew it. The server also sets this whenever an AUTO hold's geometry moves."
+    EDITED
+  }
+
+  """
   Retired. A published spray climb follows the rule every board follows: only
   its setter edits it, within 24 hours of first publish. Every wall reads SETTER.
   """
@@ -71,6 +84,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     source: SprayHoldSource!
     "Detector confidence 0-1 for AUTO holds; null when a human drew it."
     confidence: Float
+    "What the climber did with the suggestion. Null for MANUAL holds and for AUTO holds saved without provenance."
+    autoReview: SprayHoldAutoReview
+    "The detection run the suggestion came from. Null for MANUAL holds."
+    originDetectionId: ID
+    "Index of the suggestion in that run's result.candidates."
+    originCandidateIndex: Int
   }
 
   "One photograph of the wall, with the geometry that maps it onto the canonical frame."
@@ -222,6 +241,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     and its publish may narrow it to what the old wall has by then.
     """
     pendingVisibility: SprayWallVisibility
+    """
+    Whether the owner lets this wall's photo and marked holds help train hold
+    finding. On by default. The Boardsesh team checks a version before it is
+    used, and nobody else sees it. Only ever non-null for the wall's OWNER.
+    """
+    trainingConsent: Boolean
   }
 
   "A wall's visibility pair, as the board row carries it."
@@ -328,6 +353,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     hideLocation: Boolean
     "Accepted and ignored. Only a climb's setter edits it."
     climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+    "Let this wall's photo and marked holds help train hold finding. On when omitted."
+    trainingConsent: Boolean
   }
 
   "How many climbs on a wall use one hold. See \`sprayWallHoldUsage\`."
@@ -373,6 +400,20 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     source: SprayHoldSource
     confidence: Float
     movedFromHoldId: Int
+    """
+    What the climber did with the suggestion. AUTO holds only; ignored on MANUAL.
+    The server keeps the highest of this, the stored value and EDITED when the
+    geometry changed, so an omitted value never clears one.
+    """
+    autoReview: SprayHoldAutoReview
+    """
+    The detection run the suggestion came from, with originCandidateIndex. AUTO
+    holds only. A run of another wall, an unfinished run or an index out of range
+    is stored as null rather than failing the save. Omit both to keep what the
+    hold already records.
+    """
+    originDetectionId: ID
+    originCandidateIndex: Int
   }
 
   input UpsertSprayWallHoldsInput {
@@ -431,6 +472,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     angle: Int
     "Accepted and ignored. Only a climb's setter edits it."
     climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
+    """
+    Let this wall's photo and marked holds help train hold finding. Owner only,
+    like visibility. Switching it off takes the wall out of the next training
+    export and retires stored exports that held it within a day.
+    """
+    trainingConsent: Boolean
   }
 
   input SetSprayWallRenderSettingsInput {
