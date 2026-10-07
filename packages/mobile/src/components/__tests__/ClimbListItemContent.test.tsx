@@ -192,6 +192,7 @@ describe('ClimbListItemContent grade', () => {
     render(<ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />);
     expect(resolveGrade).toHaveBeenCalledWith(
       expect.objectContaining({ difficulty: '6b/V4', boardseshDifficulty: 20, boardseshConfidence: 'confirmed' }),
+      'kilter',
     );
   });
 
@@ -207,7 +208,7 @@ describe('ClimbListItemContent grade', () => {
       <ClimbListItemContent climb={baseClimb} boardName="kilter" layoutId={1} sizeId={1} setIds="1" angle={40} />,
     );
 
-    expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: null }));
+    expect(resolveGrade).toHaveBeenCalledWith(expect.objectContaining({ difficulty: null }), 'kilter');
     expect(container.textContent).not.toContain('4.5★');
   });
 });

@@ -74,6 +74,7 @@ vi.mock('@boardsesh/shared-schema', () => ({
     data: { user: { username: 'aurora' }, ascents: [], attempts: [], circuits: [], climbs: [] },
     preview: { username: 'aurora', ascents: 0, attempts: 0, circuits: 0, climbs: 0 },
   })),
+  decodeMoonBoardExportBytes: (bytes: Uint8Array) => new TextDecoder().decode(bytes),
   parseMoonBoardExportCsv: mocks.parseMoonBoardCsv,
 }));
 
@@ -153,6 +154,10 @@ vi.mock('expo-file-system', () => ({
 
     text() {
       return mocks.fileText(this.uri);
+    }
+
+    async bytes() {
+      return new TextEncoder().encode(await mocks.fileText(this.uri));
     }
   },
 }));
@@ -383,7 +388,16 @@ describe('BoardAccountsSection — MoonBoard card', () => {
     mocks.streamMoonBoardImport.mockReset().mockResolvedValue(undefined);
     mocks.parseMoonBoardCsv.mockReset().mockReturnValue({
       data: { rows: [{ problemId: 123 }] },
-      preview: { username: 'moonuser', rows: 3, sends: 1, flashes: 1, attempts: 2, projects: 1, fails: 0, angle: 40 },
+      preview: {
+        username: 'moonuser',
+        rows: 3,
+        sends: 1,
+        flashes: 1,
+        attempts: 2,
+        projects: 1,
+        fails: 0,
+        angles: [25, 40],
+      },
     });
     mocks.pickDocument.mockReset().mockResolvedValue({
       canceled: false,
@@ -435,6 +449,7 @@ describe('BoardAccountsSection — MoonBoard card', () => {
       );
       expect(button(container, 'aurora.import.dialog.confirm')).not.toBeNull();
       expect(container.textContent).toContain('aurora.moonboard.importDialog.flashes');
+      expect(container.textContent).toContain('aurora.moonboard.importDialog.angleNote');
     });
   });
 

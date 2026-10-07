@@ -685,6 +685,11 @@ async function loadTickStats(sessionIds: readonly string[]): Promise<Map<string,
       hardestGradeName: sql<
         string | null
       >`(ARRAY_AGG(${difficultyNameWithFallbackExpr} ORDER BY ${hardestOrder}) FILTER (WHERE ${isSend}))[1]`,
+      // The hardest send's own board, so the fallback label below is on that
+      // board's scale (MoonBoard's 16 is "6a/V2", not the shared "6a/V3").
+      hardestBoardType: sql<
+        string | null
+      >`(ARRAY_AGG(${ticks.boardType} ORDER BY ${hardestOrder}) FILTER (WHERE ${isSend}))[1]`,
     })
     .from(ticks)
     .leftJoin(aliases, and(eq(aliases.boardType, ticks.boardType), eq(aliases.aliasUuid, ticks.climbUuid)))
@@ -709,7 +714,9 @@ async function loadTickStats(sessionIds: readonly string[]): Promise<Map<string,
       sendCount: Number(row.sendCount),
       flashCount: Number(row.flashCount),
       hardestSendGrade:
-        row.hardestGradeName || (hardestDifficulty != null ? getGradeLabel(hardestDifficulty) : null) || null,
+        row.hardestGradeName ||
+        (hardestDifficulty != null ? getGradeLabel(hardestDifficulty, row.hardestBoardType) : null) ||
+        null,
     });
   }
   return stats;

@@ -113,6 +113,7 @@ export function buildDumbbellByAngleModel(
   boardseshRows: BoardseshGradeAtAngle[],
   crowdBars: AngleGradeBar[],
   gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
 ): DumbbellAngleRow[] {
   const crowdByAngle = new Map<number, AngleGradeBar>();
   for (const bar of crowdBars) crowdByAngle.set(bar.angle, bar);
@@ -136,7 +137,7 @@ export function buildDumbbellByAngleModel(
     // Shared with web via @boardsesh/logbook so this rule can't diverge again
     // — see #4414.
     const boardseshRaw = boardsesh && tier !== 'setter_only' ? surfacedBoardseshGrade(boardsesh) : null;
-    const rendered = boardseshRaw != null ? renderDifficulty(boardseshRaw, gradeFormat) : null;
+    const rendered = boardseshRaw != null ? renderDifficulty(boardseshRaw, gradeFormat, boardName) : null;
     const boardseshGrade = rendered ? boardseshRaw : null;
     const boardseshLabel = rendered?.label ?? null;
     const boardseshColor = rendered?.color ?? null;
@@ -247,7 +248,11 @@ const Y_AXIS_GUTTER = 4;
  * the x-axis labels. The top stays clamped to the hardest real grade so the top
  * tick always reads truthfully.
  */
-export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDisplayFormat): DumbbellAxis {
+export function buildDumbbellAxis(
+  rows: DumbbellAngleRow[],
+  gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
+): DumbbellAxis {
   const values: number[] = [];
   for (const row of rows) {
     if (row.crowdGrade != null) values.push(row.crowdGrade);
@@ -284,7 +289,7 @@ export function buildDumbbellAxis(rows: DumbbellAngleRow[], gradeFormat: GradeDi
   let labelBelow = '';
   for (let index = 0; index <= noOfSections; index++) {
     const id = minId + index * idsPerSection;
-    const label = id < MIN_DIFFICULTY_ID ? '' : (renderDifficulty(id, gradeFormat)?.label ?? '');
+    const label = id < MIN_DIFFICULTY_ID ? '' : (renderDifficulty(id, gradeFormat, boardName)?.label ?? '');
     yAxisLabelTexts.push(label && label !== labelBelow ? label : BLANK_TICK);
     if (label) labelBelow = label;
   }

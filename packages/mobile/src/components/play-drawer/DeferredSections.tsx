@@ -295,7 +295,8 @@ export const DeferredSections = memo(function DeferredSections({
   const { data: history } = useClimbStatsHistory(boardName, boardseshReady ? climb.uuid : null);
   const boardseshSummary = useMemo(() => {
     const view = buildBoardseshGradeView(boardName, boardseshGrade ?? null, gradeFormat);
-    const crowdLabel = buildAngleGradeBars(history, gradeFormat).find((bar) => bar.angle === angle)?.gradeName ?? null;
+    const crowdLabel =
+      buildAngleGradeBars(history, gradeFormat, boardName).find((bar) => bar.angle === angle)?.gradeName ?? null;
     return buildBoardseshGradeSummary(view, { crowdLabel, localWord: tClimbs('boardseshGrade.summaryLocal') });
   }, [boardName, boardseshGrade, gradeFormat, history, angle, tClimbs]);
 

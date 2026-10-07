@@ -13,7 +13,7 @@ import { ClimbListItemContent } from '../ClimbListItemContent';
 import { gradeBadgeColor } from '../you/profile-chart-colors';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
-import { resolveCrowdDifficultyId, GRADE_BY_ID, clampDifficultyId } from '../../lib/boardsesh-grade-display';
+import { resolveCrowdDifficultyId, getBoulderGradeById, clampDifficultyId } from '../../lib/boardsesh-grade-display';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { brandColors, withAlpha } from '../../theme/colors';
@@ -187,10 +187,14 @@ export const SessionTickRow = memo(function SessionTickRow({
   const crowdDifficulty = tick.difficulty == null ? resolveCrowdDifficultyId(tick, boardseshActive) : null;
   const effectiveDifficulty = tick.difficulty ?? crowdDifficulty;
   const gradeLabel =
-    formatGradeByDifficultyId(effectiveDifficulty) ?? formatGrade(tick.difficultyName) ?? tick.difficultyName;
+    formatGradeByDifficultyId(effectiveDifficulty, tick.boardType) ??
+    formatGrade(tick.difficultyName, tick.boardType) ??
+    tick.difficultyName;
   const gradeColorName =
     tick.difficultyName ??
-    (crowdDifficulty != null ? (GRADE_BY_ID.get(clampDifficultyId(crowdDifficulty))?.difficulty_name ?? null) : null);
+    (crowdDifficulty != null
+      ? (getBoulderGradeById(clampDifficultyId(crowdDifficulty), tick.boardType)?.difficulty_name ?? null)
+      : null);
   const gradeColor = gradeLabel ? gradeBadgeColor(gradeColorName ?? gradeLabel) : undefined;
 
   return (

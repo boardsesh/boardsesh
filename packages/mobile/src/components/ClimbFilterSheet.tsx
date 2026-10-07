@@ -984,6 +984,7 @@ export function ClimbFilterSheet({
                 grades={grades ?? []}
                 bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
                 lastUsedGradeId={lastUsedGradeId}
+                boardName={boardName}
                 onChange={handleGradeChange}
                 dismissible={false}
                 style={styles.inlineGradeRail}

@@ -24,9 +24,11 @@ import type { WallPreviewState } from './useWallPreview';
 function WallIdleRecovery({
   lastLitClimb,
   typeScale,
+  boardName,
 }: {
   lastLitClimb: BoardPresenceClimb | null;
   typeScale: WallKioskTypeScale;
+  boardName?: string;
 }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
@@ -39,7 +41,7 @@ function WallIdleRecovery({
   const name = lastLitClimb?.name?.trim() || '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
   // back to the legacy label + colour — lights up once the backend stamps them.
-  const resolvedGrade = resolveGrade({ difficulty: lastLitClimb?.grade ?? '' });
+  const resolvedGrade = resolveGrade({ difficulty: lastLitClimb?.grade ?? '' }, boardName);
   const grade = lastLitClimb?.grade ? resolvedGrade.label : null;
   const gradeColor = resolvedGrade.color;
   const lastLine = { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight };
@@ -80,6 +82,8 @@ type WallChromeRegionProps = {
    *  lower-priority identity lines so the controls still fit. */
   compact: boolean;
   recentSenders: BoardClimbRecentSender[];
+  /** The kiosk's board, so grades read on its scale (the wall payload names no board). */
+  boardName?: string;
 };
 
 /**
@@ -97,6 +101,7 @@ function WallChromeRegionComponent({
   bandWidth,
   compact,
   recentSenders,
+  boardName,
 }: WallChromeRegionProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
@@ -112,11 +117,12 @@ function WallChromeRegionComponent({
       previewTimestamp={previewTimestamp}
       liveClimb={liveClimb}
       typeScale={typeScale}
+      boardName={boardName}
     />
   );
   const identity =
     mode === 'idle' ? (
-      <WallIdleRecovery lastLitClimb={lastLitClimb} typeScale={typeScale} />
+      <WallIdleRecovery lastLitClimb={lastLitClimb} typeScale={typeScale} boardName={boardName} />
     ) : (
       <WallIdentityBlock
         climb={displayedClimb}
@@ -128,6 +134,7 @@ function WallChromeRegionComponent({
         nameLines={bandColumns === 3 ? 1 : 2}
         driverSize={region === 'rail' ? 32 : 28}
         compact={compact}
+        boardName={boardName}
       />
     );
   const attribution =

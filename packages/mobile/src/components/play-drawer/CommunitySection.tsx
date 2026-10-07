@@ -62,7 +62,10 @@ export const CommunitySection = memo(function CommunitySection({
     ));
   }, [qualityNum, hasQuality]);
 
-  const angleBars = useMemo(() => buildAngleGradeBars(history, gradeFormat), [history, gradeFormat]);
+  const angleBars = useMemo(
+    () => buildAngleGradeBars(history, gradeFormat, boardName),
+    [history, gradeFormat, boardName],
+  );
 
   // A climb nobody has climbed yet can still carry a hide report, so the
   // moderation block rides above the empty state rather than being swallowed by

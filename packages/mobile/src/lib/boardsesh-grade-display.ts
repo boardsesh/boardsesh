@@ -4,7 +4,7 @@
 // legacy Aurora-set difficulty. No React — one Map lookup + format per call,
 // so list rows can call this per item without cost.
 //
-// Owns the difficulty-scale primitives (GRADE_BY_ID, renderDifficulty,
+// Owns the difficulty-scale primitives (getBoulderGradeById, renderDifficulty,
 // clampDifficultyId, MIN/MAX_DIFFICULTY_ID) that used to live in the play
 // drawer's boardsesh-grade-utils.ts. That file now re-exports them from here
 // unchanged so its own callers (buildBoardseshGradeView) and tests are
@@ -12,10 +12,29 @@
 // here and components import them, never the reverse.
 import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
+import {
+  BOULDER_GRADES,
+  MOONBOARD_BOULDER_GRADES,
+  getBoulderGradesForBoard,
+  type BoulderGrade,
+} from '@boardsesh/board-constants/boulder-grade-mapping';
 import { BOARDSESH_TIER, isEstimatedGrade, resolveCrowdDifficulty } from '@boardsesh/logbook';
 
-export const GRADE_BY_ID = new Map<number, BoulderGrade>(BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]));
+const GRADE_BY_ID_BY_TABLE = new Map<readonly BoulderGrade[], ReadonlyMap<number, BoulderGrade>>(
+  [BOULDER_GRADES, MOONBOARD_BOULDER_GRADES].map((grades) => [
+    grades,
+    new Map(grades.map((grade) => [grade.difficulty_id, grade])),
+  ]),
+);
+
+/**
+ * The grade for a difficulty id on `boardName`'s scale. Ids are shared across
+ * boards; only MoonBoard labels one differently (16 is "6a/V2" there). A
+ * missing board uses the shared table.
+ */
+export function getBoulderGradeById(difficultyId: number, boardName?: string | null): BoulderGrade | undefined {
+  return GRADE_BY_ID_BY_TABLE.get(getBoulderGradesForBoard(boardName))?.get(difficultyId);
+}
 
 // The difficulty scale the data-science grade shares with Aurora's ids.
 export const MIN_DIFFICULTY_ID = BOULDER_GRADES[0].difficulty_id;
@@ -34,11 +53,15 @@ export function clampDifficultyId(value: number): number {
 }
 
 /** Round a float difficulty to the nearest grade and render its label + colour. */
-export function renderDifficulty(value: number, gradeFormat: GradeDisplayFormat): RenderedGrade | null {
-  const grade = GRADE_BY_ID.get(clampDifficultyId(value));
+export function renderDifficulty(
+  value: number,
+  gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
+): RenderedGrade | null {
+  const grade = getBoulderGradeById(clampDifficultyId(value), boardName);
   if (!grade) return null;
   return {
-    label: formatGrade(grade.difficulty_name, gradeFormat) ?? grade.v_grade,
+    label: formatGrade(grade.difficulty_name, gradeFormat, boardName) ?? grade.v_grade,
     color: getGradeColor(grade.difficulty_name) ?? DEFAULT_GRADE_COLOR,
   };
 }
@@ -107,12 +130,12 @@ export function resolveBoardseshDifficultyId(fields: BoardseshGradeFields): numb
  */
 export function resolveDisplayGrade(
   climb: BoardseshGradeFields & { difficulty?: string | null },
-  opts: { useBoardseshGrades: boolean; gradeFormat: GradeDisplayFormat },
+  opts: { useBoardseshGrades: boolean; gradeFormat: GradeDisplayFormat; boardName?: string | null },
 ): DisplayGrade {
   if (opts.useBoardseshGrades) {
     const boardseshId = resolveBoardseshDifficultyId(climb);
     if (boardseshId != null) {
-      const rendered = renderDifficulty(boardseshId, opts.gradeFormat);
+      const rendered = renderDifficulty(boardseshId, opts.gradeFormat, opts.boardName);
       if (rendered) {
         // An angle nobody has climbed wears the marker everywhere its grade is
         // shown, including the compact chips in search results, the queue and
@@ -129,7 +152,7 @@ export function resolveDisplayGrade(
     }
   }
   return {
-    label: formatGrade(climb.difficulty, opts.gradeFormat) ?? climb.difficulty ?? '',
+    label: formatGrade(climb.difficulty, opts.gradeFormat, opts.boardName) ?? climb.difficulty ?? '',
     color: getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR,
     isBoardsesh: false,
     isEstimated: false,
@@ -160,10 +183,14 @@ export const resolveCrowdDifficultyId = resolveCrowdDifficulty;
  * (docs/boardsesh-grade.md §2) is exactly this loop, and the first ascents at a
  * new angle are the ones with the least reason to be anchored.
  */
-export function resolveTickDefaultGradeName(fields: BoardseshGradeFields, useBoardseshGrades: boolean): string | null {
+export function resolveTickDefaultGradeName(
+  fields: BoardseshGradeFields,
+  useBoardseshGrades: boolean,
+  boardName?: string | null,
+): string | null {
   if (!useBoardseshGrades) return null;
   if (isEstimatedGrade(fields.boardseshConfidence)) return null;
   const boardseshId = resolveBoardseshDifficultyId(fields);
   if (boardseshId == null) return null;
-  return GRADE_BY_ID.get(boardseshId)?.difficulty_name ?? null;
+  return getBoulderGradeById(boardseshId, boardName)?.difficulty_name ?? null;
 }

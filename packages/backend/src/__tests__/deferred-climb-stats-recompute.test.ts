@@ -193,7 +193,9 @@ function statsProbeRunner(climbUuid: string, failOnBatch?: number) {
   let batch = 0;
   const runBatch = ((callback) => {
     batch += 1;
-    if (batch === failOnBatch) return Promise.reject(new Error('worker stopped'));
+    // A stopped worker runs nothing after the stop. Failing only the one batch
+    // would let a later phase's flush retry the recompute the earlier one owed.
+    if (failOnBatch !== undefined && batch >= failOnBatch) return Promise.reject(new Error('worker stopped'));
     return database.transaction(async (transaction) => {
       const result = await callback(transaction);
       const [row] = await transaction.execute<{ stats: number; pending: number }>(sql`

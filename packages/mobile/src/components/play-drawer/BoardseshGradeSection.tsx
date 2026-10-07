@@ -91,6 +91,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
   crowdLabel,
   boardSetsTheGrade,
   gradeFormat,
+  boardName,
 }: {
   climbUuid: string;
   angle: number;
@@ -99,6 +100,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
   /** True on Woods/MoonBoard, where the "crowd" number is really the setter's own. */
   boardSetsTheGrade: boolean;
   gradeFormat: GradeDisplayFormat;
+  boardName: string;
 }) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
@@ -106,7 +108,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
   // so the drawer shows the climber's grade offline too — the same grade the
   // on-device search placed this climb by.
   const myGrade = useMyGrade(climbUuid, angle, { localFallback: true });
-  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat, boardName) : null;
 
   if (!mine) {
     // Never render the CTA while the logbook is still unknown — it would
@@ -197,7 +199,10 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   // "this board" number and the dumbbell's rings. Loading/error render nothing;
   // the section's own loading/error stays owned by the singular grade above.
   const { data: history } = useClimbStatsHistory(boardName, noCrowdGrade ? null : climbUuid);
-  const crowdBars = useMemo(() => buildAngleGradeBars(history, gradeFormat), [history, gradeFormat]);
+  const crowdBars = useMemo(
+    () => buildAngleGradeBars(history, gradeFormat, boardName),
+    [history, gradeFormat, boardName],
+  );
   const crowdDifficulty = useMemo(
     () => crowdBars.find((bar) => bar.angle === angle)?.difficulty ?? null,
     [crowdBars, angle],
@@ -206,8 +211,8 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   // The cross-board Boardsesh series per angle → the dumbbell's diamonds.
   const { data: angleRows } = useBoardseshGradesForAngles(boardName, climbUuid, { enabled: !noCrowdGrade });
   const dumbbellRows = useMemo(
-    () => buildDumbbellByAngleModel(angleRows ?? [], crowdBars, gradeFormat),
-    [angleRows, crowdBars, gradeFormat],
+    () => buildDumbbellByAngleModel(angleRows ?? [], crowdBars, gradeFormat, boardName),
+    [angleRows, crowdBars, gradeFormat, boardName],
   );
 
   // The correction only exists for a real cross-board grade with a crowd number
@@ -215,8 +220,8 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const correction = useMemo(() => {
     if (view.kind !== 'confirmed' && view.kind !== 'provisional') return null;
     if (!view.universal) return null;
-    return buildCorrection(crowdDifficulty, view.gradeValue, gradeFormat);
-  }, [view, crowdDifficulty, gradeFormat]);
+    return buildCorrection(crowdDifficulty, view.gradeValue, gradeFormat, boardName);
+  }, [view, crowdDifficulty, gradeFormat, boardName]);
 
   const handleRetry = useCallback(() => {
     void Haptics.selectionAsync();
@@ -327,6 +332,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           crowdLabel={null}
           boardSetsTheGrade
           gradeFormat={gradeFormat}
+          boardName={boardName}
         />
         <View style={styles.row}>
           <Icon name="info" size={20} color={iosSystemColors.systemGray} />
@@ -370,6 +376,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
               rows={dumbbellRows}
               headlineGrade={view.gradeValue}
               gradeFormat={gradeFormat}
+              boardName={boardName}
               accessibilityLabel={t('boardseshGrade.byAngle')}
             />
           </View>
@@ -410,7 +417,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   const count = view.count;
   // Low/high labels for the trust line. When both bounds round to the same grade
   // there is no real range ("V4–V4"), so we show a single-grade line instead.
-  const band = buildTrustBand(view.gradeLow, view.gradeHigh, heroGrade.label, gradeFormat);
+  const band = buildTrustBand(view.gradeLow, view.gradeHigh, heroGrade.label, gradeFormat, boardName);
   // The all-boards grade shows the two-grade span for a provisional read.
   const everywhereLabel = rangeLabel ?? heroGrade.label;
   // "About ½" for a provisional payoff; "½" when confirmed.
@@ -435,6 +442,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         crowdLabel={correction?.crowd.label ?? null}
         boardSetsTheGrade={false}
         gradeFormat={gradeFormat}
+        boardName={boardName}
       />
       {/* HERO — leads left→right with the cross-board correction. */}
       {!universal ? (
@@ -547,6 +555,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
             rows={dumbbellRows}
             headlineGrade={view.gradeValue}
             gradeFormat={gradeFormat}
+            boardName={boardName}
             accessibilityLabel={t('boardseshGrade.byAngle')}
           />
         </View>

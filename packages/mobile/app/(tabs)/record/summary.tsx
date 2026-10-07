@@ -273,7 +273,7 @@ function SessionSummaryContent({
                 {t('summary.hardestSendTitle')}
               </Text>
               <Text variant="title2" color={gradeBadgeColor(hardest.grade)} style={styles.hardestGrade}>
-                {formatGrade(hardest.grade) ?? hardest.grade}
+                {formatGrade(hardest.grade, hardest.boardType) ?? hardest.grade}
               </Text>
               <Text variant="body" numberOfLines={1}>
                 {hardest.climbName}
@@ -295,7 +295,7 @@ function SessionSummaryContent({
         <StatTile value={totalSends} label={t('summary.sends')} icon="tick" />
         <StatTile value={totalFlashes} label={t('summary.flashes')} icon="flash" />
         <StatTile value={totalAttempts} label={t('summary.attempts')} icon="circle" />
-        {hardest ? <GradeTile grade={hardest.grade} /> : null}
+        {hardest ? <GradeTile grade={hardest.grade} boardName={hardest.boardType} /> : null}
       </Animated.View>
 
       {/* Grade distribution — the canonical chart used on the session-detail screen */}

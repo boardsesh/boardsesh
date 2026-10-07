@@ -180,10 +180,43 @@ allowlist.
 - `POST /api/aurora-import` streams newline-delimited progress events while
   importing Aurora JSON export chunks through the shared importer.
 - `POST /api/moonboard-import` streams newline-delimited progress events while
-  importing a stripped MoonBoard CSV export. MoonBoard logs are saved at 40°;
-  Project/Fail rows become attempts, and Session Flash rows become sends with
-  one attempt. The importer resolves Moon problem ids against the deterministic
-  MoonBoard catalog UUIDs and canonical aliases before writing ticks.
+  importing a stripped MoonBoard CSV export. Project/Fail rows become attempts,
+  and Session Flash rows become sends with one attempt.
+
+  **Columns.** Moon builds these exports by hand, so the parser
+  (`packages/shared-schema/src/moonboard-import.ts`) finds the log header by
+  name, not position. It needs Grade, Tries and Date plus either ProblemId or
+  Name. Header matching ignores case, spaces and punctuation, and accepts a few
+  aliases (`Date Climbed`, `Problem Name`, `Layout` for Setup, `Angle` for
+  Configuration). Optional columns: Setup, Configuration, Setter, Benchmark,
+  Comments, Attempts, Rating. Each tick is saved at the angle read from
+  Configuration (`40° MoonBoard` → 40), or at 40° when that column is missing.
+  Only 25° and 40° are accepted. Older exports ship as Windows-1252, so
+  the app decodes the raw bytes with `decodeMoonBoardExportBytes`, which tries
+  UTF-8 first; a plain UTF-8 read would garble names like `Björk`.
+
+  **Matching a row to a climb.** The service tries these methods in order and
+  stops at the first one that narrows the row to exactly one climb:
+
+  | Method            | Needs                       | Accepts                                              |
+  | ----------------- | --------------------------- | ---------------------------------------------------- |
+  | `id`              | ProblemId                   | Deterministic catalog UUID or alias, grade must match |
+  | `nameSetterGrade` | Name + Setter               | Same name, setter and grade                          |
+  | `nameGrade`       | Name                        | Same name and grade                                  |
+  | `name`            | Name                        | The only climb with that name                        |
+
+  Name candidates are always limited to the row's angle, and to its layout
+  when Setup names one we know (`MoonBoard 2016`, `MoonBoard 2024`, …). A Setup
+  we don't know fails the row rather than searching every layout. Names
+  are compared without case, extra spaces or curly apostrophes. Moon's export
+  writes characters it can't encode as `?` (`??? -KAMI HITOE-` for
+  `紙一重 -KAMI HITOE-`), so a name with `?` matches as a one-character-per-`?`
+  pattern. Each `?` stands for exactly one character Windows-1252 can't encode
+  (or a literal `?`), so `????` can match `鏡花水月` but never `WU 2`. A name
+  with `?` never takes the name-only fallback, even when a catalogue climb is
+  literally named `????`. A row that stays ambiguous is reported as
+  unresolved, never guessed. The `matchedBy` field of the result counts rows
+  per method.
 
 The JSON and CSV import parsers are shared with web/mobile so previews and
 server-side validation agree on missing users, board mismatches, and item counts.
