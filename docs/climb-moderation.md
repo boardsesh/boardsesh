@@ -121,6 +121,19 @@ Roles are board-scoped or global: a `kilter`-scoped `community_leader` carries n
 Tension report. The rules are pure functions in `packages/shared/community-roles/` so the backend and
 both clients reach the same verdict from the same rows.
 
+### What an approved grade does
+
+An approved grade proposal writes `climb_community_status.community_grade` at its angle. On most
+boards nothing reads that column outside the proposal screens. On spray walls it is the first thing
+the climb's grade rule reads, so approving or reverting one recomputes the climb in the same
+transaction, and the pinned grade reaches lists, search, the offline copy and the play drawer
+through `board_climb_stats.display_difficulty` (#5971, `docs/spray-walls.md`).
+
+Two spray-only rules: a grade proposal the wall's owner files (through `createProposal` or
+`reportClimb`, opening it or joining it) is approved at once, without the vote. A vote from the owner
+on someone else's proposal is an ordinary vote. And `setterOverrideCommunityStatus` is refused on a
+spray climb for everyone, so the grade has one way to change.
+
 ---
 
 ## The `hide` proposal

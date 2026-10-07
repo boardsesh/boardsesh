@@ -99,22 +99,23 @@ void describe('recomputeClimbStatsBulk', () => {
       /bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+AND COALESCE\(bt\.climb_revision, 1\) >= k\.holds_epoch\s+ORDER BY/,
     );
     assert.match(updateSql, /ORDER BY[\s\S]*bt\.climbed_at DESC, bt\.id DESC/);
-    // Grade columns (#4798): CASE-guarded on `owned OR deriveGradeFromTicks`,
+    // Grade columns: the climbers'-vote boards (#5971, spray) take their own
+    // branch first. Everyone else (#4798): CASE-guarded on `owned OR deriveGradeFromTicks`,
     // so an ungraded row (the Woods new-angle case) and a row carrying our
     // marker both take the tick average, while an upstream grade stands. The
     // guard is marker PRESENCE — never a timestamp comparison against
     // upstream_synced_at, which kilter-sync bumps on every pass.
     assert.match(
       updateSql,
-      /difficulty_average = CASE WHEN owned\.boardsesh_graded OR[\s\S]+?sd\.avg_difficulty ELSE s\.difficulty_average END/,
+      /difficulty_average = CASE WHEN \(k\.board_type IN \([\s\S]*?\)\) THEN COALESCE\([\s\S]+?WHEN owned\.boardsesh_graded OR[\s\S]+?sd\.avg_difficulty ELSE s\.difficulty_average END/,
     );
     assert.match(
       updateSql,
-      /display_difficulty = CASE WHEN owned\.boardsesh_graded OR[\s\S]+?sd\.avg_difficulty ELSE s\.display_difficulty END/,
+      /display_difficulty = CASE WHEN \(k\.board_type IN \([\s\S]*?\)\) THEN COALESCE\([\s\S]+?WHEN owned\.boardsesh_graded OR[\s\S]+?sd\.avg_difficulty ELSE s\.display_difficulty END/,
     );
     assert.match(
       updateSql,
-      /tick_graded_at\s+= CASE WHEN owned\.boardsesh_graded OR[\s\S]+?sd\.avg_difficulty IS NULL THEN NULL ELSE \(now\(\) AT TIME ZONE 'UTC'\)[\s\S]+?ELSE s\.tick_graded_at END/,
+      /tick_graded_at\s+= CASE WHEN \(k\.board_type IN \([\s\S]*?\)\) THEN CASE[\s\S]+?WHEN owned\.boardsesh_graded OR[\s\S]+?sd\.avg_difficulty IS NULL THEN NULL ELSE \(now\(\) AT TIME ZONE 'UTC'\)[\s\S]+?ELSE s\.tick_graded_at END/,
     );
     assert.match(updateSql, /s\.display_difficulty IS NULL/);
     assert.match(updateSql, /s\.tick_graded_at IS NOT NULL/);
