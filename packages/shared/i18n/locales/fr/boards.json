@@ -1214,7 +1214,7 @@
       "lockedRetake": "Réinitialise le mur avec une photo bien en face pour le débloquer.",
       "generating": "Génération…",
       "failed": "Ce rendu n'a pas pu être généré. Enregistre-le à nouveau pour réessayer.",
-      "preview": "Voilà à quoi ressemblera ton mur.",
+      "preview": "Voilà à quoi ressemblera ton mur. Ta photo s'affiche environ une minute après la publication.",
       "soft": "Reprends la photo bien en face pour un rendu plus net.",
       "volumes": "Les volumes ne sont pas encore détourés."
     },

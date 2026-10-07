@@ -80,11 +80,15 @@ describe('useSprayWallBackgroundEditor', () => {
         expiresAt: 'later',
       },
       holds: [{ id: 1, cx: 400, cy: 400, r: 40, outline: null }],
+      wall: { uuid: 'wall', currentVersion: { id: '3' } },
     };
     const { result } = await mounted();
     await waitFor(() =>
       expect(result.current.previewSource).toEqual({
+        layoutId: 9,
+        versionId: 3,
         photoUrl: 'https://private.example/photo.jpg',
+        photoExpiresAt: 'later',
         photo: { width: 2400, height: 1800 },
         homography: [1, 0, -100, 0, 1, -100, 0, 0, 1],
         frame: { width: 2000, height: 1500 },

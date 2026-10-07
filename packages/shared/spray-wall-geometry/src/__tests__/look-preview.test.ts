@@ -43,7 +43,65 @@ describe('photoToTileHomography', () => {
   });
 });
 
+/**
+ * Core Animation's own reading of a 16-number React Native matrix, written out
+ * here rather than borrowed from `applyViewMatrix`, so the module cannot agree
+ * with itself by mistake. `CATransform3D` is row-vector: a point is the row
+ * `[x y z w]` and maps to `[x y z w] * M`, with `m11..m14` the first row
+ * (React Native's array is `m11, m12, m13, m14, m21, ...`). The layer turns
+ * about its anchor point, the centre of its bounds.
+ */
+function coreAnimationApply(
+  array: readonly number[],
+  bounds: { width: number; height: number },
+  x: number,
+  y: number,
+): [number, number] {
+  const [m11, m12, , m14, m21, m22, , m24, , , , , m41, m42, , m44] = array;
+  const anchorX = bounds.width / 2;
+  const anchorY = bounds.height / 2;
+  const rowX = x - anchorX;
+  const rowY = y - anchorY;
+  // z = 0, w = 1.
+  const outX = rowX * m11 + rowY * m21 + m41;
+  const outY = rowX * m12 + rowY * m22 + m42;
+  const outW = rowX * m14 + rowY * m24 + m44;
+  return [anchorX + outX / outW, anchorY + outY / outW];
+}
+
 describe('perspectiveViewMatrix', () => {
+  it('reads as the homography through Core Animation’s row-vector maths', () => {
+    const { photoToTile } = setup(KEYSTONE);
+    const layout = { width: 180, height: 135 };
+    const matrix = perspectiveViewMatrix(photoToTile, PHOTO, layout);
+    const toLayout = layout.width / PHOTO.width;
+    // The pinned corners, and a point inside the wall.
+    for (const [x, y] of [...KEYSTONE, [1200, 900] as [number, number]]) {
+      expectClose(coreAnimationApply(matrix, layout, x * toLayout, y * toLayout), mapPoint(photoToTile, x, y), 4);
+    }
+  });
+
+  it('puts a translation where Core Animation looks for one', () => {
+    const layout = { width: 200, height: 100 };
+    // Photo laid out 1:1, then moved by (30, -12): no scale, no perspective.
+    const matrix = perspectiveViewMatrix([1, 0, 30, 0, 1, -12, 0, 0, 1], layout, layout);
+    expect(matrix[12]).toBeCloseTo(30, 9);
+    expect(matrix[13]).toBeCloseTo(-12, 9);
+    expect(matrix[3]).toBeCloseTo(0, 12);
+    expect(matrix[7]).toBeCloseTo(0, 12);
+    expect([matrix[0], matrix[5], matrix[10], matrix[15]]).toEqual([1, 1, 1, 1]);
+  });
+
+  it('turns about the view centre: a pure scale moves the corner, not the centre', () => {
+    const layout = { width: 200, height: 100 };
+    const matrix = perspectiveViewMatrix([2, 0, 0, 0, 2, 0, 0, 0, 1], layout, layout);
+    // Scaling about the origin, as wanted, means a centre-origin renderer needs a translation.
+    expect(matrix[12]).toBeCloseTo(100, 9);
+    expect(matrix[13]).toBeCloseTo(50, 9);
+    expectClose(coreAnimationApply(matrix, layout, 0, 0), [0, 0]);
+    expectClose(coreAnimationApply(matrix, layout, 100, 50), [200, 100]);
+  });
+
   it('lands the pinned photo corners on the tile corners, through the renderer’s centre-origin maths', () => {
     const { tile, photoToTile } = setup(KEYSTONE);
     const layout = { width: 180, height: 135 };

@@ -1978,10 +1978,28 @@ always the backend's art, or the photo.
   says so, as the picker always has.
 - **Photo** is the photo, `contain`ed in the tile.
 
-Every image is memory-cached only (`cachePolicy="memory"`), for the private
-photo's reason. The Android mesh decodes the version's base photo (up to 2048
-px) once through react-native-svg's image pipeline, shared by both generated
-tiles. A locked gate greys the generated tiles out (disabled, with the reason
+**The tiles never draw the presigned URL on a phone.** They draw the
+version's photo from the spray photo cache (`ensureSprayPhotoCached`, the same
+`<layoutId>-v<versionId>.jpg` the board draws, downloaded once with the
+payload's own signature when it is not there yet; `useSprayLookPreviewPhoto`).
+That matters on Android: react-native-svg's image loader keeps a disk cache
+for network images, and a private wall's photo must not land in a cache
+nothing clears on sign-out. A local file is only decoded. The cached file is
+one this app owns: the sweeper, the retention purge and a withdrawal delete it.
+The mesh refuses any URI that is not `file:///`, and that guard is the
+condition of `FlattenedSprayPhoto.tsx`'s one exemption from
+`check:mobile-board-art-network` (`svg-image-background`), alongside "no
+http(s) literal in the file". Everything else, the iOS view and the stored art
+thumbnails, is `expo-image` with `cachePolicy="memory"`. The Android mesh
+decodes the base photo (up to 2048 px) once, shared by both generated tiles.
+
+In a browser the cache's twin returns the presigned URL itself, and the HTTP
+cache is the cache. `MaskedView`'s web build renders only its mask element and
+drops the children, so "Holds only" there is `HoldMaskedPhoto.web.tsx`: the
+same two strokes as an SVG data URI in CSS `mask-image`
+(`lookPreviewMaskSvgDataUri`).
+
+A locked gate greys the generated tiles out (disabled, with the reason
 as their accessibility hint) and draws nothing in them. Tiles replace the
 segmented control, so iOS's one-segment-cannot-be-disabled problem is gone
 with it: a tile only looks selected when it is the value. While a save runs,

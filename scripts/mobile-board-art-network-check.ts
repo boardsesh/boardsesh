@@ -80,6 +80,29 @@ const RULES: readonly Rule[] = [
   // Re-adding offline board art (and this guard) is tracked in issue #2982.
 ] as const;
 
+/**
+ * The one place a react-native-svg `Image` is allowed: the spray wall look
+ * picker's Android mesh (`docs/spray-walls.md`, "Previewing a look on the
+ * phone"), which has to draw the owner's photo under an affine transform a
+ * React Native view cannot apply on Android. It is not board art, and it is
+ * never a network image: the file must refuse anything but a device-local
+ * `file:///` URI (the `isLocalFileUri(` guard) and must contain no http(s)
+ * literal at all. react-native-svg disk-caches network images, so a remote
+ * href here would also leak a private photo into a cache nothing clears.
+ */
+const SVG_IMAGE_LOCAL_FILE_EXEMPTIONS: ReadonlySet<string> = new Set([
+  'packages/mobile/src/components/spray-wall/FlattenedSprayPhoto.tsx',
+]);
+const LOCAL_FILE_GUARD = 'isLocalFileUri(';
+
+function isExemptLocalSvgImageFile(sourceFile: SourceFile): boolean {
+  return (
+    SVG_IMAGE_LOCAL_FILE_EXEMPTIONS.has(sourceFile.path) &&
+    sourceFile.text.includes(LOCAL_FILE_GUARD) &&
+    !/https?:\/\//.test(sourceFile.text)
+  );
+}
+
 function shouldScanPath(filePath: string): boolean {
   const normalized = filePath.replaceAll('\\', '/');
   if (IGNORED_PATH_PARTS.some((part) => normalized.includes(part))) return false;
@@ -128,9 +151,11 @@ export function findMobileBoardArtNetworkViolations(sourceFiles: readonly Source
 
   for (const sourceFile of sourceFiles) {
     const lines = sourceFile.text.split(/\r?\n/);
+    const localSvgImageFile = isExemptLocalSvgImageFile(sourceFile);
     lines.forEach((lineText, lineIndex) => {
       for (const rule of RULES) {
         if (!rule.test(lineText)) continue;
+        if (rule.name === 'svg-image-background' && localSvgImageFile) continue;
         violations.push({
           path: sourceFile.path,
           line: lineIndex + 1,

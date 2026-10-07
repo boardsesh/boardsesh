@@ -16,8 +16,6 @@
 
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
-import MaskedView from '@react-native-masked-view/masked-view';
-import Svg, { Path } from 'react-native-svg';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
@@ -36,6 +34,8 @@ import {
   type SprayLookPreviewSource,
 } from '../../lib/spray/spray-look-preview';
 import { FlattenedSprayPhoto } from './FlattenedSprayPhoto';
+import { HoldMaskedPhoto } from './HoldMaskedPhoto';
+import { useSprayLookPreviewPhoto } from '../../lib/spray/use-spray-look-preview-photo';
 import { backgroundPickerNote, type SprayBackgroundGate } from './spray-background-gate';
 
 const LOOKS: readonly SprayWallBackground[] = ['photo', 'wall-crop', 'hold-cutouts'];
@@ -65,6 +65,8 @@ type TileVisualProps = {
   look: SprayWallBackground;
   tile: ReferenceSize;
   source: SprayLookPreviewSource | null;
+  /** The photo to draw, from the spray photo cache; null until it is on disk. */
+  photoUri: string | null;
   /** The backend's art for this look, when it is ready and is what the wall will show. */
   storedUri: string | null;
   mask: LookPreviewMask | null;
@@ -77,6 +79,7 @@ const TileVisual = memo(function TileVisual({
   look,
   tile,
   source,
+  photoUri,
   storedUri,
   mask,
   fieldColor,
@@ -84,7 +87,7 @@ const TileVisual = memo(function TileVisual({
   locked,
 }: TileVisualProps) {
   const sizeStyle = useMemo(() => ({ width: tile.width, height: tile.height }), [tile]);
-  const photoSource = useMemo(() => (source ? { uri: source.photoUrl } : null), [source]);
+  const photoSource = useMemo(() => (photoUri ? { uri: photoUri } : null), [photoUri]);
   const storedSource = useMemo(() => (storedUri ? { uri: storedUri } : null), [storedUri]);
   const backgroundStyle = useMemo(
     () => ({ backgroundColor: look === 'hold-cutouts' && !locked ? fieldColor : placeholderColor }),
@@ -112,31 +115,10 @@ const TileVisual = memo(function TileVisual({
         testID={`spray-background-stored-${look}`}
       />
     );
-  } else if (source && look === 'wall-crop') {
-    content = <FlattenedSprayPhoto source={source} tile={tile} />;
-  } else if (source && mask) {
-    content = (
-      <MaskedView
-        style={sizeStyle}
-        maskElement={
-          <Svg width={tile.width} height={tile.height}>
-            {/* The job feathers its mask with a Gaussian blur; a soft, wider
-                stroke under the hard edge is the cheap stand-in. */}
-            <Path
-              d={mask.path}
-              fill="#000"
-              stroke="#000"
-              strokeOpacity={0.4}
-              strokeWidth={2 * (mask.grow + mask.feather)}
-              strokeLinejoin="round"
-            />
-            <Path d={mask.path} fill="#000" stroke="#000" strokeWidth={2 * mask.grow} strokeLinejoin="round" />
-          </Svg>
-        }
-      >
-        <FlattenedSprayPhoto source={source} tile={tile} />
-      </MaskedView>
-    );
+  } else if (source && photoUri && look === 'wall-crop') {
+    content = <FlattenedSprayPhoto source={source} photoUri={photoUri} tile={tile} />;
+  } else if (source && photoUri && mask) {
+    content = <HoldMaskedPhoto source={source} photoUri={photoUri} tile={tile} mask={mask} />;
   }
 
   return (
@@ -196,6 +178,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
     const slot = (rowWidth - 2 * spacing[2]) / LOOKS.length - 2 * TILE_RING;
     return lookPreviewTileSize(frame, slot, TILE_MAX_HEIGHT);
   }, [rowWidth, frame]);
+  const photoUri = useSprayLookPreviewPhoto(previewSource);
   const mask = useMemo(
     () => (previewSource && tile ? lookPreviewMask(previewSource.holds, tile.width / previewSource.frame.width) : null),
     [previewSource, tile],
@@ -260,6 +243,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
                   look={look}
                   tile={tile}
                   source={previewSource}
+                  photoUri={photoUri}
                   storedUri={look === 'wall-crop' ? storedCrop : look === 'hold-cutouts' ? storedCutout : null}
                   mask={mask}
                   fieldColor={fieldColor}

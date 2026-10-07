@@ -235,8 +235,8 @@ export function useSprayWallDraft(
   // must not leave another account's or a replaced row's photo reachable here.
   const photoFullUrl = wall ? (renderData?.photoFullUrl ?? null) : null;
   const lookPreviewSource = useMemo(
-    () => (wall ? lookPreviewSourceFromRenderData(renderData) : null),
-    [wall, renderData],
+    () => (wall ? lookPreviewSourceFromRenderData(renderData, { layoutId, versionId }) : null),
+    [wall, renderData, layoutId, versionId],
   );
 
   const { refetch } = query;

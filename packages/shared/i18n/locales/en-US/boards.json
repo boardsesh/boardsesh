@@ -1214,7 +1214,7 @@
       "lockedRetake": "Reset the wall with a face-on photo to unlock.",
       "generating": "Generating…",
       "failed": "That look didn't render. Save it again to retry.",
-      "preview": "This is how your wall will look.",
+      "preview": "This is how your wall will look. Your photo shows for about a minute after you publish.",
       "soft": "Retake front-on for a sharper look.",
       "volumes": "Volumes aren't cut out yet."
     },

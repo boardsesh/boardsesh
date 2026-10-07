@@ -73,7 +73,10 @@ export function useSprayWallBackgroundEditor({
     retry: false,
   });
   const renderData = renderDataQuery.data?.sprayWallRenderData;
-  const previewSource = useMemo(() => lookPreviewSourceFromRenderData(renderData), [renderData]);
+  const previewSource = useMemo(
+    () => lookPreviewSourceFromRenderData(renderData, { layoutId, versionId: renderData?.wall?.currentVersion?.id }),
+    [renderData, layoutId],
+  );
 
   const storedSettings = lookQuery.data?.sprayWall?.renderSettings;
   const storedBackground = sprayWallBackgroundOf(storedSettings);

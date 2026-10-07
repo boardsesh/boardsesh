@@ -76,8 +76,18 @@ vi.mock('@react-native-masked-view/masked-view', () => ({
     createElement('div', { 'data-testid': 'masked-view' }, maskElement, children),
 }));
 vi.mock('../FlattenedSprayPhoto', () => ({
-  FlattenedSprayPhoto: ({ tile }: { tile: { width: number; height: number } }) =>
-    createElement('div', { 'data-testid': 'flattened', 'data-tile': `${tile.width}x${tile.height}` }),
+  FlattenedSprayPhoto: ({ tile, photoUri }: { tile: { width: number; height: number }; photoUri: string }) =>
+    createElement('div', {
+      'data-testid': 'flattened',
+      'data-tile': `${tile.width}x${tile.height}`,
+      'data-uri': photoUri,
+    }),
+}));
+const LOCAL_PHOTO = 'file:///cache/spray-walls/9-v3.jpg';
+const photoCache = vi.hoisted(() => ({ onDisk: true }));
+vi.mock('../../../lib/spray/use-spray-look-preview-photo', () => ({
+  useSprayLookPreviewPhoto: (source: unknown) =>
+    source && photoCache.onDisk ? 'file:///cache/spray-walls/9-v3.jpg' : null,
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -114,7 +124,10 @@ const READY_ART = {
 };
 
 const SOURCE = {
+  layoutId: 9,
+  versionId: 3,
   photoUrl: 'https://private.example/photo.jpg',
+  photoExpiresAt: 'later',
   photo: { width: 2400, height: 1800 },
   homography: [1, 0, -100, 0, 1, -100, 0, 0, 1],
   frame: { width: 2000, height: 1500 },
@@ -126,7 +139,10 @@ const SOURCE = {
 
 const OPEN = { kind: 'open', soft: false, status: 'none' } as const;
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  photoCache.onDisk = true;
+});
 
 describe('SprayWallBackgroundPicker', () => {
   it('draws every look on the phone for a draft, and says so', () => {
@@ -149,10 +165,27 @@ describe('SprayWallBackgroundPicker', () => {
     // One path for every hold, hard edge and feather: two elements however many holds.
     expect(getAllByTestId('mask-path')).toHaveLength(2);
     expect(getByTestId('spray-background-note-preview')).toBeTruthy();
-    // The photo tile is the photo, memory-cached.
+    // Every tile draws the cached file on disk, never the presigned URL.
+    expect(flattened.map((node) => node.getAttribute('data-uri'))).toEqual([LOCAL_PHOTO, LOCAL_PHOTO]);
     const photo = getByTestId('spray-background-tile-visual-photo').querySelector('img');
-    expect(photo?.getAttribute('src')).toBe(SOURCE.photoUrl);
+    expect(photo?.getAttribute('src')).toBe(LOCAL_PHOTO);
     expect(photo?.getAttribute('data-cache-policy')).toBe('memory');
+  });
+
+  it('draws no live look until the photo is on disk', () => {
+    photoCache.onDisk = false;
+    const { queryAllByTestId, getByTestId } = render(
+      <SprayWallBackgroundPicker
+        gate={OPEN}
+        art={null}
+        value="wall-crop"
+        onChange={vi.fn()}
+        isDraft
+        previewSource={SOURCE}
+      />,
+    );
+    expect(queryAllByTestId('flattened')).toHaveLength(0);
+    expect(getByTestId('spray-background-tile-visual-photo').querySelector('img')).toBeNull();
   });
 
   it('marks the chosen tile selected, and a tap on another picks it', () => {
