@@ -1998,6 +1998,19 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "sync_seq" bigserial NOT NULL,
     PRIMARY KEY ("board_type", "climb_uuid", "angle")
   );
+  -- Migration 0176. Only written by the offline similarity loader; deleteClimb
+  -- (#5960) clears a deleted climb's rows.
+  CREATE TABLE IF NOT EXISTS "board_climb_similar" (
+    "board_type" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "angle" integer NOT NULL,
+    "neighbor_uuid" text NOT NULL,
+    "score" real NOT NULL,
+    "rank" integer NOT NULL,
+    "model_version" text NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL,
+    PRIMARY KEY ("board_type", "climb_uuid", "angle", "neighbor_uuid")
+  );
   DO $$ BEGIN
     CREATE TYPE "hold_type" AS ENUM ('jug', 'sloper', 'pinch', 'crimp', 'pocket');
   EXCEPTION WHEN duplicate_object THEN NULL;

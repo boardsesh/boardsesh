@@ -71,6 +71,7 @@ type Documents = {
   '\n  mutation SaveMoonBoardClimb($input: SaveMoonBoardClimbInput!) {\n    saveMoonBoardClimb(input: $input) {\n      uuid\n      synced\n      createdAt\n      publishedAt\n    }\n  }\n': typeof types.SaveMoonBoardClimbDocument;
   '\n  mutation UpdateClimb($input: UpdateClimbInput!) {\n    updateClimb(input: $input) {\n      uuid\n      createdAt\n      publishedAt\n      isDraft\n    }\n  }\n': typeof types.UpdateClimbDocument;
   '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n': typeof types.DeleteDraftClimbDocument;
+  '\n  mutation DeleteClimb($uuid: ID!, $boardType: String!) {\n    deleteClimb(uuid: $uuid, boardType: $boardType)\n  }\n': typeof types.DeleteClimbDocument;
   '\n  query GetNotifications($unreadOnly: Boolean, $limit: Int, $offset: Int) {\n    notifications(unreadOnly: $unreadOnly, limit: $limit, offset: $offset) {\n      notifications {\n        uuid\n        type\n        actorId\n        actorDisplayName\n        actorAvatarUrl\n        entityType\n        entityId\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        proposalUuid\n        proposalType\n        proposalValue\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n': typeof types.GetNotificationsDocument;
   '\n  query GetGroupedNotifications($limit: Int, $offset: Int) {\n    groupedNotifications(limit: $limit, offset: $offset) {\n      groups {\n        uuid\n        type\n        entityType\n        entityId\n        actorCount\n        actors {\n          id\n          displayName\n          avatarUrl\n        }\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        climbLayoutId\n        climbAngle\n        climbFrames\n        climbCompatibleSizeIds\n        threadEntityType\n        threadEntityId\n        proposalUuid\n        proposalType\n        proposalValue\n        setterUsername\n        gymName\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n': typeof types.GetGroupedNotificationsDocument;
   '\n  query GetUnreadNotificationCount {\n    unreadNotificationCount\n  }\n': typeof types.GetUnreadNotificationCountDocument;
@@ -281,6 +282,8 @@ const documents: Documents = {
     types.UpdateClimbDocument,
   '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n':
     types.DeleteDraftClimbDocument,
+  '\n  mutation DeleteClimb($uuid: ID!, $boardType: String!) {\n    deleteClimb(uuid: $uuid, boardType: $boardType)\n  }\n':
+    types.DeleteClimbDocument,
   '\n  query GetNotifications($unreadOnly: Boolean, $limit: Int, $offset: Int) {\n    notifications(unreadOnly: $unreadOnly, limit: $limit, offset: $offset) {\n      notifications {\n        uuid\n        type\n        actorId\n        actorDisplayName\n        actorAvatarUrl\n        entityType\n        entityId\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        proposalUuid\n        proposalType\n        proposalValue\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n':
     types.GetNotificationsDocument,
   '\n  query GetGroupedNotifications($limit: Int, $offset: Int) {\n    groupedNotifications(limit: $limit, offset: $offset) {\n      groups {\n        uuid\n        type\n        entityType\n        entityId\n        actorCount\n        actors {\n          id\n          displayName\n          avatarUrl\n        }\n        commentBody\n        climbName\n        climbUuid\n        boardType\n        climbLayoutId\n        climbAngle\n        climbFrames\n        climbCompatibleSizeIds\n        threadEntityType\n        threadEntityId\n        proposalUuid\n        proposalType\n        proposalValue\n        setterUsername\n        gymName\n        isRead\n        createdAt\n      }\n      totalCount\n      unreadCount\n      hasMore\n    }\n  }\n':
@@ -825,6 +828,12 @@ export function graphql(
 export function graphql(
   source: '\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n',
 ): (typeof documents)['\n  mutation DeleteDraftClimb($uuid: ID!, $boardType: String!) {\n    deleteDraftClimb(uuid: $uuid, boardType: $boardType)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DeleteClimb($uuid: ID!, $boardType: String!) {\n    deleteClimb(uuid: $uuid, boardType: $boardType)\n  }\n',
+): (typeof documents)['\n  mutation DeleteClimb($uuid: ID!, $boardType: String!) {\n    deleteClimb(uuid: $uuid, boardType: $boardType)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

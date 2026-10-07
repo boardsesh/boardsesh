@@ -8233,6 +8233,16 @@ type Mutation {
   """
   deleteDraftClimb(uuid: ID!, boardType: String!): Boolean!
 
+  """
+  Delete one of the current user's spray wall climbs, published or not, while
+  nobody (the setter included) has logged it. Refused with CLIMB_HAS_TICKS once
+  a tick exists, CLIMB_NOT_FOUND for a climb that is missing or not the
+  caller's, CLIMB_DELETE_NOT_ALLOWED off spray, and SPRAY_WALL_ARCHIVED on an
+  archived wall. Removes the climb's comments, proposals, votes, feed rows and
+  notifications, and other climbers' favourites and playlist entries.
+  """
+  deleteClimb(uuid: ID!, boardType: String!): Boolean!
+
   # ============================================
   # Playlist Mutations (require auth)
   # ============================================

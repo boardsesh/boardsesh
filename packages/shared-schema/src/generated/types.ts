@@ -4028,6 +4028,15 @@ export type Mutation = {
   deleteAuroraCredential: Scalars['Boolean']['output'];
   /** Soft-delete a board. */
   deleteBoard: Scalars['Boolean']['output'];
+  /**
+   * Delete one of the current user's spray wall climbs, published or not, while
+   * nobody (the setter included) has logged it. Refused with CLIMB_HAS_TICKS once
+   * a tick exists, CLIMB_NOT_FOUND for a climb that is missing or not the
+   * caller's, CLIMB_DELETE_NOT_ALLOWED off spray, and SPRAY_WALL_ARCHIVED on an
+   * archived wall. Removes the climb's comments, proposals, votes, feed rows and
+   * notifications, and other climbers' favourites and playlist entries.
+   */
+  deleteClimb: Scalars['Boolean']['output'];
   /** Delete a comment (soft-delete if it has replies). */
   deleteComment: Scalars['Boolean']['output'];
   deleteController: Scalars['Boolean']['output'];
@@ -4704,6 +4713,12 @@ export type MutationDeleteAuroraCredentialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteBoardArgs = {
   boardUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteClimbArgs = {
+  boardType: Scalars['String']['input'];
+  uuid: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -13824,6 +13839,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeleteBoardArgs, 'boardUuid'>
+  >;
+  deleteClimb?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeleteClimbArgs, 'boardType' | 'uuid'>
   >;
   deleteComment?: Resolver<
     ResolversTypes['Boolean'],
