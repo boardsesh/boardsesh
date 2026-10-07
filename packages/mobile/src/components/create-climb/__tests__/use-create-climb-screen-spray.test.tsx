@@ -306,7 +306,6 @@ describe('publishing a wall climb, with no grade (#5971)', () => {
     expect(payload.is_draft).toBe(true);
     expect(payload.user_grade).toBeUndefined();
   });
-
 });
 
 describe('any feet on a wall', () => {

@@ -22,9 +22,7 @@ export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProp
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
   return (
-    <View
-      style={[styles.banner, { backgroundColor: systemColors.fill }]}
-    >
+    <View style={[styles.banner, { backgroundColor: systemColors.fill }]}>
       <View style={styles.bannerText}>
         <Text variant="footnote">
           {name

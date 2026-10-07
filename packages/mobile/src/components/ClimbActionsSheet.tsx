@@ -370,7 +370,12 @@ function ClimbActionsSheet({
             climb sits below everything a climber came here to do. */}
         {onReportClimb && (
           <ListRow
-            title={t('mobile.climbActions.report')}
+            title={
+              // Your own spray climb: the report is how you change its grade (#5971).
+              currentUserId && climb?.userId === currentUserId
+                ? t('mobile.climbActions.changeGrade')
+                : t('mobile.climbActions.report')
+            }
             leading={<Icon name="flag" size={22} color={accentActionIconColor} />}
             onPress={handleReportClimb}
             showSeparator={canDelete}

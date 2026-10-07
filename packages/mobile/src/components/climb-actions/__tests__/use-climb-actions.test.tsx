@@ -201,6 +201,19 @@ describe('useClimbActions gating', () => {
     expect(own).toContain('report');
   });
 
+  it('titles it "Change grade" on your own spray climb, and "Report climb" on anyone else\u2019s', () => {
+    const published = { ...ownerClimb, is_draft: false } as unknown as Climb;
+    const titleOf = (args: ActionArgs) =>
+      renderActions(args).result.current.find((action) => action.id === 'report')?.title;
+    expect(titleOf({ climb: published, boardConfig: sprayBoard, isAuthenticated: true, currentUserId: 'user-1' })).toBe(
+      'mobile.climbActions.changeGrade',
+    );
+    const theirs = { ...climb, userId: 'setter-2', is_draft: false } as unknown as Climb;
+    expect(titleOf({ climb: theirs, boardConfig: sprayBoard, isAuthenticated: true, currentUserId: 'user-1' })).toBe(
+      'mobile.climbActions.report',
+    );
+  });
+
   it("keeps Report on somebody else's published climb", () => {
     const theirs = { ...climb, userId: 'setter-2', is_draft: false } as unknown as Climb;
     const viewed = ids({ climb: theirs, boardConfig: kilterBoard, isAuthenticated: true, currentUserId: 'user-1' });

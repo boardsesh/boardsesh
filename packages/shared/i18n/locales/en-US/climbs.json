@@ -688,6 +688,7 @@
       "edit": "Edit climb",
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
+      "changeGrade": "Change grade",
       "closeOverlay": "Close climb actions",
       "openQueue": "Open the queue",
       "deleteClimb": {

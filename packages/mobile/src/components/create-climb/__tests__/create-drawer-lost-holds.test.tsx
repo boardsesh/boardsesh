@@ -89,7 +89,9 @@ vi.mock('../CreateDrawerForm', () => ({
   },
 }));
 vi.mock('../OpenDraftsSection', () => ({ OpenDraftsSection: () => createElement('div', { 'data-node': 'drafts' }) }));
-vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: () => createElement('div', { 'data-node': 'banner' }) }));
+vi.mock('../InlineConfirmBanner', () => ({
+  InlineConfirmBanner: () => createElement('div', { 'data-node': 'banner' }),
+}));
 vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: () => createElement('div', { 'data-node': 'banner' }) }));
 vi.mock('../CreateRoutePlaybackSlot', () => ({
   CreateRoutePlaybackSlot: () => createElement('div', { 'data-node': 'route-slot' }),

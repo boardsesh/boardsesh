@@ -481,7 +481,8 @@ export function useClimbActions({
     if (isAuthenticated && moderationEnabled && reportable) {
       items.push({
         id: 'report',
-        title: t('mobile.climbActions.report'),
+        // Your own spray climb: the report is how you change its grade (#5971).
+        title: isOwnClimb ? t('mobile.climbActions.changeGrade') : t('mobile.climbActions.report'),
         icon: 'flag',
         color: accentColor,
         run: () => {

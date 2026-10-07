@@ -41,10 +41,7 @@ export function InlineConfirmBanner({
 }: InlineConfirmBannerProps) {
   const { systemColors, brandColors } = useTheme();
   return (
-    <View
-      style={[styles.banner, { backgroundColor: systemColors.fill }]}
-      accessibilityRole="alert"
-    >
+    <View style={[styles.banner, { backgroundColor: systemColors.fill }]} accessibilityRole="alert">
       <View style={styles.text}>
         <Text variant="footnote" style={styles.title}>
           {title}

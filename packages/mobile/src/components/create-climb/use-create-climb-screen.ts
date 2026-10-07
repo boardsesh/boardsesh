@@ -514,7 +514,6 @@ export function useCreateClimbScreen({
   // climb that never changed. The create drawer drops the board zoom on it.
   const [blankClimbEpoch, setBlankClimbEpoch] = useState(0);
 
-
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [savedSignatureUnknown, setSavedSignatureUnknown] = useState(false);
   const [failedSignature, setFailedSignature] = useState<string | null>(null);
@@ -1468,16 +1467,7 @@ export function useCreateClimbScreen({
         },
         t,
       ),
-    [
-      hasContent,
-      localPersistenceAvailable,
-      savedClimb,
-      hasUnsavedEdits,
-      saveFailed,
-      publishBlocked,
-      isDraft,
-      t,
-    ],
+    [hasContent, localPersistenceAvailable, savedClimb, hasUnsavedEdits, saveFailed, publishBlocked, isDraft, t],
   );
 
   // Signal the screen should focus the header name field (e.g. on a save with
