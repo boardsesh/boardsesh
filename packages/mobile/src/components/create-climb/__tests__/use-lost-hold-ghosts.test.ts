@@ -31,6 +31,9 @@ vi.mock('../../../lib/graphql/hooks/use-climb-lost-holds', () => ({
 vi.mock('../../../lib/spray/spray-wall-registry', () => ({
   SPRAY_BOARD_NAME: 'spray',
   getSprayWall: () => registry.wall,
+  // No generated look in these cases: the wall is drawn on its photo.
+  activeSprayArt: () => null,
+  drawnSprayHolds: (wall: { holds: readonly unknown[] }) => wall.holds,
 }));
 vi.mock('../../../lib/haptics', () => ({
   hapticSelection: () => {},

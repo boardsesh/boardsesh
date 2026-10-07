@@ -19,7 +19,7 @@
 // backend ship on different trains), or a save that keeps failing, must not keep
 // a finished wall from being published.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   ScrollView,
@@ -61,6 +61,19 @@ import { useKeepSprayDraftRegistered, useSprayWallDraft } from '../../lib/spray/
 import { useSetSprayWallRenderSettings } from '../../lib/spray/use-create-spray-wall';
 import type { CreatedWallDraft } from './add-wall-machine';
 import { fitSprayLookHero } from './spray-look-hero';
+import { useSprayWallArt } from '../../lib/spray/use-spray-wall-art';
+import type { SprayWallBackground } from '../../lib/spray/spray-wall-background';
+import {
+  isSprayWallArtNotAvailableError,
+  readSprayWallArtRefusalReason,
+} from '../../lib/graphql/extract-error-message';
+import { SprayWallBackgroundPicker } from './SprayWallBackgroundPicker';
+import {
+  canPickBackground,
+  sprayArtRefusalMessageKey,
+  sprayBackgroundGate,
+  suggestedBackground,
+} from './spray-background-gate';
 
 // Plain numbers, so the worklets below capture numbers rather than a shared object.
 const DIM_MIN = SPRAY_WALL_DIM_RANGE.min;
@@ -182,6 +195,26 @@ export function SprayWallLookStep({
     });
   }, [railSlotHeight, previewAspect, textStyles, fontScale, windowWidth]);
 
+  // What the wall is drawn on. Asked of the server for this draft: its answer
+  // carries the live quality verdict the save is checked against, and a
+  // backend that cannot answer is one that cannot store a background either,
+  // so the picker stays hidden and nothing new is sent.
+  const artQuery = useSprayWallArt(draft.wallUuid, draft.versionNumber);
+  const backgroundGate = useMemo(
+    () => sprayBackgroundGate({ status: artQuery.status, art: artQuery.data }),
+    [artQuery.status, artQuery.data],
+  );
+  const [background, setBackground] = useState<SprayWallBackground>('photo');
+  const [backgroundTouched, setBackgroundTouched] = useState(false);
+  // "Wall only" is the suggestion once the photo passes, until the creator picks.
+  useEffect(() => {
+    if (!backgroundTouched) setBackground(suggestedBackground(backgroundGate));
+  }, [backgroundGate, backgroundTouched]);
+  const pickBackground = useCallback((next: SprayWallBackground) => {
+    setBackgroundTouched(true);
+    setBackground(next);
+  }, []);
+
   const setRenderSettings = useSetSprayWallRenderSettings();
   const setRenderSettingsAsync = setRenderSettings.mutateAsync;
   const saving = setRenderSettings.isPending;
@@ -189,8 +222,17 @@ export function SprayWallLookStep({
 
   const handleContinue = useCallback(async () => {
     if (saving || !selectedOption) return;
-    const renderSettings = boardLookOptionWallDefault(selectedOption.id, options);
-    if (!renderSettings) return;
+    const look = boardLookOptionWallDefault(selectedOption.id, options);
+    if (!look) return;
+    // `background` only to a backend that answered `sprayWallArt` (an older one
+    // refuses the key), and only for a generated look or a photo the creator
+    // picked by hand: an omitted key keeps whatever an earlier save stored.
+    const backendKnowsBackgrounds = backgroundGate.kind === 'open' || backgroundGate.kind === 'locked';
+    const sentBackground = canPickBackground(backgroundGate, background) ? background : 'photo';
+    const renderSettings =
+      backendKnowsBackgrounds && (sentBackground !== 'photo' || backgroundTouched)
+        ? { ...look, background: sentBackground }
+        : look;
     hapticSelection();
     setSaveError(null);
     onSaveStarted();
@@ -202,8 +244,17 @@ export function SprayWallLookStep({
       reportError(error);
       onSaveFailed();
       // Our own words, never the server's: the likeliest failure is a backend
-      // that predates the field, whose message is schema jargon.
-      const message = t('sprayWizard.look.failed');
+      // that predates the field, whose message is schema jargon. A photo the
+      // server will not flatten gets its own sentence, and the picker goes back
+      // to the photo so a retry stores a look that can be shown.
+      const artRefused = isSprayWallArtNotAvailableError(error);
+      if (artRefused) {
+        setBackgroundTouched(true);
+        setBackground('photo');
+      }
+      const message = artRefused
+        ? t(`sprayBackground.${sprayArtRefusalMessageKey(readSprayWallArtRefusalReason(error))}`)
+        : t('sprayWizard.look.failed');
       setSaveError(message);
       // `accessibilityLiveRegion` below is Android-only; VoiceOver needs telling.
       AccessibilityInfo.announceForAccessibility(message);
@@ -219,6 +270,9 @@ export function SprayWallLookStep({
     onSaveFailed,
     onConfirmed,
     t,
+    background,
+    backgroundGate,
+    backgroundTouched,
   ]);
 
   const fallbackOptions = useMemo(
@@ -316,6 +370,17 @@ export function SprayWallLookStep({
         </View>
       ) : null}
 
+      <View style={styles.background}>
+        <SprayWallBackgroundPicker
+          gate={backgroundGate}
+          art={artQuery.data}
+          value={background}
+          onChange={pickBackground}
+          disabled={saving}
+          isDraft
+        />
+      </View>
+
       <View
         style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
       >
@@ -383,6 +448,10 @@ const styles = StyleSheet.create({
   },
   centered: {
     textAlign: 'center',
+  },
+  background: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[3],
   },
   footer: {
     paddingHorizontal: spacing[4],

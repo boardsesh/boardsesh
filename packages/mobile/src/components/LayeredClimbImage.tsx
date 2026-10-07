@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import type { ImageErrorEventData } from 'expo-image';
@@ -26,6 +26,13 @@ type LayeredClimbImageProps = {
    */
   onOverlayMounted?: (mountedLoadKey: string | null) => void;
   backgroundPaths: string[];
+  /**
+   * A solid colour painted under the background images. For a background that
+   * is transparent by design — a spray wall's "Holds only" look is cut-out
+   * holds on nothing — so one image reads right on the light and the dark
+   * field. Left out, nothing is painted, as before.
+   */
+  baseColor?: string;
   /**
    * Number of background layers the cache couldn't resolve. Each missing
    * layer is rendered as a visible neutral-gray block so the bug is
@@ -115,6 +122,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   onOverlayError,
   onOverlayMounted,
   backgroundPaths,
+  baseColor,
   missingBackgroundCount = 0,
   mirrored,
   dimBackground,
@@ -189,12 +197,19 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     retainedOverlay.uri !== overlayUri
       ? retainedOverlay.uri
       : null;
+  const baseLayerStyle = useMemo(
+    () => (baseColor ? [styles.layer, { backgroundColor: baseColor }] : null),
+    [baseColor],
+  );
   if (hidden) {
     return <View style={[styles.stack, mirrored && styles.mirrored]} />;
   }
 
   return (
     <View style={[styles.stack, mirrored && styles.mirrored]}>
+      {baseLayerStyle && backgroundPaths.length > 0 && (
+        <View testID="layered-climb-image-base" style={baseLayerStyle} pointerEvents="none" />
+      )}
       {shouldShowEmptyFallback && (
         <View testID="layered-climb-image-empty-fallback" style={[styles.layer, styles.emptyLayer]} />
       )}

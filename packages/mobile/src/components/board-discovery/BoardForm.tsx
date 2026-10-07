@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   View,
   ScrollView,
@@ -83,6 +83,8 @@ type BoardFormProps = {
   climbEditPolicy?: 'setter' | 'collaborators';
   onSelectClimbEditPolicy?: (policy: 'setter' | 'collaborators') => void;
   climbEditPolicyDisabled?: boolean;
+  /** A spray wall's background picker, drawn under its visibility rows. */
+  sprayBackgroundSection?: ReactNode;
 };
 
 /**
@@ -105,6 +107,7 @@ export function BoardForm({
   climbEditPolicy,
   onSelectClimbEditPolicy,
   climbEditPolicyDisabled = false,
+  sprayBackgroundSection,
 }: BoardFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -348,6 +351,7 @@ export function BoardForm({
                     </Text>
                   </>
                 ) : null}
+                {sprayBackgroundSection}
               </>
             ) : null}
           </>
