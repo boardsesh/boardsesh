@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-07T09:12:48.262Z",
+  "generatedAt": "2026-10-07T10:18:21.567Z",
   "entries": [
+    {
+      "prNumber": 6197,
+      "category": "new",
+      "title": "Delete a climb you set on your spray wall, as long as nobody has logged it yet",
+      "mergedAt": "2026-10-07T10:15:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6197"
+    },
     {
       "prNumber": 6194,
       "category": "fixed",
