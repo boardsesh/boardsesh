@@ -17,6 +17,7 @@ see the README's "macOS (Apple Silicon)" section for the full run.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -25,7 +26,7 @@ from pathlib import Path
 
 from common import DEFAULT_THREADS, HOLDS_DIR, DetectorConfig, cap_threads, load_config
 from data.tile_coco import clip_polygon_to_tile
-from data.user_walls import check_training_dataset, is_user_walls_dataset
+from data.user_walls import check_training_dataset, is_user_walls_dataset, managed_root
 
 RFDETR_VARIANTS = {
     "nano": "RFDETRNano",
@@ -40,6 +41,14 @@ RFDETR_VARIANTS = {
 # `rfdetr.detr.RFDETR._resolve_trainer_device_kwargs`): "cuda" maps to Lightning's
 # "gpu", "mps" and "cpu" pass through unchanged.
 ACCELERATOR_BY_DEVICE = {"cpu": "cpu", "mps": "mps", "cuda": "gpu"}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def resolve_device(requested: str) -> tuple[str, str]:
@@ -150,10 +159,10 @@ def tiled_dataset_dir(config: DetectorConfig, dataset_dir: Path) -> Path:
     source_name = dataset_dir.resolve().name
     tiles_name = f"{source_name}-tiles-{grid.rows}x{grid.cols}-{grid.overlap}-{config.long_side}"
     if is_user_walls_dataset(dataset_dir):
-        # Tiles are crops of climbers' wall photos. Keep them beside the export,
-        # where data/user_walls.py fetch deletes them together with it once the
-        # bucket retires that export, never in the shared .data/ root.
-        return dataset_dir.resolve().parent / tiles_name
+        # Tiles are crops of climbers' wall photos. Keep them in the fetch root
+        # beside the export, where data/user_walls.py fetch deletes them together
+        # with it once the bucket retires that export, never in the shared .data/.
+        return (managed_root(dataset_dir) or dataset_dir.resolve().parent) / tiles_name
     return HOLDS_DIR / ".data" / tiles_name
 
 
@@ -394,6 +403,7 @@ def main() -> int:
         "accelerator": accelerator,
         "train_config": summary_train_config,
         "init_weights": args.init_weights,
+        "init_weights_sha256": sha256_file(Path(args.init_weights)) if args.init_weights else None,
         "wall_clock_seconds": round(elapsed, 1),
         "output_dir": str(output_dir),
     }

@@ -196,16 +196,24 @@ python data/user_walls.py fetch
 EXPORT=.data/user-walls/<exportId>
 
 # 2. Keep the shipped model to compare against. Training writes to the same
-#    .data/runs/ and .data/artifacts/ directories, so copy both out first.
+#    .data/runs/ and .data/artifacts/ directories, so copy both out first, and
+#    check the checkpoint is the one the shipped weights came from: its sha256
+#    must equal the shipped manifest's training.checkpointSha256.
 mkdir -p .data/shipped/$SHIPPED
 curl -fo .data/shipped/$SHIPPED/model-int8.onnx \
   https://media.boardsesh.com/models/hold-detector/$SHIPPED/model-int8.onnx
+curl -fo .data/shipped/$SHIPPED/manifest.json \
+  https://media.boardsesh.com/models/hold-detector/$SHIPPED/manifest.json
 cp .data/runs/$CONFIG/checkpoint_best_ema.pth .data/shipped/$SHIPPED/
+python -c "import json,sys; print(json.load(open(sys.argv[1]))['training'].get('checkpointSha256', 'NOT RECORDED'))" \
+  .data/shipped/$SHIPPED/manifest.json
+sha256sum .data/shipped/$SHIPPED/checkpoint_best_ema.pth   # must match the line above
 
 # 3. Fine-tune from the shipped checkpoint on the user walls.
 python train.py --config $CONFIG --device mps --epochs 10 --dataset $EXPORT \
   --init-weights .data/shipped/$SHIPPED/checkpoint_best_ema.pth
-python export.py --config $CONFIG --formats onnx --shrink int8
+python export.py --config $CONFIG --formats onnx --shrink int8 \
+  --checkpoint .data/runs/$CONFIG/checkpoint_best_ema.pth
 NEW=.data/artifacts/$CONFIG/model-int8.onnx
 
 # 4. Pick the threshold on the hand-labelled spray `tune` half, against the int8 file.
@@ -232,8 +240,16 @@ python publish_model.py --config $CONFIG --version <new version> --threshold $T 
   --dataset "Roboflow climbing-holds-and-volumes v14 + Boardsesh user walls <exportId>" \
   --training-licence "CC BY 4.0 + owner consent per wall" --epochs 10 --trained-on m5-max-mps \
   --date <today> --user-walls-export <exportId> \
+  --checkpoint .data/runs/$CONFIG/checkpoint_best_ema.pth \
   --eval-json .data/artifacts/$CONFIG/eval-spray.json
 ```
+
+If the hashes in step 2 differ, the local checkpoint is not the shipped model:
+find the right one before training. A manifest published before October 2026 has
+no `checkpointSha256` ("NOT RECORDED"), so the first retrain cannot check it; say
+so in its PR. Step 6's `--checkpoint` records the new hash, so every retrain
+after that can. `train.py` also writes the starting checkpoint's sha256 to
+`train-summary.json` as `init_weights_sha256`.
 
 **Ship only if** `gesture_savings` rises on **both** `eval` splits against the
 shipped model's score on the same split, and stays at **40% or more** on both.
@@ -345,10 +361,12 @@ stamped (bytes untouched) so the repair path stays open for older versions.
 Credentials are never printed or logged by either mode.
 
 `--eval-json` takes an `eval.py` results file (`.data/artifacts/<config>/eval.json`)
-as well as a manifest-shaped one: `box.f1`, `correction_rate_micro` and
-`gesture_savings` are read into the manifest's `sprayEvalF1`,
+as well as a manifest-shaped one: `box.f1`, `weighted_correction_rate_micro`
+and `gesture_savings` are read into the manifest's `sprayEvalF1`,
 `weightedCorrectionsPerHold` and `gestureSavings`, and the file's `split` is
-recorded alongside them. A file with none of those keys is an error
+recorded alongside them. An `eval.py` file from before October 2026 has neither
+of the last two and publishes without them; it is never mapped from the
+unweighted `correction_rate_micro`. A file with none of those keys is an error
 rather than a manifest that silently ships without its `eval` section, and so is
 one whose own `config`, `model` or `score_threshold` disagrees with what is being
 published — a tune-sweep run or another config's run must not be presented as this

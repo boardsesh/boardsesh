@@ -6,6 +6,7 @@ One test runs the real image tiler; none import torch or rfdetr or train a model
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -340,6 +341,7 @@ def test_init_weights_reach_the_model_and_the_summary(
     assert built["kwargs"] == {"pretrain_weights": str(checkpoint)}
     summary = json.loads((tmp_path / "holds" / ".data" / "runs" / "seg-nano-untiled-1024" / "train-summary.json").read_text())
     assert summary["init_weights"] == str(checkpoint)
+    assert summary["init_weights_sha256"] == hashlib.sha256(b"stand-in weights").hexdigest()
 
 
 def test_init_weights_and_resume_are_exclusive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

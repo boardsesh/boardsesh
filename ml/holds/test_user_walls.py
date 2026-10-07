@@ -260,17 +260,66 @@ def test_fetch_deletes_every_local_export_the_bucket_retired(exports_dir: Path, 
 
 def test_fetch_keeps_an_older_export_the_bucket_still_holds(exports_dir: Path, root: Path) -> None:
     write_export(exports_dir, OLDER_EXPORT_ID)
-    _fetch(exports_dir, root, now=NOW - timedelta(days=1))
+    _fetch(exports_dir, root, now=NOW - timedelta(days=2))
+    (root / f"{OLDER_EXPORT_ID}-cap400").mkdir()
     write_export(exports_dir, EXPORT_ID)
+    _fetch(exports_dir, root, now=NOW - timedelta(days=1))
     (root / f"{EXPORT_ID}-tiles-2x2-0.15-1024").mkdir()
 
     _fetch(exports_dir, root)
 
     names = {path.name for path in root.iterdir()}
-    assert {OLDER_EXPORT_ID, EXPORT_ID, f"{EXPORT_ID}-tiles-2x2-0.15-1024"} <= names
+    assert {OLDER_EXPORT_ID, f"{OLDER_EXPORT_ID}-cap400", EXPORT_ID, f"{EXPORT_ID}-tiles-2x2-0.15-1024"} <= names
     # Still in the bucket means still eligible, so its fetched_at moves forward too.
     record = json.loads((root / OLDER_EXPORT_ID / user_walls.FETCH_RECORD_FILENAME).read_text())
     assert datetime.fromisoformat(record["fetched_at"]) == NOW
+
+
+def test_a_broken_newest_export_still_deletes_retired_ones(exports_dir: Path, root: Path) -> None:
+    """A schema bump or a missing file in the newest export must not keep a revoked wall here."""
+    retired = write_export(exports_dir, OLDER_EXPORT_ID)
+    _fetch(exports_dir, root)
+    shutil.rmtree(retired)
+    newest = write_export(exports_dir, EXPORT_ID)
+    manifest = json.loads((newest / "manifest.json").read_text())
+    manifest["schemaVersion"] = 2
+    (newest / "manifest.json").write_text(json.dumps(manifest))
+
+    with pytest.raises(SystemExit, match="schemaVersion 2"):
+        _fetch(exports_dir, root)
+    assert not (root / OLDER_EXPORT_ID).exists()
+
+
+def test_a_replaced_export_loses_its_caches(exports_dir: Path, root: Path) -> None:
+    """Caches built from a local copy that no longer matches the bucket are rebuilt, not reused."""
+    export_dir = write_export(exports_dir)
+    _fetch(exports_dir, root)
+    (root / f"{EXPORT_ID}-cap4").mkdir()
+    (root / f"{EXPORT_ID}-tiles-2x2-0.15-1024").mkdir()
+    (root / EXPORT_ID / "train" / "v101.jpg").write_bytes(b"locally damaged")
+
+    _fetch(exports_dir, root)
+
+    assert not (root / f"{EXPORT_ID}-cap4").exists()
+    assert not (root / f"{EXPORT_ID}-tiles-2x2-0.15-1024").exists()
+    assert (root / EXPORT_ID / "train" / "v101.jpg").read_bytes() == (export_dir / "train" / "v101.jpg").read_bytes()
+
+
+def test_only_train_py_cache_names_count_as_derived() -> None:
+    assert user_walls.derived_from(f"{EXPORT_ID}-cap400", EXPORT_ID)
+    assert user_walls.derived_from(f"{EXPORT_ID}-tiles-2x2-0.15-1024", EXPORT_ID)
+    assert user_walls.derived_from(f"{EXPORT_ID}-tiles-2x2-0.15-1024-cap400", EXPORT_ID)
+    assert not user_walls.derived_from(f"{EXPORT_ID}-copy", EXPORT_ID)
+    assert not user_walls.derived_from(f"{EXPORT_ID}-cap", EXPORT_ID)
+    assert not user_walls.derived_from(f"{EXPORT_ID}-", EXPORT_ID)
+
+
+def test_fetch_deletes_a_lookalike_of_a_current_export(exports_dir: Path, root: Path) -> None:
+    write_export(exports_dir)
+    _fetch(exports_dir, root)
+    (root / f"{EXPORT_ID}-copy").mkdir()
+    _fetch(exports_dir, root)
+    assert not (root / f"{EXPORT_ID}-copy").exists()
 
 
 def test_an_empty_bucket_deletes_everything_local(exports_dir: Path, root: Path) -> None:
@@ -386,9 +435,51 @@ def test_check_training_dataset_catches_a_leak_added_after_fetch(exports_dir: Pa
         user_walls.check_training_dataset(local, now=NOW)
 
 
+@pytest.mark.parametrize("file_name", ["../train/v101.jpg", "sub/v301.jpg", "..", "a\\b.jpg"])
+def test_a_coco_file_name_must_be_a_bare_name(exports_dir: Path, root: Path, file_name: str) -> None:
+    """`../train/v101.jpg` in eval would score the model on a photo it trained on."""
+    export_dir = write_export(exports_dir)
+    coco_path = export_dir / "eval" / "_annotations.coco.json"
+    coco = json.loads(coco_path.read_text())
+    coco["images"][0]["file_name"] = file_name
+    coco_path.write_text(json.dumps(coco))
+    manifest = json.loads((export_dir / "manifest.json").read_text())
+    manifest["files"]["eval/_annotations.coco.json"] = hashlib.sha256(coco_path.read_bytes()).hexdigest()
+    (export_dir / "manifest.json").write_text(json.dumps(manifest))
+
+    with pytest.raises(SystemExit):
+        _fetch(exports_dir, root)
+    assert not (root / EXPORT_ID).exists()
+    assert user_walls.eval_isolation_problems(export_dir)
+
+
 # --------------------------------------------------------------------------- #
 # train.py's guards
 # --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("derived", [f"{EXPORT_ID}-cap400", f"{EXPORT_ID}-tiles-2x2-0.15-1024", f"{EXPORT_ID}/train"])
+def test_train_refuses_a_cache_or_split_inside_the_fetch_root(
+    exports_dir: Path, root: Path, derived: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A derived directory has no fetch record; training on it must not skip the stale guard,
+    and must not re-tile user photos into the shared .data/."""
+    write_export(exports_dir)
+    local = _fetch(exports_dir, root, now=datetime.now(timezone.utc))
+    assert local is not None
+    target = root / derived
+    if not target.exists():
+        shutil.copytree(local, target, ignore=shutil.ignore_patterns(user_walls.FETCH_RECORD_FILENAME, "manifest.json"))
+    monkeypatch.setattr(train, "HOLDS_DIR", tmp_path / "holds")
+    monkeypatch.setattr(train, "resolve_device", lambda requested: pytest.fail("reached device selection"))
+    monkeypatch.setattr(sys, "argv", ["train.py", "--config", "seg-nano-tiled-1024", "--dataset", str(target)])
+
+    with pytest.raises(SystemExit, match="is not an export"):
+        train.main()
+    assert user_walls.is_user_walls_dataset(target)
+    # Even if something tiles it anyway, the tiles land in the fetch root.
+    assert train.tiled_dataset_dir(load_config("seg-nano-tiled-1024"), target).parent == root.resolve()
+    assert not (tmp_path / "holds" / ".data").exists()
 
 
 def test_train_refuses_a_user_walls_fetch_older_than_seven_days(exports_dir: Path, root: Path) -> None:

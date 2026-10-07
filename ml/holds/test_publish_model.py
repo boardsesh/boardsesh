@@ -237,16 +237,17 @@ def _eval_py_results(**overrides: Any) -> dict[str, Any]:
         "split": "eval",
         "score_threshold": 0.2,
         "box": {"precision": 0.514, "recall": 0.612, "f1": 0.559, "tp": 590},
-        "correction_rate_micro": 0.97,
-        "correction_rate_macro": 1.04,
-        "gesture_savings": 0.4761,
+        "correction_rate_micro": 0.634,
+        "correction_rate_macro": 0.7,
+        "weighted_correction_rate_micro": 0.97,
+        "gesture_savings": 0.515,
     }
     results.update(overrides)
     return results
 
 
 def test_an_eval_py_results_file_populates_the_manifest(tmp_path: Path, sample_model: Path) -> None:
-    """eval.py writes box.f1 / correction_rate_micro, not the manifest's own names."""
+    """eval.py writes box.f1 / weighted_correction_rate_micro, not the manifest's own names."""
     eval_json_path = tmp_path / "eval.json"
     eval_json_path.write_text(json.dumps(_eval_py_results()))
     out_dir = _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
@@ -255,7 +256,7 @@ def test_an_eval_py_results_file_populates_the_manifest(tmp_path: Path, sample_m
         "sprayEvalF1": 0.559,
         "weightedCorrectionsPerHold": 0.97,
         # The release gate's number (docs/spray-recognition-rollout.md, 40%).
-        "gestureSavings": 0.4761,
+        "gestureSavings": 0.515,
         # Which half the numbers came from: `eval` is held out, `tune` is where the
         # threshold was chosen.
         "split": "eval",
@@ -265,14 +266,16 @@ def test_an_eval_py_results_file_populates_the_manifest(tmp_path: Path, sample_m
 
 
 def test_an_eval_py_file_from_before_gesture_savings_still_publishes(tmp_path: Path, sample_model: Path) -> None:
-    """Older eval.py output has no gesture_savings; the manifest simply leaves it out."""
+    """Older eval.py output has neither new key. It publishes F1 only: its unweighted
+    correction_rate_micro must not appear under the weighted name."""
     results = _eval_py_results()
     del results["gesture_savings"]
+    del results["weighted_correction_rate_micro"]
     eval_json_path = tmp_path / "eval.json"
     eval_json_path.write_text(json.dumps(results))
     out_dir = _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
     manifest = json.loads((out_dir / "manifest.json").read_text())
-    assert "gestureSavings" not in manifest["eval"]
+    assert manifest["eval"] == {"sprayEvalF1": 0.559, "split": "eval"}
 
 
 def test_a_null_gesture_savings_is_refused(tmp_path: Path, sample_model: Path) -> None:
@@ -287,6 +290,14 @@ def test_the_user_walls_export_is_recorded_in_training(tmp_path: Path, sample_mo
     out_dir = _run_publish(tmp_path, sample_model, extra_args=["--user-walls-export", export_id])
     manifest = json.loads((out_dir / "manifest.json").read_text())
     assert manifest["training"]["userWallsExportId"] == export_id
+
+
+def test_the_checkpoint_hash_is_recorded_in_training(tmp_path: Path, sample_model: Path) -> None:
+    checkpoint = tmp_path / "checkpoint_best_ema.pth"
+    checkpoint.write_bytes(b"stand-in checkpoint")
+    out_dir = _run_publish(tmp_path, sample_model, extra_args=["--checkpoint", str(checkpoint)])
+    manifest = json.loads((out_dir / "manifest.json").read_text())
+    assert manifest["training"]["checkpointSha256"] == hashlib.sha256(b"stand-in checkpoint").hexdigest()
 
 
 def test_without_a_user_walls_export_training_has_no_export_id(tmp_path: Path, sample_model: Path) -> None:
@@ -344,8 +355,8 @@ def test_a_non_numeric_score_threshold_is_a_clear_error(tmp_path: Path, sample_m
 def test_a_null_correction_rate_is_refused_rather_than_dropped(tmp_path: Path, sample_model: Path) -> None:
     """eval.py writes null when it had no holds to score; publishing that is a lie."""
     eval_json_path = tmp_path / "eval.json"
-    eval_json_path.write_text(json.dumps(_eval_py_results(correction_rate_micro=None)))
-    with pytest.raises(SystemExit, match="correction_rate_micro set to null"):
+    eval_json_path.write_text(json.dumps(_eval_py_results(weighted_correction_rate_micro=None)))
+    with pytest.raises(SystemExit, match="weighted_correction_rate_micro set to null"):
         _run_publish(tmp_path, sample_model, extra_args=["--eval-json", str(eval_json_path)])
 
 

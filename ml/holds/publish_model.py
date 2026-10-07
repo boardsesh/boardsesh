@@ -78,13 +78,19 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 EVAL_KEYS = ("sprayEvalF1", "weightedCorrectionsPerHold", "gestureSavings")
 
 # eval.py writes its own vocabulary, not the manifest's: box F1 lives at
-# `box.f1`, the correction rate at `correction_rate_micro` and the release gate's
-# number at `gesture_savings` (see ml/holds/eval.py's results dict). --eval-json
-# is normally handed exactly that file, so each manifest key also knows the
-# dotted path to read it from.
+# `box.f1`, the weighted correction rate (2·miss + FP per hold) at
+# `weighted_correction_rate_micro` and the release gate's number at
+# `gesture_savings` (see ml/holds/eval.py's results dict). --eval-json is
+# normally handed exactly that file, so each manifest key also knows the dotted
+# path to read it from.
+#
+# weightedCorrectionsPerHold used to be read from the UNWEIGHTED
+# correction_rate_micro. There is deliberately no fallback to it: an older
+# eval.py file still publishes, just without weightedCorrectionsPerHold, rather
+# than with an unweighted number under a weighted name.
 EVAL_SOURCE_PATHS: dict[str, tuple[str, ...]] = {
     "sprayEvalF1": ("box", "f1"),
-    "weightedCorrectionsPerHold": ("correction_rate_micro",),
+    "weightedCorrectionsPerHold": ("weighted_correction_rate_micro",),
     "gestureSavings": ("gesture_savings",),
 }
 
@@ -334,6 +340,13 @@ def resolve_training(args: argparse.Namespace) -> dict[str, Any]:
         "date": args.date,
         "userWallsExportId": args.user_walls_export,
     }
+    if args.checkpoint:
+        checkpoint = Path(args.checkpoint)
+        if not checkpoint.is_file():
+            raise SystemExit(f"--checkpoint: no file at {checkpoint}")
+        # The next retrain fine-tunes from this checkpoint; its hash in the
+        # manifest is how that run proves it started from the shipped model.
+        overrides["checkpointSha256"] = sha256_file(checkpoint)
     for key, value in overrides.items():
         if value is not None:
             training[key] = value
@@ -765,6 +778,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "exportId of the user-walls export the run trained on (data/user_walls.py fetch prints it); "
             "recorded as training.userWallsExportId so a model can be traced to the walls behind it"
+        ),
+    )
+    parser.add_argument(
+        "--checkpoint",
+        help=(
+            "the PyTorch checkpoint (.pth) export.py turned into these weights; its sha256 is recorded as "
+            "training.checkpointSha256 so a later fine-tune can prove it starts from the shipped model"
         ),
     )
     parser.add_argument(

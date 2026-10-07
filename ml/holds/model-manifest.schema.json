@@ -289,6 +289,11 @@
           "minLength": 1,
           "description": "ISO date the export was trained/produced."
         },
+        "checkpointSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Optional - sha256 of the PyTorch checkpoint these weights were exported from (publish_model.py --checkpoint). The retrain runbook checks a fine-tune's starting checkpoint against it."
+        },
         "userWallsExportId": {
           "type": "string",
           "minLength": 1,
@@ -315,7 +320,7 @@
         "weightedCorrectionsPerHold": {
           "type": "number",
           "minimum": 0,
-          "description": "eval.py's correction_rate_micro: (false positives + misses) / total holds on the spray-wall `eval` split."
+          "description": "eval.py's weighted_correction_rate_micro: (2 * misses + false positives) / total holds on the spray-wall `eval` split, so gestureSavings = 1 - weightedCorrectionsPerHold / 2. Manifests published before October 2026 carry the unweighted (misses + false positives) / holds here instead."
         },
         "gestureSavings": {
           "type": "number",

@@ -329,6 +329,17 @@ def _load_coco(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _is_bare_name(name: object) -> bool:
+    """A COCO file_name must name a file in its own split directory, nothing else."""
+    return (
+        isinstance(name, str)
+        and name not in ("", ".", "..")
+        and "/" not in name
+        and "\\" not in name
+        and "\0" not in name
+    )
+
+
 def _split_refs(dataset_dir: Path, split: str) -> tuple[set[str], set[str], set[str], list[str]]:
     """(root refs, version refs, file names, problems) for one split."""
     path = dataset_dir / split / ANNOTATIONS_FILENAME
@@ -341,6 +352,9 @@ def _split_refs(dataset_dir: Path, split: str) -> tuple[set[str], set[str], set[
     for image in _load_coco(path)["images"]:
         refs = image.get("boardsesh") if isinstance(image.get("boardsesh"), dict) else {}
         root_ref, version_ref = refs.get("root_ref"), refs.get("version_ref")
+        if not _is_bare_name(image.get("file_name")):
+            # `../train/v1.jpg` in eval would point the eval split at a training photo.
+            problems.append(f"{split} names a photo by path, not file name: {image.get('file_name')!r}")
         if not root_ref or not version_ref:
             problems.append(f"{split}/{image.get('file_name')} has no boardsesh.root_ref/version_ref")
         if root_ref:
@@ -379,12 +393,24 @@ def missing_image_files(dataset_dir: Path) -> list[str]:
         if not path.is_file():
             continue
         for image in _load_coco(path)["images"]:
-            if not (dataset_dir / split / str(image.get("file_name"))).is_file():
-                missing.append(f"{split}/{image.get('file_name')}")
+            name = image.get("file_name")
+            if not _is_bare_name(name) or not (dataset_dir / split / str(name)).is_file():
+                missing.append(f"{split}/{name}")
     return missing
 
 
+def managed_root(path: Path) -> Path | None:
+    """The `fetch` root `path` lives under (or is), found by its marker file."""
+    for candidate in (path.resolve(), *path.resolve().parents):
+        if (candidate / ROOT_MARKER_FILENAME).is_file():
+            return candidate
+    return None
+
+
 def is_user_walls_dataset(dataset_dir: Path) -> bool:
+    """Anything under a `fetch` root counts, including the caches train.py derives."""
+    if managed_root(dataset_dir) is not None:
+        return True
     if (dataset_dir / FETCH_RECORD_FILENAME).is_file():
         return True
     manifest_path = dataset_dir / MANIFEST_FILENAME
@@ -397,6 +423,18 @@ def is_user_walls_dataset(dataset_dir: Path) -> bool:
     return isinstance(manifest, dict) and "exportId" in manifest
 
 
+def _is_fetched_export(dataset_dir: Path, root: Path) -> bool:
+    """A direct child of the fetch root whose fetch record names that directory."""
+    resolved = dataset_dir.resolve()
+    if resolved.parent != root:
+        return False
+    try:
+        record = json.loads((resolved / FETCH_RECORD_FILENAME).read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(record, dict) and record.get("exportId") == resolved.name
+
+
 def check_training_dataset(dataset_dir: Path, now: datetime | None = None) -> None:
     """train.py's gate for a user-walls dataset: fresh, and eval kept out of training.
 
@@ -405,6 +443,15 @@ def check_training_dataset(dataset_dir: Path, now: datetime | None = None) -> No
     if not is_user_walls_dataset(dataset_dir):
         return
     refetch = "Re-run `python data/user_walls.py fetch` and train on the directory it prints."
+    root = managed_root(dataset_dir)
+    if root is not None and not _is_fetched_export(dataset_dir, root):
+        # A cache (`<id>-cap400`, `<id>-tiles-…`) or a split directory: neither
+        # carries the fetch record, so training on it would skip the checks below.
+        raise UserWallsError(
+            f"{dataset_dir} is inside the user-walls directory {root} but is not an export. "
+            f"Pass the export directory itself (the one with {FETCH_RECORD_FILENAME}); train.py "
+            f"builds its own caches from it. {refetch}"
+        )
     record_path = dataset_dir / FETCH_RECORD_FILENAME
     if not record_path.is_file():
         raise UserWallsError(
@@ -518,11 +565,34 @@ def _write_fetch_record(export_dir: Path, export_id: str, source: str, files: in
     (export_dir / FETCH_RECORD_FILENAME).write_text(json.dumps(record, indent=2) + "\n")
 
 
+def derived_from(name: str, export_id: str) -> bool:
+    """True when `name` is a cache train.py built from export `export_id`.
+
+    That is `<id>-cap400` (cap_train_split) or `<id>-tiles-…` (tiled_dataset_dir,
+    and a cap of a tiled set). Nothing else that happens to start with `<id>-`.
+    """
+    prefix = f"{export_id}-"
+    if not name.startswith(prefix):
+        return False
+    suffix = name[len(prefix) :]
+    return bool(suffix) and (re.fullmatch(r"cap\d+", suffix) is not None or suffix.startswith("tiles-"))
+
+
 def _belongs_to(name: str, current: set[str]) -> bool:
     """An export dir, or a cache train.py derived from one (`<id>-cap400`, `<id>-tiles-…`)."""
     if name == ROOT_MARKER_FILENAME:
         return True
-    return name in current or any(name.startswith(f"{export_id}-") for export_id in current)
+    return name in current or any(derived_from(name, export_id) for export_id in current)
+
+
+def remove_derived(root: Path, export_id: str) -> list[str]:
+    """Delete every cache built from `export_id`; they describe the copy being replaced."""
+    removed: list[str] = []
+    for child in sorted(root.iterdir()):
+        if derived_from(child.name, export_id):
+            _remove(child)
+            removed.append(child.name)
+    return removed
 
 
 def claim_root(root: Path) -> None:
@@ -595,11 +665,14 @@ def fetch(store: ExportStore, root: Path = DEFAULT_ROOT, now: datetime | None = 
     current = set(export_ids)
     claim_root(root)
 
+    # Retired exports go first, before anything about the newest one can fail: a
+    # bad manifest or a missing file must not keep a revoked wall on this machine.
+    removed = delete_retired(root, current)
+    if removed:
+        print(f"deleted {len(removed)} local entries the bucket no longer holds: {', '.join(removed)}")
+
     if not export_ids:
-        removed = delete_retired(root, current)
         print(f"no export with a manifest in {store.describe()}")
-        if removed:
-            print(f"deleted {len(removed)} local exports the bucket no longer holds: {', '.join(removed)}")
         return None
 
     newest = max(export_ids)
@@ -614,6 +687,7 @@ def fetch(store: ExportStore, root: Path = DEFAULT_ROOT, now: datetime | None = 
         _download(store, newest, manifest_bytes, manifest, staging)
         if export_dir.exists():
             _remove(export_dir)
+        remove_derived(root, newest)
         staging.rename(export_dir)
         print(f"fetched {len(manifest['files'])} files from {store.describe()}; every sha256 verified")
     _write_fetch_record(export_dir, newest, store.describe(), len(manifest["files"]), now)
@@ -626,15 +700,16 @@ def fetch(store: ExportStore, root: Path = DEFAULT_ROOT, now: datetime | None = 
         if not older_dir.is_dir():
             continue
         older_bytes = store.read_bytes(export_id, MANIFEST_FILENAME)
-        if local_copy_matches(older_dir, older_bytes, parse_manifest(older_bytes, export_id)):
+        try:
+            matches = local_copy_matches(older_dir, older_bytes, parse_manifest(older_bytes, export_id))
+        except UserWallsError:
+            matches = False
+        if matches:
             _write_fetch_record(older_dir, export_id, store.describe(), len(json.loads(older_bytes)["files"]), now)
         else:
             _remove(older_dir)
+            remove_derived(root, export_id)
             print(f"deleted {older_dir}: it no longer matches the bucket's copy")
-
-    removed = delete_retired(root, current)
-    if removed:
-        print(f"deleted {len(removed)} local entries the bucket no longer holds: {', '.join(removed)}")
 
     print_summary(newest, export_dir, summarise(export_dir))
     if isinstance(manifest.get("counts"), dict):
