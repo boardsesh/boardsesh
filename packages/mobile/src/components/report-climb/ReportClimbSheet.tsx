@@ -38,6 +38,7 @@ import {
   reportToastCopy,
   type ReportKind,
 } from './report-climb-form';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 
 type ReportClimbSheetProps = {
   visible: boolean;
@@ -107,17 +108,22 @@ export function ReportClimbSheet({
 
   const currentGradeName = climb?.difficulty ?? null;
   const gradeList = useMemo(() => grades ?? [], [grades]);
-  const currentGrade = useMemo(
-    () => gradeList.find((grade) => grade.name === currentGradeName) ?? null,
-    [gradeList, currentGradeName],
-  );
+  const currentGrade = useMemo(() => {
+    // Match by id too, so a differently-spelled label for the same grade still
+    // lands on its chip (MoonBoard's 16 was "6a/V3" before it became "6a/V2").
+    const currentDifficultyId = getDifficultyIdForGradeName(currentGradeName);
+    return (
+      gradeList.find((grade) => grade.name === currentGradeName || grade.difficultyId === currentDifficultyId) ?? null
+    );
+  }, [gradeList, currentGradeName]);
   const selectedDifficultyId = pickedDifficultyId ?? currentGrade?.difficultyId ?? null;
   const selectedGradeName = useMemo(
     () => gradeList.find((grade) => grade.difficultyId === selectedDifficultyId)?.name ?? null,
     [gradeList, selectedDifficultyId],
   );
 
-  const isSameGrade = kind === 'grade' && !!selectedGradeName && selectedGradeName === currentGradeName;
+  const isSameGrade =
+    kind === 'grade' && selectedDifficultyId != null && selectedDifficultyId === currentGrade?.difficultyId;
 
   const kindOptions = useMemo(
     () => [

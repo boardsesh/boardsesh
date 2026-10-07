@@ -142,7 +142,8 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
           logger.debug(`[debouncedClimbStats] No canonical row/layout for ${key}; skipping publish`);
           return;
         }
-        const difficulty = row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty));
+        const difficulty =
+          row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardType);
         pubsub.publishClimbStatsEvent(`${boardType}:${row.layoutId}`, {
           boardType,
           layoutId: row.layoutId,

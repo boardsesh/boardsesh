@@ -111,7 +111,11 @@ const GRADE_TO_DIFFICULTY_ID = new Map<string, number>(
   ]),
 );
 
+// Grades the MoonBoard picker no longer offers but an older export can still
+// carry; keep them importable on the shared ids the catalog importer uses.
 GRADE_TO_DIFFICULTY_ID.set('5A', 13);
+GRADE_TO_DIFFICULTY_ID.set('5B', 14);
+GRADE_TO_DIFFICULTY_ID.set('5C', 15);
 // Moon's 25° 2024 problems export their easiest grade as a bare "5"; the
 // catalogue stores those climbs at the same difficulty as 5+.
 GRADE_TO_DIFFICULTY_ID.set('5', 13);

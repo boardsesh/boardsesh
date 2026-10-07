@@ -43,6 +43,7 @@ import { resolveTickClimbRevision } from '../../lib/tick-climb-revision';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 
 // Read once at module load rather than allocating a fresh createInitialTickState()
 // on every field-snapshot sync (see below) just to read this one default.
@@ -307,7 +308,12 @@ export function useQuickTickForm({
   // GradeSingleSelectRail compares against each chip's `difficultyId`.
   const consensusDifficultyId = useMemo(() => {
     if (!consensusGradeName || !grades) return undefined;
-    return grades.find((grade) => grade.name === consensusGradeName)?.difficultyId;
+    // Fall back to the id behind the name: a label from another source can
+    // spell the same grade differently (MoonBoard's 16 was "6a/V3" before it
+    // became "6a/V2").
+    const consensusId = getDifficultyIdForGradeName(consensusGradeName);
+    return grades.find((grade) => grade.name === consensusGradeName || grade.difficultyId === consensusId)
+      ?.difficultyId;
   }, [consensusGradeName, grades]);
 
   // Inverse of consensusDifficultyId: resolve the picked numeric difficulty

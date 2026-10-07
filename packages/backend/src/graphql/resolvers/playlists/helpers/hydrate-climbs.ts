@@ -234,7 +234,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
       // which a caller-supplied wall angle overrides with the live board angle.
       statsAngle: row.statsAngle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
-      difficulty: getGradeLabel(row.difficulty_id),
+      difficulty: getGradeLabel(row.difficulty_id, boardName),
       quality_average: row.quality_average?.toString() || '0',
       stars: getClimbStars(row.quality_average),
       difficulty_error: row.difficulty_error?.toString() || '0',
