@@ -1,12 +1,42 @@
 {
-  "generatedAt": "2026-10-07T02:08:07.202Z",
+  "generatedAt": "2026-10-07T09:12:48.262Z",
   "entries": [
+    {
+      "prNumber": 6194,
+      "category": "fixed",
+      "title": "Saving a climb with no name now tells you \"Name it to save\" instead of just jumping to the field.",
+      "mergedAt": "2026-10-07T09:03:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6194"
+    },
+    {
+      "prNumber": 6190,
+      "category": "new",
+      "title": "Stripped your spray wall? Reset it: take a new photo, mark the holds, and the old wall is archived with every climb and send.",
+      "mergedAt": "2026-10-07T08:54:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6190",
+      "body": "Swap a hold that climbs use and those climbs get flagged, ready to remix onto the wall as it is now.\nFix a spray climb for 24 hours after you publish it, the same as on every other board."
+    },
+    {
+      "prNumber": 6180,
+      "category": "new",
+      "title": "Spray wall climbs are simpler: one version of each climb, no edit history to dig through.",
+      "mergedAt": "2026-10-07T07:21:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6180"
+    },
     {
       "prNumber": 6189,
       "category": "new",
       "title": "Jump the MoonBoard angle straight to 25° or 40° with one tap",
       "mergedAt": "2026-10-07T02:01:26Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6189"
+    },
+    {
+      "prNumber": 6179,
+      "category": "new",
+      "title": "Show your spray wall straightened and cropped, or just the holds on a clean board",
+      "mergedAt": "2026-10-07T01:27:23Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6179",
+      "body": "See right away if your wall photo is straight-on enough to flatten"
     },
     {
       "prNumber": 6186,
@@ -38,6 +68,50 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6178"
     },
     {
+      "prNumber": 6176,
+      "category": "fixed",
+      "title": "Slide to pick a brush size, and zoom in for finer touch-ups",
+      "mergedAt": "2026-10-06T11:53:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6176"
+    },
+    {
+      "prNumber": 6175,
+      "category": "new",
+      "title": "Wall owners can put a missing hold back from the climb editor: tap its dashed ring, place it, publish, and it slots back into the climb",
+      "mergedAt": "2026-10-06T09:27:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6175"
+    },
+    {
+      "prNumber": 6174,
+      "category": "new",
+      "title": "Climbs that lost holds in a wall reset now open in the editor for their setter, with a dashed ring where each missing hold was",
+      "mergedAt": "2026-10-06T09:26:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6174",
+      "body": "Tap a ring to swap in a hold nearby; the hold that replaced it on the wall is offered first"
+    },
+    {
+      "prNumber": 6173,
+      "category": "new",
+      "title": "Touch up a hold's outline with a brush: paint to add, erase to trim.",
+      "mergedAt": "2026-10-06T08:44:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6173"
+    },
+    {
+      "prNumber": 6171,
+      "category": "new",
+      "title": "Edit your spray wall faster on iPad with keyboard shortcuts: ⌘Z to undo, Delete to switch off, [ and ] to step through holds.",
+      "mergedAt": "2026-10-06T08:20:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6171",
+      "body": "Double-tap your Apple Pencil to swap between marking and adding holds; squeeze a Pencil Pro for a tool palette."
+    },
+    {
+      "prNumber": 6160,
+      "category": "new",
+      "title": "Crop and rotate your spray wall photo before it uploads, so the wall fills the frame.",
+      "mergedAt": "2026-10-06T08:13:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6160"
+    },
+    {
       "prNumber": 6165,
       "category": "fixed",
       "title": "Share your unlisted spray wall and friends without the app can open the link in a browser",
@@ -45,11 +119,99 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6165"
     },
     {
+      "prNumber": 6172,
+      "category": "fixed",
+      "title": "Press and hold with a stylus adds a hold again in Split View and on Android",
+      "mergedAt": "2026-10-06T07:34:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6172"
+    },
+    {
+      "prNumber": 6167,
+      "category": "new",
+      "title": "On iPad, Apple Pencil marks holds on your spray wall: tap to switch one, draw round any the scan missed. Fingers pick holds and move around.",
+      "mergedAt": "2026-10-06T07:22:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6167",
+      "body": "iPad gets a side toolbar you can drag to either edge, and a card for the hold you picked."
+    },
+    {
+      "prNumber": 6166,
+      "category": "new",
+      "title": "Resetting your spray wall? Mark it a full reset and the old set leaves the list, still in your logbook.",
+      "mergedAt": "2026-10-06T07:04:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6166",
+      "body": "The Holds filter's new \"All\" brings retired climbs back."
+    },
+    {
+      "prNumber": 6168,
+      "category": "new",
+      "title": "When you draw, place or move a hold, a magnifier above your finger shows exactly where it lands.",
+      "mergedAt": "2026-10-06T07:02:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6168"
+    },
+    {
+      "prNumber": 6158,
+      "category": "fixed",
+      "title": "Adding a spray wall no longer gets stuck on \"Setting your wall up\"",
+      "mergedAt": "2026-10-06T06:34:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6158"
+    },
+    {
+      "prNumber": 6151,
+      "category": "fixed",
+      "title": "Spray walls drop the buttons that only made sense on LED boards: no kickboard rule, no Bluetooth bulb while setting, and no Benchmarks or Routes filters",
+      "mergedAt": "2026-10-06T06:25:21Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6151",
+      "body": "Your own drafts no longer offer Share or Report"
+    },
+    {
+      "prNumber": 6162,
+      "category": "new",
+      "title": "Zoom deep into your spray wall photo and holds stay sharp while you mark them",
+      "mergedAt": "2026-10-06T06:25:01Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6162"
+    },
+    {
+      "prNumber": 6148,
+      "category": "fixed",
+      "title": "Sharing a climb from your spray wall now sends a link your crew can open on the web",
+      "mergedAt": "2026-10-06T06:23:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6148"
+    },
+    {
+      "prNumber": 6153,
+      "category": "fixed",
+      "title": "Adding a spray wall is clearer: pick Private, Link only or Public in one place, and an offline upload tells you why it failed",
+      "mergedAt": "2026-10-06T06:13:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6153",
+      "body": "Reset the wall has a close button, and Resume is the big button again\nBoard picker tiles show their full names, and a shared link to a deleted wall says the wall is gone"
+    },
+    {
+      "prNumber": 6149,
+      "category": "fixed",
+      "title": "Lost holds after a reset? Edit the climb onto the holds still on the wall.",
+      "mergedAt": "2026-10-06T06:05:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6149"
+    },
+    {
       "prNumber": 6138,
       "category": "fixed",
       "title": "Data export now says it's unavailable up front instead of offering a button that can't work",
       "mergedAt": "2026-10-06T05:30:07Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6138"
+    },
+    {
+      "prNumber": 6141,
+      "category": "new",
+      "title": "Not sure how to photograph your spray wall? The photo step now links to a short video guide",
+      "mergedAt": "2026-10-06T05:29:25Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6141"
+    },
+    {
+      "prNumber": 6123,
+      "category": "fixed",
+      "title": "Read spray-wall hold counts in every language, reach Publish, and keep portrait Look previews above their page dots.",
+      "mergedAt": "2026-10-06T04:54:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6123"
     },
     {
       "prNumber": 6144,
@@ -88,6 +250,13 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6118"
     },
     {
+      "prNumber": 6121,
+      "category": "new",
+      "title": "Choose whether anyone who climbs on your spray wall can edit published climbs.",
+      "mergedAt": "2026-10-06T02:11:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6121"
+    },
+    {
       "prNumber": 6114,
       "category": "fixed",
       "title": "Keep editing your spray wall when you cancel a leave prompt.",
@@ -124,6 +293,20 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6122"
     },
     {
+      "prNumber": 6125,
+      "category": "fixed",
+      "title": "Tap or hold still in Draw to add a circle around a small hold.",
+      "mergedAt": "2026-10-05T22:28:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6125"
+    },
+    {
+      "prNumber": 6120,
+      "category": "fixed",
+      "title": "Leave spray-wall setup from its header, reach photo controls, and choose a Look even when its preview cannot load.",
+      "mergedAt": "2026-10-05T22:27:47Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6120"
+    },
+    {
       "prNumber": 6128,
       "category": "fixed",
       "title": "Signing out or deleting a spray wall clears its cached photos and hold previews. Downloads finishing afterward cannot bring those previews back.",
@@ -152,11 +335,25 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6088"
     },
     {
+      "prNumber": 6084,
+      "category": "fixed",
+      "title": "Downloaded wall photos and hold rings return after an offline restart. Going online refreshes the wall without another restart.",
+      "mergedAt": "2026-10-05T04:10:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6084"
+    },
+    {
       "prNumber": 6093,
       "category": "fixed",
       "title": "Your browser queue stays cleared after removing a wall, and new queued climbs survive a quick switch.",
       "mergedAt": "2026-10-05T04:09:48Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6093"
+    },
+    {
+      "prNumber": 6095,
+      "category": "fixed",
+      "title": "French and German wall-photo reset messages use the right wording.",
+      "mergedAt": "2026-10-05T04:09:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6095"
     },
     {
       "prNumber": 6091,
@@ -166,11 +363,27 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6091"
     },
     {
+      "prNumber": 6065,
+      "category": "fixed",
+      "title": "Your spray wall shows the right photo after throwing away a reset.",
+      "mergedAt": "2026-10-05T03:33:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6065",
+      "body": "Opening a reset keeps your published climbs on their current wall."
+    },
+    {
       "prNumber": 6069,
       "category": "new",
       "title": "Using Boardsesh in your phone's browser? There's now a link to get the app from the App Store or Google Play.",
       "mergedAt": "2026-10-05T03:32:17Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6069"
+    },
+    {
+      "prNumber": 6072,
+      "category": "fixed",
+      "title": "Keep hold edits and new wall photos in their own workflows.",
+      "mergedAt": "2026-10-05T03:31:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6072",
+      "body": "Resume or discard unfinished photos without replacing your chosen photo."
     },
     {
       "prNumber": 6074,
@@ -194,11 +407,26 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6082"
     },
     {
+      "prNumber": 6066,
+      "category": "fixed",
+      "title": "Shared climb links now open straight in the Android app",
+      "mergedAt": "2026-10-05T02:37:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6066",
+      "body": "Tap a link from a mate and the climb is on your screen, ready to light up"
+    },
+    {
       "prNumber": 6067,
       "category": "fixed",
       "title": "Delete your spray wall without its last climb lingering on the bar.",
       "mergedAt": "2026-10-05T02:37:09Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6067"
+    },
+    {
+      "prNumber": 6081,
+      "category": "fixed",
+      "title": "Read spray-wall editing actions clearly in light mode, including Cancel and reporting.",
+      "mergedAt": "2026-10-05T02:36:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6081"
     },
     {
       "prNumber": 6085,
@@ -236,6 +464,14 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6036"
     },
     {
+      "prNumber": 6030,
+      "category": "fixed",
+      "title": "While your wall loads after the hold scan, your photo stays on screen with a line saying what's happening",
+      "mergedAt": "2026-10-04T12:57:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6030",
+      "body": "If your wall can't load, you get a Try again button instead of an endless spinner"
+    },
+    {
       "prNumber": 6034,
       "category": "fixed",
       "title": "Notes and suggestions on a climb you deleted from a private wall no longer show up for other climbers",
@@ -250,12 +486,34 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6028"
     },
     {
+      "prNumber": 6026,
+      "category": "fixed",
+      "title": "The photo permission prompt now says what your photo is for: profile picture, wall photo or feedback screenshot.",
+      "mergedAt": "2026-10-04T12:31:26Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6026"
+    },
+    {
       "prNumber": 6029,
       "category": "fixed",
       "title": "All four corner rings stay on screen while you mark your spray wall.",
       "mergedAt": "2026-10-04T12:30:43Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/6029",
       "body": "The area you marked is outlined between the rings."
+    },
+    {
+      "prNumber": 5992,
+      "category": "fixed",
+      "title": "Downloaded spray walls leave your device when their owner makes them private or removes your access. Your ticks and other board downloads stay with you.",
+      "mergedAt": "2026-10-04T11:49:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5992"
+    },
+    {
+      "prNumber": 6009,
+      "category": "new",
+      "title": "The app now grabs the latest version as it opens, so you start every session on current fixes",
+      "mergedAt": "2026-10-04T11:19:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6009",
+      "body": "New installs sign in on the newest version instead of the one that shipped to the store"
     },
     {
       "prNumber": 4593,
@@ -272,12 +530,27 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/4731"
     },
     {
+      "prNumber": 5909,
+      "category": "new",
+      "title": "Save your climbing history to Files or share it straight from Boardsesh.",
+      "mergedAt": "2026-10-04T11:16:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5909"
+    },
+    {
       "prNumber": 5999,
       "category": "improved",
       "title": "Your logbook on a climb shows up right away when you open it",
       "mergedAt": "2026-10-04T05:32:28Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5999",
       "body": "Other climbers' logs are ready sooner when you scroll down to them"
+    },
+    {
+      "prNumber": 5972,
+      "category": "fixed",
+      "title": "New climbs on a spray wall are published when you tap Save, so they show up in the wall's list straight away.",
+      "mergedAt": "2026-10-04T01:45:04Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5972",
+      "body": "Tap Save without a grade and the editor takes you to the grade picker.\nDrafts now carry a Draft chip in lists, the play view and the bottom bar."
     },
     {
       "prNumber": 5975,
@@ -327,6 +600,30 @@
       "body": "Scrolling a climb no longer runs text under the clock\nThe Download button under Similar Climbs fits its card"
     },
     {
+      "prNumber": 5949,
+      "category": "fixed",
+      "title": "Open your crew’s spray-wall links straight in Boardsesh on Android.",
+      "mergedAt": "2026-10-03T11:12:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5949",
+      "body": "Add your spray wall without enabling a feature flag."
+    },
+    {
+      "prNumber": 5973,
+      "category": "new",
+      "title": "On a spray wall, the setter and the wall's editors can now edit a climb at any time.",
+      "mergedAt": "2026-10-03T11:12:38Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5973",
+      "body": "Every edit is kept. Open a climb and scroll to Revisions to see earlier versions, on the wall photo they were set on."
+    },
+    {
+      "prNumber": 5962,
+      "category": "fixed",
+      "title": "Edit your spray wall's holds, replace its photo, and share it from the board sheet.",
+      "mergedAt": "2026-10-03T10:06:05Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5962",
+      "body": "Spray walls are available by default."
+    },
+    {
       "prNumber": 5948,
       "category": "fixed",
       "title": "Find gyms and boards without losing your results when searches need to wait.",
@@ -334,11 +631,40 @@
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5948"
     },
     {
+      "prNumber": 5953,
+      "category": "new",
+      "title": "Report a spray wall from its Details sheet.",
+      "mergedAt": "2026-10-03T09:00:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5953",
+      "body": "Spray walls are ready without turning on a feature flag."
+    },
+    {
+      "prNumber": 5944,
+      "category": "new",
+      "title": "Set how much the rest of your spray wall dims around the lit holds.",
+      "mergedAt": "2026-10-03T06:28:28Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5944"
+    },
+    {
+      "prNumber": 5945,
+      "category": "fixed",
+      "title": "Aura Outline keeps a big hold's glow off the holds around it.",
+      "mergedAt": "2026-10-03T06:28:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5945"
+    },
+    {
       "prNumber": 5946,
       "category": "fixed",
       "title": "Keep your offline logbook available when storage reconnects during recovery.",
       "mergedAt": "2026-10-03T06:27:58Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5946"
+    },
+    {
+      "prNumber": 5895,
+      "category": "fixed",
+      "title": "Keep offline sends and board downloads reliable while navigating and switching accounts.",
+      "mergedAt": "2026-10-03T06:20:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5895"
     },
     {
       "prNumber": 4273,
@@ -361,6 +687,28 @@
       "title": "Board images stay put during browser updates, and the app follows light or dark appearance changes more reliably.",
       "mergedAt": "2026-10-03T04:11:24Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5890"
+    },
+    {
+      "prNumber": 5941,
+      "category": "new",
+      "title": "Spray walls now show the look their creator picked for the photo.",
+      "mergedAt": "2026-10-03T02:58:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5941",
+      "body": "Prefer your own look? Turn on Use my look on spray walls in Board look.\nAdding a spray wall no longer gets stuck when its look can't be saved."
+    },
+    {
+      "prNumber": 5937,
+      "category": "new",
+      "title": "When you create a spray wall, you can now preview how its holds light up and pick a look before you publish it.",
+      "mergedAt": "2026-10-03T00:22:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5937"
+    },
+    {
+      "prNumber": 5936,
+      "category": "new",
+      "title": "New board look: Aura Outline puts a solid outline around each lit hold, with a tight glow.",
+      "mergedAt": "2026-10-03T00:22:00Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5936"
     },
     {
       "prNumber": 5926,
@@ -396,6 +744,30 @@
       "title": "See Boardsesh in action at the top of boardsesh.com: a one-minute tour of lighting climbs, sharing a queue and logging sends.",
       "mergedAt": "2026-09-30T20:54:58Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5908"
+    },
+    {
+      "prNumber": 5910,
+      "category": "new",
+      "title": "Add holds the scan missed: tap +, then draw round a hold or tap its corners",
+      "mergedAt": "2026-09-30T11:51:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5910",
+      "body": "Zoom in twice as far when reviewing your spray wall's holds"
+    },
+    {
+      "prNumber": 5902,
+      "category": "new",
+      "title": "Watch your wall get scanned for holds, then see them sweep in",
+      "mergedAt": "2026-09-30T08:59:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5902",
+      "body": "First-time tips show you how to fix holds, then get out of the way"
+    },
+    {
+      "prNumber": 5898,
+      "category": "new",
+      "title": "Adding a spray wall is now tap and go: we mark the holds, you fix our mistakes",
+      "mergedAt": "2026-09-30T08:59:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5898",
+      "body": "Tap a ring to switch a hold off or on, tap bare wall to add one\nPress and hold a hold to resize it, trace its shape, or join two together\nOne Publish button, no more save-then-done-then-add"
     },
     {
       "prNumber": 5893,
@@ -721,6 +1093,13 @@
       "title": "When enabled, first-run can help you link your board account after picking a board. Bring available sends into your logbook, or choose Not now and keep climbing.",
       "mergedAt": "2026-09-22T08:43:30Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5235"
+    },
+    {
+      "prNumber": 5354,
+      "category": "fixed",
+      "title": "iOS: clearer heads-up when your board won't connect — points you at what's actually wrong (move closer, try again) instead of a generic error.",
+      "mergedAt": "2026-09-22T08:21:49Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5354"
     },
     {
       "prNumber": 5650,
@@ -1158,6 +1537,13 @@
       "body": "including angles beyond the board's usual 25°/40°.\nFiltering by grade range now works at angles nobody's climbed yet, instead\nof coming back empty."
     },
     {
+      "prNumber": 5524,
+      "category": "new",
+      "title": "No user-facing surface; the only code path near the limit is a tester-only screen.",
+      "mergedAt": "2026-09-16T11:37:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5524"
+    },
+    {
       "prNumber": 5507,
       "category": "fixed",
       "title": "A few dozen Kilter climbs that had gone missing from search are back, including eight that Kilter had filed under the wrong board layout.",
@@ -1173,11 +1559,25 @@
       "body": "The board sheet shows sessions happening on that wall, ready to join.\nKeep a session to yourself: turn off \"Show this session live\" when you start."
     },
     {
+      "prNumber": 5519,
+      "category": "fixed",
+      "title": "Tester-only screen behind Development; never reaches a climber.",
+      "mergedAt": "2026-09-16T10:07:14Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5519"
+    },
+    {
       "prNumber": 5502,
       "category": "fixed",
       "title": "Board art on the web now fills in once a slow load finishes, instead of leaving you with rings.",
       "mergedAt": "2026-09-16T09:13:27Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5502"
+    },
+    {
+      "prNumber": 5517,
+      "category": "fixed",
+      "title": "Tester-only screen behind Development; never reaches a climber.",
+      "mergedAt": "2026-09-16T09:13:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5517"
     },
     {
       "prNumber": 5499,
@@ -1222,6 +1622,20 @@
       "title": "No user can reach a spray wall until SW-09 ships the front door.",
       "mergedAt": "2026-09-16T02:43:39Z",
       "prUrl": "https://github.com/boardsesh/boardsesh/pull/5479"
+    },
+    {
+      "prNumber": 5391,
+      "category": "fixed",
+      "title": "Mirror a climb from the lock screen and the wall flips with it, straight away.",
+      "mergedAt": "2026-09-15T14:05:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5391"
+    },
+    {
+      "prNumber": 5361,
+      "category": "fixed",
+      "title": "Boardsesh is far less likely to crash when iOS puts it to sleep or an update restarts it. If your session ever vanished for no reason, usually right after opening the app or with a board connected over Bluetooth, this is the fix.",
+      "mergedAt": "2026-09-15T14:05:02Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5361"
     },
     {
       "prNumber": 5467,
