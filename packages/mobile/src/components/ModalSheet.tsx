@@ -54,6 +54,8 @@ type ModalSheetProps = {
   enablePanDownToClose?: boolean;
   scrollable?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /** Composers and LogAscentSheet only: form actions go in a SheetTopBar through
+   * `header` (no-bottom-footers.test.ts holds the list of files allowed a footer). */
   footer?: ReactNode;
   /** Sheet ground. `glass` (default) keeps the native material — right for chrome
    * and short pickers. `solid` paints an opaque `theme.sheetSurface` so a

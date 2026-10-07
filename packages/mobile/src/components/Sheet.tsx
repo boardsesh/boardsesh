@@ -54,6 +54,8 @@ type SheetProps = {
   // keyboard on BOTH platforms — the Android Compose dialog window does not
   // resize itself when the keyboard opens (emulator-verified), so Android needs
   // the JS-side padding just like iOS.
+  // Composers only: form actions go in a SheetTopBar through `header`
+  // (no-bottom-footers.test.ts holds the list of files allowed a footer).
   footer?: ReactNode;
   /** Sheet ground. `glass` (default) keeps the native material — right for chrome
    * and short pickers. `solid` paints an opaque `theme.sheetSurface` so a

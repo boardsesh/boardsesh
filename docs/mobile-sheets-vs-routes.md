@@ -87,7 +87,7 @@ deadlocks UIKit and freezes the whole app (renders, but ignores every tap). The
 (`src/providers/sheet-presentation-provider.tsx`) automatically. A surface with
 custom chrome that renders the raw `BottomSheetModal`/`BottomSheet` directly must
 drive present/dismiss with `useManagedSheet` (see `QueueSheet`, `BoardSheet`,
-`LogAscentSheet`). The coordinator serializes transitions per **presenter group**
+`ClimbFilterSheet`). `LogAscentSheet` used to be one of these; it is a `ModalSheet` now. The coordinator serializes transitions per **presenter group**
 (default `'root'`) and auto-sequences a sheet-over-sheet open as
 dismiss(A) → settle → present(B). **A displaced sheet is closed, not suspended**:
 the coordinator clears its desired-open flag and fires `onDisplaced`, which
@@ -138,7 +138,8 @@ column sizes to its content instead of the detent and anything past the detent (
 lands off-screen (#3330). The `Sheet` / `ModalSheet` wrappers pin that single flex child to the
 active detent's height on iOS via `useSheetColumnStyle` (`src/components/use-sheet-column-style.ts`);
 Android bounds it natively and keeps `flex: 1`. A raw-`BottomSheet` surface with a pinned footer
-(`ClimbFilterSheet`, `LogAscentSheet`) must apply the same hook itself.
+(`ClimbFilterSheet`) must apply the same hook itself. `LogAscentSheet` is a `ModalSheet` now
+and gets it from the wrapper.
 
 **Android sizing — only two real states.** `@expo/ui`'s Android sheet is a plain Material 3
 `ModalBottomSheet`: it never reads the requested `%` snap-point _values_, only the detent count
@@ -326,15 +327,61 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    the sheet's lifetime is bound to parent state.
 
 5. **Sheet content must clear the bottom safe area itself — the native `@expo/ui` sheet does
-   not.** The sheet draws under the system bottom inset on **both** platforms — the Android
-   edge-to-edge nav bar (~48dp 3-button bar / gesture pill) _and_ the iOS home indicator (~34pt) —
-   so a control at the bottom of a sheet needs `insets.bottom` added to its padding, or it sits
-   under the bar (Kilter/Tension users on Android 3-button nav hit this on the board sheet). The
-   shared `Sheet`/`ModalSheet` wrappers add it to their pinned `footer` and, for a **footerless**
-   body, automatically via `withSheetBottomInset` (composed on top of your `contentContainerStyle`).
-   A sheet built on the raw native primitive (its own `BottomSheetModal` + `BottomSheetFlatList`,
-   e.g. the board sheet / queue list) owns this itself: add `insets.bottom + spacing[N]`. Apply on
-   both platforms — `insets.bottom` is 0 when there's nothing to clear, so there's no double-inset.
+   not.** The sheet draws under the system bottom inset on **both** platforms: the Android
+   edge-to-edge nav bar (~48dp 3-button bar / gesture pill) and the iOS home indicator (~34pt).
+   A control at the bottom of a sheet needs the **window** bottom inset added to its padding, or
+   it sits under the bar (Kilter/Tension users on Android 3-button nav hit this on the board
+   sheet). Read it from `useWindowBottomInset()`, never `useSafeAreaInsets().bottom`: inside a
+   tab, the local inset includes the tab bar (up to 139pt) that the sheet covers, which is the
+   dead gap in rule 2. The shared `Sheet`/`ModalSheet` wrappers add it to their pinned `footer`
+   and, for a **footerless** body, automatically via `withSheetBottomInset` (composed on top of
+   your `contentContainerStyle`). A sheet built on the raw native primitive (its own
+   `BottomSheetModal` + `BottomSheetFlatList`, e.g. the board sheet / queue list) owns this
+   itself: add `useWindowBottomInset() + spacing[N]`. Apply on both platforms. The inset is 0
+   when there's nothing to clear, so there's no double inset.
+
+6. **Actions go in the top bar.** See "Where actions go" below.
+
+## Where actions go
+
+Sheet and screen actions sit at the top, Apple HIG style: leading Cancel / close / back, a
+centred title, a trailing confirm. A top bar never moves with the keyboard, the bottom inset or
+error text, so this removes the bottom-button yank (buttons jumping after a sheet opens, or when
+the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet footer appears.
+
+- **Sheets.** Pass `<SheetTopBar>` (`src/components/SheetTopBar.tsx`) through the `header` prop of
+  `ModalSheet` / `Sheet`. The header sits above the body and outside its scroll. Trailing is the
+  confirm. Mark it `prominent` for the sheet's main action, `disabled` until the form is valid,
+  and `loading` while it saves. The spinner takes the label's place without changing the width.
+  `trailingAccessory` (a "?" help button, say) sits before it. The title yields when room runs
+  short: it goes off-centre, then truncates. The actions never truncate.
+- **Leading: xmark or Cancel.** Use `close` (an xmark, as the iOS 26 system sheets do) when leaving
+  loses nothing: pickers, detail and filter sheets. Use `cancel` (the word) when leaving would
+  throw away an edit: forms and reports. Use `back` for step two onward of a multi-step sheet.
+- **How the confirm looks.** In a sheet, `prominent` is a filled brand capsule on Liquid Glass. On
+  Material it is brand-coloured semibold text with no fill, like the confirm in an M3 full-screen
+  dialog. In a native header it is the label colour in semibold on both, the look the spray
+  editor's header already uses. Native prominent bar items (`unstable_headerRightItems`) were
+  passed over: the API is unstable and iOS-only, and it has no loading state.
+- **Pushed or modal screens.** Call `useHeaderActions({ leading, trailing })`
+  (`src/hooks/use-header-actions.ts`). It takes the same shape and sets the native stack's
+  `headerLeft` / `headerRight`. On iOS 26 those render as Liquid Glass bar items, and on Material
+  as top app bar actions. The hook only writes the slots you pass and never clears one, so leave
+  out `leading` (or pass `null`) to keep what the layout sets, such as the spray flow's
+  leave-guarded X. Don't pass `leading: back` on a pushed stack screen: the native back chevron
+  keeps its long-press history menu, and ours would not.
+- **Multi-step flows** (the spray wizard). Step 1 shows an X as leading. From step 2 on, show a
+  back chevron. Trailing is the step's forward action: "Next", "Skip" while untouched, "Done".
+- **Secondary content actions** ("Reset", "Start the corners again", "Take a photo") sit inline
+  next to the content they act on, the way Photos puts Reset over the crop. Never stack them under
+  a primary button.
+- **Errors** go in a slot that is already there: `SheetTopBar`'s `error` with `reserveErrorSlot`,
+  or a reserved line under the field. Showing an error never moves a control.
+- **What stays at the bottom.** Composers (`CommentSheet`'s input and Send, Messages style), bottom
+  tool palettes (`SprayEditorBottomBar`) and FABs. They are tools, not form actions. Buttons that
+  belong to a form's body and are not pinned (auth screens, Delete account) stay inline.
+- **The one form-footer exception** is `LogAscentSheet`. Its `TickActionBar` (Attempt / Save) stays at
+  the bottom for thumb reach while logging an ascent.
 
 ## Pushing a route from INSIDE a modal route (the cross-navigator trap)
 
