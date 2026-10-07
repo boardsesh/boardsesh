@@ -64,6 +64,12 @@ type CreateDrawerActionBarProps = {
    * which always wins.
    */
   heatmapLine?: ReactNode;
+  /**
+   * Why Save is held back right now, when something other than the climb's own
+   * holds holds it (the remix editor's grey rings). It takes the line under
+   * Save ahead of everything else, so a disabled Save is never mute.
+   */
+  saveBlockedLine?: ReactNode;
 };
 
 /**
@@ -103,6 +109,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   heatmapActive = false,
   heatmapBusy = false,
   heatmapLine = null,
+  saveBlockedLine = null,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: schemeBrandColors } = useTheme();
@@ -287,10 +294,13 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           something urgent to say. "What a publish still needs" is not urgent
           (`yieldsToHeatmap`): it is up for most of an ordinary spray session,
           and it is still announced from the offscreen row below. */}
-      {heatmapLine && !statusOutranksHeatmap(draftStatus) ? (
+      {saveBlockedLine || (heatmapLine && !statusOutranksHeatmap(draftStatus)) ? (
         <>
-          <View style={statusRowStyles.row} testID="create-heatmap-line">
-            {heatmapLine}
+          <View
+            style={statusRowStyles.row}
+            testID={saveBlockedLine ? 'create-save-blocked-line' : 'create-heatmap-line'}
+          >
+            {saveBlockedLine ?? heatmapLine}
           </View>
           {/* Still mounted, out of sight and out of the layout, so autosave
               transitions keep being announced while the heat line has the slot. */}

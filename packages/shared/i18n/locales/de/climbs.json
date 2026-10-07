@@ -218,15 +218,16 @@
       "boardCannotAuthor": "An diesem Board kannst du noch keine Boulder bauen.",
       "boardConfigIncomplete": "Die Board-Angaben fehlen oder sind ungültig. Wähl das Board erneut, um deinen Boulder zu bauen.",
       "noUsableBoard": "Wähl erst ein Board, dann bau deinen Boulder.",
-      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board."
+      "boardTypeUnsupported": "Mit dieser App-Version kannst du an diesem Board noch keine Boulder bauen. Wähl ein anderes Board.",
+      "wallArchived": "Diese Wand ist archiviert. Die Boulder und Begehungen darauf bleiben, aber du kannst nichts Neues mehr daran bauen."
     },
     "alerts": {
       "publishDuplicateNamed": "Dieses Griff-Muster passt zu „{{name}}“. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "publishDuplicateUnnamed": "Dieses Griff-Muster passt zu einem bestehenden Boulder. Schalte auf Entwurf, um ihn ohne Veröffentlichung zu speichern, oder ändere einen Griff.",
       "viewMatchingClimb": "Passenden Boulder ansehen",
       "saveFailedFallback": "Boulder konnte nicht gespeichert werden. Versuch es nochmal.",
-      "editConflict": "Jemand hat diesen Boulder gerade geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
-      "editNotAllowed": "Du kannst diesen Boulder nicht bearbeiten. Das können nur Routenbauer*in und alle, die die Wand verwalten.",
+      "editConflict": "Dieser Boulder wurde woanders geändert. Öffne ihn neu, um den aktuellen Stand zu sehen.",
+      "editNotAllowed": "Du kannst diesen Boulder nicht bearbeiten. Das kann nur, wer ihn geschraubt hat.",
       "editWindowExpired": "Dieser Boulder wurde vor mehr als 24 Stunden veröffentlicht und lässt sich nicht mehr bearbeiten.",
       "editNotEditable": "Dieser Boulder lässt sich nicht mehr bearbeiten.",
       "localRefreshFailed": "Boulder gespeichert. Die heruntergeladene Liste konnte nicht aktualisiert werden. Verbinde dich erneut, um sie zu aktualisieren."
@@ -485,13 +486,6 @@
         "label": "Sammlung",
         "any": "Beliebig"
       },
-      "holdIntegrity": {
-        "label": "Griffe",
-        "current": "Aktuelle",
-        "any": "Alle",
-        "intact": "Nur intakte",
-        "broken": "Fehlende Griffe"
-      },
       "pin": "An Schnellzugriff anpinnen",
       "unpin": "Aus Schnellzugriff entfernen",
       "established2plus": "Etabliert 2+",
@@ -670,35 +664,10 @@
       "chip_other": "{{count}} Griffe weg",
       "chipAria_one": "{{count}} Griff ist nicht mehr an der Wand",
       "chipAria_other": "{{count}} Griffe sind nicht mehr an der Wand",
-      "banner_one": "{{count}} Griff von diesem Boulder ist weg",
-      "banner_other": "{{count}} Griffe von diesem Boulder sind weg",
-      "bannerBody": "Remixe ihn mit dem, was jetzt an der Wand ist.",
-      "bannerBodyEdit": "Bearbeite ihn mit den Griffen, die noch da sind, oder remixe ihn.",
+      "banner": "Diesem Boulder fehlt ein Griff. Remixe ihn mit den Griffen, die jetzt an der Wand sind.",
       "remix": "Remixen",
-      "edit": "Bearbeiten",
-      "editor": {
-        "tapGhost_one": "{{count}} Griff von diesem Boulder ist weg – tippe auf den gestrichelten Ring, um ihn zu ersetzen",
-        "tapGhost_other": "{{count}} Griffe von diesem Boulder sind weg – tippe auf einen gestrichelten Ring, um einen zu ersetzen",
-        "offline_one": "{{count}} Griff von diesem Boulder ist weg. Verbinde dich, um zu sehen, wo er war.",
-        "offline_other": "{{count}} Griffe von diesem Boulder sind weg. Verbinde dich, um zu sehen, wo sie waren.",
-        "pickNearby": "Tippe auf einen hervorgehobenen Griff, um ihn stattdessen zu nehmen.",
-        "roleFull": "Ein Boulder hat höchstens zwei Start- und zwei Topgriffe. Lösche einen und tippe noch mal.",
-        "noPositions_one": "{{count}} Griff von diesem Boulder ist weg. Wo er war, lässt sich nicht zeigen.",
-        "noPositions_other": "{{count}} Griffe von diesem Boulder sind weg. Wo sie waren, lässt sich nicht zeigen."
-      },
-      "sheet": {
-        "title": "Dieser Griff ist weg",
-        "wasStart": "Es war ein Startgriff.",
-        "wasHand": "Es war ein Handgriff.",
-        "wasFinish": "Es war ein Topgriff.",
-        "wasFoot": "Es war ein Tritt.",
-        "useNearby": "Griff in der Nähe nehmen",
-        "useNearbyHint": "Die nächsten freien Griffe werden auf der Wand hervorgehoben.",
-        "useNearbySuccessor": "Der Griff, der ihn ersetzt hat, wird zuerst hervorgehoben.",
-        "noneNearby": "Keine freien Griffe an der Wand zum Tauschen.",
-        "putBack": "Griff wieder an die Wand schrauben",
-        "putBackHint": "Öffnet den Griff-Editor an der alten Stelle. Veröffentliche, und er kommt zurück in diesen Boulder."
-      }
+      "editorHint_one": "Entferne den grauen Griff, um zu speichern",
+      "editorHint_other": "Entferne die grauen Griffe, um zu speichern"
     },
     "climbActions": {
       "preview": "Vorschau",

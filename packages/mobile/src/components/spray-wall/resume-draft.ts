@@ -30,6 +30,12 @@ export type ResumableWall = {
   board: { name: string };
   /** The published generation. Null until the first publish — which is what "unfinished" means. */
   currentVersion?: { id: string } | null;
+  /**
+   * The wall this one is a reset clone of, when it is one. A clone is finished
+   * from its own reset (`resetSprayWall` hands it back), never offered to a
+   * plain "Add a wall" run.
+   */
+  resetOfWallUuid?: string | null;
 };
 
 /** The slice of `SprayWallVersion` needed to decide where a wall rejoins. */
@@ -47,8 +53,9 @@ export type ResumableVersion = {
  * The wall an interrupted run left behind, or null.
  *
  * "Unfinished" is `currentVersion == null`: a wall that has published once is a
- * real board its owner climbs on, and a later reset is SW-13's flow rather than
- * this one. Only a wall the viewer may edit is offered — the list can carry
+ * real board its owner climbs on. An unfinished reset clone is left out too: it
+ * carries the name of the live wall it will replace, and finishing it archives
+ * that wall, so only its own reset picks it up. Only a wall the viewer may edit is offered — the list can carry
  * walls shared by a gym, and resuming somebody else's half-built wall is not a
  * thing this flow may do.
  *
@@ -60,7 +67,9 @@ export type ResumableVersion = {
  * on the one that is actually specified.
  */
 export function findResumableWall(walls: readonly ResumableWall[]): ResumableWall | null {
-  return walls.find((wall) => wall.viewerCanEdit && wall.currentVersion == null) ?? null;
+  return (
+    walls.find((wall) => wall.viewerCanEdit && wall.currentVersion == null && wall.resetOfWallUuid == null) ?? null
+  );
 }
 
 /** The wall's one open draft, or null when nothing has been adopted onto it. */

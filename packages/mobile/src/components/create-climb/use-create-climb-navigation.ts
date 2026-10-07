@@ -57,20 +57,32 @@ export function useCreateClimbNavigation({
       actionInFlightRef.current = true;
       onActionAccepted?.();
 
+      // The claim covers the handoff, not the hook's lifetime: once the route
+      // is pushed, or the handoff stopped short (an aborted dismissal navigates
+      // nowhere), the next action is a fresh one. A surface that outlives the
+      // handoff (the play drawer's lost-hold banner, an iPad pane) would
+      // otherwise be dead until it remounted.
       const completeHandoff = async () => {
         const dismissSource = dismissSourceSheetRef.current;
         if (dismissSource) {
           const sourceResult = await dismissSource();
-          if (sourceResult.status === 'aborted') return;
+          if (sourceResult.status === 'aborted') {
+            actionInFlightRef.current = false;
+            return;
+          }
         }
 
         const dismissPlayer = dismissPlayerAndWaitRef.current;
         if (dismissPlayer) {
           const playerResult = await dismissPlayer();
-          if (playerResult.status === 'aborted') return;
+          if (playerResult.status === 'aborted') {
+            actionInFlightRef.current = false;
+            return;
+          }
         }
 
         router.push({ pathname: '/(tabs)/climbs/create', params });
+        actionInFlightRef.current = false;
       };
       void completeHandoff().catch((error: unknown) => {
         // The owning overlay is already closing, so keep this presentation's
@@ -106,9 +118,9 @@ export function useCreateClimbNavigation({
           // grade again. Omitted when the source carries none, which reads as
           // "nothing to inherit" rather than "ungraded on purpose".
           ...(climb.difficulty ? { forkDifficulty: climb.difficulty } : {}),
-          // The parent's uuid, so the editor can fetch the holds it lost to a reset
-          // and draw them as ghost rings (#5493). The frames above already name
-          // them; only the server knows where they were.
+          // The parent's uuid, so the editor can draw a grey ring where each
+          // hold it lost used to be. The frames above already name them; only
+          // the server knows where they were.
           forkParentUuid: climb.uuid,
           ...boardParams(resolveClimbRenderBoard(climb, board)?.boardConfig ?? board),
         },

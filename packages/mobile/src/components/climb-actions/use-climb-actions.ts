@@ -29,7 +29,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
-import { useSprayWallViewerCanEditClimbs } from '../../lib/spray/use-spray-wall';
+import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
 
 export type ClimbActionId =
   | 'preview'
@@ -159,7 +159,9 @@ export function useClimbActions({
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
   const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
-  const viewerCanEditClimbs = useSprayWallViewerCanEditClimbs(boardConfig?.boardName, boardConfig?.layoutId ?? null);
+  // An archived wall keeps its climbs readable, but the server refuses every
+  // edit and new climb on it, so neither Edit nor Fork is offered there.
+  const wallArchived = useSprayWallIsArchived(boardConfig?.boardName, boardConfig?.layoutId ?? null);
   const { actionColors } = useTheme();
   const { addToQueue, playNext } = useQueueActions();
   // The active session, so a tick logged from a climb-actions sheet lands on it.
@@ -218,12 +220,13 @@ export function useClimbActions({
     const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
     const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
 
-    // Who may edit is one shared rule (`canEditClimb`): the setter, for 24h after
-    // publish on a catalogue board and always on a spray wall, plus anyone who can
-    // edit the wall on a published spray climb. A hint only; the server decides.
+    // Who may edit is one shared rule (`canEditClimb`): the setter, a draft for
+    // good and a published climb for 24 hours, on every board a spray wall
+    // included. A hint only; the server decides.
     const canEdit =
       getBoardCapabilities(boardName).climbCreation &&
-      canEditClimb({ climb, boardType: boardName, currentUserId, viewerCanEditClimbs, wallLayoutId: layoutId });
+      !wallArchived &&
+      canEditClimb({ climb, boardType: boardName, currentUserId });
 
     const items: ClimbActionItem[] = [];
 
@@ -406,8 +409,8 @@ export function useClimbActions({
     }
 
     // Fork drops into the create-climb editor, so it only appears on boards that
-    // can have climbs set on them.
-    if (getBoardCapabilities(boardName).climbCreation) {
+    // can have climbs set on them, and never on an archived wall.
+    if (getBoardCapabilities(boardName).climbCreation && !wallArchived) {
       items.push({
         id: 'fork',
         title: t('mobile.climbActions.fork'),
@@ -491,7 +494,7 @@ export function useClimbActions({
     queueItemUuid,
     activeClimbUuid,
     currentUserId,
-    viewerCanEditClimbs,
+    wallArchived,
     isAuthenticated,
     onEditEntry,
     onSelectPlaylist,

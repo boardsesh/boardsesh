@@ -2,7 +2,7 @@ SPRAY WALLS: YOUR OWN WALL IN BOARDSESH
 
 Photograph your home wall or the spray wall at your gym and the app finds the holds. Fix what it missed, pick a look, publish, and start setting. Climbs work like on any other board: queue them, save them to playlists, and log your sends in the same logbook as your other boards. No LEDs needed: the holds are highlighted on your photo.
 
-Keep a wall private, make it public, or share it by link or QR code and your crew can set and log on it too. Stripped the wall? Take a new photo and check what came off before anything changes. Climbs that lost a hold stay in your list with a badge, and one tap remixes them onto what's still on the wall.
+Keep a wall private, make it public, or share it by link or QR code and your crew can set and log on it too. Stripped the wall? Reset it: take a new photo, mark the holds, and your old wall is archived with every climb and send. Swap a single hold and any climb that used it is flagged, ready to remix.
 
 Free, like the rest of Boardsesh.
 

@@ -49,7 +49,7 @@ import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards } from '../settings';
+import { setSetting, clearOfflineBoards, clearSprayWallArchives } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -252,6 +252,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // has removed the shared key. The clear is queued behind any pre-existing
       // write and is awaited before account B is published.
       suspendLinkEmptyDismissalWrites();
+      // What the server last said about which walls are archived (the offline
+      // loader's copy). Some of it is per account: who replaced a wall is only
+      // shown to a viewer who may see the replacement.
+      clearSprayWallArchives();
       return Promise.allSettled([
         clearUserDataExportDownloads(exportCredentialGeneration),
         clearStoredSessionId(owner),

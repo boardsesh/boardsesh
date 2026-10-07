@@ -2,20 +2,12 @@ import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { accumulateFramesToMaps } from '@boardsesh/board-constants/hold-states';
 
 /**
- * Window after first publish during which a published climb on a CATALOGUE board
- * can still be edited. A spray wall has no window (#5955).
+ * Window after first publish during which the setter can still edit a published
+ * climb, on every board a spray wall included. The app is stricter than the
+ * current server here: `updateClimb` still exempts spray climbs from the window
+ * until #6183 ships, so for a spray climb this is the app's rule alone.
  */
 export const EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-/**
- * The one board type whose published climbs never lock.
- *
- * A catalogue board is shared by everyone who owns one, so a published climb is
- * something other people have already logged. A spray wall is one physical wall
- * whose holds move, so its climbs stay editable and every edit is kept as a
- * revision instead.
- */
-const SPRAY_BOARD_TYPE = 'spray';
 
 /**
  * The minimal record of a saved climb the editor tracks so subsequent saves
@@ -33,9 +25,8 @@ export type SavedClimbSnapshot = {
 
 /**
  * Can the tracked row be updated in place rather than creating a new one?
- * Same board, and one of: still a draft (editable indefinitely), on a spray
- * wall (no window), or published within the 24h window. The server enforces the
- * same rule in `updateClimb`.
+ * Same board, and either still a draft (editable indefinitely) or published
+ * within the 24h window. The server enforces the same rule in `updateClimb`.
  */
 export function computeCanUpdate(
   saved: SavedClimbSnapshot | null,
@@ -45,7 +36,6 @@ export function computeCanUpdate(
   if (!saved) return false;
   if (saved.boardType !== boardType) return false;
   if (saved.isDraft) return true;
-  if (saved.boardType === SPRAY_BOARD_TYPE) return true;
   if (!saved.publishedAt) return false;
   const publishedMs = Date.parse(saved.publishedAt);
   return Number.isFinite(publishedMs) && now - publishedMs <= EDIT_WINDOW_MS;
@@ -53,11 +43,10 @@ export function computeCanUpdate(
 
 /**
  * Is the tracked row published and past the 24h window (no further edits)?
- * Drafts are never locked, and neither is anything on a spray wall.
+ * Drafts are never locked.
  */
 export function computeEditLocked(saved: SavedClimbSnapshot | null, now: number = Date.now()): boolean {
   if (!saved || saved.isDraft || !saved.publishedAt) return false;
-  if (saved.boardType === SPRAY_BOARD_TYPE) return false;
   const publishedMs = Date.parse(saved.publishedAt);
   return Number.isFinite(publishedMs) && now - publishedMs > EDIT_WINDOW_MS;
 }
@@ -70,10 +59,6 @@ export type EditableClimb = {
   is_draft?: boolean | null;
   published_at?: string | null;
   created_at?: string | null;
-  /** The board the climb itself is on, when the row carries it (queue items do). */
-  boardType?: string | null;
-  /** The layout the climb itself is on, which on spray is the wall. */
-  layoutId?: number | null;
 };
 
 export type CanEditClimbInput = {
@@ -82,68 +67,27 @@ export type CanEditClimbInput = {
   boardType: string;
   /** Null when signed out. */
   currentUserId: string | null | undefined;
-  /**
-   * Whether the viewer can edit the WALL the climb is on (`SprayWall.viewerCanEdit`).
-   * Only read on spray. Unknown is `false`: the Edit action stays hidden until the
-   * wall says otherwise.
-   * Kept for backwards compatibility; viewerCanEditClimbs takes precedence when provided.
-   */
-  viewerCanEditWall?: boolean | null;
-  /**
-   * Whether the viewer can edit climbs on this wall (`SprayWall.viewerCanEditClimbs`, #6025).
-   * Only read on spray. Takes precedence over `viewerCanEditWall` when neither null nor undefined.
-   */
-  viewerCanEditClimbs?: boolean | null;
-  /**
-   * The layout of the wall `viewerCanEditWall` was read for. With it, a climb
-   * that says it is on a different wall is not offered to a wall editor.
-   */
-  wallLayoutId?: number | null;
   now?: number;
 };
 
 /**
  * Should this viewer be offered Edit on this climb? The whole client rule, in
- * one place, so the two action menus cannot drift:
+ * one place, so the action menus cannot drift. The same on every board, a spray
+ * wall included:
  *
- * | Board     | The climb is | Who                                   | For how long |
- * | --------- | ------------ | ------------------------------------- | ------------ |
- * | catalogue | a draft      | its setter                            | always       |
- * | catalogue | published    | its setter                            | 24 hours     |
- * | spray     | a draft      | its setter                            | always       |
- * | spray     | published    | its setter, or anyone who can edit    | always       |
- * |           |              | the wall the climb is on              |              |
+ * | The climb is | Who        | For how long                 |
+ * | ------------ | ---------- | ---------------------------- |
+ * | a draft      | its setter | always                       |
+ * | published    | its setter | 24 hours after first publish |
  *
  * A hint, not a permission: `updateClimb` decides, and a viewer this gets wrong
- * (a role granted or taken away since the wall was last read) meets the server's
- * refusal in the editor.
+ * meets the server's refusal in the editor.
  */
-export function canEditClimb({
-  climb,
-  boardType,
-  currentUserId,
-  viewerCanEditWall,
-  viewerCanEditClimbs,
-  wallLayoutId,
-  now = Date.now(),
-}: CanEditClimbInput): boolean {
+export function canEditClimb({ climb, boardType, currentUserId, now = Date.now() }: CanEditClimbInput): boolean {
   if (!climb || !currentUserId) return false;
   const isDraft = climb.is_draft ?? false;
   const isSetter = !!climb.userId && climb.userId === currentUserId;
-
-  if (!isSetter) {
-    const canEditOtherClimbs = viewerCanEditClimbs ?? viewerCanEditWall;
-    // Somebody else's draft is theirs alone, wall editor or not: publishing it
-    // would announce a new climb under the wrong name.
-    if (boardType !== SPRAY_BOARD_TYPE || canEditOtherClimbs !== true || isDraft) return false;
-    // Editing a wall is not editing every climb seen while standing at it. A
-    // queue can still hold a climb from another wall, or from Kilter, and that
-    // climb says so. A row that does not carry the field is taken on trust:
-    // list rows come from the board they are listed under.
-    if (climb.boardType != null && climb.boardType !== SPRAY_BOARD_TYPE) return false;
-    if (climb.layoutId != null && wallLayoutId != null && climb.layoutId !== wallLayoutId) return false;
-    return true;
-  }
+  if (!isSetter) return false;
 
   return computeCanUpdate(
     {

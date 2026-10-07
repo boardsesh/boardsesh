@@ -6,8 +6,7 @@
     "failed": "No pudimos terminar de buscar las presas. Tu foto está guardada.",
     "resumeHint": "Puedes salir y continuar más tarde. Tu muro publicado no cambia.",
     "retry": "Intentar de nuevo",
-    "manual": "Marcar las presas a mano",
-    "resume": "Continuar este reseteo"
+    "manual": "Marcar las presas a mano"
   },
   "mobile": {
     "edit": {
@@ -226,11 +225,11 @@
       "spray": {
         "kind": "Plafón de presas",
         "editHolds": "Editar presas",
-        "editHoldsHint": "Añade, mueve o borra las presas de tu plafón.",
-        "newPhoto": "Nueva foto",
-        "newPhotoHint": "Fotografía el plafón otra vez después de un cambio de presas.",
+        "editHoldsHint": "Añade, mueve o borra las presas de tu muro.",
+        "resetWall": "Resetear este muro",
+        "resetWallHint": "Haz una foto nueva y marca las presas otra vez.",
         "shareLink": "Compartir enlace",
-        "shareLinkPublicHint": "Cualquiera puede abrir este plafón.",
+        "shareLinkPublicHint": "Cualquiera puede abrir este muro.",
         "shareLinkUnlistedHint": "Solo quien reciba el enlace."
       },
       "details": "Detalles",
@@ -1077,88 +1076,40 @@
       "startOver": "Empezar de nuevo",
       "checkFailed": "No se pudo comprobar ese muro. Inténtalo otra vez.",
       "retry": "Reintentar"
+    },
+    "reset": {
+      "screenTitle": "Resetear este muro",
+      "starting": "Preparando tu muro nuevo…",
+      "startFailed": "No se pudo empezar el reseteo. Inténtalo otra vez.",
+      "resumeTitle": "Tienes un reseteo a medias",
+      "resumeBody": "La foto nueva de «{{name}}» no está terminada. Retómala donde la dejaste o empieza de nuevo. El muro sigue activo hasta que se publique el nuevo.",
+      "photoTitle": "Fotografía el muro tal como está ahora",
+      "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa.",
+      "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
     }
   },
-  "sprayReset": {
-    "screenTitle": "Resetear el muro",
-    "loading": "Cargando tu muro…",
-    "notYours": "Este muro no es tuyo para resetearlo.",
-    "nothingPublished": "Este muro todavía no está montado. Termina de añadirlo primero.",
-    "openDraft": {
-      "title": "Hay un reseteo a medias",
-      "body": "Tu foto está guardada para continuar. El muro publicado no cambia hasta que confirmes el reseteo.",
-      "discard": "Tírala y empezar de nuevo",
-      "discarded": "Ese reseteo ya no está. Haz una foto nueva.",
-      "discardFailed": "Ese reseteo no se pudo borrar. Inténtalo otra vez.",
-      "holdEditTitle": "Tienes cambios de presas pendientes",
-      "holdEditBody": "Publica o descarta los cambios guardados en Editar presas antes de elegir una foto nueva."
-    },
-    "photo": {
-      "title": "Fotografía el muro otra vez",
-      "body": "Colócate donde te colocaste la primera vez si puedes. Mismo muro, presas nuevas."
-    },
-    "adjust": {
-      "body": "Recorta hasta los bordes del muro y deja las cuatro esquinas dentro del recorte. Las marcarás a continuación."
-    },
-    "anchors": {
-      "title": "Marca las esquinas",
-      "body": "Arrastra los cuatro círculos a las esquinas del muro. Esto no es opcional: es lo que alinea tu foto nueva con cada bloque que ya vive en el muro.",
-      "use": "Usar estas esquinas"
-    },
-    "leave": {
-      "title": "¿Dejar el reseteo?",
-      "body": "Tu foto nueva se queda como borrador. En el muro no cambia nada hasta que confirmes."
-    },
-    "compare": {
-      "working": "Calculando qué ha cambiado…",
-      "unavailable": "No pudimos calcular qué ha cambiado en este muro.",
-      "counts": "{{kept}} siguen · {{removed}} fuera · {{added}} nuevas",
-      "climbsAffected_one": "{{count}} bloque pierde una presa",
-      "climbsAffected_other": "{{count}} bloques pierden presas",
-      "aspectWarning": "Esta foto está encuadrada distinto que la anterior. Comprueba que las esquinas cayeron en las esquinas.",
-      "filterLabel": "Qué círculos mostrar",
-      "tapHint": "Toca cualquier círculo para cambiar de opinión.",
-      "confirm": "Confirmar el reseteo",
-      "fullReset": "Reseteo completo",
-      "fullResetBody": "Los bloques que pierden una presa salen de la lista de este muro. Siguen en el logbook, y Presas perdidas los muestra.",
-      "acceptMoves": "Aceptar todos los cambios de sitio",
-      "noDetections": "Nada que comparar",
-      "noDetectionsBody": "Este móvil no pudo encontrar las presas en tu foto nueva, así que no hay nada con qué comparar. Tu foto queda guardada como borrador."
-    },
-    "commit": {
-      "failed": "El reseteo no se aplicó. En el muro no ha cambiado nada."
-    },
-    "filter": {
-      "all": "Todas",
-      "kept": "Siguen {{value}}",
-      "removed": "Fuera {{value}}",
-      "new": "Nuevas {{value}}",
-      "unsure": "Dudosas {{value}}"
-    },
-    "hold": {
-      "kept": "Presa {{id}} — sigue en el muro",
-      "removed": "Presa {{id}} — se va",
-      "unsure": "Presa {{id}} — mírala bien",
-      "stillHere": "Sigue aquí",
-      "gone": "Ya no está"
-    },
-    "detection": {
-      "new": "Una presa que antes no estaba",
-      "rejected": "No es una presa",
-      "accept": "Sí es una presa",
-      "reject": "No es una presa"
-    },
-    "pairing": {
-      "start": "La misma presa, movida aquí",
-      "prompt": "Toca el círculo donde estaba esa presa antes.",
-      "cancel": "Déjalo",
-      "paired": "Sustituye a la presa {{id}}",
-      "unpair": "No es esa presa",
-      "useSuggestion": "Sustituye a la presa {{id}}"
-    },
-    "done": {
-      "toast": "{{removed}} fuera, {{added}} nuevas, {{climbs}} bloques cambiados"
-    }
+  "sprayResetConfirm": {
+    "title": "¿Resetear este muro?",
+    "body": "Haz una foto nueva y marca las presas desde cero. Cuando el muro nuevo se publique, este se archiva. Sus bloques y encadenes se quedan en los logbooks y las playlists, y ya nadie podrá montar bloques en él.",
+    "start": "Empezar el reseteo",
+    "cancel": "Ahora no"
+  },
+  "sprayArchive": {
+    "banner": "Archivado el {{date}}. Los bloques y encadenes se quedan, pero aquí ya no se monta nada nuevo.",
+    "bannerUndated": "Archivado. Los bloques y encadenes se quedan, pero aquí ya no se monta nada nuevo.",
+    "switchToNew": "Ir al muro nuevo",
+    "openFailed": "No se pudo abrir ese muro. Inténtalo otra vez.",
+    "manageHeader": "Archivados",
+    "manageRow": "Archivado el {{date}}",
+    "manageRowUndated": "Archivado",
+    "deleteMessage": "¿Eliminar «{{name}}»? Se elimina su foto, y sus bloques y todos los encadenes registrados en ellos desaparecen de los logbooks y las playlists. No se puede deshacer."
+  },
+  "sprayWallErrors": {
+    "archived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él.",
+    "resetRetired": "Ahora los muros se cambian reseteándolos. Actualiza la app y luego resetea el muro.",
+    "resetOwnerOnly": "Solo quien creó el muro puede resetearlo.",
+    "resetSourceUnpublished": "Termina de configurar este muro antes de resetearlo.",
+    "archiveLimitReached": "Puedes guardar {{max}} muros archivados. Borra uno de la sección Archivados para resetear este muro."
   },
   "sprayMaintenance": {
     "screenTitle": "Editar presas",
@@ -1180,11 +1131,21 @@
       "stay": "Seguir editando",
       "discard": "Descartar cambios"
     },
-    "resetInProgress": "Termina o descarta el cambio con la foto nueva antes de editar las presas."
+    "leftoverPhoto": "Este muro tiene una foto nueva sin terminar de una versión anterior de la app. Descártala para editar las presas.",
+    "discardLeftover": "Descartar la foto sin terminar",
+    "discardLeftoverFailed": "No se pudo descartar esa foto. Inténtalo otra vez."
+  },
+  "sprayHoldUsage": {
+    "title": "¿Quitar una presa que usan bloques?",
+    "body_one": "{{count}} bloque publicado usa estas presas. Quedará marcado como que le falta una presa hasta que alguien lo remezcle.",
+    "body_other": "{{count}} bloques publicados usan estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
+    "bodyUnknown": "Puede que algunos bloques usen estas presas. Quedarán marcados como que les falta una presa hasta que alguien los remezcle.",
+    "removeAnyway": "Quitar igualmente",
+    "keep": "Mantener las presas"
   },
   "sprayCaps": {
     "holds": "En un muro caben hasta {{max}} presas. Descarta algunas y vuelve a guardar.",
-    "versions": "Un muro guarda {{max}} reseteos, y este ya los ha gastado todos.",
+    "versions": "Un muro guarda hasta {{max}} versiones de sus presas, una por cada edición publicada, y este ya las ha gastado todas. Resetea el muro para empezar de cero.",
     "walls": "Puedes tener {{max}} muros. Borra uno para hacer sitio.",
     "wallsHint": "Puedes tener hasta {{max}} muros."
   },
@@ -1225,13 +1186,13 @@
     "photo": "Foto",
     "wallCrop": "Solo el muro",
     "holdCutouts": "Solo las presas",
-    "retake": "Repetir la foto",
+    "retake": "Resetear el muro con una foto nueva",
     "previewLabel": "Vista previa de {{look}}",
     "saveFailed": "No se pudo guardar el fondo. Inténtalo de nuevo.",
     "notAvailable": "Esta foto está demasiado inclinada para ese aspecto. Repítela de frente.",
     "note": {
       "lockedNoPins": "Marca las 4 esquinas para desbloquearlo.",
-      "lockedRetake": "Repite la foto de frente para desbloquearlo.",
+      "lockedRetake": "Resetea el muro con una foto de frente para desbloquearlo.",
       "generating": "Generando…",
       "failed": "Ese aspecto no se pudo generar. Guárdalo otra vez para reintentarlo.",
       "afterPublish": "Listo más o menos un minuto después de publicar. Hasta entonces se ve tu foto.",

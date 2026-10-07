@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IDENTITY_HOMOGRAPHY } from '@boardsesh/spray-wall-geometry';
 import { MAX_RING_NUMBERS } from '@boardsesh/board-art-geometry/ring';
 import {
@@ -8,7 +8,14 @@ import {
   type SprayEditorHold,
   type SprayEditorState,
 } from '../spray-hold-editor-reducer';
-import { buildSprayHoldWritePlan, planHasWork, prepareCommit } from '../spray-hold-writes';
+import {
+  buildSprayHoldWritePlan,
+  confirmPlanRemovals,
+  holdIdsLeavingTheWall,
+  planHasWork,
+  prepareCommit,
+  type SprayHoldWritePlan,
+} from '../spray-hold-writes';
 import { SPRAY_ON_CUTOFF } from '../spray-hold-tools';
 
 function storedHold(id: number, overrides: Partial<SprayEditorHold> = {}): SprayEditorHold {
@@ -54,18 +61,7 @@ describe('buildSprayHoldWritePlan', () => {
     ]);
   });
 
-  it('sends a put-back hold with the removed hold it replaces (#5493), and keeps sending it on a nudge', () => {
-    const added = run([], {
-      type: 'ADD_HOLD',
-      geometry: { cx: 300, cy: 400, r: 25, outline: null },
-      movedFromHoldId: 42,
-    });
-    expect(buildSprayHoldWritePlan(added, IDENTITY_HOMOGRAPHY).upsert).toEqual([
-      { cx: 300, cy: 400, r: 25, outline: null, source: 'MANUAL', movedFromHoldId: 42 },
-    ]);
-    expect(
-      run([], { type: 'ADD_HOLD', geometry: { cx: 1, cy: 2, r: 3, outline: null }, select: true }).selectedId,
-    ).toBe(added.nextLocalId + 1);
+  it("keeps sending a stored hold's link to the hold it replaced when the hold is nudged", () => {
     // The server writes an in-place edit's link as sent, so a nudge resends it.
     const stored = run([storedHold(9, { movedFromHoldId: 42 })], { type: 'MOVE_HOLD', id: 9, cx: 150, cy: 250 });
     expect(buildSprayHoldWritePlan(stored, IDENTITY_HOMOGRAPHY).upsert).toEqual([
@@ -315,5 +311,114 @@ describe('prepareCommit', () => {
     expect(planHasWork(second.plan)).toBe(false);
     // ...and undo cannot reach a snapshot where those finds are unwritten again.
     expect(sprayEditorReducer(saved, { type: 'UNDO' })).toBe(saved);
+  });
+});
+
+function planWith(removeIds: number[], upsertIds: (number | undefined)[] = []): { plan: SprayHoldWritePlan } {
+  return {
+    plan: {
+      upsert: upsertIds.map((id) => ({
+        ...(id != null ? { id } : {}),
+        cx: 1,
+        cy: 1,
+        r: 1,
+        outline: null,
+        source: 'MANUAL',
+      })),
+      writtenIds: [],
+      removeIds,
+      unmappableIds: [],
+      outlinesDropped: 0,
+      overCap: false,
+    },
+  };
+}
+
+describe('holdIdsLeavingTheWall', () => {
+  // The server records a move as a removal plus a new hold, so a stored hold
+  // whose geometry goes out again leaves the wall just like a removed one.
+  it('names every removal and every stored hold that moves, once each', () => {
+    expect(holdIdsLeavingTheWall(planWith([4, 9], [9, 12, undefined]).plan)).toEqual([4, 9, 12]);
+  });
+
+  // A resize keeps the centre, and the server still supersedes the hold, so a
+  // climb that used it loses it: it has to be asked about like a removal.
+  it('names a stored hold resized in place, centre unchanged', () => {
+    const state = run([storedHold(7), storedHold(8)], { type: 'RESIZE_HOLD', id: 7, r: 30 });
+    const plan = buildSprayHoldWritePlan(state, IDENTITY_HOMOGRAPHY);
+    expect(plan.upsert).toEqual([expect.objectContaining({ id: 7, cx: 100, cy: 200 })]);
+    expect(holdIdsLeavingTheWall(plan)).toEqual([7]);
+  });
+
+  it('names nothing for a save that only adds holds', () => {
+    expect(holdIdsLeavingTheWall(planWith([], [undefined, undefined]).plan)).toEqual([]);
+  });
+});
+
+describe('confirmPlanRemovals', () => {
+  it('asks nothing and saves when nothing leaves the wall', async () => {
+    const ask = vi.fn(async () => true);
+    const planned = planWith([], [undefined]);
+    await expect(confirmPlanRemovals(() => planned, ask)).resolves.toBe(planned);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('asks about the holds leaving, and saves on "Remove anyway"', async () => {
+    const ask = vi.fn(async () => true);
+    const planned = planWith([4], [7]);
+    await expect(confirmPlanRemovals(() => planned, ask)).resolves.toBe(planned);
+    expect(ask).toHaveBeenCalledExactlyOnceWith([4, 7]);
+  });
+
+  it('aborts the save on "Keep holds"', async () => {
+    const onAsking = vi.fn();
+    await expect(
+      confirmPlanRemovals(
+        () => planWith([4]),
+        async () => false,
+        { onAsking },
+      ),
+    ).resolves.toBeNull();
+    // The screen is held while asking, and given back either way.
+    expect(onAsking.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('asks again only about a hold taken off while the check was up', async () => {
+    const plans = [planWith([4]), planWith([4, 5])];
+    let reads = 0;
+    const planNow = () => plans[Math.min(reads++, plans.length - 1)];
+    const ask = vi.fn(async () => true);
+    await expect(confirmPlanRemovals(planNow, ask)).resolves.toBe(plans[1]);
+    expect(ask.mock.calls).toEqual([[[4]], [[5]]]);
+  });
+
+  // The usage read can take as long as the HTTP deadline: the screen stays held
+  // (and Save shows its spinner) the whole time, and nothing is saved yet.
+  it('holds the screen while the check is still out', async () => {
+    let answer: (goAhead: boolean) => void = () => {};
+    const onAsking = vi.fn();
+    const pending = confirmPlanRemovals(
+      () => planWith([4]),
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+      { onAsking },
+    );
+    await Promise.resolve();
+    expect(onAsking.mock.calls).toEqual([[true]]);
+    answer(true);
+    await expect(pending).resolves.toEqual(planWith([4]));
+    expect(onAsking.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('saves nothing when the screen went away while asking', async () => {
+    await expect(
+      confirmPlanRemovals(
+        () => planWith([4]),
+        async () => true,
+        { stillHere: () => false },
+      ),
+    ).resolves.toBeNull();
   });
 });

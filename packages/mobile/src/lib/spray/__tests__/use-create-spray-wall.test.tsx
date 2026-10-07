@@ -8,7 +8,14 @@ const request = vi.hoisted(() => vi.fn());
 const clearPrivateCaches = vi.hoisted(() => vi.fn());
 vi.mock('../../graphql/client', () => ({ getHttpClient: () => ({ request }) }));
 vi.mock('../spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: clearPrivateCaches }));
-import { useDiscardSprayWallDraft, usePublishSprayWallVersion } from '../use-create-spray-wall';
+import {
+  sprayWallWithVersionsQueryKey,
+  useDiscardSprayWallDraft,
+  useDiscardSprayWallVersion,
+  usePublishSprayWallVersion,
+  useResetSprayWall,
+} from '../use-create-spray-wall';
+import { RESET_SPRAY_WALL } from '@boardsesh/graphql/operations/spray-walls';
 
 function queryWrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -55,5 +62,57 @@ describe('spray wizard board roster refresh', () => {
       ).rejects.toThrow('synthetic delete failure');
     });
     expect(clearPrivateCaches).not.toHaveBeenCalled();
+  });
+});
+
+describe('useResetSprayWall', () => {
+  it('asks for the clone of the wall it names and refreshes the owner wall list', async () => {
+    const client = new QueryClient();
+    client.setQueryData(['mySprayWalls'], []);
+    const clone = { uuid: 'clone-1', layoutId: 8, board: { uuid: 'clone-1' } };
+    request.mockResolvedValue({ resetSprayWall: clone });
+    const hook = renderHook(useResetSprayWall, { wrapper: queryWrapper(client) });
+    let returned: unknown;
+    await act(async () => {
+      returned = await hook.result.current.mutateAsync('old-wall');
+    });
+    expect(returned).toEqual(clone);
+    expect(request).toHaveBeenCalledExactlyOnceWith(RESET_SPRAY_WALL, { input: { wallUuid: 'old-wall' } });
+    expect(client.getQueryState(['mySprayWalls'])?.isInvalidated).toBe(true);
+  });
+
+  it('surfaces a refusal to the caller', async () => {
+    request.mockRejectedValue(new Error('SPRAY_WALL_RESET_OWNER_ONLY'));
+    const hook = renderHook(useResetSprayWall, { wrapper: queryWrapper(new QueryClient()) });
+    await act(async () => {
+      await expect(hook.result.current.mutateAsync('old-wall')).rejects.toThrow('SPRAY_WALL_RESET_OWNER_ONLY');
+    });
+  });
+});
+
+describe('useDiscardSprayWallVersion', () => {
+  // Keeps the wall: only the draft goes, so exactly one request is sent.
+  it('takes the discarded draft out of the cached history at once, even while the refetch hangs', async () => {
+    request.mockResolvedValue({ discardSprayWallVersion: true });
+    const client = new QueryClient();
+    const versionsKey = sprayWallWithVersionsQueryKey('wall-1');
+    client.setQueryData(versionsKey, {
+      uuid: 'wall-1',
+      versions: [
+        { id: 'published-1', status: 'PUBLISHED' },
+        { id: 'draft-2', status: 'DRAFT' },
+      ],
+    });
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries').mockImplementation(() => new Promise(() => {}));
+    const hook = renderHook(() => useDiscardSprayWallVersion('wall-1'), { wrapper: queryWrapper(client) });
+    await act(async () => {
+      await expect(hook.result.current.mutateAsync('draft-2')).resolves.toBe(true);
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(client.getQueryData(versionsKey)).toEqual({
+      uuid: 'wall-1',
+      versions: [{ id: 'published-1', status: 'PUBLISHED' }],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: versionsKey });
   });
 });

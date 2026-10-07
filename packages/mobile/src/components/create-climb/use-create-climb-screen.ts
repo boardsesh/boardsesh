@@ -22,7 +22,6 @@ import {
   computeCanUpdate,
   computeEditLocked,
   buildInitialFrames,
-  type HoldPlacement,
   type SavedClimbSnapshot,
 } from '@boardsesh/create-climb-react';
 import { useBoardActions, isDuplicateClimbError } from '@boardsesh/board-react';
@@ -40,7 +39,9 @@ import { useQueueActions } from '../../providers/queue-provider';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { useToast } from '../../providers/toast-provider';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import { getSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import { getSprayWall, refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import { sprayWallLifecycleRefusal, sprayWallRefusalMeansStaleWall } from '../../lib/graphql/extract-error-message';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import {
   loadDraft,
   saveDraft,
@@ -62,7 +63,6 @@ import {
   sprayWallUuidFor,
 } from './spray-climb-rules';
 import { useLastUsedGrade } from './use-last-used-grade';
-import type { LostHoldPutBackReturn } from '../../lib/spray/lost-hold-put-back';
 import { getDifficultyIdForGradeName, getGradeLabel } from '../../lib/grade-label';
 import { useCreateClimbAutosave } from './use-create-climb-autosave';
 import { deriveDraftStatusView, type DraftStatusView } from './draft-status-view';
@@ -118,18 +118,6 @@ type UseCreateClimbScreenArgs = {
    * grade again.
    */
   forkDifficultyId?: number | null;
-  /**
-   * The climber is back from putting a lost hold back on the wall (#5493): the
-   * working copy they left with, and the hold that went back on (null when they
-   * backed out). Applied once the editor's own seed has settled.
-   */
-  putBackReturn?: LostHoldPutBackReturn | null;
-  /**
-   * Fired once `putBackReturn` has been applied. `roleFull` is true when the
-   * hold came back but its role was already full (two starts or two finishes),
-   * so it could not go into the climb.
-   */
-  onPutBackApplied?: (roleFull: boolean) => void;
 };
 
 const BLE_PREVIEW_DEBOUNCE_MS = 250;
@@ -300,11 +288,10 @@ export function useCreateClimbScreen({
   onStartedNewClimb,
   sprayWallToken = '',
   forkDifficultyId,
-  putBackReturn = null,
-  onPutBackApplied,
 }: UseCreateClimbScreenArgs) {
   const router = useRouter();
   const { t } = useTranslation('climbs');
+  const { t: tBoards } = useTranslation('boards');
   const { isAuthenticated, saveClimb, updateClimb } = useBoardActions();
   const auth = useAuth();
   const { data: profile } = useProfile();
@@ -348,17 +335,15 @@ export function useCreateClimbScreen({
    * The holds that are on the board right now — spray walls only.
    *
    * A catalogue board gets `undefined`, which means "every hold in the seed is
-   * real": Kilter's holds are bolted on at the factory. A WALL's are not, and a
-   * reset takes some off. Remix seeds the editor from the parent's frames, which
-   * still name every hold the climb was set on, so without this the editor opens
-   * with the lost ones painted — invisible (no placement, so no ring), untappable
-   * (no target), and still counted by `startingCount` / `finishCount` /
-   * `isValid`. Save would then publish a climb born broken, on the one flow whose
-   * whole purpose is repairing one.
+   * real": Kilter's holds are bolted on at the factory. A wall's are not. Holds
+   * come off a live wall, and a remix or a draft of a climb set before that
+   * still names them. Without this the editor
+   * opens with those holds painted: invisible (no placement, so no ring),
+   * untappable (no target), and still counted by `startingCount` /
+   * `finishCount` / `isValid`, so Save would publish a climb born broken.
    *
-   * Read once, with the frames, from the SW-07 registry: the wall under the
-   * editor does not change mid-session, and re-reading it later would silently
-   * erase a hold the climber had just painted if a reset landed on another device.
+   * Read once, with the frames, from the SW-07 registry: re-reading it later
+   * would silently erase a hold the climber had just painted.
    *
    * eslint-disable-next-line react-hooks/exhaustive-deps — deliberately seeded
    * once, exactly like `initialFrames` above.
@@ -376,7 +361,6 @@ export function useCreateClimbScreen({
     frameCount,
     currentFrameIndex,
     setHoldState,
-    placeHold,
     generateFramesString,
     currentFrameBleString,
     startingCount,
@@ -1197,59 +1181,6 @@ export function useCreateClimbScreen({
     [setHoldState, reclaimWall],
   );
 
-  /**
-   * Put a live hold in the climb in place of one a reset took off (#5493), in
-   * every frame the lost hold was in and with the role it had there — one undo
-   * step. Placements pointing past the last frame (a frame deleted since) fall
-   * back to the frame on screen, with the lost hold's first role. Returns false
-   * when the role is already full (two starts or finishes), so the caller can
-   * say so instead of the tap doing nothing.
-   */
-  const placeLostHoldReplacement = useCallback(
-    (replacementHoldId: number, placements: readonly HoldPlacement[]): boolean => {
-      if (placements.length === 0) return false;
-      const inRange = placements.filter((placement) => placement.frameIndex < frameCount);
-      const effective = inRange.length > 0 ? inRange : [{ frameIndex: currentFrameIndex, state: placements[0].state }];
-      const placed = placeHold(replacementHoldId, effective);
-      if (placed) {
-        reclaimWall();
-        lastPaintRef.current = null;
-      }
-      return placed;
-    },
-    [placeHold, frameCount, currentFrameIndex, reclaimWall],
-  );
-
-  // ---- Back from putting a lost hold back on the wall (#5493). ----
-  // Two steps on two renders: the working copy first (it replaces the frames),
-  // then the new hold into the frames that copy produced. `placeHold` reads the
-  // frames it is given, so placing in the same pass would read the pre-restore
-  // ones. Both wait for the editor's own seed (an edit's server copy and slot),
-  // which would otherwise land on top.
-  const [putBackStage, setPutBackStage] = useState<'waiting' | 'placing' | 'done'>(putBackReturn ? 'waiting' : 'done');
-  const putBackReturnRef = useRef(putBackReturn);
-  const onPutBackAppliedRef = useRef(onPutBackApplied);
-  onPutBackAppliedRef.current = onPutBackApplied;
-  useEffect(() => {
-    const pending = putBackReturnRef.current;
-    if (putBackStage !== 'waiting' || !pending || restoreEpoch === 0) return;
-    applyStoredDraft(pending.draft);
-    const restoredSavedClimb = parseSavedClimbSnapshot(pending.draft.savedClimbJson);
-    if (restoredSavedClimb) {
-      setSavedClimb(restoredSavedClimb);
-      setSavedSignature(pending.draft.savedPayloadSignature ?? null);
-      setSavedSignatureUnknown(pending.draft.savedPayloadSignature === undefined);
-    }
-    setPutBackStage('placing');
-  }, [putBackStage, restoreEpoch, applyStoredDraft]);
-  useEffect(() => {
-    const pending = putBackReturnRef.current;
-    if (putBackStage !== 'placing' || !pending) return;
-    const placed = pending.newHoldId === null ? true : placeLostHoldReplacement(pending.newHoldId, pending.placements);
-    setPutBackStage('done');
-    onPutBackAppliedRef.current?.(!placed);
-  }, [putBackStage, placeLostHoldReplacement]);
-
   // Editing or touching the transport takes the wall back from the queue.
   const handleDuplicateFrame = useCallback(() => {
     reclaimWall();
@@ -1444,9 +1375,8 @@ export function useCreateClimbScreen({
       // save replaces the item. Self-correcting and not worth a queue-item
       // update path; revisit if it shows up in offline-first flows.
       //
-      // The ORIGINAL setter's on an edit: a wall owner fixing somebody else's
-      // spray climb has not taken it (#5955), and the server never rewrites
-      // either field on an update.
+      // The ORIGINAL setter's on an edit: the server never rewrites either
+      // field on an update.
       ...resolveProvisionalSetter(isEditing ? editClimb : null, profile),
       description,
       // The wall's own angle on a spray board, the caller's everywhere else —
@@ -1860,8 +1790,16 @@ export function useCreateClimbScreen({
         // and in the autosave slot, and Save can be tapped again (after a
         // conflict the server re-reads the climb, so a second Save can succeed).
         const refusal = climbEditRefusal(err);
+        // The wall was archived since this device last read it: say so, and re-read the wall so the editor's entry
+        // points and the board sheet catch up.
+        const wallRefusal = board.boardName === SPRAY_BOARD_NAME ? sprayWallLifecycleRefusal(err) : null;
+        if (sprayWallRefusalMeansStaleWall(wallRefusal)) refreshSprayWall(board.layoutId);
         showToast(
-          refusal ? climbEditRefusalMessage(refusal, t) : t('createClimbForm.alerts.saveFailedFallback'),
+          refusal
+            ? climbEditRefusalMessage(refusal, t)
+            : wallRefusal
+              ? sprayWallLifecycleMessage(wallRefusal, tBoards)
+              : t('createClimbForm.alerts.saveFailedFallback'),
           'error',
         );
       }
@@ -1903,6 +1841,7 @@ export function useCreateClimbScreen({
     syncSavedToQueue,
     showToast,
     t,
+    tBoards,
     queryClient,
     onPublished,
     playbackPause,
@@ -1982,16 +1921,13 @@ export function useCreateClimbScreen({
     handlePaint,
     handleAssignRole,
     handleClearHolds,
-    /** Every frame of the climb as painted now (the active one is `litUpHoldsMap`). */
-    frames,
     /** The wall's live hold ids, read once at mount; undefined off spray. */
     availableHoldIds,
-    /** The frames string the editor was seeded from — the row being edited, or
-     *  the remixed parent's — still naming any hold a reset took off. */
-    sourceFrames: isEditing ? (editClimb?.frames ?? null) : (forkFrames ?? null),
-    placeLostHoldReplacement,
-    /** The working copy as the autosave would store it — what a put-back trip carries. */
-    snapshotWorkingDraft: () => autosaveDraftRef.current,
+    /**
+     * The remixed parent's frames, still naming any hold it lost, for the grey
+     * rings (`useLostHoldGhosts`). Null for a new climb and for an edit in place.
+     */
+    remixSourceFrames: isEditing ? null : (forkFrames ?? null),
     handleNewClimb,
     pendingNewClimb,
     confirmNewClimb,

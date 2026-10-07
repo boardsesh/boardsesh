@@ -50,6 +50,9 @@ const mocks = vi.hoisted(() => ({
   reportError: vi.fn<(error: unknown, context?: unknown) => void>(),
   editorProps: { current: null as null | { onCommitted: (summary: unknown) => void } },
   lookProps: { current: null as null | { onConfirmed: () => void } },
+  resetWall: vi.fn<(wallUuid: string) => Promise<unknown>>(),
+  settleArchived: vi.fn<(queryClient: unknown, archivedUuid: string, replacementUuid: string) => void>(),
+  track: vi.fn<(name: string, properties?: Record<string, unknown>) => void>(),
 }));
 
 vi.mock('react-native', () => ({
@@ -86,13 +89,18 @@ vi.mock('@boardsesh/analytics', () => ({
   sprayWallBindStalled: (properties: Record<string, unknown>) => ({ name: 'Spray Wall Bind Stalled', properties }),
 }));
 vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: vi.fn() }));
-vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+vi.mock('../../../lib/analytics', () => ({ track: mocks.track }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: mocks.reportError, addErrorBreadcrumb: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: () => undefined,
   extractGraphqlCode: () => undefined,
+  sprayWallLifecycleRefusal: () => null,
 }));
+vi.mock('../../../lib/spray/spray-lifecycle-copy', () => ({
+  sprayWallLifecycleMessage: (refusal: string) => refusal,
+}));
+vi.mock('../../../lib/spray/settle-archived-spray-wall', () => ({ settleArchivedSprayWall: mocks.settleArchived }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12 },
@@ -166,7 +174,11 @@ vi.mock('../../../lib/spray/wall-photo', () => ({
 }));
 vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: vi.fn() }));
-vi.mock('../../../lib/spray/spray-wall-loader', () => ({ invalidateSprayWallRenderData: mocks.invalidateRenderData }));
+vi.mock('../../../lib/spray/spray-wall-loader', () => ({
+  invalidateSprayWallRenderData: mocks.invalidateRenderData,
+  // The resume check's one-wall read: not a clone.
+  fetchSprayWallResetSource: async () => null,
+}));
 vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({ prefetchSprayWallDraft: vi.fn() }));
 vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({ activatePublishedSprayWall: mocks.activate }));
 vi.mock('../../../lib/boards/use-activate-board', () => ({
@@ -198,6 +210,8 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useDiscardSprayWallDraft: () => ({ mutateAsync: vi.fn() }),
   useMySprayWalls: () => mySprayWalls,
   usePublishSprayWallVersion: () => ({ mutateAsync: mocks.publishVersion }),
+  useResetSprayWall: () => ({ mutateAsync: mocks.resetWall }),
+  useMySprayWallLifecycle: () => ({ data: undefined, isFetching: false }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: mocks.updateVisibility }),
 }));
 
@@ -336,5 +350,53 @@ describe('SprayWallWizardScreen — publish and bind', () => {
     // The second road: the first may be the one that is not landing.
     expect(mocks.rootGoBack).toHaveBeenCalledTimes(1);
     expect(mocks.dismissTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('SprayWallWizardScreen — publishing a reset', () => {
+  // The clone, already holding a photo draft: the reset rejoins it at the editor.
+  const CLONE = {
+    uuid: 'clone-1',
+    layoutId: 8,
+    viewerCanEdit: true,
+    currentVersion: null,
+    resetOfWallUuid: 'old-wall',
+    board: { uuid: 'clone-1', name: 'Garage wall', boardType: 'spray', angle: 40, isPublic: false },
+  };
+
+  it('archives the old wall on this device and reports the new one as a reset', async () => {
+    mocks.resetWall.mockResolvedValue(CLONE);
+    mocks.fetchVersions.mockResolvedValue({
+      ...CLONE,
+      versions: [{ id: 'clone-v1', number: 1, status: 'DRAFT', photo: { url: 'https://photo' }, addedHoldCount: 3 }],
+    });
+    mocks.activate.mockImplementation(async (_queryClient, _wallUuid, activateBoard) => {
+      await activateBoard(PUBLISHED_BOARD);
+    });
+    render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs', resetOfWallUuid: 'old-wall' }));
+    await flush();
+    expect(mocks.resetWall).toHaveBeenCalledExactlyOnceWith('old-wall');
+    expect(mocks.alert.mock.calls[0]?.[0]).toBe('sprayWizard.reset.resumeTitle');
+    const pickUp = mocks.alert.mock.calls[0]?.[2]?.find((button) => button.text === 'sprayWizard.resume.pickUp');
+    act(() => pickUp?.onPress?.());
+    await flush();
+    act(() => mocks.editorProps.current?.onCommitted({ written: 0, removed: 0, holdCount: 3 }));
+    act(() => mocks.lookProps.current?.onConfirmed());
+    await flush();
+
+    expect(mocks.publishVersion).toHaveBeenCalledWith('clone-v1');
+    expect(mocks.settleArchived).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'old-wall', 'clone-1');
+    expect(mocks.track).toHaveBeenCalledWith('Board Created', expect.objectContaining({ isReset: true }));
+    expect(mocks.activate).toHaveBeenCalledWith(expect.anything(), 'clone-1', mocks.finish, expect.anything());
+  });
+
+  it('reports a brand new wall as not a reset, and archives nothing', async () => {
+    mocks.activate.mockImplementation(async (_queryClient, _wallUuid, activateBoard) => {
+      await activateBoard(PUBLISHED_BOARD);
+    });
+    await reachPublish();
+    expect(mocks.settleArchived).not.toHaveBeenCalled();
+    expect(mocks.resetWall).not.toHaveBeenCalled();
+    expect(mocks.track).toHaveBeenCalledWith('Board Created', expect.objectContaining({ isReset: false }));
   });
 });

@@ -3,10 +3,52 @@
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 
-/** A row in the management list: a section header or a board. */
+/**
+ * One of the climber's archived spray walls: the slice of `mySprayWalls` the
+ * Archived section reads. `myBoards` leaves archived walls out, so they are not
+ * `UserBoard` rows here.
+ */
+export type ArchivedSprayWallSummary = {
+  uuid: string;
+  /** The wall's catalogue layout: what deleting it clears from the registry and downloads. */
+  layoutId: number;
+  name: string;
+  /** ISO time the wall was archived. */
+  archivedAt: string;
+};
+
+/** A row in the management list: a section header, a board, or an archived wall. */
 export type ManageItem =
   | { type: 'header'; key: string; title: string }
-  | { type: 'board'; key: string; board: UserBoard; isOwned: boolean; isActive: boolean };
+  | { type: 'board'; key: string; board: UserBoard; isOwned: boolean; isActive: boolean }
+  | { type: 'archivedWall'; key: string; wall: ArchivedSprayWallSummary; isActive: boolean };
+
+/**
+ * The archived walls in a `GET_MY_SPRAY_WALL_LIFECYCLE` answer, most recently archived first.
+ * Live walls (no `archivedAt`) and rows without a name are left out.
+ */
+export function archivedSprayWallSummaries(
+  walls:
+    | readonly {
+        uuid: string;
+        layoutId: number;
+        archivedAt?: string | null;
+        board?: { name?: string | null } | null;
+      }[]
+    | undefined,
+): ArchivedSprayWallSummary[] {
+  if (!walls) return [];
+  const archived: ArchivedSprayWallSummary[] = [];
+  for (const wall of walls) {
+    const name = wall.board?.name;
+    if (wall.archivedAt && name)
+      archived.push({ uuid: wall.uuid, layoutId: wall.layoutId, name, archivedAt: wall.archivedAt });
+  }
+  // ISO 8601 strings in one zone sort as text.
+  return archived.sort((left, right) =>
+    left.archivedAt < right.archivedAt ? 1 : left.archivedAt > right.archivedAt ? -1 : 0,
+  );
+}
 
 /**
  * Is this board the current user's own? `ownerId === currentUserId` whenever the
@@ -32,12 +74,17 @@ export function boardIsOwnedBy(board: UserBoard, currentUserId: string | undefin
  * Within each group the server's order is kept. The caller supplies the
  * localized header titles. Each board carries precomputed `isOwned`/`isActive`
  * so the row never scans for them.
+ *
+ * Archived walls come last, under their own header, so a wall a reset replaced
+ * can still be opened to browse and log its climbs. Pass none to leave the
+ * section out.
  */
 export function buildManageItems(
   boards: readonly UserBoard[],
   currentUserId: string | undefined,
   activeUuid: string | undefined,
-  labels: { ownedHeader: string; followingHeader: string },
+  labels: { ownedHeader: string; followingHeader: string; archivedHeader?: string },
+  archivedWalls: readonly ArchivedSprayWallSummary[] = [],
 ): ManageItem[] {
   const items: ManageItem[] = [];
   const owned: UserBoard[] = [];
@@ -55,6 +102,14 @@ export function buildManageItems(
     items.push({ type: 'header', key: 'header:following', title: labels.followingHeader });
     for (const board of followed) {
       items.push({ type: 'board', key: board.uuid, board, isOwned: false, isActive: board.uuid === activeUuid });
+    }
+  }
+  if (archivedWalls.length > 0 && labels.archivedHeader) {
+    items.push({ type: 'header', key: 'header:archived', title: labels.archivedHeader });
+    for (const wall of archivedWalls) {
+      // Keyed apart from the board rows: a wall the server has only just
+      // archived can still be in a cached `myBoards` for a moment.
+      items.push({ type: 'archivedWall', key: `archived:${wall.uuid}`, wall, isActive: wall.uuid === activeUuid });
     }
   }
   return items;

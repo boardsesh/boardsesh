@@ -120,6 +120,10 @@ type OfflineOperation<TVariables, TResponse> = {
   // Never changes what the server said, only fills fields it left out. A throw
   // here is swallowed: the network answer stands as it came.
   enrichNetworkResponse?: (db: SQLiteDatabase, variables: TVariables, response: TResponse) => Promise<TResponse>;
+  // The variables as the server should get them, when a rule the phone always
+  // applies has to travel with the request. The local read applies the same
+  // rule itself, so only the network path calls this.
+  networkVariables?: (variables: TVariables) => Variables;
 };
 
 // Generics erased at storage; `never` params keep the assignment legal
@@ -176,12 +180,12 @@ async function searchUnavailableReason(
 
 const searchBoardName = ({ input }: SearchClimbsQueryVariables) => input.boardName;
 
-// `SearchClimbs` and `GetClimb` cannot select `revisionNumber` /
-// `holdsRevisionNumber`: the App Store screenshot fixtures pin both documents
-// by hash (docs/mobile-screenshot-fixtures.md). A climb read over the network
-// therefore gets its version numbers from the phone's own `board_climbs` row,
-// one indexed read per page. A climb the phone does not hold stays without
-// them, and its sent glyph counts every tick (#6023).
+// `SearchClimbs` and `GetClimb` cannot select `holdsRevisionNumber`: the App
+// Store screenshot fixtures pin both documents by hash
+// (docs/mobile-screenshot-fixtures.md). A climb read over the network therefore
+// gets its holds version from the phone's own `board_climbs` row, one indexed
+// read per page. A climb the phone does not hold stays without it, and its sent
+// glyph counts every tick (#6023).
 async function fillSearchRevisionNumbers(
   db: SQLiteDatabase,
   { input }: SearchClimbsQueryVariables,
@@ -202,6 +206,30 @@ async function fillDetailRevisionNumbers(
   return climb === response.climb ? response : { ...response, climb };
 }
 
+/**
+ * A spray climb that lost a hold is listed like any other, so a wall list sends
+ * no `holdIntegrity` at all, whatever the caller built: a stored value from the
+ * retired "Holds" filter is dropped here as well as on read
+ * (`normalizeRetiredFilters`). With none, the server applies only its default
+ * rule (`retiredByResetCondition`), which `searchClimbsLocal` mirrors.
+ *
+ * The climber's own drafts list is the one exception: it sends an explicit
+ * `ANY`. That default rule hides a climb a full in-place reset retired from
+ * every spray search without `holdIntegrity`, drafts included, and ANY is the
+ * one value that turns it off without adding an integrity predicate. Sent
+ * nothing, such a draft could never be reached, fixed or deleted.
+ */
+export function withLostHoldRule(variables: SearchClimbsQueryVariables): SearchClimbsQueryVariables {
+  const { input } = variables;
+  const wanted = input.boardName === 'spray' && input.onlyDrafts === true ? 'ANY' : null;
+  if (wanted) {
+    return input.holdIntegrity === wanted ? variables : { ...variables, input: { ...input, holdIntegrity: wanted } };
+  }
+  if (input.holdIntegrity == null) return variables;
+  const { holdIntegrity: _retiredHoldIntegrity, ...inputWithoutHoldIntegrity } = input;
+  return { ...variables, input: inputWithoutHoldIntegrity };
+}
+
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>({
   document: SEARCH_CLIMBS,
   surface: 'search',
@@ -211,6 +239,7 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsQueryResponse>(
   resolveLocal: async (db, { input }) => ({ searchClimbs: await searchClimbsLocal(db, input) }),
   offlineFallback: () => ({ searchClimbs: { climbs: [], hasMore: false } }),
   enrichNetworkResponse: fillSearchRevisionNumbers,
+  networkVariables: withLostHoldRule,
 });
 
 registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryResponse>({
@@ -221,6 +250,7 @@ registerOfflineOperation<SearchClimbsQueryVariables, SearchClimbsCountQueryRespo
   canServeLocal: canServeSearchLocal,
   resolveLocal: async (db, { input }) => ({ searchClimbs: { totalCount: await countClimbsLocal(db, input) } }),
   offlineFallback: () => ({ searchClimbs: { totalCount: 0 } }),
+  networkVariables: withLostHoldRule,
 });
 
 registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
@@ -522,7 +552,11 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
   }
 
   try {
-    const networkResponse = await getHttpClient().request<TResponse>(document, variables);
+    const sentVariables =
+      operation?.networkVariables && variables !== undefined
+        ? operation.networkVariables(variables as never)
+        : variables;
+    const networkResponse = await getHttpClient().request<TResponse>(document, sentVariables);
     return await enrichNetworkResponse(operation, localDb, variables, networkResponse);
   } catch (networkError) {
     // The request reached the network and failed. If it's a registered op whose

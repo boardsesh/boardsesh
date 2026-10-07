@@ -2,14 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { SHARED_EVENTS } from '../events';
 import {
   SPRAY_ROLLOUT_GATES,
-  climbEditedFromBroken,
   climbRemixedFromBroken,
   sprayHoldsReviewed,
   sprayWallBindStalled,
   sprayWallDetectionFinished,
   sprayWallPhotoPicked,
-  sprayWallResetApplied,
-  sprayWallResetPreviewed,
+  sprayWallHoldsRemovedInUse,
+  sprayWallResetStarted,
   sprayWallUploadFinished,
 } from '../spray-wall-events';
 
@@ -49,25 +48,10 @@ const EVERY_PAYLOAD = [
   sprayWallDetectionFinished({ outcome: 'ok', candidateCount: 214, durationMs: 4100 }),
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
   sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
-  sprayWallResetPreviewed({
-    keptCount: 150,
-    removedCount: 20,
-    addedCount: 31,
-    lowConfidenceCount: 4,
-    climbsAffected: 12,
-    aspectMismatch: false,
-    detectionCount: 181,
-  }),
-  sprayWallResetApplied({
-    keptCount: 150,
-    removedCount: 20,
-    addedCount: 31,
-    climbsChanged: 12,
-    moveCount: 6,
-    fullReset: false,
-  }),
-  climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
-  climbEditedFromBroken({ lostHoldCount: 3, source: 'play_drawer' }),
+  sprayWallResetStarted('board_sheet'),
+  sprayWallResetStarted('board_edit'),
+  sprayWallHoldsRemovedInUse({ holdCount: 2, publishedClimbCount: 5, usageKnown: true }),
+  climbRemixedFromBroken({ lostHoldCount: 1, source: 'play_drawer' }),
 ];
 
 describe('spray wall event builders', () => {
@@ -84,13 +68,21 @@ describe('spray wall event builders', () => {
       name: SHARED_EVENTS.SprayWallBindStalled,
       properties: { stage: 'navigate', elapsedMs: 1500 },
     });
+    expect(sprayWallResetStarted('board_sheet')).toEqual({
+      name: SHARED_EVENTS.SprayWallResetStarted,
+      properties: { source: 'board_sheet' },
+    });
+    expect(sprayWallResetStarted('board_edit')).toEqual({
+      name: SHARED_EVENTS.SprayWallResetStarted,
+      properties: { source: 'board_edit' },
+    });
+    expect(sprayWallHoldsRemovedInUse({ holdCount: 1, publishedClimbCount: 0, usageKnown: false })).toEqual({
+      name: SHARED_EVENTS.SprayWallHoldsRemovedInUse,
+      properties: { holdCount: 1, publishedClimbCount: 0, usageKnown: false },
+    });
     expect(climbRemixedFromBroken({ lostHoldCount: 3, source: 'play_drawer' })).toEqual({
       name: SHARED_EVENTS.ClimbRemixedFromBroken,
       properties: { lostHoldCount: 3, source: 'play_drawer' },
-    });
-    expect(climbEditedFromBroken({ lostHoldCount: 2, source: 'play_drawer' })).toEqual({
-      name: SHARED_EVENTS.ClimbEditedFromBroken,
-      properties: { lostHoldCount: 2, source: 'play_drawer' },
     });
   });
 
@@ -161,11 +153,5 @@ describe('the rollout gates', () => {
     // dividing by zero there would make a fleet with no inference runtime look
     // like a broken detector and block the rollout on a number about nothing.
     expect(SPRAY_ROLLOUT_GATES.detectionCorrectionRate(0, 180)).toBe(0);
-  });
-
-  it('reads previews that never landed as a low commit rate', () => {
-    expect(SPRAY_ROLLOUT_GATES.resetCommitRate(10, 8)).toBeCloseTo(0.8);
-    expect(SPRAY_ROLLOUT_GATES.resetCommitRate(10, 2)).toBeCloseTo(0.2);
-    expect(SPRAY_ROLLOUT_GATES.resetCommitRate(0, 0)).toBe(0);
   });
 });

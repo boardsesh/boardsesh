@@ -79,7 +79,7 @@ describe('getRecentFilters sanitizer', () => {
       {
         id: '2',
         label: 'ok',
-        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any' },
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', minGrade: 12 },
         searchText: '',
         timestamp: 1,
       },
@@ -180,7 +180,7 @@ describe('getRecentFilters sanitizer', () => {
         id: `entry-${index}`,
         label: `Filter ${index}`,
         filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any' },
-        searchText: '',
+        searchText: `crimp ${index}`,
         timestamp: index,
       })),
     );
@@ -188,5 +188,38 @@ describe('getRecentFilters sanitizer', () => {
     expect(result).toHaveLength(10);
     expect(result[0]?.id).toBe('entry-0');
     expect(result[9]?.id).toBe('entry-9');
+  });
+
+  // The spray "Holds" filter is gone. A pill whose only filter was a hold
+  // integrity value would replay as one that changes nothing, so it is dropped.
+  // A pill that still filters, or still searches, keeps its place.
+  it('drops a legacy pill left with no filter and no search text', async () => {
+    const { getRecentFilters } = await import('../recent-filter-store');
+    await seed([
+      {
+        id: 'holds-only',
+        label: 'Lost holds',
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', holdIntegrity: 'broken' },
+        searchText: '',
+        timestamp: 2,
+      },
+      {
+        id: 'holds-and-grade',
+        label: 'V5, lost holds',
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', holdIntegrity: 'broken', minGrade: 20 },
+        searchText: '',
+        timestamp: 1,
+      },
+      {
+        id: 'holds-and-text',
+        label: 'arete',
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', holdIntegrity: 'intact' },
+        searchText: 'arete',
+        timestamp: 0,
+      },
+    ]);
+    const result = await getRecentFilters();
+    expect(result.map((entry) => entry.id)).toEqual(['holds-and-grade', 'holds-and-text']);
+    for (const entry of result) expect(entry.filters).not.toHaveProperty('holdIntegrity');
   });
 });

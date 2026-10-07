@@ -452,10 +452,10 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
         if (item.climb.uuid !== climbUuid) return item;
         if (patchKeys.every((key) => item.climb[key] === patch[key])) return item;
         changed = true;
-        // The version numbers describe the holds the item was queued with
-        // (#6023). New holds make them stale, so drop them: an unknown holds
+        // The holds version describes the holds the item was queued with
+        // (#6023). New holds make it stale, so drop it: an unknown holds
         // version lets the sent glyph count every tick on the climb.
-        const versions = item.climb.frames === patch.frames ? {} : { revisionNumber: null, holdsRevisionNumber: null };
+        const versions = item.climb.frames === patch.frames ? {} : { holdsRevisionNumber: null };
         return { ...item, climb: { ...item.climb, ...patch, ...versions } };
       };
 

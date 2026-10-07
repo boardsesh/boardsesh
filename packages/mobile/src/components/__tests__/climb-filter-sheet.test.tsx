@@ -249,7 +249,7 @@ vi.mock('@boardsesh/climb-filters', () => ({
   hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
   hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
   applyStatusChange: (_filters: unknown, status: string) => ({ status }),
-  normalizeRetiredStatus: (filters: unknown) => filters,
+  normalizeRetiredFilters: (filters: unknown) => filters,
   toClimbSearchInput: searchInputMocks.toClimbSearchInput,
   newSortSeed: () => '424242',
   mergeBoardFilters: searchInputMocks.mergeBoardFilters,
@@ -1343,92 +1343,21 @@ describe('ClimbFilterSheet name field (#3606)', () => {
   });
 });
 
-// SW-13 (#5446): the spray-wall hold-integrity single-select, sitting under
-// Collection. Default is All — a climb that lost holds must stay findable
-// without opting into anything (the acceptance criterion for this control).
-describe('ClimbFilterSheet hold integrity (SW-13)', () => {
-  it('defaults to All and sends no holdIntegrity', () => {
-    const onApply = vi.fn();
-    const { getAllByTestId, getByText, queryByTestId } = renderFilterSheet({ onApply });
-
-    // Both single-selects in this section rest on 'any' (Collection + Holds).
-    for (const segment of getAllByTestId('segment-any')) {
-      expect(segment.getAttribute('data-selected')).toBe('true');
-    }
-    // Current is a spray-wall option (#6024); a catalogue board keeps the three.
-    expect(queryByTestId('segment-current')).toBeNull();
-
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
-  });
-
-  it('applies "Lost holds"', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply });
-
-    fireEvent.click(getByTestId('segment-broken'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBe('broken');
-  });
-
-  it('applies "Intact only"', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply });
-
-    fireEvent.click(getByTestId('segment-intact'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBe('intact');
-  });
-
-  it('clears back to undefined on All, not to an inert "any" value', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getAllByTestId, getByText } = renderFilterSheet({ onApply });
-
-    fireEvent.click(getByTestId('segment-broken'));
-    // The Holds control's own All segment is the second 'any' in the section.
-    fireEvent.click(getAllByTestId('segment-any')[1]);
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
-  });
-
-  it('shows the committed selection when the sheet opens', () => {
-    const { getByTestId } = renderFilterSheet({ currentFilters: { ...currentFilters, holdIntegrity: 'broken' } });
-    expect(getByTestId('segment-broken').getAttribute('data-selected')).toBe('true');
-  });
-});
-
-// #6024: on a spray wall the default is Current (the set that is up now), and
-// All is its own value, which shows the climbs a full reset retired.
-describe('ClimbFilterSheet hold integrity on a spray wall', () => {
+// The Holds filter (Current / All / Intact / Lost holds) is gone: a published
+// spray climb that lost a hold is always left out of wall lists, so there is
+// nothing left to choose.
+describe('ClimbFilterSheet without a Holds filter', () => {
   const sprayBoard = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
 
-  it('defaults to Current and sends no holdIntegrity', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply, boardConfig: sprayBoard });
-
-    expect(getByTestId('segment-current').getAttribute('data-selected')).toBe('true');
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
-  });
-
-  it('applies "All" as its own value, so retired climbs show again', () => {
-    const onApply = vi.fn();
-    const { getAllByTestId, getByText } = renderFilterSheet({ onApply, boardConfig: sprayBoard });
-
-    // The Holds control's All segment is the second 'any' in the section.
-    fireEvent.click(getAllByTestId('segment-any')[1]);
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBe('any');
-  });
-
-  it('clears back to undefined on Current, not to an inert "current" value', () => {
-    const onApply = vi.fn();
-    const { getByTestId, getByText } = renderFilterSheet({ onApply, boardConfig: sprayBoard });
-
-    fireEvent.click(getByTestId('segment-broken'));
-    fireEvent.click(getByTestId('segment-current'));
-    applyAndClose(getByText('mobile.filter.showCount12'));
-    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).holdIntegrity).toBeUndefined();
+  it.each([
+    ['a catalogue board', boardConfig],
+    ['a spray wall', sprayBoard],
+  ])('offers no hold-integrity choice on %s', (_label, board) => {
+    const { queryByTestId, queryByText } = renderFilterSheet({ boardConfig: board });
+    for (const key of ['segment-current', 'segment-intact', 'segment-broken']) {
+      expect(queryByTestId(key)).toBeNull();
+    }
+    expect(queryByText('mobile.filter.holdIntegrity.label')).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useMemo, useReducer, useState } from 'react';
 import {
   STATE_TO_PRIMARY_CODE,
   accumulatedMapsToFrameStrings,
@@ -7,7 +7,6 @@ import {
 } from '@boardsesh/board-constants/hold-states';
 import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { applyHoldState } from './hold-paint';
-import { applyHoldPlacements, type HoldPlacement } from './lost-holds';
 
 type UseCreateClimbOptions = {
   /** Seeds the editor's full frame sequence (a fork, an edit, or an autosave restore). */
@@ -18,24 +17,22 @@ type UseCreateClimbOptions = {
    *
    * Omit it on a catalogue board, where the answer is "all of them": Kilter's
    * holds are bolted on at the factory and a climb's hold ids are as permanent as
-   * the wall. A SPRAY WALL is the opposite — a reset takes holds off it, and a
-   * remix of a climb that lost two is seeded from the parent's frames, which
-   * still name them.
+   * the wall. A SPRAY WALL is the opposite: holds came off walls before they were
+   * locked, and a remix or a draft of a climb that lost two still names them.
    *
    * Without this, the existing `filterSupportedFrames` lets them straight through:
    * it filters by whether the BOARD TYPE supports a hold's STATE, never by whether
    * the hold is there. The editor would then open with two holds painted that it
    * cannot draw (no placement, so no ring) and the climber cannot tap off (no tap
    * target) — while they still count toward `startingCount`, `finishCount` and
-   * `isValid`. Save would publish a climb born broken, on exactly the flow that
-   * exists to repair one.
+   * `isValid`. Save would publish a climb born broken.
    *
    * Applies to `loadFrames` as well as to `initialFrames`. Editing a published
    * climb seeds through `loadFrames` once the row arrives, and the server refuses
    * any save of a spray climb that still names a removed hold — so an edit that
    * kept the lost holds could never be saved (#6024). Read once at mount, like the
-   * seed: a reset landing on another device mid-session must not erase a hold the
-   * climber has just painted.
+   * seed: a hold change landing on another device mid-session must not erase a
+   * hold the climber has just painted.
    */
   availableHoldIds?: ReadonlySet<number>;
 };
@@ -118,9 +115,6 @@ type FramesAction =
   // early-out in `setHoldState` (blocked max-2, OFF-on-absent, same-state
   // repaint) leaves history untouched.
   | { type: 'APPLY'; updater: (prev: LitUpHoldsMap) => LitUpHoldsMap }
-  // Apply a functional update to the whole frame sequence (a hold placed into
-  // several frames at once). Same rule as APPLY: history only on a new reference.
-  | { type: 'APPLY_ALL'; updater: (prev: LitUpHoldsMap[]) => LitUpHoldsMap[] }
   // Replace the whole frame sequence and establish a fresh undo baseline
   // (draft load / edit seed / fork / autosave restore). You can't undo across
   // a load into the pre-load state. `frames` must be non-empty.
@@ -165,16 +159,6 @@ export function framesReducer(state: FramesHistory, action: FramesAction): Frame
         present,
         future: [],
         currentFrameIndex: state.currentFrameIndex,
-      };
-    }
-    case 'APPLY_ALL': {
-      const present = action.updater(state.present);
-      if (present === state.present) return state;
-      return {
-        past: capPast([...state.past, snapshotOf(state)]),
-        present,
-        future: [],
-        currentFrameIndex: clampIndex(state.currentFrameIndex, present.length),
       };
     }
     case 'LOAD_FRAMES': {
@@ -327,27 +311,6 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     [boardName],
   );
 
-  /**
-   * Paint one hold into several frames as a single undoable step — how a hold
-   * that replaces a lost one takes over every frame the lost hold was in, with
-   * the role it had in each (`lostHoldPlacements`). Returns whether anything
-   * changed: a replacement whose role is full in every frame (two starts already
-   * painted) is refused rather than silently dropped.
-   */
-  // Read through a ref so `placeHold` keeps one identity across paints: callers
-  // hand it down to tap handlers that would otherwise re-create on every tap.
-  const presentRef = useRef(history.present);
-  presentRef.current = history.present;
-  const placeHold = useCallback(
-    (holdId: number, placements: readonly HoldPlacement[]): boolean => {
-      const present = presentRef.current;
-      if (applyHoldPlacements(present, boardName, holdId, placements) === present) return false;
-      dispatch({ type: 'APPLY_ALL', updater: (frames) => applyHoldPlacements(frames, boardName, holdId, placements) });
-      return true;
-    },
-    [boardName],
-  );
-
   // Encode the whole route: frame 0 absolute, later frames delta-encoded.
   // Single-frame climbs produce the same flat string they always have.
   const generateFramesString = useCallback(
@@ -399,7 +362,6 @@ export function useCreateClimb(boardName: BoardName, options?: UseCreateClimbOpt
     frameCount,
     currentFrameIndex,
     setHoldState,
-    placeHold,
     generateFramesString,
     currentFrameBleString,
     startingCount,

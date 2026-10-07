@@ -18,7 +18,7 @@
 // (`packages/shared/analytics/src/events.ts`); a wall is a board, and a
 // spray-only variant would hide walls from every board-creation number we
 // already watch. The property set therefore matches `describeInput` in
-// `app/boards/create.tsx`, plus `resumed`.
+// `app/boards/create.tsx`, plus `resumed` and `isReset`.
 
 /**
  * The slice of the wall's `user_boards` row this module reads.
@@ -56,6 +56,8 @@ export type WallCreatedEventInput = {
   meta: WallCreatedMeta | null;
   /** The visibility about to be applied by `updateSprayWall`, or null when the wall stays private. */
   pendingVisibility: { isPublic: boolean; isUnlisted: boolean } | null;
+  /** The wall is a reset's replacement (`resetSprayWall`), not a new wall. */
+  isReset: boolean;
 };
 
 export type WallCreatedEventProperties = {
@@ -65,7 +67,12 @@ export type WallCreatedEventProperties = {
   setCount: number;
   angle: number;
   isOwned: true;
-  isPublic: boolean;
+  /**
+   * Absent for a reset's replacement whose visibility this run did not set: the
+   * clone is private until its publish, which then gives it the visibility of
+   * the wall it replaces. The row cannot say which, and false would be wrong.
+   */
+  isPublic?: boolean;
   /** Absent on a resumed run — see `resumed`. */
   hasLocationName?: boolean;
   /** Absent on a resumed run — see `resumed`. */
@@ -74,11 +81,16 @@ export type WallCreatedEventProperties = {
   gymUuid?: string;
   source: 'spray_wizard';
   resumed: boolean;
+  /**
+   * The wall replaces one a reset archived. Its publish nets to zero walls, so
+   * activation and creation counts leave it out.
+   */
+  isReset: boolean;
 };
 
 /** The `Board Created` payload for a wall that has just published its first version. */
 export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCreatedEventProperties {
-  const { layoutId, board, meta, pendingVisibility } = input;
+  const { layoutId, board, meta, pendingVisibility, isReset } = input;
 
   // The row wins wherever it can. On a resumed wall it is the only honest
   // source; on a fresh one it holds the value the meta step just sent, so
@@ -91,7 +103,7 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
   // visibility is applied by `updateSprayWall` in the same publish that fires
   // this event — so the pending write, when there is one, is what the wall is
   // about to be. A resumed run has no pending write and the row is the answer.
-  const isPublic = pendingVisibility?.isPublic ?? board?.isPublic ?? false;
+  const isPublic = pendingVisibility?.isPublic ?? (isReset ? undefined : (board?.isPublic ?? false));
 
   return {
     boardType: 'spray',
@@ -103,7 +115,7 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     setCount: 1,
     angle,
     isOwned: true,
-    isPublic,
+    ...(isPublic !== undefined ? { isPublic } : {}),
     // Omitted, not defaulted, when the meta step did not run.
     ...(meta ? { hasLocationName: meta.hasLocationName, hasCoords: meta.hasCoords } : {}),
     hasGym: gymUuid != null,
@@ -116,5 +128,6 @@ export function wallCreatedEventProperties(input: WallCreatedEventInput): WallCr
     // location property, so an analyst who pools the two reads a denominator
     // that is missing rows rather than one that is wrong.
     resumed: meta == null,
+    isReset,
   };
 }

@@ -35,7 +35,7 @@ export type SprayHoldWireInput = {
   outline: number[] | null;
   source: SprayEditorHoldSource;
   confidence?: number | null;
-  /** A NEW hold that puts a removed one back names it here (#5493). */
+  /** The removed hold this one replaced, carried as the server sent it. */
   movedFromHoldId?: number;
 };
 
@@ -179,6 +179,57 @@ export function buildSprayHoldWritePlan(state: SprayEditorState, homography: rea
     // is unreachable.
     overCap: aliveAfterSave > MAX_HOLDS_PER_WALL,
   };
+}
+
+/**
+ * The stored holds this save takes off the wall as they stand: every removal,
+ * and every stored hold whose geometry goes out again. The server records a move
+ * as a removal plus a new hold, so a climb that used a moved hold loses it just
+ * as it would a removed one. A hold this draft drew and saved before is in here
+ * too; no published climb can use it, so the usage read counts it as zero.
+ *
+ * Distinct and in plan order. Empty for a save that only adds holds.
+ */
+export function holdIdsLeavingTheWall(plan: SprayHoldWritePlan): number[] {
+  const ids = new Set<number>(plan.removeIds);
+  for (const hold of plan.upsert) {
+    if (hold.id != null && hold.id > 0) ids.add(hold.id);
+  }
+  return [...ids];
+}
+
+/**
+ * Run the removal check in front of a save: ask about the stored holds the
+ * plan takes off the wall, and resolve the plan to save, or null when the
+ * climber kept their holds (or the screen went away while asking).
+ *
+ * `planNow` is re-run after every answer, because the climber can still edit
+ * while the check is up; a hold taken off meanwhile is asked about too, and a
+ * hold already confirmed is never asked about twice. A plan that takes nothing
+ * off asks nothing. `planNow` returning null (nothing left to save) ends it.
+ */
+export async function confirmPlanRemovals<Planned extends { plan: SprayHoldWritePlan }>(
+  planNow: () => Planned | null,
+  ask: (holdIds: readonly number[]) => Promise<boolean>,
+  { onAsking, stillHere = () => true }: { onAsking?: (asking: boolean) => void; stillHere?: () => boolean } = {},
+): Promise<Planned | null> {
+  const confirmed = new Set<number>();
+  let planned = planNow();
+  while (planned) {
+    const unasked = holdIdsLeavingTheWall(planned.plan).filter((id) => !confirmed.has(id));
+    if (unasked.length === 0) return planned;
+    onAsking?.(true);
+    let goAhead = false;
+    try {
+      goAhead = await ask(unasked);
+    } finally {
+      onAsking?.(false);
+    }
+    if (!stillHere() || !goAhead) return null;
+    for (const id of unasked) confirmed.add(id);
+    planned = planNow();
+  }
+  return null;
 }
 
 /** Is there anything for a commit to write? */

@@ -3,7 +3,11 @@ import { clearBoardArtGeometryCache, loadBoardArtGeometry } from '@boardsesh/boa
 import {
   activeSprayArt,
   clearSprayWallRegistry,
+  findRegisteredSprayWallByUuid,
   getSprayWall,
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  markSprayWallArchived,
+  sprayWallArchiveState,
   listRegisteredSprayWalls,
   registerSprayWall,
   resetSprayWallViewerAccess,
@@ -12,7 +16,6 @@ import {
   sprayCacheToken,
   sprayGeometryKey,
   sprayWallViewerCanEdit,
-  sprayWallViewerCanEditClimbs,
   sprayWallViewerGeneration,
   subscribeToSprayWalls,
   unregisterSprayWall,
@@ -298,18 +301,6 @@ describe('who can edit the wall (#5955)', () => {
     expect(sprayWallViewerCanEdit('spray', 999)).toBe(false);
   });
 
-  it('supports separate climb edit permission (#6025)', () => {
-    registerSprayWall(LAYOUT_ID, {
-      ...wall(1),
-      viewerAccess: { canEdit: false, canEditClimbs: true, generation: sprayWallViewerGeneration() },
-    });
-    expect(sprayWallViewerCanEdit('spray', LAYOUT_ID)).toBe(false);
-    expect(sprayWallViewerCanEditClimbs('spray', LAYOUT_ID)).toBe(true);
-
-    resetSprayWallViewerAccess();
-    expect(sprayWallViewerCanEditClimbs('spray', LAYOUT_ID)).toBe(false);
-  });
-
   it('drops every wall to "cannot edit" on an account change, and keeps the wall drawable', () => {
     registerSprayWall(LAYOUT_ID, { ...wall(3), viewerAccess: canEditNow() });
     registerSprayWall(4201, { ...wall(1), wallUuid: 'other-wall', viewerAccess: canEditNow() });
@@ -374,6 +365,71 @@ describe('who can edit the wall (#5955)', () => {
   });
 });
 
+describe('spray wall archive state', () => {
+  const ARCHIVED = {
+    archivedAt: '2026-10-01T09:00:00.000Z',
+    replacedByWallUuid: 'new-wall',
+  };
+
+  it('carries the fields a payload says, and reads a payload without them as a live wall', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
+    expect(getSprayWall(LAYOUT_ID)?.archive).toEqual(ARCHIVED);
+    expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual(ARCHIVED);
+
+    registerSprayWall(LAYOUT_ID + 1, wall(1));
+    expect(sprayWallArchiveState('spray', LAYOUT_ID + 1)).toEqual(LIVE_SPRAY_WALL_ARCHIVE_STATE);
+  });
+
+  it('answers null for a catalogue board and for a wall not registered yet', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
+    expect(sprayWallArchiveState('kilter', LAYOUT_ID)).toBeNull();
+    expect(sprayWallArchiveState('spray', 999)).toBeNull();
+  });
+
+  // useSyncExternalStore compares snapshots by identity: a revalidation that
+  // says the same thing must hand back the same object, and a real change a new one.
+  it('keeps the snapshot identity across a revalidation that says the same thing', () => {
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE } });
+    const first = sprayWallArchiveState('spray', LAYOUT_ID);
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE } });
+    expect(sprayWallArchiveState('spray', LAYOUT_ID)).toBe(first);
+    registerSprayWall(LAYOUT_ID, { ...wall(1), archive: ARCHIVED });
+    expect(sprayWallArchiveState('spray', LAYOUT_ID)).not.toBe(first);
+    expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual(ARCHIVED);
+  });
+
+  it('marks a wall archived ahead of the server, waking readers once', () => {
+    registerSprayWall(LAYOUT_ID, wall(1));
+    let wakes = 0;
+    subscribeToSprayWalls(() => {
+      wakes += 1;
+    });
+    markSprayWallArchived(LAYOUT_ID, 'wall-uuid', {
+      archivedAt: '2026-10-06T10:00:00.000Z',
+      replacedByWallUuid: 'new-wall',
+    });
+    expect(sprayWallArchiveState('spray', LAYOUT_ID)).toEqual({
+      archivedAt: '2026-10-06T10:00:00.000Z',
+      replacedByWallUuid: 'new-wall',
+    });
+    expect(wakes).toBe(1);
+    // A second mark, or a mark for a wall that is not this one, changes nothing.
+    markSprayWallArchived(LAYOUT_ID, 'wall-uuid', { archivedAt: '2027-01-01T00:00:00.000Z', replacedByWallUuid: null });
+    markSprayWallArchived(LAYOUT_ID, 'another-wall', {
+      archivedAt: '2027-01-01T00:00:00.000Z',
+      replacedByWallUuid: null,
+    });
+    expect(sprayWallArchiveState('spray', LAYOUT_ID)?.archivedAt).toBe('2026-10-06T10:00:00.000Z');
+    expect(wakes).toBe(1);
+  });
+
+  it('finds a registered wall by its uuid', () => {
+    registerSprayWall(LAYOUT_ID, wall(1));
+    expect(findRegisteredSprayWallByUuid('wall-uuid')?.layoutId).toBe(LAYOUT_ID);
+    expect(findRegisteredSprayWallByUuid('nobody')).toBeNull();
+  });
+});
+
 describe('activeSprayArt on a local mirror', () => {
   const art = {
     variant: 'crop' as const,
@@ -403,7 +459,7 @@ describe('activeSprayArt on a local mirror', () => {
       background: 'wall-crop' as const,
       art,
       viewerCanEdit: false,
-      viewerCanEditClimbs: false,
+      archive: LIVE_SPRAY_WALL_ARCHIVE_STATE,
       registeredAtMs: 0,
     };
   }

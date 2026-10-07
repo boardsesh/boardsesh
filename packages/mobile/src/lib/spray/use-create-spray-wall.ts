@@ -1,4 +1,5 @@
-// The three mutations the add-a-wall flow makes (epic #5346, SW-09).
+// The mutations the add-a-wall flow makes (epic #5346, SW-09), plus the reset
+// that opens the same flow on a clone of a published wall.
 //
 // One hook each rather than one hook for the flow, because the flow retries them
 // at different granularities: a failed upload re-sends the photo against the
@@ -13,11 +14,15 @@ import {
   CREATE_SPRAY_WALL_VERSION,
   DELETE_SPRAY_WALL,
   DISCARD_SPRAY_WALL_VERSION,
+  GET_MY_SPRAY_WALL_LIFECYCLE,
   GET_MY_SPRAY_WALLS,
   GET_SPRAY_WALL_WITH_VERSIONS,
   PUBLISH_SPRAY_WALL_VERSION,
+  RESET_SPRAY_WALL,
   SET_SPRAY_WALL_RENDER_SETTINGS,
   UPDATE_SPRAY_WALL,
+  type GetMySprayWallLifecycleQueryResponse,
+  type SprayWallLifecycleRow,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type {
   CreateSprayWallInput,
@@ -31,10 +36,22 @@ import type { BoardRenderDefault } from '../board-render-settings';
 import { clearSprayWallPrivateCaches } from './spray-privacy-cleanup';
 import { primeSprayWallLook } from './spray-wall-loader';
 import type { SprayWallBackground } from './spray-wall-background';
-import { sprayWallWithVersionsQueryKey } from './use-spray-wall-reset';
 
 /** The owner's wall list, invalidated the moment a wall becomes one. */
 export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
+
+/**
+ * The narrow lifecycle list (`GET_MY_SPRAY_WALL_LIFECYCLE`). Under the
+ * `mySprayWalls` prefix on purpose: every invalidation of the owner's walls
+ * reaches it too.
+ */
+export const mySprayWallLifecycleQueryKey = ['mySprayWalls', 'lifecycle'] as const;
+
+/** How long the lifecycle list is taken at face value. Archiving is rare; pull to refresh asks at once. */
+export const MY_SPRAY_WALL_LIFECYCLE_STALE_TIME_MS = 5 * 60 * 1000;
+
+/** One wall with its version history, as the hold editor reads it. */
+export const sprayWallWithVersionsQueryKey = (wallUuid: string | null) => ['sprayWallWithVersions', wallUuid] as const;
 
 /**
  * The wall, with its board row typed the way the rest of the app types a board.
@@ -49,6 +66,8 @@ export const mySprayWallsQueryKey = ['mySprayWalls'] as const;
 export type CreatedSprayWall = Omit<SprayWall, 'board'> & { board: UserBoard };
 
 type CreateWallResponse = { createSprayWall: CreatedSprayWall };
+type ResetWallResponse = { resetSprayWall: CreatedSprayWall };
+type DiscardVersionResponse = { discardSprayWallVersion: boolean };
 type MySprayWallsResponse = { mySprayWalls: SprayWall[] };
 type SprayWallWithVersionsResponse = { sprayWall: CreatedSprayWall | null };
 type CreateVersionResponse = { createSprayWallVersion: SprayWallVersion };
@@ -71,6 +90,29 @@ export function useCreateSprayWall() {
     mutationFn: async (input: CreateSprayWallInput): Promise<CreatedSprayWall> => {
       const response = await getHttpClient().request<CreateWallResponse>(CREATE_SPRAY_WALL, { input });
       return response.createSprayWall;
+    },
+  });
+}
+
+/**
+ * Start a reset: clone a published wall's settings into a new, unfinished wall.
+ *
+ * Owner only, and idempotent on the server: while a clone is unfinished every
+ * call returns that same clone, so the wizard can call this on every open and
+ * a retry after a lost response never mints a second one. The clone carries the
+ * old wall's name, angle, location and look but no photo, version or hold, so
+ * the wizard rejoins it at the photo step. The old wall stays live until the
+ * clone's first publish archives it (`docs/spray-walls.md`, "Archive and reset").
+ */
+export function useResetSprayWall() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (wallUuid: string): Promise<CreatedSprayWall> => {
+      const response = await getHttpClient().request<ResetWallResponse>(RESET_SPRAY_WALL, { input: { wallUuid } });
+      return response.resetSprayWall;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: mySprayWallsQueryKey });
     },
   });
 }
@@ -114,6 +156,31 @@ export function useMySprayWalls(options?: { enabled?: boolean }) {
     },
     enabled: options?.enabled ?? true,
     staleTime: 0,
+  });
+}
+
+/**
+ * The owner's walls with their archive facts and nothing that costs a presigned
+ * URL: My Boards' Archived section, and the add-a-wall resume check (which must
+ * not offer a reset's unfinished clone as a new wall).
+ *
+ * Fail-soft by construction: on a backend that does not serve the archive fields
+ * this one query fails and nothing else does, after one retry; the data stays
+ * undefined, which every reader takes as "no archived walls, no clones known"
+ * (the resume check then asks about its one candidate directly).
+ */
+export function useMySprayWallLifecycle(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: mySprayWallLifecycleQueryKey,
+    queryFn: async (): Promise<SprayWallLifecycleRow[]> => {
+      const response = await getHttpClient().request<GetMySprayWallLifecycleQueryResponse>(GET_MY_SPRAY_WALL_LIFECYCLE);
+      return response.mySprayWalls;
+    },
+    enabled: options?.enabled ?? true,
+    staleTime: MY_SPRAY_WALL_LIFECYCLE_STALE_TIME_MS,
+    // One retry, for a dropped connection; a backend without the fields fails
+    // twice and stops. The resume check asks per wall when the list has nothing.
+    retry: 1,
   });
 }
 
@@ -239,6 +306,48 @@ export function useSetSprayWallRenderSettings() {
     },
     onSuccess: (_result, { layoutId, uuid, renderSettings }) => {
       primeSprayWallLook(layoutId, uuid, renderSettings);
+    },
+  });
+}
+
+/**
+ * Abandon a published wall's open draft, and keep the wall.
+ *
+ * Not `useDiscardSprayWallDraft`, which also DELETES the wall: right for an
+ * add-a-wall attempt nobody finished, wrong for a live wall that carries climbs.
+ * The one caller is the hold editor meeting a new-photo draft that the retired
+ * in-place reset left behind; discarding it is the only way back to a wall the
+ * editor can open.
+ *
+ * `discardSprayWallVersion` deletes the row, so the cached history drops it at
+ * once rather than waiting for a refetch that can pause offline.
+ */
+export function useDiscardSprayWallVersion(wallUuid: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (versionId: string): Promise<boolean> => {
+      const response = await getHttpClient().request<DiscardVersionResponse>(DISCARD_SPRAY_WALL_VERSION, {
+        input: { versionId },
+      });
+      return response.discardSprayWallVersion;
+    },
+    onSuccess: async (_discarded, versionId) => {
+      await queryClient.cancelQueries({
+        queryKey: ['sprayWallRenderData', wallUuid],
+        predicate: (query) => typeof query.queryKey[2] === 'number',
+      });
+      queryClient.removeQueries({
+        queryKey: ['sprayWallRenderData', wallUuid],
+        predicate: (query) => typeof query.queryKey[2] === 'number',
+      });
+      const versionsKey = sprayWallWithVersionsQueryKey(wallUuid);
+      await queryClient.cancelQueries({ queryKey: versionsKey });
+      queryClient.setQueryData<SprayWall | null>(versionsKey, (cachedWall) =>
+        cachedWall?.versions
+          ? { ...cachedWall, versions: cachedWall.versions.filter((version) => version.id !== versionId) }
+          : cachedWall,
+      );
+      void queryClient.invalidateQueries({ queryKey: versionsKey });
     },
   });
 }

@@ -11,6 +11,10 @@ const requests = vi.hoisted(() => ({
   invalidate: vi.fn(),
   fetchRender: vi.fn(),
   register: vi.fn(),
+  discardLeftover: vi.fn(),
+  fetchWall: vi.fn(),
+  fetchArchive: vi.fn(),
+  askUsage: vi.fn(),
 }));
 const refreshClimbs = vi.hoisted(() => vi.fn(async (_queryClient: unknown, _layoutId: number) => undefined));
 vi.mock('../../../lib/spray/refresh-published-spray-climbs', () => ({ refreshPublishedSprayClimbs: refreshClimbs }));
@@ -31,6 +35,7 @@ type EditorProps = {
   onCommitted: () => void;
   onDirtyChange: (dirty: boolean) => void;
   onHandoverChange: (handingOver: boolean) => void;
+  confirmHoldRemoval?: (holdIds: readonly number[]) => Promise<boolean>;
 };
 const editor = vi.hoisted(() => ({ current: null as EditorProps | null }));
 
@@ -53,17 +58,18 @@ vi.mock('@boardsesh/graphql/operations/spray-walls', () => ({
 }));
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
-  fetchSprayWallVersions: vi.fn(),
+  fetchSprayWallVersions: requests.fetchWall,
   mySprayWallsQueryKey: ['mySprayWalls'],
-}));
-vi.mock('../../../lib/spray/use-spray-wall-reset', () => ({
   sprayWallWithVersionsQueryKey: (wallUuid: string) => ['sprayWallWithVersions', wallUuid],
+  useDiscardSprayWallVersion: () => ({ mutateAsync: requests.discardLeftover, isPending: false }),
 }));
 vi.mock('../../../lib/spray/spray-wall-loader', () => ({
   invalidateSprayWallRenderData: requests.invalidate,
   fetchSprayWallRenderData: requests.fetchRender,
   registerRenderData: requests.register,
+  fetchSprayWallArchive: requests.fetchArchive,
 }));
+vi.mock('../../../lib/spray/spray-hold-usage', () => ({ askBeforeRemovingUsedHolds: requests.askUsage }));
 vi.mock('../../../lib/spray/spray-hold-maintenance', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../lib/spray/spray-hold-maintenance')>();
   return { ...original, prepareSprayHoldDraft: requests.prepare, publishSprayHoldDraft: requests.publish };
@@ -82,24 +88,6 @@ vi.mock('../../Button', () => ({
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
 }));
-// The put-back round trip (#5493) has its own suite; here it is only asked.
-const putBack = vi.hoisted(() => ({
-  request: null as null | {
-    requestId: string;
-    wallUuid: string;
-    lostHold: { id: number; cx: number; cy: number; r: number; outline: null };
-    knownSuccessorIds?: number[];
-  },
-  published: [] as string[],
-  returned: [] as string[],
-}));
-vi.mock('../../../lib/spray/lost-hold-put-back', () => ({
-  getLostHoldPutBack: (requestId: string | null) =>
-    requestId && putBack.request?.requestId === requestId ? putBack.request : null,
-  markLostHoldPutBackPublished: (requestId: string) => putBack.published.push(requestId),
-  returnToClimbEditor: (requestId: string) => putBack.returned.push(requestId),
-}));
-
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
   SprayHoldEditorScreen: (props: EditorProps) => {
     editor.current = props;
@@ -144,6 +132,7 @@ beforeEach(() => {
   requests.invalidate.mockReset().mockResolvedValue(undefined);
   requests.fetchRender.mockReset().mockResolvedValue(publishedRender);
   requests.register.mockReset().mockReturnValue(true);
+  requests.discardLeftover.mockReset().mockResolvedValue(true);
   queryClient.invalidateQueries.mockResolvedValue(undefined);
   refreshClimbs.mockClear();
   router.canGoBack.mockReturnValue(true);
@@ -192,6 +181,16 @@ describe('SprayWallHoldsScreen', () => {
     expect(requests.prepare.mock.calls[0][0]).toBe('wall-1');
   });
 
+  // A live wall's holds stay editable; the editor asks before a save takes off
+  // holds that climbs may use, for this route's wall.
+  it('hands the editor the "Remove a hold that climbs use?" check for its wall', async () => {
+    requests.askUsage.mockResolvedValueOnce(false);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByTestId('editor');
+    await expect(editorProps().confirmHoldRemoval?.([4, 7])).resolves.toBe(false);
+    expect(requests.askUsage).toHaveBeenCalledExactlyOnceWith('wall-1', [4, 7], expect.any(Function));
+  });
+
   it('publishes after save, awaits a renderable published wall, then returns', async () => {
     let resolveRefresh: (result: typeof publishedRender) => void = () => {};
     requests.fetchRender.mockReturnValue(
@@ -213,53 +212,6 @@ describe('SprayWallHoldsScreen', () => {
     expect(typeof fetchedUnder).toBe('number');
     expect(requests.register).toHaveBeenCalledWith(42, publishedRender, undefined, fetchedUnder, expect.any(Number));
     expect(guard.enabled).toBe(false);
-  });
-
-  it('seeds the put-back hold, marks it published, and returns to the climb (#5493)', async () => {
-    putBack.request = {
-      requestId: 'req-1',
-      wallUuid: 'wall-1',
-      lostHold: { id: 9, cx: 10, cy: 20, r: 5, outline: null },
-      knownSuccessorIds: [12],
-    };
-    putBack.published.length = 0;
-    putBack.returned.length = 0;
-    try {
-      const view = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1', putBackRequestId: 'req-1' }));
-      fireEvent.click(await screen.findByTestId('editor'));
-      expect((editorProps() as unknown as { putBackHold: unknown }).putBackHold).toEqual({
-        removedHoldId: 9,
-        knownSuccessorIds: [12],
-        cx: 10,
-        cy: 20,
-        r: 5,
-        outline: null,
-      });
-      await waitFor(() => expect(router.back).toHaveBeenCalledTimes(1));
-      expect(putBack.published).toEqual(['req-1']);
-      view.unmount();
-      expect(putBack.returned).toEqual(['req-1']);
-    } finally {
-      putBack.request = null;
-    }
-  });
-
-  it('ignores a put-back request for another wall', async () => {
-    putBack.request = {
-      requestId: 'req-2',
-      wallUuid: 'other-wall',
-      lostHold: { id: 9, cx: 10, cy: 20, r: 5, outline: null },
-    };
-    putBack.returned.length = 0;
-    try {
-      const view = render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1', putBackRequestId: 'req-2' }));
-      await screen.findByTestId('editor');
-      expect((editorProps() as unknown as { putBackHold: unknown }).putBackHold).toBeNull();
-      view.unmount();
-      expect(putBack.returned).toEqual([]);
-    } finally {
-      putBack.request = null;
-    }
   });
 
   it('keeps a removed wall unavailable when its published refresh finishes late', async () => {
@@ -427,5 +379,81 @@ describe('SprayWallHoldsScreen', () => {
     fireEvent.click(await screen.findByTestId('editor'));
     await waitFor(() => expect(router.replace).toHaveBeenCalledExactlyOnceWith('/boards'));
     expect(router.back).not.toHaveBeenCalled();
+  });
+
+  // A deep link or a sheet that rendered before the archive must not reach the
+  // editor: the screen says why and offers only the way back.
+  it('explains an archived wall and offers no retry', async () => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('archived'));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText('sprayWallErrors.archived');
+    expect(screen.queryByTestId('editor')).toBeNull();
+    expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
+    fireEvent.click(screen.getByText('sprayWizard.back'));
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  // Archived while the editor was open: the Publish is refused, and the screen
+  // says so in the climber's words with no retry.
+  it('explains a publish refused because the wall was archived', async () => {
+    requests.publish.mockRejectedValueOnce({
+      response: { errors: [{ message: 'Archived.', extensions: { code: 'SPRAY_WALL_ARCHIVED' } }] },
+    });
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByTestId('editor'));
+    await screen.findByText('sprayWallErrors.archived');
+    expect(screen.queryByText('Archived.')).toBeNull();
+    expect(screen.queryByText('sprayMaintenance.retry')).toBeNull();
+  });
+
+  // The retired in-place reset could leave a new-photo draft on a live wall.
+  // Discarding it keeps the wall and its climbs, and the editor then opens.
+  it('discards an unfinished photo from the old reset, then opens the editor', async () => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare
+      .mockRejectedValueOnce(new SprayHoldMaintenanceError('leftoverPhotoDraft', 'draft-9'))
+      .mockResolvedValueOnce(draft);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText('sprayMaintenance.leftoverPhoto');
+    fireEvent.click(screen.getByText('sprayMaintenance.discardLeftover'));
+    await screen.findByTestId('editor');
+    expect(requests.discardLeftover).toHaveBeenCalledExactlyOnceWith('draft-9');
+    expect(requests.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the discard offer up when the discard fails', async () => {
+    const { SprayHoldMaintenanceError } = await import('../../../lib/spray/spray-hold-maintenance');
+    requests.prepare.mockRejectedValueOnce(new SprayHoldMaintenanceError('leftoverPhotoDraft', 'draft-9'));
+    requests.discardLeftover.mockRejectedValueOnce(new Error('offline'));
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    fireEvent.click(await screen.findByText('sprayMaintenance.discardLeftover'));
+    await screen.findByText('sprayMaintenance.discardLeftoverFailed');
+    expect(screen.getByText('sprayMaintenance.discardLeftover')).toBeTruthy();
+    expect(requests.prepare).toHaveBeenCalledTimes(1);
+  });
+
+  // Fail-soft, like every other reader of the archive query: an archive state
+  // that cannot be read reads as live, and the gate goes on to the wall itself.
+  it.each([
+    [null, 'sprayMaintenance.nothingPublished'],
+    [{ archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: null }, 'sprayWallErrors.archived'],
+  ])('reads the archive state fresh and fails soft (%o)', async (archive, copy) => {
+    const original = await vi.importActual<typeof import('../../../lib/spray/spray-hold-maintenance')>(
+      '../../../lib/spray/spray-hold-maintenance',
+    );
+    requests.prepare.mockImplementation(original.prepareSprayHoldDraft);
+    requests.fetchWall.mockResolvedValue({
+      uuid: 'wall-1',
+      layoutId: 42,
+      viewerCanEdit: true,
+      currentVersion: null,
+      versions: [],
+    });
+    requests.fetchArchive.mockResolvedValue(archive);
+    render(createElement(SprayWallHoldsScreen, { wallUuid: 'wall-1' }));
+    await screen.findByText(copy);
+    expect(screen.queryByText('sprayMaintenance.unavailable')).toBeNull();
+    expect(requests.fetchArchive).toHaveBeenCalledWith('wall-1', { force: true });
   });
 });

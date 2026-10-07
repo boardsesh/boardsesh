@@ -4,7 +4,7 @@ import {
   STATUS_FILTER_VALUES,
   hasActiveClimbFilters,
   hasActiveBoardFilters,
-  normalizeRetiredStatus,
+  normalizeRetiredFilters,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type BoardSearchConfig,
   type ClimbBoardFilterState,
@@ -69,7 +69,7 @@ function normalizeEntry(entry: LastSearch): LastSearch {
   }
   // Retire legacy status='established' → 'any' (keeping minAscents) so restored
   // state never carries a status the UI can't show / clear.
-  next = { ...next, filters: normalizeRetiredStatus(next.filters) };
+  next = { ...next, filters: normalizeRetiredFilters(next.filters) };
   if (next.boardFilters == null || typeof next.boardFilters !== 'object' || Array.isArray(next.boardFilters)) {
     next = { ...next, boardFilters: DEFAULT_CLIMB_BOARD_FILTER_STATE };
   }

@@ -8,8 +8,7 @@ type Saver = { id?: string | null; displayName?: string | null };
 /**
  * Whose name a climb carries in the queue after the editor saves it.
  *
- * A new climb is the saver's. An EDITED climb stays its setter's, whoever saved
- * it: a wall owner fixing a start hold has not taken the climb, and the server
+ * A new climb is the saver's. An EDITED climb stays its setter's: the server
  * never rewrites `user_id` or `setter_username` on an update. Falls back to the
  * saver only while the climb being edited has not loaded.
  *

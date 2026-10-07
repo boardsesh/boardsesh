@@ -212,15 +212,16 @@
       "boardCannotAuthor": "Todavía no puedes montar bloques en este plafón.",
       "boardConfigIncomplete": "Los datos del plafón faltan o no son válidos. Vuelve a elegir el plafón para montar tu bloque.",
       "noUsableBoard": "Elige un plafón primero y luego monta tu bloque.",
-      "boardTypeUnsupported": "Esta versión de la app todavía no permite montar bloques en ese plafón. Elige otro plafón."
+      "boardTypeUnsupported": "Esta versión de la app todavía no permite montar bloques en ese plafón. Elige otro plafón.",
+      "wallArchived": "Este muro está archivado. Sus bloques y encadenes se quedan, pero ya no se puede montar nada nuevo en él."
     },
     "alerts": {
       "publishDuplicateNamed": "Este patrón de presas coincide con \"{{name}}\". Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "publishDuplicateUnnamed": "Este patrón de presas coincide con un bloque existente. Activa Borrador para guardarlo sin publicar, o cambia una presa.",
       "viewMatchingClimb": "Ver bloque coincidente",
       "saveFailedFallback": "No se pudo guardar el bloque. Inténtalo de nuevo.",
-      "editConflict": "Alguien acaba de cambiar este bloque. Vuelve a abrirlo para ver la última versión.",
-      "editNotAllowed": "No puedes editar este bloque. Solo pueden hacerlo quien lo montó y quienes gestionan el muro.",
+      "editConflict": "Este bloque ha cambiado en otro sitio. Vuelve a abrirlo para ver la última versión.",
+      "editNotAllowed": "No puedes editar este bloque. Solo puede hacerlo quien lo montó.",
       "editWindowExpired": "Este bloque se publicó hace más de 24 horas y ya no se puede editar.",
       "editNotEditable": "Este bloque ya no se puede editar.",
       "localRefreshFailed": "Vía guardada. No se pudo actualizar la lista descargada. Reconéctate para actualizarla."
@@ -485,13 +486,6 @@
         "label": "Colección",
         "any": "Cualquiera"
       },
-      "holdIntegrity": {
-        "label": "Presas",
-        "current": "Actuales",
-        "any": "Todas",
-        "intact": "Solo intactos",
-        "broken": "Presas perdidas"
-      },
       "pin": "Fijar como atajo",
       "unpin": "Quitar de los atajos",
       "established2plus": "Establecido 2+",
@@ -670,35 +664,10 @@
       "chip_other": "Faltan {{count}} presas",
       "chipAria_one": "{{count}} presa ya no está en el muro",
       "chipAria_other": "{{count}} presas ya no están en el muro",
-      "banner_one": "Falta {{count}} presa de este bloque",
-      "banner_other": "Faltan {{count}} presas de este bloque",
-      "bannerBody": "Remézclalo con lo que hay ahora en el muro.",
-      "bannerBodyEdit": "Edítalo con las presas que quedan o remézclalo.",
+      "banner": "A este bloque le falta una presa. Remézclalo con las presas que hay ahora en el muro.",
       "remix": "Remezclar",
-      "edit": "Editar",
-      "editor": {
-        "tapGhost_one": "Falta {{count}} presa de este bloque: toca el círculo discontinuo para sustituirla",
-        "tapGhost_other": "Faltan {{count}} presas de este bloque: toca un círculo discontinuo para sustituir una",
-        "offline_one": "Falta {{count}} presa de este bloque. Conéctate para ver dónde estaba.",
-        "offline_other": "Faltan {{count}} presas de este bloque. Conéctate para ver dónde estaban.",
-        "pickNearby": "Toca una presa resaltada para usarla en su lugar.",
-        "roleFull": "Un bloque lleva como mucho dos presas de salida y dos finales. Borra una y vuelve a tocar.",
-        "noPositions_one": "Falta {{count}} presa de este bloque. No se puede mostrar dónde estaba.",
-        "noPositions_other": "Faltan {{count}} presas de este bloque. No se puede mostrar dónde estaban."
-      },
-      "sheet": {
-        "title": "Esta presa ya no está",
-        "wasStart": "Era una presa de salida.",
-        "wasHand": "Era una presa de mano.",
-        "wasFinish": "Era una presa final.",
-        "wasFoot": "Era una presa de pie.",
-        "useNearby": "Usar una presa cercana",
-        "useNearbyHint": "Se resaltan en el muro las presas libres más cercanas.",
-        "useNearbySuccessor": "La presa que la sustituyó se resalta primero.",
-        "noneNearby": "No hay presas libres en el muro para cambiarla.",
-        "putBack": "Volver a poner esta presa en el muro",
-        "putBackHint": "Abre el editor de presas donde estaba. Publica y vuelve a este bloque."
-      }
+      "editorHint_one": "Quita la presa gris para guardar",
+      "editorHint_other": "Quita las presas grises para guardar"
     },
     "climbActions": {
       "preview": "Vista previa",

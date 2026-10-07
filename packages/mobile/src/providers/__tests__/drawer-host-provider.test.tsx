@@ -258,20 +258,6 @@ vi.mock('../bluetooth-provider', () => ({
   useOptionalBluetoothContext: () => ({ undoWallChange: vi.fn(async () => true) }),
 }));
 
-// The lost-holds set-active rule has its own suite; here it is only asked.
-const autoEdit = vi.hoisted(() => ({
-  answer: 'declined' as 'routed' | 'swallowed' | 'declined',
-  calls: [] as Array<{ climbUuid: string; context: Record<string, unknown> }>,
-}));
-vi.mock('../../components/play-drawer/use-lost-holds-auto-edit', () => ({
-  useLostHoldsAutoEdit: () => ({
-    tryAutoEdit: (climb: { uuid: string }, context: Record<string, unknown>) => {
-      autoEdit.calls.push({ climbUuid: climb.uuid, context });
-      return autoEdit.answer;
-    },
-  }),
-}));
-
 vi.mock('../queue-provider', () => ({
   useIsSharedSession: () => false,
   useActiveClimbUuid: () => queue.activeClimbUuid,
@@ -328,9 +314,19 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
   useSetActiveBoard: () => activeBoard.setActiveBoard,
 }));
 
+// The signed-in climber: the spray reset rows are the wall owner's alone.
+const viewerProfile = vi.hoisted(() => ({ current: null as { id: string } | null }));
+vi.mock('../../lib/spray/confirm-spray-wall-reset', () => ({ confirmSprayWallReset: async () => true }));
+
+// The stored-id fallback is a React Query read of the keychain; these cases
+// have a profile, so it never answers.
+vi.mock('../../hooks/use-current-user-id', () => ({
+  useStoredUserId: () => ({ userId: undefined, isLoading: false }),
+}));
+
 vi.mock('../../lib/graphql/hooks', () => ({
   useToggleFavorite: () => ({ mutate: vi.fn() }),
-  useProfile: () => ({ data: null }),
+  useProfile: () => ({ data: viewerProfile.current }),
   useMyBoards: () => ({ data: { boards: myBoards.boards, totalCount: myBoards.boards.length, hasMore: false } }),
 }));
 
@@ -355,6 +351,7 @@ import {
   type BoardConfig,
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
+import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
 const routerNavigate = router.navigate as unknown as ReturnType<typeof vi.fn>;
@@ -505,7 +502,7 @@ type BoardSheetTestProps = {
   onAddToQueue: (action: BoardSheetClimbAction) => void;
   onOpenPlaylist: (action: BoardSheetClimbAction) => void;
   onOpenActions: (action: BoardSheetClimbAction) => void;
-  onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'newPhoto') => void;
+  onOpenSprayMaintenance: (wallUuid: string, action: 'editHolds' | 'resetWall') => void;
   onShareSprayWall: (wallUuid: string) => void;
 };
 
@@ -765,6 +762,21 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     activeBoard.stored = { ...sprayWall };
     boardSheet.props = null;
     boardSheet.present.mockClear();
+    // The rows wait for the wall's archive state, which the registry holds.
+    clearSprayWallRegistry();
+    registerSprayWall(sprayWall.layoutId, {
+      wallUuid: sprayWall.uuid,
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: 'https://example.invalid/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+    });
+    viewerProfile.current = { id: sprayWall.ownerId };
   });
 
   function deferBoardSheetDismiss() {
@@ -777,8 +789,8 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
   }
 
   it.each([
-    ['editHolds', '/boards/spray/holds'],
-    ['newPhoto', '/boards/spray/reset'],
+    ['editHolds', '/boards/spray/holds?wallUuid='],
+    ['resetWall', '/boards/spray/new?resetOf='],
   ] as const)('routes the mounted board sheet %s callback after native dismissal', async (action, pathname) => {
     const hosts: HostValue[] = [];
     const onHost = (host: HostValue) => hosts.push(host);
@@ -789,7 +801,8 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     expect(boardSheet.present).toHaveBeenCalledTimes(1);
 
     const settle = deferBoardSheetDismiss();
-    act(() => getBoardSheetProps().onOpenSprayMaintenance(sprayWall.uuid, action));
+    // A reset is confirmed first (stubbed to yes), so the dismissal follows a tick later.
+    await act(async () => getBoardSheetProps().onOpenSprayMaintenance(sprayWall.uuid, action));
     expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
     expect(routerPush).not.toHaveBeenCalled();
     // An ordinary provider render while the animation is leaving must retain
@@ -798,7 +811,7 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
     rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
     await act(async () => settle({ status: 'dismissed' }));
 
-    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}?wallUuid=${sprayWall.uuid}`);
+    expect(routerPush).toHaveBeenCalledExactlyOnceWith(`${pathname}${sprayWall.uuid}`);
     expect(activeBoard.setActiveBoard).not.toHaveBeenCalled();
   });
 
@@ -1015,7 +1028,9 @@ describe('DrawerHostProvider play drawer open target', () => {
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
   });
 
-  it('hands a broken climb a fixer set active to the editor instead of the player (#5493)', async () => {
+  // A spray climb that lost a hold opens like any other: in the player, never
+  // routed to the editor.
+  it('opens a spray climb that lost a hold in the player', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];
     renderHost(
@@ -1023,103 +1038,21 @@ describe('DrawerHostProvider play drawer open target', () => {
       (route) => routes.push(route),
     );
     await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.answer = 'routed';
-    autoEdit.calls.length = 0;
-    queue.setCurrentClimb.mockClear();
-    const navigate = vi.mocked(router.navigate);
-    navigate.mockClear();
+    routerNavigate.mockClear();
+    routerPush.mockClear();
 
-    const climb = makeQueueItem('queue-broken', 'climb-broken').climb as unknown as Climb;
-    try {
-      act(() => {
-        hosts.at(-1)?.openPlayDrawer(climb);
-      });
-      expect(autoEdit.calls.at(-1)).toEqual({
-        climbUuid: 'climb-broken',
-        context: expect.objectContaining({
-          isPreview: false,
-          isAlreadyCurrent: false,
-          playerOpen: false,
-          optedOut: false,
-        }),
-      });
-      // Made current here, since the drawer that would have done it never opens.
-      expect(queue.setCurrentClimb).toHaveBeenCalledWith(
-        expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-broken' }) }),
-        { playlistSuggestionSource: null },
-      );
-      expect(navigate).not.toHaveBeenCalled();
-      expect(routes.at(-1)?.playTarget).toBeNull();
-    } finally {
-      autoEdit.answer = 'declined';
-    }
-  });
-
-  it('leaves the current-climb write to a committed opener it routes (#5493)', async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.answer = 'routed';
-    queue.setCurrentClimb.mockClear();
-    const navigate = vi.mocked(router.navigate);
-    navigate.mockClear();
-    try {
-      const climb = makeQueueItem('queue-c', 'climb-committed').climb as unknown as Climb;
-      act(() => {
-        hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true });
-      });
-      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-      expect(navigate).not.toHaveBeenCalled();
-    } finally {
-      autoEdit.answer = 'declined';
-    }
-  });
-
-  it('does nothing at all for a swallowed double tap', async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.answer = 'swallowed';
-    queue.setCurrentClimb.mockClear();
-    const navigate = vi.mocked(router.navigate);
-    navigate.mockClear();
-    try {
-      const climb = makeQueueItem('queue-d', 'climb-double').climb as unknown as Climb;
-      act(() => {
-        hosts.at(-1)?.openPlayDrawer(climb);
-      });
-      expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-      expect(navigate).not.toHaveBeenCalled();
-      expect(routes.at(-1)?.playTarget?.climb).not.toBe(climb);
-    } finally {
-      autoEdit.answer = 'declined';
-    }
-  });
-
-  it("passes a playlist opener's opt-out to the rule and keeps it off the open target", async () => {
-    const hosts: Array<HostValue> = [];
-    const routes: Array<RouteValue> = [];
-    renderHost(
-      (host) => hosts.push(host),
-      (route) => routes.push(route),
-    );
-    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
-    autoEdit.calls.length = 0;
-    const climb = makeQueueItem('queue-p', 'climb-playlist').climb as unknown as Climb;
+    const climb = {
+      ...makeQueueItem('queue-lost', 'climb-lost').climb,
+      boardType: 'spray',
+      missingHoldCount: 2,
+    } as unknown as Climb;
     act(() => {
-      hosts.at(-1)?.openPlayDrawer(climb, { committedExternally: true, autoEditBroken: false });
+      hosts.at(-1)?.openPlayDrawer(climb);
     });
-    expect(autoEdit.calls.at(-1)?.context).toEqual(expect.objectContaining({ optedOut: true }));
+
     await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
-    expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
+    expect(routerNavigate).toHaveBeenCalledWith('/play');
+    expect(routerPush).not.toHaveBeenCalled();
   });
 
   // The close reset runs from the route's UNMOUNT cleanup — the end of the

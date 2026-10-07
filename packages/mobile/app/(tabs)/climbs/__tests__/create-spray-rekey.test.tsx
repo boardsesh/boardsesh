@@ -57,7 +57,11 @@ vi.mock('../../../../src/lib/routing/use-unsupported-board-exit', () => ({
   useUnsupportedBoardExit: () => {},
 }));
 
-import { clearSprayWallRegistry, registerSprayWall } from '../../../../src/lib/spray/spray-wall-registry';
+import {
+  clearSprayWallRegistry,
+  registerSprayWall,
+  settleSprayWallDiscoveryMiss,
+} from '../../../../src/lib/spray/spray-wall-registry';
 import CreateClimbRoute from '../create';
 
 const LAYOUT_ID = 9001;
@@ -99,17 +103,23 @@ describe('create route — spray wall re-key', () => {
     // `supportedBoardName` used to narrow against the board-config PICKER list,
     // which excludes `spray` by design — so a remix or the FAB handing this route
     // `boardName=spray` read as a typo and never reached the editor.
+    // It waits for the wall to say whether it is archived; a wall that does
+    // not load at all is not archived, and the editor opens.
     render(createElement(CreateClimbRoute));
+    expect(mounts.count).toBe(0);
+    act(() => settleSprayWallDiscoveryMiss(LAYOUT_ID));
     expect(mounts.count).toBe(1);
   });
 
-  it('remounts the editor when the wall arrives after the first render', () => {
+  // The editor no longer mounts before a cold wall arrives (it waits for the
+  // wall's archive state), so its first key already carries the version.
+  it('mounts the editor once the wall arrives, keyed on its version from the start', () => {
     render(createElement(CreateClimbRoute));
-    expect(mounts.count).toBe(1);
+    expect(mounts.count).toBe(0);
 
     act(() => registerWall(1));
 
-    expect(mounts.count).toBe(2);
+    expect(mounts.count).toBe(1);
   });
 
   it('remounts again when a reset publishes a new version', () => {

@@ -62,21 +62,17 @@ export type Climb = {
   // rule 5).
   compatibleSizeIds?: number[] | null;
   // `board_climbs.missing_hold_count` — how many of this climb's holds are no
-  // longer on the wall after a spray-wall reset (SW-12). Null/undefined means
+  // longer on the wall after a spray-wall hold edit. Null/undefined means
   // "unknown", which every catalogue board is: holds do not come off a Kilter.
-  // Carried through the queue because a broken climb stays QUEUEABLE and stays
-  // playable — the play drawer says so from this number, and a queued row that
-  // dropped it would be the one surface that quietly pretended the climb was
-  // whole.
+  // Carried through the queue because board compatibility reads it to keep a
+  // climb that lost a hold queueable, loggable and playable on its own wall.
   missingHoldCount?: number | null;
-  // `board_climbs.revision_number` / `holds_revision_number` as the client that
-  // queued the climb read them (#6023): the version of the climb the queue item
-  // shows, and the version at which its holds last moved. Null/undefined means
-  // unknown. LOCAL ONLY for now: the queue documents are pinned by the App
-  // Store screenshot fixtures and cannot select them, so they are not written
-  // to the wire either, and an item rebuilt from a server echo has neither.
-  // The sent glyph then counts every tick on the climb. No tick sends a version.
-  revisionNumber?: number | null;
+  // `board_climbs.holds_revision_number` as the client that queued the climb
+  // read it (#6023): the version at which its holds last moved. Null/undefined
+  // means unknown. LOCAL ONLY for now: the queue documents are pinned by the
+  // App Store screenshot fixtures and cannot select it, so it is not written to
+  // the wire either, and an item rebuilt from a server echo has none. The sent
+  // glyph then counts every tick on the climb. No tick sends a version.
   holdsRevisionNumber?: number | null;
 };
 

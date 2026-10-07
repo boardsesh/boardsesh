@@ -5,8 +5,8 @@ import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 import type { ClimbLostHoldsState } from '../../../lib/graphql/hooks/use-climb-lost-holds';
 
 /**
- * The create editor's lost-hold layer (#5493): which ghosts it draws, the swap,
- * and how a ghost leaves once something stands in for it.
+ * The remix editor's grey rings: one where each hold the parent climb lost used
+ * to be, dismissed by a tap, and nothing when there is nothing to draw.
  */
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -16,10 +16,9 @@ const lostHoldsQuery = vi.hoisted(() => ({
   variables: [] as unknown[],
 }));
 const registry = vi.hoisted(() => ({
-  wall: null as null | {
-    homography?: number[];
-    holds: { id: number; cx: number; cy: number; r: number; movedFromHoldId?: number }[];
-  },
+  wall: null as null | { homography?: number[]; holds: { id: number; cx: number; cy: number; r: number }[] },
+  // The generated look the wall is drawn on, or null for its photo.
+  art: null as null | { scale: number; holds: unknown[] },
 }));
 
 vi.mock('../../../lib/graphql/hooks/use-climb-lost-holds', () => ({
@@ -31,212 +30,106 @@ vi.mock('../../../lib/graphql/hooks/use-climb-lost-holds', () => ({
 vi.mock('../../../lib/spray/spray-wall-registry', () => ({
   SPRAY_BOARD_NAME: 'spray',
   getSprayWall: () => registry.wall,
-  // No generated look in these cases: the wall is drawn on its photo.
-  activeSprayArt: () => null,
-  drawnSprayHolds: (wall: { holds: readonly unknown[] }) => wall.holds,
+  activeSprayArt: () => registry.art,
 }));
-vi.mock('../../../lib/haptics', () => ({
-  hapticSelection: () => {},
-  hapticSuccess: () => {},
-  hapticWarning: () => {},
-}));
+vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => {} }));
 
-const { useLostHoldGhosts } = await import('../use-lost-hold-ghosts');
+const { findLostHoldIds, useLostHoldGhosts } = await import('../use-lost-hold-ghosts');
 
 const BOARD = { boardName: 'spray' as const, layoutId: 7, sizeId: 1, setIds: '1', angle: 40 };
-// Hold 1 start, hold 2 hand, hold 3 finish. Hold 2 came off the wall.
-const SOURCE_FRAMES = 'p1r1p2r2p3r3';
-const AVAILABLE = new Set([1, 3, 10, 11, 12]);
-const START = { state: 'STARTING' as const, color: '#00FF00', displayColor: '#00DD00' };
-const FINISH = { state: 'FINISH' as const, color: '#FF0000', displayColor: '#FF0000' };
-const HAND = { state: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF' };
-const PAINTED: LitUpHoldsMap[] = [{ 1: START, 3: FINISH }];
+// Hold 1 start, hold 2 hand, hold 3 finish. Holds 2 and 4 came off the wall.
+const SOURCE_FRAMES = 'p1r1p2r2p3r3p4r2';
+const AVAILABLE = new Set([1, 3, 10]);
 
-function setup(frames: LitUpHoldsMap[] = PAINTED, placed = true) {
-  const placeLostHoldReplacement = vi.fn(() => placed);
-  const hook = renderHook(
-    ({ currentFrames }: { currentFrames: LitUpHoldsMap[] }) =>
-      useLostHoldGhosts({
-        board: BOARD,
-        sourceClimbUuid: 'climb-1',
-        sourceFrames: SOURCE_FRAMES,
-        availableHoldIds: AVAILABLE,
-        frames: currentFrames,
-        sprayWallToken: 'token',
-        placeLostHoldReplacement,
-      }),
-    { initialProps: { currentFrames: frames } },
+function setup(parentClimbUuid: string | null = 'climb-1') {
+  return renderHook(() =>
+    useLostHoldGhosts({
+      board: BOARD,
+      parentClimbUuid,
+      sourceFrames: SOURCE_FRAMES,
+      availableHoldIds: AVAILABLE,
+      sprayWallToken: 'token',
+    }),
   );
-  return { ...hook, placeLostHoldReplacement };
 }
+
+describe('findLostHoldIds', () => {
+  it('names the painted holds the wall no longer has, once each', () => {
+    const hold = (state: LitUpHoldsMap[number]['state']) => ({ state, color: '', displayColor: '' });
+    const frames: LitUpHoldsMap[] = [
+      { 1: hold('STARTING'), 2: hold('HAND') },
+      { 2: hold('HAND'), 5: hold('OFF') },
+    ];
+    expect(findLostHoldIds(frames, new Set([1]))).toEqual([2]);
+  });
+});
 
 describe('useLostHoldGhosts', () => {
   beforeEach(() => {
     lostHoldsQuery.variables.length = 0;
+    registry.art = null;
     lostHoldsQuery.state = {
       status: 'ready',
-      lostHolds: [{ id: 2, cx: 100, cy: 100, r: 10, outline: null, movedFromHoldId: null, removedVersion: 2 }],
-    };
-    registry.wall = {
-      homography: IDENTITY,
-      holds: [
-        { id: 1, cx: 0, cy: 0, r: 10 },
-        { id: 3, cx: 400, cy: 400, r: 10 },
-        { id: 10, cx: 130, cy: 100, r: 10 },
-        { id: 11, cx: 160, cy: 100, r: 10, movedFromHoldId: 2 },
-        { id: 12, cx: 900, cy: 900, r: 10 },
+      lostHolds: [
+        { id: 2, cx: 100, cy: 100, r: 10, outline: null },
+        { id: 4, cx: 200, cy: 200, r: 12, outline: null },
       ],
     };
+    registry.wall = { homography: IDENTITY, holds: [{ id: 1, cx: 0, cy: 0, r: 10 }] };
   });
 
-  it('draws a ghost where the lost hold was, in its old role', () => {
+  it('draws a ring where each lost hold was, as a tap target', () => {
     const { result } = setup();
-    expect(result.current.status).toBe('ready');
-    expect(result.current.count).toBe(1);
-    expect(result.current.ghosts).toEqual([expect.objectContaining({ id: 2, cx: 100, cy: 100, r: 10, role: 'HAND' })]);
-    expect(result.current.ghostTargets).toEqual([{ id: 2, cx: 100, cy: 100, r: 10 }]);
+    expect(result.current.ghosts.map((ghost) => ghost.id)).toEqual([2, 4]);
+    expect(result.current.ghostTargets).toEqual([
+      { id: 2, cx: 100, cy: 100, r: 10 },
+      { id: 4, cx: 200, cy: 200, r: 12 },
+    ]);
     expect(lostHoldsQuery.variables.at(-1)).toEqual(expect.objectContaining({ climbUuid: 'climb-1', layoutId: 7 }));
   });
 
-  it('offers the successor first, then nearby holds', () => {
+  it('takes a ring away on a tap, and only that one', () => {
     const { result } = setup();
-    act(() => result.current.openGhost(2));
-    expect(result.current.sheetGhost?.id).toBe(2);
-    expect(result.current.sheetCandidates.map((candidate) => candidate.holdId)).toEqual([11, 10]);
-  });
-
-  it('swaps a picked hold in with the lost hold placements, and only a highlighted one', () => {
-    const { result, placeLostHoldReplacement } = setup();
-    act(() => result.current.openGhost(2));
-    act(() => result.current.startReplacing());
-    expect(result.current.sheetGhost).toBeNull();
-    expect(result.current.replacing?.candidateHolds.map((hold) => hold.id)).toEqual([11, 10]);
-
-    // A tap off the highlights is swallowed, never painted.
-    let consumed = false;
-    act(() => {
-      consumed = result.current.interceptPaint(12);
-    });
-    expect(consumed).toBe(true);
-    expect(placeLostHoldReplacement).not.toHaveBeenCalled();
-
-    act(() => {
-      consumed = result.current.interceptPaint(10);
-    });
-    expect(consumed).toBe(true);
-    expect(placeLostHoldReplacement).toHaveBeenCalledWith(10, [{ frameIndex: 0, state: 'HAND' }]);
-    expect(result.current.replacing).toBeNull();
-  });
-
-  it('drops the ghost once its replacement is painted, and brings it back on undo', () => {
-    const { result, rerender } = setup();
-    act(() => result.current.openGhost(2));
-    act(() => result.current.startReplacing());
-    act(() => {
-      result.current.interceptPaint(10);
-    });
-    rerender({ currentFrames: [{ ...PAINTED[0], 10: HAND }] });
+    act(() => result.current.dismissGhost(2));
+    expect(result.current.ghosts.map((ghost) => ghost.id)).toEqual([4]);
+    act(() => result.current.dismissGhost(4));
     expect(result.current.ghosts).toEqual([]);
-    expect(result.current.count).toBe(0);
-    rerender({ currentFrames: PAINTED });
-    expect(result.current.ghosts.map((ghost) => ghost.id)).toEqual([2]);
+    expect(result.current.ghostTargets).toEqual([]);
   });
 
-  it('treats a hold painted on the spot as an answer (a restored autosave)', () => {
-    registry.wall?.holds.push({ id: 13, cx: 104, cy: 100, r: 10 });
-    const { result } = setup([{ ...PAINTED[0], 13: HAND }]);
+  it('draws nothing outside a remix (an edit in place, or a new climb)', () => {
+    const { result } = setup(null);
     expect(result.current.ghosts).toEqual([]);
-  });
-
-  it('says the role is full instead of doing nothing', () => {
-    const { result } = setup(PAINTED, false);
-    act(() => result.current.openGhost(2));
-    act(() => result.current.startReplacing());
-    act(() => {
-      result.current.interceptPaint(10);
-    });
-    expect(result.current.roleFull).toBe(true);
-    expect(result.current.replacing).not.toBeNull();
-  });
-
-  it('keeps the count with no signal', () => {
-    lostHoldsQuery.state = { status: 'unavailable' };
-    const { result } = setup();
-    expect(result.current.status).toBe('unavailable');
-    expect(result.current.count).toBe(1);
-    expect(result.current.ghosts).toEqual([]);
-  });
-
-  it('asks for nothing when the climb lost nothing', () => {
-    const { result } = renderHook(() =>
-      useLostHoldGhosts({
-        board: BOARD,
-        sourceClimbUuid: 'climb-1',
-        sourceFrames: 'p1r1p3r3',
-        availableHoldIds: AVAILABLE,
-        frames: PAINTED,
-        sprayWallToken: 'token',
-        placeLostHoldReplacement: vi.fn(),
-      }),
-    );
-    expect(result.current.status).toBe('none');
     expect(lostHoldsQuery.variables.at(-1)).toBeNull();
   });
 
-  it('forgets an open sheet whose ghost was answered, so an undo does not reopen it', () => {
-    registry.wall?.holds.push({ id: 13, cx: 102, cy: 100, r: 10 });
-    const { result, rerender } = setup();
-    act(() => result.current.openGhost(2));
-    expect(result.current.sheetGhost?.id).toBe(2);
-    rerender({ currentFrames: [{ ...PAINTED[0], 13: HAND }] });
-    expect(result.current.sheetGhost).toBeNull();
-    rerender({ currentFrames: PAINTED });
-    expect(result.current.ghosts.map((ghost) => ghost.id)).toEqual([2]);
-    expect(result.current.sheetGhost).toBeNull();
+  it('draws nothing, so holds nothing back, when the positions cannot be read', () => {
+    lostHoldsQuery.state = { status: 'unavailable' };
+    expect(setup().result.current.ghosts).toEqual([]);
   });
 
-  it('states only the count when there is no climb to ask about', () => {
-    lostHoldsQuery.state = { status: 'idle' };
-    const { result } = setup();
-    expect(result.current.status).toBe('countOnly');
-    expect(result.current.count).toBe(1);
+  // On a generated look the rings are scaled into the art, the way the live
+  // holds are, and need no homography at all.
+  it('draws the ring on a generated look by its scale', () => {
+    registry.wall = { holds: [] };
+    registry.art = { scale: 0.5, holds: [] };
+    lostHoldsQuery.state = { status: 'ready', lostHolds: [{ id: 2, cx: 100, cy: 100, r: 10, outline: null }] };
+    expect(setup().result.current.ghosts).toEqual([expect.objectContaining({ id: 2, cx: 50, cy: 50, r: 5 })]);
   });
 
-  it('says the positions cannot be shown when the server answered with nothing usable', () => {
-    lostHoldsQuery.state = { status: 'ready', lostHolds: [] };
-    const { result } = setup();
-    expect(result.current.status).toBe('noPositions');
-    expect(result.current.count).toBe(1);
+  it('draws nothing on a wall registered without a homography', () => {
+    registry.wall = { holds: [] };
+    expect(setup().result.current.ghosts).toEqual([]);
   });
 
-  it('keeps the same ghosts array across a paint that leaves them standing', () => {
-    const { result, rerender } = setup();
-    const ghostsBefore = result.current.ghosts;
-    const targetsBefore = result.current.ghostTargets;
-    rerender({ currentFrames: [{ ...PAINTED[0], 12: HAND }] });
-    expect(result.current.ghosts).toBe(ghostsBefore);
-    expect(result.current.ghostTargets).toBe(targetsBefore);
-  });
-
-  it('starts with the hold put back on the wall answering its ghost, wherever it was nudged to', () => {
-    registry.wall?.holds.push({ id: 14, cx: 300, cy: 300, r: 10, movedFromHoldId: 2 });
-    const { result } = renderHook(() =>
-      useLostHoldGhosts({
-        board: BOARD,
-        sourceClimbUuid: 'climb-1',
-        sourceFrames: SOURCE_FRAMES,
-        availableHoldIds: AVAILABLE,
-        frames: [{ ...PAINTED[0], 14: HAND }],
-        sprayWallToken: 'token',
-        placeLostHoldReplacement: vi.fn(),
-        initialReplacements: new Map([[2, 14]]),
-      }),
-    );
-    expect(result.current.ghosts).toEqual([]);
-  });
-
-  it('passes taps through outside a pick', () => {
-    const { result } = setup();
-    expect(result.current.interceptPaint(10)).toBe(false);
+  it('skips a hold the server lists that this climb never used', () => {
+    lostHoldsQuery.state = {
+      status: 'ready',
+      lostHolds: [
+        { id: 2, cx: 100, cy: 100, r: 10, outline: null },
+        { id: 99, cx: 5, cy: 5, r: 5, outline: null },
+      ],
+    };
+    expect(setup().result.current.ghosts.map((ghost) => ghost.id)).toEqual([2]);
   });
 });

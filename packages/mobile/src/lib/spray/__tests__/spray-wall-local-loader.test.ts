@@ -9,6 +9,7 @@ const fixture = vi.hoisted(() => ({
   read: vi.fn(),
   register: vi.fn(),
   getSize: vi.fn(),
+  remembered: null as { archivedAt: string; replacedByWallUuid: string | null } | null,
   previous: null as unknown,
   artOnDisk: true,
 }));
@@ -17,10 +18,15 @@ vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
 vi.mock('../../../db/queries/get-spray-wall-local', () => ({ getSprayWallLocal: fixture.read }));
 vi.mock('../../local-user-id', () => ({ readLocalUserId: async () => fixture.userId }));
 vi.mock('../spray-photo-store', () => ({ tryGetStoredSprayPhotoPathSync: () => fixture.storedPath }));
+vi.mock('../../../settings/offline-boards', () => ({ getRememberedSprayWallArchive: () => fixture.remembered }));
 vi.mock('../spray-photo-cache', () => ({
   tryGetSprayPhotoPathSync: () => (fixture.artOnDisk ? '/cache/4-v21-crop.jpg' : null),
 }));
 vi.mock('../spray-wall-registry', () => ({
+  LIVE_SPRAY_WALL_ARCHIVE_STATE: {
+    archivedAt: null,
+    replacedByWallUuid: null,
+  },
   getSprayWall: () => fixture.previous,
   registerSprayWall: fixture.register,
   sprayWallViewerGeneration: () => fixture.viewerGeneration,
@@ -47,6 +53,7 @@ beforeEach(() => {
   fixture.storedPath = '/photos/wall.jpg';
   fixture.viewerGeneration = 1;
   fixture.removalGeneration = 1;
+  fixture.remembered = null;
   fixture.previous = null;
   fixture.artOnDisk = true;
   fixture.read.mockResolvedValue(wall);
@@ -68,6 +75,29 @@ describe('offline published wall hydration', () => {
         localPhotoPath: '/photos/wall.jpg',
         viewerAccess: { canEdit: false, generation: 1 },
         holds: [expect.objectContaining({ cx: 100, cy: 150 })],
+      }),
+    );
+  });
+
+  // SQLite has no archive column, so what the server last said comes from the
+  // settings store: an archived wall still refuses new climbs with no signal.
+  // Nothing remembered: the registration says nothing about the archive, so the
+  // registry keeps what this session already knew, or reads the wall as live.
+  it('leaves the archive unsaid when nothing was remembered about the wall', async () => {
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
+    expect(fixture.register).toHaveBeenCalledWith(4, expect.objectContaining({ archive: undefined }));
+  });
+
+  it('keeps a remembered archive offline', async () => {
+    fixture.remembered = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall' };
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(true);
+    expect(fixture.register).toHaveBeenCalledWith(
+      4,
+      expect.objectContaining({
+        archive: {
+          archivedAt: '2026-10-01T09:00:00.000Z',
+          replacedByWallUuid: 'new-wall',
+        },
       }),
     );
   });

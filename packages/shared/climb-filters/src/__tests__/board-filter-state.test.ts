@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { hasActiveBoardFilters, mergeBoardFilters, type ClimbBoardFilterState } from '../board-filter-state';
 import { countActiveFiltersBeyondGrade } from '../active-filter-count';
-import { DEFAULT_CLIMB_FILTER_STATE, normalizeRetiredStatus, type ClimbFilterState } from '../filter-state';
+import { DEFAULT_CLIMB_FILTER_STATE, normalizeRetiredFilters, type ClimbFilterState } from '../filter-state';
 
 const baseInput: ClimbSearchInput = {
   boardName: 'kilter',
@@ -85,19 +85,19 @@ describe('countActiveFiltersBeyondGrade', () => {
     // Pre-normalization a legacy state could carry both; after normalization it
     // is a single Popularity lever (minAscents) → count 1, not 2.
     const legacy: ClimbFilterState = { ...active, status: 'established', minAscents: 2 };
-    expect(countActiveFiltersBeyondGrade(normalizeRetiredStatus(legacy))).toBe(1);
+    expect(countActiveFiltersBeyondGrade(normalizeRetiredFilters(legacy))).toBe(1);
   });
 });
 
-describe('normalizeRetiredStatus', () => {
+describe('normalizeRetiredFilters', () => {
   it('maps established → any while keeping minAscents', () => {
-    const out = normalizeRetiredStatus({ ...DEFAULT_CLIMB_FILTER_STATE, status: 'established', minAscents: 2 });
+    const out = normalizeRetiredFilters({ ...DEFAULT_CLIMB_FILTER_STATE, status: 'established', minAscents: 2 });
     expect(out.status).toBe('any');
     expect(out.minAscents).toBe(2);
   });
 
   it('leaves non-established statuses untouched', () => {
-    expect(normalizeRetiredStatus({ ...DEFAULT_CLIMB_FILTER_STATE, status: 'projects' }).status).toBe('projects');
-    expect(normalizeRetiredStatus(DEFAULT_CLIMB_FILTER_STATE).status).toBe('any');
+    expect(normalizeRetiredFilters({ ...DEFAULT_CLIMB_FILTER_STATE, status: 'projects' }).status).toBe('projects');
+    expect(normalizeRetiredFilters(DEFAULT_CLIMB_FILTER_STATE).status).toBe('any');
   });
 });

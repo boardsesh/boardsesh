@@ -73,6 +73,8 @@ vi.mock('../CreateDrawerActionBar', () => ({
   CreateDrawerActionBar: () => createElement('div', { 'data-node': 'action-bar' }),
 }));
 const formProps = vi.hoisted(() => ({ last: null as null | Record<string, unknown> }));
+// The lost-hold ring layer draws through react-native-svg and has its own suite.
+vi.mock('../LostHoldGhostLayer', () => ({ LostHoldGhostLayer: () => null }));
 vi.mock('../CreateDrawerForm', () => ({
   CreateDrawerForm: (props: { onSetterGradeLayout?: (event: LayoutEvent) => void } & Record<string, unknown>) => {
     formProps.last = props;
@@ -97,9 +99,6 @@ function footprintBanner(footprint: number) {
     return createElement('div', { 'data-node': 'banner' });
   };
 }
-// The lost-hold layer (#5493) draws through react-native-svg and has its own suite.
-vi.mock('../LostHoldGhostLayer', () => ({ LostHoldGhostLayer: () => null }));
-vi.mock('../LostHoldsEditorBanner', () => ({ LostHoldsEditorBanner: () => null }));
 vi.mock('../InlineConfirmBanner', () => ({ InlineConfirmBanner: footprintBanner(96) }));
 vi.mock('../DuplicateBanner', () => ({ DuplicateBanner: footprintBanner(70) }));
 vi.mock('../CreateRoutePlaybackSlot', () => ({

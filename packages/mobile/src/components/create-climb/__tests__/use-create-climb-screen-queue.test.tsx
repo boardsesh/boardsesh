@@ -300,10 +300,9 @@ describe('create-climb queue hand-off carries board identity', () => {
 // played at the 750ms default however the setter set the transport — the speed
 // control authored nothing. These pin the value actually reaching the wire.
 describe('editing a climb somebody else set (#5955)', () => {
-  // A wall owner fixing a start hold has not taken the climb. The server never
-  // rewrites `user_id` / `setter_username` on an update, so the queue row the
-  // editor builds must not either: with the saver's id on it, the play drawer
-  // would credit the wall owner and offer the real setter nothing.
+  // The server never rewrites `user_id` / `setter_username` on an update, so
+  // the queue row the editor builds must not either: with the saver's id on it,
+  // the play drawer would credit the saver and offer the real setter nothing.
   const someoneElsesClimb = {
     uuid: 'climb-9',
     name: 'Left Arete',
@@ -856,7 +855,6 @@ describe('create-climb queue hand-off: no version on the queued climb (#6023)', 
     expect(current?.climb.frames).toBe(SECOND_SAVE_FRAMES);
     expect(queueState.queue).toHaveLength(1);
     // The refresh moved the holds, so the reducer cleared the item's version.
-    expect(current?.climb.revisionNumber).toBeNull();
     expect(current?.climb.holdsRevisionNumber).toBeNull();
   });
 
@@ -866,7 +864,7 @@ describe('create-climb queue hand-off: no version on the queued climb (#6023)', 
 
     await saveWithFrames(result, 'Only Save', FIRST_SAVE_FRAMES);
 
-    expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
+    expect(queueState.currentClimbQueueItem?.climb.holdsRevisionNumber).toBeUndefined();
   });
 
   it('Set Active with unsaved work-in-progress holds: no version on the item', async () => {
@@ -892,7 +890,7 @@ describe('create-climb queue hand-off: no version on the queued climb (#6023)', 
     const current = queueState.currentClimbQueueItem;
     expect(current?.climb.uuid).toBe('climb-z');
     expect(current?.climb.frames).toBe(WIP_FRAMES);
-    expect(current?.climb.revisionNumber).toBeUndefined();
+    expect(current?.climb.holdsRevisionNumber).toBeUndefined();
   });
 
   it('Set Active on a climb that was never saved: no version on the item', () => {
@@ -903,7 +901,7 @@ describe('create-climb queue hand-off: no version on the queued climb (#6023)', 
     act(() => result.current.handleSetActive());
 
     expect(queueState.currentClimbQueueItem?.climb.frames).toBe(WIP_FRAMES);
-    expect(queueState.currentClimbQueueItem?.climb.revisionNumber).toBeUndefined();
+    expect(queueState.currentClimbQueueItem?.climb.holdsRevisionNumber).toBeUndefined();
   });
 
   it('the editor never puts a version on the climb it queues, whatever updateClimb returns', async () => {
@@ -923,7 +921,7 @@ describe('create-climb queue hand-off: no version on the queued climb (#6023)', 
     await saveWithFrames(result, 'Second Save', SECOND_SAVE_FRAMES);
 
     for (const [item] of queue.setCurrentClimb.mock.calls as Array<[ClimbQueueItem]>) {
-      expect(item.climb.revisionNumber).toBeUndefined();
+      expect('revisionNumber' in item.climb).toBe(false);
       expect(item.climb.holdsRevisionNumber).toBeUndefined();
     }
   });

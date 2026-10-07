@@ -353,6 +353,7 @@ const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
   setSetting: (...args: unknown[]) => setSettingMock(...args),
   clearOfflineBoards: () => clearOfflineBoardsMock(),
+  clearSprayWallArchives: () => undefined,
 }));
 
 // The provider registers its forced-sign-out cleanup against this lib-layer hook

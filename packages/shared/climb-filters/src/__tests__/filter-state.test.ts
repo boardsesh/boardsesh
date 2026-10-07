@@ -7,6 +7,7 @@ import {
   applyStatusChange,
   toClimbSearchInput,
   newSortSeed,
+  normalizeRetiredFilters,
   type ClimbFilterState,
   type BoardSearchConfig,
   type SearchPagination,
@@ -370,34 +371,25 @@ describe('toClimbSearchInput personal grades', () => {
   });
 });
 
-// #6024: on a spray wall the default ('current') hides climbs a full reset
-// retired, and "All" has to say so out loud, because the server reads an
-// absent value as the default view.
-describe('toClimbSearchInput hold integrity after a full reset', () => {
+// The spray-wall "Holds" filter is gone. A search input built from a stored
+// state that still carries it must neither send it nor count it.
+describe('a stored filter state from before the Holds filter was removed', () => {
   const spray: BoardSearchConfig = { boardName: 'spray', layoutId: 7, sizeId: 7, setIds: '1', angle: 25 };
-  const build = (holdIntegrity: ClimbFilterState['holdIntegrity'], target: BoardSearchConfig = spray) =>
-    toClimbSearchInput({ ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity }, target, pagination).holdIntegrity;
+  const legacy = { ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity: 'broken' } as ClimbFilterState;
 
-  it('sends nothing for the default, current view', () => {
-    expect(build(undefined)).toBeUndefined();
-    expect(build('current')).toBeUndefined();
+  it('sends no holdIntegrity and counts as no active filter', () => {
+    expect(toClimbSearchInput(legacy, spray, pagination).holdIntegrity).toBeUndefined();
+    expect(hasActiveClimbFilters(legacy)).toBe(false);
   });
 
-  it('sends ANY for "All" on a spray wall', () => {
-    expect(build('any')).toBe('ANY');
+  it('drops the stored value on read and keeps everything else', () => {
+    const normalized = normalizeRetiredFilters({ ...legacy, minGrade: 12 });
+    expect('holdIntegrity' in normalized).toBe(false);
+    expect(normalized.minGrade).toBe(12);
+    expect(normalized.status).toBe('any');
   });
 
-  it('keeps "All" off the wire on a catalogue board, where it is the default list', () => {
-    expect(build('any', board)).toBeUndefined();
-  });
-
-  it('still sends INTACT and BROKEN', () => {
-    expect(build('intact')).toBe('INTACT');
-    expect(build('broken')).toBe('BROKEN');
-  });
-
-  it('counts "All" as an active filter and the current view as none', () => {
-    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity: 'any' })).toBe(true);
-    expect(hasActiveClimbFilters({ ...DEFAULT_CLIMB_FILTER_STATE, holdIntegrity: 'current' })).toBe(false);
+  it('returns the same state when nothing needs dropping', () => {
+    expect(normalizeRetiredFilters(DEFAULT_CLIMB_FILTER_STATE)).toBe(DEFAULT_CLIMB_FILTER_STATE);
   });
 });

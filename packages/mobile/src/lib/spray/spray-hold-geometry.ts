@@ -28,11 +28,12 @@ export type SprayHoldProvenance = {
   /** Detector confidence 0–1 for an AUTO hold; absent when a human drew it. */
   confidence?: number | null;
   /**
-   * The hold this one replaced, when a reset review linked a move.
+   * The hold this one replaced, as the server has it (a move linked by the
+   * retired reset review).
    *
-   * Not geometry either. The create editor reads it (#5493): a climb that lost a
-   * hold offers the live hold that replaced it first. Present only when set, so a
-   * hold with no predecessor keeps the shape it always had.
+   * Not geometry either. The hold editor resends it on every write, because the
+   * server writes the field as sent. Present only when set, so a hold with no
+   * predecessor keeps the shape it always had.
    */
   movedFromHoldId?: number;
 };

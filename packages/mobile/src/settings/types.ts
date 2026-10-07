@@ -1,6 +1,12 @@
 import type { RestTimerMode } from '../lib/rest-timer';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
+/** What `offlineSprayWallArchiveV1` keeps per archived wall. */
+export type RememberedSprayWallArchive = {
+  archivedAt: string;
+  replacedByWallUuid: string | null;
+};
+
 export type AppSettings = {
   defaultBoardUuid: string | null;
   syncEnabledBoards: string[];
@@ -29,6 +35,14 @@ export type AppSettings = {
    * automatic. Cleared the moment it is consumed.
    */
   offlineDownloadAllTapPending: boolean;
+  /**
+   * When the server last said each archived spray wall was archived, keyed by
+   * wall uuid (`rememberSprayWallArchive`). A downloaded wall opened with no
+   * signal is drawn from SQLite, which has no column for it, so without this an
+   * archived wall would offer "set a climb" again the moment the phone went
+   * offline. Only archived walls are stored, and the account boundary clears it.
+   */
+  offlineSprayWallArchiveV1: Record<string, RememberedSprayWallArchive>;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   /**
