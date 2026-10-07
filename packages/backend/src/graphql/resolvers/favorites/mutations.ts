@@ -9,6 +9,7 @@ import type {
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, validateInput } from '../shared/helpers';
+import { lockSprayClimbAgainstDelete } from '../climbs/spray-climb-lock';
 import {
   ToggleFavoriteInputSchema,
   AddFavoriteInputSchema,
@@ -58,6 +59,15 @@ async function writeFavorite(
       .from(dbSchema.boardClimbs)
       .where(eq(dbSchema.boardClimbs.uuid, input.climbUuid))
       .limit(1);
+    // A spray climb can be hard-deleted by its setter (`deleteClimb`, #5960),
+    // and a favourite queued offline can drain after that. Hold the climb for
+    // the rest of this transaction, or refuse with CLIMB_NOT_FOUND (the drainer
+    // dead-letters it) instead of leaving a heart no tombstone will ever clear.
+    // Either signal counts: the client's board name, or the catalogue row.
+    // Catalogue climbs stay fail-open below.
+    if (input.boardName === 'spray' || climb?.boardType === 'spray') {
+      await lockSprayClimbAgainstDelete(transaction, input.climbUuid);
+    }
     const inserted = await transaction
       .insert(dbSchema.userFavorites)
       .values({

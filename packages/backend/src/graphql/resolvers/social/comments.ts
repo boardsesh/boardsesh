@@ -16,6 +16,7 @@ import { encodeOffsetCursor, decodeOffsetCursor } from '../../../utils/feed-curs
 import { sprayClimbVisibilityCondition, sprayReferenceVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayClimbUuidIsReadable, sprayProposalUuidIsReadable } from '../climbs/spray-read-access';
 import { validateEntityExists } from './entity-validation';
+import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
 import crypto from 'crypto';
@@ -535,14 +536,18 @@ export const socialCommentMutations = {
       parentCommentId = parent.id;
     }
 
-    const commentResult = await insertComment({
-      userId,
-      entityType,
-      entityId,
-      body,
-      parentCommentId,
-      parentCommentUuid,
-    });
+    const commentParams = { userId, entityType, entityId, body, parentCommentId, parentCommentUuid };
+    // The existence check above runs outside any transaction, and a spray climb
+    // can be hard-deleted by its setter (`deleteClimb`, #5960). Holding the climb
+    // until the insert commits stops a comment landing after the delete's sweep,
+    // where it would be orphaned and could notify about a climb that is gone.
+    const commentResult =
+      entityType === 'climb'
+        ? await db.transaction(async (tx) => {
+            await lockReferencedClimb(tx, entityId);
+            return insertComment({ ...commentParams, executor: tx });
+          })
+        : await insertComment(commentParams);
 
     // Live comment update via PubSub (synchronous for real-time)
     publishCommentAddedLive(entityType, entityId, commentResult);

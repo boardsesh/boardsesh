@@ -82,6 +82,10 @@ import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
 import { climbMutations } from '../graphql/resolvers/climbs/mutations';
 import { deleteClimbMutations } from '../graphql/resolvers/climbs/delete-climb';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { favoriteMutations } from '../graphql/resolvers/favorites/mutations';
+import { playlistMutations } from '../graphql/resolvers/playlists/mutations';
+import { socialCommentMutations } from '../graphql/resolvers/social/comments';
+import { socialVoteMutations } from '../graphql/resolvers/social/votes';
 
 const OWNER = 'dc-owner';
 const STRANGER = 'dc-stranger';
@@ -141,7 +145,7 @@ async function createPublishedWall(): Promise<{ wall: CreatedWall; holdIds: numb
   return { wall, holdIds: holds.map((hold) => hold.id) };
 }
 
-async function setClimb(wall: CreatedWall, holdIds: number[], setter = OWNER): Promise<string> {
+async function setClimb(wall: CreatedWall, holdIds: number[], setter = OWNER, isDraft = false): Promise<string> {
   const saved = (await climbMutations.saveClimb(
     {},
     {
@@ -149,7 +153,7 @@ async function setClimb(wall: CreatedWall, holdIds: number[], setter = OWNER): P
         boardType: 'spray',
         layoutId: wall.layoutId,
         name: 'Garage crimps',
-        isDraft: false,
+        isDraft,
         frames: holdIds.map((holdId, index) => `p${holdId}r${[1, 2, 3][index] ?? 2}`).join(''),
         angle: ANGLE,
         userGrade: '6b/V4',
@@ -407,7 +411,8 @@ beforeEach(async () => {
                    "climb_community_status", "climb_classic_status", "user_favorites", "playlists",
                    "playlist_climbs", "board_climb_popularity", "board_climb_embeddings", "board_climb_similar",
                    "board_climb_grades", "board_climb_send_stats", "board_climb_events",
-                   "climb_stats_recompute_pending", "board_climb_ratings", "board_beta_links", "sync_deletions"
+                   "climb_stats_recompute_pending", "board_climb_ratings", "board_beta_links", "sync_deletions",
+                   "playlist_ownership"
     RESTART IDENTITY CASCADE
   `);
   await db.execute(sql`ALTER SEQUENCE spray_wall_catalog_id_seq RESTART WITH 1`);
@@ -599,5 +604,219 @@ describe('deleteClimb against a concurrent saveTick', () => {
     expect(tickState).toBe('parked');
     expect(await climbExists(climbUuid)).toBe(false);
     expect(await ticksOn(climbUuid)).toBe(0);
+  });
+});
+
+describe('deleteClimb on an archived wall', () => {
+  it('still lets the setter clear a draft, as deleteDraftClimb does', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const draftUuid = await setClimb(wall, holdIds, OWNER, true);
+    await db.execute(sql`UPDATE spray_walls SET archived_at = now() WHERE board_uuid = ${wall.uuid}`);
+
+    await expect(deleteClimb(OWNER, draftUuid)).resolves.toBe(true);
+    expect(await climbExists(draftUuid)).toBe(false);
+  });
+});
+
+/**
+ * Review of #6196: a favourite, playlist entry, comment or vote written after
+ * the delete's sweep used to land on a climb that no longer exists. Each writer
+ * now holds a spray climb `FOR KEY SHARE` in its insert transaction.
+ */
+describe('references written after or during the delete', () => {
+  /** A spray playlist owned by `owner`, through SQL: createPlaylist is not under test. */
+  async function createSprayPlaylist(wall: CreatedWall, owner = CLIMBER): Promise<string> {
+    const playlistUuid = uuidv4();
+    await db.execute(sql`
+      INSERT INTO playlists (uuid, board_type, layout_id, name, created_at, updated_at)
+      VALUES (${playlistUuid}, 'spray', ${wall.layoutId}, 'Projects', now(), now())
+    `);
+    await db.execute(sql`
+      INSERT INTO playlist_ownership (playlist_id, user_id, role, created_at)
+      SELECT id, ${owner}, 'owner', now() FROM playlists WHERE uuid = ${playlistUuid}
+    `);
+    return playlistUuid;
+  }
+
+  const addFavorite = (userId: string, climbUuid: string, boardName: string | null = 'spray') =>
+    favoriteMutations.addFavorite({}, { input: { climbUuid, boardName, angle: ANGLE } }, ctxFor(userId));
+  const toggleFavorite = (userId: string, climbUuid: string) =>
+    favoriteMutations.toggleFavorite({}, { input: { climbUuid, boardName: 'spray', angle: ANGLE } }, ctxFor(userId));
+  const addToPlaylist = (userId: string, playlistId: string, climbUuid: string) =>
+    playlistMutations.addClimbToPlaylist({}, { input: { playlistId, climbUuid, angle: ANGLE } }, ctxFor(userId));
+  const addComment = (userId: string, climbUuid: string) =>
+    socialCommentMutations.addComment(
+      {},
+      { input: { entityType: 'climb', entityId: climbUuid, body: 'Sick line' } },
+      ctxFor(userId),
+    );
+  const vote = (userId: string, climbUuid: string) =>
+    socialVoteMutations.vote({}, { input: { entityType: 'climb', entityId: climbUuid, value: 1 } }, ctxFor(userId));
+
+  const favoritesOn = (climbUuid: string) =>
+    count(sql`SELECT count(*)::int AS n FROM user_favorites WHERE climb_uuid = ${climbUuid}`);
+  const playlistEntriesOn = (climbUuid: string) =>
+    count(sql`SELECT count(*)::int AS n FROM playlist_climbs WHERE climb_uuid = ${climbUuid}`);
+  const commentsOn = (climbUuid: string) =>
+    count(sql`SELECT count(*)::int AS n FROM comments WHERE entity_id = ${climbUuid}`);
+  const votesOn = (climbUuid: string) =>
+    count(sql`SELECT count(*)::int AS n FROM votes WHERE entity_id = ${climbUuid}`);
+
+  /**
+   * Park `deleteClimb` after it has locked the climb and swept favourites,
+   * playlist entries, comments and votes: this transaction holds the
+   * popularity row the delete removes after all of those.
+   */
+  async function parkDeleteAfterSweep(climbUuid: string) {
+    await db.execute(sql`
+      INSERT INTO board_climb_popularity (board_type, climb_uuid, angle, total_ascensionist_count)
+      VALUES ('spray', ${climbUuid}, ${ANGLE}, 0)
+    `);
+    const holding = deferred();
+    const release = deferred();
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT climb_uuid FROM board_climb_popularity WHERE climb_uuid = ${climbUuid} FOR UPDATE`);
+      holding.resolve();
+      await release.promise;
+    });
+    await holding.promise;
+    const deletion = outcomeOf(deleteClimb(OWNER, climbUuid));
+    expect(await waitForLockWaiters(1)).toBe(true);
+    return {
+      deletion,
+      finish: async () => {
+        release.resolve();
+        await holder;
+      },
+    };
+  }
+
+  describe('after the delete committed (an offline write draining late)', () => {
+    it('refuses a favourite with CLIMB_NOT_FOUND, by board name or by toggle', async () => {
+      const { wall, holdIds } = await createPublishedWall();
+      const climbUuid = await setClimb(wall, holdIds);
+      await deleteClimb(OWNER, climbUuid);
+
+      expect(await outcomeOf(addFavorite(CLIMBER, climbUuid))).toMatchObject({ ok: false, code: 'CLIMB_NOT_FOUND' });
+      expect(await outcomeOf(toggleFavorite(CLIMBER, climbUuid))).toMatchObject({
+        ok: false,
+        code: 'CLIMB_NOT_FOUND',
+      });
+      expect(await favoritesOn(climbUuid)).toBe(0);
+    });
+
+    it('refuses a spray playlist add with CLIMB_NOT_FOUND', async () => {
+      const { wall, holdIds } = await createPublishedWall();
+      const climbUuid = await setClimb(wall, holdIds);
+      const playlistUuid = await createSprayPlaylist(wall);
+      await deleteClimb(OWNER, climbUuid);
+
+      expect(await outcomeOf(addToPlaylist(CLIMBER, playlistUuid, climbUuid))).toMatchObject({
+        ok: false,
+        code: 'CLIMB_NOT_FOUND',
+      });
+      expect(await playlistEntriesOn(climbUuid)).toBe(0);
+    });
+
+    it('keeps catalogue favourites fail-open for a uuid the database does not hold', async () => {
+      const unknownUuid = uuidv4();
+      await expect(addFavorite(CLIMBER, unknownUuid, 'kilter')).resolves.toBe(true);
+      expect(await favoritesOn(unknownUuid)).toBe(1);
+    });
+  });
+
+  describe('delete first: the reference waits for the delete, then is refused', () => {
+    it('a favourite', async () => {
+      const { wall, holdIds } = await createPublishedWall();
+      const climbUuid = await setClimb(wall, holdIds);
+      const { deletion, finish } = await parkDeleteAfterSweep(climbUuid);
+
+      const favorite = outcomeOf(addFavorite(CLIMBER, climbUuid));
+      const favoriteState = await parkedOrSettled(favorite, 2);
+      await finish();
+
+      expect(await deletion).toEqual({ ok: true });
+      expect(await favorite).toMatchObject({ ok: false, code: 'CLIMB_NOT_FOUND' });
+      expect(favoriteState).toBe('parked');
+      expect(await favoritesOn(climbUuid)).toBe(0);
+    });
+
+    it('a playlist add', async () => {
+      const { wall, holdIds } = await createPublishedWall();
+      const climbUuid = await setClimb(wall, holdIds);
+      const playlistUuid = await createSprayPlaylist(wall);
+      const { deletion, finish } = await parkDeleteAfterSweep(climbUuid);
+
+      const add = outcomeOf(addToPlaylist(CLIMBER, playlistUuid, climbUuid));
+      const addState = await parkedOrSettled(add, 2);
+      await finish();
+
+      expect(await deletion).toEqual({ ok: true });
+      expect(await add).toMatchObject({ ok: false, code: 'CLIMB_NOT_FOUND' });
+      expect(addState).toBe('parked');
+      expect(await playlistEntriesOn(climbUuid)).toBe(0);
+    });
+
+    it('a comment', async () => {
+      const { wall, holdIds } = await createPublishedWall();
+      const climbUuid = await setClimb(wall, holdIds);
+      const { deletion, finish } = await parkDeleteAfterSweep(climbUuid);
+
+      const comment = outcomeOf(addComment(CLIMBER, climbUuid));
+      const commentState = await parkedOrSettled(comment, 2);
+      await finish();
+
+      expect(await deletion).toEqual({ ok: true });
+      expect(await comment).toMatchObject({ ok: false, code: 'CLIMB_NOT_FOUND' });
+      expect(commentState).toBe('parked');
+      expect(await commentsOn(climbUuid)).toBe(0);
+    });
+
+    it('a vote', async () => {
+      const { wall, holdIds } = await createPublishedWall();
+      const climbUuid = await setClimb(wall, holdIds);
+      const { deletion, finish } = await parkDeleteAfterSweep(climbUuid);
+
+      const cast = outcomeOf(vote(CLIMBER, climbUuid));
+      const castState = await parkedOrSettled(cast, 2);
+      await finish();
+
+      expect(await deletion).toEqual({ ok: true });
+      expect(await cast).toMatchObject({ ok: false, code: 'CLIMB_NOT_FOUND' });
+      expect(castState).toBe('parked');
+      expect(await votesOn(climbUuid)).toBe(0);
+    });
+  });
+
+  it('playlist add first: the delete waits for it to commit, then sweeps the new entry', async () => {
+    const { wall, holdIds } = await createPublishedWall();
+    const climbUuid = await setClimb(wall, holdIds);
+    const playlistUuid = await createSprayPlaylist(wall);
+
+    // Park the add after its insert: it bumps the playlist's updated_at, and
+    // this transaction holds the playlist row.
+    const holding = deferred();
+    const release = deferred();
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM playlists WHERE uuid = ${playlistUuid} FOR UPDATE`);
+      holding.resolve();
+      await release.promise;
+    });
+    await holding.promise;
+    const add = outcomeOf(addToPlaylist(CLIMBER, playlistUuid, climbUuid));
+    expect(await waitForLockWaiters(1)).toBe(true);
+
+    const deletion = outcomeOf(deleteClimb(OWNER, climbUuid));
+    // With the add's climb lock in place the delete blocks on it. Without it the
+    // delete sweeps before the add commits, and the entry is left behind.
+    const deleteState = await parkedOrSettled(deletion, 2);
+    release.resolve();
+    await holder;
+
+    expect(await add).toEqual({ ok: true });
+    expect(await deletion).toEqual({ ok: true });
+    expect(deleteState).toBe('parked');
+    expect(await climbExists(climbUuid)).toBe(false);
+    expect(await playlistEntriesOn(climbUuid)).toBe(0);
   });
 });

@@ -20,6 +20,7 @@ vi.mock('../error-classification', () => ({
   isServerUnavailableError: vi.fn().mockReturnValue(false),
   isServerFailureSignal: vi.fn().mockReturnValue(false),
   getErrorStatus: vi.fn().mockReturnValue(null),
+  isClimbReferenceToDeletedClimb: vi.fn().mockReturnValue(false),
 }));
 
 import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut, setBackgrounded } from '../drainer';
@@ -32,6 +33,7 @@ import {
   isServerUnavailableError,
   isServerFailureSignal,
   getErrorStatus,
+  isClimbReferenceToDeletedClimb,
 } from '../error-classification';
 
 const mockPeekPending = peekPending as ReturnType<typeof vi.fn>;
@@ -45,6 +47,7 @@ const mockIsNetworkError = isNetworkError as ReturnType<typeof vi.fn>;
 const mockIsServerUnavailableError = isServerUnavailableError as ReturnType<typeof vi.fn>;
 const mockIsServerFailureSignal = isServerFailureSignal as ReturnType<typeof vi.fn>;
 const mockGetErrorStatus = getErrorStatus as ReturnType<typeof vi.fn>;
+const mockIsClimbReferenceToDeletedClimb = isClimbReferenceToDeletedClimb as ReturnType<typeof vi.fn>;
 
 // The suite mocks the classifier so each branch can be driven in isolation. The
 // #5295 cases below need the opposite: the REAL predicates, so the assertion is
@@ -59,6 +62,7 @@ function useRealClassification(): void {
   mockIsServerUnavailableError.mockImplementation(realClassification.isServerUnavailableError);
   mockIsServerFailureSignal.mockImplementation(realClassification.isServerFailureSignal);
   mockGetErrorStatus.mockImplementation(realClassification.getErrorStatus);
+  mockIsClimbReferenceToDeletedClimb.mockImplementation(realClassification.isClimbReferenceToDeletedClimb);
 }
 
 // Always online unless a test opts out — matches the onlineManager default and
@@ -104,6 +108,7 @@ describe('drainMutationQueue', () => {
     mockIsServerUnavailableError.mockReturnValue(false);
     mockIsServerFailureSignal.mockReturnValue(false);
     mockGetErrorStatus.mockReturnValue(null);
+    mockIsClimbReferenceToDeletedClimb.mockReturnValue(false);
     mockRecordFailure.mockResolvedValue({ status: 'pending', retryCount: 1 });
   });
 
@@ -790,6 +795,63 @@ describe('drainMutationQueue', () => {
       expect(mockRecordFailure).not.toHaveBeenCalled();
       expect(onMutationDeadLettered).toHaveBeenCalledWith(
         expect.objectContaining({ reason: 'non_retryable', retryCount: 1, status: 400 }),
+      );
+    });
+  });
+
+  // Issue #5960: a setter can hard-delete their spray climb. A favourite or a
+  // playlist add queued before that drains into CLIMB_NOT_FOUND on HTTP 200.
+  // There is nothing left to star and no Retry can ever succeed, so the row is
+  // cleared as delivered rather than parked in the "needs retry" list. A tick
+  // keeps dead-lettering: that is a lost logbook entry the climber must see.
+  describe('a queued reference to a spray climb its setter deleted (#5960)', () => {
+    const climbNotFound = () =>
+      Object.assign(new Error('Climb not found'), {
+        response: { status: 200, errors: [{ message: 'Climb not found', extensions: { code: 'CLIMB_NOT_FOUND' } }] },
+      });
+
+    it.each([
+      ['user_favorites', 'fav-key'],
+      ['playlist_climbs', 'playlist-key'],
+    ])('settles a %s create answered CLIMB_NOT_FOUND as acknowledged, silently', async (tableName, key) => {
+      useRealClassification();
+      const mutation = makeMutation({ id: 7, table_name: tableName, idempotency_key: key });
+      mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(climbNotFound());
+      const onMutationDeadLettered = vi.fn();
+      const onMutationStatus = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+        onMutationStatus,
+      });
+
+      expect(mockMarkCompleted).toHaveBeenCalledWith(mockDb, 7);
+      expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+      expect(mockRecordFailure).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).not.toHaveBeenCalled();
+      expect(onMutationStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ tableName, idempotencyKey: key, status: 'acknowledged' }),
+      );
+    });
+
+    it('still dead-letters a tick answered CLIMB_NOT_FOUND', async () => {
+      useRealClassification();
+      const mutation = makeMutation({ id: 8, table_name: 'boardsesh_ticks', idempotency_key: 'tick-key' });
+      mockPeekPending.mockResolvedValueOnce([mutation]).mockResolvedValueOnce([]);
+      mockProcessMutation.mockRejectedValueOnce(climbNotFound());
+      const onMutationDeadLettered = vi.fn();
+
+      await drainMutationQueue(mockDb, createMockQueryClient(), mockGraphqlFetch, {
+        ...ONLINE,
+        onMutationDeadLettered,
+      });
+
+      expect(mockMarkDeadLetter).toHaveBeenCalledWith(mockDb, 8, 'Climb not found');
+      expect(mockMarkCompleted).not.toHaveBeenCalled();
+      expect(onMutationDeadLettered).toHaveBeenCalledWith(
+        expect.objectContaining({ tableName: 'boardsesh_ticks', reason: 'non_retryable' }),
       );
     });
   });

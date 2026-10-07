@@ -2596,8 +2596,8 @@ is archived. Its climbs stay, but nothing new can be set on it."
 
 | Refused | Still allowed |
 | --- | --- |
-| `saveClimb`, every `updateClimb` (including publishing a draft), `deleteClimb` | `saveTick` (the offline drainer would dead-letter a refusal) |
-| `createSprayWallVersion`, and a photo upload to `/api/spray-wall-photos` (409, before and after the bytes land) | `deleteDraftClimb` |
+| `saveClimb`, every `updateClimb` (including publishing a draft), `deleteClimb` of a published climb | `saveTick` (the offline drainer would dead-letter a refusal) |
+| `createSprayWallVersion`, and a photo upload to `/api/spray-wall-photos` (409, before and after the bytes land) | `deleteDraftClimb`, and `deleteClimb` of a draft |
 | `upsertSprayWallHolds`, `removeSprayWallHolds` | `discardSprayWallVersion` |
 | `publishSprayWallVersion`, `commitSprayWallVersion` | `updateSprayWall`, `setSprayWallRenderSettings`, `deleteSprayWall` |
 
@@ -3391,7 +3391,12 @@ ever left pointing at nothing. The resolver is
 | no such climb, or not the caller's | `CLIMB_NOT_FOUND`, the same words for both, so a uuid on a wall the caller cannot see stays unconfirmed |
 | a tick exists, from anybody | `CLIMB_HAS_TICKS` |
 | any board but spray | `CLIMB_DELETE_NOT_ALLOWED` |
-| the wall is archived | `SPRAY_WALL_ARCHIVED` |
+| the wall is archived and the climb is published | `SPRAY_WALL_ARCHIVED` |
+
+On an archived wall a draft can still be deleted. Published climbs there stay,
+as the archive promises. A draft is the setter's alone and can never be
+published on an archived wall, so clearing it changes nothing anyone else sees.
+That is the same rule `deleteDraftClimb` follows, so the two mutations agree.
 
 It is a hard delete, so every reader audited above for a hard-deleted climb
 already handles it. `deleteClimbReferenceRows` (`climbs/climb-cleanup.ts`)
@@ -3414,8 +3419,9 @@ aliases, revisions and lineage (as the child) cascade from the climb row.
 The climb's tombstone stays unscoped, as `log_deletion_board_climbs` writes it.
 Everybody who could open the wall could read the climb, and gym members or
 public-wall viewers may have it on their phone. A tombstone scoped to the
-setter would leave them a climb they could tick and then lose. The leak #6150
-describes is about drafts, which nobody else ever saw.
+setter would leave them a climb they could tick and then lose. A draft deleted
+here writes the same unscoped tombstone as `deleteDraftClimb`, which is the leak
+#6150 tracks; its fix has to cover both callers.
 
 **The race with a tick.** Both sides lock the climb row. The delete takes the
 wall lock, then `SELECT … FOR UPDATE` on the climb, then counts ticks. `saveTick`
@@ -3425,6 +3431,18 @@ its count (a fresh READ COMMITTED statement) sees the tick: `CLIMB_HAS_TICKS`.
 When the delete locks first, the tick waits and then finds no row:
 `CLIMB_NOT_FOUND`, which the offline drainer dead-letters on the first attempt.
 An offline tick drained after the delete gets the same answer.
+
+**The same lock on every other reference.** `addFavorite` / `toggleFavorite`,
+`addClimbToPlaylist` on a spray playlist, `addComment` and `vote` on a climb
+call `lockSprayClimbAgainstDelete` (`climbs/spray-climb-lock.ts`) inside their
+insert transaction. Without it a favourite or playlist entry drained after the
+delete, or a comment landing between the delete's sweep and its commit, would
+point at a climb that is gone. A favourite counts as spray when the client sends
+`boardName: 'spray'` or the catalogue row says so. Catalogue climbs keep the
+old fail-open behaviour. The offline drainer settles a queued favourite or
+playlist add refused this way as delivered, with no "needs retry" entry: there is
+nothing left to star, and a Retry could never succeed. A refused tick still
+dead-letters.
 `packages/backend/src/__tests__/spray-climb-delete.test.ts` drives both orders.
 
 **In the app.** "Delete climb" is the last row of the climb actions, in both the

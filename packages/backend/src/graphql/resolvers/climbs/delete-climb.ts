@@ -25,7 +25,9 @@ import { isSprayBoard } from './spray-authoring';
  *  - `notAllowed`: a climb on any board but spray. Catalogue climbs are shared
  *    reference data and stay.
  *
- * An archived wall refuses with the wall's own `SPRAY_WALL_ARCHIVED`.
+ * An archived wall refuses a published climb with the wall's own
+ * `SPRAY_WALL_ARCHIVED`, and still lets the setter clear a draft (the same rule
+ * as `deleteDraftClimb`).
  */
 export const DELETE_CLIMB_CODES = {
   notFound: 'CLIMB_NOT_FOUND',
@@ -83,6 +85,7 @@ export const deleteClimbMutations = {
     await db.transaction(
       async (tx) => {
         // A soft-deleted wall keeps its row; its climbs can still be cleared.
+        let wallArchived = false;
         const [wall] = await tx
           .select({ id: dbSchema.sprayWalls.id })
           .from(dbSchema.sprayWalls)
@@ -95,11 +98,15 @@ export const deleteClimbMutations = {
             .from(dbSchema.sprayWalls)
             .where(eq(dbSchema.sprayWalls.id, wall.id))
             .limit(1);
-          if (state?.archivedAt != null) throw sprayWallArchivedError();
+          wallArchived = state?.archivedAt != null;
         }
 
         const [locked] = await tx
-          .select({ userId: dbSchema.boardClimbs.userId, layoutId: dbSchema.boardClimbs.layoutId })
+          .select({
+            userId: dbSchema.boardClimbs.userId,
+            layoutId: dbSchema.boardClimbs.layoutId,
+            isDraft: dbSchema.boardClimbs.isDraft,
+          })
           .from(dbSchema.boardClimbs)
           .where(
             and(eq(dbSchema.boardClimbs.uuid, validatedUuid), eq(dbSchema.boardClimbs.boardType, validatedBoardType)),
@@ -107,6 +114,12 @@ export const deleteClimbMutations = {
           .limit(1)
           .for('update');
         if (!locked || locked.userId !== userId || locked.layoutId !== loaded.layoutId) throw notFoundError();
+        // An archived wall is read-only for what other climbers can see: its
+        // published climbs stay (#6181, frozen by #6183). A draft is the setter's
+        // alone and can never be published there, so it may still be cleared,
+        // exactly as `deleteDraftClimb` allows. Read under the wall lock, which
+        // the archive stamp also takes.
+        if (wallArchived && locked.isDraft !== true) throw sprayWallArchivedError();
 
         const [tick] = await tx
           .select({ uuid: dbSchema.boardseshTicks.uuid })
