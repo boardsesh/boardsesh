@@ -459,9 +459,7 @@ export function CreateDrawer({
             />
           ) : null}
 
-          {controller.nameMissingHint ? (
-            <NameRequiredHint announceKey={controller.nameMissingTick} />
-          ) : null}
+          {controller.nameMissingHint ? <NameRequiredHint announceKey={controller.nameMissingTick} /> : null}
 
           {controller.publishDuplicateError ? (
             <DuplicateBanner

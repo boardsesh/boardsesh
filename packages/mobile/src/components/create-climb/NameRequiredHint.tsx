@@ -23,12 +23,7 @@ export function NameRequiredHint({ announceKey }: NameRequiredHintProps) {
     AccessibilityInfo.announceForAccessibility(message);
   }, [message, announceKey]);
   return (
-    <Text
-      variant="footnote"
-      color={brandColors.error}
-      style={styles.hint}
-      testID="create-drawer-name-required"
-    >
+    <Text variant="footnote" color={brandColors.error} style={styles.hint} testID="create-drawer-name-required">
       {message}
     </Text>
   );
