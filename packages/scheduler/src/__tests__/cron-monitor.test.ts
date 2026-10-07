@@ -53,6 +53,7 @@ describe('monitorSlugForJob', () => {
       'scheduler-purge-spray-wall-photos',
       'scheduler-snapshot-active-users',
       'scheduler-purge-user-activity',
+      'scheduler-export-spray-training',
     ]);
   });
 });
@@ -86,6 +87,7 @@ describe('monitorConfigForJob', () => {
       'scheduler-purge-spray-wall-photos': '0 7 * * *',
       'scheduler-snapshot-active-users': '20 0 * * *',
       'scheduler-purge-user-activity': '30 7 * * *',
+      'scheduler-export-spray-training': '0 8 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {
