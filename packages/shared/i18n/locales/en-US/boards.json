@@ -815,7 +815,6 @@
       "cancel": "Keep editing"
     },
     "chips": {
-      "trace": "Trace",
       "join": "Join",
       "switchOff": "Switch off",
       "switchOn": "Switch on",
@@ -823,6 +822,21 @@
       "keep": "Keep",
       "finish": "Finish",
       "refine": "Refine"
+    },
+    "modes": {
+      "label": "Editing modes",
+      "select": "Select",
+      "add": "Add",
+      "trace": "Trace",
+      "refine": "Refine",
+      "join": "Join",
+      "hints": {
+        "select": "Tap holds to pick them and switch them on or off",
+        "add": "Draw round the holds the scan missed",
+        "trace": "Redraw one hold's outline in a single loop. Works on the picked hold, or the next one you tap.",
+        "refine": "Brush a hold's outline bigger or smaller. Works on the picked hold, or the next one you tap.",
+        "join": "Turn two holds into one. Starts from the picked hold, or the next one you tap."
+      }
     },
     "banner": {
       "trace": "Draw round the hold with one finger",
@@ -835,7 +849,10 @@
       "refineAdd": "Paint to add to the hold. Pinch to zoom.",
       "refineErase": "Paint to trim the hold. Pinch to zoom.",
       "refineAddPencil": "Paint with Apple Pencil to add to the hold",
-      "refineErasePencil": "Paint with Apple Pencil to trim the hold"
+      "refineErasePencil": "Paint with Apple Pencil to trim the hold",
+      "tracePick": "Tap a hold to trace",
+      "refinePick": "Tap a hold to refine",
+      "joinPick": "Tap the first hold to join"
     },
     "addShape": {
       "label": "How to outline a hold",
@@ -874,7 +891,8 @@
         "delete": "Delete",
         "addHold": "Add a hold in the middle of the view"
       },
-      "revealed": "Holds found: {{summary}}"
+      "revealed": "Holds found: {{summary}}",
+      "pickHint": "Swipe up or down to a hold, then double-tap to pick it."
     },
     "readOnly": "This wall isn't yours to edit.",
     "errors": {
@@ -891,7 +909,8 @@
       "cornersHollow": "That shape is too hollow. Tap the corners round the outside of the hold.",
       "refineNothingLeft": "That would erase the whole hold. Switch it off instead.",
       "refineTooDetailed": "That leaves an edge too fiddly to save. Try a bigger brush.",
-      "refineCantStore": "That stroke would leave a shape that can't be saved as one hold, so it wasn't kept."
+      "refineCantStore": "That stroke would leave a shape that can't be saved as one hold, so it wasn't kept.",
+      "needsOnHold": "Switch the hold on first"
     },
     "empty": {
       "noPhoto": "This wall has no photo to edit yet."

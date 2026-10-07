@@ -4,10 +4,10 @@ vi.mock('react-native', () => ({
   PlatformColor: (color: string) => color,
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFill: {} },
 }));
-import { fitSprayPhoto } from '../spray-photo-frame';
+import { fitSprayPhoto, SPRAY_BAR_RESERVE } from '../spray-photo-frame';
 
-describe('spray photo and two-row count controls', () => {
-  it('reserves both control rows and the safe area below a tall photo', () => {
+describe('spray photo and the one-row bottom bar', () => {
+  it('reserves the bar row and the safe area below a tall photo', () => {
     const frame = fitSprayPhoto({
       areaWidth: 375,
       areaHeight: 700,
@@ -15,10 +15,10 @@ describe('spray photo and two-row count controls', () => {
       photoWidth: 500,
       photoHeight: 1000,
     });
-    // Two 48pt rows, their 8pt gap, three 8pt gutters, and 34pt safe area.
-    expect(frame.slotHeight).toBe(538);
-    expect(frame.height).toBe(538);
-    expect(frame.width).toBe(269);
+    // One 48pt row, an 8pt gutter under it and one above it, and 34pt safe area.
+    expect(frame.slotHeight).toBe(602);
+    expect(frame.height).toBe(602);
+    expect(frame.width).toBe(301);
   });
 
   it('fits the photo to the whole area when the bottom is not reserved', () => {
@@ -39,5 +39,9 @@ describe('spray photo and two-row count controls', () => {
   it('is unchanged when the reserve is asked for explicitly', () => {
     const area = { areaWidth: 375, areaHeight: 700, bottomInset: 34, photoWidth: 500, photoHeight: 1000 };
     expect(fitSprayPhoto({ ...area, reserveBottom: true })).toEqual(fitSprayPhoto(area));
+  });
+
+  it('keeps 64pt free for the one-row bar', () => {
+    expect(SPRAY_BAR_RESERVE).toBe(64);
   });
 });

@@ -3,18 +3,13 @@ import { StyleSheet, View, type ColorValue } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
-import { Button } from '../Button';
-import { GlassIconButton } from '../GlassIconButton';
 import { GlassSurface } from '../GlassSurface';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import type { SprayEditorCounts } from './spray-hold-editor-reducer';
 import { SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT } from './spray-photo-frame';
-import { SprayCountCapsule, SprayEditorMenu } from './SprayCountCapsule';
-
-// Re-exported so the editor imports the count line from where it always has.
-export { sprayCountSummary } from './SprayCountCapsule';
+import { SprayModeSwitcher } from './SprayModeSwitcher';
+import type { SprayEditorMode } from './spray-editor-mode';
 
 /** The undo and redo glyphs, the size `GlassIconButton` draws its own. */
 const HISTORY_ICON_SIZE = 22;
@@ -26,160 +21,78 @@ const REDO_EXITING = FadeOut.duration(150);
 const PILL_LAYOUT = LinearTransition.duration(150);
 
 type SprayEditorBottomBarProps = {
-  counts: SprayEditorCounts;
-  /** Maybes are currently drawn. Drives the Hide / Show row. */
-  showMaybes: boolean;
-  /** The target reviews detector finds at all. False drops the two maybe rows. */
-  canReviewMaybes: boolean;
   canUndo: boolean;
   /** Something was undone and nothing edited since: the pill grows a Redo half. */
   canRedo: boolean;
-  /** Add mode is on: the + turns into a check that leaves it, like the banner's Done. */
-  adding: boolean;
+  /** The mode that is on, for the switcher. */
+  mode: SprayEditorMode;
+  onModeChange: (mode: SprayEditorMode) => void;
   /** Read-only, or a commit is in flight: every control is disabled. */
   locked: boolean;
-  primaryLabel: string;
-  primaryLoading: boolean;
-  /** A Corners outline is half placed: Finish or undo it before publishing. */
-  primaryBlocked: boolean;
-  /** The holds are saved: the capsule turns into a checkmark for the hand-over. */
-  celebrating: boolean;
   bottomInset: number;
   onUndo: () => void;
   onRedo: () => void;
-  /** Enter add mode (outline the holds the scan missed), or leave it while `adding`. */
-  onAdd: () => void;
-  onKeepMaybes: () => void;
-  onToggleMaybes: () => void;
-  onStartOver: () => void;
-  onPrimary: () => void;
-  /** The count capsule's menu is open. Held by the screen, so Esc can close it. */
-  menuOpen: boolean;
-  onToggleMenu: () => void;
-  onCloseMenu: () => void;
 };
 
 /**
- * The editor's floating bottom bar: the Undo | Redo pill, the count capsule,
- * Add, and the one button that saves and publishes.
+ * The phone editor's floating bottom bar, one row: the Undo | Redo pill at the
+ * left and the mode switcher at the right.
  *
  * Undo and Redo share one split glass pill, and the Redo half only slides in
- * while there is something to redo — so the resting bar is the same three
- * controls it always was, and the redo arrow appears exactly when it means
- * something.
+ * while there is something to redo, so the redo arrow appears exactly when it
+ * means something.
  *
- * Add is the one tool with its own button, because it is the one a climber goes
- * looking for: every scan misses a few small holds, and a tap on bare wall only
- * picks or puts down rings — it never adds. It is a glass + rather than a
- * labelled button so the row fits a 375pt phone however long the counts read.
- *
- * The capsule is the only place the wall's numbers are said, and it doubles as
- * the menu for the three wall-wide actions — so the bar stays four controls
- * however much the editor can do. The menu is an inline glass card rather than
- * a native sheet, because a sheet would cover the very board the climber is
- * deciding about.
+ * Everything else the bar used to carry has moved where it reads better: the
+ * count capsule (and the wall-wide menu it opens) to the top-left of the
+ * editor, Add into the switcher as a mode beside Trace, Refine and Join, and
+ * the primary button into the header next to "?". One row keeps the photo's
+ * reserve (`SPRAY_BAR_RESERVE`) to 64 pt, so a 1x wall is that much bigger.
  */
 export const SprayEditorBottomBar = React.memo(function SprayEditorBottomBar({
-  counts,
-  showMaybes,
-  canReviewMaybes,
   canUndo,
   canRedo,
-  adding,
+  mode,
+  onModeChange,
   locked,
-  primaryLabel,
-  primaryLoading,
-  primaryBlocked,
-  celebrating,
   bottomInset,
   onUndo,
   onRedo,
-  onAdd,
-  onKeepMaybes,
-  onToggleMaybes,
-  onStartOver,
-  onPrimary,
-  menuOpen,
-  onToggleMenu,
-  onCloseMenu,
 }: SprayEditorBottomBarProps) {
   const { t } = useTranslation('boards');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: bottomInset + SPRAY_BAR_GUTTER }]}>
-      {menuOpen && !locked ? (
-        <SprayEditorMenu
-          counts={counts}
-          showMaybes={showMaybes}
-          canReviewMaybes={canReviewMaybes}
-          onKeepMaybes={onKeepMaybes}
-          onToggleMaybes={onToggleMaybes}
-          onStartOver={onStartOver}
-          onClose={onCloseMenu}
-        />
-      ) : null}
-
-      <View pointerEvents="box-none" style={styles.row}>
-        <Animated.View layout={PILL_LAYOUT} style={styles.historyPill}>
-          <GlassSurface
-            glassEffectStyle="regular"
-            fallbackColor={systemColors.fill}
-            borderRadius={SPRAY_BAR_HEIGHT / 2}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <HistoryButton
-            iconName="undo"
-            label={t('sprayEditor.bar.undo')}
-            color={systemColors.label}
-            disabled={!canUndo || locked}
-            onPress={onUndo}
-          />
-          {canRedo ? (
-            <Animated.View entering={REDO_ENTERING} exiting={REDO_EXITING} style={styles.redoHalf}>
-              <View style={[styles.pillDivider, { backgroundColor: systemColors.separator }]} />
-              <HistoryButton
-                iconName="redo"
-                label={t('sprayEditor.bar.redo')}
-                color={systemColors.label}
-                disabled={locked}
-                onPress={onRedo}
-              />
-            </Animated.View>
-          ) : null}
-        </Animated.View>
-
-        <SprayCountCapsule
-          counts={counts}
-          showMaybes={showMaybes}
-          celebrating={celebrating}
-          locked={locked}
-          onPress={onToggleMenu}
-          expanded={menuOpen}
-        />
-
-        <GlassIconButton
-          iconName="plus"
-          secondaryIconName="check.small"
-          active={adding}
-          iconColor={adding ? brandColors.primary : systemColors.label}
+      <Animated.View layout={PILL_LAYOUT} style={styles.historyPill}>
+        <GlassSurface
+          glassEffectStyle="regular"
           fallbackColor={systemColors.fill}
-          size={SPRAY_BAR_HEIGHT}
-          onPress={onAdd}
-          disabled={locked}
-          accessibilityLabel={adding ? t('sprayEditor.banner.done') : t('sprayEditor.bar.addA11y')}
+          borderRadius={SPRAY_BAR_HEIGHT / 2}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
-      </View>
-      <Button
-        title={primaryLabel}
-        variant="filled"
-        size="large"
-        onPress={onPrimary}
-        loading={primaryLoading}
-        disabled={locked || primaryBlocked || counts.on === 0}
-        minHeight={SPRAY_BAR_HEIGHT}
-      />
+        <HistoryButton
+          iconName="undo"
+          label={t('sprayEditor.bar.undo')}
+          color={systemColors.label}
+          disabled={!canUndo || locked}
+          onPress={onUndo}
+        />
+        {canRedo ? (
+          <Animated.View entering={REDO_ENTERING} exiting={REDO_EXITING} style={styles.redoHalf}>
+            <View style={[styles.pillDivider, { backgroundColor: systemColors.separator }]} />
+            <HistoryButton
+              iconName="redo"
+              label={t('sprayEditor.bar.redo')}
+              color={systemColors.label}
+              disabled={locked}
+              onPress={onRedo}
+            />
+          </Animated.View>
+        ) : null}
+      </Animated.View>
+
+      <SprayModeSwitcher mode={mode} onChange={onModeChange} disabled={locked} />
     </View>
   );
 });
@@ -220,11 +133,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing[4],
     right: spacing[4],
-    gap: spacing[2],
-  },
-  row: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing[2],
   },
   historyPill: {

@@ -119,4 +119,64 @@ describe('resolveEditTap', () => {
       }
     }
   });
+
+  describe('the pick step of Trace, Refine and Join', () => {
+    const holdModes = ['trace', 'refine', 'join'] as const;
+
+    it.each(holdModes)('%s: a tap on an ON ring makes it the hold, without switching it', (tool) => {
+      expect(resolveEditTap({ tool, hitId: 4, selectedId: null, picking: true, hitIsOn: true })).toBe('pickTarget');
+    });
+
+    it.each(holdModes)('%s: a tap on an OFF ring or a maybe asks for it on first', (tool) => {
+      expect(resolveEditTap({ tool, hitId: 4, selectedId: null, picking: true, hitIsOn: false })).toBe('pickNeedsOn');
+    });
+
+    it.each(holdModes)('%s: bare wall and the dark band do nothing', (tool) => {
+      expect(resolveEditTap({ tool, hitId: null, selectedId: null, picking: true })).toBe('none');
+      expect(resolveEditTap({ tool, hitId: 4, selectedId: null, picking: true, onPhoto: false })).toBe('none');
+    });
+
+    it('treats a Pencil tap and a Pencil-only finger the same as a finger', () => {
+      for (const input of ['finger', 'pencil'] as const) {
+        for (const pencilOnly of [false, true]) {
+          expect(
+            resolveEditTap({
+              tool: 'trace',
+              hitId: 4,
+              selectedId: null,
+              picking: true,
+              hitIsOn: true,
+              input,
+              pencilOnly,
+            }),
+          ).toBe('pickTarget');
+          expect(
+            resolveEditTap({
+              tool: 'join',
+              hitId: 4,
+              selectedId: null,
+              picking: true,
+              hitIsOn: false,
+              input,
+              pencilOnly,
+            }),
+          ).toBe('pickNeedsOn');
+        }
+      }
+    });
+
+    it('never answers with anything that changes the wall', () => {
+      const answers = holdModes.flatMap((tool) =>
+        [null, 4].flatMap((hitId) =>
+          [true, false].map((hitIsOn) => resolveEditTap({ tool, hitId, selectedId: null, picking: true, hitIsOn })),
+        ),
+      );
+      expect(answers.every((answer) => ['pickTarget', 'pickNeedsOn', 'none'].includes(answer))).toBe(true);
+    });
+
+    it('is ignored by Select and Add, which have no pick step', () => {
+      expect(resolveEditTap({ tool: 'edit', hitId: 4, selectedId: null, picking: true })).toBe('select');
+      expect(resolveEditTap({ tool: 'add', hitId: 4, selectedId: null, picking: true })).toBe('none');
+    });
+  });
 });

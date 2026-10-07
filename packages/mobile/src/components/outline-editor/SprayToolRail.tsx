@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View, type ColorValue } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { ScrollView, StyleSheet, View, type ColorValue } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,8 @@ import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { springs } from '../../theme/animations';
 import { spacing } from '../../theme/tokens';
+import { SPRAY_MODES, type SprayEditorMode } from './spray-editor-mode';
+import { sprayModeCopy } from './SprayModeSwitcher';
 import {
   railDockX,
   SPRAY_RAIL_BUTTON_SIZE,
@@ -40,12 +42,10 @@ type SprayToolRailProps = {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  /** Add mode is on. Otherwise the resting pick-and-switch tool (Mark) is. */
-  adding: boolean;
-  /** Back to the resting tool: leaves Add, or cancels Trace or Join. */
-  onMark: () => void;
-  /** Enter Add mode, or leave it while `adding`. */
-  onAdd: () => void;
+  /** The mode that is on. */
+  mode: SprayEditorMode;
+  /** A mode button was tapped: the one that is on asks for Select, as the phone's switcher does. */
+  onModeChange: (mode: SprayEditorMode) => void;
   /** The wall has maybes and this target reviews them: show the two maybe buttons. */
   maybeControls: boolean;
   showMaybes: boolean;
@@ -66,8 +66,8 @@ type SprayToolRailProps = {
 
 /**
  * The iPad editor's tools, in one vertical glass capsule docked to the side of
- * the screen: Undo and Redo, the two tools (Mark, the resting pick-and-switch,
- * and Add), the maybes' show-or-hide and keep-all, "Pencil only" once a Pencil
+ * the screen: Undo and Redo, the five modes the phone's switcher has (Select,
+ * Add, Trace, Refine, Join), the maybes' show-or-hide and keep-all, "Pencil only" once a Pencil
  * has been seen, fit-the-wall, the wall-wide menu and the hints. It is the
  * phone's bottom bar turned on its side, minus the counts and the primary
  * button, which keep a cluster of their own at the bottom.
@@ -93,9 +93,8 @@ export const SprayToolRail = React.memo(function SprayToolRail({
   canRedo,
   onUndo,
   onRedo,
-  adding,
-  onMark,
-  onAdd,
+  mode,
+  onModeChange,
   maybeControls,
   showMaybes,
   onToggleMaybes,
@@ -189,6 +188,16 @@ export const SprayToolRail = React.memo(function SprayToolRail({
 
   const label = systemColors.label;
   const accent = brandColors.primary;
+  const handleModePress = useCallback(
+    (target: SprayEditorMode) => {
+      if (target === mode) {
+        if (mode !== 'select') onModeChange('select');
+        return;
+      }
+      onModeChange(target);
+    },
+    [mode, onModeChange],
+  );
   return (
     <View pointerEvents="box-none" style={styles.track}>
       <Animated.View
@@ -213,94 +222,103 @@ export const SprayToolRail = React.memo(function SprayToolRail({
             <Icon name="drag.handle" size={RAIL_ICON_SIZE - 4} color={systemColors.secondaryLabel} />
           </PressableSurface>
         </GestureDetector>
-
-        <RailButton
-          iconName="undo"
-          label={t('sprayEditor.bar.undo')}
-          color={label}
-          disabled={locked || !canUndo}
-          onPress={onUndo}
-        />
-        <RailButton
-          iconName="redo"
-          label={t('sprayEditor.bar.redo')}
-          color={label}
-          disabled={locked || !canRedo}
-          onPress={onRedo}
-        />
-        <RailDivider color={systemColors.separator} />
-        <RailButton
-          iconName="hand.tap"
-          label={t('sprayEditor.rail.mark')}
-          color={adding ? label : accent}
-          selected={!adding}
-          selectedColor={systemColors.fill}
-          disabled={locked}
-          onPress={onMark}
-        />
-        <RailButton
-          iconName="plus"
-          label={t('sprayEditor.bar.addA11y')}
-          color={adding ? accent : label}
-          selected={adding}
-          selectedColor={systemColors.fill}
-          disabled={locked}
-          onPress={onAdd}
-        />
-        {maybeControls ? (
-          <>
-            <RailDivider color={systemColors.separator} />
-            <RailButton
-              iconName={showMaybes ? 'visibility.off' : 'visibility'}
-              label={showMaybes ? t('sprayEditor.menu.hideMaybes') : t('sprayEditor.menu.showMaybes')}
-              color={label}
-              disabled={locked}
-              onPress={onToggleMaybes}
-            />
-            {showMaybes ? (
+        {/* The modes made the rail taller than an iPad mini's landscape editor
+            once every button shows, so past the window's height it scrolls
+            rather than running off the top and bottom. */}
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <RailButton
+            iconName="undo"
+            label={t('sprayEditor.bar.undo')}
+            color={label}
+            disabled={locked || !canUndo}
+            onPress={onUndo}
+          />
+          <RailButton
+            iconName="redo"
+            label={t('sprayEditor.bar.redo')}
+            color={label}
+            disabled={locked || !canRedo}
+            onPress={onRedo}
+          />
+          <RailDivider color={systemColors.separator} />
+          {SPRAY_MODES.map((spec) => {
+            const copy = sprayModeCopy(spec.mode, t);
+            const selected = spec.mode === mode;
+            return (
+              <RailModeButton
+                key={spec.mode}
+                mode={spec.mode}
+                iconName={spec.iconName}
+                label={copy.label}
+                hint={copy.hint}
+                color={selected ? accent : label}
+                selected={selected}
+                selectedColor={systemColors.fill}
+                disabled={locked}
+                onModePress={handleModePress}
+              />
+            );
+          })}
+          {maybeControls ? (
+            <>
+              <RailDivider color={systemColors.separator} />
               <RailButton
-                iconName="tick.outline"
-                label={t('sprayEditor.menu.keepMaybes')}
+                iconName={showMaybes ? 'visibility.off' : 'visibility'}
+                label={showMaybes ? t('sprayEditor.menu.hideMaybes') : t('sprayEditor.menu.showMaybes')}
                 color={label}
                 disabled={locked}
-                onPress={onKeepMaybes}
+                onPress={onToggleMaybes}
               />
-            ) : null}
-          </>
-        ) : null}
-        <RailDivider color={systemColors.separator} />
-        {pencilToggleAvailable ? (
+              {showMaybes ? (
+                <RailButton
+                  iconName="tick.outline"
+                  label={t('sprayEditor.menu.keepMaybes')}
+                  color={label}
+                  disabled={locked}
+                  onPress={onKeepMaybes}
+                />
+              ) : null}
+            </>
+          ) : null}
+          <RailDivider color={systemColors.separator} />
+          {pencilToggleAvailable ? (
+            <RailButton
+              iconName="pencil.tip"
+              label={t('sprayEditor.rail.pencilOnly')}
+              hint={t('sprayEditor.rail.pencilOnlyHint')}
+              color={pencilOnly ? accent : label}
+              selected={pencilOnly}
+              selectedColor={systemColors.fill}
+              isSwitch
+              disabled={locked}
+              onPress={onTogglePencilOnly}
+            />
+          ) : null}
+          <RailButton iconName="fit.screen" label={t('sprayEditor.rail.fit')} color={label} onPress={onFit} />
           <RailButton
-            iconName="pencil.tip"
-            label={t('sprayEditor.rail.pencilOnly')}
-            hint={t('sprayEditor.rail.pencilOnlyHint')}
-            color={pencilOnly ? accent : label}
-            selected={pencilOnly}
+            iconName="more.actions"
+            label={t('sprayEditor.rail.more')}
+            color={moreExpanded ? accent : label}
+            selected={moreExpanded}
             selectedColor={systemColors.fill}
-            isSwitch
             disabled={locked}
-            onPress={onTogglePencilOnly}
+            onPress={onMore}
           />
-        ) : null}
-        <RailButton iconName="fit.screen" label={t('sprayEditor.rail.fit')} color={label} onPress={onFit} />
-        <RailButton
-          iconName="more.actions"
-          label={t('sprayEditor.rail.more')}
-          color={moreExpanded ? accent : label}
-          selected={moreExpanded}
-          selectedColor={systemColors.fill}
-          disabled={locked}
-          onPress={onMore}
-        />
-        {onHelp ? (
-          <RailButton
-            iconName="help"
-            label={t('sprayEditor.hints.replay')}
-            color={label}
-            disabled={locked}
-            onPress={onHelp}
-          />
-        ) : null}
+          {onHelp ? (
+            <RailButton
+              iconName="help"
+              label={t('sprayEditor.hints.replay')}
+              color={label}
+              disabled={locked}
+              onPress={onHelp}
+            />
+          ) : null}
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -352,6 +370,17 @@ const RailButton = React.memo(function RailButton({
   );
 });
 
+type RailModeButtonProps = Omit<RailButtonProps, 'onPress' | 'isSwitch'> & {
+  mode: SprayEditorMode;
+  onModePress: (mode: SprayEditorMode) => void;
+};
+
+/** A mode's square on the rail, holding its own press handler so the row stays memoised. */
+const RailModeButton = React.memo(function RailModeButton({ mode, onModePress, ...buttonProps }: RailModeButtonProps) {
+  const handlePress = useCallback(() => onModePress(mode), [onModePress, mode]);
+  return <RailButton {...buttonProps} onPress={handlePress} />;
+});
+
 function RailDivider({ color }: { color: ColorValue }) {
   return <View style={[styles.divider, { backgroundColor: color }]} />;
 }
@@ -369,10 +398,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   rail: {
+    maxHeight: '100%',
     width: SPRAY_RAIL_WIDTH,
     padding: SPRAY_RAIL_PADDING,
     borderRadius: SPRAY_RAIL_WIDTH / 2,
     overflow: 'hidden',
+    alignItems: 'center',
+    gap: spacing[1] / 2,
+  },
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  scrollContent: {
     alignItems: 'center',
     gap: spacing[1] / 2,
   },

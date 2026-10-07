@@ -249,9 +249,11 @@ describe('Add Draw pointer lifecycle', () => {
   });
   it('opts Add into stationary taps while leaving Trace on its default path', () => {
     const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
-    const addSection = source.slice(source.indexOf("if (tool === 'add')"), source.indexOf("if (tool === 'trace')"));
+    const traceStart = source.indexOf("if (tool === 'trace' && !modePicking)");
+    expect(traceStart).toBeGreaterThan(0);
+    const addSection = source.slice(source.indexOf("if (tool === 'add')"), traceStart);
     expect(addSection).toContain('acceptStationaryTaps');
-    const traceSection = source.slice(source.indexOf("if (tool === 'trace')"));
+    const traceSection = source.slice(traceStart);
     expect(traceSection).not.toContain('acceptStationaryTaps');
   });
   it('retains the Trace pan stroke path', () => {
@@ -333,8 +335,8 @@ describe('closing the loop', () => {
   it('opts the Refine brush out, and leaves every outline tool on the default', () => {
     const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
     const refineSection = source.slice(
-      source.indexOf("if (tool === 'refine')"),
-      source.indexOf("if (tool === 'trace')"),
+      source.indexOf("if (tool === 'refine' && !modePicking)"),
+      source.indexOf("if (tool === 'trace' && !modePicking)"),
     );
     expect(refineSection).toContain('closeOnReturn={false}');
     expect(source.match(/closeOnReturn/g)).toHaveLength(1);

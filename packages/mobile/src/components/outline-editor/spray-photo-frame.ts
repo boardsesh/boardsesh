@@ -5,15 +5,18 @@ import { spacing } from '../../theme/tokens';
 export const SPRAY_BAR_HEIGHT = glassSize.standard;
 /** Gap between the bottom bar and the bottom safe area. */
 export const SPRAY_BAR_GUTTER = spacing[2];
-/** Two 48pt rows (count controls and primary action), separated by spacing[2]. */
-export const SPRAY_BAR_TOTAL_HEIGHT = SPRAY_BAR_HEIGHT * 2 + spacing[2];
+/**
+ * The phone bottom bar is one 48pt row: Undo | Redo and the mode switcher. The
+ * counts and the primary button live elsewhere (top-left and the header).
+ */
+export const SPRAY_BAR_TOTAL_HEIGHT = SPRAY_BAR_HEIGHT;
 
 /**
  * Vertical room kept free under the photo for the floating bottom bar: the bar,
- * the gutter under it and a matching gap above it. The safe-area inset is added
- * on top.
+ * the gutter under it and a matching gap above it (48 + 2 x 8 = 64 pt). The
+ * safe-area inset is added on top.
  */
-export const SPRAY_BAR_RESERVE = SPRAY_BAR_TOTAL_HEIGHT + SPRAY_BAR_GUTTER * 3;
+export const SPRAY_BAR_RESERVE = SPRAY_BAR_TOTAL_HEIGHT + SPRAY_BAR_GUTTER * 2;
 
 /**
  * Deepest pinch zoom in the spray hold editor. Small holds tucked beside big ones
