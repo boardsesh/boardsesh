@@ -4,6 +4,8 @@ import { act, renderHook } from '@testing-library/react';
 
 const ctrl = vi.hoisted(() => ({
   offline: false,
+  pendingTick: false,
+  hasQueuedTickForClimb: vi.fn(async (_climbUuid: string) => false),
   confirmed: true,
   confirm: vi.fn(async (_options: unknown) => true),
   showToast: vi.fn(),
@@ -18,6 +20,7 @@ vi.mock('../../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => ({ effectiveOffline: ctrl.offline }),
 }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => ctrl.confirm }));
+vi.mock('../../../offline/pending-tick', () => ({ hasQueuedTickForClimb: ctrl.hasQueuedTickForClimb }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
 
 import { useDeleteClimbAction } from '../use-delete-climb-action';
@@ -30,6 +33,9 @@ function codedError(code: string) {
 
 beforeEach(() => {
   ctrl.offline = false;
+  ctrl.pendingTick = false;
+  ctrl.hasQueuedTickForClimb.mockReset();
+  ctrl.hasQueuedTickForClimb.mockImplementation(async () => ctrl.pendingTick);
   ctrl.confirm.mockReset();
   ctrl.confirm.mockImplementation(async () => ctrl.confirmed);
   ctrl.confirmed = true;
@@ -47,6 +53,20 @@ describe('useDeleteClimbAction (#5960)', () => {
     await act(() => result.current(climb, 'spray', onDeleted));
 
     expect(ctrl.showToast).toHaveBeenCalledWith('mobile.climbActions.deleteClimb.offline', 'error');
+    expect(ctrl.confirm).not.toHaveBeenCalled();
+    expect(ctrl.mutateAsync).not.toHaveBeenCalled();
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it('refuses while this phone has a send on the climb waiting to sync, before any confirm or request', async () => {
+    ctrl.pendingTick = true;
+    const onDeleted = vi.fn();
+    const { result } = renderHook(() => useDeleteClimbAction());
+
+    await act(() => result.current(climb, 'spray', onDeleted));
+
+    expect(ctrl.hasQueuedTickForClimb).toHaveBeenCalledWith('climb-1');
+    expect(ctrl.showToast).toHaveBeenCalledWith('mobile.climbActions.deleteClimb.pendingTick', 'error');
     expect(ctrl.confirm).not.toHaveBeenCalled();
     expect(ctrl.mutateAsync).not.toHaveBeenCalled();
     expect(onDeleted).not.toHaveBeenCalled();

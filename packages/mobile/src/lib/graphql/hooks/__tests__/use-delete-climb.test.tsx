@@ -49,6 +49,19 @@ describe('useDeleteClimb', () => {
     expect(ctrl.request.mock.invocationCallOrder[0]).toBeLessThan(ctrl.removeFromDevice.mock.invocationCallOrder[0]);
   });
 
+  it('settles without waiting for the local write, which can sit behind a pull', async () => {
+    ctrl.request.mockResolvedValue({ deleteClimb: true });
+    // A local write that never finishes: the mutation must still succeed.
+    ctrl.removeFromDevice.mockImplementationOnce(() => new Promise<void>(() => {}));
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useDeleteClimb(), { wrapper: Wrapper });
+
+    const settled = result.current.mutateAsync(variables);
+
+    await expect(settled).resolves.toMatchObject({ deleted: true });
+    expect(ctrl.removeFromDevice).toHaveBeenCalledTimes(1);
+  });
+
   it('refetches every climb list and the climb detail once the delete lands', async () => {
     ctrl.request.mockResolvedValue({ deleteClimb: true });
     const { queryClient, Wrapper } = makeWrapper();

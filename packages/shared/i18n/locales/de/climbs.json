@@ -422,7 +422,8 @@
     "logAscent": {
       "errorMessage": "Deine Begehung konnte nicht gespeichert werden. Versuch es nochmal.",
       "offlineErrorMessage": "Deine Begehung konnte offline nicht gespeichert werden. Der Speicher deines Handys war belegt – versuch es gleich nochmal.",
-      "savedToast": "Eintrag gespeichert"
+      "savedToast": "Eintrag gespeichert",
+      "climbDeletedMessage": "Dieser Boulder wurde gelöscht."
     },
     "tick": {
       "dateLabel": "Datum",
@@ -693,7 +694,8 @@
         "confirm": "Löschen",
         "cancel": "Behalten",
         "success": "Boulder gelöscht.",
-        "hasTicks": "Jemand hat diesen Boulder schon eingetragen, deshalb bleibt er an der Spraywall.",
+        "hasTicks": "Für diesen Boulder ist schon eine Begehung eingetragen, deshalb bleibt er an der Spraywall.",
+        "pendingTick": "Du hast eine Begehung dieses Boulders, die noch synchronisiert wird, deshalb bleibt er.",
         "notFound": "Diesen Boulder gibt es nicht mehr.",
         "notAllowed": "Löschen geht nur bei Bouldern an einer Spraywall.",
         "archived": "Diese Spraywall ist archiviert, ihre Boulder bleiben, wie sie sind.",

@@ -29,6 +29,7 @@ export {
   enqueue,
   peekPending,
   getPendingCount,
+  hasPendingTickForClimb,
   getDeadLetterCount,
   getDeadLetters,
   getOutboxSummary,

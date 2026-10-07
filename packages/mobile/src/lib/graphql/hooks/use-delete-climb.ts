@@ -22,8 +22,14 @@ import {
 } from '../query-keys';
 
 /**
- * On success the climb comes off this phone's downloaded copy first, then the
- * search and climb caches refetch, so no list (online or downloaded) shows it.
+ * On success the climb comes off this phone's downloaded copy and the search and
+ * climb caches refetch, so no list (online or downloaded) shows it.
+ *
+ * The local removal is fire-and-forget: it waits for the SQLite write lock,
+ * which a running pull can hold, and the toast and the drawer close should not
+ * wait with it. It reports its own errors and re-checks the account under the
+ * lock. The caches are invalidated again once it lands, so a downloaded list
+ * that refetched before the row went does not keep showing it.
  */
 export function useDeleteClimb() {
   const queryClient = useQueryClient();
@@ -32,14 +38,20 @@ export function useDeleteClimb() {
       // Captured before the request, so a sign-out during it stops the local write.
       const authGeneration = captureAuthCredentialGeneration();
       const response = await getHttpClient().request<DeleteClimbMutationResponse>(DELETE_CLIMB_MUTATION, variables);
-      await removeDeletedClimbFromDevice({ uuid: variables.uuid, boardType: variables.boardType }, authGeneration);
-      return response.deleteClimb;
+      return { deleted: response.deleteClimb, authGeneration };
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: CLIMB_QUERY_KEY });
+    onSuccess: ({ authGeneration }, variables) => {
+      const invalidateClimbLists = () => {
+        void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: CLIMB_QUERY_KEY });
+      };
+      invalidateClimbLists();
+      // `removeDeletedClimbFromDevice` never rejects; it reports its own errors.
+      void removeDeletedClimbFromDevice({ uuid: variables.uuid, boardType: variables.boardType }, authGeneration).then(
+        invalidateClimbLists,
+      );
     },
   });
 }

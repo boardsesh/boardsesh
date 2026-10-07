@@ -38,6 +38,9 @@ export async function removeDeletedClimbLocally(
       climb.boardType,
       climb.uuid,
     ]);
+    // No user filter on the favourite and playlist deletes: the local database
+    // holds one account's data at a time (sign-out clears it, and every write is
+    // fenced by `canWrite`), so every row here is the signed-in climber's own.
     await transaction.runAsync('DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ?', [
       climb.boardType,
       climb.uuid,

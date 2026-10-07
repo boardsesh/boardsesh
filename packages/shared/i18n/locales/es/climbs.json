@@ -422,7 +422,8 @@
     "logAscent": {
       "errorMessage": "No se pudo guardar tu ascenso. Inténtalo de nuevo.",
       "offlineErrorMessage": "No se pudo guardar tu ascenso sin conexión. El almacenamiento del teléfono estaba ocupado; inténtalo de nuevo en un momento.",
-      "savedToast": "Encadene guardado"
+      "savedToast": "Encadene guardado",
+      "climbDeletedMessage": "Este bloque se ha eliminado."
     },
     "tick": {
       "dateLabel": "Fecha",
@@ -694,6 +695,7 @@
         "cancel": "Conservarlo",
         "success": "Bloque eliminado.",
         "hasTicks": "Alguien ya registró este bloque, así que se queda en el plafón.",
+        "pendingTick": "Tienes una ascensión de este bloque esperando a sincronizarse, así que se queda.",
         "notFound": "Este bloque ya no existe.",
         "notAllowed": "Solo se pueden eliminar bloques de un plafón de spray.",
         "archived": "Este plafón de spray está archivado, así que sus bloques se quedan como están.",

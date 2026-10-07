@@ -5,6 +5,7 @@ import { useDeleteClimb } from '../../lib/graphql/hooks/use-delete-climb';
 import { getConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
+import { hasQueuedTickForClimb } from '../../offline/pending-tick';
 import { deleteClimbErrorMessage, deleteClimbRefusal } from './delete-climb-rules';
 
 /**
@@ -35,6 +36,12 @@ export function useDeleteClimbAction(): (
       }
       inFlight.current = true;
       try {
+        // A send of the climber's own still waiting in the outbox is a tick the
+        // server cannot see yet. Deleting now would win the race and strand it.
+        if (await hasQueuedTickForClimb(climb.uuid)) {
+          showToast(t('mobile.climbActions.deleteClimb.pendingTick'), 'error');
+          return;
+        }
         const confirmed = await confirm({
           title: t('mobile.climbActions.deleteClimb.title'),
           message: t('mobile.climbActions.deleteClimb.message'),
