@@ -9875,6 +9875,8 @@ export type Tick = {
   auroraSyncedAt?: Maybe<Scalars['String']['output']>;
   /** Type of Aurora sync ('bid' or 'ascent') */
   auroraType?: Maybe<Scalars['String']['output']>;
+  /** The wall's own name (user_boards.name) - e.g. Garage for a spray wall the owner photographed. Null when the tick has no board, or when the viewer may not see the board (private/unlisted wall on someone else's profile). Catalogue boards keep their layout names in the UI; this is the label a runtime-created wall has instead. */
+  boardDisplayName?: Maybe<Scalars['String']['output']>;
   /** Board entity ID if tick was associated with a board */
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
@@ -16810,6 +16812,7 @@ export type TickResolvers<
   auroraId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   auroraSyncedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   auroraType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   boardseshConfidence?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

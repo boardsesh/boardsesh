@@ -9872,6 +9872,8 @@ export type Tick = {
   auroraSyncedAt?: Maybe<Scalars['String']['output']>;
   /** Type of Aurora sync ('bid' or 'ascent') */
   auroraType?: Maybe<Scalars['String']['output']>;
+  /** The wall's own name (user_boards.name) - e.g. Garage for a spray wall the owner photographed. Null when the tick has no board, or when the viewer may not see the board (private/unlisted wall on someone else's profile). Catalogue boards keep their layout names in the UI; this is the label a runtime-created wall has instead. */
+  boardDisplayName?: Maybe<Scalars['String']['output']>;
   /** Board entity ID if tick was associated with a board */
   boardId?: Maybe<Scalars['Int']['output']>;
   /** Board type */
@@ -14196,6 +14198,7 @@ export type GetUserTicksQuery = {
     boardseshConfidence?: string | null;
     climbedAt: string;
     layoutId?: number | null;
+    boardDisplayName?: string | null;
   }>;
 };
 
@@ -23211,6 +23214,7 @@ export const GetUserTicksDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'boardseshConfidence' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'boardDisplayName' } },
               ],
             },
           },

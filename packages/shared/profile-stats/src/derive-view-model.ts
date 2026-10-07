@@ -12,6 +12,7 @@ import {
   HEATMAP_WEEKS,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
+import { buildLayoutNameLookup } from './layouts';
 import type {
   LogbookEntry,
   UnifiedTimeframeType,
@@ -108,7 +109,13 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     now,
   );
 
-  const statisticsSummary = buildStatisticsSummary(profileStats, gradeFormat);
+  const statisticsSummary = buildStatisticsSummary(
+    profileStats,
+    gradeFormat,
+    // The stats summary is lifetime and unfiltered — its layout names come from
+    // the whole tick set, not the selected board.
+    buildLayoutNameLookup(allBoardsTicks),
+  );
 
   const vPointsTimeline = buildVPointsTimeline(filteredBoardsTicks, timeframe, fromDate, toDate, now);
 

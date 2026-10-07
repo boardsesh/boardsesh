@@ -153,7 +153,7 @@ type Documents = {
   '\n  \n  mutation RequestSprayDetection($input: RequestSprayWallDetectionInput!) {\n    requestSprayWallDetection(input: $input) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RequestSprayDetectionDocument;
   '\n  \n  mutation RetrySprayDetection($id: ID!) {\n    retrySprayWallDetection(id: $id) {\n      ...SprayDetectionFields\n    }\n  }\n': typeof types.RetrySprayDetectionDocument;
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n': typeof types.GetTicksDocument;
-  '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n': typeof types.GetUserTicksDocument;
+  '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n      boardDisplayName\n    }\n  }\n': typeof types.GetUserTicksDocument;
   '\n  query GetUserTickCountsByBoard($userId: ID!) {\n    userTickCountsByBoard(userId: $userId) {\n      boardType\n      count\n    }\n  }\n': typeof types.GetUserTickCountsByBoardDocument;
   '\n  mutation SaveTick($input: SaveTickInput!) {\n    saveTick(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      difficulty\n      comment\n      climbedAt\n    }\n  }\n': typeof types.SaveTickDocument;
   '\n  mutation DeleteTick($uuid: ID!) {\n    deleteTick(uuid: $uuid)\n  }\n': typeof types.DeleteTickDocument;
@@ -443,7 +443,7 @@ const documents: Documents = {
     types.RetrySprayDetectionDocument,
   '\n  query GetTicks($input: GetTicksInput!) {\n    ticks(input: $input) {\n      uuid\n      climbUuid\n      angle\n      isMirror\n      status\n      attemptCount\n      quality\n      effectiveQuality\n      difficulty\n      boardseshDifficulty\n      boardseshConfidence\n      isBenchmark\n      comment\n      climbedAt\n      upvotes\n      downvotes\n      commentCount\n    }\n  }\n':
     types.GetTicksDocument,
-  '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n':
+  '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n      boardDisplayName\n    }\n  }\n':
     types.GetUserTicksDocument,
   '\n  query GetUserTickCountsByBoard($userId: ID!) {\n    userTickCountsByBoard(userId: $userId) {\n      boardType\n      count\n    }\n  }\n':
     types.GetUserTickCountsByBoardDocument,
@@ -1324,8 +1324,8 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n',
-): (typeof documents)['\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n    }\n  }\n'];
+  source: '\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n      boardDisplayName\n    }\n  }\n',
+): (typeof documents)['\n  query GetUserTicks($userId: ID!, $boardType: String!) {\n    userTicks(userId: $userId, boardType: $boardType) {\n      climbUuid\n      angle\n      status\n      attemptCount\n      difficulty\n      effectiveDifficulty\n      boardseshDifficulty\n      boardseshConfidence\n      climbedAt\n      layoutId\n      boardDisplayName\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

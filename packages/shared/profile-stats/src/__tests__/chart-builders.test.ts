@@ -171,6 +171,39 @@ describe('buildAggregatedStackedBars', () => {
     expect(result!.bars).toHaveLength(1);
     expect(result!.bars[0].label).toBe('V6');
   });
+
+  it('labels a spray wall by its own name in the legend and the segments (#5487)', () => {
+    const ticks = {
+      spray: [
+        makeEntry({ status: 'send', climbUuid: 'c1', layoutId: 941, boardDisplayName: 'Garage' }),
+        makeEntry({ status: 'send', climbUuid: 'c2', layoutId: 941, boardDisplayName: 'Garage' }),
+      ],
+    };
+    const result = buildAggregatedStackedBars(ticks, 'all');
+    expect(result).not.toBeNull();
+    expect(result!.legend).toEqual([{ key: 'spray-941', label: 'Spray wall · Garage' }]);
+    const segments = result!.bars.flatMap((bar) => bar.segments);
+    expect(segments.map((s) => s.label)).toContain('Spray wall · Garage');
+  });
+
+  it('separates two spray walls on their names — not a shared bare "Spray wall"', () => {
+    const ticks = {
+      spray: [
+        makeEntry({ status: 'send', climbUuid: 'c1', layoutId: 941, boardDisplayName: 'Garage' }),
+        makeEntry({ status: 'send', climbUuid: 'c2', layoutId: 942, boardDisplayName: 'The cave' }),
+      ],
+    };
+    const result = buildAggregatedStackedBars(ticks, 'all');
+    expect(result!.legend.map((l) => l.label)).toEqual(['Spray wall · Garage', 'Spray wall · The cave']);
+  });
+
+  it('keeps the raw-id fallback for a spray tick whose viewer has no wall name', () => {
+    const ticks = {
+      spray: [makeEntry({ status: 'send', climbUuid: 'c1', layoutId: 941, boardDisplayName: null })],
+    };
+    const result = buildAggregatedStackedBars(ticks, 'all');
+    expect(result!.legend[0].label).toBe('Spray wall (Layout 941)');
+  });
 });
 
 describe('buildWeeklyBars', () => {
@@ -467,6 +500,23 @@ describe('buildStatisticsSummary', () => {
     expect(layoutPercentages[0]).not.toHaveProperty('color');
     expect(typeof layoutPercentages[0].displayName).toBe('string');
   });
+
+  it('names a spray layout from the wall-name lookup the caller passes (#5487)', () => {
+    const profileStats = {
+      totalDistinctClimbs: 10,
+      layoutStats: [
+        { layoutKey: 'spray-941', boardType: 'spray', layoutId: 941, distinctClimbCount: 6, gradeCounts: [] },
+        { layoutKey: 'spray-942', boardType: 'spray', layoutId: 942, distinctClimbCount: 4, gradeCounts: [] },
+      ],
+    };
+    // The `userProfileStats` aggregate only carries layout ids; the names come
+    // from the caller's tick data. One wall known, one not — the unknown one
+    // keeps the raw-id fallback rather than a bare "Spray wall".
+    const summary = buildStatisticsSummary(profileStats, 'v-grade', new Map([['spray-941', 'Garage']]));
+    const byKey = Object.fromEntries(summary.layoutPercentages.map((l) => [l.layoutKey, l.displayName]));
+    expect(byKey['spray-941']).toBe('Spray wall · Garage');
+    expect(byKey['spray-942']).toBe('Spray wall (Layout 942)');
+  });
 });
 
 describe('buildVPointsTimeline', () => {
@@ -611,6 +661,24 @@ describe('buildVPointsTimeline', () => {
     )!;
     expect(result.weekLabels).toHaveLength(1);
     expect(result.series[0].data).toEqual([1]);
+  });
+
+  it('names a spray series by the wall it was climbed on (#5487)', () => {
+    const result = buildVPointsTimeline(
+      {
+        spray: [
+          makeEntry({
+            status: 'send',
+            difficulty: 22,
+            climbed_at: '2024-01-03T12:00:00Z',
+            layoutId: 941,
+            boardDisplayName: 'Garage',
+          }),
+        ],
+      },
+      'all',
+    )!;
+    expect(result.series[0].displayName).toBe('Spray wall · Garage');
   });
 });
 

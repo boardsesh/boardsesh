@@ -1891,6 +1891,137 @@ describe('tickQueries — behavior fixes', () => {
       expect(trimmed?.boardseshDifficulty).toBeNull();
     });
 
+    // #5487: profile charts label a spray wall from `user_boards.name`, which
+    // arrives on the tick as `boardDisplayName`. Same identity-gate as the
+    // ascent feeds: the owner always sees it, a stranger only public walls.
+    describe('boardDisplayName', () => {
+      const ownerCtx = {
+        connectionId: 'board-name-test-conn',
+        isAuthenticated: true,
+        userId: TEST_USER_ID,
+        sessionId: undefined,
+        controllerId: undefined,
+        controllerApiKey: undefined,
+      };
+
+      const callUserTicksWithCtx = (userId: string, boardType: string, ctx?: typeof ownerCtx) =>
+        tickQueries.userTicks(undefined, { userId, boardType }, ctx) as Promise<
+          Array<{ uuid: string; boardDisplayName: string | null }>
+        >;
+
+      const nameOf = (rows: Array<{ uuid: string; boardDisplayName: string | null }>, uuid: string): string | null => {
+        const row = rows.find((entry) => entry.uuid === uuid);
+        if (!row) throw new Error(`tick ${uuid} missing from userTicks`);
+        return row.boardDisplayName;
+      };
+
+      it('gives the owner the wall name for a private board', async () => {
+        const climbUuid = CLIMB_PREFIX + 'boardname-private';
+        await insertClimb(climbUuid, 'Board Name Private');
+        const boardId = await insertPrivateBoard('Secret Garage');
+        await insertTick({
+          uuid: 'tick-boardname-private',
+          climbUuid,
+          climbedAt: '2026-06-01 10:00:00',
+          status: 'send',
+          boardId,
+        });
+
+        const rows = await callUserTicksWithCtx(TEST_USER_ID, 'kilter', ownerCtx);
+        expect(nameOf(rows, 'tick-boardname-private')).toBe('Secret Garage');
+      });
+
+      it('withholds a private board name from a stranger', async () => {
+        const climbUuid = CLIMB_PREFIX + 'boardname-stranger';
+        await insertClimb(climbUuid, 'Board Name Stranger');
+        const boardId = await insertPrivateBoard('Hidden Cave');
+        await insertTick({
+          uuid: 'tick-boardname-stranger',
+          climbUuid,
+          climbedAt: '2026-06-02 10:00:00',
+          status: 'send',
+          boardId,
+        });
+
+        // No ctx at all is an anonymous reader — the public-profile path.
+        const rows = await callUserTicksWithCtx(TEST_USER_ID, 'kilter');
+        expect(nameOf(rows, 'tick-boardname-stranger')).toBeNull();
+      });
+
+      it('shows a public board name to everyone', async () => {
+        const climbUuid = CLIMB_PREFIX + 'boardname-public';
+        await insertClimb(climbUuid, 'Board Name Public');
+        const boardId = await insertOwnedBoard({ name: 'Bergen Wall', sizeId: 1 });
+        await insertTick({
+          uuid: 'tick-boardname-public',
+          climbUuid,
+          climbedAt: '2026-06-03 10:00:00',
+          status: 'send',
+          boardId,
+        });
+
+        const rows = await callUserTicksWithCtx(TEST_USER_ID, 'kilter');
+        expect(nameOf(rows, 'tick-boardname-public')).toBe('Bergen Wall');
+      });
+
+      it('is null for a tick that never resolved a board', async () => {
+        const climbUuid = CLIMB_PREFIX + 'boardname-noboard';
+        await insertClimb(climbUuid, 'Board Name No Board');
+        await insertTick({
+          uuid: 'tick-boardname-noboard',
+          climbUuid,
+          climbedAt: '2026-06-04 10:00:00',
+          status: 'send',
+        });
+
+        const rows = await callUserTicksWithCtx(TEST_USER_ID, 'kilter', ownerCtx);
+        expect(nameOf(rows, 'tick-boardname-noboard')).toBeNull();
+      });
+
+      it('skips the board join when the selection does not ask for the name', async () => {
+        const climbUuid = CLIMB_PREFIX + 'boardname-unselected';
+        await insertClimb(climbUuid, 'Board Name Unselected');
+        const boardId = await insertPrivateBoard('Unselected Garage');
+        await insertTick({
+          uuid: 'tick-boardname-unselected',
+          climbUuid,
+          climbedAt: '2026-06-05 10:00:00',
+          status: 'send',
+          boardId,
+        });
+
+        const trimmed = (await callUserTicksSelecting(
+          TEST_USER_ID,
+          'kilter',
+          'climbUuid layoutId',
+        )) as unknown as Array<{
+          climbUuid: string;
+        }>;
+        expect(trimmed.map((item) => item.climbUuid)).toContain(climbUuid);
+      });
+
+      it('the You-page selection carries the name through the join-trim path', async () => {
+        const climbUuid = CLIMB_PREFIX + 'boardname-selected';
+        await insertClimb(climbUuid, 'Board Name Selected');
+        const boardId = await insertOwnedBoard({ name: 'Selected Wall', sizeId: 1 });
+        await insertTick({
+          uuid: 'tick-boardname-selected',
+          climbUuid,
+          climbedAt: '2026-06-06 10:00:00',
+          status: 'send',
+          boardId,
+        });
+
+        // A selection that asks for boardDisplayName gets the join and the name.
+        const rows = (await callUserTicksSelecting(
+          TEST_USER_ID,
+          'kilter',
+          'climbUuid layoutId boardDisplayName',
+        )) as unknown as Array<{ climbUuid: string; boardDisplayName: string | null }>;
+        expect(rows.find((item) => item.climbUuid === climbUuid)?.boardDisplayName).toBe('Selected Wall');
+      });
+    });
+
     it('userGroupedAscentsFeed: bestQuality reflects the synced rating for a null-quality tick', async () => {
       const climbUuid = CLIMB_PREFIX + 'rating-grouped';
       await insertClimb(climbUuid, 'Rating Grouped');

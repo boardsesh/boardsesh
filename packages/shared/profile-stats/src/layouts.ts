@@ -1,6 +1,7 @@
 import { MOONBOARD_LAYOUTS, formatBoardDisplayName, SUPPORTED_BOARDS as PICKER_BOARDS } from '@boardsesh/board-config';
 import { getLayout, ORPHANED_KILTER_LAYOUT_DEFAULTS } from '@boardsesh/board-constants/product-sizes';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
+import type { LogbookEntry } from './types';
 
 /**
  * Board types charted on the profile — the SCHEMA list, every board that can
@@ -76,7 +77,24 @@ export const getLayoutKey = (boardType: string, layoutId: number | null | undefi
   return `${boardType}-${layoutId}`;
 };
 
-export const getLayoutDisplayName = (boardType: string, layoutId: number | null | undefined): string => {
+/**
+ * Chart label for a `(boardType, layoutId)` pair.
+ *
+ * `boardName` is the wall's own name when the caller has one — the tick's
+ * `boardDisplayName` (`user_boards.name`), threaded through
+ * {@link buildLayoutNameLookup}. It is used only for spray walls: their layout
+ * row is created at runtime when the owner photographs the wall, so no
+ * catalogue table can name it, and without this they fall through to
+ * `Spray wall (Layout 941)` (#5487). A bare `Spray wall` is not the fix — two
+ * walls would share a label while their keys stay distinct. Catalogue boards
+ * ignore the name: an owner's "My Kilter" must never replace "Kilter Original"
+ * on a chart.
+ */
+export const getLayoutDisplayName = (
+  boardType: string,
+  layoutId: number | null | undefined,
+  boardName?: string | null,
+): string => {
   if (layoutId === null || layoutId === undefined) {
     return `${formatBoardDisplayName(boardType)} (Unknown Layout)`;
   }
@@ -105,7 +123,34 @@ export const getLayoutDisplayName = (boardType: string, layoutId: number | null 
     }
   }
 
+  // A spray wall the viewer can see arrives here with its owner's wall name:
+  // label it the way the epic asks (`Spray wall · <name>`), leading with WHAT
+  // it is, matching `boardRowSubtitle` in @boardsesh/board-config. The "Spray
+  // wall" kind is deliberately untranslated, so composing it here keeps the
+  // package i18n-free.
+  if (boardType === 'spray' && boardName) {
+    return `${formatBoardDisplayName(boardType)} · ${boardName}`;
+  }
+
   return `${formatBoardDisplayName(boardType)} (Layout ${layoutId})`;
+};
+
+/**
+ * Map from layoutKey to the wall's own name, taken from ticks that carry a
+ * `boardDisplayName` (first non-null per layout). Chart builders use it to
+ * label runtime-created walls; every layoutKey the ticks produce is a key in
+ * this map only when some tick on it knew its wall's name.
+ */
+export const buildLayoutNameLookup = (allBoardsTicks: Record<string, LogbookEntry[]>): Map<string, string> => {
+  const names = new Map<string, string>();
+  for (const [boardType, entries] of Object.entries(allBoardsTicks)) {
+    for (const entry of entries) {
+      if (entry.boardDisplayName == null || entry.boardDisplayName === '') continue;
+      const key = getLayoutKey(boardType, entry.layoutId);
+      if (!names.has(key)) names.set(key, entry.boardDisplayName);
+    }
+  }
+  return names;
 };
 
 /** Parse a `${boardType}-${layoutId}` key back into its parts. */
