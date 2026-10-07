@@ -1,3 +1,6 @@
+import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
+import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
+import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -120,14 +123,28 @@ export default function ManageBoards() {
   const { data: activeBoard } = useActiveBoard();
   const activeUuid = activeBoard?.uuid;
 
+  // With My Boards, the only caller that lists unfinished spray walls: they show
+  // import progress, and a press on one opens the wizard, never a climbing path.
   const {
     data: boardConnection,
     isLoading,
     isError,
     refetch,
     isRefetching,
-  } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const myBoards = boardConnection?.boards ?? EMPTY_BOARDS;
+  } = useMyBoards(MY_BOARDS_WITH_IMPORTS_INPUT, { enabled: isAuthenticated });
+  const {
+    boards: myBoards,
+    stale: importStatusStale,
+    unfinishedWallUuids,
+  } = useSprayImportProgress(boardConnection?.boards ?? EMPTY_BOARDS);
+
+  const openImport = useCallback(
+    (board: UserBoard) => {
+      const importRoute = unfinishedSprayWallRoute(board, unfinishedWallUuids);
+      if (importRoute) router.push(importRoute);
+    },
+    [router, unfinishedWallUuids],
+  );
 
   // Offline download wiring. Subscribe to the sync status + enabled-boards setting
   // ONCE here (not per row) and derive a primitive state per row, so a download's
@@ -245,6 +262,12 @@ export default function ManageBoards() {
 
   const handleToggleOffline = useCallback(
     async (board: UserBoard) => {
+      // An unfinished wall has no catalogue to download: finish it first.
+      const importRoute = unfinishedSprayWallRoute(board, unfinishedWallUuids);
+      if (importRoute) {
+        router.push(importRoute);
+        return;
+      }
       const scope = offlineBoardScopeForBoard(board);
       const key = offlineBoardKeyForBoard(board);
       const alreadyEnabled = getSetting('syncEnabledBoards').includes(key);
@@ -301,7 +324,7 @@ export default function ManageBoards() {
       // Size quote + confirm + enable, shared with the discovery-nudge surfaces.
       await confirmAndDownload(board, { trigger: 'toggle', source: 'manage' });
     },
-    [confirmAndDownload, db],
+    [confirmAndDownload, db, router, unfinishedWallUuids],
   );
 
   // The escape from a board that settled onto the slow crawl (issue #4313).
@@ -608,6 +631,8 @@ export default function ManageBoards() {
       return (
         <BoardManageRow
           board={item.board}
+          importStatusStale={importStatusStale}
+          onOpenImport={openImport}
           isOwned={item.isOwned}
           isActive={item.isActive}
           downloadState={downloadState}
@@ -624,6 +649,8 @@ export default function ManageBoards() {
     },
     [
       offlineDownloadsEnabled,
+      importStatusStale,
+      openImport,
       enabledSet,
       isSyncing,
       downloadedSet,

@@ -58,6 +58,15 @@ export type GetBoardDiscoveryQueryVariables = { input?: BoardDiscoveryInput };
  * drift test tells you the recorded `GetBoard` no longer matches.
  */
 export const BOARD_FIELDS = `
+  sprayImport {
+    wallUuid
+    versionId
+    detectionId
+    stage
+    queuePosition
+    retryAt
+    resetOfWallUuid
+  }
   uuid
   slug
   ownerId

@@ -86,6 +86,10 @@ export const NotificationRow = memo(function NotificationRow({ notification, onP
     >
       {climbRender ? (
         <NotificationClimbThumbnail render={climbRender} actor={actors[0]} />
+      ) : notification.type === 'spray_wall_detection_completed' ? (
+        <View style={styles.avatarSlot}>
+          <Icon name={notificationIconName(notification.type)} size={32} color={brandColors.primary} />
+        </View>
       ) : (
         <View style={styles.avatarSlot}>
           {showAvatarGroup ? (

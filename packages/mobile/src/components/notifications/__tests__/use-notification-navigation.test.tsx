@@ -158,3 +158,29 @@ describe('useNotificationNavigation proposal rows', () => {
     expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
   });
 });
+
+describe('useNotificationNavigation spray imports', () => {
+  it.each([
+    { resetOf: null, params: { wallUuid: 'wall-1', versionId: '123' } },
+    { resetOf: 'wall-0', params: { resetOf: 'wall-0' } },
+  ])('opens the completed import with resetOf=$resetOf', ({ resetOf, params }) => {
+    const notification = makeNotification({
+      type: 'spray_wall_detection_completed',
+      sprayWallUuid: 'wall-1',
+      sprayVersionId: '123',
+      sprayResetOfWallUuid: resetOf,
+      actorCount: 0,
+      actors: [],
+    });
+    tap(notification);
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/spray/new', params });
+    expect(markGroupMutate).toHaveBeenCalledWith(notification);
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('opens My Boards when the completed photo is no longer accessible', () => {
+    tap(makeNotification({ type: 'spray_wall_detection_completed', sprayWallUuid: null, sprayVersionId: null }));
+    expect(routerMock.push).toHaveBeenCalledWith('/boards');
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+});

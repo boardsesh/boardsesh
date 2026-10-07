@@ -10,8 +10,17 @@ export default function NewSprayWall() {
   const params = useLocalSearchParams<{
     returnTo?: string;
     resetOf?: string | string[];
+    wallUuid?: string;
+    versionId?: string;
   }>();
   const resetOfWallUuid =
     typeof params.resetOf === 'string' && params.resetOf.trim().length > 0 ? params.resetOf : null;
-  return <SprayWallWizardScreen returnTo={resolveBoardReturnTo(params.returnTo)} resetOfWallUuid={resetOfWallUuid} />;
+  return (
+    <SprayWallWizardScreen
+      returnTo={resolveBoardReturnTo(params.returnTo)}
+      resetOfWallUuid={resetOfWallUuid}
+      wallUuid={params.wallUuid}
+      versionId={params.versionId}
+    />
+  );
 }

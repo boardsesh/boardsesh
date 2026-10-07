@@ -55,6 +55,7 @@ import * as sharedPlaylists from '@boardsesh/graphql/operations/playlists';
 import * as sharedProposals from '@boardsesh/graphql/operations/proposals';
 import * as sharedQa from '@boardsesh/graphql/operations/qa';
 import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session';
+import * as sharedNotifications from '@boardsesh/graphql/operations/notifications';
 
 import {
   BATCHED_OPERATIONS,
@@ -152,6 +153,7 @@ const REQUIRED_STORE_FLOW_OPERATIONS = [
 const MINIMUM_REGISTRY_DOCUMENTS = 54;
 
 const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
+  '@boardsesh/graphql/operations/notifications': sharedNotifications,
   '@boardsesh/graphql/operations': sharedOperations,
   '@boardsesh/graphql/operations/ticks': sharedTicks,
   '@boardsesh/graphql/operations/spray-walls': sharedSprayWalls,

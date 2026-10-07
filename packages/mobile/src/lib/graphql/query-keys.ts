@@ -19,6 +19,14 @@ import type { MyBoardsInput } from '@boardsesh/shared-schema';
 export const myBoardsQueryKey = (input?: MyBoardsInput) => ['myBoards', input] as const;
 
 /**
+ * The roster My Boards and Manage ask for: the plain one plus the viewer's own
+ * unfinished spray walls, so their import progress can show. Only those two
+ * screens pass it. Its input is part of the key, so this entry never answers the
+ * plain `myBoardsQueryKey()` that board pickers and the imperative readers use.
+ */
+export const MY_BOARDS_WITH_IMPORTS_INPUT: MyBoardsInput = Object.freeze({ includeUnfinishedSprayWalls: true });
+
+/**
  * The boards linked to one gym, and the root every gym's list hangs off.
  *
  * Both live here because two modules that never import each other have to agree

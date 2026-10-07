@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
-import type { BoardName } from '@boardsesh/shared-schema';
+import { sprayImportCopy } from '../../lib/spray/spray-import-progress';
+import type { BoardName, SprayWallImportProgress } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticHeavy, hapticLight } from '../../lib/haptics';
@@ -63,6 +64,8 @@ export type DiscoveryBoardItem = {
    * be downloaded as a board (popular configs — see `popularConfigToItem`).
    */
   offlineState?: BoardDownloadState;
+  sprayImport?: SprayWallImportProgress | null;
+  importStatusStale?: boolean;
 };
 
 export const DISCOVERY_CARD_WIDTH = 168;
@@ -169,6 +172,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   pinLabel,
 }: BoardDiscoveryCardProps) {
   const { t } = useTranslation('boards');
+  const importCopy = item.sprayImport ? sprayImportCopy(item.sprayImport, item.importStatusStale) : null;
+  const importLabel = importCopy ? t(importCopy.textI18nKey, importCopy.params) : null;
   const { systemColors, brandColors, radii } = useTheme();
   const scale = useSharedValue(1);
 
@@ -205,7 +210,8 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
   const showEditBadge = !isEditing && action === 'edit' && onAction !== undefined;
   const showFollowingBadge = !isEditing && action === 'unfollow';
   const showEditAction = isEditing && (action === 'delete' || action === 'unfollow') && onAction !== undefined;
-  const canOpenDetails = !isEditing && item.boardName === 'spray' && onDetails !== undefined;
+  // An import is an unpublished wall: the card itself opens the wizard.
+  const canOpenDetails = !isEditing && item.boardName === 'spray' && onDetails !== undefined && !item.sprayImport;
   const detailsLabel = t('mobile.boardDetail.detailsAria', { name: item.title });
   const handleDetails = useCallback(() => onDetails?.(item), [onDetails, item]);
   const canDownload = item.offlineState === 'off' && onDownload !== undefined;
@@ -296,6 +302,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
     item.isActive ? activeLabel : null,
     ownershipLabel,
     pinnedLabel,
+    importLabel,
   ]
     .filter((part): part is string => typeof part === 'string' && part.length > 0)
     .join(', ');
@@ -462,6 +469,12 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             {t('mobile.boardDetail.details')}
           </Text>
         </PressableSurface>
+      ) : null}
+
+      {importLabel ? (
+        <Text variant="caption1" color={brandColors.primary} accessibilityLiveRegion="polite">
+          {importLabel}
+        </Text>
       ) : null}
 
       {showEditAction ? (

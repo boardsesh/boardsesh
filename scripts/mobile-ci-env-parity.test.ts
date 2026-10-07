@@ -203,6 +203,20 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     ).toBe(1);
   });
 
+  it('sets GOOGLE_SERVICES_JSON on the Android build and every OTA resolve, or nowhere', () => {
+    // app.config.ts copies GOOGLE_SERVICES_JSON into android.googleServicesFile,
+    // which the fingerprint hashes. Setting it on the Android build alone would
+    // move the binary's fingerprint off every OTA's, so Android OTAs would stop
+    // landing. No workflow sets it today; the first one that does must bring the
+    // native build and every OTA workflow along.
+    const fingerprintWorkflows = [NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, OTA_BACKPORT];
+    const setting = fingerprintWorkflows.filter((name) => /^\s*GOOGLE_SERVICES_JSON:/m.test(readWorkflow(name)));
+    expect(
+      setting.length === 0 ? fingerprintWorkflows.length : setting.length,
+      `GOOGLE_SERVICES_JSON is set only in ${setting.join(', ')}; set it in all of ${fingerprintWorkflows.join(', ')}`,
+    ).toBe(fingerprintWorkflows.length);
+  });
+
   it('keeps GOOGLE_MAPS_API_KEY out of the PR OTA-compat check (it diffs vs main without the key)', () => {
     // mobile-ota-check.yml intentionally omits GOOGLE_MAPS_API_KEY: it's a
     // Production-environment secret, unavailable on feature-branch pushes, and the

@@ -796,3 +796,56 @@ describe('spray wall Details action', () => {
     ).toBe(false);
   });
 });
+
+const importProgress = {
+  wallUuid: 'spray-wall',
+  versionId: '42',
+  detectionId: 'detection',
+  stage: 'queued' as const,
+  queuePosition: 3,
+  retryAt: null,
+  resetOfWallUuid: null,
+};
+
+describe('BoardDiscoveryCard import status', () => {
+  afterEach(resetCapture);
+
+  it('hands the exact unfinished import to the picker and masks stale ranks', () => {
+    const onPress = vi.fn();
+    const onDetails = vi.fn();
+    const importItem = { ...item, boardName: 'spray' as const, sprayImport: importProgress, importStatusStale: true };
+    const { getByText, getByTestId, queryByRole } = render(
+      createElement(BoardDiscoveryCard, { item: importItem, onPress, onDetails }),
+    );
+    expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
+    expect(
+      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).some(
+        (action) => action.name === 'details',
+      ),
+    ).toBe(false);
+    expect(getByText('sprayImport.offline')).toBeTruthy();
+    fireEvent.click(getByTestId('card-root'));
+    expect(onPress).toHaveBeenCalledWith(importItem);
+  });
+
+  it('opens a reset clone like any import, with no Details or nested review action', () => {
+    const onPress = vi.fn();
+    const resetItem = {
+      ...item,
+      boardName: 'spray' as const,
+      sprayImport: { ...importProgress, resetOfWallUuid: 'old-wall', stage: 'ready' as const },
+    };
+    const { getByTestId, queryByRole } = render(
+      createElement(BoardDiscoveryCard, { item: resetItem, onPress, onDetails: vi.fn() }),
+    );
+    expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
+    expect(queryByRole('button', { name: 'sprayImport.review' })).toBeNull();
+    const actionNames = ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).map(
+      (action) => action.name,
+    );
+    expect(actionNames).not.toContain('details');
+    expect(actionNames).not.toContain('import');
+    fireEvent.click(getByTestId('card-root'));
+    expect(onPress).toHaveBeenCalledWith(resetItem);
+  });
+});

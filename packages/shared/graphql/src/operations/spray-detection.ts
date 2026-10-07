@@ -9,6 +9,8 @@ const fields = gql`
     modelVersion
     error
     createdAt
+    queuePosition
+    retryAt
     finishedAt
     result {
       width
@@ -45,6 +47,20 @@ export const RETRY_SPRAY_DETECTION = gql`
   mutation RetrySprayDetection($id: ID!) {
     retrySprayWallDetection(id: $id) {
       ...SprayDetectionFields
+    }
+  }
+`;
+
+export const GET_SPRAY_IMPORT_PROGRESS = gql`
+  query SprayWallImportProgress($wallUuids: [ID!]!) {
+    sprayWallImportProgress(wallUuids: $wallUuids) {
+      wallUuid
+      versionId
+      detectionId
+      stage
+      queuePosition
+      retryAt
+      resetOfWallUuid
     }
   }
 `;

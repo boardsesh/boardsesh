@@ -43,6 +43,8 @@ const routerMock = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), dismissT
 const lifecycleQuery = vi.hoisted(() => ({
   current: { data: undefined as unknown, isFetching: false },
 }));
+/** The `enabled` flag each list hook was called with, per render. */
+const listEnabled = vi.hoisted(() => ({ walls: [] as unknown[], lifecycle: [] as unknown[] }));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { isReduceMotionEnabled: vi.fn(async () => false), addEventListener: () => ({ remove() {} }) },
@@ -61,9 +63,13 @@ vi.mock('expo-router', () => ({
   useNavigation: () => ({ getParent: () => undefined }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
+const stableQueryClient = vi.hoisted(() => ({}));
+vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => stableQueryClient }));
+// `t` is stable across renders, as in the app: the targeted-open effect lists it
+// as a dependency, so a fresh function per render would refetch on every render.
+const stableT = vi.hoisted(() => (key: string) => key);
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
+  useTranslation: () => ({ t: stableT, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
 }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
@@ -100,7 +106,8 @@ vi.mock('../../../lib/spray/spray-lifecycle-copy', () => ({
   sprayWallLifecycleMessage: (refusal: string) => `lifecycle:${refusal}`,
 }));
 vi.mock('../../../lib/spray/settle-archived-spray-wall', () => ({ settleArchivedSprayWall: vi.fn() }));
-vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
+const stableActivateBoard = vi.hoisted(() => () => {});
+vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => stableActivateBoard }));
 vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({ activatePublishedSprayWall: vi.fn() }));
 const resetSourceMock = vi.hoisted(() => vi.fn(async (): Promise<string | null | undefined> => undefined));
 vi.mock('../../../lib/spray/spray-wall-loader', () => ({
@@ -122,14 +129,20 @@ vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto: vi
 vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   fetchSprayWallVersions: fetchVersionsMock,
-  useMySprayWalls: () => ({ ...wallsQuery.current, refetch: vi.fn() }),
+  useMySprayWalls: (options?: { enabled?: boolean }) => {
+    listEnabled.walls.push(options?.enabled);
+    return { ...wallsQuery.current, refetch: vi.fn() };
+  },
   useCreateSprayWall: () => ({ mutateAsync: vi.fn() }),
   useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   usePublishSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: vi.fn() }),
   useDiscardSprayWallDraft: () => ({ mutateAsync: discardDraftMock }),
   useResetSprayWall: () => ({ mutateAsync: resetWallMock }),
-  useMySprayWallLifecycle: () => lifecycleQuery.current,
+  useMySprayWallLifecycle: (options?: { enabled?: boolean }) => {
+    listEnabled.lifecycle.push(options?.enabled);
+    return lifecycleQuery.current;
+  },
 }));
 
 vi.mock('../../Text', () => ({
@@ -226,6 +239,8 @@ beforeEach(() => {
   fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
   editorProps.last = null;
+  listEnabled.walls = [];
+  listEnabled.lifecycle = [];
 });
 afterEach(cleanup);
 
@@ -587,5 +602,68 @@ describe('a plain "Add a wall" run and reset clones', () => {
     expect(resetSourceMock).toHaveBeenCalledWith('wall-1');
     expect(alertMock).not.toHaveBeenCalled();
     expect(queryByTestId('identity')).not.toBeNull();
+  });
+});
+
+// A targeted open: an import-progress row or a notification names the wall and
+// the draft. It never asks "resume?" and never reads the my-walls list.
+describe('a targeted open (`wallUuid` + `versionId`)', () => {
+  const DRAFT_ON_WALL = {
+    ...UNFINISHED_WALL,
+    versions: [{ id: 'v-1', number: 1, status: 'DRAFT', photo: { url: 'https://img/w.jpg' }, addedHoldCount: 2 }],
+  };
+
+  async function mountTargeted(versionId = 'v-1') {
+    const view = render(<SprayWallWizardScreen returnTo="/(tabs)/climbs" wallUuid="wall-1" versionId={versionId} />);
+    await act(async () => {});
+    return view;
+  }
+
+  it('says the draft is unavailable, with Back and no retry, when it no longer matches', async () => {
+    fetchVersionsMock.mockResolvedValue(DRAFT_ON_WALL);
+    const { getByText, queryByText } = await mountTargeted('v-gone');
+
+    expect(getByText('sprayImport.unavailable')).toBeTruthy();
+    expect(queryByText('sprayWizard.resume.retry')).toBeNull();
+    act(() => getByText('sprayWizard.back').click());
+    expect(routerMock.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+  });
+
+  it('says the wall is unavailable, with Back and no retry, when the viewer cannot edit it', async () => {
+    fetchVersionsMock.mockResolvedValue({ ...DRAFT_ON_WALL, viewerCanEdit: false });
+    const { getByText, queryByText } = await mountTargeted();
+
+    expect(getByText('sprayImport.unavailable')).toBeTruthy();
+    expect(queryByText('sprayWizard.resume.retry')).toBeNull();
+    act(() => getByText('sprayWizard.back').click());
+    expect(routerMock.replace).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+  });
+
+  it('offers Try again when the fetch fails, and pressing it fetches again', async () => {
+    fetchVersionsMock.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(DRAFT_ON_WALL);
+    const { getByText, queryByText } = await mountTargeted();
+
+    expect(getByText('sprayWizard.resume.checkFailed')).toBeTruthy();
+    expect(fetchVersionsMock).toHaveBeenCalledTimes(1);
+    await act(async () => getByText('sprayWizard.resume.retry').click());
+
+    expect(fetchVersionsMock).toHaveBeenCalledTimes(2);
+    expect(fetchVersionsMock).toHaveBeenLastCalledWith('wall-1');
+    expect(queryByText('sprayWizard.resume.checkFailed')).toBeNull();
+  });
+
+  it('never asks "resume?" and never turns on the my-walls list', async () => {
+    fetchVersionsMock.mockResolvedValue(DRAFT_ON_WALL);
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const { queryByTestId } = await mountTargeted();
+
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(fetchVersionsMock).toHaveBeenCalledExactlyOnceWith('wall-1');
+    expect(listEnabled.walls.length).toBeGreaterThan(0);
+    expect(listEnabled.walls.every((enabled) => enabled === false)).toBe(true);
+    expect(listEnabled.lifecycle.every((enabled) => enabled === false)).toBe(true);
+    // Went straight to the draft, not to the new-wall form.
+    expect(queryByTestId('editor')).not.toBeNull();
+    expect(queryByTestId('identity')).toBeNull();
   });
 });

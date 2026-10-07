@@ -175,6 +175,10 @@ type SprayWallWizardScreenProps = {
    * wall back.
    */
   resetOfWallUuid?: string | null;
+  /** The unfinished wall a progress row or notification opened, if any. */
+  wallUuid?: string;
+  /** The draft version on `wallUuid` that row or notification points at. */
+  versionId?: string;
 };
 
 /** Hoisted for `useConnectivityField`: a stable selector keeps one subscription. */
@@ -182,7 +186,12 @@ function selectConnectivityReason(snapshot: ConnectivitySnapshot): ConnectivityS
   return snapshot.reason;
 }
 
-export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: SprayWallWizardScreenProps) {
+export function SprayWallWizardScreen({
+  returnTo,
+  resetOfWallUuid = null,
+  wallUuid,
+  versionId,
+}: SprayWallWizardScreenProps) {
   const countedSteps = resetOfWallUuid != null ? RESET_COUNTED_STEPS : COUNTED_STEPS;
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -358,8 +367,11 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
   // Only while the flow is actually asking. Once it has an answer the query is
   // dead weight, and refetching it mid-flow could offer to resume the very wall
   // this run just created.
-  // A reset never asks: `resetSprayWall` hands back the clone to work on.
-  const mySprayWalls = useMySprayWalls({ enabled: state.step === 'resuming' && resetOfWallUuid == null });
+  // A reset never asks: `resetSprayWall` hands back the clone to work on. A
+  // targeted open never asks either: it already names the wall.
+  const mySprayWalls = useMySprayWalls({
+    enabled: state.step === 'resuming' && resetOfWallUuid == null && !wallUuid,
+  });
   // `refetch` comes out with the rest of the fields on purpose. React Query keeps
   // it stable for the query's life, where the RESULT object is a fresh reference
   // on every render — so a callback closing over the whole thing would be rebuilt
@@ -372,7 +384,7 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
   // backend without them this fails, nothing is filtered, and the check behaves
   // as it always did.
   const sprayWallLifecycle = useMySprayWallLifecycle({
-    enabled: state.step === 'resuming' && resetOfWallUuid == null,
+    enabled: state.step === 'resuming' && resetOfWallUuid == null && !wallUuid,
   });
   const lifecycleSettled = !sprayWallLifecycle.isFetching;
   const lifecycleRows = sprayWallLifecycle.data;
@@ -410,17 +422,43 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
   // `resetSprayWall` calls or stack two prompts.
   const resetInFlightRef = useRef(false);
 
+  // A targeted open (progress row, notification) whose wall or draft has gone:
+  // asking again cannot bring it back, so only Back is offered.
+  const showTargetUnavailable = useCallback(() => {
+    setResumeError(t('sprayImport.unavailable'));
+    setResumeErrorIsFinal(true);
+  }, [t]);
+
   const decideResume = useCallback(
-    async (resumable: NonNullable<ReturnType<typeof findResumableWall>>, choice: 'resume' | 'startOver') => {
+    async (
+      resumable: NonNullable<ReturnType<typeof findResumableWall>>,
+      choice: 'resume' | 'startOver',
+      loaded?: NonNullable<Awaited<ReturnType<typeof fetchSprayWallVersions>>>,
+    ) => {
       // The list carries no version history, so the draft — and whether it has a
       // photo — takes one more round trip. A FAILURE here is not "no draft":
       // treating it as one sends the climber to the photo step, where
       // `createSprayWallVersion` then refuses every upload forever because the
       // draft it could not see is still open. So it surfaces and offers a retry.
-      const full = await fetchSprayWallVersions(resumable.uuid).catch(() => null);
+      const full = loaded ?? (await fetchSprayWallVersions(resumable.uuid).catch(() => null));
       if (!full) {
         setResumeError(t('sprayWizard.resume.checkFailed'));
         resumeAskedRef.current = false;
+        return;
+      }
+      if (wallUuid && (!full.viewerCanEdit || full.uuid !== wallUuid)) {
+        showTargetUnavailable();
+        return;
+      }
+      if (wallUuid && full.currentVersion) {
+        await finish(full.board);
+        return;
+      }
+      if (
+        versionId &&
+        !full.versions?.some((version) => version.id === versionId && version.status.toLowerCase() === 'draft')
+      ) {
+        showTargetUnavailable();
         return;
       }
       if (full.board) boardRef.current = full.board;
@@ -451,11 +489,32 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
-    [discardDraftAsync, t],
+    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable],
   );
 
+  const [targetAttempt, setTargetAttempt] = useState(0);
   useEffect(() => {
-    if (resetOfWallUuid != null) return;
+    if (resetOfWallUuid != null || !wallUuid || state.step !== 'resuming') return;
+    let cancelled = false;
+    void fetchSprayWallVersions(wallUuid)
+      .then(async (target) => {
+        if (cancelled) return;
+        if (!target) {
+          showTargetUnavailable();
+          return;
+        }
+        await decideResume(target, 'resume', target);
+      })
+      .catch(() => {
+        if (!cancelled) setResumeError(t('sprayWizard.resume.checkFailed'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resetOfWallUuid, wallUuid, state.step, targetAttempt, decideResume, showTargetUnavailable, t]);
+
+  useEffect(() => {
+    if (resetOfWallUuid != null || wallUuid) return;
     if (state.step !== 'resuming' || !wallsSettled || !lifecycleSettled || resumeAskedRef.current) return;
     resumeAskedRef.current = true;
 
@@ -496,7 +555,7 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
       }
       askToResume();
     });
-  }, [resetOfWallUuid, state.step, wallsSettled, lifecycleSettled, lifecycleRows, walls, decideResume, t]);
+  }, [resetOfWallUuid, wallUuid, state.step, wallsSettled, lifecycleSettled, lifecycleRows, walls, decideResume, t]);
 
   // ============================================
   // Step 0, for a reset — the clone to work on
@@ -590,8 +649,9 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
     }
     resumeAskedRef.current = false;
     mountedAtRef.current = Date.now();
-    void refetchMySprayWalls();
-  }, [resetOfWallUuid, startReset, refetchMySprayWalls]);
+    if (wallUuid) setTargetAttempt((attempt) => attempt + 1);
+    else void refetchMySprayWalls();
+  }, [resetOfWallUuid, startReset, refetchMySprayWalls, wallUuid]);
 
   // ============================================
   // Step 2 — the photo
@@ -1236,7 +1296,7 @@ export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: Spra
             {resumeError && !resumeErrorIsFinal ? (
               <Button title={t('sprayWizard.resume.retry')} variant="filled" onPress={retryResume} />
             ) : null}
-            {resumeError && resetOfWallUuid != null ? (
+            {resumeError && (resetOfWallUuid != null || wallUuid) ? (
               <Button title={t('sprayWizard.back')} variant="text" onPress={closeBoardsModal} />
             ) : null}
           </View>

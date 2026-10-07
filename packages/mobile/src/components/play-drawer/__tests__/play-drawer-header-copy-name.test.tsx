@@ -75,7 +75,7 @@ vi.mock('../../DrawerHeader', () => ({
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createElement('i', null) }));
 // The real Icon pulls in react-native-vector-icons, which this suite's
-// `react-native` stub can't satisfy — and the grade glyphs are not what it tests.
+// `react-native` stub can't satisfy. Keep marker names visible for grade assertions.
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 
 // The real chip reads the theme provider, which this suite does not stand up.

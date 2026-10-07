@@ -1,3 +1,6 @@
+import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
+import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
+import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -167,14 +170,20 @@ export default function BoardSelection() {
   });
   const pinBoardMutate = pinBoard.mutate;
 
+  // With Manage, the only caller that lists unfinished spray walls: they show
+  // import progress, and a press on one opens the wizard, never a climbing path.
   const {
     data: boardConnection,
     isLoading: isMyBoardsLoading,
     isError,
     refetch,
     isRefetching,
-  } = useMyBoards(undefined, { enabled: isAuthenticated });
-  const myBoards = boardConnection?.boards ?? EMPTY_BOARDS;
+  } = useMyBoards(MY_BOARDS_WITH_IMPORTS_INPUT, { enabled: isAuthenticated });
+  const {
+    boards: myBoards,
+    stale: importStatusStale,
+    unfinishedWallUuids,
+  } = useSprayImportProgress(boardConnection?.boards ?? EMPTY_BOARDS);
 
   // Whether Climbs' no-board entry gets "Where do you climb?": only when the
   // account has no boards at all. Someone whose active board was merely cleared
@@ -288,8 +297,9 @@ export default function BoardSelection() {
         currentUserId,
         pinnedOverrides,
         labelOptions,
+        importStatusStale,
       }),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions],
+    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions, importStatusStale],
   );
   const nearbyItems = useMemo(
     () => userBoardsToItems(nearby?.boards ?? [], { activeUuid: activeBoard?.uuid, labelOptions }),
@@ -317,7 +327,10 @@ export default function BoardSelection() {
         // Offline rows come from the persisted snapshots, which aren't in either
         // network list — without this an offline tap is dead.
         offlineRows.find((b) => b.uuid === item.key);
-      if (board) {
+      const importRoute = board ? unfinishedSprayWallRoute(board, unfinishedWallUuids) : null;
+      if (importRoute) {
+        router.push(importRoute);
+      } else if (board) {
         void activateBoard(board, { pickSource });
       } else {
         // The item's UserBoard should always be in one of the lists it came
@@ -326,7 +339,7 @@ export default function BoardSelection() {
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
-    [myBoards, nearby?.boards, offlineRows, activateBoard, showToast, t],
+    [myBoards, nearby?.boards, offlineRows, activateBoard, showToast, t, router, unfinishedWallUuids],
   );
   const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
   const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);
@@ -361,9 +374,14 @@ export default function BoardSelection() {
   const onSetActiveFromDetails = useCallback(
     (board: UserBoard) => {
       closeBoardDetails();
+      const importRoute = unfinishedSprayWallRoute(board, unfinishedWallUuids);
+      if (importRoute) {
+        router.push(importRoute);
+        return;
+      }
       void activateBoard(board, { pickSource: detailPickSource.current });
     },
-    [activateBoard, closeBoardDetails],
+    [activateBoard, closeBoardDetails, router, unfinishedWallUuids],
   );
 
   const nearbySection =
@@ -378,7 +396,8 @@ export default function BoardSelection() {
   const onDownloadMyBoard = useCallback(
     (item: DiscoveryBoardItem) => {
       const board = myBoards.find((candidate) => candidate.uuid === item.key);
-      if (!board) return;
+      // An unfinished wall has no catalogue to download.
+      if (!board || unfinishedSprayWallRoute(board, unfinishedWallUuids)) return;
       void confirmAndDownload(board).then((confirmed) => {
         if (!confirmed) return;
         // This surface deliberately has no impression event — a card scrolling
@@ -398,7 +417,7 @@ export default function BoardSelection() {
         );
       });
     },
-    [myBoards, confirmAndDownload, downloadedScopeKeys],
+    [myBoards, confirmAndDownload, downloadedScopeKeys, unfinishedWallUuids],
   );
   const downloadLabelFor = useCallback(
     (item: DiscoveryBoardItem) => t('mobile.offline.makeAvailableAria', { name: item.title }),

@@ -12462,6 +12462,10 @@ export type GetNotificationsQuery = {
       proposalUuid?: string | null;
       proposalType?: ProposalType | null;
       proposalValue?: string | null;
+      sprayWallName?: string | null;
+      sprayWallUuid?: string | null;
+      sprayVersionId?: string | null;
+      sprayResetOfWallUuid?: string | null;
       isRead: boolean;
       createdAt: string;
     }>;
@@ -12502,6 +12506,10 @@ export type GetGroupedNotificationsQuery = {
       proposalValue?: string | null;
       setterUsername?: string | null;
       gymName?: string | null;
+      sprayWallName?: string | null;
+      sprayWallUuid?: string | null;
+      sprayVersionId?: string | null;
+      sprayResetOfWallUuid?: string | null;
       isRead: boolean;
       createdAt: string;
       actors: Array<{
@@ -14164,6 +14172,8 @@ export type SprayDetectionFieldsFragment = {
   modelVersion: string;
   error?: string | null;
   createdAt: string;
+  queuePosition?: number | null;
+  retryAt?: string | null;
   finishedAt?: string | null;
   result?: {
     __typename?: 'SprayDetectionResult';
@@ -14196,6 +14206,8 @@ export type SprayDetectionQuery = {
     modelVersion: string;
     error?: string | null;
     createdAt: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
     finishedAt?: string | null;
     result?: {
       __typename?: 'SprayDetectionResult';
@@ -14228,6 +14240,8 @@ export type RequestSprayDetectionMutation = {
     modelVersion: string;
     error?: string | null;
     createdAt: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
     finishedAt?: string | null;
     result?: {
       __typename?: 'SprayDetectionResult';
@@ -14260,6 +14274,8 @@ export type RetrySprayDetectionMutation = {
     modelVersion: string;
     error?: string | null;
     createdAt: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
     finishedAt?: string | null;
     result?: {
       __typename?: 'SprayDetectionResult';
@@ -14275,6 +14291,24 @@ export type RetrySprayDetectionMutation = {
       }>;
     } | null;
   };
+};
+
+export type SprayWallImportProgressQueryVariables = Exact<{
+  wallUuids: Array<Scalars['ID']['input']> | Scalars['ID']['input'];
+}>;
+
+export type SprayWallImportProgressQuery = {
+  __typename?: 'Query';
+  sprayWallImportProgress: Array<{
+    __typename?: 'SprayWallImportProgress';
+    wallUuid: string;
+    versionId?: string | null;
+    detectionId?: string | null;
+    stage: string;
+    queuePosition?: number | null;
+    retryAt?: string | null;
+    resetOfWallUuid?: string | null;
+  }>;
 };
 
 export type GetTicksQueryVariables = Exact<{
@@ -15100,6 +15134,8 @@ export const SprayDetectionFieldsFragmentDoc = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -18836,6 +18872,10 @@ export const GetNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalType' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayResetOfWallUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -18930,6 +18970,10 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'proposalValue' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'gymName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayResetOfWallUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -23006,6 +23050,8 @@ export const SprayDetectionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -23089,6 +23135,8 @@ export const RequestSprayDetectionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -23169,6 +23217,8 @@ export const RetrySprayDetectionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'modelVersion' } },
           { kind: 'Field', name: { kind: 'Name', value: 'error' } },
           { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'finishedAt' } },
           {
             kind: 'Field',
@@ -23200,6 +23250,57 @@ export const RetrySprayDetectionDocument = {
     },
   ],
 } as unknown as DocumentNode<RetrySprayDetectionMutation, RetrySprayDetectionMutationVariables>;
+export const SprayWallImportProgressDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'SprayWallImportProgress' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'wallUuids' } },
+          type: {
+            kind: 'NonNullType',
+            type: {
+              kind: 'ListType',
+              type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+            },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'sprayWallImportProgress' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'wallUuids' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'wallUuids' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'wallUuid' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'versionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'detectionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'stage' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resetOfWallUuid' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SprayWallImportProgressQuery, SprayWallImportProgressQueryVariables>;
 export const GetTicksDocument = {
   kind: 'Document',
   definitions: [

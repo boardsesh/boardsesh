@@ -84,6 +84,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
+vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
+  useSprayImportProgress: (boards: unknown[]) => ({ boards, stale: false, unfinishedWallUuids: new Set<string>() }),
+}));
+
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => state.params,

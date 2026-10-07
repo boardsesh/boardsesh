@@ -331,6 +331,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
   const isDevVariant = process.env.BOARDSESH_APP_VARIANT === 'dev';
   const appName = isDevVariant ? 'Boardsesh Dev' : 'Boardsesh';
   const androidPackage = isDevVariant ? 'com.boardsesh.app.dev' : 'com.boardsesh.app';
+  // EAS file environment variable for this Android package's Firebase config.
+  const googleServicesFile = process.env.GOOGLE_SERVICES_JSON?.trim();
   const iconPath = isDevVariant ? './dev-assets/icon.png' : './assets/icon.png';
   const adaptiveIconPath = isDevVariant ? './dev-assets/adaptive-icon.png' : './assets/adaptive-icon.png';
   const splashIconPath = isDevVariant ? './dev-assets/splash-icon.png' : './assets/splash-icon.png';
@@ -500,6 +502,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     },
     android: {
       package: androidPackage,
+      ...(googleServicesFile ? { googleServicesFile } : {}),
       playStoreUrl: ANDROID_PLAY_STORE_URL,
       // App Links for board shares, the multiplayer join flow and retired OTA preview links:
       // https://www.boardsesh.com/b/{slug}/{angle}/list (including ?wall= for unlisted walls),

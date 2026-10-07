@@ -1,3 +1,4 @@
+import { deactivateNotificationDevice } from '../notifications/device-registration';
 import { markStartup } from '../lib/profiling/startup-profile';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -395,6 +396,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       const localDb = getDatabaseHandle();
       if (localDb) await reportOutboxDiscardedOnSignOut(localDb);
       resetOfflineUsageSignal();
+      await deactivateNotificationDevice();
       const stopTokenCleanup = stopTokenManagement(async () => {});
       if (Platform.OS === 'web') await waitForCleanupPhase(stopTokenCleanup);
       else await stopTokenCleanup;
@@ -974,6 +976,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (!isAuthCredentialGenerationCurrent(credentialGeneration) || !isAuthTransitionCurrent(transitionEpoch)) {
         return;
       }
+
+      await deactivateNotificationDevice();
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || !isAuthTransitionCurrent(transitionEpoch)) return;
 
       // Hide the browser's authenticated tree before the two NextAuth network
       // phases. authSignOutForGeneration synchronously clears the exposed JWE
