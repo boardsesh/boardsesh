@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isProjectClimb } from '../grade-display';
+import { climbStatsKnown, isProjectClimb } from '../grade-display';
 
 describe('isProjectClimb (#5971)', () => {
   it('is a published climb with no grade to show', () => {
@@ -18,5 +18,18 @@ describe('isProjectClimb (#5971)', () => {
 
   it('is never a draft, which has its own chip', () => {
     expect(isProjectClimb({ gradeLabel: '', isDraft: true })).toBe(false);
+  });
+
+  it('is not a climb whose stats the surface does not have yet', () => {
+    expect(isProjectClimb({ gradeLabel: '', statsKnown: false })).toBe(false);
+  });
+});
+
+describe('climbStatsKnown', () => {
+  it('knows a spray climb always, and any other climb by its stats angle', () => {
+    expect(climbStatsKnown('spray', null)).toBe(true);
+    expect(climbStatsKnown('kilter', 40)).toBe(true);
+    expect(climbStatsKnown('kilter', null)).toBe(false);
+    expect(climbStatsKnown('tension', undefined)).toBe(false);
   });
 });

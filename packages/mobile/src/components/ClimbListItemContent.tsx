@@ -13,7 +13,7 @@ import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useMyGrade } from '../hooks/use-my-grade';
 import { renderDifficulty } from '../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
-import { isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
+import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
@@ -422,7 +422,11 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
     consensusGrade !== undefined ? consensusGrade : showsMine ? splitGradeLabel(derived.secondaryLabel)[0] : null;
   // Nobody has graded it yet (#5971): the grade's slot says so instead of
   // standing empty.
-  const isProject = isProjectClimb({ gradeLabel: primaryLabel, isDraft: climb.is_draft });
+  const isProject = isProjectClimb({
+    gradeLabel: primaryLabel,
+    isDraft: climb.is_draft,
+    statsKnown: climbStatsKnown(boardName, climb.statsAngle),
+  });
 
   return (
     <View style={styles.gradeColumn}>

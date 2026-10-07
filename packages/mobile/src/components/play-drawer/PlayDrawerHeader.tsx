@@ -21,7 +21,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useMyGrade } from '../../hooks/use-my-grade';
 import { renderDifficulty } from '../../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
-import { isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
+import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -229,7 +229,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             {markedAsMine ? <Icon name="person" size={13} color={iosSystemColors.systemGray} /> : null}
             {/* Nobody has graded it yet (#5971): say so rather than leave the
                 slot blank. */}
-            {isProjectClimb({ gradeLabel: difficulty, isDraft }) ? (
+            {isProjectClimb({ gradeLabel: difficulty, isDraft, statsKnown: climbStatsKnown(boardName, statsAngle) }) ? (
               <ProjectChip testID="play-drawer-climb-project" />
             ) : (
               <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>

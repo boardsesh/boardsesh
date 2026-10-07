@@ -576,11 +576,11 @@ describe('ClimbListItemContent project chip (#5971)', () => {
 
   const chip = (container: HTMLElement) => container.querySelector('[aria-label="mobile.project.chip"]');
 
-  const renderWith = (climb: Record<string, unknown>) =>
+  const renderWith = (climb: Record<string, unknown>, boardName: 'spray' | 'kilter' = 'spray') =>
     render(
       <ClimbListItemContent
         climb={{ ...baseClimb, ...climb }}
-        boardName="spray"
+        boardName={boardName}
         layoutId={1}
         sizeId={1}
         setIds="1"
@@ -601,6 +601,16 @@ describe('ClimbListItemContent project chip (#5971)', () => {
     const { container } = renderWith({ difficulty: '', boardseshDifficulty: null });
     expect(chip(container)).toBeNull();
     expect(gradeNode(container)?.textContent).not.toBe('');
+  });
+
+  it('leaves an offline Kilter row with no stats yet blank, not a project', () => {
+    resolveGrade.mockReturnValue({ label: '', color: '#000000', isBoardsesh: false });
+    const offline = renderWith({ difficulty: '', boardseshDifficulty: null, statsAngle: null }, 'kilter');
+    expect(chip(offline.container)).toBeNull();
+    offline.unmount();
+    // Once its stats are known, an ungraded Kilter climb is a project like any other.
+    const synced = renderWith({ difficulty: '', boardseshDifficulty: null, statsAngle: 40 }, 'kilter');
+    expect(chip(synced.container)?.textContent).toBe('mobile.project.chip');
   });
 
   it('leaves a graded climb, and an ungraded draft, without it', () => {

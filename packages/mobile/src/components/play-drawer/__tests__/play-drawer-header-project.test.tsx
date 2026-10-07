@@ -63,6 +63,7 @@ import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
 const baseProps = {
   name: 'Garage project',
+  boardName: 'spray' as const,
   qualityAverage: '0',
   ascensionistCount: 0,
   setterUsername: '',
@@ -80,6 +81,13 @@ describe('PlayDrawerHeader project chip (#5971)', () => {
     const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, difficulty: 'V4' }));
     expect(chip(container)).toBeNull();
     expect(container.textContent).toContain('V4');
+  });
+
+  it('leaves a Kilter climb with no stats yet blank, not a project', () => {
+    const { container } = render(
+      createElement(PlayDrawerHeader, { ...baseProps, boardName: 'kilter', difficulty: '', statsAngle: null }),
+    );
+    expect(chip(container)).toBeNull();
   });
 
   it('leaves an ungraded draft to its Draft chip', () => {
