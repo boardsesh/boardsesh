@@ -32,7 +32,7 @@ const detectionSchema = readFileSync(
 // SW-20 (#5471) training-data columns and the review table. After the detection
 // schema: `spray_wall_holds.origin_detection_id` references it.
 const sprayTrainingSchema = readFileSync(
-  new URL('../../../db/drizzle/0259_spray_training_data.sql', import.meta.url),
+  new URL('../../../db/drizzle/0260_spray_training_data.sql', import.meta.url),
   'utf8',
 );
 const placesSchema = readFileSync(new URL('../../../db/drizzle/0235_places_search.sql', import.meta.url), 'utf8');
