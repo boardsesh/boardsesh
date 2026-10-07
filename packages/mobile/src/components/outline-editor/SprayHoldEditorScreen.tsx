@@ -96,6 +96,7 @@ import {
   SPRAY_TABLET_CONTENT_MAX_WIDTH,
 } from './spray-tablet-layout';
 import { zoomTargetForHold } from './hold-navigation';
+import type { ZoomViewport } from '../play-drawer/zoom-viewport-clamp';
 import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
 import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -128,7 +129,7 @@ import {
 import type { SprayHoldCandidate, SprayHoldSaveSummary } from './spray-hold-editor-types';
 import type { HoldGeometry } from './spray-hold-tools';
 import { editorTargetCapabilities, type SprayWallEditorTarget } from './editor-target';
-import { fallbackRadiusAt, flattenHitHolds, holdReach, loupeMagnification } from './spray-gesture-math';
+import { fallbackRadiusAt, flattenHitHolds, holdReach, isOnPhoto, loupeMagnification } from './spray-gesture-math';
 import {
   actionChangesWall,
   countEditorHolds,
@@ -226,7 +227,11 @@ const REFINE_SIZE_RING_FADE_MS = 150;
 /** Refine's brush clamp before a hold is open: never drawn, only a typed placeholder. */
 const NO_REFINE_LIMITS = { floorBoardPx: 0, capBoardPx: 0 };
 
-/** Where the zoomed-in reset control sits: top-left, clear of the chip bar and the bottom bar. */
+/**
+ * Where the zoomed-in reset control sits: the top-left of the editor (the
+ * zoomed photo's viewport), clear of the "?" at top-right, the chip bar and the
+ * bottom bar.
+ */
 const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
 /** On iPad it goes to the top corner away from the tool rail. */
 const RESET_ZOOM_STYLE_RIGHT = { right: spacing[2], top: spacing[2] };
@@ -664,6 +669,37 @@ export function SprayHoldEditorScreen({
     [area.width, area.height, insets.bottom, photoWidth, photoHeight, reserveBottom],
   );
 
+  // Zoomed in, the photo is drawn over the whole editor, not just its fitted
+  // box: under the floating bars, out to both sides, but never behind the
+  // header (the editor's root is the keyboard and Pencil scope, and the header
+  // is outside it). The fitted box sits in this viewport where it always has,
+  // so at 1x nothing moves. A pan may bring any edge of the photo into the
+  // band the bottom bar leaves clear (`slotHeight`); on the iPad nothing is
+  // reserved and the band is the whole editor.
+  const boardOffsetX = (area.width - boardRender.width) / 2;
+  const boardTopInContainer = (boardRender.slotHeight - boardRender.height) / 2;
+  const boardViewport = useMemo<ZoomViewport>(
+    () => ({
+      width: area.width,
+      height: Math.max(area.height, boardRender.slotHeight),
+      offsetX: boardOffsetX,
+      offsetY: boardTopInContainer,
+      bandStartX: 0,
+      bandEndX: area.width,
+      bandStartY: 0,
+      bandEndY: boardRender.slotHeight,
+    }),
+    [area.width, area.height, boardRender.slotHeight, boardOffsetX, boardTopInContainer],
+  );
+  /** The middle of that band, where a screen reader's "add a hold" lands: the photo's centre at 1x. */
+  const viewCentre = useMemo(
+    () => ({
+      x: (boardViewport.bandStartX + boardViewport.bandEndX) / 2,
+      y: (boardViewport.bandStartY + boardViewport.bandEndY) / 2,
+    }),
+    [boardViewport],
+  );
+
   const boardControlRef = useRef<FilterBoardControls | null>(null);
   /**
    * Bumped when the photo changes size, to remount the gesture overlay and so
@@ -1050,11 +1086,15 @@ export function SprayHoldEditorScreen({
       setErrorText(null);
       const current = stateRef.current;
       const fallbackRadius = fallbackRadiusAt(boardScale, zoom);
+      // Past the photo's edge (the dark band round a zoomed wall) nothing is
+      // picked, switched or added: the tap only puts the picked hold down.
+      const onPhoto = isOnPhoto(boardX, boardY, photoWidth, photoHeight);
       // A hidden maybe is still a hold under the finger, so a tap there picks
       // the maybe rather than finding nothing.
-      const hit =
-        holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) ??
-        holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius);
+      const hit = onPhoto
+        ? (holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) ??
+          holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius))
+        : null;
 
       // The Pencil's own rule applies on the iPad layout only.
       const input = tabletRef.current && isStylus ? 'pencil' : 'finger';
@@ -1064,6 +1104,7 @@ export function SprayHoldEditorScreen({
         selectedId: current.selectedId,
         input,
         pencilOnly: pencilOnlyRef.current,
+        onPhoto,
       });
       switch (answer) {
         case 'select':
@@ -1099,7 +1140,7 @@ export function SprayHoldEditorScreen({
           return;
       }
     },
-    [boardScale, toggleHold, joinHolds, pulseSpotlight, recordHint, addHold],
+    [boardScale, photoWidth, photoHeight, toggleHold, joinHolds, pulseSpotlight, recordHint, addHold],
   );
 
   const handlePickUp = useCallback(
@@ -1764,10 +1805,12 @@ export function SprayHoldEditorScreen({
           renderHeight: boardRender.height,
           contextRadii: STEP_FRAME_CONTEXT_RADII,
           maxScale: SPRAY_EDITOR_MAX_SCALE,
+          // Centred in the band the bars leave clear, and clamped as a pan is.
+          viewport: boardViewport,
         }),
       );
     },
-    [photoWidth, boardRender.width, boardRender.height],
+    [photoWidth, boardRender.width, boardRender.height, boardViewport],
   );
   const handleSelectPrevious = useCallback(() => stepSelection(-1), [stepSelection]);
   const handleSelectNext = useCallback(() => stepSelection(1), [stepSelection]);
@@ -2122,9 +2165,12 @@ export function SprayHoldEditorScreen({
    * a hidden maybe, just as a tap would.
    */
   const addHoldAtViewCentre = useCallback(
-    (boardX: number, boardY: number) => {
+    (viewCentreX: number, viewCentreY: number) => {
       if (!canEditRef.current || toolRef.current !== 'edit') return;
       setErrorText(null);
+      // A zoomed photo can sit off the middle of the screen: the hold goes on
+      // the nearest point of the wall, never in the dark band beside it.
+      const { x: boardX, y: boardY } = clampPointToPhoto(viewCentreX, viewCentreY, photoWidth, photoHeight);
       announceNextRef.current = true;
       const visibleHit = holdAtPoint(visibleHoldsRef.current, boardX, boardY);
       const hiddenHit = visibleHit ? null : holdAtPoint(hiddenMaybesRef.current, boardX, boardY);
@@ -2149,7 +2195,7 @@ export function SprayHoldEditorScreen({
       pulseSpotlight('add', geometry);
       recordHint('add');
     },
-    [refuseOverCap, toggleHold, pulseSpotlight, recordHint],
+    [refuseOverCap, toggleHold, pulseSpotlight, recordHint, photoWidth, photoHeight],
   );
 
   const handleWallAccessibilityAction = useCallback(
@@ -2244,16 +2290,16 @@ export function SprayHoldEditorScreen({
 
   // The resize handle flips off any diagonal that would put it under the bottom
   // dock (toast, chip bar) or the bar beneath it. The dock is laid out in the
-  // screen's container and the handle in the board's, so the board's top in
-  // the container is taken off: the board is centred in its slot.
-  const boardTopInContainer = (boardRender.slotHeight - boardRender.height) / 2;
+  // screen's container and the handle in the board's viewport, whose top-left
+  // IS the container's (the viewport fills the editor), so the dock's top is
+  // used as it is.
   const dockTopRef = useRef<number | null>(null);
   const handleDockLayout = useCallback(
     (event: LayoutChangeEvent) => {
       dockTopRef.current = event.nativeEvent.layout.y;
-      avoidTopSV.value = event.nativeEvent.layout.y - boardTopInContainer;
+      avoidTopSV.value = event.nativeEvent.layout.y;
     },
-    [avoidTopSV, boardTopInContainer],
+    [avoidTopSV],
   );
   // The iPad has no bottom dock: its chrome floats over the photo, and what
   // sits along the bottom edge is the count and primary cluster. The handle
@@ -2261,11 +2307,11 @@ export function SprayHoldEditorScreen({
   const tabletClusterTop = area.height - (insets.bottom + SPRAY_BAR_GUTTER + SPRAY_BAR_HEIGHT);
   useEffect(() => {
     if (tablet) {
-      avoidTopSV.value = tabletClusterTop - boardTopInContainer;
+      avoidTopSV.value = tabletClusterTop;
       return;
     }
-    if (dockTopRef.current != null) avoidTopSV.value = dockTopRef.current - boardTopInContainer;
-  }, [avoidTopSV, boardTopInContainer, tablet, tabletClusterTop]);
+    if (dockTopRef.current != null) avoidTopSV.value = dockTopRef.current;
+  }, [avoidTopSV, tablet, tabletClusterTop]);
   // What a hovering Pencil would do, on the resting iPad editor only.
   const hoverShown = tablet && tool === 'edit' && canEdit;
 
@@ -2555,6 +2601,8 @@ export function SprayHoldEditorScreen({
             translateYSV={context.translateYSV}
             containerWidthSV={context.containerWidthSV}
             containerHeightSV={context.containerHeightSV}
+            viewportWidthSV={context.viewportWidthSV}
+            viewportHeightSV={context.viewportHeightSV}
             isPinchingSV={context.isPinchingSV}
             pinchRef={context.pinchRef}
             boardScale={boardScale}
@@ -2612,6 +2660,7 @@ export function SprayHoldEditorScreen({
               containerHeightSV={context.containerHeightSV}
               boardScale={boardScale}
               pinchRef={context.pinchRef}
+              startsOnPhotoOnly
               onStrokeStart={handleAddStrokeStart}
               onStrokeEnd={(strokeBoardPoints) => handleAddStrokeEnd(strokeBoardPoints, scaleSV.value)}
               onStrokeCancel={handleStrokeCancel}
@@ -2640,6 +2689,7 @@ export function SprayHoldEditorScreen({
             containerHeightSV={context.containerHeightSV}
             boardScale={boardScale}
             pinchRef={context.pinchRef}
+            startsOnPhotoOnly
             onStrokeStart={handleRefineStrokeStart}
             onStrokeEnd={handleRefineStrokeEnd}
             strokeZoomSV={refineStrokeZoomSV}
@@ -2662,6 +2712,7 @@ export function SprayHoldEditorScreen({
             containerHeightSV={context.containerHeightSV}
             boardScale={boardScale}
             pinchRef={context.pinchRef}
+            startsOnPhotoOnly
             onStrokeStart={handleStrokeStart}
             onStrokeEnd={handleStrokeEnd}
             onStrokeCancel={handleStrokeCancel}
@@ -2708,6 +2759,7 @@ export function SprayHoldEditorScreen({
             onStylusSeen={tablet ? handlePencilSeen : undefined}
             onTwoFingerTap={tablet ? handleTwoFingerUndo : undefined}
             stylusAddsElsewhere={pencilSurfaceShown}
+            viewCentre={viewCentre}
           >
             {pencilSurfaceShown ? (
               <SprayPencilSurface
@@ -2785,6 +2837,7 @@ export function SprayHoldEditorScreen({
       handlePencilSeen,
       handlePencilStroke,
       handleTwoFingerUndo,
+      viewCentre,
     ],
   );
 
@@ -2918,7 +2971,7 @@ export function SprayHoldEditorScreen({
       onPencilGesture={handlePencilGesture}
     >
       {boardRender.width > 0 ? (
-        <View style={[styles.boardSlot, { height: boardRender.slotHeight }]}>
+        <View style={[styles.boardSlot, { height: boardViewport.height }]}>
           <InteractiveFilterBoard
             backgroundPhotoUrl={wall.photoUrl}
             fullResolutionPhoto={fullResolutionPhoto}
@@ -2938,6 +2991,7 @@ export function SprayHoldEditorScreen({
             controlRef={boardControlRef}
             maxScale={SPRAY_EDITOR_MAX_SCALE}
             pinchPans
+            viewport={boardViewport}
           />
         </View>
       ) : null}
@@ -3145,8 +3199,10 @@ export function SprayHoldEditorScreen({
         <SprayLoupe
           feed={loupeFeed}
           magnificationSV={loupeMagnificationSV}
-          clipOffsetX={(area.width - boardRender.width) / 2}
-          clipOffsetY={boardTopInContainer}
+          // The board's clip is its viewport, which fills the editor from its
+          // top-left: the overlays' points are the editor's own.
+          clipOffsetX={0}
+          clipOffsetY={0}
           hostWidth={area.width}
           hostHeight={area.height}
           topSafe={LOUPE_TOP_SAFE}

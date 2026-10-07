@@ -1,6 +1,6 @@
 import { type MutableRefObject, useMemo, useRef } from 'react';
 import { Gesture, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
-import { runOnJS, type SharedValue } from 'react-native-reanimated';
+import { runOnJS, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { resolveHoldAtPoint, type HoldHitTarget } from './holdLayout';
 
 // Match the at-rest overlay (use-rest-hold-tap-gesture) so a tap while zoomed
@@ -24,8 +24,8 @@ type UseZoomedHoldTapGestureOptions = {
    *  stationary tap never crosses its activation threshold. */
   zoomPanGesture: GestureType;
   scaleSV: SharedValue<number>;
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   /** Hold hit circles in board-local render px (from buildHoldHitTargets). */

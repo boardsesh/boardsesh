@@ -1297,6 +1297,20 @@ What the editor does with a wall is decided by this document rather than by tast
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
+- **Zoomed in, the photo fills the editor.** At 1x the photo sits in its
+  fitted box (`fitSprayPhoto`, the same box the scan step sweeps). Once
+  zoomed, `InteractiveFilterBoard`'s opt-in `viewport` lets it spill over the
+  whole editor below the header: out to both sides and under the floating
+  bars. The pan clamp (`clampAxisTranslation` in
+  `play-drawer/zoom-viewport-clamp.ts`, shared with Previous / Next's
+  `zoomTargetForHold`) lets any edge of the photo reach the band the bottom bar
+  leaves clear (`slotHeight`; the whole editor on the iPad), and no further.
+  The board's overlays read a translate with the photo's offset folded in, so
+  their coordinate maths is unchanged. Past the photo's edge (`isOnPhoto`)
+  nothing is created: a press and hold or a stroke (Add, Trace, Refine, the
+  Pencil) that starts there and a Corners corner lifted there are ignored, and
+  a tap there only puts the picked ring down. Without a `viewport` the search
+  board, the outline editor and the play drawer behave exactly as before.
 - **Rings are holds. A tap picks one, and a tap on the picked one switches it.**
   At rest there are no finger modes, and no single tap changes the wall. The
   rule is pure (`resolveEditTap` in `spray-edit-tap.ts`, tested row by row) and
@@ -1344,7 +1358,7 @@ What the editor does with a wall is decided by this document rather than by tast
   keeping it off the disc is what keeps a tap on the selected ring a toggle and
   a press there a pick-up at every zoom. The spec's "10 pt outside" would have
   laid the box over the whole ring of a typical hold at 1x. It flips to another
-  diagonal when its touch box would leave the board or sit under the bottom
+  diagonal when its touch box would leave the editor or sit under the bottom
   dock (toast, chip bar) or bar (`resizeHandleAnchor`, which the dock's
   measured top feeds). It is placed in screen space, so it is the same size at
   any zoom. One finger

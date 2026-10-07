@@ -91,4 +91,32 @@ describe('resolveEditTap', () => {
     );
     expect(answers.some((answer) => answer === 'toggle' || answer === 'addHold')).toBe(false);
   });
+
+  it('only puts the picked ring down for a tap past the photo’s edge', () => {
+    // The zoomed photo fills the screen; the dark band round it is not wall.
+    for (const input of ['finger', 'pencil'] as const) {
+      for (const pencilOnly of [false, true]) {
+        // A ring hit there (its outline poking past the edge) still does nothing.
+        for (const hitId of [null, 4, 7]) {
+          expect(resolveEditTap({ tool: 'edit', hitId, selectedId: 7, input, pencilOnly, onPhoto: false })).toBe(
+            'deselect',
+          );
+          expect(resolveEditTap({ tool: 'edit', hitId, selectedId: null, input, pencilOnly, onPhoto: false })).toBe(
+            'none',
+          );
+        }
+      }
+    }
+  });
+
+  it('never adds, joins or hints off the photo, whatever the tool', () => {
+    for (const tool of ['edit', 'trace', 'join', 'add', 'refine'] as const) {
+      for (const input of ['finger', 'pencil'] as const) {
+        const answer = resolveEditTap({ tool, hitId: 4, selectedId: 7, input, onPhoto: false });
+        expect(['deselect', 'none']).toContain(answer);
+        const bare = resolveEditTap({ tool, hitId: null, selectedId: null, input, onPhoto: false });
+        expect(bare).toBe('none');
+      }
+    }
+  });
 });

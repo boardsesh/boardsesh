@@ -22,6 +22,10 @@
  * the inspector) and puts it down on bare wall. With it off a finger follows the
  * phone rule above. The phone layout never passes `input: 'pencil'`, so none of
  * this reaches it.
+ *
+ * Zoomed in, the photo fills the screen and a tap can land past its edge. Off
+ * the photo there is nothing to pick, switch or add: in the resting tool such a
+ * tap puts the picked ring down, and otherwise does nothing.
  */
 
 /**
@@ -65,6 +69,7 @@ export function resolveEditTap({
   selectedId,
   input = 'finger',
   pencilOnly = false,
+  onPhoto = true,
 }: {
   tool: SprayEditorTool;
   /** The ring the tap landed on, or null for bare wall. */
@@ -73,7 +78,10 @@ export function resolveEditTap({
   input?: SprayTapInput;
   /** "Pencil only" is on: fingers pick and never switch. Ignored for a Pencil tap. */
   pencilOnly?: boolean;
+  /** False when the tap landed past the photo's edge. `hitId` is ignored then. */
+  onPhoto?: boolean;
 }): SprayEditTapResult {
+  if (!onPhoto) return tool === 'edit' && selectedId != null ? 'deselect' : 'none';
   if (tool === 'join') {
     // Join waits for the second hold and nothing else: bare wall or the
     // selected hold itself leaves it waiting.

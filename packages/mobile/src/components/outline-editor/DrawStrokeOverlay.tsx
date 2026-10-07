@@ -7,8 +7,8 @@ import {
   type GestureStateManager,
   type GestureType,
 } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { fallbackRadiusAt, selectedDragIdAt, strokeReturnsToHead } from './spray-gesture-math';
+import { runOnJS, useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
+import { fallbackRadiusAt, isOnPhoto, selectedDragIdAt, strokeReturnsToHead } from './spray-gesture-math';
 import { CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
 import { STROKE_MIN_SAMPLE_BOARD_PX } from './stroke';
 import { stopLoupe, trackLoupe, useReleaseLoupeOnUnmount, type SprayLoupeFeed } from './spray-loupe-feed';
@@ -57,8 +57,8 @@ type DrawStrokeOverlayProps = {
   fingerDrawSV: SharedValue<boolean>;
   /** The board's live zoom transform, from `FilterBoardTransformContext`. */
   scaleSV: SharedValue<number>;
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   /** Board px per render px (`boardWidth / renderWidth`). */
@@ -115,6 +115,15 @@ type DrawStrokeOverlayProps = {
    * the same zoom, even if a pinch moves the board mid-stroke.
    */
   strokeZoomSV?: SharedValue<number>;
+  /**
+   * OPT-IN, for the spray editor, whose zoomed photo fills the screen: a
+   * drawing touch that lands past the photo's edge (the dark band round it)
+   * fails at touch-down instead of starting a stroke, so it falls through to
+   * the board's pan and a stroke can never begin off the wall. A stroke that
+   * starts on the photo may still wander off it. Omitted (the catalogue
+   * editor), any drawing touch starts a stroke.
+   */
+  startsOnPhotoOnly?: boolean;
 };
 
 /** No hit list: the selection's grab radius alone decides a decline. */
@@ -194,6 +203,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
   declineHitHoldsSV,
   onStylusSeen,
   strokeZoomSV,
+  startsOnPhotoOnly = false,
 }: DrawStrokeOverlayProps) {
   // Mirrored into a shared value rather than captured: a captured number would
   // have to be a gesture dependency, and rebuilding a live RNGH gesture
@@ -307,6 +317,23 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
       farthestSV.value = Math.max(farthestSV.value, Math.hypot(boardX - current[0], boardY - current[1]));
       return false;
     };
+    // Whether a stroke may not start at this screen point: past the photo's
+    // edge, through the same inverse transform the samples use. Always false
+    // without the opt-in.
+    const startsOffPhoto = (screenX: number, screenY: number) => {
+      'worklet';
+      if (!startsOnPhotoOnly) return false;
+      const centreX = containerWidthSV.value / 2;
+      const centreY = containerHeightSV.value / 2;
+      const boardX = ((screenX - translateXSV.value - centreX) / scaleSV.value + centreX) * boardScaleSV.value;
+      const boardY = ((screenY - translateYSV.value - centreY) / scaleSV.value + centreY) * boardScaleSV.value;
+      return !isOnPhoto(
+        boardX,
+        boardY,
+        containerWidthSV.value * boardScaleSV.value,
+        containerHeightSV.value * boardScaleSV.value,
+      );
+    };
     if (acceptStationaryTaps) {
       // A manually activated UIPan recognizer need not deliver onStart/onEnd
       // for a stationary touch. Add owns raw pointer events instead: DOWN seeds
@@ -366,8 +393,9 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
             manager.fail();
             return;
           }
-          // On the selected hold: the ancestor's move has it.
-          if (touchesSelection(pointer.x, pointer.y)) {
+          // On the selected hold: the ancestor's move has it. Off the photo:
+          // nothing is drawn there, and the board's pan can have it.
+          if (touchesSelection(pointer.x, pointer.y) || startsOffPhoto(pointer.x, pointer.y)) {
             manager.fail();
             return;
           }
@@ -460,7 +488,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
         // Two fingers at once are a pinch from the start, not a stroke.
         if (isStylus || (fingerDrawSV.value && event.numberOfTouches < 2)) {
           const touch = event.changedTouches[0] ?? event.allTouches[0];
-          if (touch && touchesSelection(touch.x, touch.y)) {
+          if (touch && (touchesSelection(touch.x, touch.y) || startsOffPhoto(touch.x, touch.y))) {
             manager.fail();
             return;
           }
@@ -564,6 +592,7 @@ export const DrawStrokeOverlay = React.memo(function DrawStrokeOverlay({
     declineOnSelectionSV,
     declineHitHoldsSV,
     strokeZoomSV,
+    startsOnPhotoOnly,
     pinchRef,
   ]);
 

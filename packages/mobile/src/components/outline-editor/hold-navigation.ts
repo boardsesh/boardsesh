@@ -6,13 +6,13 @@
  * hunting: which hold comes next, and how do I get a close look at it.
  *
  * Both answers are pure functions here so they can be tested without a board on
- * screen. The transform maths mirrors `use-zoom-pan-gesture`; see
- * {@link zoomTargetForHold} for the exact relationship and why it has to stay in
- * step.
+ * screen. The transform maths mirrors `use-zoom-pan-gesture`, and the pan clamp
+ * is the same function the gesture calls; see {@link zoomTargetForHold}.
  */
 
 import { MAX_SCALE, MIN_SCALE } from '@boardsesh/play-view';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
+import { clampAxisTranslation, type ZoomViewport } from '../play-drawer/zoom-viewport-clamp';
 
 /**
  * How far apart two holds' centres may sit vertically and still count as the
@@ -113,38 +113,25 @@ export type BoardZoomTarget = {
 };
 
 /**
- * Worklet-free twin of `clampTranslation` in `use-zoom-pan-gesture`. Keeping the
- * board inside its own frame is the pan gesture's rule, and a programmatic zoom
- * has to obey it too or the first manual pan afterwards would snap.
- *
- * `@boardsesh/play-view` holds the canonical spec both copies answer to; this is
- * the third expression of it, and the only one a test can call directly.
- *
- * The twin spells its "not zoomed" sentinel as the literal `currentScale <= 1`
- * (a worklet, so it can't reach a cross-module import); this one uses
- * `MIN_SCALE`, which IS 1. They agree today and have to keep agreeing — if
- * `MIN_SCALE` ever moves off 1, change both or a programmatic zoom and a manual
- * pan will clamp differently.
- */
-function clampTranslation(translation: number, scale: number, extent: number): number {
-  if (scale <= MIN_SCALE) return 0;
-  const limit = (extent * (scale - 1)) / 2;
-  return Math.max(-limit, Math.min(limit, translation));
-}
-
-/**
  * The transform that puts one hold in the middle of the viewport at a scale you
  * can trace at.
  *
  * The board is drawn `transform: [translateX, translateY, scale]` about a centre
  * origin, so a board-local point maps to the screen as
  *
- *     screen = centre + scale * (local - centre) + translate
+ *     screen = offset + centre + scale * (local - centre) + translate
  *
- * Setting `screen = centre` and solving gives `translate = -scale * (local -
- * centre)`, which is the whole of the centring maths below. The result is then
- * clamped exactly as a manual pan would be, so a hold near an edge frames as far
- * as the board allows and no further.
+ * where `offset` is where the unzoomed board sits in its viewport (0 without
+ * one). Setting `screen` to the middle of the viewport's visible band and
+ * solving gives `translate = bandMiddle - offset - centre - scale * (local -
+ * centre)`; without a viewport the band's middle is the centre and that is
+ * `-scale * (local - centre)`. The result is then clamped exactly as a manual
+ * pan would be (`clampAxisTranslation`, the very function the pan calls), so a
+ * hold near an edge frames as far as the board allows and no further.
+ *
+ * The scale still comes from the render box, not the viewport: the context ring
+ * fits the photo's own frame, so a bigger viewport shows more wall round the
+ * hold rather than zooming in further.
  *
  * NOTE on the scale: for every Aurora config in the catalogue the ideal scale
  * works out well above `MAX_SCALE`, so the answer saturates at the gesture
@@ -161,6 +148,7 @@ export function zoomTargetForHold({
   contextRadii = ZOOM_CONTEXT_RADII,
   minScale = MIN_SCALE,
   maxScale = MAX_SCALE,
+  viewport,
 }: {
   hold: BoardHoldTarget;
   boardWidth: number;
@@ -169,6 +157,8 @@ export function zoomTargetForHold({
   contextRadii?: number;
   minScale?: number;
   maxScale?: number;
+  /** The board's zoom viewport, when it has one (see `useZoomPanGesture`). */
+  viewport?: ZoomViewport;
 }): BoardZoomTarget {
   if (boardWidth <= 0 || renderWidth <= 0 || renderHeight <= 0) {
     return { scale: minScale, translateX: 0, translateY: 0 };
@@ -188,10 +178,33 @@ export function zoomTargetForHold({
   const localY = hold.cy * renderScale;
   const centreX = renderWidth / 2;
   const centreY = renderHeight / 2;
+  const offsetX = viewport?.offsetX ?? 0;
+  const offsetY = viewport?.offsetY ?? 0;
+  const bandStartX = viewport?.bandStartX ?? 0;
+  const bandEndX = viewport?.bandEndX ?? renderWidth;
+  const bandStartY = viewport?.bandStartY ?? 0;
+  const bandEndY = viewport?.bandEndY ?? renderHeight;
+  // How far the band's middle sits from the transform's origin: 0 without a viewport.
+  const shiftX = (bandStartX + bandEndX) / 2 - offsetX - centreX;
+  const shiftY = (bandStartY + bandEndY) / 2 - offsetY - centreY;
 
   return {
     scale,
-    translateX: clampTranslation(-scale * (localX - centreX), scale, renderWidth),
-    translateY: clampTranslation(-scale * (localY - centreY), scale, renderHeight),
+    translateX: clampAxisTranslation(
+      shiftX - scale * (localX - centreX),
+      scale,
+      renderWidth,
+      offsetX,
+      bandStartX,
+      bandEndX,
+    ),
+    translateY: clampAxisTranslation(
+      shiftY - scale * (localY - centreY),
+      scale,
+      renderHeight,
+      offsetY,
+      bandStartY,
+      bandEndY,
+    ),
   };
 }

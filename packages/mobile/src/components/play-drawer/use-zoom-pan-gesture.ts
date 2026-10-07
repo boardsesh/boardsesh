@@ -20,6 +20,7 @@ import {
 } from 'react-native-reanimated';
 import { MIN_SCALE, MAX_SCALE, ZOOM_THRESHOLD } from '@boardsesh/play-view';
 import { timing } from '../../theme/animations';
+import { clampAxisTranslation, transformOriginInViewport, type ZoomViewport } from './zoom-viewport-clamp';
 
 type UseZoomPanGestureOptions = {
   enabled?: boolean;
@@ -63,6 +64,15 @@ type UseZoomPanGestureOptions = {
    * drawer down. Unzoomed there's no overlay and no relation, so pull-to-dismiss
    * keeps the whole surface. Only the play drawer passes it. */
   dismissRef?: MutableRefObject<GestureType | undefined>;
+  /**
+   * The area the zoomed board is drawn and panned in, when it is bigger than
+   * the board's own render box (the spray hold editor lets a zoomed photo fill
+   * the screen). Pans clamp so every photo edge can reach the viewport's
+   * visible band, and a pinch scales about the photo's centre inside it. Left
+   * unset, the viewport is the render box and nothing changes. Mirrored into
+   * shared values, so a layout change never rebuilds the gestures.
+   */
+  viewport?: ZoomViewport;
 };
 
 type UseZoomPanGestureReturn = {
@@ -96,10 +106,22 @@ type UseZoomPanGestureReturn = {
   translateXSV: SharedValue<number>;
   translateYSV: SharedValue<number>;
   /** Live container size on the UI thread — the transform's center origin
-   * (containerWidth/2, containerHeight/2). Mirrored so the inverse-transform
-   * worklet reads it without re-creating gesture objects on a layout change. */
+   * (containerWidth/2, containerHeight/2), measured in the render box. With a
+   * `viewport` that box sits at the viewport offset, and this stays the
+   * render box's size. Mirrored so the inverse-transform worklet reads it
+   * without re-creating gesture objects on a layout change. */
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
+  /**
+   * The viewport the board is panned in (see the `viewport` option), on the UI
+   * thread: its size and where the unzoomed board sits in it. Without a
+   * viewport these are the container size and 0. An overlay laid out over the
+   * whole viewport adds the offset to `translateX/YSV` to map board points.
+   */
+  viewportWidthSV: SharedValue<number>;
+  viewportHeightSV: SharedValue<number>;
+  viewportOffsetXSV: SharedValue<number>;
+  viewportOffsetYSV: SharedValue<number>;
   resetZoom: () => void;
   /**
    * Animate the board to an explicit transform — the programmatic twin of a
@@ -115,35 +137,10 @@ type UseZoomPanGestureReturn = {
   animatedZoomStyle: AnimatedStyle<ViewStyle>;
 };
 
-// Worklet-callable copy of clampTranslation from @boardsesh/play-view. The
-// shared version is the canonical spec / test target; reanimated can't
-// reliably call non-worklet functions across module boundaries so we keep a
-// 'worklet'-marked clone here. Keep in sync.
-//
-// There is a THIRD copy — zoomTargetForHold's clamp in
-// outline-editor/hold-navigation.ts, which pre-clamps a programmatic zoom so it
-// lands where a manual pan would. It spells the "not zoomed" sentinel as
-// MIN_SCALE where this one uses the literal 1 (a worklet can't reach the
-// import). They are equal today; if MIN_SCALE ever moves off 1, all three have
-// to move together.
-function clampTranslation(
-  translationX: number,
-  translationY: number,
-  currentScale: number,
-  containerWidth: number,
-  containerHeight: number,
-): { x: number; y: number } {
-  'worklet';
-  if (currentScale <= 1) return { x: 0, y: 0 };
-
-  const maxX = (containerWidth * (currentScale - 1)) / 2;
-  const maxY = (containerHeight * (currentScale - 1)) / 2;
-
-  return {
-    x: Math.max(-maxX, Math.min(maxX, translationX)),
-    y: Math.max(-maxY, Math.min(maxY, translationY)),
-  };
-}
+// The pan clamp lives in ./zoom-viewport-clamp (one per-axis worklet, shared
+// with zoomTargetForHold in outline-editor/hold-navigation.ts so a programmatic
+// zoom lands where a manual pan would). With no viewport it reduces exactly to
+// clampTranslation from @boardsesh/play-view, the original spec.
 
 /**
  * The scale a pinch lands on: the gesture's raw scale held inside
@@ -165,6 +162,7 @@ export function useZoomPanGesture({
   maxScale = MAX_SCALE,
   pinchPans = false,
   dismissRef,
+  viewport,
 }: UseZoomPanGestureOptions): UseZoomPanGestureReturn {
   const scale = useSharedValue(MIN_SCALE);
   const translateX = useSharedValue(0);
@@ -196,6 +194,51 @@ export function useZoomPanGesture({
   const containerHeightSV = useSharedValue(containerHeight);
   const maxScaleSV = useSharedValue(maxScale);
   const pinchPansSV = useSharedValue(pinchPans);
+  // The viewport, or the render box standing in for one. Its own shared values
+  // for the same reason as the container size above.
+  const viewportWidth = viewport?.width ?? containerWidth;
+  const viewportHeight = viewport?.height ?? containerHeight;
+  const viewportOffsetX = viewport?.offsetX ?? 0;
+  const viewportOffsetY = viewport?.offsetY ?? 0;
+  const bandStartX = viewport?.bandStartX ?? 0;
+  const bandEndX = viewport?.bandEndX ?? containerWidth;
+  const bandStartY = viewport?.bandStartY ?? 0;
+  const bandEndY = viewport?.bandEndY ?? containerHeight;
+  const viewportWidthSV = useSharedValue(viewportWidth);
+  const viewportHeightSV = useSharedValue(viewportHeight);
+  const viewportOffsetXSV = useSharedValue(viewportOffsetX);
+  const viewportOffsetYSV = useSharedValue(viewportOffsetY);
+  const bandStartXSV = useSharedValue(bandStartX);
+  const bandEndXSV = useSharedValue(bandEndX);
+  const bandStartYSV = useSharedValue(bandStartY);
+  const bandEndYSV = useSharedValue(bandEndY);
+  useEffect(() => {
+    viewportWidthSV.value = viewportWidth;
+    viewportHeightSV.value = viewportHeight;
+    viewportOffsetXSV.value = viewportOffsetX;
+    viewportOffsetYSV.value = viewportOffsetY;
+    bandStartXSV.value = bandStartX;
+    bandEndXSV.value = bandEndX;
+    bandStartYSV.value = bandStartY;
+    bandEndYSV.value = bandEndY;
+  }, [
+    viewportWidth,
+    viewportHeight,
+    viewportOffsetX,
+    viewportOffsetY,
+    bandStartX,
+    bandEndX,
+    bandStartY,
+    bandEndY,
+    viewportWidthSV,
+    viewportHeightSV,
+    viewportOffsetXSV,
+    viewportOffsetYSV,
+    bandStartXSV,
+    bandEndXSV,
+    bandStartYSV,
+    bandEndYSV,
+  ]);
   useEffect(() => {
     pinchPansSV.value = pinchPans;
   }, [pinchPans, pinchPansSV]);
@@ -301,8 +344,12 @@ export function useZoomPanGesture({
           maxScaleSV.value,
         );
 
-        const focalOffsetX = pinchFocalX.value - containerWidthSV.value / 2;
-        const focalOffsetY = pinchFocalY.value - containerHeightSV.value / 2;
+        // Measured from the transform's origin — the unzoomed photo's centre in
+        // the viewport, which is the container centre when there is no viewport.
+        const focalOffsetX =
+          pinchFocalX.value - transformOriginInViewport(viewportOffsetXSV.value, containerWidthSV.value);
+        const focalOffsetY =
+          pinchFocalY.value - transformOriginInViewport(viewportOffsetYSV.value, containerHeightSV.value);
         const scaleDelta = newScale / savedScale.value;
         // Inlined from computeFocalPinchTranslation in @boardsesh/play-view
         // — keep in sync. Direct call from worklet across module boundaries
@@ -314,16 +361,23 @@ export function useZoomPanGesture({
         const newTranslateX = focalOffsetX * (1 - scaleDelta) + scaleDelta * savedTranslateX.value + panX;
         const newTranslateY = focalOffsetY * (1 - scaleDelta) + scaleDelta * savedTranslateY.value + panY;
 
-        const clamped = clampTranslation(
+        scale.value = newScale;
+        translateX.value = clampAxisTranslation(
           newTranslateX,
-          newTranslateY,
           newScale,
           containerWidthSV.value,
-          containerHeightSV.value,
+          viewportOffsetXSV.value,
+          bandStartXSV.value,
+          bandEndXSV.value,
         );
-        scale.value = newScale;
-        translateX.value = clamped.x;
-        translateY.value = clamped.y;
+        translateY.value = clampAxisTranslation(
+          newTranslateY,
+          newScale,
+          containerHeightSV.value,
+          viewportOffsetYSV.value,
+          bandStartYSV.value,
+          bandEndYSV.value,
+        );
       })
       .onEnd(() => {
         'worklet';
@@ -416,6 +470,12 @@ export function useZoomPanGesture({
     enabledSV,
     containerWidthSV,
     containerHeightSV,
+    viewportOffsetXSV,
+    viewportOffsetYSV,
+    bandStartXSV,
+    bandEndXSV,
+    bandStartYSV,
+    bandEndYSV,
     maxScaleSV,
     pinchPansSV,
     updateZoomState,
@@ -443,9 +503,22 @@ export function useZoomPanGesture({
         if (scale.value <= MIN_SCALE) return;
         const newX = savedTranslateX.value + event.translationX;
         const newY = savedTranslateY.value + event.translationY;
-        const clamped = clampTranslation(newX, newY, scale.value, containerWidthSV.value, containerHeightSV.value);
-        translateX.value = clamped.x;
-        translateY.value = clamped.y;
+        translateX.value = clampAxisTranslation(
+          newX,
+          scale.value,
+          containerWidthSV.value,
+          viewportOffsetXSV.value,
+          bandStartXSV.value,
+          bandEndXSV.value,
+        );
+        translateY.value = clampAxisTranslation(
+          newY,
+          scale.value,
+          containerHeightSV.value,
+          viewportOffsetYSV.value,
+          bandStartYSV.value,
+          bandEndYSV.value,
+        );
       })
       .onEnd(() => {
         'worklet';
@@ -478,6 +551,12 @@ export function useZoomPanGesture({
     savedTranslateY,
     containerWidthSV,
     containerHeightSV,
+    viewportOffsetXSV,
+    viewportOffsetYSV,
+    bandStartXSV,
+    bandEndXSV,
+    bandStartYSV,
+    bandEndYSV,
     panActivationOffset,
     scrollRef,
     dismissRef,
@@ -502,6 +581,10 @@ export function useZoomPanGesture({
     translateYSV: translateY,
     containerWidthSV,
     containerHeightSV,
+    viewportWidthSV,
+    viewportHeightSV,
+    viewportOffsetXSV,
+    viewportOffsetYSV,
     resetZoom,
     zoomTo,
     animatedZoomStyle,

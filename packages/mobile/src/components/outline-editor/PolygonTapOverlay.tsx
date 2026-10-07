@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, type MutableRefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { runOnJS, useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { CORNERS_CLOSE_EXTENT_FRACTION, CORNERS_CLOSE_TARGET_PT } from './spray-hold-tools';
+import { isOnPhoto } from './spray-gesture-math';
 import {
   pointerWantsLoupe,
   stopLoupe,
@@ -32,8 +33,8 @@ type PolygonTapOverlayProps = {
   verticesSV: SharedValue<number[]>;
   /** The board's live zoom transform, from `FilterBoardTransformContext`. */
   scaleSV: SharedValue<number>;
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   /** Board px per render px (`boardWidth / renderWidth`). */
@@ -90,6 +91,10 @@ type PolygonTapOverlayProps = {
  * `screenToBoardPoint` in `stroke.ts`). Absolute event coordinates, never a
  * translation delta. The close test and the corner cap run there too, so the
  * corners never round-trip through React per touch.
+ *
+ * A lift past the photo's edge (the dark band round a zoomed wall) places no
+ * corner: the outline can only be built on the photo. It can still close the
+ * outline when it lands on the first corner.
  *
  * `runOnJS` fires once per lifted finger — never per frame.
  */
@@ -196,6 +201,17 @@ export const PolygonTapOverlay = React.memo(function PolygonTapOverlay({
           runOnJS(handleClose)(current);
           return;
         }
+      }
+      // Off the photo: nothing to outline there.
+      if (
+        !isOnPhoto(
+          boardX,
+          boardY,
+          containerWidthSV.value * boardScaleSV.value,
+          containerHeightSV.value * boardScaleSV.value,
+        )
+      ) {
+        return;
       }
       if (count >= maxVerticesSV.value) {
         runOnJS(handleVertexLimit)();

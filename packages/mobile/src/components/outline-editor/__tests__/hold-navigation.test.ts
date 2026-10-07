@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_SCALE, MIN_SCALE } from '@boardsesh/play-view';
 import type { BoardHoldTarget } from '../../../lib/create-board-holds';
+import type { ZoomViewport } from '../../play-drawer/zoom-viewport-clamp';
 import {
   ROW_TOLERANCE_RADII,
   spatialPlacementOrder,
@@ -198,5 +199,107 @@ describe('zoomTargetForHold', () => {
     expect(zoomTargetForHold({ hold: hold(1, 540, 960, 30), boardWidth: 0, renderWidth, renderHeight })).toEqual(
       identity,
     );
+  });
+});
+
+describe('zoomTargetForHold with a viewport', () => {
+  // The spray editor on a phone: a 390 × 844 editor, a 390 × 520 photo centred
+  // in the 720 points the bottom bar leaves clear.
+  const boardWidth = 3000;
+  const renderWidth = 390;
+  const renderHeight = 520;
+  const viewport: ZoomViewport = {
+    width: 390,
+    height: 844,
+    offsetX: 0,
+    offsetY: 100,
+    bandStartX: 0,
+    bandEndX: 390,
+    bandStartY: 0,
+    bandEndY: 720,
+  };
+  const renderScale = renderWidth / boardWidth;
+
+  /** Board-local render px → viewport points, under a target transform. */
+  function toViewport(localX: number, localY: number, target: BoardZoomTarget): [number, number] {
+    const centreX = renderWidth / 2;
+    const centreY = renderHeight / 2;
+    return [
+      viewport.offsetX + centreX + target.scale * (localX - centreX) + target.translateX,
+      viewport.offsetY + centreY + target.scale * (localY - centreY) + target.translateY,
+    ];
+  }
+
+  it('puts a mid-wall hold in the middle of the visible band, not of the render box', () => {
+    const target = zoomTargetForHold({
+      hold: hold(1, 1500, 2000, 40),
+      boardWidth,
+      renderWidth,
+      renderHeight,
+      maxScale: 8,
+      viewport,
+    });
+    const [screenX, screenY] = toViewport(1500 * renderScale, 2000 * renderScale, target);
+    expect(screenX).toBeCloseTo(195, 6);
+    expect(screenY).toBeCloseTo(360, 6);
+  });
+
+  it('stops a corner hold where the pan would: the photo edge on the band edge', () => {
+    const target = zoomTargetForHold({
+      hold: hold(1, 0, 0, 40),
+      boardWidth,
+      renderWidth,
+      renderHeight,
+      maxScale: 8,
+      viewport,
+    });
+    // The photo's top-left corner sits on the band's top-left corner.
+    const [cornerX, cornerY] = toViewport(0, 0, target);
+    expect(cornerX).toBeCloseTo(0, 6);
+    expect(cornerY).toBeCloseTo(0, 6);
+  });
+
+  it('can bring the photo’s bottom edge up to the bar’s line, never past it', () => {
+    const target = zoomTargetForHold({
+      hold: hold(1, 1500, (renderHeight / renderScale) * 0.999, 40),
+      boardWidth,
+      renderWidth,
+      renderHeight,
+      maxScale: 8,
+      viewport,
+    });
+    const [, bottomEdge] = toViewport(0, renderHeight, target);
+    expect(bottomEdge).toBeCloseTo(viewport.bandEndY, 6);
+  });
+
+  it('matches the no-viewport answer for a viewport that is just the render box', () => {
+    const renderBox: ZoomViewport = {
+      width: renderWidth,
+      height: renderHeight,
+      offsetX: 0,
+      offsetY: 0,
+      bandStartX: 0,
+      bandEndX: renderWidth,
+      bandStartY: 0,
+      bandEndY: renderHeight,
+    };
+    for (const [cx, cy] of [
+      [0, 0],
+      [1500, 2000],
+      [2999, 3999],
+      [400, 3100],
+    ]) {
+      const plain = zoomTargetForHold({ hold: hold(1, cx, cy, 40), boardWidth, renderWidth, renderHeight });
+      const boxed = zoomTargetForHold({
+        hold: hold(1, cx, cy, 40),
+        boardWidth,
+        renderWidth,
+        renderHeight,
+        viewport: renderBox,
+      });
+      expect(boxed.scale).toBe(plain.scale);
+      expect(boxed.translateX).toBeCloseTo(plain.translateX, 9);
+      expect(boxed.translateY).toBeCloseTo(plain.translateY, 9);
+    }
   });
 });

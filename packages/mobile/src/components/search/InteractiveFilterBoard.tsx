@@ -8,12 +8,13 @@ import React, {
 } from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
-import Animated, { type SharedValue } from 'react-native-reanimated';
+import Animated, { useDerivedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
+import type { ZoomViewport } from '../play-drawer/zoom-viewport-clamp';
 import { holdGeometry, buildHoldHitTargets } from '../create-climb/holdLayout';
 import { useRestHoldTapGesture } from '../create-climb/use-rest-hold-tap-gesture';
 import { useZoomedHoldTapGesture, PAN_ACTIVATION_OFFSET } from '../create-climb/use-zoomed-hold-tap-gesture';
@@ -55,14 +56,28 @@ export type FilterBoardTransformContext = {
    * The rest of the live zoom transform. Together with `scaleSV` and the
    * container size these are everything needed to invert the board's transform
    * on the UI thread — what an overlay drawn ABOVE the transform (see
-   * `renderAboveBoard`) needs to map a screen point back to board-local px.
-   * Produced by `useZoomPanGesture` all along; forwarded here so an overlay
-   * doesn't have to re-derive them.
+   * `renderAboveBoard`) needs to map a screen point back to board-local px:
+   *
+   *     screen = (local − c) · scale + c + translate,  c = containerSize / 2
+   *
+   * in the coordinates of the clip view an above-board overlay fills. With a
+   * `viewport` that clip is the viewport and the board sits at its offset, so
+   * the translate handed out here already includes the offset (it is derived,
+   * hence read-only): the formula stays exact without every overlay knowing
+   * about the viewport. The container size stays the RENDER box, the basis of
+   * the transform's centre.
    */
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
+  /**
+   * The size of the clip view an above-board overlay fills: the viewport when
+   * there is one, the render box otherwise. What a screen-space element (a
+   * handle, a pill) keeps itself inside.
+   */
+  viewportWidthSV: SharedValue<number>;
+  viewportHeightSV: SharedValue<number>;
   renderWidth: number;
   renderHeight: number;
 };
@@ -149,6 +164,15 @@ type InteractiveFilterBoardProps = {
   maxScale?: number;
   /** Two fingers pan as well as zoom. See `useZoomPanGesture`'s `pinchPans`. */
   pinchPans?: boolean;
+  /**
+   * OPT-IN: a viewport bigger than the render box that the zoomed board fills
+   * (the spray hold editor's whole screen). The clip view takes the viewport's
+   * size, the board sits at its offset, and pans clamp to its visible band (see
+   * `ZoomViewport`). At 1× the board looks exactly as it does without one; the
+   * area round it is empty but still takes the pinch and the overlays'
+   * touches. Left out, the clip is the render box and nothing changes.
+   */
+  viewport?: ZoomViewport;
 };
 
 /** What {@link InteractiveFilterBoard} exposes through `controlRef`. */
@@ -196,6 +220,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   resetZoomStyle,
   maxScale,
   pinchPans,
+  viewport,
 }: InteractiveFilterBoardProps) {
   // Shared with the rest/zoom tap overlays so they mark themselves simultaneous
   // with the pinch — same Android pinch-stall fix as the create board (a finger
@@ -211,6 +236,10 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     translateYSV,
     containerWidthSV,
     containerHeightSV,
+    viewportWidthSV,
+    viewportHeightSV,
+    viewportOffsetXSV,
+    viewportOffsetYSV,
     resetZoom,
     zoomTo,
     animatedZoomStyle,
@@ -222,7 +251,24 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     pinchRef,
     maxScale,
     pinchPans,
+    viewport,
   });
+
+  // With a viewport the overlays above the board are laid out over the whole
+  // viewport, where the board sits at an offset: they read the translate WITH
+  // the offset folded in, so their `(p − c)·s + c + t` maths stays exact.
+  // Without one the hook's own values go straight through, as they always have.
+  const viewportTranslateXSV = useDerivedValue(
+    () => translateXSV.value + viewportOffsetXSV.value,
+    [translateXSV, viewportOffsetXSV],
+  );
+  const viewportTranslateYSV = useDerivedValue(
+    () => translateYSV.value + viewportOffsetYSV.value,
+    [translateYSV, viewportOffsetYSV],
+  );
+  const hasViewport = viewport != null;
+  const overlayTranslateXSV: DerivedValue<number> = hasViewport ? viewportTranslateXSV : translateXSV;
+  const overlayTranslateYSV: DerivedValue<number> = hasViewport ? viewportTranslateYSV : translateYSV;
 
   const transformContext = useMemo<FilterBoardTransformContext>(
     () => ({
@@ -230,10 +276,12 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       pinchRef,
       scaleSV,
       isPinchingSV,
-      translateXSV,
-      translateYSV,
+      translateXSV: overlayTranslateXSV,
+      translateYSV: overlayTranslateYSV,
       containerWidthSV,
       containerHeightSV,
+      viewportWidthSV,
+      viewportHeightSV,
       renderWidth,
       renderHeight,
     }),
@@ -241,10 +289,12 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
       pinchGesture,
       scaleSV,
       isPinchingSV,
-      translateXSV,
-      translateYSV,
+      overlayTranslateXSV,
+      overlayTranslateYSV,
       containerWidthSV,
       containerHeightSV,
+      viewportWidthSV,
+      viewportHeightSV,
       renderWidth,
       renderHeight,
     ],
@@ -273,8 +323,9 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   const overlayGesture = useZoomedHoldTapGesture({
     zoomPanGesture,
     scaleSV,
-    translateXSV,
-    translateYSV,
+    // Inverted in the pan overlay's coordinates, which are the viewport's.
+    translateXSV: overlayTranslateXSV,
+    translateYSV: overlayTranslateYSV,
     containerWidthSV,
     containerHeightSV,
     hitTargets,
@@ -318,11 +369,26 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
     );
   }, [activeHoldId, holdById, boardWidth, boardHeight, renderWidth, mirrored]);
 
+  // With a viewport the clip is the viewport and the board is placed in it at
+  // the offset, render-box sized, so the transform still scales about the
+  // board's own centre. Without one the board fills the render-box clip.
+  const clipWidth = viewport ? viewport.width : renderWidth;
+  const clipHeight = viewport ? viewport.height : renderHeight;
+  const boardBoxStyle: ViewStyle | null = viewport
+    ? {
+        position: 'absolute',
+        left: viewport.offsetX,
+        top: viewport.offsetY,
+        width: renderWidth,
+        height: renderHeight,
+      }
+    : null;
+
   return (
     <View style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
-        <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
-          <Animated.View style={[styles.board, animatedZoomStyle]}>
+        <View style={[styles.clip, { width: clipWidth, height: clipHeight }]}>
+          <Animated.View style={[boardBoxStyle ?? styles.board, animatedZoomStyle]}>
             {backgroundPhotoUrl ? (
               <>
                 <Image
@@ -399,7 +465,10 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               touches even when zoomed. Its root is `pointerEvents="box-none"`,
               so taps on empty space fall through to the pan-reset layer below. */}
           {renderInTransform ? (
-            <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, animatedZoomStyle]}>
+            <Animated.View
+              pointerEvents="box-none"
+              style={[boardBoxStyle ?? StyleSheet.absoluteFill, animatedZoomStyle]}
+            >
               {renderInTransform(transformContext)}
             </Animated.View>
           ) : null}
