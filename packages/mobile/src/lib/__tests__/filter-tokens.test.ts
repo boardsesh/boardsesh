@@ -74,6 +74,21 @@ describe('getActiveFilterTokens', () => {
     expect(setGrade).toHaveBeenCalledWith({ minGradeId: undefined, maxGradeId: undefined });
   });
 
+  it('names a grade the way the rail chip does when the chip labels are given (#5960)', () => {
+    const tokens = getActiveFilterTokens({
+      filters: { ...DEFAULT_FILTERS, minGrade: 5, maxGrade: 5 },
+      boardFilters: {},
+      grades: mockGrades,
+      t: mockT,
+      formatGradeByDifficultyId: mockFormatGradeById,
+      gradeChipLabels: new Map([[5, 'V0 / 4B']]),
+      patchFilters: vi.fn(),
+      patchBoardFilters: vi.fn(),
+      setGrade: vi.fn(),
+    });
+    expect(tokens[0]).toMatchObject({ key: 'grade', label: 'V0 / 4B' });
+  });
+
   it('omits the grade token when grades data is unavailable', () => {
     // Call directly: a default param can't be overridden by an explicit
     // `undefined`, so the helper's `grades = mockGrades` default would win.

@@ -42,6 +42,9 @@ type GetActiveFilterTokensArgs = {
    *  matching how the list rows render grades — keeps the chip from showing the
    *  dual "7a+/V7" string. Falls back to the dual name when it returns null. */
   formatGradeByDifficultyId: (difficultyId: number | null | undefined) => string | null;
+  /** The rail's own chip labels (`distinctGradeChipLabels`), so the token names
+   *  a grade exactly as the chip the climber picked it from does (#5960). */
+  gradeChipLabels?: ReadonlyMap<number, string>;
   patchFilters: (patch: Partial<ClimbFilterState>) => void;
   patchBoardFilters: (patch: Partial<ClimbBoardFilterState>) => void;
   setGrade: (grade: GradeBound) => void;
@@ -57,6 +60,7 @@ export function getActiveFilterTokens({
   grades,
   t,
   formatGradeByDifficultyId,
+  gradeChipLabels,
   patchFilters,
   patchBoardFilters,
   setGrade,
@@ -76,7 +80,9 @@ export function getActiveFilterTokens({
   if (grades != null && (filters.minGrade != null || filters.maxGrade != null)) {
     // Prefer the user's single-scale grade name; fall back to the dual name.
     const gradeName = (difficultyId: number) =>
-      formatGradeByDifficultyId(difficultyId) ?? getGradeName(difficultyId, grades);
+      gradeChipLabels?.get(difficultyId) ??
+      formatGradeByDifficultyId(difficultyId) ??
+      getGradeName(difficultyId, grades);
     let label: string;
     if (filters.minGrade != null && filters.maxGrade != null) {
       // A single selected grade (min == max) reads as the bare grade name, not a range.
