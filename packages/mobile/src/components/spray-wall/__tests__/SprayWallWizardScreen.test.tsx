@@ -232,7 +232,11 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
   SprayWallVisibilityField: () => null,
-  SprayTrainingConsentField: () => null,
+  SprayTrainingConsentField: () => createElement('div', { 'data-testid': 'builder-consent' }),
+}));
+vi.mock('../SprayWallTrainingConsentRow', () => ({
+  SprayWallTrainingConsentRow: ({ wallUuid }: { wallUuid: string }) =>
+    createElement('div', { 'data-testid': 'server-consent' }, wallUuid),
 }));
 const trainingConsentMock = vi.hoisted(() =>
   vi.fn((_wallUuid: string | null, _enabled: boolean) => ({ data: undefined as boolean | null | undefined })),
@@ -379,6 +383,22 @@ describe('resume freshness', () => {
 
     expect(alertMock).not.toHaveBeenCalled();
     expect(queryByTestId('identity')).not.toBeNull();
+    // No wall yet: the training switch is the builder's, sent with the create.
+    expect(queryByTestId('builder-consent')).not.toBeNull();
+    expect(queryByTestId('server-consent')).toBeNull();
+  });
+
+  it("shows the stored training switch, not the builder's, when Back reaches the form of a wall that exists", async () => {
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const { getByText, getByTestId, queryByTestId } = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+
+    act(() => getByText('sprayWizard.back').click());
+    expect(queryByTestId('identity')).not.toBeNull();
+    expect(getByTestId('server-consent').textContent).toBe('wall-1');
+    expect(queryByTestId('builder-consent')).toBeNull();
   });
 });
 

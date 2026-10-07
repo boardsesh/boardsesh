@@ -180,6 +180,7 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   SprayWallVisibilityField: () => null,
   SprayTrainingConsentField: () => null,
 }));
+vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
 vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
   useSprayWallTrainingConsent: () => ({ data: undefined }),
 }));

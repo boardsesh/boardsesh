@@ -116,6 +116,7 @@ import {
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
 import { useSprayWallTrainingConsent } from '../../lib/spray/use-spray-wall-training-consent';
+import { SprayWallTrainingConsentRow } from './SprayWallTrainingConsentRow';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
@@ -1475,7 +1476,16 @@ export function SprayWallWizardScreen({
             {/* Same three-way control as Edit board: two switches let "Public"
                 and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
             <SprayWallVisibilityField builder={builder} />
-            <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
+            {/* Before the wall exists the switch is the builder's, sent with
+                `createSprayWall`. Once it exists (Back after a failed upload, or
+                a resumed wall) nothing re-sends the builder, so the switch reads
+                and writes the server's value instead. The flow's owner is the
+                wall's owner. */}
+            {state.wall ? (
+              <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner />
+            ) : (
+              <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
+            )}
             <BoardVisibilityFields builder={builder} hideVisibilitySwitches />
 
             {/* The wall cap said before it bites rather than after: ten is a
