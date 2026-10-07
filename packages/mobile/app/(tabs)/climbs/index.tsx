@@ -54,6 +54,7 @@ import {
 } from '../../../src/lib/collection-filter';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
+import { distinctGradeChipLabels } from '../../../src/components/grade/grade-chip-labels';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
 import { useDimensionLockUpkeep, useDimensionLocks } from '../../../src/lib/dimension-lock-store';
 import {
@@ -541,7 +542,7 @@ function ClimbListInner() {
   const gradesRef = useRef(gradesData);
   gradesRef.current = gradesData;
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
-  const { formatGradeByDifficultyId } = useGradeFormat();
+  const { formatGradeByDifficultyId, gradeFormat } = useGradeFormat();
   const formatBoardGradeByDifficultyId = useCallback(
     (difficultyId: number | null | undefined) => formatGradeByDifficultyId(difficultyId, boardName),
     [formatGradeByDifficultyId, boardName],
@@ -1279,6 +1280,12 @@ function ClimbListInner() {
     [filters.minGrade, filters.maxGrade],
   );
   const activeFilterCount = useMemo(() => countActiveFilters(filters, boardFilters), [filters, boardFilters]);
+  // The pill names a grade the way the rail's chip does ("V0 / 4B" where V0
+  // alone would be ambiguous), so one pick is never spelled two ways (#5960).
+  const gradeChipLabels = useMemo(
+    () => (grades ? distinctGradeChipLabels(grades, gradeFormat, boardName) : undefined),
+    [grades, gradeFormat, boardName],
+  );
   // Removable active-filter tokens for the scope row beneath the search field.
   // Each token's `clear` patches just its field back to the default.
   const filterTokens = useMemo(
@@ -1289,11 +1296,22 @@ function ClimbListInner() {
         grades,
         t,
         formatGradeByDifficultyId: formatBoardGradeByDifficultyId,
+        gradeChipLabels,
         patchFilters,
         patchBoardFilters,
         setGrade,
       }),
-    [filters, boardFilters, grades, t, formatBoardGradeByDifficultyId, patchFilters, patchBoardFilters, setGrade],
+    [
+      filters,
+      boardFilters,
+      grades,
+      t,
+      formatBoardGradeByDifficultyId,
+      gradeChipLabels,
+      patchFilters,
+      patchBoardFilters,
+      setGrade,
+    ],
   );
   const nonGradeFilterTokens = useMemo(
     () => filterTokens.filter((filterToken) => filterToken.key !== 'grade'),

@@ -151,7 +151,7 @@ vi.mock('../../../theme/colors', () => ({
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 
 vi.mock('../../../hooks/use-grade-format', () => ({
-  useGradeFormat: () => ({ formatGrade: (name: string | null | undefined) => name ?? null }),
+  useGradeFormat: () => ({ gradeFormat: 'v-grade', formatGrade: (name: string | null | undefined) => name ?? null }),
 }));
 
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: haptics.selection }));
@@ -369,6 +369,23 @@ describe('GradeRangeRail', () => {
 });
 
 describe('GradeSingleSelectRail', () => {
+  it('labels every chip differently when grades share a V grade (#5960)', () => {
+    const scale = [
+      { difficultyId: 10, name: '4a/V0' },
+      { difficultyId: 11, name: '4b/V0' },
+      { difficultyId: 12, name: '4c/V0' },
+      { difficultyId: 15, name: '5c/V2' },
+    ] as unknown as Grade[];
+    const { getByText, queryByText } = render(
+      <GradeSingleSelectRail grades={scale} selectedDifficultyId={null} onSelect={vi.fn()} />,
+    );
+    expect(getByText('V0 / 4A')).toBeTruthy();
+    expect(getByText('V0 / 4B')).toBeTruthy();
+    expect(getByText('V0 / 4C')).toBeTruthy();
+    expect(getByText('V2')).toBeTruthy();
+    expect(queryByText('V0')).toBeNull();
+  });
+
   beforeEach(() => {
     haptics.selection.mockClear();
   });

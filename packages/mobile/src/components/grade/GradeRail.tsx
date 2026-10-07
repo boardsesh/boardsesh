@@ -23,6 +23,7 @@ import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useGradeFormat } from '../../hooks/use-grade-format';
+import { distinctGradeChipLabels } from './grade-chip-labels';
 import { gradeRailCenter } from '../../lib/grade-seed';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing } from '../../theme/tokens';
@@ -138,7 +139,7 @@ export function GradeRangeRail({
   // The clear chip's selected accent: brand primary (purple) by default so climbs
   // stays purple; the logbook passes amber.
   const clearAccent = accentColor ?? brandColors.primary;
-  const { formatGrade } = useGradeFormat();
+  const { gradeFormat } = useGradeFormat();
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   const chipLayoutsRef = useRef<Record<number, ChipLayout>>({});
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,6 +159,11 @@ export function GradeRangeRail({
   const userInteractedRef = useRef(false);
 
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
+  // No two chips read the same: "V0 V0 V0" becomes "V0 / 4A", "V0 / 4B"... (#5960).
+  const chipLabels = useMemo(
+    () => distinctGradeChipLabels(grades, gradeFormat, boardName),
+    [grades, gradeFormat, boardName],
+  );
   const gradeIds = useMemo(() => grades.map((grade) => grade.difficultyId), [grades]);
   const centerId = useMemo(() => {
     // With centering-on-empty off (the logbook filter), only auto-center when a
@@ -352,7 +358,7 @@ export function GradeRangeRail({
           accessibilityState={{ selected: anySelected }}
         />
         {grades.map((grade) => {
-          const label = formatGrade(grade.name, boardName) ?? grade.name;
+          const label = chipLabels.get(grade.difficultyId) ?? grade.name;
           const gradeColor = getGradeColor(grade.name) ?? DEFAULT_GRADE_COLOR;
           const endpoint = isGradeEndpoint(bound, grade.difficultyId);
           const insideRange = !endpoint && isGradeInRange(bound, grade.difficultyId);
@@ -422,7 +428,7 @@ export function GradeSingleSelectRail({
   style,
 }: GradeSingleSelectRailProps) {
   const { t } = useTranslation('climbs');
-  const { formatGrade } = useGradeFormat();
+  const { gradeFormat } = useGradeFormat();
   const scrollRef = useRef<ElementRef<typeof ScrollView>>(null);
   const chipLayoutsRef = useRef<Record<number, ChipLayout>>({});
   const [railWidth, setRailWidth] = useState(0);
@@ -437,6 +443,11 @@ export function GradeSingleSelectRail({
   // focus and re-centring there IS the yank.
   const userInteractedRef = useRef(false);
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
+  // No two chips read the same: "V0 V0 V0" becomes "V0 / 4A", "V0 / 4B"... (#5960).
+  const chipLabels = useMemo(
+    () => distinctGradeChipLabels(grades, gradeFormat, boardName),
+    [grades, gradeFormat, boardName],
+  );
   const focusId = selectedDifficultyId ?? consensusDifficultyId ?? undefined;
 
   // Snapping is a tick-sheet behaviour. Every other consumer (the generator
@@ -543,7 +554,7 @@ export function GradeSingleSelectRail({
       }}
     >
       {grades.map((grade) => {
-        const label = formatGrade(grade.name, boardName) ?? grade.name;
+        const label = chipLabels.get(grade.difficultyId) ?? grade.name;
         const gradeColor = getGradeColor(grade.name) ?? DEFAULT_GRADE_COLOR;
         const selected = grade.difficultyId === selectedDifficultyId;
         const consensus = !selected && grade.difficultyId === consensusDifficultyId;
