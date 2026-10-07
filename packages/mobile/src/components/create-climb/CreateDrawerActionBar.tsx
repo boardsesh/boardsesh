@@ -354,9 +354,7 @@ function SaveButton({
         // `primaryFill` (lifts to #7C3AED in dark), matching every other CTA.
         tintColor={view.tint === 'success' ? brandColors.success : undefined}
         // A publish with no start or no finish disables the button; the status
-        // line directly below names what is missing, so it is never mute. A
-        // missing setter grade does NOT disable it — that tap opens the grade
-        // rail instead (#5954).
+        // line directly below names what is missing, so it is never mute.
         disabled={view.disabled || publishBlocked}
         onPress={onSave}
       />

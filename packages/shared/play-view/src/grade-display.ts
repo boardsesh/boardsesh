@@ -312,3 +312,45 @@ export function getSoftGradeColorByFormat(
   }
   return getSoftVGradeColor(extractVGrade(difficulty), darkMode);
 }
+
+/**
+ * Is this a project: a published climb nobody has graded yet (#5971)?
+ *
+ * On a spray wall a climb publishes with no grade and its first ascent grades
+ * it, so "no grade" is a real state a climber sees, not a missing value. It
+ * reads the same on every board: a user-set Kilter climb nobody has sent is a
+ * project too.
+ *
+ * Takes the grade label the surface is ABOUT to show (after the Boardsesh grade
+ * and your own grade have had their say), so a climb you graded yourself, or one
+ * the Boardsesh model has a grade for, never reads as a project. A draft is never
+ * one: it carries its own chip.
+ */
+export function isProjectClimb({
+  gradeLabel,
+  isDraft,
+  statsKnown = true,
+}: {
+  gradeLabel: string | null | undefined;
+  isDraft?: boolean | null;
+  /**
+   * False when the surface has no stats for the climb yet (an offline Kilter row
+   * before the stats table synced): a blank grade there is missing data, not a
+   * project. See {@link climbStatsKnown}.
+   */
+  statsKnown?: boolean;
+}): boolean {
+  if (isDraft === true || !statsKnown) return false;
+  return (gradeLabel ?? '').trim() === '';
+}
+
+/**
+ * Does this surface know the climb's stats? A spray climb always counts: it
+ * gets its stats row when it is published, ungraded or not. Elsewhere it is the
+ * `statsAngle` a search row carries (null when the climb has no stats row at
+ * any angle, which is every row of an offline search before the stats synced;
+ * absent on a queue item, which says nothing either way).
+ */
+export function climbStatsKnown(boardName: string | null | undefined, statsAngle: number | null | undefined): boolean {
+  return boardName === 'spray' || statsAngle != null;
+}

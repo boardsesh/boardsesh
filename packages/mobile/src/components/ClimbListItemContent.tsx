@@ -13,11 +13,12 @@ import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useMyGrade } from '../hooks/use-my-grade';
 import { renderDifficulty } from '../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
-import { splitGradeLabel } from '@boardsesh/play-view';
+import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
+import { ProjectChip } from './ProjectChip';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
 import { useIsClimbFavorited } from '../hooks/use-is-climb-favorited';
@@ -419,27 +420,38 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   // different scales, and the line costs no extra width.
   const secondary =
     consensusGrade !== undefined ? consensusGrade : showsMine ? splitGradeLabel(derived.secondaryLabel)[0] : null;
+  // Nobody has graded it yet (#5971): the grade's slot says so instead of
+  // standing empty.
+  const isProject = isProjectClimb({
+    gradeLabel: primaryLabel,
+    isDraft: climb.is_draft,
+    statsKnown: climbStatsKnown(boardName, climb.statsAngle),
+  });
 
   return (
     <View style={styles.gradeColumn}>
       <View style={styles.iconGradeRow}>
         {markedAsMine ? <Icon name="person" size={13} color={systemColors.secondaryLabel} /> : null}
         {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-        <Text
-          variant="title3"
-          numberOfLines={1}
-          // The glyph supplies the column floor when it renders, so the minimum
-          // width is only needed on an unmarked row. Without this a marked row
-          // would cost the climb name the full glyph width on top of a gutter
-          // it no longer needs.
-          style={[
-            styles.gradeText,
-            markedAsMine || gradeIsConsensus ? styles.gradeTextMarked : null,
-            { color: primaryColor },
-          ]}
-        >
-          {primaryLabel}
-        </Text>
+        {isProject ? (
+          <ProjectChip testID="climb-row-project-chip" />
+        ) : (
+          <Text
+            variant="title3"
+            numberOfLines={1}
+            // The glyph supplies the column floor when it renders, so the minimum
+            // width is only needed on an unmarked row. Without this a marked row
+            // would cost the climb name the full glyph width on top of a gutter
+            // it no longer needs.
+            style={[
+              styles.gradeText,
+              markedAsMine || gradeIsConsensus ? styles.gradeTextMarked : null,
+              { color: primaryColor },
+            ]}
+          >
+            {primaryLabel}
+          </Text>
+        )}
       </View>
       {secondary ? (
         <View style={styles.iconGradeRow}>

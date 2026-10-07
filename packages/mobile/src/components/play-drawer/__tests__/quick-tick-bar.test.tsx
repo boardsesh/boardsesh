@@ -145,6 +145,8 @@ function makeForm(overrides: Partial<QuickTickForm> = {}): QuickTickForm {
     maximumClimbedAtDate: new Date('2025-06-01T08:00:00.000Z'),
     grades: [{ difficultyId: 7, name: 'V5' }] as unknown as QuickTickForm['grades'],
     consensusDifficultyId: 7,
+    firstAscent: false,
+    saveBlockedByGrade: false,
     resolvedGradeName: undefined,
     ascentType: 'send',
     saveLabel: 'playView.tickBar.sendSaveLabel',
@@ -254,6 +256,20 @@ describe('QuickTickBar rail rows', () => {
 
     fireEvent.click(rail);
     expect(form.onGradeSelect).toHaveBeenCalledWith(7);
+  });
+});
+
+describe('QuickTickBar first ascent (#5971)', () => {
+  it('says the grade sets the climb\u2019s grade on a first ascent', () => {
+    const { getByText, queryByText } = renderBar({ firstAscent: true });
+    expect(getByText('mobile.tick.firstAscent')).toBeTruthy();
+    expect(queryByText('mobile.tick.gradeHelp')).toBeNull();
+  });
+
+  it('keeps the ordinary grade help otherwise', () => {
+    const { queryByText, getByText } = renderBar();
+    expect(queryByText('mobile.tick.firstAscent')).toBeNull();
+    expect(getByText('mobile.tick.gradeHelp')).toBeTruthy();
   });
 });
 

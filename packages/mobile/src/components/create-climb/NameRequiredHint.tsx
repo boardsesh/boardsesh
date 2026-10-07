@@ -13,11 +13,9 @@ import { spacing } from '../../theme/tokens';
 type NameRequiredHintProps = {
   /** Bumps on every blank Save tap, so a repeat tap is announced again. */
   announceKey: number;
-  /** The vertical space this line takes in the drawer, top margin included. */
-  onFootprint?: (height: number) => void;
 };
 
-export function NameRequiredHint({ announceKey, onFootprint }: NameRequiredHintProps) {
+export function NameRequiredHint({ announceKey }: NameRequiredHintProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
   const message = t('mobile.create.header.nameRequired');
@@ -25,13 +23,7 @@ export function NameRequiredHint({ announceKey, onFootprint }: NameRequiredHintP
     AccessibilityInfo.announceForAccessibility(message);
   }, [message, announceKey]);
   return (
-    <Text
-      variant="footnote"
-      color={brandColors.error}
-      style={styles.hint}
-      testID="create-drawer-name-required"
-      onLayout={onFootprint ? (event) => onFootprint(event.nativeEvent.layout.height + spacing[2]) : undefined}
-    >
+    <Text variant="footnote" color={brandColors.error} style={styles.hint} testID="create-drawer-name-required">
       {message}
     </Text>
   );

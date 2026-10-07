@@ -568,6 +568,59 @@ describe('ClimbListItemContent draft chip', () => {
   });
 });
 
+describe('ClimbListItemContent project chip (#5971)', () => {
+  beforeEach(() => {
+    liveStatsOverride.current = null;
+    myGradeOverride.current = { status: 'unknown' };
+  });
+
+  const chip = (container: HTMLElement) => container.querySelector('[aria-label="mobile.project.chip"]');
+
+  const renderWith = (climb: Record<string, unknown>, boardName: 'spray' | 'kilter' = 'spray') =>
+    render(
+      <ClimbListItemContent
+        climb={{ ...baseClimb, ...climb }}
+        boardName={boardName}
+        layoutId={1}
+        sizeId={1}
+        setIds="1"
+        angle={40}
+      />,
+    );
+
+  it('puts Project in the grade slot of a published climb nobody has graded', () => {
+    resolveGrade.mockReturnValue({ label: '', color: '#000000', isBoardsesh: false });
+    const { container } = renderWith({ difficulty: '', boardseshDifficulty: null });
+    expect(chip(container)?.textContent).toBe('mobile.project.chip');
+    expect(gradeNode(container)).toBeNull();
+  });
+
+  it('shows your own grade instead, once you have graded it', () => {
+    resolveGrade.mockReturnValue({ label: '', color: '#000000', isBoardsesh: false });
+    myGradeOverride.current = { status: 'set', difficultyId: 27, climbedAt: '2026-08-01T00:00:00.000Z' };
+    const { container } = renderWith({ difficulty: '', boardseshDifficulty: null });
+    expect(chip(container)).toBeNull();
+    expect(gradeNode(container)?.textContent).not.toBe('');
+  });
+
+  it('leaves an offline Kilter row with no stats yet blank, not a project', () => {
+    resolveGrade.mockReturnValue({ label: '', color: '#000000', isBoardsesh: false });
+    const offline = renderWith({ difficulty: '', boardseshDifficulty: null, statsAngle: null }, 'kilter');
+    expect(chip(offline.container)).toBeNull();
+    offline.unmount();
+    // Once its stats are known, an ungraded Kilter climb is a project like any other.
+    const synced = renderWith({ difficulty: '', boardseshDifficulty: null, statsAngle: 40 }, 'kilter');
+    expect(chip(synced.container)?.textContent).toBe('mobile.project.chip');
+  });
+
+  it('leaves a graded climb, and an ungraded draft, without it', () => {
+    resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
+    expect(chip(renderWith({}).container)).toBeNull();
+    resolveGrade.mockReturnValue({ label: '', color: '#000000', isBoardsesh: false });
+    expect(chip(renderWith({ difficulty: '', is_draft: true }).container)).toBeNull();
+  });
+});
+
 // #5917: exercise the actual indexed hook and status precedence, not a glyph stub.
 describe('ClimbListItemContent original and mirror statuses', () => {
   const tick = (overrides: Partial<StatusEntry> = {}): StatusEntry => ({

@@ -12,6 +12,7 @@ import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { DraftChip } from '../DraftChip';
+import { ProjectChip } from '../ProjectChip';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { PLAY_HEADER_TRAILING_MIN_WIDTH, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
@@ -20,7 +21,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useMyGrade } from '../../hooks/use-my-grade';
 import { renderDifficulty } from '../../lib/boardsesh-grade-display';
 import { derivePersonalGradeDisplay } from '@boardsesh/logbook';
-import { splitGradeLabel } from '@boardsesh/play-view';
+import { climbStatsKnown, isProjectClimb, splitGradeLabel } from '@boardsesh/play-view';
 
 type PlayDrawerHeaderProps = {
   name: string;
@@ -226,9 +227,15 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 the beta, so an unlabelled headline number that is actually your
                 private opinion needs to say so. */}
             {markedAsMine ? <Icon name="person" size={13} color={iosSystemColors.systemGray} /> : null}
-            <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>
-              {difficulty}
-            </Text>
+            {/* Nobody has graded it yet (#5971): say so rather than leave the
+                slot blank. */}
+            {isProjectClimb({ gradeLabel: difficulty, isDraft, statsKnown: climbStatsKnown(boardName, statsAngle) }) ? (
+              <ProjectChip testID="play-drawer-climb-project" />
+            ) : (
+              <Text variant="headline" style={[styles.gradeText, { color: resolvedGradeColor }]} numberOfLines={1}>
+                {difficulty}
+              </Text>
+            )}
           </View>
           {secondaryGrade && !dropSecondaryLine ? (
             <View style={styles.gradeRow}>

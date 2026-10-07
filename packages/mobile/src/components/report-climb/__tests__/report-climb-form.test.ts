@@ -141,6 +141,19 @@ describe('reportToastCopy', () => {
     }
   });
 
+  it('says the grade changed when the proposal came back approved (a wall owner, #5971)', () => {
+    for (const status of ['created', 'added'] as const) {
+      expect(reportToastCopy(status, 'grade', { ...proposal, status: 'approved' })).toEqual({
+        textI18nKey: 'mobile.report.toast.gradeChanged',
+        params: {},
+      });
+    }
+    // An approved hide keeps its own copy.
+    expect(reportToastCopy('created', 'hide', { ...proposal, status: 'approved' }).textI18nKey).toBe(
+      'mobile.report.toast.reported',
+    );
+  });
+
   it('says nothing about votes when this climber already reported the climb', () => {
     expect(reportToastCopy('already_reported', 'hide', proposal)).toEqual({
       textI18nKey: 'mobile.report.toast.alreadyReported',

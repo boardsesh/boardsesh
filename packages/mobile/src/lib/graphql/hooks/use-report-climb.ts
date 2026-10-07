@@ -25,6 +25,9 @@ export const PROPOSALS_QUERY_KEY = ['proposals'] as const;
 /** Key `useClimb` writes under; a report can flip `is_hidden` on the climb. */
 const CLIMB_QUERY_KEY = ['climb'] as const;
 
+/** The climb lists a changed grade has to reach: the same keys a create-climb save refreshes. */
+const CLIMB_LIST_QUERY_KEYS = [['searchClimbs'], ['infiniteSearchClimbs'], ['searchClimbsCount']] as const;
+
 export function useReportClimb() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -35,9 +38,14 @@ export function useReportClimb() {
       );
       return response.reportClimb;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: CLIMB_QUERY_KEY });
+      // An approved grade (a spray wall owner's, #5971) changed the climb's grade
+      // on the server, so the lists showing the old one refetch.
+      if (result.proposal.status === 'approved' && result.proposal.type === 'grade') {
+        for (const queryKey of CLIMB_LIST_QUERY_KEYS) void queryClient.invalidateQueries({ queryKey });
+      }
     },
   });
 }

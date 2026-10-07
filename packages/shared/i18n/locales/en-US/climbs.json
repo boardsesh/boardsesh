@@ -132,6 +132,7 @@
     "title": "Boardsesh grade",
     "moonboardBody": "We don't have community grade data for MoonBoard yet. Log your Moon sends on Boardsesh to help unlock it.",
     "woodsBody": "We don't have community grade data for the Woods Board yet. Log your Woods sends on Boardsesh to help unlock it.",
+    "sprayBody": "On a spray wall the crew grades each climb. The first ascent sets the grade, and every climber's grade after that moves it.",
     "loadError": "Couldn't load the grade right now.",
     "byAngle": "How it climbs by angle",
     "summaryLocal": "local",
@@ -453,7 +454,8 @@
       "logAscentAria": "Log {{status}}",
       "setTriesAria_one": "Set to {{count}} try",
       "setTriesAria_other": "Set to {{count}} tries",
-      "moreTriesAria": "One more try"
+      "moreTriesAria": "One more try",
+      "firstAscent": "First ascent. Your grade sets this climb's grade."
     },
     "filter": {
       "climbType": {
@@ -652,7 +654,8 @@
       "toast": {
         "reported": "Reported. {{current}} of {{required}} votes to hide it",
         "reportedGrade": "Grade change proposed. The crew votes on it",
-        "alreadyReported": "You've already reported this climb"
+        "alreadyReported": "You've already reported this climb",
+        "gradeChanged": "Grade changed"
       }
     },
     "hidden": {
@@ -685,6 +688,7 @@
       "edit": "Edit climb",
       "editEntry": "Edit logbook entry",
       "report": "Report climb",
+      "changeGrade": "Change grade",
       "closeOverlay": "Close climb actions",
       "openQueue": "Open the queue",
       "deleteClimb": {
@@ -797,8 +801,7 @@
         }
       },
       "publish": {
-        "blocked": "Add a start and a finish hold to publish",
-        "gradeBlocked": "Pick your grade to publish"
+        "blocked": "Add a start and a finish hold to publish"
       },
       "wallSizeMismatch": "Switch your active board to this Woods size to light it.",
       "routeMenu": {
@@ -806,11 +809,6 @@
         "makeRoute": "Make it a route",
         "makeBoulder": "Make it a boulder",
         "makeBoulderBlocked": "Make it a boulder — delete frames first"
-      },
-      "grade": {
-        "label": "Your grade",
-        "required": "Needed to publish",
-        "optional": "Optional on a draft"
       }
     },
     "holdFilter": {
@@ -896,6 +894,9 @@
       "downloadLine": "Download {{name}} to see which holds get used",
       "download": "Download",
       "unavailable": "Heatmap isn't available right now."
+    },
+    "project": {
+      "chip": "Project"
     }
   },
   "frontDoor": {

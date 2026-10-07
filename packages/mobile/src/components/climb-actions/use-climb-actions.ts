@@ -28,6 +28,7 @@ import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
+import { ownClimbIsReportable } from '../play-drawer/can-report-climb';
 import { track } from '../../lib/analytics';
 import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
 import { canDeleteClimb } from './delete-climb-rules';
@@ -473,11 +474,15 @@ export function useClimbActions({
     // AGAINST the climb, so it sits below everything a climber came here to do.
     // Not on the viewer's own climb: reporting yourself to the crew has no
     // outcome, and the setter already has Edit for anything they want changed.
+    // Except on a spray wall, where a grade proposal is how the setter changes
+    // their own climb's grade (#5971). A draft is never reported.
     const isOwnClimb = !!currentUserId && climb.userId === currentUserId;
-    if (isAuthenticated && moderationEnabled && !isOwnClimb) {
+    const reportable = climb.is_draft !== true && (!isOwnClimb || ownClimbIsReportable(boardName));
+    if (isAuthenticated && moderationEnabled && reportable) {
       items.push({
         id: 'report',
-        title: t('mobile.climbActions.report'),
+        // Your own spray climb: the report is how you change its grade (#5971).
+        title: isOwnClimb ? t('mobile.climbActions.changeGrade') : t('mobile.climbActions.report'),
         icon: 'flag',
         color: accentColor,
         run: () => {

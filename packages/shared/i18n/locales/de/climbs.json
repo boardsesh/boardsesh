@@ -132,6 +132,7 @@
     "title": "Boardsesh-Grad",
     "moonboardBody": "Für MoonBoard haben wir noch keine Grad-Daten aus der Community. Trag deine Moon-Begehungen auf Boardsesh ein, damit es losgehen kann.",
     "woodsBody": "Für das Woods Board haben wir noch keine Grad-Daten aus der Community. Trag deine Woods-Begehungen auf Boardsesh ein, damit es losgehen kann.",
+    "sprayBody": "An einer Spraywall bewertet die Crew jeden Boulder. Die Erstbegehung legt den Grad fest, danach verschiebt ihn jede weitere Bewertung.",
     "loadError": "Der Grad konnte gerade nicht geladen werden.",
     "byAngle": "Wie er sich je Winkel klettert",
     "summaryLocal": "lokal",
@@ -453,7 +454,8 @@
       "logAscentAria": "{{status}} eintragen",
       "setTriesAria_one": "Auf {{count}} Versuch setzen",
       "setTriesAria_other": "Auf {{count}} Versuche setzen",
-      "moreTriesAria": "Ein Versuch mehr"
+      "moreTriesAria": "Ein Versuch mehr",
+      "firstAscent": "Erstbegehung. Dein Grad wird der Grad dieses Boulders."
     },
     "filter": {
       "climbType": {
@@ -652,7 +654,8 @@
       "toast": {
         "reported": "Gemeldet. {{current}} von {{required}} Stimmen zum Ausblenden",
         "reportedGrade": "Gradänderung vorgeschlagen. Die Crew stimmt ab",
-        "alreadyReported": "Du hast diesen Boulder schon gemeldet"
+        "alreadyReported": "Du hast diesen Boulder schon gemeldet",
+        "gradeChanged": "Grad geändert"
       }
     },
     "hidden": {
@@ -685,6 +688,7 @@
       "edit": "Boulder bearbeiten",
       "editEntry": "Routenbuch-Eintrag bearbeiten",
       "report": "Boulder melden",
+      "changeGrade": "Grad ändern",
       "closeOverlay": "Boulder-Aktionen schließen",
       "openQueue": "Warteschlange öffnen",
       "deleteClimb": {
@@ -797,8 +801,7 @@
         }
       },
       "publish": {
-        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen",
-        "gradeBlocked": "Wähle deine Schwierigkeit zum Veröffentlichen"
+        "blocked": "Füge einen Startgriff und einen Topgriff hinzu, um zu veröffentlichen"
       },
       "wallSizeMismatch": "Wähle diese Woods-Größe als aktives Board, um es zu beleuchten.",
       "routeMenu": {
@@ -806,11 +809,6 @@
         "makeRoute": "Zur Route machen",
         "makeBoulder": "Zum Boulder machen",
         "makeBoulderBlocked": "Zum Boulder machen — erst Bilder löschen"
-      },
-      "grade": {
-        "label": "Deine Schwierigkeit",
-        "required": "Zum Veröffentlichen nötig",
-        "optional": "Bei einem Entwurf optional"
       }
     },
     "holdFilter": {
@@ -896,6 +894,9 @@
       "downloadLine": "Lade {{name}} herunter, um zu sehen, welche Griffe genutzt werden",
       "download": "Herunterladen",
       "unavailable": "Die Heatmap ist gerade nicht verfügbar."
+    },
+    "project": {
+      "chip": "Projekt"
     }
   },
   "frontDoor": {

@@ -25,7 +25,7 @@ import { ClimbPreviewCard } from '../ClimbPreviewCard';
 import { GradeSingleSelectRail } from '../grade';
 import { TickNoteField } from '../tick';
 import { useReportClimb } from '../../lib/graphql/hooks/use-report-climb';
-import { useGrades } from '../../lib/graphql/hooks';
+import { useGrades, useProfile } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -71,7 +71,13 @@ export function ReportClimbSheet({
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
-  const [kind, setKind] = useState<ReportKind>('hide');
+  const [chosenKind, setKind] = useState<ReportKind>('hide');
+  // Your own climb (only a spray wall offers Report there, #5971) is reported to
+  // change its grade, never to hide it: the sheet locks to grade and hides the
+  // segmented control. The server refuses a self-hide too.
+  const { data: profile } = useProfile();
+  const ownClimb = !!profile?.id && climb?.userId === profile.id;
+  const kind: ReportKind = ownClimb ? 'grade' : chosenKind;
   const [reason, setReason] = useState('');
   // `TickNoteField` has no maxLength prop; the server bound is 500, enforced here.
   const handleChangeReason = useCallback((next: string) => setReason(next.slice(0, REASON_MAX)), []);
@@ -240,13 +246,15 @@ export function ReportClimbSheet({
       ) : null}
 
       <View style={styles.body}>
-        <SegmentedControl
-          options={kindOptions}
-          selectedKey={kind}
-          onSelect={handleSelectKind}
-          accessibilityLabel={t('mobile.report.kind.label')}
-          tint={brandColors.primaryFill}
-        />
+        {ownClimb ? null : (
+          <SegmentedControl
+            options={kindOptions}
+            selectedKey={kind}
+            onSelect={handleSelectKind}
+            accessibilityLabel={t('mobile.report.kind.label')}
+            tint={brandColors.primaryFill}
+          />
+        )}
         <Text variant="footnote" color={systemColors.secondaryLabel}>
           {kind === 'hide' ? t('mobile.report.kind.hideHint') : t('mobile.report.kind.gradeHint')}
         </Text>

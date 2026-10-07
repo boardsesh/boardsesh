@@ -2203,6 +2203,7 @@ export function PlayDrawer({
               moderationEnabled,
               climb: displayedClimb,
               currentUserId,
+              boardName,
             })
               ? handleOpenReportClimb
               : undefined

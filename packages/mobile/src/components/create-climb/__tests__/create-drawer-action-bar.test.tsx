@@ -194,19 +194,6 @@ describe('CreateDrawerActionBar', () => {
     expect(container.textContent).toContain('mobile.create.publish.blocked');
   });
 
-  it('keeps Save enabled when the grade is the only thing missing', () => {
-    // #5954: the grade rail is below the fold, so the tap is what takes the
-    // setter to it. The controller reports this state as NOT publish-blocked,
-    // with the grade line as the status.
-    const { save, container } = renderBar(1, {
-      publishBlocked: false,
-      draftStatus: { text: 'mobile.create.publish.gradeBlocked', tone: 'warning', announce: true },
-    });
-
-    expect((save as HTMLButtonElement).disabled).toBe(false);
-    expect(container.textContent).toContain('mobile.create.publish.gradeBlocked');
-  });
-
   it('renders no status TEXT for an empty editor, but still holds the row', () => {
     // The words are absent by design — an empty editor has nothing to report.
     // The ROW is not, and that distinction is load-bearing: the drawer sizes the
@@ -335,10 +322,9 @@ describe('CreateDrawerActionBar', () => {
   });
 
   it('keeps the heat line up while the status only says what a publish still needs', () => {
-    // On a spray wall Save publishes by default, so one of these two hints is up
-    // from the first hold until the climb has a start, a finish and a grade —
-    // the whole time the heatmap is in use (#5954 review).
-    for (const text of ['mobile.create.publish.blocked', 'mobile.create.publish.gradeBlocked']) {
+    // On a spray wall Save publishes by default, so this hint is up from the
+    // first hold until the climb has a start and a finish (#5954 review).
+    for (const text of ['mobile.create.publish.blocked']) {
       const { container, unmount } = render(
         createElement(CreateDrawerActionBar, {
           ...baseProps,

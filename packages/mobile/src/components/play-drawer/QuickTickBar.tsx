@@ -45,6 +45,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
     maximumClimbedAtDate,
     grades,
     consensusDifficultyId,
+    firstAscent,
     onQualitySelect,
     onGradeSelect,
     onTriesSelect,
@@ -111,9 +112,17 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
           lever — they graded a climb V10 and watched it keep saying V0. The
           label alone ("My grade") does not say what picking one DOES, so the
           consequence is spelled out once, permanently, right under the rail. */}
-      <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.gradeHelp}>
-        {tClimbs('mobile.tick.gradeHelp')}
-      </Text>
+      {/* On a first ascent the consequence is bigger: this grade becomes the
+          climb's (#5971), and a flash or send cannot be logged without it. */}
+      {firstAscent ? (
+        <Text variant="caption1" style={styles.gradeHelp} testID="tick-first-ascent">
+          {tClimbs('mobile.tick.firstAscent')}
+        </Text>
+      ) : (
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.gradeHelp}>
+          {tClimbs('mobile.tick.gradeHelp')}
+        </Text>
+      )}
 
       <TickFormRow label={tClimbs('mobile.tick.starsLabel')} testID="tick-row-stars">
         <StarRating

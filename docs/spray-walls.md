@@ -3680,28 +3680,22 @@ and start/finish still cap at two each. What is left is five rules a wall answer
 differently, and they live as pure functions in
 `packages/mobile/src/components/create-climb/spray-climb-rules.ts`:
 
-1. **A setter grade is required to publish, optional on a draft.** (Until the
-   mobile half of #5971 lands: the server no longer requires it, see rule 2 of
-   "Climb writes on a wall" above.)
-   `SetterGradeRow.tsx` puts the tick sheets' single-select grade rail in the
-   create form, over the board's own scale (`useGrades`, which falls back to the
-   bundled taxonomy offline — a wall copies the Tension scale, so the ids line up
-   with what `resolveDifficultyId` matches server-side). The pick rides
-   `SaveClimbInput.userGrade` / `UpdateClimbInput.userGrade` as the grade NAME
-   (`"6c/V5"`), the same string `board_difficulty_grades.boulder_name` stores.
-   A missing grade does not disable Save (#5954). The rail is below the fold, so
-   a dead button up top gave no hint where to look: the status line under Save
-   reads "Pick your grade to publish", and tapping Save sends nothing, bumps
-   `focusGradeSignal`, and `CreateDrawer` opens the sheet and scrolls just far
-   enough to show the rail with its "Needed to publish" subtitle in the warning
-   colour. The prompt clears when a grade is picked, when the draft switch goes
-   on, and when a new climb starts. Save is still disabled while a start or a
-   finish hold is missing (`publishBlocked`). Both publish hints give their line
-   to the hold heatmap's legend while the heat is on (`yieldsToHeatmap`), since
-   on a wall one of them is up for most of an ordinary session. `use-last-used-grade.ts` seeds a FRESH climb's picker
-   with what the setter last published on this board — a session on one wall
-   clusters hard — and a draft, a fork and an edit all overwrite that seed with
-   their own grade.
+1. **No grade field (#5971).** The editor asks for no grade and sends none: a
+   wall climb publishes ungraded and its first ascent grades it. The grade row,
+   the "Pick your grade to publish" prompt, the last-used grade seed and the
+   remix grade carry-over are gone. Save is disabled only while a start or a
+   finish hold is missing (`publishBlocked`), and that hint gives its line to the
+   hold heatmap's legend while the heat is on (`yieldsToHeatmap`).
+
+   Downstream, an ungraded published climb shows a **Project** chip in the
+   grade's slot (`isProjectClimb` in `@boardsesh/play-view`, on every board) in
+   list rows and the play-drawer header. The tick sheet on a spray climb nobody
+   has sent says "First ascent. Your grade sets this climb's grade.", offers no
+   default grade, and keeps Send disabled until a grade is picked; an attempt
+   needs none. The sheet's subtitle says "consensus" only from the first ascent
+   on. A setter can report their own published spray climb, because a grade
+   proposal is how its grade changes; a wall owner's applies at once and the
+   toast says "Grade changed".
 2. **Feet are open by default, and the toggle follows the paint.** A wall is a
    field of holds with no set-piece feet, so "any feet" starts on. It is not
    derived, though: the first FOOT hold turns it off and clearing the last one

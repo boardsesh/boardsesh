@@ -13,8 +13,6 @@ type InlineConfirmBannerProps = {
   cancelLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
-  /** The vertical space this banner takes in the drawer, top margin included. */
-  onFootprint?: (height: number) => void;
 };
 
 /**
@@ -40,15 +38,10 @@ export function InlineConfirmBanner({
   cancelLabel,
   onConfirm,
   onCancel,
-  onFootprint,
 }: InlineConfirmBannerProps) {
   const { systemColors, brandColors } = useTheme();
   return (
-    <View
-      style={[styles.banner, { backgroundColor: systemColors.fill }]}
-      accessibilityRole="alert"
-      onLayout={onFootprint ? (event) => onFootprint(event.nativeEvent.layout.height + BANNER_MARGIN_TOP) : undefined}
-    >
+    <View style={[styles.banner, { backgroundColor: systemColors.fill }]} accessibilityRole="alert">
       <View style={styles.text}>
         <Text variant="footnote" style={styles.title}>
           {title}

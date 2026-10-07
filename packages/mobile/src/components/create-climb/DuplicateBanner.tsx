@@ -11,8 +11,6 @@ type DuplicateBannerProps = {
   name: string | null;
   onView?: () => void;
   onDismiss: () => void;
-  /** The vertical space this banner takes in the drawer, top margin included. */
-  onFootprint?: (height: number) => void;
 };
 
 /**
@@ -20,14 +18,11 @@ type DuplicateBannerProps = {
  * because the hold pattern already exists. Rendered in-drawer (not at the
  * screen root) so the drawer's backdrop can't occlude it.
  */
-export function DuplicateBanner({ name, onView, onDismiss, onFootprint }: DuplicateBannerProps) {
+export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
   return (
-    <View
-      style={[styles.banner, { backgroundColor: systemColors.fill }]}
-      onLayout={onFootprint ? (event) => onFootprint(event.nativeEvent.layout.height + BANNER_MARGIN_TOP) : undefined}
-    >
+    <View style={[styles.banner, { backgroundColor: systemColors.fill }]}>
       <View style={styles.bannerText}>
         <Text variant="footnote">
           {name
