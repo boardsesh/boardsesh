@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
@@ -16,12 +16,23 @@ import { spacing } from '../../theme/tokens';
  * the summary line and per-row glyphs; tapping a bar still surfaces its total.
  * Renders nothing when there's no data.
  */
-export function SessionAnalyticsSection({ gradeDistribution }: { gradeDistribution: SessionGradeDistributionItem[] }) {
+export function SessionAnalyticsSection({
+  gradeDistribution,
+  boardName,
+}: {
+  gradeDistribution: SessionGradeDistributionItem[];
+  /** The session's only board, or null when it spans several. */
+  boardName?: string | null;
+}) {
   const { t } = useTranslation('profile');
   const { t: tSession } = useTranslation('session');
   // Match the grade format the Progress tab / useYouProfileData uses so a
   // session's chart reads identically to the profile's.
-  const { formatGrade } = useGradeFormat();
+  const { formatGrade: formatAnyBoardGrade } = useGradeFormat();
+  const formatGrade = useCallback(
+    (difficulty: string | null | undefined) => formatAnyBoardGrade(difficulty, boardName),
+    [formatAnyBoardGrade, boardName],
+  );
 
   // No splitFlash → each grade bar is one solid `gradeBadgeColor` segment.
   const gradeBars = useMemo(

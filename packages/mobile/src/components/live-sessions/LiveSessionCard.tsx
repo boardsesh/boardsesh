@@ -37,7 +37,7 @@ export type LiveSessionCardProps = {
   height: number;
   /** Above 1.2× text the action drops under the stats. */
   stacked: boolean;
-  formatGrade: (grade: string | null | undefined) => string | null;
+  formatGrade: (grade: string | null | undefined, boardName?: string | null) => string | null;
   onPress: (card: LiveCardModel) => void;
   onInvite: (sessionId: string) => void;
 };
@@ -59,8 +59,12 @@ function LiveSessionCardComponent({
   const elapsed = elapsedParts(card.startedAtMs, nowMs);
   const boardLine = liveBoardLine(card, t);
   const followOnly = isListedForFollowedBoardOnly(card);
-  const hardestGrade = card.hardestSendGrade ? (formatGrade(card.hardestSendGrade) ?? card.hardestSendGrade) : null;
-  const climbGrade = card.currentClimbGrade ? (formatGrade(card.currentClimbGrade) ?? card.currentClimbGrade) : null;
+  const hardestGrade = card.hardestSendGrade
+    ? (formatGrade(card.hardestSendGrade, card.boardType) ?? card.hardestSendGrade)
+    : null;
+  const climbGrade = card.currentClimbGrade
+    ? (formatGrade(card.currentClimbGrade, card.boardType) ?? card.currentClimbGrade)
+    : null;
   const action = liveCardAction(card);
   const spokenLabel = liveCardSpokenLabel({ names, card, elapsed, hardestGrade, climbGrade }, t);
 

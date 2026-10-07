@@ -59,7 +59,7 @@ type RowProps = {
   card: LiveCardModel;
   nowMs: number;
   viewerUserId: string | null;
-  formatGrade: (grade: string | null | undefined) => string | null;
+  formatGrade: (grade: string | null | undefined, boardName?: string | null) => string | null;
   onPress: (card: LiveCardModel) => void;
 };
 
@@ -75,7 +75,9 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
   const names = liveNamesCopy(describeLiveNames(card, viewerUserId), t);
   const quiet = isQuietSession(card);
   const elapsed = elapsedParts(card.startedAtMs, nowMs);
-  const grade = card.hardestSendGrade ? (formatGrade(card.hardestSendGrade) ?? card.hardestSendGrade) : null;
+  const grade = card.hardestSendGrade
+    ? (formatGrade(card.hardestSendGrade, card.boardType) ?? card.hardestSendGrade)
+    : null;
   const sends = card.sendCount > 0 ? t('mobile.liveSessions.sends', { count: card.sendCount }) : null;
   const meta = [elapsedShort(elapsed, t), sends].filter((part): part is string => part != null).join(' · ');
   const spoken = [

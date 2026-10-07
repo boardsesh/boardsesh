@@ -36,4 +36,46 @@ export const BOULDER_GRADES = [
   { difficulty_id: 33, font_grade: '8c+', v_grade: 'V16', difficulty_name: '8c+/V16' },
 ] as const;
 
-export type BoulderGrade = (typeof BOULDER_GRADES)[number];
+export type BoulderGrade = {
+  readonly difficulty_id: number;
+  readonly font_grade: string;
+  readonly v_grade: string;
+  readonly difficulty_name: string;
+};
+
+/**
+ * The difficulty ids a MoonBoard problem can be graded at. Moon's own scale is
+ * 5+, 6A, 6A+, 6B … 8C+, so it skips the shared 5b and 5c stops (14, 15) and
+ * everything under 5a. Lists (the grade rail, filters, the setter picker) offer
+ * only these; a label lookup still resolves 14/15, because a community grade
+ * average can round onto them.
+ */
+export const MOONBOARD_DIFFICULTY_IDS: ReadonlySet<number> = new Set(
+  BOULDER_GRADES.map((grade) => grade.difficulty_id).filter(
+    (difficultyId) => difficultyId === 13 || difficultyId >= 16,
+  ),
+);
+
+/**
+ * Where Moon Climbing's Font → V conversion disagrees with the shared (Aurora)
+ * one. The MoonBoard app shows 6A as V2; the shared table says 6a/V3. Ids are
+ * unchanged, so ticks, filters and stats still compare across boards; only the
+ * V half of the label moves.
+ */
+const MOONBOARD_V_GRADE_OVERRIDES: ReadonlyMap<number, string> = new Map([[16, 'V2']]);
+
+/** Every shared difficulty id, labelled the way the MoonBoard app labels it. */
+export const MOONBOARD_BOULDER_GRADES: readonly BoulderGrade[] = BOULDER_GRADES.map((grade) => {
+  const vGrade = MOONBOARD_V_GRADE_OVERRIDES.get(grade.difficulty_id);
+  if (!vGrade) return grade;
+  return { ...grade, v_grade: vGrade, difficulty_name: `${grade.font_grade}/${vGrade}` };
+});
+
+/**
+ * The id → label table for one board. MoonBoard has its own V conversion; every
+ * other board (and an unknown or missing board name) uses the shared table.
+ * Matches `board_difficulty_grades.boulder_name` for that board.
+ */
+export function getBoulderGradesForBoard(boardName: string | null | undefined): readonly BoulderGrade[] {
+  return boardName === 'moonboard' ? MOONBOARD_BOULDER_GRADES : BOULDER_GRADES;
+}

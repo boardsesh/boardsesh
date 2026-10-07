@@ -46,7 +46,7 @@ function SidebarWallCellComponent() {
   // The wall concept is inactive (no board bound) — leave the rail as-is.
   if (!enabled || boardId === null) return null;
 
-  const grade = litClimb ? formatGrade(litClimb.grade ?? '') : null;
+  const grade = litClimb ? formatGrade(litClimb.grade ?? '', boardConfig?.boardName) : null;
   const accessibilityLabel = litClimb
     ? t('boardPresence.openAriaWithClimb', { name: litClimb.name ?? '' })
     : t('boardPresence.openAria');

@@ -251,6 +251,7 @@ export function ReportClimbSheet({
               grades={gradeList}
               selectedDifficultyId={selectedDifficultyId}
               consensusDifficultyId={currentGrade?.difficultyId ?? null}
+              boardName={boardName}
               onSelect={handleSelectGrade}
               allowClear={false}
               colorway="selection"

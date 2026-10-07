@@ -367,6 +367,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
             <ClimberLogRow
               group={item.group}
               boardAngle={angle}
+              boardName={boardName}
               noteLines={6}
               hideEarlier
               onPressClimber={handlePressClimber}
@@ -375,6 +376,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
             <ClimberLogRow
               group={item.group}
               boardAngle={angle}
+              boardName={boardName}
               noteLines={6}
               hideEarlier={hasMore}
               onPressClimber={handlePressClimber}
@@ -416,7 +418,9 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
             />
           );
         case 'earlier':
-          return <ClimberLogEarlierRow log={item.log} boardAngle={angle} climbGradeId={climbGradeId} />;
+          return (
+            <ClimberLogEarlierRow log={item.log} boardAngle={angle} climbGradeId={climbGradeId} boardName={boardName} />
+          );
         case 'earlierFold':
           return <ClimberLogEarlierFoldRow angle={item.angle} count={item.count} boardAngle={angle} />;
         default:
@@ -442,6 +446,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     },
     [
       angle,
+      boardName,
       climbGradeId,
       angleOnly,
       hasMore,
@@ -557,7 +562,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
     [emptyText, systemColors.secondaryLabel],
   );
 
-  const grade = climb ? formatGrade(climb.difficulty) : null;
+  const grade = climb ? formatGrade(climb.difficulty, boardName) : null;
   const subtitle = climb
     ? grade
       ? t('mobile.climberLogs.sheetSubtitle', { name: climb.name, grade })

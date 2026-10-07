@@ -9,6 +9,8 @@ export type HardestSend = {
   difficultyId?: number | null;
   grade: string;
   climbName?: string | null;
+  /** The send's board, so its grade reads on that board's scale. */
+  boardType?: string | null;
 };
 
 function hardestSendSortValue(send: Pick<HardestSend, 'difficultyId' | 'grade'>): number {

@@ -3,7 +3,7 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import { formatGradeByDifficultyId, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { parseTickTime, tickTimeMs } from './format-tick-time';
-import { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
+import { getDifficultyMapping, sortGrades } from './grade-mapping';
 import { BOARD_TYPES, getLayoutKey, getLayoutDisplayName, parseLayoutKey, sortLayoutKeys } from './layouts';
 import type {
   LogbookEntry,
@@ -86,7 +86,6 @@ export function buildAggregatedStackedBars(
   toDate?: string,
   now: dayjs.Dayjs = dayjs(),
 ): RawStackedBars | null {
-  const mapping = getDifficultyMapping(gradeFormat);
   const layoutGradeClimbs: Record<string, Record<string, Set<string>>> = {};
   const allGrades = new Set<string>();
   const allLayouts = new Set<string>();
@@ -94,6 +93,7 @@ export function buildAggregatedStackedBars(
   BOARD_TYPES.forEach((boardType) => {
     const ticks = allBoardsTicks[boardType] || [];
     const filteredTicks = filterLogbookByTimeframe(ticks, timeframe, fromDate ?? '', toDate ?? '', now);
+    const mapping = getDifficultyMapping(gradeFormat, boardType);
 
     filteredTicks.forEach((entry) => {
       const gradeId = gradeIdForEntry(entry);
@@ -146,8 +146,6 @@ export function buildWeeklyBars(
 ): RawBar[] | null {
   if (filteredLogbook.length === 0) return null;
 
-  const mapping = getDifficultyMapping(gradeFormat);
-
   const entries =
     fromDate || toDate
       ? filteredLogbook.filter((entry) => {
@@ -190,7 +188,7 @@ export function buildWeeklyBars(
   entries.forEach((entry) => {
     const gradeId = gradeIdForEntry(entry);
     if (gradeId == null) return;
-    const grade = mapping[gradeId];
+    const grade = getDifficultyMapping(gradeFormat, entry.boardType)[gradeId];
     if (!grade) return;
     const d = parseTickTime(entry.climbed_at);
     const weekKey = `${d.isoWeekYear()}-W${d.isoWeek()}`;
@@ -234,14 +232,13 @@ export function buildFlashRedpointBars(
 ): RawGroupedBar[] | null {
   if (filteredLogbook.length === 0) return null;
 
-  const mapping = getDifficultyMapping(gradeFormat);
   const flash: Record<string, number> = {};
   const redpoint: Record<string, number> = {};
 
   filteredLogbook.forEach((entry) => {
     const gradeId = gradeIdForEntry(entry);
     if (gradeId == null) return;
-    const difficulty = mapping[gradeId];
+    const difficulty = getDifficultyMapping(gradeFormat, entry.boardType)[gradeId];
     if (!difficulty) return;
     // Prefer the canonical status field when available. Fall back to the old
     // tries-based heuristic for legacy rows that don't have status set.
@@ -353,7 +350,7 @@ export function buildVPointsTimeline(
     for (const entry of entriesByLayout[layoutKey]) {
       const gradeId = gradeIdForEntry(entry);
       if (gradeId == null) continue;
-      const grade = difficultyMapping[gradeId];
+      const grade = getDifficultyMapping('v-grade', entry.boardType)[gradeId];
       if (!grade) continue;
       const d = parseTickTime(entry.climbed_at);
       const wk = `${d.isoWeekYear()}-W${d.isoWeek()}`;
@@ -418,12 +415,12 @@ export function buildStatisticsSummary(
     return { totalAscents: 0, layoutPercentages: [] };
   }
 
-  const mapping = getDifficultyMapping(gradeFormat);
   const totalAscents = profileStats.totalDistinctClimbs;
 
   const layoutsWithExactPercentages = profileStats.layoutStats
     .map((stats) => {
       const exactPercentage = totalAscents > 0 ? (stats.distinctClimbCount / totalAscents) * 100 : 0;
+      const mapping = getDifficultyMapping(gradeFormat, stats.boardType);
       const grades: Record<string, number> = {};
       let hardestDifficulty: number | null = null;
       stats.gradeCounts.forEach(({ grade, count }) => {
@@ -448,7 +445,9 @@ export function buildStatisticsSummary(
             ? null
             : {
                 difficulty: hardestDifficulty,
-                label: formatGradeByDifficultyId(hardestDifficulty, gradeFormat) ?? mapping[hardestDifficulty],
+                label:
+                  formatGradeByDifficultyId(hardestDifficulty, gradeFormat, stats.boardType) ??
+                  mapping[hardestDifficulty],
                 status: 'send' as const,
               },
         exactPercentage,

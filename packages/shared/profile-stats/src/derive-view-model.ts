@@ -77,8 +77,16 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
   const { allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStats, comparisonMode, now } =
     input;
 
-  const filteredBoardsTicks: Record<string, LogbookEntry[]> =
+  const selectedBoardsTicks: Record<string, LogbookEntry[]> =
     selectedBoard === 'all' ? allBoardsTicks : { [selectedBoard]: allBoardsTicks[selectedBoard] || [] };
+  // Stamp each entry with the board it was filed under: grade labels are per
+  // board (MoonBoard's 6A is V2), and producers don't always set boardType.
+  const filteredBoardsTicks: Record<string, LogbookEntry[]> = Object.fromEntries(
+    Object.entries(selectedBoardsTicks).map(([boardType, ticks]) => [
+      boardType,
+      ticks.map((tick) => (tick.boardType ? tick : { ...tick, boardType })),
+    ]),
+  );
 
   const filteredLogbook = filterLogbookByTimeframe(
     Object.values(filteredBoardsTicks).flat(),
@@ -137,7 +145,8 @@ function computeHardest(
   gradeFormat: GradeDisplayFormat,
 ): { hardestSend: RawGradeHighlight | null; hardestFlash: RawGradeHighlight | null } {
   const allTicks = Object.values(filteredBoardsTicks).flat();
-  const mapping = getDifficultyMapping(gradeFormat);
+  let hardestSendTick: LogbookEntry | null = null;
+  let hardestFlashTick: LogbookEntry | null = null;
   let maxSendDifficulty = -1;
   let maxFlashDifficulty = -1;
 
@@ -147,21 +156,35 @@ function computeHardest(
     const grade = tick.effectiveDifficulty ?? tick.difficulty;
     if (grade == null) continue;
     if (tick.status === 'send' || tick.status === 'flash') {
-      if (grade > maxSendDifficulty) maxSendDifficulty = grade;
+      if (grade > maxSendDifficulty) {
+        maxSendDifficulty = grade;
+        hardestSendTick = tick;
+      }
     }
     if (tick.status === 'flash') {
-      if (grade > maxFlashDifficulty) maxFlashDifficulty = grade;
+      if (grade > maxFlashDifficulty) {
+        maxFlashDifficulty = grade;
+        hardestFlashTick = tick;
+      }
     }
   }
 
-  const makeHighlight = (difficulty: number, status: 'send' | 'flash'): RawGradeHighlight => ({
+  // Labelled on the hardest tick's own board, so a MoonBoard 6A reads V2.
+  const makeHighlight = (
+    difficulty: number,
+    status: 'send' | 'flash',
+    tick: LogbookEntry | null,
+  ): RawGradeHighlight => ({
     difficulty,
-    label: formatGradeByDifficultyId(difficulty, gradeFormat) ?? mapping[difficulty] ?? `${difficulty}`,
+    label:
+      formatGradeByDifficultyId(difficulty, gradeFormat, tick?.boardType) ??
+      getDifficultyMapping(gradeFormat, tick?.boardType)[difficulty] ??
+      `${difficulty}`,
     status,
   });
 
   return {
-    hardestSend: maxSendDifficulty >= 0 ? makeHighlight(maxSendDifficulty, 'send') : null,
-    hardestFlash: maxFlashDifficulty >= 0 ? makeHighlight(maxFlashDifficulty, 'flash') : null,
+    hardestSend: maxSendDifficulty >= 0 ? makeHighlight(maxSendDifficulty, 'send', hardestSendTick) : null,
+    hardestFlash: maxFlashDifficulty >= 0 ? makeHighlight(maxFlashDifficulty, 'flash', hardestFlashTick) : null,
   };
 }

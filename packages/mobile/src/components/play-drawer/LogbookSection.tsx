@@ -178,7 +178,7 @@ export const LogbookSection = memo(function LogbookSection({
         {pendingRow}
         <View style={styles.summary}>
           <LogbookVerdict verdict={ledger.verdict} todayKey={dayKeys.todayKey} yesterdayKey={dayKeys.yesterdayKey} />
-          <LogbookStatLine totals={ledger.totals} section={statSection} />
+          <LogbookStatLine totals={ledger.totals} section={statSection} boardName={boardName} />
         </View>
         {/* What is on the phone (an optimistic or cached tick, or the synced
             rows shown while the fetch is in flight) is not the whole history
@@ -201,6 +201,7 @@ export const LogbookSection = memo(function LogbookSection({
                   showDayTries={section.sessionCount > 1}
                   maxEntries={MAX_ENTRIES_PER_SESSION}
                   climbCurrentRevision={climbCurrentRevision}
+                  boardName={boardName}
                 />
               ))}
             </View>

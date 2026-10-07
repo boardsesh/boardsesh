@@ -20,6 +20,8 @@ type DumbbellByAngleChartProps = {
   headlineGrade: number | null;
   /** The viewer's grade-format preference, for the tap caption's dash fallback. */
   gradeFormat: GradeDisplayFormat;
+  /** The climb's board, so axis labels read on that board's scale (MoonBoard's 6A is V2). */
+  boardName?: string | null;
   /** Screen-reader summary of the chart (built by the parent section). */
   accessibilityLabel: string;
 };
@@ -77,6 +79,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
   rows,
   headlineGrade,
   gradeFormat,
+  boardName,
   accessibilityLabel,
 }: DumbbellByAngleChartProps) {
   const { chartColors } = useTheme();
@@ -84,7 +87,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
   const [width, setWidth] = useState(0);
   const [focusedAngle, setFocusedAngle] = useState<number | null>(null);
 
-  const axis = useMemo(() => buildDumbbellAxis(rows, gradeFormat), [rows, gradeFormat]);
+  const axis = useMemo(() => buildDumbbellAxis(rows, gradeFormat, boardName), [rows, gradeFormat, boardName]);
   const anyDiamond = useMemo(() => hasAnyBoardseshDiamond(rows), [rows]);
   const anyEstimate = useMemo(() => rows.some((row) => row.estimated), [rows]);
 

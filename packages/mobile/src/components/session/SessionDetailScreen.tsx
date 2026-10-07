@@ -23,6 +23,7 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { getSoleBoardType } from '../../lib/grade-label';
 
 // Hoisted so FlashList gets a stable reference across renders.
 const keyExtractor = (tick: SessionDetailTick) => tick.uuid;
@@ -144,7 +145,10 @@ export default function SessionDetailScreen() {
         onEditSession={canEdit ? openEdit : undefined}
       />
 
-      <SessionAnalyticsSection gradeDistribution={session.gradeDistribution} />
+      <SessionAnalyticsSection
+        gradeDistribution={session.gradeDistribution}
+        boardName={getSoleBoardType(session.boardTypes)}
+      />
 
       <SessionNotesCard session={session} />
 

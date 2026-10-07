@@ -100,6 +100,8 @@ export type QuickTickForm = {
    *  tell "a new climb loaded" from "the climber changed a field" — the hosting
    *  sheet stays mounted across climbs, so no value change is a reliable signal. */
   climbUuid: string;
+  /** The climb's board, so the grade rail labels follow its scale. */
+  boardName?: string;
   tickState: QuickTickState;
   comment: string;
   climbedAt: Date;
@@ -511,6 +513,7 @@ export function useQuickTickForm({
 
   return {
     climbUuid,
+    boardName,
     tickState,
     comment,
     climbedAt,

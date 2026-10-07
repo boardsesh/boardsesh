@@ -301,3 +301,23 @@ describe('getSoftGradeColor variants', () => {
     expect(byFormat).toBe(byFont);
   });
 });
+
+describe('MoonBoard grade scale', () => {
+  // Moon converts 6A to V2, so 6A+ is its only V3 and needs no "+".
+  it('drops the "+" on 6a+/V3 for MoonBoard only', () => {
+    expect(formatVGrade('6a+/V3', 'moonboard')).toBe('V3');
+    expect(formatVGrade('6a+/V3', 'kilter')).toBe('V3+');
+    expect(formatVGrade('6a+/V3')).toBe('V3+');
+  });
+
+  it('labels difficulty 16 as V2 on MoonBoard and V3 elsewhere', () => {
+    expect(formatGradeByDifficultyId(16, 'v-grade', 'moonboard')).toBe('V2');
+    expect(formatGradeByDifficultyId(16, 'both', 'moonboard')).toBe('V2 / 6A');
+    expect(formatGradeByDifficultyId(16, 'v-grade', 'kilter')).toBe('V3');
+    expect(formatGradeByDifficultyId(16, 'font', 'moonboard')).toBe('6A');
+  });
+
+  it('keeps the "+" where MoonBoard still has two Font grades per V grade', () => {
+    expect(formatVGrade('6b+/V4', 'moonboard')).toBe('V4+');
+  });
+});
