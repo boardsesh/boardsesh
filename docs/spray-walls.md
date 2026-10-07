@@ -2529,7 +2529,7 @@ have.
 | `spray_walls.archived_at` | When a reset replaced this wall. NULL for a live wall. |
 | `spray_walls.reset_from_wall_id` | The wall this one was cloned from. Self-reference, `ON DELETE SET NULL`, with a partial index where it is not null (almost no wall has one). |
 
-Migration 0257 adds both. Nothing is dropped or rewritten.
+Migration 0258 adds both. Nothing is dropped or rewritten.
 
 ### `resetSprayWall`
 
