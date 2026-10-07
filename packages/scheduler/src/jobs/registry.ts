@@ -86,9 +86,9 @@ const ACTIVE_USERS_TIMEOUT_MS = 600_000;
  * The spray training export copies every approved photo (each at most 10 MB)
  * inside the private bucket and writes a few JSON files, one object at a time.
  * Its database reads are bounded by the approved set, which an admin builds by
- * hand. Fifteen minutes leaves a large set room to finish; a run that does not
- * finish writes no manifest, so the half-written export is ignored by the ML
- * fetch and deleted by the next run.
+ * hand. The backend stops the run itself at 12 minutes, inside this 15-minute
+ * timeout; a run that does not finish writes no manifest, so the half-written
+ * export is ignored by the ML fetch and deleted by the next run.
  */
 const SPRAY_TRAINING_EXPORT_TIMEOUT_MS = 900_000;
 
@@ -225,9 +225,9 @@ export const JOBS: readonly JobDefinition[] = [
   // climber who switches "Help train hold finding" off is that their wall leaves
   // every stored export within 24 hours, and each run retires before it writes.
   //
-  // Overlap-safe, which JobDefinition requires: the mutation holds
-  // `pg_try_advisory_xact_lock` for the whole run, so a second run meeting a
-  // first answers `skipped: true` and writes nothing.
+  // Overlap-safe, which JobDefinition requires: the mutation holds a lease row
+  // for the whole run, so a second run meeting a first writes nothing (and this
+  // job reports it as a failure, so a stuck run is seen).
   {
     name: 'export-spray-training',
     // 08:00 UTC — an hour after the 07:00 photo purge, so a wall purged today is

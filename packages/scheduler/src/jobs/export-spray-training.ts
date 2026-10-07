@@ -12,14 +12,16 @@ import type { JobRun } from './types';
  * every stored export within 24 hours, because each run first retires any
  * export holding a version that is no longer eligible and approved.
  *
- * Overlap-safe, which `JobDefinition` requires: the mutation takes
- * `pg_try_advisory_xact_lock` before it touches storage, so a second run meeting
- * a first answers `skipped: true` and writes nothing.
+ * Overlap-safe, which `JobDefinition` requires: the mutation takes a lease row
+ * before it touches storage, so a second run meeting a first answers
+ * `skippedReason: LOCKED` and writes nothing. This job then FAILS, on purpose:
+ * a lease still held a day later means a stuck run, and that must not pass as
+ * a skip.
  */
 export const EXPORT_SPRAY_TRAINING_MUTATION = `
   mutation ExportSprayTrainingDataset {
     exportSprayTrainingDataset {
-      exportId imagesWritten exportsRetired skipped durationMs
+      exportId imagesWritten exportsRetired skipped skippedReason versionsSkipped durationMs
     }
   }
 `;
@@ -34,8 +36,12 @@ export type ExportResult = {
   imagesWritten: number;
   exportsRetired: number;
   skipped: boolean;
+  skippedReason: 'LOCKED' | 'UNCHANGED' | 'NOTHING_TO_EXPORT' | null;
+  versionsSkipped: number;
   durationMs: number;
 };
+
+const SKIP_REASONS: ReadonlyArray<ExportResult['skippedReason']> = ['LOCKED', 'UNCHANGED', 'NOTHING_TO_EXPORT', null];
 
 /** HTTP 200 alone is insufficient: GraphQL can report resolver errors in it. */
 export function readExportResult(payload: unknown): ExportResult {
@@ -45,11 +51,12 @@ export function readExportResult(payload: unknown): ExportResult {
   const exported = payload.data.exportSprayTrainingDataset;
   if (
     !isRecord(exported) ||
-    !['imagesWritten', 'exportsRetired', 'durationMs'].every(
+    !['imagesWritten', 'exportsRetired', 'versionsSkipped', 'durationMs'].every(
       (field) =>
         typeof exported[field] === 'number' && Number.isFinite(exported[field]) && (exported[field] as number) >= 0,
     ) ||
     typeof exported.skipped !== 'boolean' ||
+    !SKIP_REASONS.includes(exported.skippedReason as ExportResult['skippedReason']) ||
     !(exported.exportId === null || typeof exported.exportId === 'string')
   ) {
     throw new Error('exportSprayTrainingDataset returned an invalid result');
@@ -87,7 +94,15 @@ export const exportSprayTraining: JobRun = async ({ config, timeoutMs, shutdownS
         }
         throw new Error(`exportSprayTrainingDataset returned HTTP ${response.status}`);
       }
-      return readExportResult(await response.json());
+      const result = readExportResult(await response.json());
+      // A held lease means another run is still going, or one died holding it.
+      // Either way today's retirement did not happen, and the 24-hour removal
+      // promise rests on it, so this is a failed run (lastError and overdue on
+      // /health/jobs) rather than a quiet skip.
+      if (result.skippedReason === 'LOCKED') {
+        throw new Error('exportSprayTrainingDataset skipped: another run holds the export lease');
+      }
+      return result;
     }
   } finally {
     clearTimeout(timeoutHandle);
