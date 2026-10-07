@@ -291,7 +291,9 @@ def parse_manifest(raw: bytes, export_id: str) -> dict[str, Any]:
         _safe_relpath(relpath)
         if not isinstance(digest, str) or not SHA256_PATTERN.match(digest):
             raise UserWallsError(f"export {export_id}: {relpath} has no usable sha256 ({digest!r})")
-    for split in TRAINING_SPLITS:
+    # The backend writes all three, an empty `images` list included. A missing
+    # eval file means a broken export, not "no held-out walls this time".
+    for split in SPLITS:
         if f"{split}/{ANNOTATIONS_FILENAME}" not in files:
             raise UserWallsError(f"export {export_id}: manifest lists no {split}/{ANNOTATIONS_FILENAME}")
     return manifest
@@ -365,24 +367,31 @@ def _split_refs(dataset_dir: Path, split: str) -> tuple[set[str], set[str], set[
     return roots, versions, names, problems
 
 
+# Every pair of splits that must not share a wall, a version or a photo file.
+SPLIT_PAIRS = ((HELD_OUT_SPLIT, "train"), (HELD_OUT_SPLIT, "valid"), ("valid", "train"))
+
+
 def eval_isolation_problems(dataset_dir: Path) -> list[str]:
-    """Every way the held-out `eval` split overlaps train/valid. Empty means isolated.
+    """Every way any two splits overlap, eval against train/valid and valid
+    against train. Empty means isolated.
 
     The backend assigns a split per ROOT wall (a reset clone follows its root), so
-    one wall in two splits is a backend bug that would inflate the eval number.
+    one wall in two splits is a backend bug: in eval it inflates the held-out
+    number, in valid it inflates the score checkpoints are chosen by.
     """
-    held_roots, held_versions, held_names, problems = _split_refs(dataset_dir, HELD_OUT_SPLIT)
-    for split in TRAINING_SPLITS:
-        roots, versions, names, split_problems = _split_refs(dataset_dir, split)
-        problems += split_problems
+    refs = {split: _split_refs(dataset_dir, split) for split in SPLITS}
+    problems = [problem for split in SPLITS for problem in refs[split][3]]
+    for first, second in SPLIT_PAIRS:
+        first_roots, first_versions, first_names, _ = refs[first]
+        second_roots, second_versions, second_names, _ = refs[second]
         for kind, overlap in (
-            ("wall (root_ref)", held_roots & roots),
-            ("version (version_ref)", held_versions & versions),
-            ("photo file", held_names & names),
+            ("wall (root_ref)", first_roots & second_roots),
+            ("version (version_ref)", first_versions & second_versions),
+            ("photo file", first_names & second_names),
         ):
             if overlap:
                 sample = ", ".join(sorted(overlap)[:3])
-                problems.append(f"{len(overlap)} eval {kind} also in {split}: {sample}")
+                problems.append(f"{len(overlap)} {first} {kind} also in {second}: {sample}")
     return problems
 
 

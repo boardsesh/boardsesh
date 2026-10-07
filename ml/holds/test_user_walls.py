@@ -421,6 +421,50 @@ def test_an_export_whose_eval_wall_is_also_in_train_is_refused(exports_dir: Path
     assert not (root / EXPORT_ID).exists()
 
 
+def test_an_export_whose_valid_wall_is_also_in_train_is_refused(exports_dir: Path, root: Path) -> None:
+    """Valid picks the checkpoint; a training wall in it inflates that choice."""
+    write_export(exports_dir, walls=[*WALLS, (202, "wall-c", "train")])
+
+    with pytest.raises(SystemExit, match=r"valid wall \(root_ref\) also in train"):
+        _fetch(exports_dir, root)
+    assert not (root / EXPORT_ID).exists()
+
+
+@pytest.mark.parametrize("kind", ["version_ref", "file_name"])
+def test_a_valid_version_or_photo_shared_with_train_is_refused(exports_dir: Path, kind: str) -> None:
+    export_dir = write_export(exports_dir)
+    train_coco = json.loads((export_dir / "train" / "_annotations.coco.json").read_text())
+    valid_path = export_dir / "valid" / "_annotations.coco.json"
+    valid_coco = json.loads(valid_path.read_text())
+    if kind == "version_ref":
+        valid_coco["images"][0]["boardsesh"]["version_ref"] = train_coco["images"][0]["boardsesh"]["version_ref"]
+    else:
+        valid_coco["images"][0]["file_name"] = train_coco["images"][0]["file_name"]
+    valid_path.write_text(json.dumps(valid_coco))
+
+    problems = user_walls.eval_isolation_problems(export_dir)
+    assert any(problem.startswith("1 valid") and "also in train" in problem for problem in problems)
+
+
+def test_an_export_without_an_eval_file_is_refused(exports_dir: Path, root: Path) -> None:
+    """The backend always writes eval, even empty; its absence means a broken export."""
+    export_dir = write_export(exports_dir)
+    (export_dir / "eval" / "_annotations.coco.json").unlink()
+    manifest = json.loads((export_dir / "manifest.json").read_text())
+    del manifest["files"]["eval/_annotations.coco.json"]
+    (export_dir / "manifest.json").write_text(json.dumps(manifest))
+
+    with pytest.raises(SystemExit, match="manifest lists no eval/_annotations.coco.json"):
+        _fetch(exports_dir, root)
+
+
+def test_an_export_with_an_empty_eval_split_is_fetched(exports_dir: Path, root: Path) -> None:
+    write_export(exports_dir, walls=[wall for wall in WALLS if wall[2] != "eval"])
+    local = _fetch(exports_dir, root)
+    assert local is not None
+    assert json.loads((local / "eval" / "_annotations.coco.json").read_text())["images"] == []
+
+
 def test_check_training_dataset_catches_a_leak_added_after_fetch(exports_dir: Path, root: Path) -> None:
     write_export(exports_dir)
     local = _fetch(exports_dir, root)

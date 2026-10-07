@@ -897,8 +897,9 @@ polygon in photo pixels, plus `attributes`: `source` (`manual` or `auto`),
 `auto_review` (`accepted`, `confirmed`, `edited`, or null), and
 `mask_from_circle: true` when the polygon is a circle. Every image carries
 `boardsesh.version_ref` and `boardsesh.root_ref`, hashed references that let
-`fetch` and `train.py` prove no `eval` wall is in `train` or `valid` without
-carrying a wall id.
+`fetch` and `train.py` prove no wall, version or photo sits in two splits without
+carrying a wall id. All three COCO files are always present; a split with no walls
+has an empty `images` list, and an export missing one is refused.
 
 ```bash
 python data/user_walls.py fetch      # see "Retrain runbook" for the env vars
