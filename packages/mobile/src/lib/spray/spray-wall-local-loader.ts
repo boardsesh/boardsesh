@@ -4,7 +4,14 @@ import { getSprayWallLocal } from '../../db/queries/get-spray-wall-local';
 import { readLocalUserId } from '../local-user-id';
 import { mapCanonicalHoldsToPhoto } from './spray-hold-geometry';
 import { tryGetStoredSprayPhotoPathSync } from './spray-photo-store';
-import { registerSprayWall, sprayWallRemovalGeneration, sprayWallViewerGeneration } from './spray-wall-registry';
+import {
+  getSprayWall,
+  registerSprayWall,
+  sprayWallRemovalGeneration,
+  sprayWallViewerGeneration,
+  type RegisteredSprayArt,
+} from './spray-wall-registry';
+import { tryGetSprayPhotoPathSync } from './spray-photo-cache';
 import type { SprayVersionIdentity } from './spray-photo-keys';
 
 function storedPhotoDimensions(path: string): Promise<{ width: number; height: number } | null> {
@@ -18,6 +25,19 @@ function storedPhotoDimensions(path: string): Promise<{ width: number; height: n
       () => resolve(null),
     );
   });
+}
+
+/**
+ * The generated look this wall already draws, when it is for the same
+ * published version and its file is still on disk. A revalidation that fails
+ * on the network lands here; without this every surface would flip from the
+ * art back to the photo for as long as the gym has no signal.
+ */
+function heldArtFor(layoutId: number, wallUuid: string, version: number): RegisteredSprayArt | null {
+  const previous = getSprayWall(layoutId);
+  const art = previous?.wallUuid === wallUuid ? previous.art : null;
+  if (!art || art.version !== version) return null;
+  return tryGetSprayPhotoPathSync({ layoutId, versionId: art.versionId, variant: art.variant }) ? art : null;
 }
 
 /** Read only a mirrored published wall, never a wizard or editor draft. */
@@ -56,6 +76,7 @@ export async function loadLocalSprayWall(
       return false;
     const versionId: SprayVersionIdentity = `local-${photoMatch[2]}-${wall.version}`;
     registerSprayWall(layoutId, {
+      art: heldArtFor(layoutId, wall.boardUuid, wall.version),
       wallUuid: wall.boardUuid,
       angle: null,
       version: wall.version,

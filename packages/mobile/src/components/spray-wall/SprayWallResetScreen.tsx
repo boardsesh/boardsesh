@@ -137,6 +137,17 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
    * leaving this screen; resuming never replaces the published wall.
    */
   const openDraft = useMemo(() => wall?.versions?.find((version) => version.status === 'DRAFT') ?? null, [wall]);
+  // The wall's canonical frame, which a reset's corners map onto: what the
+  // corner step grades them against for the generated wall looks.
+  const referenceWidth = wall?.referenceWidth ?? null;
+  const referenceHeight = wall?.referenceHeight ?? null;
+  const qualityFrame = useMemo(
+    () =>
+      referenceWidth && referenceHeight && referenceWidth > 0 && referenceHeight > 0
+        ? { width: referenceWidth, height: referenceHeight }
+        : null,
+    [referenceWidth, referenceHeight],
+  );
 
   // ============================================
   // Step 1 — the photo
@@ -531,6 +542,7 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
           value={state.anchors}
           onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
           invalid={state.anchorRejection != null}
+          qualityFrame={qualityFrame}
         />
         <SprayCornerFooter
           primaryTitle={t('sprayReset.anchors.use')}
@@ -579,6 +591,9 @@ export function SprayWallResetScreen({ wallUuid }: SprayWallResetScreenProps) {
             <Text variant="title3">{t('sprayReset.photo.title')}</Text>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {t('sprayReset.photo.body')}
+            </Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayWizard.photo.tip')}
             </Text>
             {state.photo ? (
               <View style={styles.previewWrap}>

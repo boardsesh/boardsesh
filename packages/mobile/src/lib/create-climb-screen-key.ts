@@ -1,5 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { sprayCacheToken } from './spray/spray-wall-registry';
+import { sprayIdentityToken } from './spray/spray-wall-registry';
 
 type CreateClimbKeyBoard = {
   boardName: BoardName;
@@ -25,7 +25,9 @@ type CreateClimbKeyBoard = {
  * The spray wall VERSION is INCLUDED, for the same reason the rest of the tuple
  * is: a reset changes which holds exist under an unchanged layout and size, so a
  * create screen left open across one has to remount and drop the holds that came
- * off the wall. `sprayCacheToken` is empty for every catalogue board.
+ * off the wall. `sprayIdentityToken` is empty for every catalogue board, and
+ * leaves out the drawn picture: a generated look landing mid-paint must not
+ * remount the screen and drop its undo history.
  */
 export function createClimbScreenKey(
   editClimbUuid: string | undefined,
@@ -34,6 +36,6 @@ export function createClimbScreenKey(
 ): string {
   const authoringIdentity =
     editClimbUuid && editClimbUuid !== 'new' ? `edit:${editClimbUuid}` : forkFrames ? 'fork' : 'new';
-  const spray = sprayCacheToken(board.boardName, board.layoutId);
+  const spray = sprayIdentityToken(board.boardName, board.layoutId);
   return `${authoringIdentity}:${board.boardName}:${board.layoutId}:${board.sizeId}${spray}:${board.setIds}`;
 }

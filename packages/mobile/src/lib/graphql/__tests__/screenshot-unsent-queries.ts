@@ -63,6 +63,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetPopularBoardConfigs',
   'GetSessionHealthExport',
   'GetSprayWall',
+  'GetSprayWallArt',
   'GetSprayWallByLayout',
   'GetSprayWallDraftRenderData',
   'GetSprayWallForLink',
