@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-07T13:27:20.403Z",
+  "generatedAt": "2026-10-07T20:36:56.632Z",
   "entries": [
+    {
+      "prNumber": 6204,
+      "category": "new",
+      "title": "Zoom in on your spray wall's holds and the photo fills the whole screen",
+      "mergedAt": "2026-10-07T20:34:29Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6204"
+    },
     {
       "prNumber": 6203,
       "category": "fixed",

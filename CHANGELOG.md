@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Zoom in on your spray wall's holds and the photo fills the whole screen ([#6204](https://github.com/boardsesh/boardsesh/pull/6204))
 - Delete a climb you set on your spray wall, as long as nobody has logged it yet ([#6197](https://github.com/boardsesh/boardsesh/pull/6197))
 - Stripped your spray wall? Reset it: take a new photo, mark the holds, and the old wall is archived with every climb and send. ([#6190](https://github.com/boardsesh/boardsesh/pull/6190))
   Swap a hold that climbs use and those climbs get flagged, ready to remix onto the wall as it is now.
