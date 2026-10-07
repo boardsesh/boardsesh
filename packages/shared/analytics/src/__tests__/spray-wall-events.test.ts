@@ -49,6 +49,7 @@ const EVERY_PAYLOAD = [
   sprayHoldsReviewed({ holdCount: 198, hadCandidates: true }),
   sprayWallBindStalled({ stage: 'fetch_board', elapsedMs: 30000 }),
   sprayWallResetStarted('board_sheet'),
+  sprayWallResetStarted('board_edit'),
   sprayWallHoldsRemovedInUse({ holdCount: 2, publishedClimbCount: 5, usageKnown: true }),
   climbRemixedFromBroken({ lostHoldCount: 1, source: 'play_drawer' }),
 ];
@@ -70,6 +71,10 @@ describe('spray wall event builders', () => {
     expect(sprayWallResetStarted('board_sheet')).toEqual({
       name: SHARED_EVENTS.SprayWallResetStarted,
       properties: { source: 'board_sheet' },
+    });
+    expect(sprayWallResetStarted('board_edit')).toEqual({
+      name: SHARED_EVENTS.SprayWallResetStarted,
+      properties: { source: 'board_edit' },
     });
     expect(sprayWallHoldsRemovedInUse({ holdCount: 1, publishedClimbCount: 0, usageKnown: false })).toEqual({
       name: SHARED_EVENTS.SprayWallHoldsRemovedInUse,

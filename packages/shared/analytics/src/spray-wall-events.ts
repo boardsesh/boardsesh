@@ -139,10 +139,11 @@ export function sprayWallBindStalled(
 }
 
 /**
- * Where the owner confirmed a reset: the wall sheet's "Reset this wall" row.
- * One value today; a union so a second entry point adds a member, not a prop.
+ * Where the owner confirmed a reset: the wall sheet's "Reset this wall" row, or
+ * the edit screen's "Reset wall with a new photo" under a photo too skewed for
+ * a generated look.
  */
-export type SprayResetSurface = 'board_sheet';
+export type SprayResetSurface = 'board_sheet' | 'board_edit';
 
 export type SprayWallResetStartedProps = { source: SprayResetSurface };
 

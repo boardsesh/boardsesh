@@ -720,10 +720,10 @@ export const SHARED_EVENTS = {
   // clones the wall's settings into a new wall the owner photographs and marks
   // in the add-a-wall wizard; its first publish archives the old wall.
   //
-  // Props: { source: 'board_sheet' } (where the owner
+  // Props: { source: 'board_sheet' | 'board_edit' } (where the owner
   // confirmed "Reset this wall?"). Fired once per confirm tap, from the board
-  // sheet, never from the wizard: reopening an unfinished reset or starting it
-  // over fires nothing. The replacement's publish is the ordinary
+  // sheet or the edit screen's photo reset, never from the wizard: reopening an
+  // unfinished reset or starting it over fires nothing. The replacement's publish is the ordinary
   // `Board Created` with `isReset: true`, so the ratio between the two is
   // confirms per completed reset.
   SprayWallResetStarted: 'Spray Wall Reset Started',
