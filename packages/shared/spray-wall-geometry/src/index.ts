@@ -3,8 +3,9 @@
  * per-version homography that maps a photo onto the wall's canonical frame, and
  * the rule that tells a hold-edit draft from a new-photo draft.
  *
- * Pure TypeScript, no dependencies, shared by the backend, the app and the web
- * climb page. The hold matcher that compared two photos of one wall went with the
+ * Pure TypeScript, shared by the backend, the app and the web climb page. Its one
+ * dependency is `@boardsesh/board-art-geometry/ring`, the outline-ring contract
+ * the hold projection hands back. The hold matcher that compared two photos of one wall went with the
  * retired in-place reset. The frame is written up in `docs/spray-walls.md`,
  * "Canonical coordinates".
  */
@@ -24,6 +25,14 @@ export {
   mapRing,
   quadDoubleArea,
 } from './homography';
+
+export {
+  type CanonicalSprayHold,
+  type SprayHoldProvenance,
+  type SprayPhotoHold,
+  mapCanonicalHoldsToPhoto,
+  scaleCanonicalHoldsToArt,
+} from './hold-projection';
 
 export { classifySprayDraft, sameSprayGeometry, type SprayDraftPurpose, type SprayVersionPhoto } from './draft-purpose';
 

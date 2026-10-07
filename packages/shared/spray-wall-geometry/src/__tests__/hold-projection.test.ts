@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { homographyFromAnchors, IDENTITY_HOMOGRAPHY, mapPoint } from '@boardsesh/spray-wall-geometry';
-import { mapCanonicalHoldsToPhoto } from '../spray-hold-geometry';
+import { homographyFromAnchors, IDENTITY_HOMOGRAPHY, mapPoint } from '../homography';
+import { mapCanonicalHoldsToPhoto } from '../hold-projection';
 
 /**
  * A photo whose wall corners are an off-axis trapezoid, mapped onto a

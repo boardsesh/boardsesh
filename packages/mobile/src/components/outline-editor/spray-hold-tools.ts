@@ -32,36 +32,10 @@ import {
   type StrokeRejection,
 } from './stroke';
 
-/**
- * Detector confidence at or above which a candidate opens ON — drawn as a solid
- * ring and written on Publish unless the climber switches it off.
- *
- * The band this cut sits in is set by the WORKER, not by the app: the hold
- * detector keeps only detections at or above its manifest's
- * `thresholds.default`, which is 0.6 for `2026-09-18-seg` (`detect()` in
- * `packages/hold-detector/src/detect.ts` falls back to it and
- * `inference-thread.ts` passes no override). Every candidate this screen ever
- * sees therefore scores 0.6–1.0, and a cut below 0.6 would make every find ON
- * and the maybe state unreachable.
- *
- * 0.75 splits that band where the old editor already drew its dashed
- * "low confidence" rings. On a 240-hold validation spray wall
- * (`roboflow-1class/valid/IMG_8992`) the deployed model returned 224 finds,
- * median 0.84; this cut opens 189 of them ON and 35 as maybes. No precision
- * curve for the seg model is checked in yet — re-derive this once one lands in
- * `ml/holds/results/`, and lower the worker's threshold if more maybes are wanted.
- */
-export const SPRAY_ON_CUTOFF = 0.75;
-
-/**
- * Candidates between this and {@link SPRAY_ON_CUTOFF} open as MAYBES: a dashed
- * amber ring that is drawn but not written until the climber taps it on.
- * Anything below is never shown at all.
- *
- * Matches the worker's own 0.6 floor, so today every candidate it sends is
- * shown; the floor only bites if a future model ships a lower default.
- */
-export const SPRAY_MAYBE_FLOOR = 0.6;
+// The ON / maybe cuts moved to `@boardsesh/shared-schema` (SW-20, #5471) so the
+// backend's training review can tell a deleted suggestion from one the editor
+// never showed. Re-exported so the editor's imports stay where they were.
+export { SPRAY_MAYBE_FLOOR, SPRAY_ON_CUTOFF } from '@boardsesh/shared-schema';
 
 /**
  * The smallest a hold's grab area gets on SCREEN, in points, before it is
