@@ -217,10 +217,14 @@ async function missingFor(uuid: string): Promise<number | null> {
 }
 
 /** The search the Intact / Lost holds filter drives, straight through the real SQL. */
-async function searchNames(wall: CreatedWall, holdIntegrity?: 'intact' | 'broken'): Promise<string[]> {
+async function searchNames(
+  wall: CreatedWall,
+  holdIntegrity?: 'any' | 'intact' | 'broken',
+  name?: string,
+): Promise<string[]> {
   const result = await searchClimbs(
     { board_name: 'spray', layout_id: wall.layoutId, size_id: wall.sizeId, set_ids: [1], angle: 40 },
-    { page: 0, pageSize: 50, sortBy: 'name', sortOrder: 'asc', holdIntegrity },
+    { page: 0, pageSize: 50, sortBy: 'name', sortOrder: 'asc', holdIntegrity, ...(name ? { name } : {}) },
     OWNER,
   );
   return result.climbs.map((climb) => climb.name).sort();
@@ -979,6 +983,124 @@ describe('commitSprayWallVersion', () => {
 
     expect(await missingFor(climb)).toBe(0);
     expect(await searchNames(wall, 'intact')).toEqual(['Echo']);
+  });
+});
+
+async function retiredFor(uuid: string): Promise<boolean | null> {
+  const [row] = (await db.execute(
+    sql`SELECT retired_by_reset FROM board_climbs WHERE uuid = ${uuid}`,
+  )) as unknown as Array<{ retired_by_reset: boolean | null }>;
+  return row.retired_by_reset;
+}
+
+/** A reset that takes `removed` off and keeps every other base hold. */
+async function commitReset(
+  wall: CreatedWall,
+  holdIds: number[],
+  removed: number[],
+  extra: { fullReset?: boolean; added?: Array<{ detection: { cx: number; cy: number; r: number } }> } = {},
+): Promise<{ climbsChanged: number }> {
+  const versionId = await openDraft(wall);
+  return (await sprayWallMutations.commitSprayWallVersion(
+    {},
+    {
+      input: {
+        wallUuid: wall.uuid,
+        versionId,
+        kept: holdIds.filter((holdId) => !removed.includes(holdId)).map((holdId) => ({ holdId })),
+        removed,
+        added: extra.added ?? [],
+        ...(extra.fullReset === undefined ? {} : { fullReset: extra.fullReset }),
+      },
+    },
+    ctxFor(OWNER),
+  )) as { climbsChanged: number };
+}
+
+// #6024: the owner can mark a reset as FULL. Every climb that lost a hold in it
+// is retired: gone from the wall's default list, still there under "All",
+// "Lost holds" and a name search, and back to normal once edited onto the holds
+// that are on the wall now.
+describe('a full reset retires the climbs that lost holds in it', () => {
+  it('retires only the climbs that lost a hold, and the default list hides them', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const lost = await saveClimbOn(wall, 'Alpha loses a hold', [holdIds[0], holdIds[1]]);
+    const intact = await saveClimbOn(wall, 'Charlie is intact', [holdIds[0], holdIds[2]]);
+
+    const result = await commitReset(wall, holdIds, [holdIds[1]], { fullReset: true });
+
+    expect(result.climbsChanged).toBe(1);
+    expect(await retiredFor(lost)).toBe(true);
+    expect(await retiredFor(intact)).not.toBe(true);
+    expect(await missingFor(lost)).toBe(1);
+
+    expect(await searchNames(wall)).toEqual(['Charlie is intact']);
+    expect(await searchNames(wall, 'any')).toEqual(['Alpha loses a hold', 'Charlie is intact']);
+    expect(await searchNames(wall, 'broken')).toEqual(['Alpha loses a hold']);
+    expect(await searchNames(wall, 'intact')).toEqual(['Charlie is intact']);
+    expect(await searchNames(wall, undefined, 'Alpha')).toEqual(['Alpha loses a hold']);
+
+    const [version] = (await db.execute(sql`
+      SELECT is_full_reset FROM spray_wall_versions
+      WHERE wall_id = (SELECT id FROM spray_walls WHERE layout_id = ${wall.layoutId}) AND version_number = 2
+    `)) as unknown as Array<{ is_full_reset: boolean }>;
+    expect(version.is_full_reset).toBe(true);
+  });
+
+  it('retires nothing on a partial reset, which is what an older app sends', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const lost = await saveClimbOn(wall, 'Alpha loses a hold', [holdIds[0], holdIds[1]]);
+
+    await commitReset(wall, holdIds, [holdIds[1]]);
+
+    expect(await missingFor(lost)).toBe(1);
+    expect(await retiredFor(lost)).not.toBe(true);
+    expect(await searchNames(wall)).toEqual(['Alpha loses a hold']);
+  });
+
+  it('keeps a retired climb retired through a later partial reset, and retires nothing new', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const retired = await saveClimbOn(wall, 'Alpha loses a hold', [holdIds[0], holdIds[1]]);
+    const later = await saveClimbOn(wall, 'Charlie loses one later', [holdIds[0], holdIds[2]]);
+
+    await commitReset(wall, holdIds, [holdIds[1]], { fullReset: true });
+    await commitReset(
+      wall,
+      holdIds.filter((holdId) => holdId !== holdIds[1]),
+      [holdIds[2]],
+      { fullReset: false },
+    );
+
+    expect(await retiredFor(retired)).toBe(true);
+    expect(await missingFor(later)).toBe(1);
+    expect(await retiredFor(later)).toBe(false);
+    expect(await searchNames(wall)).toEqual(['Charlie loses one later']);
+  });
+
+  it('brings a retired climb back once it is edited onto holds still on the wall', async () => {
+    const { wall, holdIds } = await createPublishedWall(OWNER);
+    const climb = await saveClimbOn(wall, 'Oscar', [holdIds[0], holdIds[1]]);
+
+    await commitReset(wall, holdIds, [holdIds[1]], { fullReset: true });
+    expect(await retiredFor(climb)).toBe(true);
+
+    await climbMutations.updateClimb(
+      {},
+      {
+        input: {
+          uuid: climb,
+          boardType: 'spray',
+          layoutId: wall.layoutId,
+          frames: framesFor([holdIds[0], holdIds[2]]),
+          angle: 40,
+        },
+      },
+      ctxFor(OWNER),
+    );
+
+    expect(await missingFor(climb)).toBe(0);
+    expect(await retiredFor(climb)).toBe(false);
+    expect(await searchNames(wall)).toEqual(['Oscar']);
   });
 });
 

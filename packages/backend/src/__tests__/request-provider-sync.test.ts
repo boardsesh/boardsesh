@@ -64,10 +64,9 @@ beforeEach(async () => {
   `);
   await boss.deleteAllJobs(queue);
   await db.delete(backgroundJobRuns);
-  process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync,kilter-user-sync';
 });
 afterEach(async () => {
-  delete process.env.BATCH_FAMILIES_ENABLED;
+  delete process.env.BATCH_FAMILIES_DISABLED;
   await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
 });
 afterAll(async () => {
@@ -119,16 +118,16 @@ describe('requestProviderSync', () => {
     expect(await db.select().from(backgroundJobRuns)).toEqual([]);
   });
 
-  it('says so when the board’s sync family is not switched on', async () => {
+  it('says so when the board’s sync family is switched off', async () => {
     await linkTension();
-    process.env.BATCH_FAMILIES_ENABLED = 'kilter-user-sync';
+    process.env.BATCH_FAMILIES_DISABLED = 'aurora-user-sync';
 
     await expect(syncNow()).rejects.toMatchObject({ extensions: { code: 'PROVIDER_SYNC_UNAVAILABLE' } });
   });
 
-  it('answers unavailable, not an error, when BATCH_FAMILIES_ENABLED has a typo', async () => {
+  it('answers unavailable, not an error, when BATCH_FAMILIES_DISABLED has a typo', async () => {
     await linkTension();
-    process.env.BATCH_FAMILIES_ENABLED = 'aurora-user-sync,aurora-usr-sync';
+    process.env.BATCH_FAMILIES_DISABLED = 'aurora-usr-sync';
 
     await expect(syncNow()).rejects.toMatchObject({ extensions: { code: 'PROVIDER_SYNC_UNAVAILABLE' } });
     expect(await db.select().from(backgroundJobRuns)).toEqual([]);

@@ -79,6 +79,7 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
         bandWidth={chromeRect.width}
         compact={layout.compact}
         recentSenders={recentSenders}
+        boardName={boardConfig.boardName}
       />
     );
 

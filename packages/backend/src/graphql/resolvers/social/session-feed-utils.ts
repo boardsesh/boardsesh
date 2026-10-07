@@ -49,7 +49,7 @@ export function buildGradeDistributionFromTicks(
     const effectiveDifficulty =
       row.tick.difficulty ?? (row.consensusDifficulty != null ? Math.round(row.consensusDifficulty) : null);
     if (effectiveDifficulty == null) continue;
-    const effectiveGradeName = row.difficultyName || getGradeLabel(effectiveDifficulty) || null;
+    const effectiveGradeName = row.difficultyName || getGradeLabel(effectiveDifficulty, row.tick.boardType) || null;
     if (!effectiveGradeName) continue;
     const key = `${effectiveGradeName}:${effectiveDifficulty}`;
     const existing = gradeMap.get(key) ?? {

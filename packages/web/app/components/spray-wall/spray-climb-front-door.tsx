@@ -5,8 +5,15 @@ import Typography from '@mui/material/Typography';
 import { getDisplayDescription } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import SprayBoardArt from '@/app/components/spray-wall/spray-board-art';
+import FrontDoorInstall from '@/app/components/climb-front-door/front-door-install';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { buildSprayLitHoldMarks, resolveSprayPhotoFrame } from '@/app/lib/spray/spray-climb-view';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import {
+  buildSprayLitHoldMarks,
+  resolveSprayWallDrawing,
+  type SprayWallArtChoice,
+} from '@/app/lib/spray/spray-climb-view';
 import type { SprayWallPageData } from '@/app/lib/spray/spray-wall-render-data.server';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -17,6 +24,10 @@ type SprayClimbFrontDoorProps = {
   wallData: SprayWallPageData;
   /** The photograph to draw, already chosen by visibility. Null when there is none to show. */
   photoUrl: string | null;
+  /** The owner's generated look, when the backend has it ready; null draws the photo. */
+  art: SprayWallArtChoice | null;
+  /** The stable path the generated look is served at, or null with no art. */
+  artUrl: string | null;
   angle: number;
 };
 
@@ -43,12 +54,20 @@ const sectionHeadingSx = { fontWeight: themeTokens.typography.fontWeight.semibol
  * back to. What is left is the climb, the photograph with the holds on it, and
  * links a crawler can follow.
  *
- * No client component anywhere in the tree: the picture of the wall is the
+ * One client island, the store button under the climb (#6027), and it is server
+ * rendered as a real anchor like everything else. The picture of the wall is the
  * page's LCP and the first HTML byte has to carry it, for a reader on a slow
  * connection and for a crawler that runs no JavaScript.
  */
-export default async function SprayClimbFrontDoor({ climb, wallData, photoUrl, angle }: SprayClimbFrontDoorProps) {
-  const { t } = await getServerTranslation('climbs');
+export default async function SprayClimbFrontDoor({
+  climb,
+  wallData,
+  photoUrl,
+  art,
+  artUrl,
+  angle,
+}: SprayClimbFrontDoorProps) {
+  const [{ t }, storeButtonLabels] = await Promise.all([getServerTranslation('climbs'), getStoreButtonLabels()]);
 
   const climbName = resolveClimbDisplayName(climb.name, 'spray');
   const wallName = wallData.wall.name;
@@ -58,15 +77,20 @@ export default async function SprayClimbFrontDoor({ climb, wallData, photoUrl, a
   // page. User-written, so it renders verbatim and never through `t()`.
   const setterNotes = getDisplayDescription(climb.description);
 
-  const frame = resolveSprayPhotoFrame({
+  const drawing = resolveSprayWallDrawing({
+    photoUrl,
+    artUrl,
+    art,
     photoWidth: wallData.photo.width,
     photoHeight: wallData.photo.height,
     boardWidth: wallData.boardWidth,
     boardHeight: wallData.boardHeight,
+    homography: wallData.homography,
+    darkFieldColor: BOARD_FIELD_COLORS.dark,
   });
   const marks = buildSprayLitHoldMarks({
     holds: wallData.holds,
-    homography: wallData.homography,
+    homography: drawing?.homography ?? wallData.homography,
     frames: climb.frames,
   });
 
@@ -80,12 +104,13 @@ export default async function SprayClimbFrontDoor({ climb, wallData, photoUrl, a
         {t('spray.summary', { wallName, angle, holdCount: wallData.wall.holdCount })}
       </Typography>
 
-      {photoUrl ? (
+      {drawing ? (
         <SprayBoardArt
-          photoUrl={photoUrl}
+          imageUrl={drawing.imageUrl}
+          fieldColor={drawing.fieldColor}
           photoAlt={t('spray.photoAlt', { climbName, grade, wallName })}
-          frameWidth={frame.width}
-          frameHeight={frame.height}
+          frameWidth={drawing.frame.width}
+          frameHeight={drawing.frame.height}
           marks={marks}
         />
       ) : (
@@ -113,6 +138,15 @@ export default async function SprayClimbFrontDoor({ climb, wallData, photoUrl, a
           </Typography>
         </Box>
       ) : null}
+
+      {/* The page's only action. A wall has no hand-off into the browser app, so
+          the store is the one way from here to climbing this. */}
+      <Box sx={sectionSx}>
+        <Typography variant="h2" sx={{ ...sectionHeadingSx, fontSize: '1.25rem' }}>
+          {t('spray.install.heading')}
+        </Typography>
+        <FrontDoorInstall placement="spray-climb" helperText={t('spray.install.body')} labels={storeButtonLabels} />
+      </Box>
 
       <Box sx={sectionSx}>
         <Typography variant="h2" sx={{ ...sectionHeadingSx, fontSize: '1.25rem' }}>

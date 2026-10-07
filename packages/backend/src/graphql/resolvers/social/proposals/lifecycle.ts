@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { getGradeLabel } from '@boardsesh/db/queries';
+import { getGradeLabel, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { logger } from '../../../../utils/logger';
 import { publishSocialEvent } from '../../../../events/index';
 import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
@@ -40,13 +40,16 @@ export type ProposalTypeName = ProposalRow['type'];
 /**
  * The climb a proposal targets, reduced to what the lifecycle needs: the stored
  * board type (to fence client-declared scope), whether the community has hidden
- * it, and who owns/set it.
+ * it, who owns/set it, and the draft/listing flags the visibility gate reads
+ * before it lets a proposal through.
  */
 export type TargetClimb = {
   boardType: string;
   isHidden: boolean;
   userId: string | null;
   setterId: number | null;
+  isDraft: boolean | null;
+  isListed: boolean | null;
 };
 
 /**
@@ -89,10 +92,28 @@ export function normalizeAngleForType(type: ProposalTypeName, angle: number | nu
  * has to be checked against the stored climb before it is used as a proposal key
  * — proposal rows have no FK back to `board_climbs`, so a Kilter UUID declared
  * as Grasshopper would otherwise smuggle -5° into them.
+ *
+ * The visibility half of the gate lives here too, so both doors — `createProposal`
+ * and `reportClimb` — pass through exactly one rule:
+ *
+ *  - a SPRAY climb on a wall the caller cannot see yields no row and therefore the
+ *    same "Climb not found" a missing climb gives. A proposal is a write onto a
+ *    climb, and "Climb not found" vs "wall not visible" would otherwise be an
+ *    existence oracle for a private wall's uuid — the read side deliberately
+ *    refuses to distinguish them;
+ *  - a DRAFT or UNLISTED climb belongs to its setter alone, on every board type,
+ *    exactly as `validateEntityExists` rules for comments (`social/entity-validation.ts`).
+ *    `insertComment` inside these mutations does NOT re-run that check, so the gate
+ *    has to be here or a stranger's hide proposal would open a thread on somebody's
+ *    unpublished work.
+ *
+ * Proposals carry no wall-uuid input, so there is no unlisted capability on this
+ * path — same as comments, whose gate also omits it.
  */
 export async function loadTargetClimb(
   climbUuid: string,
   boardType: string,
+  viewerUserId: string,
   executor: ProposalExecutor = db,
 ): Promise<TargetClimb> {
   const [climb] = await executor
@@ -101,15 +122,30 @@ export async function loadTargetClimb(
       isHidden: dbSchema.boardClimbs.isHidden,
       userId: dbSchema.boardClimbs.userId,
       setterId: dbSchema.boardClimbs.setterId,
+      isDraft: dbSchema.boardClimbs.isDraft,
+      isListed: dbSchema.boardClimbs.isListed,
     })
     .from(dbSchema.boardClimbs)
-    .where(eq(dbSchema.boardClimbs.uuid, climbUuid))
+    .where(
+      and(
+        eq(dbSchema.boardClimbs.uuid, climbUuid),
+        sprayClimbVisibilityCondition(
+          { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+          viewerUserId,
+        ),
+      ),
+    )
     .limit(1);
 
   if (!climb) {
     throw new Error('Climb not found');
   }
   assertClimbBoardType(climb.boardType, boardType);
+
+  // Same message as a missing climb, on purpose — see the doc comment above.
+  if ((climb.isDraft === true || climb.isListed === false) && climb.userId !== viewerUserId) {
+    throw new Error('Climb not found');
+  }
 
   return climb;
 }
@@ -173,7 +209,7 @@ export async function resolveCurrentValue(params: {
             LIMIT 1
           `,
         );
-        currentValue = getGradeLabel(statsRows[0]?.difficulty_id ?? null) || 'Unknown';
+        currentValue = getGradeLabel(statsRows[0]?.difficulty_id ?? null, boardType) || 'Unknown';
       } catch {
         currentValue = 'Unknown';
       }

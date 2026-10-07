@@ -140,10 +140,12 @@ that copy under the destination app's retention rules.
 3. Converge Cloudflare retention using its existing dry-run/apply workflow. Verify
    the prefix and age; a newly created bucket needs a second converge. Resolve any
    blocked policy before enabling exports.
-4. Add `user-data-export` to the backend's existing `BATCH_FAMILIES_ENABLED`
-   comma-separated list, preserving its other enabled families. Deploy
+4. The family starts with the backend deploy; hold it with
+   `BATCH_FAMILIES_DISABLED` until steps 1-3 are done. Deploy
    backend/mobile with compatible native binaries; verify named downloads and
    repeated-download snapshot reuse.
+   Until this step, status reads answer `unavailable` instead of offering Prepare
+   or Retry; this week's finished files stay downloadable.
 5. Observe duration, bytes, cache reuse, and failures. Validate large logbooks and
    actual iOS/Android save/share destinations before completing device QA.
 

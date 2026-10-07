@@ -13,7 +13,7 @@ import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
 import { useGradeFormat } from '../../hooks/use-grade-format';
-import { GRADE_BY_ID, clampDifficultyId, resolveCrowdDifficultyId } from '../../lib/boardsesh-grade-display';
+import { getBoulderGradeById, clampDifficultyId, resolveCrowdDifficultyId } from '../../lib/boardsesh-grade-display';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { hapticSelection } from '../../lib/haptics';
 import { formatRelativeTime } from '../../lib/format-relative-time';
@@ -76,10 +76,13 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
   const rawGradeLabel = ascent.difficultyName ?? ascent.consensusDifficultyName;
   const displayedDifficulty = ascent.difficulty ?? crowdDifficulty;
   const gradeLabel =
-    formatGradeByDifficultyId(displayedDifficulty) ?? formatGrade(rawGradeLabel) ?? rawGradeLabel ?? null;
+    formatGradeByDifficultyId(displayedDifficulty, ascent.boardType) ??
+    formatGrade(rawGradeLabel, ascent.boardType) ??
+    rawGradeLabel ??
+    null;
   const gradeColorName =
     gradeIsConsensus && crowdDifficulty != null
-      ? (GRADE_BY_ID.get(clampDifficultyId(crowdDifficulty))?.difficulty_name ?? rawGradeLabel)
+      ? (getBoulderGradeById(clampDifficultyId(crowdDifficulty), ascent.boardType)?.difficulty_name ?? rawGradeLabel)
       : rawGradeLabel;
   const gradeColor = gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR;
 

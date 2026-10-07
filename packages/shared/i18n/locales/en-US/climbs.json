@@ -60,6 +60,9 @@
         "previous": "Previous page",
         "next": "Next page",
         "pageLabel": "Page {{page}}"
+      },
+      "install": {
+        "helper": "No app yet? Get it and light these climbs on your board."
       }
     }
   },
@@ -934,7 +937,6 @@
         "grade": "Purple holds show up on harder climbs, yellow on easier ones"
       },
       "wholeBoard": "Whole board",
-      "holdPicksSkipped": "{{summary}} · hold picks skipped offline",
       "wholeBoardHint": "Counts every climb on the board instead",
       "useFiltersHint": "Counts only the climbs your filters match",
       "filterUnsupported": "The heatmap can't follow these filters offline. Tap the chip to see the whole board.",
@@ -993,6 +995,9 @@
       "climbThis": "Climb this",
       "ariaLabel": "Open {{climbName}} in the Boardsesh app",
       "helper": "Opens the app, lights the holds, logs the send."
+    },
+    "install": {
+      "helper": "No app yet? Get it and light this climb on your board."
     }
   },
   "spray": {
@@ -1021,6 +1026,10 @@
         "title": "{{wallName}} | Spray Wall",
         "description": "{{wallName}}, a spray wall at {{angle}}°. See the wall and open it in the Boardsesh app."
       }
+    },
+    "install": {
+      "heading": "Get the app",
+      "body": "Log your sends on this wall and set climbs of your own."
     }
   }
 }

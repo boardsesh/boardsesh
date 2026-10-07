@@ -19,12 +19,13 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
 }));
 
 const fetchSprayWallPhotoUrl = vi.fn(async (_wallUuid: string): Promise<string | null> => null);
-vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({ fetchSprayWallPhotoUrl }));
+const fetchSprayWallArtImageUrl = vi.fn(async (_wallUuid: string, _look: string): Promise<string | null> => null);
+vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({ fetchSprayWallPhotoUrl, fetchSprayWallArtImageUrl }));
 
 const { GET } = await import('../route');
 
-function request(wallUuid: string) {
-  return GET(new Request(`https://boardsesh.com/api/v1/spray-walls/${wallUuid}/photo`), {
+function request(wallUuid: string, query = '') {
+  return GET(new Request(`https://boardsesh.com/api/v1/spray-walls/${wallUuid}/photo${query}`), {
     params: Promise.resolve({ wall_uuid: wallUuid }),
   });
 }
@@ -65,5 +66,26 @@ describe('GET /api/v1/spray-walls/[wall_uuid]/photo', () => {
     // A server fault goes out at `error` level, or a dashboard that filters by
     // level never sees the 502s this route is emitting.
     expect(logError).toHaveBeenCalledWith('spray wall photo read failed', expect.objectContaining({ status: 502 }));
+  });
+
+  it('redirects ?look= to that generated look, and never to the photo', async () => {
+    fetchSprayWallArtImageUrl.mockResolvedValue('https://private.example/art/1-r1-cutout.webp?sig=fresh');
+
+    const response = await request('wall-1', '?look=hold-cutouts');
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('https://private.example/art/1-r1-cutout.webp?sig=fresh');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(fetchSprayWallArtImageUrl).toHaveBeenCalledWith('wall-1', 'hold-cutouts');
+    expect(fetchSprayWallPhotoUrl).not.toHaveBeenCalled();
+  });
+
+  it('404s a look that is not ready, and a look it does not know without asking the backend', async () => {
+    fetchSprayWallArtImageUrl.mockResolvedValue(null);
+    expect((await request('wall-1', '?look=wall-crop')).status).toBe(404);
+
+    const unknown = await request('wall-1', '?look=blurred');
+    expect(unknown.status).toBe(404);
+    expect(fetchSprayWallArtImageUrl).toHaveBeenCalledTimes(1);
   });
 });

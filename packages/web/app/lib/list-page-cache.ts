@@ -1,6 +1,7 @@
 import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
 import { USER_SPECIFIC_SEARCH_PARAMS } from '@boardsesh/shared-schema';
 import type { SearchRequestPagination } from '@/app/lib/types';
+import { WALL_CAPABILITY_PARAM } from '@/app/lib/spray/spray-visibility';
 
 // List data tolerates a full day of staleness (a new/edited climb showing up a
 // little late in a list is harmless), so list pages cache for 24h.
@@ -50,6 +51,26 @@ function hasUserSpecificQueryParams(searchParams: URLSearchParams): boolean {
 }
 
 /**
+ * True for a `/b/...` request carrying a spray wall's share-link capability
+ * (`?wall=<uuid>`). Takes the LOCALE-STRIPPED pathname, like the TTL helpers.
+ *
+ * Such a response must never enter a shared cache, for two reasons:
+ *
+ *  - privacy: an unlisted wall's page answers 200 only while the wall stays
+ *    unlisted and unhidden. A cached copy would keep serving it at the edge for
+ *    a day (plus 7 days of stale-while-revalidate) after an admin hides it or
+ *    its owner makes it private;
+ *  - correctness: while www is ahead of the backend, the same URL answers 404,
+ *    and a cached 404 would outlive the backend deploy that fixes it.
+ *
+ * The cost is small: these URLs are noindex and only reach people the owner sent
+ * the link to, so they are not part of the crawl surface the cache exists for.
+ */
+export function isSprayWallCapabilityRequest(pathname: string, searchParams: URLSearchParams): boolean {
+  return (pathname === '/b' || pathname.startsWith('/b/')) && searchParams.has(WALL_CAPABILITY_PARAM);
+}
+
+/**
  * Checks whether a request is a cacheable list page and returns the CDN cache
  * duration in seconds, or null if the request should not be CDN-cached.
  *
@@ -74,7 +95,7 @@ export function getListPageCacheTTL(pathname: string, searchParams: URLSearchPar
     return null;
   }
 
-  if (hasUserSpecificQueryParams(searchParams)) {
+  if (hasUserSpecificQueryParams(searchParams) || isSprayWallCapabilityRequest(pathname, searchParams)) {
     return null;
   }
 
@@ -106,7 +127,7 @@ export function getClimbViewPageCacheTTL(pathname: string, searchParams: URLSear
     return null;
   }
 
-  if (hasUserSpecificQueryParams(searchParams)) {
+  if (hasUserSpecificQueryParams(searchParams) || isSprayWallCapabilityRequest(pathname, searchParams)) {
     return null;
   }
 

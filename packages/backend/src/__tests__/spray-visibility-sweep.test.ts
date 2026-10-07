@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import { createRequire } from 'node:module';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, sql } from 'drizzle-orm';
-import { boardClimbEvents, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import { boardClimbEvents, sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
+import { ART_RECIPE } from '@boardsesh/spray-wall-geometry';
 import type * as GraphQLModule from 'graphql';
 import type {
   GraphQLArgument,
@@ -576,10 +577,6 @@ function scannableSentinels(argumentValues: Record<string, unknown>): Sentinel[]
  * improvement, not a rule change.
  */
 const NOT_APPLICABLE: Record<string, string> = {
-  // --- carried on release/next without its resolver ---------------------------
-  'Query.sprayWallArt':
-    "schema carried from #6178 for the mobile client; the resolver and its exercised sweep case land with #6178 on main; take main's version of this file when main merges into the train",
-
   // --- readers scoped to another board type entirely ---------------------------
   'Query.checkMoonBoardClimbDuplicates':
     "hardcoded to board_type = 'moonboard', so a spray climb is not a row it can return",
@@ -635,7 +632,7 @@ const NOT_APPLICABLE: Record<string, string> = {
   // goes private or is deleted AFTER the fan-out — is what matters here, and
   // spray-wall-api.test.ts drives it directly.
   'Query.activityFeed':
-    'reads materialised feed_items, and the sweep fans nothing out to the owner (an actor is never a recipient of their own event). A comment on a proposal DOES fan out for a private wall, so the read gates carry it: spray-wall-api.test.ts for a wall that went private, and the hard-deleted block at the end of this file',
+    'reads materialised feed_items, and the sweep fans nothing out to the owner (an actor is never a recipient of their own event). A comment on a proposal used to fan out for a private wall and for drafts; since #6032 the write skips both, and the read gates carry the pre-fix rows: spray-wall-api.test.ts for a wall that went private, and the hard-deleted block at the end of this file, which seeds a pre-fix row by hand',
 
   // --- session readers --------------------------------------------------------
   'Query.session': 'live room state held in Redis, not a climb read; membership-gated',
@@ -937,6 +934,26 @@ async function seedWorld(): Promise<SeededWorld> {
   )) as Array<{ id: number }>;
 
   await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+
+  // Generated wall looks, READY, so `sprayWallArt` has something to hand the
+  // owner. The keys carry the photo-id sentinel, as the presigned URLs do.
+  const artStem = `spray-walls/${wall.uuid}/art/${photoId}-r${ART_RECIPE}`;
+  await db
+    .update(sprayWallVersions)
+    .set({
+      art: {
+        recipe: ART_RECIPE,
+        status: 'ready',
+        width: 800,
+        height: 620,
+        cropKey: `${artStem}-crop.jpg`,
+        cutoutKey: `${artStem}-cutout.webp`,
+        quality: { stretch: 1, verdict: 'good' },
+        error: null,
+        requestedAt: new Date().toISOString(),
+      },
+    })
+    .where(eq(sprayWallVersions.id, Number(version.id)));
 
   const holdIds = holds.map((hold) => hold.id);
   const frames = holdIds.map((holdId, index) => `p${holdId}r${[1, 2, 3][index] ?? 2}`).join('');
@@ -1622,9 +1639,11 @@ describe('references to a hard-deleted spray climb', () => {
       VALUES (${uuidv4()}, 'climb', 'sweep-orphan-kilter-missing', ${OWNER}, ${MISSING_KILTER_COMMENT}, now(), now())
     `);
 
-    // The stranger follows the owner, so the real fan-out writes the stranger a
-    // feed row for the hide-reason comment WHILE THE DRAFT STILL EXISTS. That
-    // row carries the draft's name, frames and layout id in its metadata.
+    // The stranger follows the owner. A build before #6032 wrote the stranger a
+    // feed row for the hide-reason comment WHILE THE DRAFT STILL EXISTS — its
+    // metadata carried the draft's name, frames and layout id, because
+    // `getProposalContextMetadata` checked nothing. Now the write-side gate skips
+    // a draft climb and a wall that may not announce, so the fan-out lands empty.
     await fanoutCommentFeedItems({
       type: 'comment.created',
       actorId: OWNER,
@@ -1637,7 +1656,28 @@ describe('references to a hard-deleted spray climb', () => {
       SELECT metadata->>'climbName' AS "climbName", metadata->>'boardType' AS "boardType"
       FROM feed_items WHERE recipient_id = ${STRANGER} AND entity_id = ${orphanHideCommentUuid}
     `)) as unknown as Array<{ climbName: string; boardType: string }>;
-    expect(fannedOut).toEqual([{ climbName: ORPHAN_DRAFT_NAME, boardType: 'spray' }]);
+    expect(fannedOut).toEqual([]);
+
+    // …and the row a PRE-fix build would already have written is seeded by hand —
+    // the same shape spray-wall-api.test.ts uses for the post-commit window — so
+    // the #5981 read gate below stays tested against the legacy rows production
+    // still holds. Only the fields the gate keys on and the leak scan looks for.
+    await db.execute(sql`
+      INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, metadata, created_at)
+      VALUES (
+        ${STRANGER}, ${OWNER}, 'comment', 'comment', ${orphanHideCommentUuid},
+        ${JSON.stringify({
+          climbUuid: orphanClimbUuid,
+          boardType: 'spray',
+          proposalType: 'hide',
+          climbName: ORPHAN_DRAFT_NAME,
+          layoutId: world.layoutId,
+          frames: world.frames,
+          commentBody: ORPHAN_HIDE_REASON,
+        })}::jsonb,
+        now()
+      )
+    `);
 
     // The real path, not a raw DELETE: this is the mutation that strands them.
     await climbMutations.deleteDraftClimb({}, { uuid: orphanClimbUuid, boardType: 'spray' }, ctxFor(OWNER));

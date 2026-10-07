@@ -77,8 +77,8 @@ export function SetterGradeRow({
   const selectedLabel = useMemo(() => {
     if (difficultyId == null) return null;
     const picked = grades?.find((grade) => grade.difficultyId === difficultyId);
-    return picked ? formatGrade(picked.name) : null;
-  }, [grades, difficultyId, formatGrade]);
+    return picked ? formatGrade(picked.name, boardName) : null;
+  }, [grades, difficultyId, formatGrade, boardName]);
 
   const prompted = required && highlightSignal > 0 && selectedLabel === null;
 
@@ -116,6 +116,7 @@ export function SetterGradeRow({
         <GradeSingleSelectRail
           grades={grades ?? []}
           selectedDifficultyId={difficultyId}
+          boardName={boardName}
           onSelect={handleSelect}
           // No clear: `updateClimb` has no way to un-grade a climb, so offering
           // the gesture would be an action the server cannot carry out. Moving

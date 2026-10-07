@@ -1,8 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { and, asc, count, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
+import { lockWallForWrite } from '../../../services/spray-wall-lock';
+export { lockWallForWrite } from '../../../services/spray-wall-lock';
+import { lockSprayWallAccount } from '../../../services/spray-account-lock';
+import { markDeletedSprayWallPhotoRetry } from '../../../services/spray-photo-erasure-retry';
 import {
   MAX_HOLDS_PER_WALL,
   MAX_SPRAY_WALLS_PER_USER,
@@ -52,7 +55,9 @@ import {
   SPRAY_PHOTO_CONTENT_TYPE,
   SPRAY_PHOTO_HEIGHT_METADATA_KEY,
   SPRAY_PHOTO_WIDTH_METADATA_KEY,
+  sprayWallFullPhotoKey,
   sprayWallPhotoKey,
+  sprayWallPhotoMayHaveFullCopy,
   sprayWallPublicPhotoKey,
 } from '../../../handlers/spray-wall-photos';
 import {
@@ -60,11 +65,19 @@ import {
   deleteFromS3,
   getPublicUrl,
   getS3ObjectMetadata,
+  getS3ObjectMetadataStrict,
   isS3Configured,
   presignGetObject,
 } from '../../../storage/s3';
 import { sprayWallIsListable } from './spray-wall-listing';
 import { resizedVariantKey } from '../../../lib/image-resize';
+import { sprayVersionQuality, sprayWallArtState } from '../../../lib/spray-wall-art';
+import {
+  requestSprayWallArtFromRead,
+  requestSprayWallArtOn,
+  sprayWallArtNeedsRequest,
+  sprayWallArtView,
+} from '../../../services/spray-wall-art';
 import {
   ClimbUuidSchema,
   CommitSprayWallVersionInputSchema,
@@ -150,6 +163,7 @@ export const SPRAY_WALL_CODES = {
   anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
   climbEditPolicyOwnerOnly: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
+  artNotAvailable: 'SPRAY_WALL_ART_NOT_AVAILABLE',
 } as const;
 
 type SprayWallRow = typeof dbSchema.sprayWalls.$inferSelect;
@@ -382,6 +396,68 @@ export async function presignVersionPhoto(version: SprayWallVersionRow): Promise
   };
 }
 
+/**
+ * Whether a base photo key has a full-resolution copy beside it, by photo key.
+ *
+ * Remembered per process because the answer never changes for a key: the copy is
+ * written before the base (so before any version row can name the key), and the
+ * only paths that delete it — the retention purge and account deletion — clear
+ * `photo_key` too, so a remembered "yes" is never consulted for a deleted object.
+ * Bounded so a long-lived process does not grow without limit; Map iteration is
+ * insertion order, so the oldest entry goes first.
+ */
+const fullPhotoPresence = new Map<string, boolean>();
+const FULL_PHOTO_PRESENCE_MAX_ENTRIES = 5000;
+
+/** Forget every remembered full-copy answer. Test seam: the map is module state. */
+export function resetSprayFullPhotoPresenceCache(): void {
+  fullPhotoPresence.clear();
+}
+
+async function versionHasFullPhoto(photoKey: string): Promise<boolean> {
+  const remembered = fullPhotoPresence.get(photoKey);
+  if (remembered !== undefined) return remembered;
+
+  // Strict, so an outage throws instead of reading as "missing" and being
+  // remembered as a permanent no for this key.
+  const present = (await getS3ObjectMetadataStrict('private', sprayWallFullPhotoKey(photoKey))) !== null;
+  if (fullPhotoPresence.size >= FULL_PHOTO_PRESENCE_MAX_ENTRIES) {
+    const oldest = fullPhotoPresence.keys().next();
+    if (!oldest.done) fullPhotoPresence.delete(oldest.value);
+  }
+  fullPhotoPresence.set(photoKey, present);
+  return present;
+}
+
+/**
+ * Presigned GET for a version's full-resolution copy (#5911), or null when it
+ * has none.
+ *
+ * Only the hold editor asks for this, and only once it zooms past the base
+ * photo's resolution, so it is a field on `SprayWallRenderData` and not on
+ * `SprayWallPhoto` — the version lists and moderation previews that also build
+ * a `SprayWallPhoto` never pay for it. Signed in the same breath as the base, so
+ * `photo.expiresAt` covers it too.
+ *
+ * Existence costs no storage call for most versions: a base whose long side is
+ * not exactly the base cap cannot have a copy (`sprayWallPhotoMayHaveFullCopy`).
+ * The rest — including every pre-#5911 photo the app compressed to exactly 2048
+ * px — get one HEAD per key per process, remembered after. Best-effort: the base
+ * photo always renders, so a storage error here is a null, never a failed read.
+ */
+export async function presignVersionFullPhoto(version: SprayWallVersionRow): Promise<string | null> {
+  if (!version.photoKey || !isS3Configured('private')) return null;
+  if (!sprayWallPhotoMayHaveFullCopy(version.photoWidth, version.photoHeight)) return null;
+
+  try {
+    if (!(await versionHasFullPhoto(version.photoKey))) return null;
+    return (await presignGetObject('private', sprayWallFullPhotoKey(version.photoKey))).url;
+  } catch (error) {
+    logger.warn('Failed to presign a spray wall full-resolution photo', { versionId: version.id }, error);
+    return null;
+  }
+}
+
 /** How many holds a version put on, and took off, the wall. */
 async function versionHoldDeltas(versionIds: number[]): Promise<Map<number, { added: number; removed: number }>> {
   const deltas = new Map<number, { added: number; removed: number }>();
@@ -594,36 +670,6 @@ async function resolveReadableVersion(
 }
 
 /**
- * Advisory-lock namespace for spray wall writes. `pg_advisory_xact_lock`'s
- * single-int8 form shares one global lock space with every other advisory-lock
- * caller in the cluster, so this uses the two-int form with an arbitrary
- * namespace — `0x53505259` is ASCII "SPRY". Mirrors
- * `CLIMB_DUPLICATE_LOCK_NAMESPACE` in `climbs/climb-similarity.ts`.
- */
-const SPRAY_WALL_LOCK_NAMESPACE = SPRAY_WALL_WRITE_LOCK_NAMESPACE;
-
-/**
- * Serialize every write that changes a wall's holds or its published version.
- *
- * Editing holds and publishing are TOCTOU by nature: the edit reads "this version
- * is a draft" and then writes, and a publish landing in between turns that write
- * into a silent mutation of a PUBLISHED generation — moving every climb set on it.
- * The lock is keyed on the wall rather than the version because the two sides race
- * on different rows (a version row and the wall's `current_version_id`), so a
- * per-version lock would not make them queue.
- *
- * Transaction-scoped, so it releases on commit or rollback with nothing to clean
- * up. Take it as the FIRST statement in the transaction, before any read whose
- * answer the write depends on.
- */
-export async function lockWallForWrite(
-  tx: { execute: (query: SQL) => Promise<unknown> },
-  wallId: number,
-): Promise<void> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_LOCK_NAMESPACE}, ${wallId})`);
-}
-
-/**
  * The version being edited, asserted to be a DRAFT of this wall.
  *
  * Published and superseded versions are immutable: a climb set against a
@@ -778,6 +824,16 @@ async function deletePublicWallPhoto(key: string | null | undefined): Promise<vo
     await deleteFromS3('media', key);
   } catch (error) {
     logger.error('Failed to delete a spray wall public photo copy', { key }, error);
+    // Public copies staged before deletion can finish after the prefix purge.
+    // Failed cleanup must re-open that tombstone's durable retry marker.
+    const wallUuid = /^spray-walls\/([^/]+)\//.exec(key)?.[1];
+    if (wallUuid) {
+      try {
+        await markDeletedSprayWallPhotoRetry(wallUuid);
+      } catch (retryError) {
+        logger.error('Failed to mark withdrawn public photo for erasure retry', { wallUuid }, retryError);
+      }
+    }
   }
 }
 
@@ -906,6 +962,13 @@ export async function refreshPublicWallPhoto(
     // than the orphan, which SW-17 sweeps. Only the "no row back" path above knows
     // the write did not happen, and only it deletes.
     logger.error('Failed to refresh a public spray wall photo after a publish', { boardUuid, nextKey }, error);
+    // An uncertain live-wall write must retain its copy. If account deletion
+    // won, reopen its durable purge instead: the copy may postdate that purge.
+    try {
+      await markDeletedSprayWallPhotoRetry(boardUuid);
+    } catch (retryError) {
+      logger.error('Failed to reopen deleted spray wall photo cleanup', { boardUuid }, retryError);
+    }
   }
 }
 
@@ -1168,6 +1231,21 @@ async function publishDraftUnderLock(
   // AFTER the status flip, because the recompute only counts removals by
   // generations that have landed, and until that update this version is a draft.
   const climbsChanged = await recomputeMissingHoldCounts(tx, wall.id);
+
+  // The generated wall looks for the new generation, queued with the publish so
+  // the job commits (or rolls back) with it. Whatever background the wall
+  // shows, so the owner's picker has art to offer straight away. Refused here,
+  // with no job, when the photo fails the quality gate. Never fails the publish.
+  const [frame] = await tx
+    .select({
+      referenceWidth: dbSchema.sprayWalls.referenceWidth,
+      referenceHeight: dbSchema.sprayWalls.referenceHeight,
+    })
+    .from(dbSchema.sprayWalls)
+    .where(eq(dbSchema.sprayWalls.id, wall.id))
+    .limit(1);
+  if (frame) await requestSprayWallArtOn(tx, row, frame);
+
   if (climbsChanged > 0) {
     logger.info('Spray wall publish re-materialised climb integrity', {
       layoutId: wall.layoutId,
@@ -1292,6 +1370,24 @@ async function climbsUsingHolds(layoutId: number, holdIds: number[]): Promise<nu
 // Queries
 // ============================================
 
+/**
+ * The version a generated-background choice is checked against: the published
+ * one, or before the first publish the newest version (the wizard's draft).
+ */
+async function versionForArtChoice(wall: SprayWallRow): Promise<SprayWallVersionRow | undefined> {
+  const [version] = await db
+    .select()
+    .from(dbSchema.sprayWallVersions)
+    .where(
+      wall.currentVersionId != null
+        ? eq(dbSchema.sprayWallVersions.id, wall.currentVersionId)
+        : eq(dbSchema.sprayWallVersions.wallId, wall.id),
+    )
+    .orderBy(desc(dbSchema.sprayWallVersions.versionNumber))
+    .limit(1);
+  return version;
+}
+
 export const sprayWallQueries = {
   sprayWall: async (_: unknown, { uuid }: { uuid: unknown }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWall');
@@ -1350,7 +1446,10 @@ export const sprayWallQueries = {
     // honest answer — the same one an invisible wall gets.
     if (!photo) return null;
 
-    const holds = await aliveHolds(db, loaded.wall.id, versionRow.versionNumber);
+    const [photoFullUrl, holds] = await Promise.all([
+      presignVersionFullPhoto(versionRow),
+      aliveHolds(db, loaded.wall.id, versionRow.versionNumber),
+    ]);
     const versionNumberById = await loadVersionNumbers(loaded.wall.id);
 
     return {
@@ -1362,9 +1461,53 @@ export const sprayWallQueries = {
       boardWidth: loaded.wall.referenceWidth ?? versionRow.photoWidth ?? 0,
       boardHeight: loaded.wall.referenceHeight ?? versionRow.photoHeight ?? 0,
       photo,
+      photoFullUrl,
       homography: versionRow.homography ?? [...IDENTITY_HOMOGRAPHY],
       holds: holds.map((hold) => toGraphQLHold(hold, versionNumberById)),
     };
+  },
+
+  /**
+   * One version's generated wall looks and its quality verdict.
+   *
+   * The same gate as `sprayWallRenderData`, step for step: the wall's view
+   * rule, then the version rule (a draft only for an editor). Its own query so
+   * a backend that predates it fails only this read, never the render payload.
+   */
+  sprayWallArt: async (
+    _: unknown,
+    { uuid, version }: { uuid: unknown; version?: number | null },
+    ctx: ConnectionContext,
+  ) => {
+    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'sprayWallArt');
+    const validatedUuid = validateInput(UUIDSchema, uuid, 'uuid');
+
+    const loaded = await loadVisibleWall(validatedUuid, ctx.userId);
+    if (!loaded) return null;
+
+    const canEdit = await computeCanEdit(ctx, loaded.board);
+    const versionRow = await resolveReadableVersion(loaded.wall, version, canEdit);
+    if (!versionRow?.photoKey) return null;
+
+    const liveFail = sprayVersionQuality(versionRow, loaded.wall).verdict === 'fail';
+    const state = sprayWallArtState(versionRow.art, liveFail);
+
+    // Read-time backfill: the PUBLISHED version of a wall that chose a
+    // generated look, whose art is missing, from an older recipe, or failed or
+    // stuck past the job's deadline. Only queued, never rendered inline; the
+    // singleton key dedupes concurrent readers, and a refused photo never
+    // reaches here (`requeue` is false for it).
+    const background = loaded.wall.renderSettings?.background;
+    if (
+      state.requeue &&
+      versionRow.id === loaded.wall.currentVersionId &&
+      (background === 'wall-crop' || background === 'hold-cutouts')
+    ) {
+      const outcome = await requestSprayWallArtFromRead(db, versionRow, loaded.wall);
+      if (outcome === 'queued') return sprayWallArtView(versionRow, loaded.wall, { status: 'PENDING', requeue: false });
+    }
+
+    return sprayWallArtView(versionRow, loaded.wall, state);
   },
 
   /**
@@ -1707,6 +1850,13 @@ export const sprayWallMutations = {
     const slug = await generateUniqueSlug(validated.name);
 
     const created = await db.transaction(async (tx) => {
+      await lockSprayWallAccount(tx, userId);
+      const [account] = await tx
+        .select({ id: dbSchema.users.id })
+        .from(dbSchema.users)
+        .where(eq(dbSchema.users.id, userId))
+        .limit(1);
+      if (!account) throw notFoundError();
       // ONE sequence value is BOTH the layout id and the size id: a wall has
       // exactly one size, itself.
       const { layoutId, sizeId } = await allocateWallIds(tx);
@@ -2225,7 +2375,11 @@ export const sprayWallMutations = {
         }
 
         const [boardNow] = await tx
-          .select({ isPublic: dbSchema.userBoards.isPublic })
+          .select({
+            isPublic: dbSchema.userBoards.isPublic,
+            deletedAt: dbSchema.userBoards.deletedAt,
+            ownerId: dbSchema.userBoards.ownerId,
+          })
           .from(dbSchema.userBoards)
           .where(eq(dbSchema.userBoards.id, board.id))
           .limit(1);
@@ -2237,11 +2391,17 @@ export const sprayWallMutations = {
             hiddenAt: dbSchema.sprayWalls.hiddenAt,
             pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
             pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
+            deletedAt: dbSchema.sprayWalls.deletedAt,
           })
           .from(dbSchema.sprayWalls)
           .where(eq(dbSchema.sprayWalls.id, wall.id))
           .limit(1);
 
+        // A copy was staged outside the lock. Account or wall deletion may have
+        // withdrawn ownership while it was copying; catch below erases the copy.
+        if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
+          throw notFoundError();
+        }
         if (Object.keys(updates).length > 0) {
           await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
         }
@@ -2355,6 +2515,15 @@ export const sprayWallMutations = {
    * lock either — `render_settings` is touched by no other writer (holds,
    * versions and publish never read or write it), so there is no concurrent
    * write to order this against; the last call wins, which is what a setting is.
+   *
+   * A generated background (`wall-crop`, `hold-cutouts`) is refused when the
+   * wall's photo fails the quality gate — the published version's, or the
+   * newest draft's before the first publish — so no client can store a look
+   * the wall cannot show. The read it decides on is a version's pins and
+   * frame, which never change once written, so it still needs no lock: a
+   * publish landing alongside requests its own art. When the published
+   * version has no current art yet (a wall published before art existed),
+   * choosing one queues it.
    */
   setSprayWallRenderSettings: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
@@ -2363,15 +2532,46 @@ export const sprayWallMutations = {
     const validated = validateInput(SetSprayWallRenderSettingsInputSchema, input, 'input');
     const { wall } = await loadEditableWall(ctx, validated.uuid);
 
+    // An older client sends `{ mode, boardsesh }` with no `background` key.
+    // That is "change the look", not "go back to the photo", so the stored
+    // background is kept. Only an explicit choice is gated: a kept one was
+    // allowed when it was made, and a reset that fails the gate draws the
+    // photo through the read-side fallback anyway.
+    const explicitBackground = validated.renderSettings?.background;
+    const renderSettings =
+      validated.renderSettings && explicitBackground === undefined && wall.renderSettings?.background
+        ? { ...validated.renderSettings, background: wall.renderSettings.background }
+        : validated.renderSettings;
+    const background = renderSettings?.background ?? 'photo';
+    const artVersion = background === 'photo' ? undefined : await versionForArtChoice(wall);
+    if (explicitBackground !== undefined && explicitBackground !== 'photo') {
+      const quality = artVersion ? sprayVersionQuality(artVersion, wall) : null;
+      if (!quality || quality.verdict === 'fail') {
+        throw new GraphQLError(
+          'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.',
+          {
+            extensions: { code: SPRAY_WALL_CODES.artNotAvailable, reason: quality?.reason ?? 'no-photo' },
+          },
+        );
+      }
+    }
+
     await db
       .update(dbSchema.sprayWalls)
-      .set({ renderSettings: validated.renderSettings, updatedAt: new Date() })
+      .set({ renderSettings, updatedAt: new Date() })
       .where(eq(dbSchema.sprayWalls.id, wall.id));
+
+    // Backfill: only for the PUBLISHED version. A draft gets its art when it
+    // is published.
+    if (artVersion && artVersion.id === wall.currentVersionId && sprayWallArtNeedsRequest(artVersion.art)) {
+      await db.transaction((tx) => requestSprayWallArtOn(tx, artVersion, wall));
+    }
 
     logger.info('Spray wall render settings updated', {
       layoutId: wall.layoutId,
       userId: ctx.userId,
       mode: validated.renderSettings?.mode ?? null,
+      background,
     });
 
     const reloaded = await loadWall('uuid', validated.uuid);
@@ -2841,7 +3041,17 @@ export const sprayWallMutations = {
         `);
       }
 
-      // 4. …and publish, which is the moment every removal above becomes real.
+      // 4. A full reset is recorded on the version BEFORE the publish below,
+      //    because the publish's recompute is what reads it: every climb using a
+      //    hold this version removed comes out retired (#6024).
+      if (validated.fullReset === true) {
+        await tx
+          .update(dbSchema.sprayWallVersions)
+          .set({ isFullReset: true, updatedAt: new Date() })
+          .where(eq(dbSchema.sprayWallVersions.id, version.id));
+      }
+
+      // 5. …and publish, which is the moment every removal above becomes real.
       //    Same transaction and same lock, so a reset is atomic: there is no
       //    instant at which the holds have gone but the version has not landed.
       const {
@@ -2870,6 +3080,7 @@ export const sprayWallMutations = {
       removed: committed.removedCount,
       added: committed.addedCount,
       climbsChanged: committed.climbsChanged,
+      fullReset: validated.fullReset === true,
     });
 
     // The same public-copy refresh `publishSprayWallVersion` makes, on the same

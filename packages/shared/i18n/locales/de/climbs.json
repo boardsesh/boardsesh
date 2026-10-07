@@ -60,6 +60,9 @@
         "previous": "Vorherige Seite",
         "next": "Nächste Seite",
         "pageLabel": "Seite {{page}}"
+      },
+      "install": {
+        "helper": "Noch keine App? Hol sie dir und beleuchte diese Boulder an deinem Board."
       }
     }
   },
@@ -934,7 +937,6 @@
         "grade": "Lila Griffe tauchen in schwereren Bouldern auf, gelbe in leichteren"
       },
       "wholeBoard": "Ganzes Board",
-      "holdPicksSkipped": "{{summary}} · Griffauswahl offline übersprungen",
       "wholeBoardHint": "Zählt stattdessen jeden Boulder am Board",
       "useFiltersHint": "Zählt nur die Boulder, die zu deinen Filtern passen",
       "filterUnsupported": "Die Heatmap kann diesen Filtern offline nicht folgen. Tipp auf den Chip, um das ganze Board zu sehen.",
@@ -993,6 +995,9 @@
       "climbThis": "Boulder jetzt",
       "ariaLabel": "{{climbName}} in der Boardsesh-App öffnen",
       "helper": "Öffnet die App, beleuchtet die Griffe, loggt die Begehung."
+    },
+    "install": {
+      "helper": "Noch keine App? Hol sie dir und beleuchte diesen Boulder an deinem Board."
     }
   },
   "spray": {
@@ -1021,6 +1026,10 @@
         "title": "{{wallName}} | Spraywall",
         "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Wand an und öffne sie in der Boardsesh-App."
       }
+    },
+    "install": {
+      "heading": "Hol dir die App",
+      "body": "Trag deine Begehungen an dieser Wand ein und schraub deine eigenen Boulder."
     }
   }
 }

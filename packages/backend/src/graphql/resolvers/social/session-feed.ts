@@ -679,7 +679,9 @@ export const sessionFeedQueries = {
       const effectiveDifficulty =
         row.tick.difficulty ?? (row.consensusDifficulty != null ? Math.round(row.consensusDifficulty) : null);
       const effectiveDifficultyName =
-        row.difficultyName || (effectiveDifficulty != null ? getGradeLabel(effectiveDifficulty) : null) || null;
+        row.difficultyName ||
+        (effectiveDifficulty != null ? getGradeLabel(effectiveDifficulty, row.tick.boardType) : null) ||
+        null;
       return {
         uuid: row.tick.uuid,
         userId: row.tick.userId,
@@ -840,7 +842,7 @@ export const sessionFeedQueries = {
     const gradesSorted = tickRows
       .map((r) => {
         const effDiff = r.tick.difficulty ?? (r.consensusDifficulty != null ? Math.round(r.consensusDifficulty) : null);
-        const effName = r.difficultyName || (effDiff != null ? getGradeLabel(effDiff) : null) || null;
+        const effName = r.difficultyName || (effDiff != null ? getGradeLabel(effDiff, r.tick.boardType) : null) || null;
         return { ...r, effDiff, effName };
       })
       .filter((r) => r.effName && (r.tick.status === 'flash' || r.tick.status === 'send'))
@@ -1060,6 +1062,42 @@ async function fetchParticipantsBatch(
   return map;
 }
 
+type GradeDistributionRow = {
+  session_id: string;
+  board_type: string;
+  diff_num: number;
+  flash: number;
+  send: number;
+  attempt: number;
+};
+
+/**
+ * Turn per-(session, board, difficulty) count rows into each session's grade
+ * distribution. Rows are grouped by board so each one is labelled on its own
+ * board's scale (MoonBoard calls difficulty 16 "6a/V2", everyone else "6a/V3");
+ * rows from different boards that land on the same label merge into one bucket,
+ * so a Kilter + Tension session still shows one bar per grade. Input must be
+ * ordered by difficulty descending; output keeps that order.
+ */
+function foldGradeDistributionRows(rows: GradeDistributionRow[]): Map<string, SessionGradeDistributionItem[]> {
+  const bucketsBySession = new Map<string, Map<string, SessionGradeDistributionItem>>();
+  for (const row of rows) {
+    const grade = getGradeLabel(row.diff_num, row.board_type);
+    if (!grade) continue;
+    const buckets = bucketsBySession.get(row.session_id) ?? new Map<string, SessionGradeDistributionItem>();
+    const bucket = buckets.get(grade);
+    if (bucket) {
+      bucket.flash += row.flash;
+      bucket.send += row.send;
+      bucket.attempt += row.attempt;
+    } else {
+      buckets.set(grade, { grade, flash: row.flash, send: row.send, attempt: row.attempt });
+    }
+    bucketsBySession.set(row.session_id, buckets);
+  }
+  return new Map([...bucketsBySession].map(([sessionId, buckets]) => [sessionId, [...buckets.values()]]));
+}
+
 /**
  * Fetch grade distributions for multiple sessions in a single query.
  * Returns a Map from sessionId to grade distribution array.
@@ -1076,6 +1114,7 @@ async function fetchGradeDistributionBatch(
   const result = await dbRead.execute(sql`
     SELECT
       t.session_id,
+      t.board_type,
       COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS diff_num,
       COUNT(*) FILTER (WHERE t.status = 'flash')::int AS flash,
       COUNT(*) FILTER (WHERE t.status = 'send')::int AS send,
@@ -1095,27 +1134,11 @@ async function fetchGradeDistributionBatch(
       ${batchTickFilter}
       ${batchUserFilter}
       AND COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
-    GROUP BY t.session_id, diff_num
+    GROUP BY t.session_id, t.board_type, diff_num
     ORDER BY diff_num DESC
   `);
 
-  const rows = rowsFromResult<{
-    session_id: string;
-    diff_num: number;
-    flash: number;
-    send: number;
-    attempt: number;
-  }>(result);
-
-  const map = new Map<string, SessionGradeDistributionItem[]>();
-  for (const r of rows) {
-    const grade = getGradeLabel(r.diff_num);
-    if (!grade) continue;
-    const distribution = map.get(r.session_id) ?? [];
-    distribution.push({ grade, flash: r.flash, send: r.send, attempt: r.attempt });
-    map.set(r.session_id, distribution);
-  }
-  return map;
+  return foldGradeDistributionRows(rowsFromResult<GradeDistributionRow>(result));
 }
 
 /**
@@ -1245,7 +1268,9 @@ function mapTickHighlightRow(row: TickHighlightRow, ownerBoards: RenderBoardCand
   const effectiveDifficulty =
     row.difficulty ?? (row.consensusDifficulty != null ? Math.round(row.consensusDifficulty) : null);
   const effectiveDifficultyName =
-    row.difficultyName || (effectiveDifficulty != null ? getGradeLabel(effectiveDifficulty) : null) || null;
+    row.difficultyName ||
+    (effectiveDifficulty != null ? getGradeLabel(effectiveDifficulty, row.boardType) : null) ||
+    null;
 
   return {
     uuid: row.uuid,
@@ -1464,6 +1489,7 @@ async function fetchDailyGradeDistributionBatch(
     )
     SELECT
       keys.session_id,
+      t.board_type,
       COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) AS diff_num,
       COUNT(*) FILTER (WHERE t.status = 'flash')::int AS flash,
       COUNT(*) FILTER (WHERE t.status = 'send')::int AS send,
@@ -1483,27 +1509,11 @@ async function fetchDailyGradeDistributionBatch(
       AND bcs.angle = t.angle
     WHERE COALESCE(t.difficulty, ROUND(bcs.display_difficulty)::int) IS NOT NULL
       ${batchTickFilter}
-    GROUP BY keys.session_id, diff_num
+    GROUP BY keys.session_id, t.board_type, diff_num
     ORDER BY diff_num DESC
   `);
 
-  const rows = rowsFromResult<{
-    session_id: string;
-    diff_num: number;
-    flash: number;
-    send: number;
-    attempt: number;
-  }>(result);
-
-  const map = new Map<string, SessionGradeDistributionItem[]>();
-  for (const row of rows) {
-    const grade = getGradeLabel(row.diff_num);
-    if (!grade) continue;
-    const distribution = map.get(row.session_id) ?? [];
-    distribution.push({ grade, flash: row.flash, send: row.send, attempt: row.attempt });
-    map.set(row.session_id, distribution);
-  }
-  return map;
+  return foldGradeDistributionRows(rowsFromResult<GradeDistributionRow>(result));
 }
 
 function mapBetaLinkRow(row: BetaLinkRow): BetaLinksGqlRow {

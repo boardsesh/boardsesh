@@ -29,6 +29,22 @@ export type BackgroundJobContext = {
   database: DbInstance;
   transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
   /**
+   * The same attempt fence as `transaction`, without its abort checks. Only
+   * for recording why an attempt failed after `signal` has already fired from
+   * a worker shutdown or a lost attempt (a failed heartbeat): `transaction`
+   * would refuse that write, and a family that tracks its own state in a row
+   * would leave it mid-flight.
+   *
+   * It does NOT cover a lease timeout. That abort fires at `startedOn +
+   * expireInSeconds`, the moment the fence's own active-attempt check stops
+   * passing, so the fence refuses the write too. A family that needs a final
+   * state after a timeout has to recover it some other way (`spray-wall-art`
+   * reads a pending row past its run deadline as failed and re-queues it).
+   * The fence also refuses once another attempt owns the run. Optional so a
+   * hand-built test context need not supply it; fall back to `transaction`.
+   */
+  transactionAfterAbort?<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
+  /**
    * Queue another family's run inside one of this run's transactions, so the
    * run commits (or rolls back) with that batch. Same semantics as
    * `enqueueBackgroundJobOn`, on this worker's queue client.

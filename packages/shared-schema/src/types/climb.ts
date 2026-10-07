@@ -228,6 +228,9 @@ export type ClimbSearchInput = {
    */
   useMyGrades?: boolean;
   onlyDrafts?: boolean;
+  // Only climbs the user has hearted on this board. A heart is per climb, not
+  // per angle, so it matches at every angle.
+  onlyFavorited?: boolean;
   projectsOnly?: boolean;
   // Spray-wall hold integrity: INTACT keeps climbs that have lost no holds,
   // BROKEN keeps only the ones that have, ANY (and an absent value) adds no
@@ -274,6 +277,7 @@ export const USER_SPECIFIC_SEARCH_PARAMS = [
   // which the whole feature silently no-ops.
   'useMyGrades',
   'onlyDrafts',
+  'onlyFavorited',
 ] as const satisfies ReadonlyArray<keyof ClimbSearchInput>;
 
 export type ClimbSearchResult = {

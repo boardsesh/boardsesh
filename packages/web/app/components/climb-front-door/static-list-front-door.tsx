@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getStoreButtonLabels } from '@/app/lib/store-button-labels.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { frontDoorPagePath, isIndexableFrontDoorPage } from '@/app/lib/seo/list-page-robots';
@@ -13,6 +14,7 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import ClimbListJsonLd from './climb-list-json-ld';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
+import FrontDoorInstall from './front-door-install';
 
 type StaticListFrontDoorProps = {
   boardDetails: BoardDetails;
@@ -126,7 +128,10 @@ export default async function StaticListFrontDoor({
   tree,
   noindex = false,
 }: StaticListFrontDoorProps) {
-  const { t, locale } = await getServerTranslation('climbs');
+  const [{ t, locale }, storeButtonLabels] = await Promise.all([
+    getServerTranslation('climbs'),
+    getStoreButtonLabels(),
+  ]);
   const boardName = formatBoardDisplayName(boardDetails.board_name);
   // The breadcrumb's leaf is this page's CANONICAL, which on `/b/{slug}` is the
   // config-tuple URL rather than the path the reader is on — same split
@@ -229,7 +234,13 @@ export default async function StaticListFrontDoor({
         layoutId={boardDetails.layout_id}
         angle={angle}
         locale={locale}
-      />
+      >
+        <FrontDoorInstall
+          placement="climb-list"
+          helperText={t('list.frontDoor.install.helper')}
+          labels={storeButtonLabels}
+        />
+      </ClimbHandoffCta>
     </Box>
   );
 }

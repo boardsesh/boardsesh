@@ -56,6 +56,7 @@ const ALTER_ADDED_COLUMNS: { version: number; table: string; column: string }[] 
   { version: 11, table: 'boardsesh_ticks', column: 'climb_revision' },
   { version: 11, table: 'board_climbs', column: 'revision_number' },
   { version: 11, table: 'board_climbs', column: 'holds_revision_number' },
+  { version: 12, table: 'board_climbs', column: 'retired_by_reset' },
 ];
 
 async function rollBackAlterColumnsAbove(
@@ -341,7 +342,7 @@ describe('runMigrations', () => {
     });
     expect(
       (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
-    ).toBe(11);
+    ).toBe(LATEST_SCHEMA_VERSION);
   });
 
   it('v11 adds the climb revision columns as nullable, and leaves rows already on disk NULL', async () => {
@@ -371,7 +372,29 @@ describe('runMigrations', () => {
     });
     expect(
       (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
-    ).toBe(11);
+    ).toBe(LATEST_SCHEMA_VERSION);
+  });
+
+  it('v12 adds board_climbs.retired_by_reset as nullable, and leaves rows already on disk NULL (#6024)', async () => {
+    // NULL reads as not retired in the local search, so a climb pulled before
+    // this column existed stays in a wall's default list until a full reset
+    // re-delivers it.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await rollBackAlterColumnsAbove(upgradedDb, 11);
+    expect(await tableColumns(upgradedDb, 'board_climbs')).not.toContain('retired_by_reset');
+    await upgradedDb.runAsync(
+      "INSERT INTO board_climbs (uuid, board_type, layout_id, frames, sync_seq) VALUES ('kept', 'spray', 7, 'p1r12', 3)",
+    );
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 11 WHERE id = 1');
+    await runMigrations(upgradedDb);
+
+    expect(await upgradedDb.getFirstAsync("SELECT retired_by_reset FROM board_climbs WHERE uuid = 'kept'")).toEqual({
+      retired_by_reset: null,
+    });
+    expect(
+      (await upgradedDb.getFirstAsync<{ version: number }>('SELECT version FROM schema_version WHERE id = 1'))?.version,
+    ).toBe(12);
   });
 
   it('keeps the device-only holds index tables out of SCHEMA_STATEMENTS', () => {
@@ -431,8 +454,8 @@ describe('runMigrations', () => {
 });
 
 describe('ARTIFACT_SCHEMA_VERSION', () => {
-  it('is the last migration that changed an artifact table: v11, the climb revision columns', () => {
-    expect(ARTIFACT_SCHEMA_VERSION).toBe(11);
+  it('is the last migration that changed an artifact table: v12, the full-reset retired flag', () => {
+    expect(ARTIFACT_SCHEMA_VERSION).toBe(12);
   });
 
   it('is not moved by device-only migrations (v8 spray_walls, v9 followed authors, v10 holds index)', () => {

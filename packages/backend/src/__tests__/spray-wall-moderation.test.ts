@@ -93,7 +93,7 @@ const { climbMutations } = await import('../graphql/resolvers/climbs/mutations')
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
 const { smartPlaylist } = await import('../graphql/resolvers/playlists/queries/smart-playlists');
 const { favoriteClimbsQuery } = await import('../graphql/resolvers/favorites/favorite-climbs-query');
-const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
+const { sprayWallFullPhotoKey, sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { SPRAY_WALL_PHOTO_RETENTION_DAYS } = await import('@boardsesh/board-config');
 const { socialBoardQueries } = await import('../graphql/resolvers/social/boards');
 const { boardPresenceQueries } = await import('../graphql/resolvers/board-presence/queries');
@@ -1075,6 +1075,32 @@ describe('the photo purge', () => {
 
     expect(result).toMatchObject({ wallsPurged: 1, wallsConsidered: 1, objectsDeleted: 1 });
     expect(deletedObjects.map((object) => object.key)).toEqual([strayKey]);
+  });
+
+  it('deletes the full-resolution copy with the base and its thumbnail', async () => {
+    // #5911: a photo larger than the base cap gets a `-full` object beside it.
+    // Nothing on the version row names that key, so the prefix listing is the
+    // only thing that can reach it — pinned here so a sweep narrowed to the keys
+    // a row names would red instead of leaving the sharpest copy of somebody's
+    // living room in the bucket.
+    const { wall } = await createPublishedWall();
+    const [version] = [
+      ...(await db.execute<{ photo_key: string }>(sql`
+        SELECT v.photo_key FROM spray_wall_versions v JOIN spray_walls w ON w.id = v.wall_id
+        WHERE w.board_uuid = ${wall.uuid}
+      `)),
+    ];
+    const fullKey = sprayWallFullPhotoKey(version.photo_key);
+    expect(fullKey.startsWith(`spray-walls/${wall.uuid}/`)).toBe(true);
+    storedObjects.get('private')!.add(fullKey);
+    await deleteWallDaysAgo(wall.uuid, SPRAY_WALL_PHOTO_RETENTION_DAYS + 1);
+
+    const result = await purgeDeletedSprayWallPhotos({ now: new Date() });
+
+    expect(result).toMatchObject({ wallsPurged: 1, objectsDeleted: 3 });
+    expect(deletedObjects.map((object) => object.key).sort()).toEqual(
+      [version.photo_key, `${version.photo_key}@280.jpg`, fullKey].sort(),
+    );
   });
 
   it('reaches a fresh deletion past a full batch of already-purged walls', async () => {

@@ -299,8 +299,13 @@ export function parseBoardAngleSegment(boardName: BoardName, segment: string): A
 // utilities can depend on the grade taxonomy without pulling in the rest of
 // board-config (image dimensions, set IDs, moonboard config). Re-exported
 // here for back-compat with existing call sites.
-import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
-export { BOULDER_GRADES, type BoulderGrade };
+import {
+  BOULDER_GRADES,
+  MOONBOARD_DIFFICULTY_IDS,
+  getBoulderGradesForBoard,
+  type BoulderGrade,
+} from '@boardsesh/board-constants/boulder-grade-mapping';
+export { BOULDER_GRADES, getBoulderGradesForBoard, type BoulderGrade };
 
 // Alias for backwards compatibility
 export const TENSION_KILTER_GRADES = BOULDER_GRADES;
@@ -310,9 +315,10 @@ export const TENSION_KILTER_GRADES = BOULDER_GRADES;
 export const MOONBOARD_MIN_DIFFICULTY_ID = 13; // 5a/V1 (MoonBoard "5+" grade)
 
 // Helper to get grades for a specific board
-export function getGradesForBoard(boardName: BoardName) {
+export function getGradesForBoard(boardName: BoardName): readonly BoulderGrade[] {
   if (boardName === 'moonboard') {
-    return BOULDER_GRADES.filter((g) => g.difficulty_id >= MOONBOARD_MIN_DIFFICULTY_ID);
+    // Moon's scale (5+, 6A, 6A+ …) has no 5b/5c, and labels 6A as V2.
+    return getBoulderGradesForBoard(boardName).filter((grade) => MOONBOARD_DIFFICULTY_IDS.has(grade.difficulty_id));
   }
   if (boardName === 'woods') {
     // The Woods app grades on a 0-based V scale, and the importer folds each V

@@ -1453,6 +1453,8 @@ export type ClimbSearchInput = {
   onlyBenchmarks?: InputMaybe<Scalars['Boolean']['input']>;
   /** Show only the user's draft climbs (requires auth) */
   onlyDrafts?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Show only climbs the user has hearted on this board. A heart belongs to the climb, not to an angle, so it matches at every angle. Signed out returns no climbs. (requires auth) */
+  onlyFavorited?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only climbs by followed setters or followed users, including linked board accounts. Requires authentication. */
   onlyFollowedAuthors?: InputMaybe<Scalars['Boolean']['input']>;
   /** Only show climbs the user has rated at this angle (requires auth) */
@@ -6016,7 +6018,14 @@ export type Query = {
   betaLinks: Array<BetaLink>;
   /** Get a board by UUID. */
   board?: Maybe<UserBoard>;
-  /** Get a board by slug (for URL routing). */
+  /**
+   * Get a board by slug (for URL routing).
+   *
+   * wallUuid is a spray wall's share-link capability (the ?wall= param). When it
+   * matches the uuid of the wall the slug resolved to, an UNLISTED wall opens for
+   * any caller, the same as sprayWall(uuid). It never opens a private or
+   * admin-hidden wall, a mismatch is ignored, and it does nothing on other boards.
+   */
   boardBySlug?: Maybe<UserBoard>;
   /**
    * The five most recent distinct climbers to send or flash a climb at the
@@ -6803,6 +6812,7 @@ export type QueryBoardArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardBySlugArgs = {
   slug: Scalars['String']['input'];
+  wallUuid?: InputMaybe<Scalars['ID']['input']>;
 };
 
 /** Root query type for all read operations. */

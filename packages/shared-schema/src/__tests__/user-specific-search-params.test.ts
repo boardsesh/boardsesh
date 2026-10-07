@@ -20,6 +20,7 @@ describe('USER_SPECIFIC_SEARCH_PARAMS', () => {
         'onlyRatedByMe',
         'useMyGrades',
         'onlyDrafts',
+        'onlyFavorited',
       ].sort(),
     );
   });
@@ -33,6 +34,13 @@ describe('USER_SPECIFIC_SEARCH_PARAMS', () => {
   // search, so the personal-grade filter/sort has nobody to read ticks for and
   // quietly falls back to the crowd's grade — the row would then display one
   // grade and be filtered by another (#4828).
+  // Without this entry an onlyFavorited search gets no userId, so the filter
+  // matches nothing for a signed-in climber, and its result could be written
+  // to the shared cache (#6077).
+  it('includes the liked-climbs filter (#6077)', () => {
+    expect(USER_SPECIFIC_SEARCH_PARAMS).toContain('onlyFavorited');
+  });
+
   it('includes the personal grade toggle (#4828)', () => {
     expect(USER_SPECIFIC_SEARCH_PARAMS).toContain('useMyGrades');
   });

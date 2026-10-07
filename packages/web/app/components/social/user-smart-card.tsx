@@ -119,9 +119,10 @@ export default function UserSmartCard({ userId, refreshKey = 0 }: UserSmartCardP
 
   const gradeBars = useMemo(() => {
     if (!rawStats) return [];
-    const mapping = getDifficultyMapping(gradeFormat);
     const gradeAgg: Record<string, number> = {};
     for (const layout of rawStats.layoutStats) {
+      // Per layout's board: MoonBoard's 6A buckets under V2.
+      const mapping = getDifficultyMapping(gradeFormat, layout.boardType);
       for (const gc of layout.gradeCounts) {
         const num = parseInt(gc.grade, 10);
         if (isNaN(num)) continue;

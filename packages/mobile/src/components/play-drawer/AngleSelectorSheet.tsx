@@ -65,7 +65,10 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   // (mirrors the QueueList active-gate). React Query's 5-min staleTime keeps stats
   // warm across re-opens and still dedupes with CommunitySection's below-fold query.
   const { data: statsHistory } = useClimbStatsHistory(boardName, visible ? (climbUuid ?? null) : null);
-  const statsByAngle = useMemo(() => buildAngleStatsMap(statsHistory, gradeFormat), [statsHistory, gradeFormat]);
+  const statsByAngle = useMemo(
+    () => buildAngleStatsMap(statsHistory, gradeFormat, boardName),
+    [statsHistory, gradeFormat, boardName],
+  );
   const stats: AngleStats | undefined = statsByAngle.get(selectedAngle);
   const quality = stats?.quality ?? 0;
 

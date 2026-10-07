@@ -312,6 +312,40 @@ const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
 ];
 
 /**
+ * What `spray-wall-art` reads and writes: one version's photo key, frame and
+ * pins, the wall's canonical frame, the holds alive at that version, and the
+ * version's `art` column, which is the only thing it writes. No owner,
+ * visibility or public-copy column: the job renders what the backend queued
+ * and decides nothing about who may see it.
+ */
+const SPRAY_WALL_ART_GRANTS: readonly WorkerTableGrant[] = [
+  {
+    table: 'spray_walls',
+    privileges: ['SELECT'],
+    columns: ['id', 'board_uuid', 'reference_width', 'reference_height', 'deleted_at'],
+  },
+  {
+    table: 'spray_wall_versions',
+    privileges: ['SELECT'],
+    columns: [
+      'id',
+      'wall_id',
+      'version_number',
+      'status',
+      'photo_key',
+      'photo_width',
+      'photo_height',
+      'anchors',
+      'homography',
+      'art',
+    ],
+  },
+  { table: 'spray_wall_versions', privileges: ['UPDATE'], columns: ['art'] },
+  // `aliveHolds` reads every hold column; geometry, colour and provenance only.
+  { table: 'spray_wall_holds', privileges: ['SELECT'] },
+];
+
+/**
  * Data grants per worker role, on top of the pg-boss DML and the ledger every
  * worker login gets. Each list is exactly what that role's families read and
  * write, and is proven by running every family under the restricted role in
@@ -325,8 +359,8 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // provider-routine-cycle (a user sync), aurora-shared-sync,
   // kilter-catalog-sync, moonboard-locations-sync.
   'routine-provider': [...PROVIDER_SYNC_GRANTS, ...ROUTINE_PROVIDER_EXTRA_GRANTS],
-  // climb-stats-self-heal, user-data-export.
-  'maintenance-delivery': [...CLIMB_STATS_SELF_HEAL_GRANTS, ...USER_DATA_EXPORT_GRANTS],
+  // climb-stats-self-heal, user-data-export, spray-wall-art.
+  'maintenance-delivery': [...CLIMB_STATS_SELF_HEAL_GRANTS, ...USER_DATA_EXPORT_GRANTS, ...SPRAY_WALL_ART_GRANTS],
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots.
   batch: [

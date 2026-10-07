@@ -219,8 +219,8 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
             <Icon name="people" size={16} color={systemColors.secondaryLabel} />
             <Text variant="footnote">
               {t('mobile.community.moderation.openGrade', {
-                from: formatGrade(proposal.currentValue) ?? proposal.currentValue,
-                to: formatGrade(proposal.proposedValue) ?? proposal.proposedValue,
+                from: formatGrade(proposal.currentValue, boardName) ?? proposal.currentValue,
+                to: formatGrade(proposal.proposedValue, boardName) ?? proposal.proposedValue,
                 current: proposal.weightedUpvotes,
                 required: proposal.requiredUpvotes,
               })}

@@ -22,7 +22,6 @@ import {
   renderDifficulty,
   clampDifficultyId,
   ESTIMATE_PREFIX,
-  GRADE_BY_ID,
   MIN_DIFFICULTY_ID,
   MAX_DIFFICULTY_ID,
   type RenderedGrade,
@@ -32,7 +31,7 @@ import {
 // primitives now live in lib/boardsesh-grade-display.ts (a lib must not
 // import from components, so they moved there; this file, a component-tree
 // helper, imports them like any other consumer).
-export { renderDifficulty, clampDifficultyId, GRADE_BY_ID, MIN_DIFFICULTY_ID, MAX_DIFFICULTY_ID, type RenderedGrade };
+export { renderDifficulty, clampDifficultyId, MIN_DIFFICULTY_ID, MAX_DIFFICULTY_ID, type RenderedGrade };
 
 // Compact status markers for the collapsed-header teaser. Not user-facing
 // prose (glyphs, not words), so they stay out of i18n.
@@ -133,8 +132,8 @@ export type BoardseshGradeView =
     };
 
 /** The label a bound rounds to, used to decide whether a range spans two grades. */
-function boundLabel(value: number, gradeFormat: GradeDisplayFormat): string | null {
-  return renderDifficulty(value, gradeFormat)?.label ?? null;
+function boundLabel(value: number, gradeFormat: GradeDisplayFormat, boardName?: string | null): string | null {
+  return renderDifficulty(value, gradeFormat, boardName)?.label ?? null;
 }
 
 /**
@@ -148,9 +147,10 @@ export function buildTrustBand(
   high: number | null,
   headlineLabel: string,
   gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
 ): { low: string; high: string; sameLabel: boolean } {
-  const lowLabel = (low != null ? boundLabel(low, gradeFormat) : null) ?? headlineLabel;
-  const highLabel = (high != null ? boundLabel(high, gradeFormat) : null) ?? headlineLabel;
+  const lowLabel = (low != null ? boundLabel(low, gradeFormat, boardName) : null) ?? headlineLabel;
+  const highLabel = (high != null ? boundLabel(high, gradeFormat, boardName) : null) ?? headlineLabel;
   return { low: lowLabel, high: highLabel, sameLabel: lowLabel === highLabel };
 }
 
@@ -167,11 +167,12 @@ export function buildEstimateRange(
   low: number | null,
   high: number | null,
   gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
 ): { low: string; high: string } | null {
   if (low == null || high == null) return null;
   if (high - low > MAX_PRINTABLE_ESTIMATE_BAND) return null;
-  const lowLabel = boundLabel(low, gradeFormat);
-  const highLabel = boundLabel(high, gradeFormat);
+  const lowLabel = boundLabel(low, gradeFormat, boardName);
+  const highLabel = boundLabel(high, gradeFormat, boardName);
   if (!lowLabel || !highLabel || lowLabel === highLabel) return null;
   return { low: lowLabel, high: highLabel };
 }
@@ -191,13 +192,13 @@ export function buildBoardseshGradeView(
   // instead of the blanket "not standardized yet" message.
   if (isMoonboardAngleEstimate(grade?.confidence)) {
     const moonPrimary = grade?.localGrade ?? null;
-    const moonRendered = moonPrimary != null ? renderDifficulty(moonPrimary, gradeFormat) : null;
+    const moonRendered = moonPrimary != null ? renderDifficulty(moonPrimary, gradeFormat, boardName) : null;
     if (grade && moonPrimary != null && moonRendered) {
       return {
         kind: 'moonboardAngleEstimate',
         grade: moonRendered,
         gradeValue: moonPrimary,
-        range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat),
+        range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat, boardName),
         computedAt: grade.computedAt,
       };
     }
@@ -206,13 +207,13 @@ export function buildBoardseshGradeView(
   // angle outside the board's own two fixed angles.
   if (isMoonboardWideAngleEstimate(grade?.confidence)) {
     const moonPrimary = grade?.localGrade ?? null;
-    const moonRendered = moonPrimary != null ? renderDifficulty(moonPrimary, gradeFormat) : null;
+    const moonRendered = moonPrimary != null ? renderDifficulty(moonPrimary, gradeFormat, boardName) : null;
     if (grade && moonPrimary != null && moonRendered) {
       return {
         kind: 'moonboardWideAngleEstimate',
         grade: moonRendered,
         gradeValue: moonPrimary,
-        range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat),
+        range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat, boardName),
         computedAt: grade.computedAt,
       };
     }
@@ -225,7 +226,7 @@ export function buildBoardseshGradeView(
   // @boardsesh/logbook so this rule can't diverge again — see #4414.
   const universal = grade.universalGrade != null;
   const primary = surfacedBoardseshGrade(grade);
-  const rendered = primary != null ? renderDifficulty(primary, gradeFormat) : null;
+  const rendered = primary != null ? renderDifficulty(primary, gradeFormat, boardName) : null;
 
   if (grade.confidence === 'setter_only' || primary == null || !rendered) {
     return { kind: 'setterOnly', grade: rendered, count: grade.ascensionistCount };
@@ -237,7 +238,7 @@ export function buildBoardseshGradeView(
       universal,
       grade: rendered,
       gradeValue: primary,
-      range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat),
+      range: buildEstimateRange(grade.gradeLow, grade.gradeHigh, gradeFormat, boardName),
       computedAt: grade.computedAt,
     };
   }
@@ -259,8 +260,8 @@ export function buildBoardseshGradeView(
   // settling. Show a range only when the bounds round to two different grades.
   let rangeLabel: string | null = null;
   if (grade.gradeLow != null && grade.gradeHigh != null) {
-    const lowLabel = boundLabel(grade.gradeLow, gradeFormat);
-    const highLabel = boundLabel(grade.gradeHigh, gradeFormat);
+    const lowLabel = boundLabel(grade.gradeLow, gradeFormat, boardName);
+    const highLabel = boundLabel(grade.gradeHigh, gradeFormat, boardName);
     if (lowLabel && highLabel && lowLabel !== highLabel) {
       rangeLabel = `${lowLabel}–${highLabel}`;
     }
@@ -319,9 +320,10 @@ export function buildCorrection(
   crowdDifficulty: number | null,
   boardseshValue: number,
   gradeFormat: GradeDisplayFormat,
+  boardName?: string | null,
 ): BoardseshCorrection | null {
   if (crowdDifficulty == null) return null;
-  const crowd = renderDifficulty(crowdDifficulty, gradeFormat);
+  const crowd = renderDifficulty(crowdDifficulty, gradeFormat, boardName);
   if (!crowd) return null;
 
   // Gate agreement on the LABEL the hero actually shows, not the id delta. Some
@@ -331,7 +333,7 @@ export function buildCorrection(
   // labels match it "matches this board" — no pill, no payoff — even if the ids
   // differ, which keeps the hero in step with the collapsed teaser (it gates the
   // same way on the label).
-  const boardsesh = renderDifficulty(boardseshValue, gradeFormat);
+  const boardsesh = renderDifficulty(boardseshValue, gradeFormat, boardName);
   if (boardsesh && crowd.label === boardsesh.label) {
     return { crowd, steps: 0, label: null, direction: 'equal' };
   }
