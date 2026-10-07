@@ -40,7 +40,7 @@ import { AuthProvider } from '../src/providers/auth-provider';
 import { I18nProvider } from '../src/providers/i18n-provider';
 import { BluetoothProviderWrapper } from '../src/providers/bluetooth-provider-wrapper';
 import { RogueTimerProvider } from '../src/providers/rogue-timer-provider';
-import { ToastProvider } from '../src/providers/toast-provider';
+import { ToastHost, ToastProvider } from '../src/providers/toast-provider';
 import { QueueProvider } from '../src/providers/queue-provider';
 import { QueueSnackbarProvider } from '../src/providers/queue-snackbar-provider';
 import { DrawerHostProvider } from '../src/providers/drawer-host-provider';
@@ -1077,6 +1077,11 @@ function RootLayout() {
                                                               </DeepLinkProvider>
                                                             </DrawerHostProvider>
                                                           </LogbookDeleteProvider>
+                                                          {/* Toast overlay. Its state lives in ToastProvider (above
+                                                          QueueProvider, so every provider can call showToast); it
+                                                          renders here, last, so toasts paint over the snackbars and
+                                                          read the shared bottom-chrome offsets. */}
+                                                          <ToastHost />
                                                         </BottomChromeMetricsProvider>
                                                       </BleControlSheetProvider>
                                                     </RogueTimerProvider>

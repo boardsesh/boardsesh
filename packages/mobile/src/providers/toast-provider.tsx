@@ -13,6 +13,16 @@ type ToastContextValue = {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+type ToastQueueValue = {
+  toasts: ToastData[];
+  dismissToast: (id: string) => void;
+};
+
+// The visible toasts, read only by ToastHost. Split from ToastContext so a
+// toast appearing or dismissing re-renders the host alone, never every
+// useToast() caller.
+const ToastQueueContext = createContext<ToastQueueValue | null>(null);
+
 export function useToast(): ToastContextValue {
   const context = useContext(ToastContext);
   if (!context) throw new Error('useToast must be used within ToastProvider');
@@ -56,22 +66,41 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   // wrapper object keeps every useToast() consumer from re-rendering on each
   // ToastProvider render (toasts state churns as toasts appear/dismiss).
   const value = useMemo<ToastContextValue>(() => ({ showToast }), [showToast]);
+  const queue = useMemo<ToastQueueValue>(() => ({ toasts, dismissToast }), [toasts, dismissToast]);
 
+  // The provider holds state only. The overlay renders from ToastHost, which
+  // sits lower in the tree (inside BottomChromeMetricsProvider) so a toast can
+  // position against the bottom chrome actually on screen. ToastProvider itself
+  // stays above QueueProvider so the queue and BLE providers can call showToast.
   return (
     <ToastContext.Provider value={value}>
-      {children}
-      {/* This overlay is a root-level JS View, so it renders BEHIND any native
-          surface above it — an @expo/ui sheet (ModalSheet / BottomSheetModal) or
-          a `presentation: 'modal'` route. Pattern: feedback for an action taken
-          INSIDE such a sheet must stay inline (e.g. the sheet's own error slot);
-          only call showToast once the sheet is fully dismissed, or it'll be
-          invisible behind it. */}
-      <View style={styles.overlay} pointerEvents="none">
-        {toasts.map((toast) => (
-          <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />
-        ))}
-      </View>
+      <ToastQueueContext.Provider value={queue}>{children}</ToastQueueContext.Provider>
     </ToastContext.Provider>
+  );
+}
+
+/**
+ * Renders the visible toasts. Mount it once, inside both ToastProvider and
+ * BottomChromeMetricsProvider, as the last child so it paints over the screens,
+ * the queue bar and the snackbars (same pattern as the queue snackbars, whose
+ * state lives above QueueProvider and whose overlays render below it).
+ */
+export function ToastHost() {
+  const queue = useContext(ToastQueueContext);
+  if (!queue) throw new Error('ToastHost must be used within ToastProvider');
+  const { toasts, dismissToast } = queue;
+  return (
+    // This overlay is a root-level JS View, so it renders BEHIND any native
+    // surface above it — an @expo/ui sheet (ModalSheet / BottomSheetModal) or a
+    // `presentation: 'modal'` route. Pattern: feedback for an action taken
+    // INSIDE such a sheet must stay inline (e.g. the sheet's own error slot);
+    // only call showToast once the sheet is fully dismissed, or it'll be
+    // invisible behind it.
+    <View style={styles.overlay} pointerEvents="none">
+      {toasts.map((toast) => (
+        <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />
+      ))}
+    </View>
   );
 }
 

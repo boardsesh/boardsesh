@@ -70,6 +70,7 @@ import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-cli
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 const ACTION_CLIMB_CACHE_LIMIT = 50;
 
@@ -243,6 +244,7 @@ function NowOnTheWallPanelComponent(
   const canSwitchGymWall = variant === 'sheet' && onSelectGymWall != null && hasGymSiblings;
   const toggleGymWalls = useCallback(() => setGymWallsExpanded((open) => !open), []);
   const insets = useSafeAreaInsets();
+  const windowBottomInset = useWindowBottomInset();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
   // `formatGrade` still renders the board-wide aggregate grade tiles (hardest / top
@@ -832,7 +834,10 @@ function NowOnTheWallPanelComponent(
   // the Android edge-to-edge navigation bar, so without it the switch-board button
   // sits under the 3-button nav bar. Matches the shared Sheet/ModalSheet footers.
   const headerTopPadding = variant === 'sheet' ? 0 : insets.top + spacing[2];
-  const footerBottomPadding = insets.bottom + spacing[3];
+  // The sheet variant presents over the tab bar, so it clears the WINDOW's
+  // bottom inset rather than the mount point's (#3776). The inline column is not
+  // a sheet and keeps the inset of the surface it sits in.
+  const footerBottomPadding = (variant === 'sheet' ? windowBottomInset : insets.bottom) + spacing[3];
 
   const refreshControl = (
     <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={systemColors.secondaryLabel} />
