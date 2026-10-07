@@ -289,8 +289,7 @@
       "title": "Pair a workout timer",
       "subtitle": "Pick the Rogue or Echo timer next to this board.",
       "scanning": "Looking for nearby timers…",
-      "empty": "No timers found. Make sure the timer is powered on and within range.",
-      "cancel": "Cancel"
+      "empty": "No timers found. Make sure the timer is powered on and within range."
     },
     "gymGrant": {
       "sectionTitle": "Write access",

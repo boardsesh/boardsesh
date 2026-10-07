@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
 import {
   View,
+  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   TextInput,
@@ -37,6 +38,7 @@ import {
 } from '@boardsesh/climb-filters';
 import { Text } from './Text';
 import { Button } from './Button';
+import { SheetTopBar } from './SheetTopBar';
 import { SegmentedControl } from './SegmentedControl';
 import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
@@ -196,8 +198,9 @@ export function ClimbFilterSheet({
   const { isAuthenticated } = useAuth();
   // The WINDOW inset, not this mount point's: this sheet lives in the climbs
   // tab, whose per-tab provider folds the iOS 26 tab bar + accessory into
-  // insets.bottom — chrome the sheet covers. Padding the Apply footer with that
-  // floated it ~105pt up into the sheet (#3776's "dead gap").
+  // insets.bottom — chrome the sheet covers. Padding with that floated the old
+  // Apply footer ~105pt up into the sheet (#3776's "dead gap"). It now pads the
+  // end of the scroll body, so the last row scrolls clear of the home indicator.
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
@@ -273,7 +276,7 @@ export function ClimbFilterSheet({
   // A sub-picker round trip re-presents the native sheet host. On iOS a re-present
   // of an ALREADY-MOUNTED SwiftUI sheet host loses the detent height bound, so the
   // flex:1 column stops being clamped to the 90% detent — the ScrollView then grows
-  // to content height and pushes the pinned Apply footer off-screen (#3330). Bumping
+  // to content height and stops scrolling, its lower rows off-screen (#3330). Bumping
   // this epoch on resume remounts the host under a fresh key, so every re-present
   // takes the same first-present path as the initial mount (Android already rebuilds
   // its native host each present; this just makes the code path uniform).
@@ -319,13 +322,20 @@ export function ClimbFilterSheet({
   const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
   const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
   // On iOS the SwiftUI sheet host can propose an unbounded height, so a flex:1
-  // column sizes to its CONTENT and the pinned Apply footer lands off-screen
-  // (#3330). The shared hook pins the column to this single detent's height;
-  // Android bounds the column natively, so it keeps flex:1.
+  // column sizes to its CONTENT: the scroll body never overflows, so it never
+  // scrolls, and the rows past the detent are unreachable (#3330). The shared
+  // hook pins the column to this single detent's height; Android bounds the
+  // column natively, so it keeps flex:1. This sheet stays on the raw native
+  // sheet rather than ModalSheet because Apply commits from the native close
+  // (see handleApply) and the sub-picker round trip restores the scroll offset
+  // through its own scroll ref, neither of which the wrapper exposes.
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
   // Dev-only observers for #3922 — they feed a log line, never layout. This is
   // the sheet #3776 was reported against, so it is the one to capture on an SE 3.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(sheetColumnStyle, 'ClimbFilterSheet');
+  // The scroll body ends against the bottom edge now that the footer is gone,
+  // so it clears the window inset itself.
+  const scrollContentStyle = useMemo(() => ({ paddingBottom: windowInsetBottom + spacing[4] }), [windowInsetBottom]);
   // Tall/Wide apply on any board whose active size has a shorter/narrower sibling
   // in its family (getTallWideScope — the shared source of truth the chip row and
   // server filter use), not just Kilter. Each toggle renders only where it applies,
@@ -867,8 +877,8 @@ export function ClimbFilterSheet({
   const accuracyValue: GradeAccuracyValue | 'off' = localFilters.gradeAccuracy ?? 'off';
   const applyLabel =
     previewCount != null ? t('mobile.filter.showCount', { count: previewCount }) : t('mobile.filter.apply');
-  // Reset stays a quiet secondary accent until there's actually something to
-  // reset — so the header isn't a second always-on violet next to Apply.
+  // Reset greys out until there's actually something to reset, so the top bar
+  // isn't a second always-on violet across from Apply.
   // The name counts as something to reset (#3606): it lives outside
   // ClimbFilters, so neither hasActive* helper can see it, and a lone climb-name
   // search — the issue's own repro — would otherwise leave Reset disabled with
@@ -896,24 +906,24 @@ export function ClimbFilterSheet({
       {sentinelProps ? <View {...sentinelProps} /> : null}
       {probeProps ? <View {...probeProps} /> : null}
       {/* One column child bounded to the detent height (JS-computed on iOS, see
-          sheetColumnStyle) — the scroll body then actually scrolls and the
-          footer pins. Handed multiple direct children, the native sheet sizes
-          to content and the flex:1 ScrollView collapses (no scrolling). */}
-      <View style={sheetColumnStyle} onLayout={onColumnLayout}>
-        <View style={styles.header}>
-          <Text variant="title3">{t('mobile.filter.title')}</Text>
-          <Pressable onPress={handleReset} hitSlop={8} accessibilityRole="button" disabled={!anyActive}>
-            <Text variant="subheadline" color={anyActive ? theme.brandColors.primary : systemColors.secondaryLabel}>
-              {t('mobile.filter.reset')}
-            </Text>
-          </Pressable>
-        </View>
+          sheetColumnStyle) — the scroll body then actually scrolls. Handed
+          multiple direct children, the native sheet sizes to content and the
+          flex:1 ScrollView collapses (no scrolling). The column is a
+          KeyboardAvoidingView, as in ModalSheet: the Android Compose dialog
+          window does not resize for the keyboard, so `padding` on both
+          platforms keeps the scroll body, and the name field in it, above it. */}
+      <KeyboardAvoidingView style={sheetColumnStyle} behavior="padding" onLayout={onColumnLayout}>
+        <SheetTopBar
+          title={t('mobile.filter.title')}
+          leading={{ kind: 'text', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
+          trailing={{ label: applyLabel, onPress: handleApply, prominent: true }}
+        />
 
         <BottomSheetScrollView
           ref={scrollRef}
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={scrollContentStyle}
           onScroll={handleScroll}
           scrollEventThrottle={32}
           onContentSizeChange={handleScrollContentSizeChange}
@@ -924,8 +934,15 @@ export function ClimbFilterSheet({
           keyboardShouldPersistTaps="handled"
         >
           {/* Flat, labeled sections — no accordions. The scroll body is one column
-              child (styles.body) so the native sheet scrolls and the footer pins. */}
+              child (styles.body) so the native sheet scrolls. */}
           <View style={styles.body}>
+            {/* What the "Show N climbs" count in the top bar counts. */}
+            {showCountNote ? (
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
+                {t('mobile.filter.countNote')}
+              </Text>
+            ) : null}
+
             {/* 1 · NAME — climb-name search term, first row so Reset has something
                 visible to reset (#3606). Committed live via onNameChange/onClearName,
                 same as the top-bar search field — NOT part of localFilters/Apply. */}
@@ -1362,21 +1379,7 @@ export function ClimbFilterSheet({
             </View>
           </View>
         </BottomSheetScrollView>
-
-        <View
-          style={[
-            styles.footer,
-            { paddingBottom: windowInsetBottom + spacing[3], borderTopColor: systemColors.separator },
-          ]}
-        >
-          <Button title={applyLabel} onPress={handleApply} variant="filled" size="large" style={styles.applyButton} />
-          {showCountNote ? (
-            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.countNote}>
-              {t('mobile.filter.countNote')}
-            </Text>
-          ) : null}
-        </View>
-      </View>
+      </KeyboardAvoidingView>
     </BottomSheetModal>
   );
 }
@@ -1391,16 +1394,6 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-  },
-  scrollContent: {
-    paddingBottom: spacing[4],
   },
   body: {
     paddingHorizontal: spacing[4],
@@ -1502,18 +1495,8 @@ const styles = StyleSheet.create({
   inlineGradeRail: {
     marginTop: spacing[2],
   },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    // borderTopColor is themed at the call site (systemColors.separator).
-  },
-  applyButton: {
-    width: '100%',
-  },
   countNote: {
-    marginTop: spacing[2],
+    paddingTop: spacing[3],
     textAlign: 'center',
   },
 });

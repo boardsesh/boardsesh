@@ -110,6 +110,25 @@ describe('SheetTopBar', () => {
     expect(back.getByLabelText('t:ariaLabels.back')).toBeTruthy();
   });
 
+  it('a text leading action shows its own label and swallows the tap while disabled', () => {
+    const onReset = vi.fn();
+    const enabled = render(
+      createElement(SheetTopBar, { title: 'Filters', leading: { kind: 'text', label: 'Reset', onPress: onReset } }),
+    );
+    fireEvent.click(enabled.getByText('Reset'));
+    expect(onReset).toHaveBeenCalledTimes(1);
+    enabled.unmount();
+
+    const disabled = render(
+      createElement(SheetTopBar, {
+        title: 'Filters',
+        leading: { kind: 'text', label: 'Reset', onPress: onReset, disabled: true },
+      }),
+    );
+    fireEvent.click(disabled.getByTestId('sheet-top-bar-leading'));
+    expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
   it('a disabled trailing action swallows the tap', () => {
     const onSave = vi.fn();
     const { getByTestId } = render(

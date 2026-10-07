@@ -48,6 +48,8 @@ type ModalSheetProps = {
    * native post-animation `onDismiss` (accurate); on Android it settles off the
    * coordinator's ceiling timer (no native signal there). */
   onFullyDismissed?: () => void;
+  /** Fired when another sheet displaces this one. Defaults to `onClose`. */
+  onDisplaced?: () => void;
   /** Serialization domain. Sheets presented off the same view controller share a
    * group; defaults to the root window VC. */
   presenterGroup?: PresenterGroup;
@@ -97,6 +99,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     onChange,
     onClose,
     onFullyDismissed,
+    onDisplaced,
     presenterGroup,
     enablePanDownToClose = true,
     scrollable = false,
@@ -130,6 +133,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     group: presenterGroup,
     sheetRef,
     onClose,
+    onDisplaced,
     onFullyDismissed,
   });
   useImperativeHandle(ref, () => managed.handle, [managed.handle]);

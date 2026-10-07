@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import type { DiscoveredDevice } from '../../lib/ble/types';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
+import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
 import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
@@ -19,7 +19,8 @@ import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
+
+const SNAP_POINTS = ['72%'];
 
 // "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
 // knows, never the serial (#5658). The suffix is the one the board-account card
@@ -88,17 +89,14 @@ export function DevicePickerSheet({
 }: DevicePickerSheetProps) {
   const { t } = useTranslation('settings');
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheetModal>(null);
-
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['72%']), []);
+  const sheetRef = useRef<ManagedSheetHandle>(null);
 
   // The host mounts this sheet while a picker session is active. It is open
   // unless the session says otherwise (a background connect, or a searching
-  // picker another sheet displaced). Present/dismiss route through the
-  // coordinator (serialized, no overlapping native transitions); `onDismiss`
+  // picker another sheet displaced). ModalSheet routes present/dismiss through
+  // the coordinator (serialized, no overlapping native transitions); `onDismiss`
   // clears the host's picker state on a user pan-down / backdrop.
-  const managed = useManagedSheet({ open: open && !closing, sheetRef, onClose: onDismiss, onDisplaced });
+  const visible = open && !closing;
 
   // Closing without a choice: wait for the coordinator's dismissal to settle
   // (immediately if the sheet never reached the screen), then let the host drop
@@ -106,17 +104,16 @@ export function DevicePickerSheet({
   // still presenting, the UIKit overlap the coordinator exists to prevent.
   const onClosedRef = useRef(onClosed);
   onClosedRef.current = onClosed;
-  const { dismissAndWait } = managed.handle;
   useEffect(() => {
     if (!closing) return;
     let active = true;
-    void dismissAndWait().then(() => {
+    void dismissManagedSheetAndWait(sheetRef.current).then(() => {
       if (active) onClosedRef.current?.();
     });
     return () => {
       active = false;
     };
-  }, [closing, dismissAndWait]);
+  }, [closing]);
 
   const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
 
@@ -207,27 +204,31 @@ export function DevicePickerSheet({
     recordDevicePickerNoLights();
   }, [onDismiss, onNoLeds]);
 
-  return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onChange={managed.onChange}
-      onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={styles.indicator}
-    >
-      <BottomSheetView style={styles.header}>
-        <Text variant="title3" color={systemColors.label}>
-          {t('ble.selectBoard')}
-        </Text>
-        {devices.length > 0 && (
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('ble.devicesFound', { count: devices.length })}
-          </Text>
-        )}
-      </BottomSheetView>
+  // The hardware tips only when the board they want may be missing: not when
+  // it's clearly listed, and not while the initial scan is still running
+  // (showEmptyState gates the zero-device path on the scan having finished empty).
+  const showHardwareTips =
+    !showLocationHint && !showLocationServicesHint && (showEmptyState || noneMatchedSelectedType);
+  const showHints = showLocationHint || showLocationServicesHint || showHardwareTips;
 
+  // ModalSheet hands the native sheet a single flex child and pads the body for
+  // the window bottom inset. Cancel sits in the top bar; the hints that used to
+  // share the pinned footer with it are body content now, under the list.
+  return (
+    <ModalSheet
+      ref={sheetRef}
+      visible={visible}
+      snapPoints={SNAP_POINTS}
+      onClose={onDismiss}
+      onDisplaced={onDisplaced}
+      header={
+        <SheetTopBar
+          title={t('ble.selectBoard')}
+          subtitle={devices.length > 0 ? t('ble.devicesFound', { count: devices.length }) : undefined}
+          leading={{ kind: 'cancel', onPress: onDismiss }}
+        />
+      }
+    >
       {searching && (
         <View style={styles.scanningContainer}>
           <ActivityIndicator size="small" color={theme.brandColors.primary} />
@@ -279,6 +280,7 @@ export function DevicePickerSheet({
 
       {devices.length > 0 && (
         <BottomSheetFlatList
+          style={styles.list}
           data={sortedDevices}
           keyExtractor={keyExtractor}
           renderItem={renderDeviceItem}
@@ -287,105 +289,91 @@ export function DevicePickerSheet({
         />
       )}
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-        {/* The OS is withholding results — say so instead of blaming the board. */}
-        {showLocationHint && (
-          <View style={styles.troubleshoot}>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('ble.locationHintTitle')}
-            </Text>
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
-              {locationHint.wasGranted ? t('ble.locationHintGranted') : t('ble.locationHintBody')}
-            </Text>
-            {locationHint.shouldOfferLocationGrant && (
-              <Button
-                title={t('ble.locationHintGrant')}
-                onPress={handleGrantLocation}
-                variant="text"
-                size="medium"
-                loading={locationHint.isRequesting}
-              />
-            )}
-          </View>
-        )}
-
-        {/* Android 11 and below: the permission is granted, but the system
-            Location toggle is off, so AOSP withholds every scan result. */}
-        {!showLocationHint && showLocationServicesHint && (
-          <View style={styles.troubleshoot}>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('ble.locationServicesHintTitle')}
-            </Text>
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
-              {locationHint.servicesWereEnabled
-                ? t('ble.locationServicesHintEnabled')
-                : t('ble.locationServicesHintBody')}
-            </Text>
-            {locationHint.shouldOfferLocationServicesEnable && (
-              <Button
-                title={t('ble.locationServicesHintEnable')}
-                onPress={handleEnableLocationServices}
-                variant="text"
-                size="medium"
-                loading={locationHint.isPromptingServices}
-              />
-            )}
-          </View>
-        )}
-
-        {/* Only when the board they want may be missing — not when it's clearly
-            listed, and not while the initial scan is still running (showEmptyState
-            gates the zero-device path on the scan having finished empty). */}
-        {!showLocationHint && !showLocationServicesHint && (showEmptyState || noneMatchedSelectedType) && (
-          <View style={styles.troubleshoot}>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {t('ble.troubleshootTitle')}
-            </Text>
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
-              {t('ble.troubleshootTips')}
-            </Text>
-            {/* The wall may simply have no light kit. Offer to drive it anyway:
-                everyone on the board feed (and the gym screen) still sees the
-                climb. Session-local — nothing is written to the board record. */}
-            {showNoLedsOffer && (
-              <View style={styles.noLedsOffer}>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
-                  {t('ble.noLedsBody')}
-                </Text>
+      {showHints && (
+        <View style={styles.hints}>
+          {/* The OS is withholding results — say so instead of blaming the board. */}
+          {showLocationHint && (
+            <View style={styles.troubleshoot}>
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('ble.locationHintTitle')}
+              </Text>
+              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                {locationHint.wasGranted ? t('ble.locationHintGranted') : t('ble.locationHintBody')}
+              </Text>
+              {locationHint.shouldOfferLocationGrant && (
                 <Button
-                  title={t('ble.noLedsCta')}
-                  onPress={handleNoLeds}
+                  title={t('ble.locationHintGrant')}
+                  onPress={handleGrantLocation}
                   variant="text"
                   size="medium"
-                  icon="pin"
-                  // The handler fires hapticSelection itself so the tap keeps one
-                  // haptic; takeVirtualWall's own hapticLight lands after the
-                  // dismissal, alongside the "You've got the wall" toast.
-                  haptic={false}
+                  loading={locationHint.isRequesting}
                 />
-              </View>
-            )}
-          </View>
-        )}
-        <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
-      </View>
-    </BottomSheetModal>
+              )}
+            </View>
+          )}
+
+          {/* Android 11 and below: the permission is granted, but the system
+              Location toggle is off, so AOSP withholds every scan result. */}
+          {!showLocationHint && showLocationServicesHint && (
+            <View style={styles.troubleshoot}>
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('ble.locationServicesHintTitle')}
+              </Text>
+              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                {locationHint.servicesWereEnabled
+                  ? t('ble.locationServicesHintEnabled')
+                  : t('ble.locationServicesHintBody')}
+              </Text>
+              {locationHint.shouldOfferLocationServicesEnable && (
+                <Button
+                  title={t('ble.locationServicesHintEnable')}
+                  onPress={handleEnableLocationServices}
+                  variant="text"
+                  size="medium"
+                  loading={locationHint.isPromptingServices}
+                />
+              )}
+            </View>
+          )}
+
+          {showHardwareTips && (
+            <View style={styles.troubleshoot}>
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('ble.troubleshootTitle')}
+              </Text>
+              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                {t('ble.troubleshootTips')}
+              </Text>
+              {/* The wall may simply have no light kit. Offer to drive it anyway:
+                  everyone on the board feed (and the gym screen) still sees the
+                  climb. Session-local — nothing is written to the board record. */}
+              {showNoLedsOffer && (
+                <View style={styles.noLedsOffer}>
+                  <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                    {t('ble.noLedsBody')}
+                  </Text>
+                  <Button
+                    title={t('ble.noLedsCta')}
+                    onPress={handleNoLeds}
+                    variant="text"
+                    size="medium"
+                    icon="pin"
+                    // The handler fires hapticSelection itself so the tap keeps one
+                    // haptic; takeVirtualWall's own hapticLight lands after the
+                    // dismissal, alongside the "You've got the wall" toast.
+                    haptic={false}
+                  />
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+    </ModalSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
-  header: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-    alignItems: 'center',
-    gap: 4,
-  },
   scanningContainer: {
     flex: 1,
     alignItems: 'center',
@@ -393,22 +381,24 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     paddingVertical: spacing[10],
   },
+  list: {
+    flex: 1,
+  },
   listContent: {
+    paddingTop: spacing[2],
     paddingHorizontal: spacing[2],
     paddingBottom: spacing[4],
     gap: spacing[1],
   },
   typeHint: {
     paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
+    paddingVertical: spacing[2],
     alignItems: 'center',
   },
-  footer: {
+  hints: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
   },
   troubleshoot: {
     alignItems: 'center',

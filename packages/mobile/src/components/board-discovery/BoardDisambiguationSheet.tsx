@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { BoardCandidate } from '@boardsesh/shared-schema';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { Text } from '../Text';
 
 type BoardDisambiguationSheetProps = {
@@ -21,10 +22,16 @@ type BoardDisambiguationSheetProps = {
  *
  * A plain RN `Modal` rather than a bottom-sheet so it works wherever a connect
  * happens (the provider is mounted above every screen) without a sheet host.
+ *
+ * Cancel stays at the foot of the card, action-sheet style, rather than moving
+ * to a top bar: this is a one-tap choice with no form behind it, and nothing in
+ * the card (no keyboard, no error text) can move it. The card clears the
+ * window's bottom inset (home indicator / Android navigation bar) itself.
  */
 export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel }: BoardDisambiguationSheetProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
+  const windowInsetBottom = useWindowBottomInset();
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
@@ -32,7 +39,10 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
         <Pressable
           // Stop backdrop taps from closing when tapping the card itself.
           onPress={(event) => event.stopPropagation()}
-          style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}
+          style={[
+            styles.card,
+            { backgroundColor: systemColors.secondaryBackground, paddingBottom: windowInsetBottom + spacing[4] },
+          ]}
         >
           <Text variant="title3" style={styles.heading}>
             {t('mobile.disambiguation.title')}
@@ -91,7 +101,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
     padding: spacing[4],
-    paddingBottom: spacing[8],
     maxHeight: '80%',
   },
   heading: {

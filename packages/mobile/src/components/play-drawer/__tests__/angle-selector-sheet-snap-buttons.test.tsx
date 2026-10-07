@@ -59,8 +59,18 @@ vi.mock('react-native-screens', () => ({
   FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
-vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
+
+type TopBarAction = { label?: string; kind?: string; onPress: () => void };
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({ title, leading, trailing }: { title: string; leading?: TopBarAction; trailing?: TopBarAction }) =>
+    createElement(
+      'div',
+      null,
+      title,
+      leading ? createElement('button', { onClick: leading.onPress, 'aria-label': `leading-${leading.kind}` }) : null,
+      trailing ? createElement('button', { onClick: trailing.onPress, 'aria-label': trailing.label }) : null,
+    ),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -116,11 +126,11 @@ const noop = () => {};
 const SNAP_25 = 'mobile.angleSelector.snapToAngle:25';
 const SNAP_40 = 'mobile.angleSelector.snapToAngle:40';
 
-function renderSheet(boardName: string, onAngleChange: (angle: number) => void = noop) {
+function renderSheet(boardName: string, onAngleChange: (angle: number) => void = noop, onClose: () => void = noop) {
   return render(
     createElement(AngleSelectorSheet, {
       visible: true,
-      onClose: noop,
+      onClose,
       boardName,
       layoutId: 3,
       climbUuid: 'climb-1',
@@ -159,6 +169,17 @@ describe('AngleSelectorSheet — MoonBoard 25°/40° snap buttons', () => {
 
     fireEvent.click(screen.getByLabelText('actions.done'));
     expect(onAngleChange).toHaveBeenCalledWith(40);
+  });
+
+  it('closes from the top bar without applying the previewed angle', () => {
+    const onAngleChange = vi.fn();
+    const onClose = vi.fn();
+    renderSheet('moonboard', onAngleChange, onClose);
+
+    fireEvent.click(screen.getByLabelText(SNAP_40));
+    fireEvent.click(screen.getByLabelText('leading-close'));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onAngleChange).not.toHaveBeenCalled();
   });
 
   it('hides the buttons when MoonBoard only offers 25° and 40°', () => {

@@ -18,9 +18,19 @@ function readPaddingBottom(style: unknown): number | undefined {
 const sheet = vi.hoisted(() => ({ expand: vi.fn() }));
 
 type ViewMockProps = { children?: ReactNode };
+type KeyboardAvoidingViewMockProps = { children?: ReactNode; style?: unknown; keyboardVerticalOffset?: number };
 vi.mock('react-native', () => ({
   View: ({ children }: ViewMockProps) => createElement('div', {}, children),
-  KeyboardAvoidingView: ({ children }: ViewMockProps) => createElement('div', { 'data-kav': 'true' }, children),
+  KeyboardAvoidingView: ({ children, style, keyboardVerticalOffset }: KeyboardAvoidingViewMockProps) =>
+    createElement(
+      'div',
+      {
+        'data-kav': 'true',
+        'data-pb': String(readPaddingBottom(style) ?? ''),
+        'data-offset': String(keyboardVerticalOffset ?? ''),
+      },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 
@@ -36,7 +46,7 @@ type SheetMockProps = {
   snapPoints?: (string | number)[];
   index?: number;
 };
-type SheetViewMockProps = { children?: ReactNode; style?: unknown };
+type SheetViewMockProps = { children?: ReactNode };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   default: forwardRef(({ children, enableDynamicSizing, snapPoints, index }: SheetMockProps, ref: Ref<unknown>) => {
     useImperativeHandle(ref, () => ({ expand: sheet.expand }));
@@ -51,8 +61,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
       children,
     );
   }),
-  BottomSheetView: ({ children, style }: SheetViewMockProps) =>
-    createElement('div', { 'data-sheet-view': 'true', 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
+  BottomSheetView: ({ children }: SheetViewMockProps) => createElement('div', { 'data-sheet-view': 'true' }, children),
   BottomSheetTextInput: ({ placeholder, value, onChangeText, accessibilityLabel, maxLength }: TextInputMockProps) =>
     createElement('input', {
       'data-textinput': 'true',
@@ -145,6 +154,44 @@ vi.mock('../Button', () => ({
     }),
 }));
 
+// The top bar's actions render as buttons keyed by their label, so the cases
+// below press them the way they pressed the old row of buttons.
+type TopBarActionMock = {
+  label?: string;
+  kind?: string;
+  accessibilityLabel?: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+};
+vi.mock('../SheetTopBar', () => ({
+  SheetTopBar: ({
+    title,
+    leading,
+    trailing,
+  }: {
+    title: string;
+    leading?: TopBarActionMock;
+    trailing?: TopBarActionMock;
+  }) =>
+    createElement(
+      'div',
+      { 'data-top-bar': title },
+      [leading, trailing].map((action, index) =>
+        action
+          ? createElement('button', {
+              key: index,
+              onClick: action.onPress,
+              'data-button': action.label ?? action.accessibilityLabel ?? action.kind,
+              'data-slot': index === 0 ? 'leading' : 'trailing',
+              'data-loading': action.loading ? 'true' : 'false',
+              'data-disabled': action.disabled ? 'true' : 'false',
+            })
+          : null,
+      ),
+    ),
+}));
+
 vi.mock('../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));
@@ -211,10 +258,30 @@ describe('EndSessionSheet', () => {
     expect(sheetEl.getAttribute('data-snappoints')).toBe('');
   });
 
-  it('pads the content past the safe-area bottom inset (34) plus spacing[3] (12)', () => {
+  it('pads the content past the window bottom inset (34) plus spacing[3] (12)', () => {
     const { container } = render(<EndSessionSheet {...makeProps()} />);
-    const view = container.querySelector('[data-sheet-view]') as HTMLElement;
-    expect(view.getAttribute('data-pb')).toBe('46');
+    const avoider = container.querySelector('[data-kav]') as HTMLElement;
+    expect(avoider.getAttribute('data-pb')).toBe('46');
+  });
+
+  it('takes the inset back off the keyboard offset, so no gap opens above the keyboard', () => {
+    const { container } = render(<EndSessionSheet {...makeProps()} />);
+    const avoider = container.querySelector('[data-kav]') as HTMLElement;
+    expect(avoider.getAttribute('data-offset')).toBe('-34');
+  });
+
+  it('puts End session in the top bar as the trailing action and the exit as leading', () => {
+    const { container } = render(<EndSessionSheet {...makeProps()} />);
+    expect(container.querySelector('[data-top-bar="mobile.queue.endSession"]')).not.toBeNull();
+    expect(button(container, 'mobile.queue.endSession')?.getAttribute('data-slot')).toBe('trailing');
+    expect(button(container, 'mobile.queue.endSessionCancel')?.getAttribute('data-slot')).toBe('leading');
+  });
+
+  it('keeps the sheet up while an exit is in flight', () => {
+    const onDismiss = vi.fn();
+    const { container } = render(<EndSessionSheet {...makeProps({ onDismiss, isEnding: true })} />);
+    fireEvent.click(button(container, 'mobile.queue.endSessionCancel')!);
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it('fires onConfirm when End session is pressed', () => {
@@ -224,7 +291,7 @@ describe('EndSessionSheet', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('fires onDismiss when Done is pressed', () => {
+  it('fires onDismiss when the top bar close is pressed', () => {
     const onDismiss = vi.fn();
     const { container } = render(<EndSessionSheet {...makeProps({ onDismiss })} />);
     fireEvent.click(button(container, 'mobile.queue.endSessionCancel')!);

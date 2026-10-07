@@ -289,8 +289,7 @@
       "title": "Vincular un temporizador",
       "subtitle": "Elige el temporizador Rogue o Echo que está junto a este plafón.",
       "scanning": "Buscando temporizadores cercanos…",
-      "empty": "No se encontraron temporizadores. Asegúrate de que esté encendido y dentro del alcance.",
-      "cancel": "Cancelar"
+      "empty": "No se encontraron temporizadores. Asegúrate de que esté encendido y dentro del alcance."
     },
     "gymGrant": {
       "sectionTitle": "Acceso de edición",

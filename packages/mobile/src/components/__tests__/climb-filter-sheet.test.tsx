@@ -126,6 +126,8 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
     createElement('div', { 'data-style': resolveStyle(style) }, children),
+  KeyboardAvoidingView: ({ children, behavior }: { children?: ReactNode; behavior?: string }) =>
+    createElement('div', { 'data-kav': behavior }, children),
   Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
@@ -383,6 +385,39 @@ vi.mock('../SwitchRow', () => ({
     ),
 }));
 vi.mock('../Icon', () => ({ Icon: () => null }));
+// The top bar's two actions as plain buttons labelled with their text, so the
+// cases below press Reset and Apply by label as they did in the old header and
+// footer. A disabled action swallows the tap, like the real bar.
+type TopBarActionMock = { label?: string; kind?: string; onPress: () => void; disabled?: boolean };
+vi.mock('../SheetTopBar', () => ({
+  SheetTopBar: ({
+    title,
+    leading,
+    trailing,
+  }: {
+    title: string;
+    leading?: TopBarActionMock;
+    trailing?: TopBarActionMock;
+  }) =>
+    createElement(
+      'div',
+      { 'data-top-bar': title },
+      [leading, trailing].map((action, index) =>
+        action
+          ? createElement(
+              'button',
+              {
+                key: index,
+                'data-slot': index === 0 ? 'leading' : 'trailing',
+                disabled: action.disabled,
+                onClick: action.disabled ? undefined : action.onPress,
+              },
+              action.label ?? action.kind,
+            )
+          : null,
+      ),
+    ),
+}));
 vi.mock('../grade', () => ({ GradeRangeRail: () => null }));
 
 function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet>[0]> = {}) {
@@ -439,6 +474,14 @@ beforeEach(() => {
 // same render as the dismiss, so the slide-down never played and the list swapped
 // under a vanishing sheet. Apply must commit only once the native close lands.
 describe('ClimbFilterSheet Apply waits for the native close', () => {
+  it('puts Reset leading and the live "Show N" Apply trailing in the top bar, over a keyboard-avoiding column', () => {
+    const { container, getByText } = renderFilterSheet();
+    expect(container.querySelector('[data-top-bar="mobile.filter.title"]')).not.toBeNull();
+    expect(getByText('mobile.filter.reset').getAttribute('data-slot')).toBe('leading');
+    expect(getByText('mobile.filter.showCount12').getAttribute('data-slot')).toBe('trailing');
+    expect(container.querySelector('[data-kav="padding"]')).not.toBeNull();
+  });
+
   it('separates the Following switch from the setter picker and applies its own filter', () => {
     const onApply = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({ onApply });
