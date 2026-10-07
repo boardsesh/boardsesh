@@ -258,6 +258,42 @@ describe('the setter grade gates a publish', () => {
     expect(result.current.nameMissingHint).toBe(false);
   });
 
+  it('bumps the hint tick on every blank Save tap, so a repeat tap is announced again', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.nameMissingTick).toBe(1);
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.nameMissingTick).toBe(2);
+    expect(result.current.nameMissingHint).toBe(true);
+  });
+
+  it('keeps the hint while the name is only whitespace, matching the Save gate', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    act(() => result.current.setName('   '));
+    expect(result.current.nameMissingHint).toBe(true);
+    act(() => result.current.setName('  a '));
+    expect(result.current.nameMissingHint).toBe(false);
+  });
+
+  it('drops the hint when a new climb starts, even though the name was already blank', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+    await act(async () => {
+      await result.current.handleSave();
+    });
+    expect(result.current.nameMissingHint).toBe(true);
+    await act(async () => {
+      result.current.confirmNewClimb();
+    });
+    await waitFor(() => expect(result.current.nameMissingHint).toBe(false));
+  });
+
   it('still disables Save, and names the holds, while a start or finish is missing', () => {
     createClimb.canPublish = false;
     try {
