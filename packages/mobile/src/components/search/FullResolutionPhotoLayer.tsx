@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { runOnJS, useAnimatedReaction, type SharedValue } from 'react-native-reanimated';
@@ -20,7 +20,16 @@ export type FullResolutionPhoto = {
   cacheKey: string;
   /** The zoom the board has to pass before the photo is fetched. */
   minScale: number;
+  /**
+   * Fetch the photo into a file this app keeps, resolving its path, or `null`
+   * when it could not (the layer then loads `uri`). Called once the zoom first
+   * passes `minScale`, never before. Left out, the layer loads `uri` directly.
+   */
+  loadFromDisk?: () => Promise<string | null>;
 };
+
+/** What `loadFromDisk` answered, for the photo named by `cacheKey`. */
+type DiskAnswer = { cacheKey: string; path: string | null };
 
 type FullResolutionPhotoLayerProps = {
   photo: FullResolutionPhoto;
@@ -45,7 +54,11 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
   onError,
 }: FullResolutionPhotoLayerProps) {
   const [wanted, setWanted] = useState(false);
-  const { minScale } = photo;
+  const [diskAnswer, setDiskAnswer] = useState<DiskAnswer | null>(null);
+  // A kept file that would not decode. Set, the layer loads the URL instead, so a
+  // bad file costs one download rather than a sharp photo for good.
+  const [unreadableFileKey, setUnreadableFileKey] = useState<string | null>(null);
+  const { minScale, loadFromDisk, cacheKey } = photo;
 
   // One crossing is all it takes, so the JS thread hears about it once: the
   // reaction only fires when the answer flips, and only the first flip to true
@@ -58,10 +71,38 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
     [scaleSV, minScale],
   );
 
+  // A re-signed URL hands over a new `loadFromDisk` for the same photo. The
+  // answer already on screen stays (it is keyed on the photo, not the URL) until
+  // the new one lands, so a refetch never blanks the sharp layer.
+  useEffect(() => {
+    if (!wanted || !loadFromDisk) return;
+    let current = true;
+    loadFromDisk().then(
+      (path) => {
+        if (current) setDiskAnswer({ cacheKey, path });
+      },
+      () => {
+        if (current) setDiskAnswer({ cacheKey, path: null });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [wanted, loadFromDisk, cacheKey]);
+
+  const answer = diskAnswer?.cacheKey === cacheKey ? diskAnswer : null;
+  const filePath = answer?.path && unreadableFileKey !== cacheKey ? answer.path : null;
+  const handleError = useCallback(() => {
+    if (filePath) setUnreadableFileKey(cacheKey);
+    else onError?.();
+  }, [filePath, cacheKey, onError]);
+
   if (!wanted) return null;
+  // Still fetching to disk: the base shows through, the same as while a URL loads.
+  if (loadFromDisk && !answer) return null;
   return (
     <Image
-      source={{ uri: photo.uri, cacheKey: photo.cacheKey }}
+      source={{ uri: filePath ? `file://${filePath}` : photo.uri, cacheKey }}
       style={StyleSheet.absoluteFill}
       contentFit="fill"
       // Without this, expo-image on iOS resizes the bitmap to the view's
@@ -69,9 +110,12 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
       // smaller than the 2048 px base and throws away the pixels it was
       // fetched for. The zoom transform scales the view, not its layout box.
       allowDownscaling={false}
-      // Memory only, like the base: a private wall's photo is not written to disk.
+      // Memory only: the file on disk, when there is one, is this app's own copy
+      // under the spray-wall cache (`ensureSprayFullPhotoCached`), which sign-out
+      // and wall withdrawal erase. A second copy in expo-image's shared disk
+      // cache would outlive both.
       cachePolicy="memory"
-      onError={onError}
+      onError={handleError}
       accessible={false}
     />
   );

@@ -17,15 +17,23 @@
 //     same contract `tryResolveBundledPathSync` has, so a board surface's first
 //     frame is a placeholder rather than a blocked JS thread. The async pass does
 //     the download.
+//  3. **A downloaded wall's photo is read from the durable store first.** Offline
+//     sync already keeps it under `Paths.document`, named after its object key
+//     (`spray-photo-store.ts`). Reading that copy online means a downloaded wall
+//     never fetches its photo a second time into this cache, and a sweep or the
+//     OS reclaiming `Paths.cache` costs it nothing.
 
 import { Directory, File, Paths } from 'expo-file-system';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
+import { tryGetStoredSprayPhotoPathSync } from './spray-photo-store';
 import { getSprayWall, listRegisteredSprayWalls, refreshSprayWall } from './spray-wall-registry';
 import { releaseDownloadTaskAfterNativeCompletion, retainDownloadTask } from '../../offline/download-task-retention';
 import {
+  SPRAY_PARTIAL_SUFFIX,
   SPRAY_PHOTO_CACHE_DIR_NAME,
-  sprayPartialPhotoFileName,
+  sprayFullPhotoFileName,
   sprayPhotoFileName,
+  sprayPhotoObjectFromUrl,
   type SprayPhotoIdentity,
 } from './spray-photo-keys';
 import type { RegisteredSprayWall } from './spray-wall-registry';
@@ -86,8 +94,12 @@ const resolvedPaths = new Map<string, string>();
 /** In-flight downloads, so N rows on one wall fetch one photo, not N. */
 const pendingDownloads = new Map<string, Promise<string | null>>();
 
+function cacheDirectory(): Directory {
+  return new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
+}
+
 function photoFile(identity: SprayPhotoIdentity): File {
-  return new File(new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME), sprayPhotoFileName(identity));
+  return new File(cacheDirectory(), sprayPhotoFileName(identity));
 }
 
 /**
@@ -102,11 +114,8 @@ function photoFile(identity: SprayPhotoIdentity): File {
  * only a completed one is moved into place. iOS already stages its own temp
  * file; this makes the two platforms behave the same.
  */
-function partialPhotoFile(identity: SprayPhotoIdentity, generation: string): File {
-  return new File(
-    new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME),
-    `${generation}-${sprayPartialPhotoFileName(identity)}`,
-  );
+function partialPhotoFile(fileName: string, generation: string): File {
+  return new File(cacheDirectory(), `${generation}-${fileName}${SPRAY_PARTIAL_SUFFIX}`);
 }
 
 /** Delete a file if it is there, swallowing the race where it is not. */
@@ -125,6 +134,52 @@ function deleteQuietly(file: File): void {
  */
 function toPath(uri: string): string {
   return uri.replace(/^file:\/\//, '');
+}
+
+/**
+ * The object key of the photo a registered wall draws at `identity`'s version,
+ * or `null` when the registry has no such wall or its URL names no key.
+ */
+function registeredPhotoKey(identity: SprayPhotoIdentity): string | null {
+  if (identity.variant || typeof identity.versionId !== 'number') return null;
+  const wall = getSprayWall(identity.layoutId);
+  if (!wall || wall.versionId !== identity.versionId) return null;
+  const photo = sprayPhotoObjectFromUrl(wall.photoUrl, wall.wallUuid);
+  return photo?.size === 'base' ? photo.key : null;
+}
+
+/**
+ * The durable offline copy of the raw photo `identity` names, when this device
+ * downloaded the wall (`spray-photo-store.ts`).
+ *
+ * Only through a REGISTERED wall: registration is what says this session may
+ * draw the wall, and its signed URL is what names the object. A key that does not
+ * parse is a miss, and the ordinary cache download runs as before.
+ */
+function storedPhotoPath(identity: SprayPhotoIdentity): string | null {
+  const photoKey = registeredPhotoKey(identity);
+  return photoKey ? tryGetStoredSprayPhotoPathSync(photoKey) : null;
+}
+
+/**
+ * The renderer's cached copy of the photo stored as `photoKey`, for offline sync
+ * to adopt instead of downloading the same bytes again.
+ *
+ * A climber usually opens a wall before they download it, so the photo is
+ * normally already here. Only this cache's own file, never the durable store's:
+ * the caller is filling the durable store.
+ */
+export function findCachedSprayPhotoForObjectKey(layoutId: number, photoKey: string): string | null {
+  const wall = getSprayWall(layoutId);
+  if (!wall || typeof wall.versionId !== 'number') return null;
+  const identity: SprayPhotoIdentity = { layoutId, versionId: wall.versionId };
+  if (registeredPhotoKey(identity) !== photoKey) return null;
+  try {
+    const file = photoFile(identity);
+    return file.exists ? toPath(file.uri) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -147,6 +202,11 @@ export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string |
   const key = sprayPhotoFileName(identity);
   const cached = resolvedPaths.get(key);
   if (cached) return cached;
+
+  // Not memoised: the durable copy has its own reclaim paths (a tombstone, a
+  // removed download, a reset's prune) that never touch this module's memo.
+  const stored = storedPhotoPath(identity);
+  if (stored) return stored;
 
   try {
     const file = photoFile(identity);
@@ -222,22 +282,35 @@ async function downloadSprayPhoto(
     return null;
   }
 
-  const destination = photoFile(identity);
-  const partial = partialPhotoFile(identity, generation);
+  return downloadIntoCache(sprayPhotoFileName(identity), source.url, identity.layoutId, generation);
+}
+
+/**
+ * Stream `url` into the cache directory as `fileName`, staged under a
+ * generation-named `.part` and moved into place only when complete and still
+ * current, then memoise the path under `fileName`.
+ */
+async function downloadIntoCache(
+  fileName: string,
+  url: string,
+  layoutId: number,
+  generation: string,
+): Promise<string | null> {
+  const destination = new File(cacheDirectory(), fileName);
+  const partial = partialPhotoFile(fileName, generation);
   try {
-    const directory = new Directory(Paths.cache, SPRAY_PHOTO_CACHE_DIR_NAME);
-    directory.create({ intermediates: true, idempotent: true });
+    cacheDirectory().create({ intermediates: true, idempotent: true });
 
     // Leftovers from a download this process did not finish. Both are dead: a
     // `.part` was never complete, and a destination we are about to replace is
-    // one `tryGetSprayPhotoPathSync` already declined.
+    // one the sync lookup already declined.
     deleteQuietly(partial);
     deleteQuietly(destination);
 
-    await runRetainedDownload(source.url, partial);
+    await runRetainedDownload(url, partial);
     // A withdrawal while native I/O was streaming: the wall's generation moved,
     // so this body belongs to a revoked wall and must never reach its real name.
-    if (generation !== sprayPrivacyGeneration(identity.layoutId)) {
+    if (generation !== sprayPrivacyGeneration(layoutId)) {
       deleteQuietly(partial);
       return null;
     }
@@ -248,14 +321,74 @@ async function downloadSprayPhoto(
     // `destination` — a file that is, by then, the correct one.
     const path = toPath(destination.uri);
     partial.moveSync(destination);
-    resolvedPaths.set(sprayPhotoFileName(identity), path);
+    resolvedPaths.set(fileName, path);
     return path;
   } catch {
     // Never leave a truncated body behind under either name.
     deleteQuietly(partial);
-    if (generation === sprayPrivacyGeneration(identity.layoutId)) deleteQuietly(destination);
+    if (generation === sprayPrivacyGeneration(layoutId)) deleteQuietly(destination);
     return null;
   }
+}
+
+/** Where to fetch a photo's full-resolution copy, and whose wall it is. */
+export type SprayFullPhotoRequest = {
+  layoutId: number;
+  wallUuid: string;
+  /** The version's `photoFullUrl`: presigned, expiring with `expiresAt`. */
+  url: string;
+  expiresAt: string;
+};
+
+/**
+ * The full-resolution copy's cache name, or `null` when its URL names no
+ * full-copy object of this wall (and so has no identity worth caching under).
+ */
+function fullPhotoFileName(request: SprayFullPhotoRequest): string | null {
+  const photo = sprayPhotoObjectFromUrl(request.url, request.wallUuid);
+  return photo?.size === 'full' ? sprayFullPhotoFileName(request.layoutId, photo.photoId) : null;
+}
+
+/**
+ * Make sure the hold editor's full-resolution copy (#5911) is on disk, and
+ * return its path; `null` when it could not be, and the caller loads the URL.
+ *
+ * The copy is several megabytes and only the hold editor reads it, past 3x zoom,
+ * so it is fetched the first time a climber zooms that far and kept beside the
+ * base in this cache. Every later visit, and every draft that reuses the photo,
+ * decodes the file instead of downloading it again. It is named after the photo,
+ * not the version, and lives and dies with the wall's other cached files: the age
+ * sweep, the Clear button, per-wall withdrawal and sign-out.
+ *
+ * An expired signature answers `null` without fetching: the editor's own
+ * fallback loads the URL, fails, and re-reads the draft for a fresh one.
+ */
+export async function ensureSprayFullPhotoCached(request: SprayFullPhotoRequest): Promise<string | null> {
+  const fileName = fullPhotoFileName(request);
+  if (!fileName || !request.url.startsWith('https://')) return null;
+  const generation = sprayPrivacyGeneration(request.layoutId);
+  const memoised = resolvedPaths.get(fileName);
+  if (memoised) return memoised;
+  try {
+    const file = new File(cacheDirectory(), fileName);
+    if (file.exists) {
+      const path = toPath(file.uri);
+      resolvedPaths.set(fileName, path);
+      return path;
+    }
+  } catch {
+    // Unreadable reads as "not yet"; the download below decides.
+  }
+  if (isExpired(request.expiresAt)) return null;
+
+  const downloadKey = `${generation}:${fileName}`;
+  const inFlight = pendingDownloads.get(downloadKey);
+  if (inFlight) return inFlight;
+  const download = downloadIntoCache(fileName, request.url, request.layoutId, generation).finally(() => {
+    if (pendingDownloads.get(downloadKey) === download) pendingDownloads.delete(downloadKey);
+  });
+  pendingDownloads.set(downloadKey, download);
+  return download;
 }
 
 /**
@@ -323,9 +456,10 @@ export function deleteCachedSprayPhotos(layoutId?: number): void {
     else {
       // Match version-id names (`<layoutId>-v<versionId>.jpg`), the generated
       // looks beside them (`-crop.jpg`, `-cutout.webp`), legacy version-number
-      // names, and the producer's nonce/session/wall staging prefix.
+      // names, the full-resolution copy (`<layoutId>-full-<photoId>.jpg`), and
+      // the producer's nonce/session/wall staging prefix.
       const wallPhotoPattern = new RegExp(
-        `^(?:[a-z0-9]+-\\d+-\\d+-)?${layoutId}-v?\\d+(?:\\.jpg|-crop\\.jpg|-cutout\\.webp)(?:\\.part)?$`,
+        `^(?:[a-z0-9]+-\\d+-\\d+-)?${layoutId}-(?:v?\\d+(?:\\.jpg|-crop\\.jpg|-cutout\\.webp)|full-[0-9a-f-]{36}\\.jpg)(?:\\.part)?$`,
       );
       for (const entry of directory.list()) {
         if (wallPhotoPattern.test(entry.name)) {

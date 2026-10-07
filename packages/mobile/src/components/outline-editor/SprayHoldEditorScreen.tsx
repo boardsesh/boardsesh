@@ -114,6 +114,7 @@ import {
   SPRAY_EDITOR_MAX_SCALE,
 } from './spray-photo-frame';
 import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-photo';
+import { ensureSprayFullPhotoCached } from '../../lib/spray/spray-photo-cache';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { sprayPhotoReservesBottom, useSprayEditorLayout } from './use-spray-editor-layout';
 import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
@@ -415,7 +416,10 @@ export function SprayHoldEditorScreen({
     useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
   // The sharper photo for deep zoom (#5911). Null on walls that have none, which
   // keep the base photo alone.
-  const fullResolutionPhoto = useMemo(() => sprayFullResolutionPhoto(wall, photoFullUrl), [wall, photoFullUrl]);
+  const fullResolutionPhoto = useMemo(
+    () => sprayFullResolutionPhoto(wall, photoFullUrl, ensureSprayFullPhotoCached),
+    [wall, photoFullUrl],
+  );
   const photoExpiresAt = wall?.photoExpiresAt ?? null;
   const lastPhotoRefreshAtRef = useRef(0);
   const handleFullPhotoError = useCallback(() => {

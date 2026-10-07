@@ -1,6 +1,7 @@
 import type { QueryClient, QueryFilters } from '@tanstack/react-query';
 import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
+import { findCachedSprayPhotoForObjectKey } from '../lib/spray/spray-photo-cache';
 import { sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import {
   SPRAY_PHOTO_STORE_AVAILABLE,
@@ -67,7 +68,15 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     if (typeof photoUrl !== 'string' || !photoUrl) continue;
 
     const wallGeneration = sprayPrivacyGeneration(layoutId);
-    const stored = await storeSprayPhoto(photoKey, photoUrl, layoutId);
+    // A wall is usually opened before it is downloaded, so the renderer has
+    // normally fetched this exact object already: copy it rather than download
+    // the same bytes a second time.
+    const stored = await storeSprayPhoto(
+      photoKey,
+      photoUrl,
+      layoutId,
+      findCachedSprayPhotoForObjectKey(layoutId, photoKey),
+    );
     if (generation !== sprayPrivacyGeneration()) return;
     if (wallGeneration !== sprayPrivacyGeneration(layoutId)) continue;
     if (stored) {

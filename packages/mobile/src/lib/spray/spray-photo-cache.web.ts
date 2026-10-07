@@ -49,6 +49,19 @@ export function ensureSprayPhotoCached(identity: SprayPhotoIdentity, source?: Sp
   return Promise.resolve(source?.url ?? presignedUrl(identity));
 }
 
+/** No renderer cache in a browser, so offline sync has nothing to adopt. */
+export function findCachedSprayPhotoForObjectKey(_layoutId: number, _photoKey: string): string | null {
+  return null;
+}
+
+/** Where to fetch a photo's full-resolution copy, and whose wall it is. */
+export type SprayFullPhotoRequest = { layoutId: number; wallUuid: string; url: string; expiresAt: string };
+
+/** Nothing to keep on disk: the hold editor loads the signed URL itself. */
+export function ensureSprayFullPhotoCached(_request: SprayFullPhotoRequest): Promise<string | null> {
+  return Promise.resolve(null);
+}
+
 export function clearSprayPhotoPathCache(): void {
   // No memo to clear: the URL comes straight off the registry on every read.
 }

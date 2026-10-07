@@ -33,6 +33,7 @@ export async function storeSprayPhoto(
   _photoKey: string,
   _photoUrl: string,
   _layoutId?: number,
+  _cachedCopyPath?: string | null,
 ): Promise<string | null> {
   return null;
 }

@@ -77,6 +77,11 @@ vi.mock('expo-file-system', () => {
       files.delete(this.uri);
       files.set(destination.uri, contents);
     }
+    async copy(destination: { uri: string }): Promise<void> {
+      const contents = files.get(this.uri);
+      if (!contents) throw new Error(`no such file: ${this.uri}`);
+      files.set(destination.uri, { ...contents });
+    }
     static downloadFileAsync(
       url: string,
       destination: { uri: string },
@@ -324,5 +329,36 @@ describe('clearStoredSprayPhotos', () => {
     clearStoredSprayPhotos();
 
     expect(names()).toEqual([]);
+  });
+});
+
+// A climber usually opens a wall before downloading it, so the renderer's cache
+// already holds the photo. The key is the identity: those bytes ARE this photo.
+describe('storeSprayPhoto adopting the renderer copy', () => {
+  const KEY = 'spray-walls/wall-a/photo-1.jpg';
+  const URL = 'https://private.example/a?sig=1';
+  const CACHED = '/cache/spray-walls/4-v9.jpg';
+
+  it('copies the cached file instead of downloading it', async () => {
+    files.set(`file://${CACHED}`, { contents: 'cached bytes' });
+
+    const path = await storeSprayPhoto(KEY, URL, 4, CACHED);
+
+    expect(path).toBe(`/documents/${SPRAY_PHOTO_STORE_DIR_NAME}/${sprayPhotoStoreFileName(KEY)}`);
+    expect(downloadedUrls).toEqual([]);
+    expect(files.get(`${DIR}/${sprayPhotoStoreFileName(KEY)}`)?.contents).toBe('cached bytes');
+    // The renderer keeps its own copy: a board on screen may be drawing it.
+    expect(files.has(`file://${CACHED}`)).toBe(true);
+    // Nothing staged is left behind.
+    expect([...files.keys()].some((name) => name.endsWith('.part'))).toBe(false);
+  });
+
+  // The sweeper or the OS can take the cache file between lookup and copy.
+  it('downloads when the cached file has gone', async () => {
+    const path = await storeSprayPhoto(KEY, URL, 4, CACHED);
+
+    expect(path).not.toBeNull();
+    expect(downloadedUrls).toEqual([URL]);
+    expect(files.get(`${DIR}/${sprayPhotoStoreFileName(KEY)}`)?.contents).toBe(URL);
   });
 });
