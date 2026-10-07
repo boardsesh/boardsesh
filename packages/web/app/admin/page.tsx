@@ -114,6 +114,14 @@ export default function AdminPage() {
         >
           {t('nav.locationSync')}
         </MuiLink>
+        <MuiLink
+          component={LocaleLink}
+          href="/admin/spray-walls"
+          underline="hover"
+          sx={{ color: themeTokens.colors.primary }}
+        >
+          {t('nav.sprayWalls')}
+        </MuiLink>
       </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: themeTokens.neutral[200], mb: 3 }}>

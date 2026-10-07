@@ -364,6 +364,7 @@ const nextConfig = {
     '@boardsesh/play-view',
     '@boardsesh/playback-react',
     '@boardsesh/climb-filters',
+    '@boardsesh/community-roles',
     '@boardsesh/i18n',
     '@boardsesh/velvet-tokens',
     '@boardsesh/logbook',
