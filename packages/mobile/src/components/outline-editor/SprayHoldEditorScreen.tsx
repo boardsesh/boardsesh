@@ -22,6 +22,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
+import { useNavigation } from 'expo-router';
 import { MAX_HOLDS_PER_WALL } from '@boardsesh/board-config';
 import { Text } from '../Text';
 import {
@@ -29,7 +30,6 @@ import {
   type FilterBoardControls,
   type FilterBoardTransformContext,
 } from '../search/InteractiveFilterBoard';
-import { GlassIconButton } from '../GlassIconButton';
 import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useTheme } from '../../providers/theme-provider';
@@ -58,8 +58,10 @@ import { SprayResizeHandle } from './SprayResizeHandle';
 import { SprayLoupe } from './SprayLoupe';
 import { useSprayLoupeFeed } from './spray-loupe-feed';
 import { SprayEditGestureOverlay, type SprayWallAccessibility } from './SprayEditGestureOverlay';
-import { SprayEditorBottomBar, sprayCountSummary } from './SprayEditorBottomBar';
-import { SprayEditorMenu } from './SprayCountCapsule';
+import { SprayEditorBottomBar } from './SprayEditorBottomBar';
+import { SprayCountCapsule, SprayEditorMenu, sprayCountSummary } from './SprayCountCapsule';
+import { SprayEditorHeaderActions } from './SprayEditorHeaderActions';
+import { modeForTool, planModeSwitch, toolForMode, type SprayEditorMode } from './spray-editor-mode';
 import { SprayCornersChipBar, SprayHoldChipBar, SprayRefineBar } from './SprayHoldChipBar';
 import { SprayHoldInspector } from './SprayHoldInspector';
 import { SprayRefineLayer } from './SprayRefineLayer';
@@ -228,13 +230,13 @@ const REFINE_SIZE_RING_FADE_MS = 150;
 const NO_REFINE_LIMITS = { floorBoardPx: 0, capBoardPx: 0 };
 
 /**
- * Where the zoomed-in reset control sits: the top-left of the editor (the
- * zoomed photo's viewport), clear of the "?" at top-right, the chip bar and the
- * bottom bar.
+ * Where the zoomed-in reset control sits on a phone: the top-right of the
+ * editor (the zoomed photo's viewport), across from the count capsule at
+ * top-left and clear of the chip bar and the bottom bar.
  */
-const RESET_ZOOM_STYLE = { left: spacing[2], top: spacing[2] };
-/** On iPad it goes to the top corner away from the tool rail. */
 const RESET_ZOOM_STYLE_RIGHT = { right: spacing[2], top: spacing[2] };
+/** On iPad it goes to the top corner away from the tool rail. */
+const RESET_ZOOM_STYLE_LEFT = { left: spacing[2], top: spacing[2] };
 
 /**
  * How much wall the inspector's Previous / Next frame round the hold they pick,
@@ -283,7 +285,12 @@ export type SprayHoldEditorScreenProps = {
    * with its holds already there.
    */
   revealOnMount?: boolean;
-  /** The bottom bar's one filled button — "Pick a look" on the add-a-wall flow. */
+  /**
+   * The one button that saves the holds and moves on — "Pick a look" on the
+   * add-a-wall flow, "Publish holds" on a live wall. On a phone the editor puts
+   * it in its route's header (`headerRight`, next to "?"); on the iPad layout it
+   * stays in the cluster at the bottom.
+   */
   primaryLabel: string;
   /**
    * The wall's photo as this phone still holds it, when it does. Shown dimmed
@@ -328,8 +335,8 @@ export type SprayHoldEditorScreenProps = {
  * The detector's confident finds open ON and its unsure ones as dashed maybes,
  * so the climber's job is fixing the machine's mistakes rather than approving
  * every one of its guesses. A picked ring gets the chip bar for its role —
- * size, trace, join and switch off for an ON ring, switch on or delete for a
- * ghost, keep or switch off for a maybe — and a long press picks a ring up so
+ * size and switch off for an ON ring, switch on or delete for a ghost, keep or
+ * switch off for a maybe — and a long press picks a ring up so
  * the same touch can carry on into a move, or on bare wall places a new hold
  * that slides with the finger until it lifts. The picked ring carries a resize
  * handle that scales it on the same 5% grid as the − / + chips. A stray tap
@@ -337,7 +344,10 @@ export type SprayHoldEditorScreenProps = {
  * ghost can be deleted.
  * Everything goes through one pure reducer with undo and redo, the heavy
  * actions raise an in-screen undo toast, and one button saves and hands over
- * (`onCommitted`).
+ * (`onCommitted`). On a phone that button sits in the route's header beside
+ * "?" (`SprayEditorHeaderActions`), and the bottom bar is Undo | Redo and the
+ * mode switcher (`SprayModeSwitcher`: Select, Add, Trace, Refine, Join;
+ * `spray-editor-mode.ts` is the rule between them).
  *
  * The board surface is the shared `InteractiveFilterBoard`. The rings, the dim
  * layer and the selection draw INSIDE its zoom transform; the gesture surface
@@ -435,8 +445,9 @@ export function SprayHoldEditorScreen({
   const [moveRevision, setMoveRevision] = useState(0);
   /**
    * Where a screen reader's swipes have got to while Join waits for its second
-   * hold. Outside Join the cursor IS the selection, so it needs no state of its
-   * own; inside Join the selection has to stay put on the first hold.
+   * hold, or while Trace, Refine or Join waits for its hold (the pick step).
+   * Elsewhere the cursor IS the selection, so it needs no state of its own;
+   * there the selection has to stay put.
    */
   const [joinCursorId, setJoinCursorId] = useState<number | null>(null);
   const [area, setArea] = useState({ width: 0, height: 0 });
@@ -862,6 +873,16 @@ export function SprayHoldEditorScreen({
   canEditRef.current = canEdit;
   const toolRef = useRef(tool);
   toolRef.current = tool;
+  /** A Refine session is open on a hold: Undo and Redo are about its strokes, and Publish waits. */
+  const refineOpen = refineView != null;
+  /**
+   * Trace, Refine or Join is on and still waiting for its hold: chosen from the
+   * switcher with no ON hold picked, or its hold went from under it (an undo).
+   * The edit overlay takes the taps, and the next tap on an ON ring is the hold.
+   */
+  const modePicking = tool === 'refine' ? !refineOpen : (tool === 'trace' || tool === 'join') && selectedHold == null;
+  const modePickingRef = useRef(modePicking);
+  modePickingRef.current = modePicking;
 
   // A hover left over from before a tool change must not flash up on the way back.
   useEffect(() => {
@@ -945,14 +966,23 @@ export function SprayHoldEditorScreen({
     setSpotlight({ key: spotlightKeyRef.current, kind, hold });
   }, []);
 
-  // A one-shot tool needs its hold. An undo that took the selection away ends it.
-  // Add mode has no hold of its own, so it is left alone.
+  // Trace, Refine and Join need their hold. One that goes from under them (an
+  // undo toast, a re-seed) sends the mode back to its pick step rather than out
+  // of the mode: the climber chose it, so the next ON ring tapped carries on.
+  // A Refine session open on the vanished hold is dropped with its strokes.
   useEffect(() => {
-    if ((tool === 'trace' || tool === 'join' || tool === 'refine') && selectedHold == null) setTool('edit');
-  }, [tool, selectedHold]);
+    if (tool !== 'refine' || !refineView || selectedHold?.id === refineView.holdId) return;
+    refineRef.current.cancel();
+    refinePointsSV.value = NO_POINTS;
+    setRefineNotice(null);
+  }, [tool, refineView, selectedHold, refinePointsSV]);
+  // A stroke in flight when the pick step began is gone with its overlay.
+  useEffect(() => {
+    if (modePicking) draftPointsSV.value = NO_POINTS;
+  }, [modePicking, draftPointsSV]);
 
-  // Refine ends with its tool, whichever way the tool ended — Start over, or an
-  // undo toast that took the hold away. Done and Cancel have ended it already.
+  // Refine ends with its tool, whichever way the tool ended — Start over, a
+  // switch to another mode. Done and Cancel have ended it already.
   useEffect(() => {
     if (tool === 'refine' || !refineRef.current.view) return;
     refineRef.current.cancel();
@@ -1080,6 +1110,44 @@ export function SprayHoldEditorScreen({
     [refuseOverCap, pulseSpotlight, recordHint],
   );
 
+  /**
+   * Open Refine on an ON hold: its outline (or its circle) becomes an area to
+   * brush. Any undo toast goes, since its Undo would take back a wall edit from
+   * under the open session.
+   */
+  const openRefineSession = useCallback(
+    (hold: SprayEditorHold) => {
+      setErrorText(null);
+      setRefineNotice(null);
+      setUndoToast(null);
+      refinePointsSV.value = NO_POINTS;
+      refineRef.current.start(hold);
+    },
+    [refinePointsSV],
+  );
+
+  /**
+   * The pick step's tap on an ON ring: it becomes the mode's hold, picked but
+   * not switched. Trace then waits for its loop, Refine opens on it, and Join
+   * takes it as the first of the two holds.
+   */
+  const pickHoldForMode = useCallback(
+    (hold: SprayEditorHold) => {
+      setErrorText(null);
+      hapticSelection();
+      setJoinCursorId(null);
+      dispatch({ type: 'SELECT', id: hold.id });
+      if (toolRef.current === 'refine') openRefineSession(hold);
+    },
+    [openRefineSession],
+  );
+
+  /** The pick step's tap on an OFF ring or a maybe: the modes only work on a hold that is on. */
+  const refuseHoldNotOn = useCallback(() => {
+    hapticWarning();
+    setErrorText(t('sprayEditor.errors.needsOnHold'));
+  }, [t]);
+
   const handleTap = useCallback(
     (boardX: number, boardY: number, zoom: number, isStylus = false) => {
       if (!canEditRef.current) return;
@@ -1105,8 +1173,16 @@ export function SprayHoldEditorScreen({
         input,
         pencilOnly: pencilOnlyRef.current,
         onPhoto,
+        picking: modePickingRef.current,
+        hitIsOn: hit != null && holdRole(hit) === 'on',
       });
       switch (answer) {
+        case 'pickTarget':
+          if (hit) pickHoldForMode(hit);
+          return;
+        case 'pickNeedsOn':
+          refuseHoldNotOn();
+          return;
         case 'select':
           if (!hit) return;
           hapticSelection();
@@ -1140,7 +1216,18 @@ export function SprayHoldEditorScreen({
           return;
       }
     },
-    [boardScale, photoWidth, photoHeight, toggleHold, joinHolds, pulseSpotlight, recordHint, addHold],
+    [
+      boardScale,
+      photoWidth,
+      photoHeight,
+      toggleHold,
+      joinHolds,
+      pulseSpotlight,
+      recordHint,
+      addHold,
+      pickHoldForMode,
+      refuseHoldNotOn,
+    ],
   );
 
   const handlePickUp = useCallback(
@@ -1257,32 +1344,6 @@ export function SprayHoldEditorScreen({
     },
     [placeHoldSV, refuseOverCap, pulseSpotlight, recordHint, photoWidth, photoHeight],
   );
-
-  const handleStartTrace = useCallback(() => {
-    setErrorText(null);
-    setTool('trace');
-  }, []);
-
-  const handleStartJoin = useCallback(() => {
-    setErrorText(null);
-    setJoinCursorId(null);
-    setTool('join');
-  }, []);
-
-  /** Refine on the picked hold: its outline (or its circle) becomes an area to brush. ON holds only, like Trace. */
-  const handleStartRefine = useCallback(() => {
-    const current = stateRef.current;
-    const hold = current.selectedId != null ? current.holds[current.selectedId] : null;
-    if (!canEditRef.current || !hold || holdRole(hold) !== 'on') return;
-    setErrorText(null);
-    setRefineNotice(null);
-    // Its Undo would take back a wall edit from under the open session.
-    setUndoToast(null);
-    refinePointsSV.value = NO_POINTS;
-    refineRef.current.start(hold);
-    hapticSelection();
-    setTool('refine');
-  }, [refinePointsSV]);
 
   /**
    * Leave Refine. Kept, the area goes on the hold as ONE `SET_OUTLINE` — one
@@ -1504,35 +1565,103 @@ export function SprayHoldEditorScreen({
     hapticWarning();
   }, []);
 
+  /** Leave add mode. False when a ready Corners outline would not close: add mode stays on with its error. */
   const leaveAddMode = useCallback(() => {
     // Done means done: an outline with enough corners is kept rather than
     // thrown away. One that cannot close stays on screen with its error, in
     // add mode, so the climber can fix it or undo it.
-    if (cornersSV.value.length / 2 >= MIN_CORNERS && !takeAndCloseCorners()) return;
+    if (cornersSV.value.length / 2 >= MIN_CORNERS && !takeAndCloseCorners()) return false;
     clearCorners();
     draftPointsSV.value = NO_POINTS;
     setLastAddedId(null);
     setTool('edit');
+    return true;
   }, [takeAndCloseCorners, clearCorners, cornersSV, draftPointsSV]);
 
-  const handleToggleAddMode = useCallback(() => {
-    if (toolRef.current === 'add') {
-      leaveAddMode();
-      return;
-    }
-    // Refine's strokes are kept, not thrown away by a tap on +. One that could
-    // not be kept says why and stays out of add mode.
-    if (toolRef.current === 'refine' && !leaveRefine(true)) return;
-    setErrorText(null);
+  const enterAddMode = useCallback(() => {
     setJoinCursorId(null);
     draftPointsSV.value = NO_POINTS;
     clearCorners();
     // Nothing is picked up while adding, so nothing stays picked up either.
     dispatch({ type: 'SELECT', id: null });
     setLastAddedId(null);
-    hapticSelection();
     setTool('add');
-  }, [leaveAddMode, leaveRefine, clearCorners, draftPointsSV]);
+  }, [clearCorners, draftPointsSV]);
+
+  /**
+   * Leave whatever mode is on the way its own Done or Cancel would: Add closes
+   * a ready Corners outline, Refine keeps its strokes, Trace and Join drop what
+   * they had. False when leaving was refused (an outline that will not close, a
+   * stroke that cannot be kept): the mode stays on and its banner says why.
+   */
+  const exitCurrentMode = useCallback(() => {
+    const current = toolRef.current;
+    if (current === 'add') return leaveAddMode();
+    if (current === 'refine') return leaveRefine(true);
+    if (current !== 'edit') handleCancelTool();
+    return true;
+  }, [leaveAddMode, leaveRefine, handleCancelTool]);
+
+  /**
+   * The one way between modes: the switcher, the iPad rail, the keys, the
+   * Pencil and the inspector's buttons all come here (`planModeSwitch` is the
+   * rule). A hold-needing mode starts on the picked ON hold, or opens in its
+   * pick step with none. True when the mode changed.
+   */
+  const switchMode = useCallback(
+    (to: SprayEditorMode) => {
+      const current = stateRef.current;
+      const selected = current.selectedId != null ? (current.holds[current.selectedId] ?? null) : null;
+      const plan = planModeSwitch(modeForTool(toolRef.current), to, {
+        selectedHoldRole: selected ? holdRole(selected) : null,
+        locked: !canEditRef.current,
+      });
+      if (plan === 'refuse') return false;
+      if (!exitCurrentMode()) {
+        hapticWarning();
+        return false;
+      }
+      hapticSelection();
+      setErrorText(null);
+      if (plan === 'exit') return true;
+      if (to === 'add') {
+        enterAddMode();
+        return true;
+      }
+      setJoinCursorId(null);
+      if (plan === 'pick') {
+        // The mode's hold is the next ON ring tapped. A picked OFF ring or maybe
+        // is put down, so the tap rule sees the pick step.
+        dispatch({ type: 'SELECT', id: null });
+      } else if (to === 'refine' && selected) {
+        openRefineSession(selected);
+      }
+      setTool(toolForMode(to));
+      return true;
+    },
+    [exitCurrentMode, enterAddMode, openRefineSession],
+  );
+
+  /** The A key and the Pencil's switch: Add, or out of it. */
+  const handleToggleAddMode = useCallback(() => {
+    switchMode(toolRef.current === 'add' ? 'select' : 'add');
+  }, [switchMode]);
+  /** The inspector's Redraw, Refine and Join, which start on the hold it shows. */
+  const handleStartTrace = useCallback(() => {
+    switchMode('trace');
+  }, [switchMode]);
+  const handleStartRefine = useCallback(() => {
+    switchMode('refine');
+  }, [switchMode]);
+  const handleStartJoin = useCallback(() => {
+    switchMode('join');
+  }, [switchMode]);
+  const handleModeChange = useCallback(
+    (mode: SprayEditorMode) => {
+      switchMode(mode);
+    },
+    [switchMode],
+  );
 
   const handleAddShapeChange = useCallback(
     (shape: SprayAddShape) => {
@@ -1638,15 +1767,16 @@ export function SprayHoldEditorScreen({
     const reverted = restoring ? revertedHold(current.holds, restoring.holds) : null;
     dispatch({ type: 'UNDO' });
     // A snapshot from before add mode carries its selection; nothing is picked
-    // up while adding.
-    if (toolRef.current === 'add') dispatch({ type: 'SELECT', id: null });
+    // up while adding, nor while a mode waits for its hold (a restored
+    // selection would quietly become that hold).
+    if (toolRef.current === 'add' || modePickingRef.current) dispatch({ type: 'SELECT', id: null });
     if (reverted) pulseSpotlight('undo', reverted);
   }, [pulseSpotlight]);
 
   /** The bar's Undo: a Corners outline in progress gives back its last corner before any hold. */
   const handleUndo = useCallback(() => {
     // While refining, Undo takes back one stroke; the hold itself is untouched until Done.
-    if (toolRef.current === 'refine') {
+    if (refineRef.current.view) {
       if (refineRef.current.undo()) {
         setErrorText(null);
         setRefineNotice(null);
@@ -1665,7 +1795,7 @@ export function SprayHoldEditorScreen({
   }, [cornersSV, undoWallEdit]);
 
   const handleRedo = useCallback(() => {
-    if (toolRef.current === 'refine') return;
+    if (refineRef.current.view) return;
     const current = stateRef.current;
     const next = current.future[current.future.length - 1];
     if (!next) return;
@@ -1674,7 +1804,7 @@ export function SprayHoldEditorScreen({
     // The same halo Undo gives, on the hold the redo changes.
     const changed = revertedHold(current.holds, next.holds);
     dispatch({ type: 'REDO' });
-    if (toolRef.current === 'add') dispatch({ type: 'SELECT', id: null });
+    if (toolRef.current === 'add' || modePickingRef.current) dispatch({ type: 'SELECT', id: null });
     if (changed) pulseSpotlight('undo', changed);
   }, [pulseSpotlight]);
 
@@ -1766,12 +1896,10 @@ export function SprayHoldEditorScreen({
     undoWallEdit();
   }, [undoWallEdit]);
 
-  /** The rail's Mark: back to the resting tool from Add, Trace, Join or Refine. Add and Refine keep their work, as their Done does. */
+  /** The Pencil palette's Mark and the Pencil's switch: back to Select. Add and Refine keep their work, as their Done does. */
   const handleMarkTool = useCallback(() => {
-    if (toolRef.current === 'add') leaveAddMode();
-    else if (toolRef.current === 'refine') leaveRefine(true);
-    else handleCancelTool();
-  }, [leaveAddMode, leaveRefine, handleCancelTool]);
+    switchMode('select');
+  }, [switchMode]);
 
   const handleFitWall = useCallback(() => boardControlRef.current?.resetZoom(), []);
   const handlePutDown = useCallback(() => dispatch({ type: 'SELECT', id: null }), []);
@@ -1878,7 +2006,7 @@ export function SprayHoldEditorScreen({
   }, [homography, refuseOverCap, t]);
 
   const handlePrimary = useCallback(async () => {
-    if (!viewerCanEdit || homography == null || committingRef.current || toolRef.current === 'refine') return;
+    if (!viewerCanEdit || homography == null || committingRef.current || refineRef.current.view) return;
     // Ask before taking stored holds off a live wall that climbs may use. The
     // press owns the screen while the host asks (`committingRef`), so a second
     // press waits, and a declined check leaves every edit where it was.
@@ -1974,11 +2102,12 @@ export function SprayHoldEditorScreen({
    * Undo and Redo are about strokes: Undo takes back the last one, and there is
    * nothing to redo.
    */
-  const canUndo =
-    tool === 'refine'
-      ? (refineView?.strokeCount ?? 0) > 0
-      : state.past.length > 0 || (tool === 'add' && cornerCount > 0);
-  const canRedo = tool !== 'refine' && state.future.length > 0;
+  const canUndo = refineView
+    ? refineView.strokeCount > 0
+    : state.past.length > 0 || (tool === 'add' && cornerCount > 0);
+  const canRedo = !refineOpen && state.future.length > 0;
+  /** The primary button's own enabled rule, shared by the header, the iPad cluster and Cmd-Return. */
+  const primaryBlocked = cornerCount > 0 || refineOpen;
 
   // ---- Keyboard shortcuts and the Apple Pencil's own gestures ----
   // `modules/spray-editor-input` reports a shortcut id or a Pencil double tap /
@@ -1995,6 +2124,10 @@ export function SprayHoldEditorScreen({
         delete: t('sprayEditor.shortcuts.delete'),
         escape: t('sprayEditor.banner.cancel'),
         add: t('sprayEditor.bar.addA11y'),
+        select: t('sprayEditor.modes.select'),
+        trace: t('sprayEditor.modes.trace'),
+        refine: t('sprayEditor.modes.refine'),
+        join: t('sprayEditor.modes.join'),
         smaller: t('sprayEditor.a11y.actions.smaller'),
         bigger: t('sprayEditor.a11y.actions.bigger'),
         previous: t('sprayEditor.inspector.previous'),
@@ -2014,7 +2147,7 @@ export function SprayHoldEditorScreen({
       canRedo,
       canStep: readingOrder.length > 1,
       // The primary button's own enabled rule.
-      primaryReady: cornerCount === 0 && tool !== 'refine' && counts.on > 0,
+      primaryReady: !primaryBlocked && counts.on > 0,
       popoverOpen: pencilPalette != null || menuOpen,
     });
     switch (action) {
@@ -2045,6 +2178,18 @@ export function SprayHoldEditorScreen({
         return;
       case 'toggleAdd':
         handleToggleAddMode();
+        return;
+      case 'modeSelect':
+        switchMode('select');
+        return;
+      case 'modeTrace':
+        switchMode('trace');
+        return;
+      case 'modeRefine':
+        switchMode('refine');
+        return;
+      case 'modeJoin':
+        switchMode('join');
         return;
       case 'shrink':
         handleShrink();
@@ -2110,16 +2255,17 @@ export function SprayHoldEditorScreen({
   }, [tablet, canEdit]);
 
   /**
-   * A screen reader's swipe up (`1`) or down (`-1`). Outside Join it selects the
-   * next ring in reading order, which is what brings up the chip bar; inside
-   * Join it only moves the cursor, skipping the hold being joined.
+   * A screen reader's swipe up (`1`) or down (`-1`). In Select it selects the
+   * next ring in reading order, which is what brings up the chip bar; in Join,
+   * and in a mode's pick step, it only moves the cursor (skipping the hold
+   * being joined), and a double tap acts on it.
    */
   const stepWallCursor = useCallback((delta: 1 | -1) => {
     announceNextRef.current = false;
     if (!canEditRef.current) return;
     const order = readingOrderRef.current;
     const indexById = readingIndexRef.current;
-    if (toolRef.current === 'join') {
+    if (toolRef.current === 'join' || modePickingRef.current) {
       const selectedId = stateRef.current.selectedId;
       let next = stepReadingCursor(order, indexById, joinCursorIdRef.current, delta);
       if (next != null && next === selectedId && order.length > 1) {
@@ -2143,6 +2289,16 @@ export function SprayHoldEditorScreen({
     if (!canEditRef.current) return;
     const current = stateRef.current;
     const onWalk = (id: number | null): id is number => id != null && readingIndexRef.current.has(id);
+    if (modePickingRef.current) {
+      // The pick step: the cursor's ring becomes the mode's hold, if it is on.
+      const targetId = joinCursorIdRef.current;
+      const hold = onWalk(targetId) ? current.holds[targetId] : undefined;
+      if (!hold) return;
+      announceNextRef.current = true;
+      if (holdRole(hold) === 'on') pickHoldForMode(hold);
+      else refuseHoldNotOn();
+      return;
+    }
     if (toolRef.current === 'join') {
       const targetId = joinCursorIdRef.current;
       if (!onWalk(targetId) || current.selectedId == null || targetId === current.selectedId) return;
@@ -2156,7 +2312,7 @@ export function SprayHoldEditorScreen({
     setErrorText(null);
     announceNextRef.current = true;
     toggleHold(hold);
-  }, [toggleHold, joinHolds]);
+  }, [toggleHold, joinHolds, pickHoldForMode, refuseHoldNotOn]);
 
   /**
    * "Add a hold here" for a screen reader, which has no finger to say where:
@@ -2233,7 +2389,7 @@ export function SprayHoldEditorScreen({
     [stepWallCursor, activateWallCursor, handleAccessibilityResize, handleDelete, addHoldAtViewCentre],
   );
 
-  const cursorId = tool === 'join' ? joinCursorId : state.selectedId;
+  const cursorId = tool === 'join' || modePicking ? joinCursorId : state.selectedId;
   const cursorPosition = readingCursorPosition(readingIndex, cursorId);
   const cursorHold = cursorPosition && cursorId != null ? (state.holds[cursorId] ?? null) : null;
   const wallValue =
@@ -2244,7 +2400,11 @@ export function SprayHoldEditorScreen({
           role: roleLabel(holdRole(cursorHold), t),
         })
       : t('sprayEditor.a11y.noHold');
-  const wallHint = tool === 'join' ? t('sprayEditor.a11y.joinHint') : t('sprayEditor.a11y.hint');
+  const wallHint = modePicking
+    ? t('sprayEditor.a11y.pickHint')
+    : tool === 'join'
+      ? t('sprayEditor.a11y.joinHint')
+      : t('sprayEditor.a11y.hint');
   const holdToolsOpen = tool === 'edit' && canEdit;
   const selectedRole = selectedHold ? holdRole(selectedHold) : null;
   const canShrinkSelected = shrinkTo != null;
@@ -2671,7 +2831,9 @@ export function SprayHoldEditorScreen({
           </>
         );
       }
-      if (tool === 'refine') {
+      // In a mode's pick step the edit overlay below takes the taps: its next
+      // tap on an ON ring is the hold the mode then draws on.
+      if (tool === 'refine' && !modePicking) {
         const { scaleSV } = context;
         // A dab paints too, so the overlay takes stationary taps. Fingers follow
         // "Pencil only" as Trace's do: with it on they pan and only the Pencil paints.
@@ -2699,7 +2861,7 @@ export function SprayHoldEditorScreen({
           />
         );
       }
-      if (tool === 'trace') {
+      if (tool === 'trace' && !modePicking) {
         return (
           <DrawStrokeOverlay
             key={gestureEpoch}
@@ -2744,7 +2906,7 @@ export function SprayHoldEditorScreen({
             dragOffsetYSV={dragOffsetYSV}
             dragHoldIdSV={dragHoldIdSV}
             canMove={tool === 'edit' && canEdit}
-            canAdd={canAddHold && !(tablet && pencil.pencilOnly)}
+            canAdd={canAddHold && tool === 'edit' && !(tablet && pencil.pencilOnly)}
             medianRadiusSV={medianRadiusSV}
             placeHoldSV={placeHoldSV}
             loupe={loupeFeed}
@@ -2788,6 +2950,7 @@ export function SprayHoldEditorScreen({
       viewerCanEdit,
       gestureEpoch,
       tool,
+      modePicking,
       addShape,
       canEdit,
       canAddHold,
@@ -2851,6 +3014,7 @@ export function SprayHoldEditorScreen({
   );
   const banner = bannerFor({
     tool,
+    picking: modePicking,
     addShape,
     refineMode,
     refineNotice,
@@ -2877,7 +3041,7 @@ export function SprayHoldEditorScreen({
         onSelect={handleAddShapeChange}
         accessibilityLabel={t('sprayEditor.addShape.label')}
       />
-    ) : tool === 'refine' ? (
+    ) : tool === 'refine' && !modePicking ? (
       <SegmentedControl
         options={refineModeOptions}
         selectedKey={refineMode}
@@ -2897,8 +3061,51 @@ export function SprayHoldEditorScreen({
     if (hintLine) AccessibilityInfo.announceForAccessibility(hintLine);
   }, [hintLine]);
 
+  // On a phone the primary button and "?" sit in the route's header, set from
+  // here so both hosts (the hold route's "Publish holds" and the wizard's "Pick
+  // a look") get them with the editor's own enabled rule and spinner, and lose
+  // them the moment the editor goes (the wizard moving on to its look step).
+  // Every input is a boolean or a stable callback, so this re-runs only when
+  // the button's state really changes, never per edit. The iPad layout keeps
+  // its primary in the bottom cluster and "?" on the rail.
+  const navigation = useNavigation();
+  const headerActionsShown = !tablet && boardShowing && viewerCanEdit;
+  const headerPrimaryDisabled = !canEdit || primaryBlocked || counts.on === 0;
+  const headerHelp = SCREENSHOT_MODE ? undefined : hints.replay;
+  // `pressPrimary` follows the save mutation's result, a new object every
+  // render, so the header gets a forwarder with one identity instead.
+  const pressPrimaryRef = useRef(pressPrimary);
+  pressPrimaryRef.current = pressPrimary;
+  const pressHeaderPrimary = useCallback(() => pressPrimaryRef.current(), []);
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: headerActionsShown
+        ? () => (
+            <SprayEditorHeaderActions
+              primaryLabel={primaryLabel}
+              primaryLoading={committing}
+              primaryDisabled={headerPrimaryDisabled}
+              onPrimary={pressHeaderPrimary}
+              onHelp={headerHelp}
+              helpDisabled={!canEdit}
+            />
+          )
+        : undefined,
+    });
+  }, [
+    navigation,
+    headerActionsShown,
+    primaryLabel,
+    committing,
+    headerPrimaryDisabled,
+    pressHeaderPrimary,
+    headerHelp,
+    canEdit,
+  ]);
+  useEffect(() => () => navigation.setOptions({ headerRight: undefined }), [navigation]);
+
   const refineBarNode =
-    tool === 'refine' && canEdit ? (
+    refineOpen && canEdit ? (
       <SprayRefineBar
         brushPt={refineBrushPt}
         range={refineBrushRange}
@@ -2925,12 +3132,13 @@ export function SprayHoldEditorScreen({
     tool === 'add' && addShape === 'corners' && cornerCount >= MIN_CORNERS && canEdit ? (
       <SprayCornersChipBar onFinish={takeAndCloseCorners} />
     ) : null;
-  // iPad: the reset-zoom control goes to the top corner away from the rail, and
-  // the banner and hints keep a readable column in the middle.
+  // The reset-zoom control: top-right on a phone, across from the count
+  // capsule; on iPad the top corner away from the rail. The banner and hints
+  // keep a readable column in the middle there.
   const resetZoomStyle =
-    tablet && sprayTabletPlacement({ railSide, landscape }).oppositeEdge === 'right'
+    !tablet || sprayTabletPlacement({ railSide, landscape }).oppositeEdge === 'right'
       ? RESET_ZOOM_STYLE_RIGHT
-      : RESET_ZOOM_STYLE;
+      : RESET_ZOOM_STYLE_LEFT;
   // In landscape the inspector shares the top edge, so the column also keeps
   // clear of its width on both sides.
   const bannerSideInset = tablet
@@ -3030,9 +3238,8 @@ export function SprayHoldEditorScreen({
               canRedo={canRedo}
               onUndo={handleUndo}
               onRedo={handleRedo}
-              adding={tool === 'add'}
-              onMark={handleMarkTool}
-              onAdd={handleToggleAddMode}
+              mode={modeForTool(tool)}
+              onModeChange={handleModeChange}
               maybeControls={capabilities.canReviewCandidates && counts.maybes > 0}
               showMaybes={showMaybes}
               onToggleMaybes={handleToggleMaybes}
@@ -3096,25 +3303,11 @@ export function SprayHoldEditorScreen({
           locked={!canEdit}
           primaryLabel={primaryLabel}
           primaryLoading={committing}
-          primaryDisabled={!canEdit || cornerCount > 0 || tool === 'refine' || counts.on === 0}
+          primaryDisabled={headerPrimaryDisabled}
           onPrimary={pressPrimary}
         />
       ) : (
         <>
-          {viewerCanEdit && !SCREENSHOT_MODE ? (
-            <View style={styles.helpSlot}>
-              <GlassIconButton
-                iconName="help"
-                iconColor={systemColors.label}
-                fallbackColor={systemColors.fill}
-                size={glassSize.capsule}
-                onPress={hints.replay}
-                disabled={!canEdit}
-                accessibilityLabel={t('sprayEditor.hints.replay')}
-              />
-            </View>
-          ) : null}
-
           {/* One column docked just above the bottom bar: the undo toast on top,
               the chip bar for the picked hold (or Corners' Finish) under it, so the
               two stack instead of overlapping however many rows the chips wrap to. */}
@@ -3132,9 +3325,6 @@ export function SprayHoldEditorScreen({
                 canGrow={growTo != null}
                 onShrink={handleShrink}
                 onGrow={handleGrow}
-                onTrace={handleStartTrace}
-                onRefine={handleStartRefine}
-                onJoin={handleStartJoin}
                 onSwitchOff={handleSwitchSelectedOff}
                 onSwitchOn={handleSwitchSelectedOn}
                 onDelete={handleDelete}
@@ -3146,29 +3336,41 @@ export function SprayHoldEditorScreen({
           </View>
 
           <SprayEditorBottomBar
-            counts={counts}
-            showMaybes={showMaybes}
-            canReviewMaybes={capabilities.canReviewCandidates}
             canUndo={canUndo}
             canRedo={canRedo}
-            adding={tool === 'add'}
-            primaryBlocked={cornerCount > 0 || tool === 'refine'}
+            mode={modeForTool(tool)}
+            onModeChange={handleModeChange}
             locked={!canEdit}
-            primaryLabel={primaryLabel}
-            primaryLoading={committing}
-            celebrating={celebrating}
             bottomInset={insets.bottom}
             onUndo={handleUndo}
             onRedo={handleRedo}
-            onAdd={handleToggleAddMode}
-            onKeepMaybes={handleKeepMaybes}
-            onToggleMaybes={handleToggleMaybes}
-            onStartOver={handleStartOver}
-            onPrimary={pressPrimary}
-            menuOpen={menuOpen}
-            onToggleMenu={toggleMenu}
-            onCloseMenu={closeMenu}
           />
+
+          {/* Last of the phone chrome, so the wall-wide menu it opens draws over
+              the banner: the counts at top-left, the menu dropping down from
+              them. The reset-zoom control has the top-right corner. */}
+          <View pointerEvents="box-none" style={styles.topStrip}>
+            <SprayCountCapsule
+              counts={counts}
+              showMaybes={showMaybes}
+              celebrating={celebrating}
+              locked={!canEdit}
+              onPress={toggleMenu}
+              expanded={menuOpen && canEdit}
+            />
+            {menuOpen && canEdit ? (
+              <SprayEditorMenu
+                counts={counts}
+                showMaybes={showMaybes}
+                canReviewMaybes={capabilities.canReviewCandidates}
+                onKeepMaybes={handleKeepMaybes}
+                onToggleMaybes={handleToggleMaybes}
+                onStartOver={handleStartOver}
+                onClose={closeMenu}
+                style={styles.menuDown}
+              />
+            ) : null}
+          </View>
         </>
       )}
 
@@ -3236,6 +3438,7 @@ function roleLabel(role: SprayHoldRole, t: Translate): string {
 /** The one line at the top of the photo, most urgent first: the active tool, an error, read-only, the empty wall. */
 function bannerFor({
   tool,
+  picking,
   addShape,
   refineMode,
   refineNotice,
@@ -3248,6 +3451,8 @@ function bannerFor({
   t,
 }: {
   tool: SprayEditorTool;
+  /** Trace, Refine or Join is waiting for its hold. */
+  picking: boolean;
   addShape: SprayAddShape;
   refineMode: RefineMode;
   /** Refine's line about the last stroke that is not an error. */
@@ -3266,6 +3471,11 @@ function bannerFor({
     if (errorText) return { message: errorText, actionLabel: done, onAction: onDone, tone: 'error' };
     const message = addShape === 'corners' ? t('sprayEditor.banner.addCorners') : t('sprayEditor.banner.addDraw');
     return { message, actionLabel: done, onAction: onDone };
+  }
+  if (picking && (tool === 'trace' || tool === 'refine' || tool === 'join')) {
+    const cancel = t('sprayEditor.banner.cancel');
+    if (errorText) return { message: errorText, actionLabel: cancel, onAction: onCancel, tone: 'error' };
+    return { message: pickBannerMessage(tool, t), actionLabel: cancel, onAction: onCancel };
   }
   if (tool === 'trace') {
     const message = pencilOnly ? t('sprayEditor.banner.tracePencil') : t('sprayEditor.banner.trace');
@@ -3286,6 +3496,13 @@ function bannerFor({
   if (!viewerCanEdit) return { message: t('sprayEditor.readOnly') };
   if (notice) return notice;
   return null;
+}
+
+/** What a mode's pick step asks for. Literal keys, so the catalogue checks can see them. */
+function pickBannerMessage(tool: 'trace' | 'refine' | 'join', t: Translate): string {
+  if (tool === 'trace') return t('sprayEditor.banner.tracePick');
+  if (tool === 'refine') return t('sprayEditor.banner.refinePick');
+  return t('sprayEditor.banner.joinPick');
 }
 
 function hintText(id: SprayHintId, t: Translate): string {
@@ -3351,16 +3568,24 @@ const styles = StyleSheet.create({
   centeredText: {
     textAlign: 'center',
   },
-  // Below the top-left reset-zoom control and the top-right "?", so none of
-  // them overlap.
+  // Below the top row (the count capsule and the reset-zoom control), so none
+  // of them overlap.
   bannerSlot: {
     position: 'absolute',
     top: spacing[2] * 2 + glassSize.capsule,
   },
-  helpSlot: {
+  // The phone's top row: the count capsule at the left, stopping short of the
+  // reset-zoom control's corner at the right.
+  topStrip: {
     position: 'absolute',
     top: spacing[2],
-    right: spacing[2],
+    left: spacing[2],
+    right: spacing[2] * 2 + glassSize.capsule,
+    alignItems: 'flex-start',
+    gap: spacing[2],
+  },
+  menuDown: {
+    alignSelf: 'flex-start',
   },
   dock: {
     position: 'absolute',

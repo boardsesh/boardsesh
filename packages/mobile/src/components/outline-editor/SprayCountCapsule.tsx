@@ -56,9 +56,10 @@ type SprayCountCapsuleProps = {
 /**
  * The only place the wall's numbers are said: a glass capsule with the hold
  * count (and the maybes under it while any show), which turns into a checkmark
- * once the holds are saved. Shared by the phone's bottom bar, where it is also
- * the button for the wall-wide menu, and the iPad's primary cluster, where that
- * menu lives on the tool rail instead.
+ * once the holds are saved. Shared by the phone editor's top-left corner, where
+ * it is also the button for the wall-wide menu (which opens downward from it),
+ * and the iPad's primary cluster, where that menu lives on the tool rail
+ * instead.
  */
 export const SprayCountCapsule = React.memo(function SprayCountCapsule({
   counts,
@@ -208,9 +209,9 @@ export const SprayEditorMenu = React.memo(function SprayEditorMenu({
 });
 
 const styles = StyleSheet.create({
+  // Sized to its numbers. The iPad's primary cluster stretches it.
   capsule: {
-    flex: 1,
-    minWidth: 0,
+    minWidth: glassSize.capsule,
     height: glassSize.capsule,
     borderRadius: glassSize.capsule / 2,
     overflow: 'hidden',

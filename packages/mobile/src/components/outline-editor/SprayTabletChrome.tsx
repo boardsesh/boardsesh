@@ -75,7 +75,13 @@ export function SprayTabletChrome({
 
   const cluster = (
     <View style={styles.clusterRow}>
-      <SprayCountCapsule counts={counts} showMaybes={showMaybes} celebrating={celebrating} locked={locked} />
+      <SprayCountCapsule
+        counts={counts}
+        showMaybes={showMaybes}
+        celebrating={celebrating}
+        locked={locked}
+        style={styles.clusterCapsule}
+      />
       <Button
         title={primaryLabel}
         variant="filled"
@@ -154,6 +160,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
+  },
+  clusterCapsule: {
+    flex: 1,
+    minWidth: 0,
   },
   sideCluster: {
     position: 'absolute',

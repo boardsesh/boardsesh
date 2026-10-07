@@ -217,6 +217,10 @@ export const iconMap = {
   'hand.tap': { ios: 'hand.tap', android: 'gesture-tap' },
   'pencil.tip': { ios: 'pencil.tip', android: 'draw-pen' },
   'fit.screen': { ios: 'arrow.down.right.and.arrow.up.left', android: 'arrow-collapse' },
+  // The spray editor's Trace and Refine modes: redraw a hold's outline in one
+  // loop, or brush it bigger and smaller.
+  lasso: { ios: 'lasso', android: 'lasso' },
+  paintbrush: { ios: 'paintbrush.pointed', android: 'brush' },
   // The two ways to outline a missed hold, on the Apple Pencil squeeze palette.
   'shape.draw': { ios: 'scribble', android: 'gesture' },
   'shape.corners': { ios: 'pentagon', android: 'vector-polygon' },

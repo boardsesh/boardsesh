@@ -33,10 +33,6 @@ type SprayHoldChipBarProps = {
   canGrow: boolean;
   onShrink: () => void;
   onGrow: () => void;
-  onTrace: () => void;
-  /** Touch up the outline with an add / erase brush (`'refine'` tool). */
-  onRefine: () => void;
-  onJoin: () => void;
   /** An ON ring or a maybe goes OFF, as a ghost. */
   onSwitchOff: () => void;
   /** A ghost goes back ON ("Switch on"), or a maybe is kept ("Keep"). */
@@ -51,19 +47,22 @@ const DISABLED_OPACITY = 0.4;
 const STEP_ICON_SIZE = 18;
 
 /**
- * What a picked hold can have done to it, one chip set per role:
+ * What a picked hold can have done to it in one tap, one chip set per role:
  *
- * - ON: `[−] [+] Trace Refine Join Switch off`
+ * - ON: `[−] [+] Switch off`
  * - OFF ghost: `Switch on  Delete`
  * - maybe: `Keep  Switch off`
  *
- * Only on screen while a hold is selected, so the resting editor shows the wall
- * and three controls, and the fixing tools appear exactly when there is a hold
- * to fix. Delete only ever appears for a ghost, so taking a hold off the photo
- * is always two deliberate steps — switch it off, then delete it — and the
- * second one raises an undo toast.
+ * Only on screen while a hold is selected. Trace, Refine and Join are not here:
+ * they are modes, in the switcher on the bottom bar, and start on the picked
+ * hold when one is picked. What is left is one row in every language, so the
+ * chips never wrap over the wall.
  *
- * Every chip is the same glass capsule as the bottom bar's count, at the 44pt
+ * Delete only ever appears for a ghost, so taking a hold off the photo is
+ * always two deliberate steps — switch it off, then delete it — and the second
+ * one raises an undo toast.
+ *
+ * Every chip is the same glass capsule as the count capsule, at the 44pt
  * touch floor, so the row reads as buttons over a bright photo, a dark one or
  * the black letterbox under a landscape wall alike. − and + are 44pt icon
  * chips. Delete is the same weight as its neighbours with a red label: it is
@@ -78,9 +77,6 @@ export const SprayHoldChipBar = React.memo(function SprayHoldChipBar({
   canGrow,
   onShrink,
   onGrow,
-  onTrace,
-  onRefine,
-  onJoin,
   onSwitchOff,
   onSwitchOn,
   onDelete,
@@ -105,9 +101,6 @@ export const SprayHoldChipBar = React.memo(function SprayHoldChipBar({
             disabled={!canGrow}
             onPress={onGrow}
           />
-          <SprayHoldChip label={t('sprayEditor.chips.trace')} color={systemColors.label} onPress={onTrace} />
-          <SprayHoldChip label={t('sprayEditor.chips.refine')} color={systemColors.label} onPress={onRefine} />
-          <SprayHoldChip label={t('sprayEditor.chips.join')} color={systemColors.label} onPress={onJoin} />
           <SprayHoldChip label={t('sprayEditor.chips.switchOff')} color={systemColors.label} onPress={onSwitchOff} />
         </>
       ) : role === 'off' ? (
@@ -343,11 +336,11 @@ const SprayHoldChip = React.memo(function SprayHoldChip({
 });
 
 const styles = StyleSheet.create({
-  // Tight enough that the five English chips fit one row on a 375pt phone;
-  // longer labels or bigger type wrap to a second row rather than truncate.
+  // One row: at most two icon chips and one label, which fits a 375pt phone in
+  // every language at the chrome's largest type.
   row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     justifyContent: 'center',
     gap: spacing[1],
   },
@@ -370,9 +363,8 @@ const styles = StyleSheet.create({
   chipLabel: {
     fontWeight: '600',
   },
-  // One row whatever the width: the slider takes what the dot and Done leave.
+  // The slider takes what the dot and Done leave.
   refineRow: {
-    flexWrap: 'nowrap',
     alignItems: 'center',
     alignSelf: 'stretch',
   },
