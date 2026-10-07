@@ -257,7 +257,10 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
         await setStatus('skipped');
         return;
       }
-      if (['MessageTooBig', 'InvalidCredentials'].includes(ticket.details?.error ?? '')) {
+      // Only a payload problem is permanent. InvalidCredentials (APNs/FCM keys
+      // revoked or mid-rotation) falls through to the retry below, so the
+      // delivery lands once operators upload working credentials.
+      if (ticket.details?.error === 'MessageTooBig') {
         await setStatus('skipped');
         return;
       }
