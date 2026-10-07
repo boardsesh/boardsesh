@@ -29,6 +29,12 @@ const detectionSchema = readFileSync(
   new URL('../../../db/drizzle/0234_shallow_the_phantom.sql', import.meta.url),
   'utf8',
 );
+// SW-20 (#5471) training-data columns and the review table. After the detection
+// schema: `spray_wall_holds.origin_detection_id` references it.
+const sprayTrainingSchema = readFileSync(
+  new URL('../../../db/drizzle/0259_spray_training_data.sql', import.meta.url),
+  'utf8',
+);
 const placesSchema = readFileSync(new URL('../../../db/drizzle/0235_places_search.sql', import.meta.url), 'utf8');
 const climbNeighborsSchema = readFileSync(
   new URL('../../../db/drizzle/0236_climb_neighbors.sql', import.meta.url),
@@ -1969,6 +1975,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS spray_wall_detections;
   DROP TYPE IF EXISTS spray_detection_status;
   ${detectionSchema}
+  DROP TABLE IF EXISTS spray_wall_training_reviews;
+  DROP TYPE IF EXISTS spray_hold_auto_review;
+  DROP TYPE IF EXISTS spray_training_review_status;
+  DROP TYPE IF EXISTS spray_training_reject_reason;
+  ${sprayTrainingSchema}
   CREATE EXTENSION IF NOT EXISTS pg_trgm;
   DROP TABLE IF EXISTS places, place_imports;
   ${placesSchema}

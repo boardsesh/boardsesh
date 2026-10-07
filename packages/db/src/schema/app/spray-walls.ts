@@ -14,6 +14,7 @@ import {
   uniqueIndex,
   primaryKey,
   foreignKey,
+  check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -82,6 +83,24 @@ export const sprayWallVersionStatusEnum = pgEnum('spray_wall_version_status', ['
 
 /** Where a hold's geometry came from: a detector run, or a human's hand. */
 export const sprayHoldSourceEnum = pgEnum('spray_hold_source', ['manual', 'auto']);
+
+/**
+ * What the climber did with a detector suggestion before it was saved as an
+ * `auto` hold (SW-20, #5471). The training export reads it as the label's
+ * provenance, and the correction ratio in `docs/spray-recognition-rollout.md`
+ * comes straight from it.
+ *
+ *  - `accepted`: kept as found, via accept-defaults or keep-maybes.
+ *  - `confirmed`: a maybe the climber switched on by itself.
+ *  - `edited`: its geometry changed after the detector drew it. The server sets
+ *    this on its own whenever an auto hold's centre, radius or outline moves, so
+ *    an app that predates the field still records the correction.
+ *
+ * Ranked `accepted` < `confirmed` < `edited`, and a hold never moves down the
+ * ladder: a confirmed maybe that is later nudged is `edited`, and saving it again
+ * untouched keeps it `edited`.
+ */
+export const sprayHoldAutoReviewEnum = pgEnum('spray_hold_auto_review', ['accepted', 'confirmed', 'edited']);
 
 export const sprayDetectionStatusEnum = pgEnum('spray_detection_status', [
   'pending',
@@ -258,6 +277,21 @@ export const sprayWalls = pgTable(
      * Defaults to 'setter', keeping existing behavior for all existing walls.
      */
     climbEditPolicy: sprayClimbEditPolicyEnum('climb_edit_policy').default('setter').notNull(),
+    /**
+     * When the owner let this wall's photo and holds be used to train hold
+     * finding, or NULL when they have not (SW-20, #5471).
+     *
+     * On by default for every wall, private and link-only included: a new wall
+     * gets `now()`. Switching it off nulls it; switching it back on stamps a fresh
+     * `now()`, so the column always says when the CURRENT consent was given. Only
+     * the owner can change it (`updateSprayWall`, the same gate as visibility).
+     *
+     * Read by `trainingEligibleVersions()` in
+     * `packages/backend/src/graphql/resolvers/board/spray-training.ts`: a wall with
+     * NULL here never reaches the admin queue or an export, whatever review rows
+     * it has, and the next export run retires any stored export that held it.
+     */
+    trainingConsentAt: timestamp('training_consent_at', { withTimezone: true }).defaultNow(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     /**
@@ -580,11 +614,49 @@ export const sprayWallHolds = pgTable(
     source: sprayHoldSourceEnum('source').default('manual').notNull(),
     /** Detector confidence 0-1 for `source = 'auto'`; NULL when a human drew it. */
     confidence: real('confidence'),
+    /**
+     * What the climber did with the suggestion (see `sprayHoldAutoReviewEnum`).
+     * NULL for a manual hold, and for an auto hold saved by an app that predates
+     * the field and never touched it.
+     */
+    autoReview: sprayHoldAutoReviewEnum('auto_review'),
+    /**
+     * The detection run this hold's suggestion came from, with
+     * `origin_candidate_index` naming the candidate in its `result.candidates`.
+     * Together they let the training export say which suggestions were kept and
+     * which were deleted, without a table of deletions: a candidate no alive hold
+     * points back at was dropped.
+     *
+     * Validated on write (same wall, run `done`, index in range); an invalid pair
+     * is stored as NULL rather than failing the save. `SET NULL` on delete because
+     * a hold must never depend on a detection row outliving it.
+     */
+    originDetectionId: text('origin_detection_id').references(() => sprayWallDetections.id, {
+      onDelete: 'set null',
+    }),
+    originCandidateIndex: integer('origin_candidate_index'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.wallId, table.holdId] }),
+    // The training read's "which holds came from this run?" Partial because
+    // every manual hold, and every hold saved before provenance, has none.
+    originDetectionIdx: index('spray_wall_holds_origin_detection_idx')
+      .on(table.originDetectionId)
+      .where(sql`${table.originDetectionId} IS NOT NULL`),
+    // Provenance is a fact about a detector suggestion; a hand-drawn hold has
+    // none. `origin_candidate_index` is left out on purpose: a detection delete
+    // nulls `origin_detection_id` alone, and that must not violate this.
+    //
+    // ⚠️ drizzle-kit 0.31 does not reliably diff object-form check(): a future
+    // `generate` may emit a spurious DROP CONSTRAINT for this. Strip it from the
+    // generated SQL and hand-patch the snapshot, as for
+    // `boardsesh_ticks_quality_range` (migration 0155).
+    provenanceIsAutoOnly: check(
+      'spray_wall_holds_provenance_auto_only',
+      sql`${table.source} = 'auto' OR (${table.autoReview} IS NULL AND ${table.originDetectionId} IS NULL)`,
+    ),
     // The alive-holds read: every render, every create-climb session and the
     // integrity recompute filter `wall_id = ? AND removed_version_id IS NULL`.
     aliveIdx: index('spray_wall_holds_alive_idx').on(table.wallId, table.removedVersionId),
@@ -593,6 +665,62 @@ export const sprayWallHolds = pgTable(
     movedFromIdx: index('spray_wall_holds_moved_from_idx')
       .on(table.movedFromHoldId)
       .where(sql`${table.movedFromHoldId} IS NOT NULL`),
+  }),
+);
+
+/** An admin's verdict on one version as training data (SW-20, #5471). */
+export const sprayTrainingReviewStatusEnum = pgEnum('spray_training_review_status', ['approved', 'rejected']);
+
+/**
+ * Why an admin kept a version out of the training set. A closed set, like
+ * `spray_wall_report_reason`; `notes` carries anything the list does not.
+ */
+export const sprayTrainingRejectReasonEnum = pgEnum('spray_training_reject_reason', [
+  'bad_holds',
+  'missing_holds',
+  'photo_quality',
+  'not_a_wall',
+  'people_or_personal_info',
+  'duplicate',
+  'other',
+]);
+
+/**
+ * The admin vetting record for one wall version as training data.
+ *
+ * Per VERSION, not per wall: a published version's hold set never changes
+ * (`aliveHolds`), so a verdict on it stays true, while a reset or a hold edit
+ * makes a new version that has to be looked at again. A version with no row is
+ * unreviewed; setting it back to unreviewed deletes the row.
+ *
+ * A row is necessary and never sufficient for export: the wall's consent and the
+ * rest of `trainingEligibleVersions()` are re-checked on every read, so an
+ * approval outlives a consent switch-off without ever acting on it.
+ */
+export const sprayWallTrainingReviews = pgTable(
+  'spray_wall_training_reviews',
+  {
+    versionId: bigint('version_id', { mode: 'number' })
+      .primaryKey()
+      .references(() => sprayWallVersions.id, { onDelete: 'cascade' }),
+    status: sprayTrainingReviewStatusEnum('status').notNull(),
+    rejectReason: sprayTrainingRejectReasonEnum('reject_reason'),
+    /** At most 500 characters, enforced by the resolver's Zod schema. */
+    notes: text('notes'),
+    reviewedBy: text('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    // The admin queue's tab read: one status, newest verdict first.
+    statusReviewedIdx: index('spray_wall_training_reviews_status_idx').on(table.status, table.reviewedAt.desc()),
+    // A rejection always says why, and an approval never carries a reason.
+    //
+    // ⚠️ drizzle-kit 0.31 does not reliably diff object-form check(): see the
+    // note on `spray_wall_holds_provenance_auto_only`.
+    rejectReasonCheck: check(
+      'spray_wall_training_reviews_reason_check',
+      sql`(${table.status} = 'rejected') = (${table.rejectReason} IS NOT NULL)`,
+    ),
   }),
 );
 
@@ -649,4 +777,8 @@ export type SprayClimbLineage = typeof sprayClimbLineage.$inferSelect;
 export type NewSprayClimbLineage = typeof sprayClimbLineage.$inferInsert;
 export type SprayWallReportReason = (typeof sprayWallReportReasonEnum.enumValues)[number];
 export type SprayWallReport = typeof sprayWallReports.$inferSelect;
+export type SprayHoldAutoReview = (typeof sprayHoldAutoReviewEnum.enumValues)[number];
+export type SprayTrainingReviewStatus = (typeof sprayTrainingReviewStatusEnum.enumValues)[number];
+export type SprayTrainingRejectReason = (typeof sprayTrainingRejectReasonEnum.enumValues)[number];
+export type SprayWallTrainingReview = typeof sprayWallTrainingReviews.$inferSelect;
 export type NewSprayWallReport = typeof sprayWallReports.$inferInsert;
