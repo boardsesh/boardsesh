@@ -312,3 +312,27 @@ export function getSoftGradeColorByFormat(
   }
   return getSoftVGradeColor(extractVGrade(difficulty), darkMode);
 }
+
+/**
+ * Is this a project: a published climb nobody has graded yet (#5971)?
+ *
+ * On a spray wall a climb publishes with no grade and its first ascent grades
+ * it, so "no grade" is a real state a climber sees, not a missing value. It
+ * reads the same on every board: a user-set Kilter climb nobody has sent is a
+ * project too.
+ *
+ * Takes the grade label the surface is ABOUT to show (after the Boardsesh grade
+ * and your own grade have had their say), so a climb you graded yourself, or one
+ * the Boardsesh model has a grade for, never reads as a project. A draft is never
+ * one: it carries its own chip.
+ */
+export function isProjectClimb({
+  gradeLabel,
+  isDraft,
+}: {
+  gradeLabel: string | null | undefined;
+  isDraft?: boolean | null;
+}): boolean {
+  if (isDraft === true) return false;
+  return (gradeLabel ?? '').trim() === '';
+}

@@ -193,6 +193,14 @@ describe('useClimbActions gating', () => {
     expect(own).not.toContain('report');
   });
 
+  // #5971: on a spray wall a grade proposal is how the setter changes their
+  // own climb's grade, so Report stays on their published climb there.
+  it("keeps Report on the viewer's own published spray climb, never on its draft", () => {
+    const published = { ...ownerClimb, is_draft: false } as unknown as Climb;
+    const own = ids({ climb: published, boardConfig: sprayBoard, isAuthenticated: true, currentUserId: 'user-1' });
+    expect(own).toContain('report');
+  });
+
   it("keeps Report on somebody else's published climb", () => {
     const theirs = { ...climb, userId: 'setter-2', is_draft: false } as unknown as Climb;
     const viewed = ids({ climb: theirs, boardConfig: kilterBoard, isAuthenticated: true, currentUserId: 'user-1' });
@@ -570,9 +578,7 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
         forkFrames: 'p1r12',
         forkName: 'Test Climb',
         forkDescription: '',
-        // The parent's grade rides along so a remix on a board that publishes
-        // with the setter's own grade (a spray wall) opens at it (#5443).
-        forkDifficulty: 'V4',
+        // No grade: a remix is graded by its own first ascent (#5971).
         // The parent, so the editor can draw the holds it lost.
         forkParentUuid: climb.uuid,
         boardName: 'kilter',

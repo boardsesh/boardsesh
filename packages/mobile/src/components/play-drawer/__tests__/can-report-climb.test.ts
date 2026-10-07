@@ -10,6 +10,17 @@ describe('canReportDisplayedClimb', () => {
   it('hides Report on your own published climb', () => {
     expect(canReportDisplayedClimb({ ...base, climb: { is_draft: false, userId: 'me' } })).toBe(false);
   });
+  it('offers Report on your own published spray climb: its grade changes through a proposal (#5971)', () => {
+    expect(canReportDisplayedClimb({ ...base, boardName: 'spray', climb: { is_draft: false, userId: 'me' } })).toBe(
+      true,
+    );
+    expect(canReportDisplayedClimb({ ...base, boardName: 'spray', climb: { is_draft: true, userId: 'me' } })).toBe(
+      false,
+    );
+    expect(canReportDisplayedClimb({ ...base, boardName: 'kilter', climb: { is_draft: false, userId: 'me' } })).toBe(
+      false,
+    );
+  });
   it('hides Report on a draft', () => {
     expect(canReportDisplayedClimb({ ...base, climb: { is_draft: true, userId: 'other' } })).toBe(false);
   });

@@ -94,6 +94,14 @@ export type QuickTickForm = {
   maximumClimbedAtDate: Date;
   grades: ReturnType<typeof useGrades>['data'];
   consensusDifficultyId: number | undefined;
+  /**
+   * The climber is logging the first ascent of a spray climb (#5971): nobody has
+   * sent it, and their grade becomes the climb's grade. The sheet says so, offers
+   * no default grade, and a flash or send needs one.
+   */
+  firstAscent: boolean;
+  /** True while a first-ascent flash or send is still missing its grade. */
+  saveBlockedByGrade: boolean;
   /** The picked difficulty id resolved back to its grade name, for the header's
    *  identity bar and for analytics. */
   resolvedGradeName: string | undefined;
@@ -275,15 +283,21 @@ export function useQuickTickForm({
   // Resolve the consensus grade *name* (e.g. "V5") to a numeric difficulty
   // id by matching against the loaded grades list. The id is what
   // GradeSingleSelectRail compares against each chip's `difficultyId`.
+  // The first ascent of a spray climb (#5971): nobody has sent it, so the
+  // climber's grade is the one the climb takes. Spray only, where the climbers'
+  // vote is the grade; `baseAscensionistCount` is the count the sheet opened with.
+  const firstAscent = boardName === 'spray' && baseAscensionistCount === 0;
   const consensusDifficultyId = useMemo(() => {
-    if (!consensusGradeName || !grades) return undefined;
+    // No outline on a first ascent: whatever grade the climb carries is not a
+    // consensus yet, and the climber's grade should be their own.
+    if (firstAscent || !consensusGradeName || !grades) return undefined;
     // Fall back to the id behind the name: a label from another source can
     // spell the same grade differently (MoonBoard's 16 was "6a/V3" before it
     // became "6a/V2").
     const consensusId = getDifficultyIdForGradeName(consensusGradeName);
     return grades.find((grade) => grade.name === consensusGradeName || grade.difficultyId === consensusId)
       ?.difficultyId;
-  }, [consensusGradeName, grades]);
+  }, [firstAscent, consensusGradeName, grades]);
 
   // Inverse of consensusDifficultyId: resolve the picked numeric difficulty
   // id back to its human-readable grade name (e.g. "V5") for analytics.
@@ -353,9 +367,14 @@ export function useQuickTickForm({
     setTickState((prev) => ({ ...prev, attemptCount: value }));
   }, []);
 
+  const saveBlockedByGrade = firstAscent && tickState.difficulty == null;
+
   const handleSaveWithStatus = useCallback(
     (status: TickStatus) => {
       if (saveTick.isPending) return;
+      // A first-ascent flash or send sets the climb's grade, so it needs one. An
+      // attempt sets nothing and goes through.
+      if (status !== 'attempt' && saveBlockedByGrade) return;
       setLastError(null);
 
       // Mirrors the server's flash-is-one-try rule; a no-op for every value the picker can show.
@@ -458,6 +477,7 @@ export function useQuickTickForm({
     },
     [
       saveTick,
+      saveBlockedByGrade,
       climbUuid,
       boardName,
       angle,
@@ -496,6 +516,8 @@ export function useQuickTickForm({
     maximumClimbedAtDate,
     grades,
     consensusDifficultyId,
+    firstAscent,
+    saveBlockedByGrade,
     resolvedGradeName,
     ascentType,
     saveLabel,

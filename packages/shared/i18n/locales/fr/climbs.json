@@ -132,6 +132,7 @@
     "title": "Grade Boardsesh",
     "moonboardBody": "Nous n'avons pas encore de données de cotation communautaires pour le MoonBoard. Enregistre tes croix Moon sur Boardsesh pour aider à la débloquer.",
     "woodsBody": "Nous n'avons pas encore de données de cotation communautaires pour le Woods Board. Enregistre tes croix sur le Woods pour aider à la débloquer.",
+    "sprayBody": "Sur une spray wall, la crew cote chaque bloc. La première ascension fixe la cotation, puis la cotation de chaque grimpeur la fait évoluer.",
     "loadError": "Impossible de charger le grade pour le moment.",
     "byAngle": "Sa difficulté selon l'angle",
     "summaryLocal": "local",
@@ -453,7 +454,8 @@
       "logAscentAria": "Enregistrer : {{status}}",
       "setTriesAria_one": "Mettre {{count}} essai",
       "setTriesAria_other": "Mettre {{count}} essais",
-      "moreTriesAria": "Un essai de plus"
+      "moreTriesAria": "Un essai de plus",
+      "firstAscent": "Première ascension. Ta cotation devient celle de ce bloc."
     },
     "filter": {
       "climbType": {
@@ -652,7 +654,8 @@
       "toast": {
         "reported": "Signalé. {{current}} votes sur {{required}} pour le masquer",
         "reportedGrade": "Changement de cotation proposé. La crew vote dessus",
-        "alreadyReported": "Tu as déjà signalé ce bloc"
+        "alreadyReported": "Tu as déjà signalé ce bloc",
+        "gradeChanged": "Cotation changée"
       }
     },
     "hidden": {
@@ -890,6 +893,9 @@
       "downloadLine": "Télécharge {{name}} pour voir quelles prises servent",
       "download": "Télécharger",
       "unavailable": "La carte de chaleur n'est pas disponible pour le moment."
+    },
+    "project": {
+      "chip": "Projet"
     }
   },
   "frontDoor": {

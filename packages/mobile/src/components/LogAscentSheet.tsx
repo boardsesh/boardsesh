@@ -130,9 +130,12 @@ export function LogAscentSheet({
     [t],
   );
 
-  const subtitle = consensusGradeName
-    ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle })
-    : t('mobile.tick.angleMeta', { angle });
+  // "Consensus" only once somebody has sent it (#5960 C7): before that, the
+  // grade a climb carries is its setter's, not a crowd's.
+  const subtitle =
+    consensusGradeName && baseAscensionistCount > 0
+      ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle })
+      : t('mobile.tick.angleMeta', { angle });
 
   return (
     <ModalSheet
@@ -170,6 +173,7 @@ export function LogAscentSheet({
             title: form.saveLabel,
             onPress: form.onSave,
             loading: form.isPending,
+            disabled: form.saveBlockedByGrade,
             icon: SAVE_ICON,
             accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns[form.ascentType] }),
           }}

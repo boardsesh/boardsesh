@@ -338,7 +338,11 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Icon name="info" size={20} color={iosSystemColors.systemGray} />
           <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.flexText}>
             {/* Literal keys per board — the i18n linter rejects a computed t() key. */}
-            {view.boardName === 'woods' ? t('boardseshGrade.woodsBody') : t('boardseshGrade.moonboardBody')}
+            {view.boardName === 'woods'
+              ? t('boardseshGrade.woodsBody')
+              : view.boardName === 'spray'
+                ? t('boardseshGrade.sprayBody')
+                : t('boardseshGrade.moonboardBody')}
           </Text>
         </View>
       </View>

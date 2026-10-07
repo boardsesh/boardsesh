@@ -165,7 +165,7 @@ vi.mock('../tick', async () => {
       secondary,
       error,
     }: {
-      primary: { title: string; onPress: () => void; accessibilityLabel?: string };
+      primary: { title: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean };
       secondary?: { title: string; onPress: () => void; accessibilityLabel?: string };
       error?: string | null;
     }) =>
@@ -177,6 +177,7 @@ vi.mock('../tick', async () => {
           'data-testid': 'simulate-save-success',
           'data-label': primary.accessibilityLabel,
           'data-title': primary.title,
+          'data-disabled': String(primary.disabled ?? false),
           onClick: primary.onPress,
         }),
         secondary
@@ -199,6 +200,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
   useQuickTickForm: (input: {
     climbUuid: string;
     baseAscensionistCount: number;
+    boardName: string;
     onDismiss: () => void;
     savedRef?: { current: boolean };
   }) => {
@@ -210,6 +212,8 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
       maximumClimbedAtDate: new Date('2025-06-01T08:00:00.000Z'),
       grades: [],
       consensusDifficultyId: undefined,
+      firstAscent: input.boardName === 'spray' && input.baseAscensionistCount === 0,
+      saveBlockedByGrade: input.boardName === 'spray' && input.baseAscensionistCount === 0,
       resolvedGradeName: undefined,
       ascentType: 'send',
       saveLabel: 'playView.tickBar.sendSaveLabel',
@@ -392,6 +396,27 @@ describe('LogAscentSheet header', () => {
     const header = getByTestId('tick-header');
     expect(header.getAttribute('data-title')).toBe('mobile.tick.fallbackTitle');
     expect(header.getAttribute('data-subtitle')).toBe('mobile.tick.angleMeta');
+  });
+
+  it('says "consensus" only once somebody has sent it (#5960 C7)', () => {
+    const { getByTestId, unmount } = renderSheet({ consensusGradeName: 'V2', baseAscensionistCount: 0 });
+    expect(getByTestId('tick-header').getAttribute('data-subtitle')).toBe('mobile.tick.angleMeta');
+    unmount();
+
+    const sent = renderSheet({ consensusGradeName: 'V2', baseAscensionistCount: 1 });
+    expect(sent.getByTestId('tick-header').getAttribute('data-subtitle')).toBe('mobile.tick.consensusMeta');
+  });
+});
+
+describe('LogAscentSheet first ascent (#5971)', () => {
+  it('disables Send while a first-ascent send is missing its grade', () => {
+    const { getByTestId } = renderSheet({ boardName: 'spray', baseAscensionistCount: 0 });
+    expect(getByTestId('simulate-save-success').getAttribute('data-disabled')).toBe('true');
+  });
+
+  it('leaves Send enabled on an ordinary tick', () => {
+    const { getByTestId } = renderSheet({ boardName: 'kilter', baseAscensionistCount: 0 });
+    expect(getByTestId('simulate-save-success').getAttribute('data-disabled')).toBe('false');
   });
 });
 

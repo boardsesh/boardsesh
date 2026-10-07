@@ -78,6 +78,35 @@ describe('useReportClimb', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['climb'] });
   });
 
+  it('refreshes the climb lists when a grade came back approved (a wall owner, #5971)', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    requestMock.mockResolvedValue({
+      reportClimb: { status: 'created', proposal: { uuid: 'proposal-2', type: 'grade', status: 'approved' } },
+    });
+    const { result } = renderHook(() => useReportClimb(), { wrapper: Wrapper });
+
+    result.current.mutate({ input: hideInput });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+  });
+
+  it('leaves the climb lists alone for a proposal still open to the vote', async () => {
+    const { queryClient, Wrapper } = makeWrapper();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+    requestMock.mockResolvedValue({
+      reportClimb: { status: 'created', proposal: { uuid: 'proposal-3', type: 'grade', status: 'open' } },
+    });
+    const { result } = renderHook(() => useReportClimb(), { wrapper: Wrapper });
+
+    result.current.mutate({ input: hideInput });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+  });
+
   it('leaves a rejection to the caller — nothing is invalidated', async () => {
     const { queryClient, Wrapper } = makeWrapper();
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries');

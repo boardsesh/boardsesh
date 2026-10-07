@@ -154,6 +154,9 @@ function Harness(props: QuickTickFormInput) {
     createElement('button', { 'data-testid': 'future-adjusted', onClick: form.onFutureAdjusted }),
     createElement('span', { 'data-testid': 'ascent-type' }, form.ascentType),
     createElement('span', { 'data-testid': 'last-error' }, form.lastError ?? ''),
+    createElement('span', { 'data-testid': 'first-ascent' }, String(form.firstAscent)),
+    createElement('span', { 'data-testid': 'save-blocked' }, String(form.saveBlockedByGrade)),
+    createElement('span', { 'data-testid': 'consensus-id' }, String(form.consensusDifficultyId ?? '')),
   );
 }
 
@@ -359,6 +362,54 @@ describe('useQuickTickForm grade value on Tick Logged', () => {
     fireEvent.click(getByTestId('save'));
 
     expect(track).toHaveBeenCalledWith('Tick Logged', expect.objectContaining({ grade: null, difficulty: null }));
+  });
+});
+
+describe('useQuickTickForm first ascent of a spray climb (#5971)', () => {
+  const FIRST_ASCENT = { boardName: 'spray', baseAscensionistCount: 0, consensusGradeName: 'V5' } as const;
+
+  it('needs a grade for a send, and saves once one is picked', () => {
+    boardState.current = null;
+    gradesState.current = [{ difficultyId: 5, name: 'V5' }];
+    const { getByTestId } = renderForm(FIRST_ASCENT);
+
+    expect(getByTestId('first-ascent').textContent).toBe('true');
+    expect(getByTestId('save-blocked').textContent).toBe('true');
+    fireEvent.click(getByTestId('save'));
+    expect(saveMock.mutate).not.toHaveBeenCalled();
+
+    fireEvent.click(getByTestId('grade-select'));
+    expect(getByTestId('save-blocked').textContent).toBe('false');
+    fireEvent.click(getByTestId('save'));
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ difficulty: 5 });
+  });
+
+  it('offers no default grade: the climb\u2019s grade is not outlined as a consensus', () => {
+    gradesState.current = [{ difficultyId: 5, name: 'V5' }];
+    const { getByTestId } = renderForm(FIRST_ASCENT);
+    expect(getByTestId('consensus-id').textContent).toBe('');
+  });
+
+  it('lets an attempt through without a grade', () => {
+    boardState.current = null;
+    const { getByTestId } = renderForm(FIRST_ASCENT);
+    fireEvent.click(getByTestId('attempt'));
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'attempt', difficulty: null });
+  });
+
+  it('is not a first ascent once somebody has sent it, nor on another board', () => {
+    boardState.current = null;
+    gradesState.current = [{ difficultyId: 5, name: 'V5' }];
+    for (const overrides of [
+      { boardName: 'spray', baseAscensionistCount: 1, consensusGradeName: 'V5' },
+      { boardName: 'kilter', baseAscensionistCount: 0, consensusGradeName: 'V5' },
+    ]) {
+      const { getByTestId, unmount } = renderForm(overrides);
+      expect(getByTestId('first-ascent').textContent).toBe('false');
+      expect(getByTestId('save-blocked').textContent).toBe('false');
+      expect(getByTestId('consensus-id').textContent).toBe('5');
+      unmount();
+    }
   });
 });
 

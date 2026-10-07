@@ -83,8 +83,8 @@ export function buildReportInput({
   };
 }
 
-/** Vote counts the "reported" toast reads off the returned proposal. */
-type ReportedProposal = Pick<Proposal, 'weightedUpvotes' | 'requiredUpvotes'>;
+/** What the toasts read off the returned proposal: its vote counts and status. */
+type ReportedProposal = Pick<Proposal, 'weightedUpvotes' | 'requiredUpvotes'> & { status?: string | null };
 
 export type ReportToastCopy = {
   /** Catalog key in the `climbs` namespace. */
@@ -109,6 +109,11 @@ export function reportToastCopy(
     // A status this build does not know (the backend may grow one) still landed
     // the report, so it reads like a fresh one rather than dropping the toast.
     default:
+      // A spray wall owner's grade proposal applies at once (#5971): the server
+      // hands it back already approved, so the toast says the grade changed.
+      if (kind === 'grade' && proposal.status === 'approved') {
+        return { textI18nKey: 'mobile.report.toast.gradeChanged', params: {} };
+      }
       if (kind === 'grade') return { textI18nKey: 'mobile.report.toast.reportedGrade', params: {} };
       return {
         textI18nKey: 'mobile.report.toast.reported',

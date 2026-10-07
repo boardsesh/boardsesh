@@ -62,35 +62,28 @@ vi.mock('../../ProjectChip', () => ({ ProjectChip: () => createElement('i', { 'd
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
 const baseProps = {
-  name: 'Hueco Madness',
-  difficulty: 'V6',
+  name: 'Garage project',
   qualityAverage: '0',
   ascensionistCount: 0,
   setterUsername: '',
 };
 
-const marker = (container: HTMLElement) => container.querySelector('[data-variant="caption2"]');
+const chip = (container: HTMLElement) => container.querySelector('[data-chip="project"]');
 
-describe('PlayDrawerHeader set-angle marker', () => {
-  // #5532: the play drawer showed the set-angle grade and sends with nothing
-  // saying they came from a different angle than the one on the wall.
-  it('shows "set at N°" under the grade when statsAngle differs from the browsed angle', () => {
-    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, statsAngle: 45, angle: 40 }));
-    expect(marker(container)?.textContent).toBe('mobile.climbRow.setAngleMarker:45');
+describe('PlayDrawerHeader project chip (#5971)', () => {
+  it('shows Project in the grade slot for a published climb with no grade', () => {
+    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, difficulty: '' }));
+    expect(chip(container)).not.toBeNull();
   });
 
-  it('shows nothing when statsAngle matches the browsed angle', () => {
-    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, statsAngle: 40, angle: 40 }));
-    expect(marker(container)).toBeNull();
+  it('shows the grade, not the chip, once the climb has one', () => {
+    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, difficulty: 'V4' }));
+    expect(chip(container)).toBeNull();
+    expect(container.textContent).toContain('V4');
   });
 
-  it('shows nothing when statsAngle is null (no cross-angle stats)', () => {
-    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, statsAngle: null, angle: 40 }));
-    expect(marker(container)).toBeNull();
-  });
-
-  it('shows nothing when statsAngle is omitted entirely', () => {
-    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, angle: 40 }));
-    expect(marker(container)).toBeNull();
+  it('leaves an ungraded draft to its Draft chip', () => {
+    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, difficulty: '', isDraft: true }));
+    expect(chip(container)).toBeNull();
   });
 });

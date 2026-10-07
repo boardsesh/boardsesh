@@ -273,6 +273,14 @@ describe('BoardseshGradeSection personal grade', () => {
     expect(text).toContain('boardseshGrade.woodsBody');
   });
 
+  it('explains on a spray wall that the crew grades it, not the MoonBoard line (#5971)', () => {
+    myGradeOverride.current = { status: 'none' };
+    const { container } = renderSection('spray');
+    const text = container.textContent ?? '';
+    expect(text).toContain('boardseshGrade.sprayBody');
+    expect(text).not.toContain('boardseshGrade.moonboardBody');
+  });
+
   it('says nothing at all while the logbook is still unknown', () => {
     // Never invite someone to grade a climb they may already have graded.
     const { container } = renderSection('woods');
