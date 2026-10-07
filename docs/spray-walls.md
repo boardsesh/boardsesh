@@ -3500,8 +3500,8 @@ What an edit does now:
   stats restart and no recompute marker any more.
 - **The rest is as before:** the `board_climb_holds` rewrite, the neighbours row
   delete, the fingerprint refresh, `populateSprayClimbColumns`,
-  `recomputeMissingHoldCountForClimb`, the web revalidation and the stats row
-  upsert on a grade edit. Every spray edit still checks that the climb's holds are
+  `recomputeMissingHoldCountForClimb` and the web revalidation. A grade on an
+  edit is ignored (#5971). Every spray edit still checks that the climb's holds are
   alive on the published version, and an edit never moves `published_at`. The
   setter stays the setter.
 
@@ -3579,7 +3579,9 @@ and start/finish still cap at two each. What is left is five rules a wall answer
 differently, and they live as pure functions in
 `packages/mobile/src/components/create-climb/spray-climb-rules.ts`:
 
-1. **A setter grade is required to publish, optional on a draft.**
+1. **A setter grade is required to publish, optional on a draft.** (Until the
+   mobile half of #5971 lands: the server no longer requires it, see rule 2 of
+   "Climb writes on a wall" above.)
    `SetterGradeRow.tsx` puts the tick sheets' single-select grade rail in the
    create form, over the board's own scale (`useGrades`, which falls back to the
    bundled taxonomy offline — a wall copies the Tension scale, so the ids line up
