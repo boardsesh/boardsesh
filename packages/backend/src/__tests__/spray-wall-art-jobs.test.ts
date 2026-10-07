@@ -27,6 +27,8 @@ const objects = vi.hoisted(() => new Map<string, StoredObject>());
 const uploadHook = vi.hoisted(() => ({ beforeUpload: null as null | ((key: string) => Promise<void>) }));
 const deletedKeys = vi.hoisted(() => [] as string[]);
 const storage = vi.hoisted(() => ({ configured: true }));
+/** Runs when the job reads the photo; a test uses it to abort the attempt mid-render. */
+const readHook = vi.hoisted(() => ({ onRead: null as null | (() => void) }));
 
 vi.mock('../services/job-queue', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../services/job-queue')>()),
@@ -47,6 +49,7 @@ vi.mock('../storage/s3', () => ({
   },
   getS3ObjectMetadataStrict: async () => null,
   getFromS3Strict: async (_bucket: string, key: string) => {
+    readHook.onRead?.();
     const object = objects.get(key);
     return object
       ? { stream: Readable.from([object.body]), contentType: object.contentType, contentLength: object.body.length }
@@ -89,6 +92,7 @@ const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { ensureBackgroundJobSchema } = await import('../workers/families/__tests__/provider-sync-fixtures');
 const { executeBackgroundJob, handlerForRole } = await import('../workers/jobs');
 const { assertWorkerPrivileges } = await import('../services/job-queue-client');
+const { resetSprayWallArtReadThrottle } = await import('../services/spray-wall-art');
 type BackgroundJobPayload = import('../workers/jobs').BackgroundJobPayload;
 
 const OWNER = 'art-owner';
@@ -188,6 +192,8 @@ beforeEach(async () => {
   deletedKeys.length = 0;
   uploadHook.beforeUpload = null;
   storage.configured = true;
+  readHook.onRead = null;
+  resetSprayWallArtReadThrottle();
   await ownerBoss.deleteAllJobs(queue);
   await db.delete(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'spray-wall-art'));
   await db.execute(sql`
@@ -488,6 +494,93 @@ describe('spray-wall-art', () => {
       'PENDING',
     );
     expect(await runs()).toHaveLength(1);
+  });
+
+  it('ends an attempt aborted mid-render as failed, not pending', async () => {
+    const { versionId } = await publishWall(STRAIGHT);
+    const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    const shutdown = new AbortController();
+    // A worker shutdown while the photo downloads: the next stage check throws,
+    // and every ordinary fenced write is refused. (A lease timeout is not
+    // covered: the fence itself refuses that write, and the row waits for the
+    // 1 h deadline to re-queue it.)
+    readHook.onRead = () => shutdown.abort();
+    await executeBackgroundJob(
+      workerDatabase,
+      workerBoss,
+      job,
+      handlerForRole('maintenance-delivery'),
+      shutdown.signal,
+    );
+    expect(await artOf(versionId)).toMatchObject({ status: 'failed', error: 'SPRAY_ART_ABORTED' });
+  }, 30000);
+
+  it('deletes the images of an older recipe once the new ones are ready', async () => {
+    const { wall, versionId } = await publishWall(STRAIGHT);
+    const oldStem = `spray-walls/${wall.uuid}/art/${versionId}-r0`;
+    await db
+      .update(sprayWallVersions)
+      .set({
+        art: {
+          recipe: ART_RECIPE - 1,
+          status: 'ready',
+          width: 2048,
+          height: 1489,
+          cropKey: `${oldStem}-crop.jpg`,
+          cutoutKey: `${oldStem}-cutout.webp`,
+          quality: { stretch: 1, verdict: 'good' },
+          error: null,
+        },
+      })
+      .where(eq(sprayWallVersions.id, versionId));
+    const [job] = await workerBoss.fetch<BackgroundJobPayload>(queue, { includeMetadata: true, batchSize: 1 });
+    await executeBackgroundJob(
+      workerDatabase,
+      workerBoss,
+      job,
+      handlerForRole('maintenance-delivery'),
+      new AbortController().signal,
+    );
+
+    expect(await artOf(versionId)).toMatchObject({ status: 'ready', recipe: ART_RECIPE });
+    expect(deletedKeys.filter((key) => key.startsWith(oldStem)).sort()).toEqual(
+      [
+        `${oldStem}-crop.jpg`,
+        `${oldStem}-crop.jpg@280.jpg`,
+        `${oldStem}-cutout.webp`,
+        `${oldStem}-cutout.webp@280.webp`,
+      ].sort(),
+    );
+    // The new recipe's images stay.
+    const newStem = `spray-walls/${wall.uuid}/art/${versionId}-r${ART_RECIPE}`;
+    expect(deletedKeys.filter((key) => key.startsWith(newStem))).toEqual([]);
+    expect(objects.has(`${newStem}-crop.jpg`)).toBe(true);
+  }, 60000);
+
+  it('throttles read-path re-queues per version, and opens nothing while the family is off', async () => {
+    const { wall, versionId } = await publishWall(STRAIGHT);
+    await chooseWallCrop(wall.uuid);
+    const staleFailure = artRow('failed', new Date(0).toISOString());
+    const read = async () =>
+      ((await sprayWallQueries.sprayWallArt({}, { uuid: wall.uuid }, ctx)) as { status: string }).status;
+
+    await db.update(sprayWallVersions).set({ art: staleFailure }).where(eq(sprayWallVersions.id, versionId));
+    expect(await read()).toBe('PENDING');
+    expect(await runs()).toHaveLength(1);
+
+    // Within the window: the same stale row is NOT re-queued again.
+    await ownerBoss.deleteAllJobs(queue);
+    await db.delete(backgroundJobRuns).where(eq(backgroundJobRuns.family, 'spray-wall-art'));
+    await db.update(sprayWallVersions).set({ art: staleFailure }).where(eq(sprayWallVersions.id, versionId));
+    expect(await read()).toBe('FAILED');
+    expect(await runs()).toHaveLength(0);
+
+    // Family off: nothing is queued and the row is not touched.
+    resetSprayWallArtReadThrottle();
+    vi.stubEnv('BATCH_FAMILIES_DISABLED', 'spray-wall-art');
+    expect(await read()).toBe('FAILED');
+    expect(await runs()).toHaveLength(0);
+    expect(await artOf(versionId)).toEqual(staleFailure);
   });
 });
 

@@ -13,7 +13,7 @@ import {
   type ArtMaskRing,
 } from '@boardsesh/spray-wall-geometry';
 import { deleteFromS3, getFromS3Strict, isS3Configured, uploadToS3 } from '../../storage/s3';
-import { streamToBuffer, writeImageVariants } from '../../lib/image-resize';
+import { resizedVariantKey, streamToBuffer, writeImageVariants } from '../../lib/image-resize';
 import {
   SPRAY_WALL_ART_CACHE_CONTROL,
   SPRAY_WALL_ART_CROP_CONTENT_TYPE,
@@ -80,9 +80,56 @@ export function holdMaskSvg(rings: readonly ArtMaskRing[], width: number, height
   );
 }
 
+/** The four objects one art row names: both images and their thumbnails. */
+function artObjectKeys(cropKey: string, cutoutKey: string): string[] {
+  return [
+    cropKey,
+    resizedVariantKey(cropKey, SPRAY_WALL_ART_THUMBNAIL_SIZE),
+    cutoutKey,
+    sprayWallArtCutoutThumbKey(cutoutKey),
+  ];
+}
+
+/**
+ * Best-effort delete of this version's art from older recipes, once the
+ * running recipe's is ready. A recipe bump never overwrites an object (the
+ * recipe is in the key), so without this every bump would leave the old images
+ * in the bucket until the wall is deleted.
+ *
+ * Both the keys the replaced row named (if it was from another recipe) and
+ * the keys every older recipe would have used: a re-queue writes `pending`
+ * over an old `ready` row, so by now the row may no longer name them.
+ */
+async function deleteOlderRecipeArt(
+  wallUuid: string,
+  versionId: number,
+  prior: SprayWallVersionArt | null,
+): Promise<void> {
+  const keys = new Set<string>();
+  if (prior && prior.recipe !== ART_RECIPE && prior.cropKey && prior.cutoutKey) {
+    for (const key of artObjectKeys(prior.cropKey, prior.cutoutKey)) keys.add(key);
+  }
+  for (let recipe = 1; recipe < ART_RECIPE; recipe++) {
+    const old = sprayWallArtKeys(wallUuid, versionId, recipe);
+    for (const key of artObjectKeys(old.cropKey, old.cutoutKey)) keys.add(key);
+  }
+  for (const key of keys) {
+    await deleteFromS3('private', key).catch((error: unknown) =>
+      logger.warn('[spray-wall-art] could not delete older-recipe art', { key, ...boundedErrorFields(error) }),
+    );
+  }
+}
+
 async function writeArtFailure(context: BackgroundJobContext, versionId: number, code: string): Promise<void> {
+  // After an abort `transaction` refuses every write, which left the row
+  // `pending` until the read path re-queued it an hour later. The after-abort
+  // variant keeps the attempt fence and drops only the abort check, which
+  // rescues a shutdown or a lost attempt. A lease timeout is still refused by
+  // the fence itself, so that row stays `pending` until the 1 h deadline
+  // re-queues it; with the blur capped, a timeout is now unlikely.
+  const fenced = context.transactionAfterAbort ?? context.transaction;
   try {
-    await context.transaction(async (transaction) => {
+    await fenced(async (transaction) => {
       const [current] = await transaction
         .select({ art: sprayWallVersions.art })
         .from(sprayWallVersions)
@@ -154,6 +201,9 @@ async function render(context: BackgroundJobContext, request: Payload): Promise<
   const object = await getFromS3Strict('private', row.photoKey);
   if (!object) throw new BackgroundJobError('SPRAY_ART_PHOTO_MISSING', { retryable: false });
   const photoBytes = await streamToBuffer(object.stream);
+  // sharp cannot be interrupted mid-operation, so the lease is checked between
+  // stages instead: an aborted attempt stops at the next one.
+  context.signal.throwIfAborted();
 
   let photo: { data: Buffer; info: sharp.OutputInfo };
   try {
@@ -191,6 +241,7 @@ async function render(context: BackgroundJobContext, request: Payload): Promise<
     size.scale,
   );
   const raw = { raw: { width: size.width, height: size.height, channels } } as const;
+  context.signal.throwIfAborted();
 
   const holds = await aliveHolds(context.database, row.wallId, row.versionNumber);
   const rings = holdMaskRings(holds, size.scale);
@@ -205,11 +256,14 @@ async function render(context: BackgroundJobContext, request: Payload): Promise<
     .raw()
     .toBuffer();
 
+  context.signal.throwIfAborted();
   const crop = await sharp(warped, raw).jpeg({ quality: CROP_JPEG_QUALITY, mozjpeg: true }).toBuffer();
+  context.signal.throwIfAborted();
   const cutout = await sharp(warped, raw)
     .joinChannel(mask, { raw: { width: size.width, height: size.height, channels: 1 } })
     .webp({ quality: CUTOUT_WEBP_QUALITY, alphaQuality: 100 })
     .toBuffer();
+  context.signal.throwIfAborted();
   const cutoutThumb = await sharp(cutout)
     .resize(SPRAY_WALL_ART_THUMBNAIL_SIZE, SPRAY_WALL_ART_THUMBNAIL_SIZE, { fit: 'cover', withoutEnlargement: true })
     .webp({ quality: 80, alphaQuality: 100 })
@@ -243,16 +297,23 @@ async function render(context: BackgroundJobContext, request: Payload): Promise<
     quality: { stretch: quality.stretch, verdict: quality.verdict },
     error: null,
   };
-  const stillLive = await context.transaction(async (transaction) => {
+  const outcome = await context.transaction(async (transaction) => {
     const [wall] = await transaction
       .select({ id: sprayWalls.id })
       .from(sprayWalls)
       .where(and(eq(sprayWalls.id, row.wallId), isNull(sprayWalls.deletedAt)))
       .limit(1);
-    if (!wall) return false;
+    if (!wall) return { stillLive: false, prior: null };
+    const [before] = await transaction
+      .select({ art: sprayWallVersions.art })
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, row.versionId))
+      .limit(1);
     await transaction.update(sprayWallVersions).set({ art: ready }).where(eq(sprayWallVersions.id, row.versionId));
-    return true;
+    return { stillLive: true, prior: before?.art ?? null };
   });
+  const stillLive = outcome.stillLive;
+  if (stillLive) await deleteOlderRecipeArt(row.boardUuid, row.versionId, outcome.prior);
   if (!stillLive) {
     // Deleted while this rendered. The retention purge may already have swept
     // the prefix, and it never sweeps a wall twice, so take back what this job
@@ -298,7 +359,12 @@ export const sprayWallArtFamily: BackgroundJobFamilyModule<Payload> = {
       if (!isS3Configured('private')) throw new BackgroundJobError('SPRAY_ART_STORAGE_UNAVAILABLE');
       await render(context, request);
     } catch (error) {
-      const code = error instanceof BackgroundJobError ? error.code : 'SPRAY_ART_RENDER_FAILED';
+      const code =
+        error instanceof BackgroundJobError
+          ? error.code
+          : context.signal.aborted
+            ? 'SPRAY_ART_ABORTED'
+            : 'SPRAY_ART_RENDER_FAILED';
       logger.warn('[spray-wall-art] render failed', {
         runId: context.runId,
         versionId: request.versionId,
