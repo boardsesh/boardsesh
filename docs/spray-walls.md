@@ -1071,7 +1071,8 @@ The reference form alone is not enough there. It passes a spray tick whose
 `board_climbs` row is missing, for every viewer, and a climb row does go missing:
 deleting a wall is a soft delete that keeps its climbs, but `deleteDraftClimb`
 and account deletion (which removes the deleted user's drafts) hard-delete the
-climb and leave its ticks. With no climb there is no wall to check, so
+climb and leave its ticks. `deleteClimb` hard-deletes too, but only a climb with
+no ticks (below, "Deleting one climb"). With no climb there is no wall to check, so
 `climbLogConditions` adds a second condition that fails closed: a spray tick is
 returned only when its climb row still exists. Other board types keep the lenient
 behaviour, because an Aurora tick can arrive before its climb. Any new per-climb
@@ -2674,7 +2675,7 @@ is archived. Its climbs stay, but nothing new can be set on it."
 
 | Refused | Still allowed |
 | --- | --- |
-| `saveClimb`, every `updateClimb` (including publishing a draft) | `saveTick` (the offline drainer would dead-letter a refusal) |
+| `saveClimb`, every `updateClimb` (including publishing a draft), `deleteClimb` | `saveTick` (the offline drainer would dead-letter a refusal) |
 | `createSprayWallVersion`, and a photo upload to `/api/spray-wall-photos` (409, before and after the bytes land) | `deleteDraftClimb` |
 | `upsertSprayWallHolds`, `removeSprayWallHolds` | `discardSprayWallVersion` |
 | `publishSprayWallVersion`, `commitSprayWallVersion` | `updateSprayWall`, `setSprayWallRenderSettings`, `deleteSprayWall` |
@@ -3397,6 +3398,54 @@ its queue, current climb and playlist source. The solo snapshot is removed
 before the picker finishes, so relaunching cannot restore the deleted wall's
 climb. Removing another board leaves the active queue alone. The confirmation
 names the wall's photos and climbs, and a successful delete shows a toast.
+
+### Deleting one climb (`deleteClimb`, #5960)
+
+A setter can delete their own spray climb, published or not, until somebody has
+logged it. Any tick blocks it, the setter's own included, so no logbook entry is
+ever left pointing at nothing. The resolver is
+`packages/backend/src/graphql/resolvers/climbs/delete-climb.ts`.
+
+| Case | Answer |
+| --- | --- |
+| no such climb, or not the caller's | `CLIMB_NOT_FOUND`, the same words for both, so a uuid on a wall the caller cannot see stays unconfirmed |
+| a tick exists, from anybody | `CLIMB_HAS_TICKS` |
+| any board but spray | `CLIMB_DELETE_NOT_ALLOWED` |
+| the wall is archived | `SPRAY_WALL_ARCHIVED` |
+
+It is a hard delete, so every reader audited above for a hard-deleted climb
+already handles it. `deleteClimbReferenceRows` (`climbs/climb-cleanup.ts`)
+removes, in the same transaction:
+
+- other climbers' favourites and playlist entries. They do not block the delete.
+  Both tables have user-scoped tombstone triggers, so each climber's phone drops
+  its copy on the next pull;
+- comments on the climb and on its proposals (replies included), votes on the
+  climb and on those comments, and the vote tallies;
+- proposals (their votes cascade), community and classic status, and any
+  climb-scoped community setting;
+- feed rows and notifications naming the climb, its proposals or its comments;
+- popularity, embeddings, similar-climb rows (as the climb and as a neighbour),
+  grades, send stats, climb events, pending recomputes and ratings.
+
+`deleteClimbDependentRows` takes the stats and beta links. Holds, neighbours,
+aliases, revisions and lineage (as the child) cascade from the climb row.
+
+The climb's tombstone stays unscoped, as `log_deletion_board_climbs` writes it.
+Everybody who could open the wall could read the climb, and gym members or
+public-wall viewers may have it on their phone. A tombstone scoped to the
+setter would leave them a climb they could tick and then lose. The leak #6150
+describes is about drafts, which nobody else ever saw.
+
+**The race with a tick.** Both sides lock the climb row. The delete takes the
+wall lock, then `SELECT … FOR UPDATE` on the climb, then counts ticks. `saveTick`
+takes `SELECT … FOR KEY SHARE` on a spray climb inside its insert transaction.
+The two locks conflict. When the tick locks first, the delete waits for it, and
+its count (a fresh READ COMMITTED statement) sees the tick: `CLIMB_HAS_TICKS`.
+When the delete locks first, the tick waits and then finds no row:
+`CLIMB_NOT_FOUND`, which the offline drainer dead-letters on the first attempt.
+An offline tick drained after the delete gets the same answer.
+`packages/backend/src/__tests__/spray-climb-delete.test.ts` drives both orders.
 
 ### Turning a wall private has to RETRACT, not just stop
 

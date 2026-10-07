@@ -1130,6 +1130,26 @@ export const tickMutations = {
     // we detect that, return the original row, and skip every side effect below.
     const [tick] = await db.transaction(
       async (tx) => {
+        // A spray climb can be hard-deleted by its setter while nobody has
+        // logged it (`deleteClimb`, #5960). The visibility check above ran
+        // outside this transaction, so it cannot stop a delete committing
+        // between it and the insert. `FOR KEY SHARE` here conflicts with the
+        // delete's `FOR UPDATE`: if the delete holds the row, this waits and
+        // then finds no row (CLIMB_NOT_FOUND, dead-lettered by the drainer); if
+        // this holds it first, the delete waits and its tick count sees this
+        // tick. Inside the transaction so the lock lasts until the insert commits.
+        if (validatedInput.boardType === 'spray') {
+          const [lockedClimb] = await tx
+            .select({ uuid: dbSchema.boardClimbs.uuid })
+            .from(dbSchema.boardClimbs)
+            .where(and(eq(dbSchema.boardClimbs.uuid, climbUuid), eq(dbSchema.boardClimbs.boardType, 'spray')))
+            .limit(1)
+            .for('key share');
+          if (!lockedClimb) {
+            throw new GraphQLError('Climb not found', { extensions: { code: 'CLIMB_NOT_FOUND' } });
+          }
+        }
+
         // Re-lock and canonicalise the association immediately before INSERT.
         // Board resolution above intentionally stays outside this transaction so
         // its network/catalog work does not lengthen the row-lock hold time.

@@ -4012,6 +4012,15 @@ export type Mutation = {
   deleteAuroraCredential: Scalars['Boolean']['output'];
   /** Soft-delete a board. */
   deleteBoard: Scalars['Boolean']['output'];
+  /**
+   * Delete one of the current user's spray wall climbs, published or not, while
+   * nobody (the setter included) has logged it. Refused with CLIMB_HAS_TICKS once
+   * a tick exists, CLIMB_NOT_FOUND for a climb that is missing or not the
+   * caller's, CLIMB_DELETE_NOT_ALLOWED off spray, and SPRAY_WALL_ARCHIVED on an
+   * archived wall. Removes the climb's comments, proposals, votes, feed rows and
+   * notifications, and other climbers' favourites and playlist entries.
+   */
+  deleteClimb: Scalars['Boolean']['output'];
   /** Delete a comment (soft-delete if it has replies). */
   deleteComment: Scalars['Boolean']['output'];
   deleteController: Scalars['Boolean']['output'];
@@ -4688,6 +4697,12 @@ export type MutationDeleteAuroraCredentialArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteBoardArgs = {
   boardUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteClimbArgs = {
+  boardType: Scalars['String']['input'];
+  uuid: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -12341,6 +12356,13 @@ export type DeleteDraftClimbMutationVariables = Exact<{
 
 export type DeleteDraftClimbMutation = { __typename?: 'Mutation'; deleteDraftClimb: boolean };
 
+export type DeleteClimbMutationVariables = Exact<{
+  uuid: Scalars['ID']['input'];
+  boardType: Scalars['String']['input'];
+}>;
+
+export type DeleteClimbMutation = { __typename?: 'Mutation'; deleteClimb: boolean };
+
 export type GetNotificationsQueryVariables = Exact<{
   unreadOnly?: InputMaybe<Scalars['Boolean']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -18631,6 +18653,49 @@ export const DeleteDraftClimbDocument = {
     },
   ],
 } as unknown as DocumentNode<DeleteDraftClimbMutation, DeleteDraftClimbMutationVariables>;
+export const DeleteClimbDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteClimb' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteClimb' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'uuid' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'uuid' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'boardType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'boardType' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteClimbMutation, DeleteClimbMutationVariables>;
 export const GetNotificationsDocument = {
   kind: 'Document',
   definitions: [

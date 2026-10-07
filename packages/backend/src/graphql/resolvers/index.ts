@@ -16,6 +16,7 @@ import { userMutations } from './users/mutations';
 import { userDataExportQueries, userDataExportMutations } from './users/data-export';
 import { climbQueries } from './climbs/queries';
 import { climbMutations } from './climbs/mutations';
+import { deleteClimbMutations } from './climbs/delete-climb';
 import { climbFieldResolvers } from './climbs/field-resolvers';
 import { favoriteQueries } from './favorites/queries';
 import { favoriteClimbsQuery } from './favorites/favorite-climbs-query';
@@ -154,6 +155,7 @@ export const resolvers = {
     ...queueMutations,
     ...tickMutations,
     ...climbMutations,
+    ...deleteClimbMutations,
     ...userMutations,
     ...userDataExportMutations,
     ...favoriteMutations,
