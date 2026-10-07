@@ -51,8 +51,11 @@ export type ZoomViewport = {
  * in the viewport and `[a, b]` the visible band, the zoomed photo's leading
  * edge sits at `L = o + r/2 + t − S/2`. That edge is kept inside
  * `[min(a, b − S), max(a, b − S)]`: a photo bigger than the band may move until
- * either edge reaches the band's edge, and one smaller than the band may move
- * anywhere inside it. Not zoomed in (`s ≤ 1`), there is no pan at all.
+ * either edge reaches the band's edge. The result is also capped at the box
+ * clamp `±(S − r)/2`, so one smaller than the band stays over its own spot and
+ * the range shrinks smoothly to 0 as `s → 1`. For a photo that sits inside its
+ * band at 1×, the band range of a photo bigger than the band already lies inside
+ * that cap. Not zoomed in (`s ≤ 1`), there is no pan at all.
  *
  * Written around `overflow = r·(s − 1)` (which is `S − r`) so that with no
  * viewport (`o = 0`, `a = 0`, `b = r`) the bounds come out bit for bit as the
@@ -74,8 +77,16 @@ export function clampAxisTranslation(
   const overflow = renderExtent * (scale - 1);
   // Where the leading edge sits when the trailing edge is on the band's end.
   const lastEdge = bandEnd - renderExtent - overflow;
-  const lowest = Math.min(bandStart, lastEdge) - offset + overflow / 2;
-  const highest = Math.max(bandStart, lastEdge) - offset + overflow / 2;
+  const bandLowest = Math.min(bandStart, lastEdge) - offset + overflow / 2;
+  const bandHighest = Math.max(bandStart, lastEdge) - offset + overflow / 2;
+  // Never more freedom than the photo's own box allows (`±overflow/2`). Just
+  // past 1× a photo smaller than the band would otherwise slide across the
+  // whole band, then snap back to centre the frame the pinch reaches 1×.
+  const lowest = Math.max(bandLowest, -overflow / 2);
+  const highest = Math.min(bandHighest, overflow / 2);
+  // A photo that starts outside its band can leave the two ranges disjoint;
+  // the band wins, so every edge stays reachable.
+  if (lowest > highest) return Math.max(bandLowest, Math.min(bandHighest, translation));
   return Math.max(lowest, Math.min(highest, translation));
 }
 

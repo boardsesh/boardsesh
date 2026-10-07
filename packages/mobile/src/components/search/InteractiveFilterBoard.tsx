@@ -258,6 +258,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   // viewport, where the board sits at an offset: they read the translate WITH
   // the offset folded in, so their `(p − c)·s + c + t` maths stays exact.
   // Without one the hook's own values go straight through, as they always have.
+  // A derived value updates one mapper pass after its inputs, so never write
+  // scale/translate and read these back in the same worklet.
   const viewportTranslateXSV = useDerivedValue(
     () => translateXSV.value + viewportOffsetXSV.value,
     [translateXSV, viewportOffsetXSV],

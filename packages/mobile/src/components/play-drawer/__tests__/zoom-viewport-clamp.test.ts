@@ -51,16 +51,33 @@ describe('clampAxisTranslation with a viewport', () => {
     expect(trailingEdge).toBeCloseTo(bandEnd, 9);
   });
 
-  it('keeps a photo smaller than the band anywhere inside it', () => {
-    // 1.1 × 300 = 330, narrower than the 390 band: it may slide but never leave.
+  it('keeps a photo smaller than the band over its own spot', () => {
+    // 1.1 × 300 = 330, narrower than the 390 band: it may only move as far as
+    // its own box allows (±overflow/2 = ±15), so it never wanders off its spot.
     const scale = 1.1;
-    const scaled = scale * renderExtent;
-    const furthestRight = clampAxisTranslation(1e6, scale, renderExtent, offset, bandStart, bandEnd);
-    const furthestLeft = clampAxisTranslation(-1e6, scale, renderExtent, offset, bandStart, bandEnd);
-    expect(leadingEdge(furthestRight, scale, renderExtent, offset) + scaled).toBeCloseTo(bandEnd, 9);
-    expect(leadingEdge(furthestLeft, scale, renderExtent, offset)).toBeCloseTo(bandStart, 9);
-    // A small pan inside that room is left alone.
+    const halfOverflow = (renderExtent * (scale - 1)) / 2;
+    expect(clampAxisTranslation(1e6, scale, renderExtent, offset, bandStart, bandEnd)).toBeCloseTo(halfOverflow, 9);
+    expect(clampAxisTranslation(-1e6, scale, renderExtent, offset, bandStart, bandEnd)).toBeCloseTo(-halfOverflow, 9);
     expect(clampAxisTranslation(5, scale, renderExtent, offset, bandStart, bandEnd)).toBe(5);
+  });
+
+  it('never jumps as a small photo zooms back through 1x', () => {
+    // A landscape wall on a phone: 292 tall in a 569 band, centred at 138.5.
+    // Pinch from 2x down to 1x while holding the photo pushed to either end:
+    // each 0.001 step of scale moves the clamped pan by well under a point.
+    const extent = 292;
+    const top = 138.5;
+    for (const held of [-1e6, 1e6]) {
+      let previous = clampAxisTranslation(held, 2, extent, top, 0, 569);
+      for (let step = 1999; step >= 1000; step -= 1) {
+        const scale = step / 1000;
+        const current = clampAxisTranslation(held, scale, extent, top, 0, 569);
+        expect(Math.abs(current - previous)).toBeLessThan(0.5);
+        expect(Math.abs(current)).toBeLessThanOrEqual((extent * (scale - 1)) / 2 + 1e-9);
+        previous = current;
+      }
+      expect(previous).toBe(0);
+    }
   });
 
   it('keeps the 1x position reachable just past 1x, so zooming out never jumps', () => {
