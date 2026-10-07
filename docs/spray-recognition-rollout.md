@@ -76,6 +76,20 @@ work reports **48.2%**; that is prior evidence, not a new measurement from this
 rollout. Reproduce on the pinned image/model before promotion. Do not substitute
 Python runtime scores: the int8 runtimes have previously differed.
 
+Gesture savings is 1 − (2 × misses + false positives) ÷ (2 × holds): placing a
+hold by hand counts 2 gestures and deleting a false positive counts 1. The 48.2%
+above follows from that run's precision 0.6909 and recall 0.6214 on the 964-hold
+spray `eval` split. `ml/holds/eval.py` writes it as `gesture_savings`, and
+`publish_model.py` records it in the manifest as `eval.gestureSavings`.
+
+A retrained model (SW-20, #5471) has to pass the gate on **two** held-out splits:
+the hand-labelled spray `eval` split and the `eval` split of the climbers' walls
+export. It ships only when gesture savings rises on both against the shipped
+model's score on the same split, and stays at 40% or more on both. The
+hand-labelled split is the unbiased one, because climbers' labels include the old
+model's suggestions that they kept unchanged. The steps are in `ml/holds/README.md`,
+"Retrain runbook".
+
 | Service check | Minimum evidence before promotion |
 | --- | --- |
 | Initial validation | At least 24 hours; a photographed, reset and climbed real wall; 20 reviewed walls across at least 5 users; uploads ≥95%; count-difference proxy ≤15%. |
@@ -87,6 +101,17 @@ contains both `candidateCount` and `holdCount`, so the count-difference proxy
 can be calculated on the same event. It is **not** edit count or F1; equal counts
 can hide corrections. Exclude older events without a candidate count, and do
 not join unrelated users' detection/review events to manufacture a denominator.
+
+The correction ratio no longer has to be estimated. Every saved hold now records
+where it came from (SW-20, #5471): `source` is `manual` for a hold placed by hand,
+and an `auto` hold carries `auto_review` = `accepted` (kept as suggested),
+`confirmed` (switched on individually) or `edited` (geometry changed). Suggestions
+the climber deleted are worked out from the detection's candidates. For the walls
+in a training export, `candidates.json` lists every candidate with its fate
+(kept, edited, deleted, not shown), so corrections per wall are counted exactly:
+edited + deleted + manual holds, over saved holds. Use that count for walls saved
+after provenance shipped; older walls have no `auto_review` and still need the
+proxy.
 
 Record each observation window, image digest, model hash, participant count,
 reviewed-wall count, uploads attempted/succeeded, candidate/saved counts and

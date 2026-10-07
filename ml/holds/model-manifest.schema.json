@@ -288,6 +288,16 @@
           "type": "string",
           "minLength": 1,
           "description": "ISO date the export was trained/produced."
+        },
+        "checkpointSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Optional - sha256 of the PyTorch checkpoint these weights were exported from (publish_model.py --checkpoint). The retrain runbook checks a fine-tune's starting checkpoint against it."
+        },
+        "userWallsExportId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional - the spray-training export (private bucket, spray-training/exports/<exportId>/) the run trained on, from publish_model.py's --user-walls-export. Absent for a model trained on public corpora only."
         }
       }
     },
@@ -310,11 +320,12 @@
         "weightedCorrectionsPerHold": {
           "type": "number",
           "minimum": 0,
-          "description": "eval.py's correction_rate_micro: (false positives + misses) / total holds on the spray-wall `eval` split."
+          "description": "eval.py's weighted_correction_rate_micro: (2 * misses + false positives) / total holds on the spray-wall `eval` split, so gestureSavings = 1 - weightedCorrectionsPerHold / 2. Manifests published before October 2026 carry the unweighted (misses + false positives) / holds here instead."
         },
         "gestureSavings": {
           "type": "number",
-          "description": "Estimated fraction of manual tap-to-place gestures the detector saves a user, relative to placing every hold by hand."
+          "maximum": 1,
+          "description": "eval.py's gesture_savings: 1 - (2 * misses + false positives) / (2 * holds) on the `eval` split at the shipped default threshold. The share of hand-placement gestures the detector saves, where placing a hold by hand costs 2 and deleting a false positive costs 1. Can go negative for a detector that mostly adds false positives. The release gate is 40% (docs/spray-recognition-rollout.md)."
         }
       }
     },

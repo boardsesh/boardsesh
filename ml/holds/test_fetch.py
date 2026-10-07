@@ -39,3 +39,26 @@ def test_a_missing_roboflow_sdk_names_the_install_command(
     message = str(raised.value)
     assert "pip install roboflow" in message
     assert "not installed" in message
+
+
+def test_the_user_walls_corpus_is_registered_as_private_and_usable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The licence passes the NC / unstated filter, and fetch.py never downloads it itself."""
+    import json
+
+    fetch = _load_fetch()
+    entry = json.loads(fetch.SOURCES_PATH.read_text())["sources"]["boardsesh-user-walls"]
+    assert entry["kind"] == "private"
+    assert entry["redistributable"] is False
+    assert fetch.licence_is_acceptable(entry["licence"]) == (True, entry["licence"])
+
+    def no_network(*args: object, **kwargs: object) -> None:
+        raise AssertionError("fetch.py tried to download a private corpus")
+
+    monkeypatch.setattr(fetch, "download", no_network)
+    monkeypatch.setattr(fetch, "fetch_git", no_network)
+    fetch.fetch_source("boardsesh-user-walls", entry)
+    out = capsys.readouterr().out
+    assert "private corpus" in out
+    assert "python data/user_walls.py fetch" in out

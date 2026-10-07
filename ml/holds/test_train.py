@@ -6,6 +6,7 @@ One test runs the real image tiler; none import torch or rfdetr or train a model
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -305,4 +306,48 @@ def test_capping_to_only_negative_images_cannot_reach_mask_model_construction(
 
     monkeypatch.setattr(train, "build_model", unexpected_model)
     with pytest.raises(SystemExit, match="mask training needs annotated holds"):
+        train.main()
+
+
+def test_init_weights_reach_the_model_and_the_summary(
+    monkeypatch: pytest.MonkeyPatch, holds_dir: Path, tmp_path: Path
+) -> None:
+    """A fine-tune starts from our checkpoint, not rfdetr's COCO weights, and says so."""
+    import common
+
+    monkeypatch.setattr(common, "HOLDS_DIR", tmp_path / "holds")
+    dataset = _mask_set(tmp_path / "segmented", VALID_POLYGON)
+    checkpoint = tmp_path / "shipped" / "checkpoint_best_ema.pth"
+    checkpoint.parent.mkdir()
+    checkpoint.write_bytes(b"stand-in weights")
+    monkeypatch.setattr(
+        train.sys, "argv",
+        ["train.py", "--config", "seg-nano-untiled-1024", "--dataset", str(dataset), "--init-weights", str(checkpoint)],
+    )
+    monkeypatch.setattr(train, "cap_threads", lambda _threads: None)
+    monkeypatch.setattr(train, "resolve_device", lambda _requested: ("cpu", "cpu"))
+    built: dict[str, object] = {}
+
+    class FakeModel:
+        def train(self, **kwargs: object) -> None:
+            built["train_kwargs"] = kwargs
+
+    def fake_build(*args: object, **kwargs: object) -> FakeModel:
+        built["kwargs"] = kwargs
+        return FakeModel()
+
+    monkeypatch.setattr(train, "build_model", fake_build)
+    assert train.main() == 0
+    assert built["kwargs"] == {"pretrain_weights": str(checkpoint)}
+    summary = json.loads((tmp_path / "holds" / ".data" / "runs" / "seg-nano-untiled-1024" / "train-summary.json").read_text())
+    assert summary["init_weights"] == str(checkpoint)
+    assert summary["init_weights_sha256"] == hashlib.sha256(b"stand-in weights").hexdigest()
+
+
+def test_init_weights_and_resume_are_exclusive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        train.sys, "argv",
+        ["train.py", "--config", "seg-nano-untiled-1024", "--init-weights", "a.pth", "--resume", "last"],
+    )
+    with pytest.raises(SystemExit):
         train.main()

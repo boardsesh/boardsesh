@@ -19,6 +19,8 @@ What it measures, per config:
     Both a micro rate (all corrections over all holds, which is what the reported
     tables quote) and a macro mean over photos are written out; they differ
     whenever photos carry very different hold counts.
+  * "gesture savings": the share of hand-placement gestures the detector saves,
+    1 - (2 * misses + false positives) / (2 * holds). See `gesture_savings`.
 
 Matching is class-agnostic: there is one class, `hold`.
 """
@@ -32,6 +34,7 @@ import sys
 import time
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 from PIL import Image
@@ -193,6 +196,42 @@ def mask_iou(a: np.ndarray, b: np.ndarray) -> float:
 # --------------------------------------------------------------------------- #
 
 
+def weighted_corrections(fp: int, fn: int) -> int:
+    """Gestures a user spends fixing one photo's detections by hand.
+
+    A miss costs 2 (the hold has to be placed from scratch) and a false positive
+    costs 1 (it has to be deleted). This is the "Weighted corr. (2·miss+FP)" row
+    in the README's full-run table.
+    """
+    return 2 * fn + fp
+
+
+def gesture_savings(fp: int, fn: int, holds: int) -> float | None:
+    """Share of hand-placement gestures the detector saves: 1 - (2·fn + fp) / (2·holds).
+
+    The baseline is placing every hold by hand, which costs 2 gestures a hold on
+    the same scale as `weighted_corrections`. 1.0 is a perfect detector, 0.0 one
+    that saves nothing, and a detector that buries the wall in false positives can
+    go negative.
+
+    This is the definition behind the 47.2% (Python onnxruntime) and 48.2%
+    (onnxruntime-node) figures the Node detector reported for `2026-09-18-seg` and
+    that docs/spray-recognition-rollout.md quotes against its 40% gate: those
+    runs' precision and recall reproduce both numbers to 0.1 point with it. The
+    unweighted 1 - (fp + fn) / holds would put the same runs at 32.7% (Python)
+    and 34.3% (Node), under the gate both were reported to clear.
+
+    None when the split has no labelled holds, matching eval.py's other rates.
+    """
+    if holds <= 0:
+        return None
+    return 1.0 - weighted_corrections(fp, fn) / (2 * holds)
+
+
+def _rounded(value: float | None) -> float | None:
+    return None if value is None else round(value, 4)
+
+
 def _portable_model_path(model_path: Path) -> str:
     """Record the model relative to ml/holds when it lives there, so a committed
     fixture never carries one machine's checkout layout."""
@@ -202,7 +241,17 @@ def _portable_model_path(model_path: Path) -> str:
         return model_path.name
 
 
-def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: Path, threads: int, limit: int | None):
+def evaluate(
+    config: DetectorConfig,
+    dataset_dir: Path,
+    split: str,
+    model_path: Path,
+    threads: int,
+    limit: int | None,
+    detect_photo: Callable[[Image.Image], tuple[np.ndarray, np.ndarray]] | None = None,
+):
+    """Score one split. `detect_photo` replaces the ONNX pipeline, for tests only:
+    it takes a photo and returns (xyxy boxes in photo pixels, scores)."""
     annotations_path = dataset_dir / split / "_annotations.coco.json"
     if not annotations_path.exists():
         raise SystemExit(f"no annotations at {annotations_path}")
@@ -212,7 +261,12 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
     for annotation in payload["annotations"]:
         by_image.setdefault(annotation["image_id"], []).append(annotation)
 
-    detector = OnnxDetector(model_path, config.resolution, threads)
+    if detect_photo is None:
+        detector = OnnxDetector(model_path, config.resolution, threads)
+
+        def detect_photo(photo: Image.Image) -> tuple[np.ndarray, np.ndarray]:
+            return detect(detector, photo, config)
+
     wants_masks = config.produces_masks
 
     totals = {"tp": 0, "fp": 0, "fn": 0}
@@ -227,7 +281,7 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
         photo = Image.open(image_path).convert("RGB")
 
         started = time.perf_counter()
-        boxes, scores = detect(detector, photo, config)
+        boxes, scores = detect_photo(photo)
         elapsed = time.perf_counter() - started
         latencies.append(elapsed)
 
@@ -278,6 +332,7 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
                 "fp": fp,
                 "fn": fn,
                 "correction_rate": round(corrections / len(ground_truth), 4) if ground_truth else None,
+                "gesture_savings": _rounded(gesture_savings(fp, fn, len(ground_truth))),
                 "seconds": round(elapsed, 3),
             }
         )
@@ -328,6 +383,13 @@ def evaluate(config: DetectorConfig, dataset_dir: Path, split: str, model_path: 
         "correction_rate_micro": round((totals["fp"] + totals["fn"]) / total_holds, 4) if total_holds else None,
         # Macro: the mean of the per-photo rates, which a photo with three holds can swing.
         "correction_rate_macro": round(float(np.mean(rates)), 4) if rates else None,
+        # A miss costs 2 gestures and a false positive 1 (the README's weighted row).
+        "weighted_correction_rate_micro": (
+            round(weighted_corrections(totals["fp"], totals["fn"]) / total_holds, 4) if total_holds else None
+        ),
+        # The release gate: 1 - (2·fn + fp) / (2·holds) over the whole split, at
+        # score_threshold below. publish_model.py reads it as `gestureSavings`.
+        "gesture_savings": _rounded(gesture_savings(totals["fp"], totals["fn"], total_holds)),
         "score_threshold": config.score_threshold,
         "threads": threads,
         "per_photo": per_photo,
