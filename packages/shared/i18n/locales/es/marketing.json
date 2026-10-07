@@ -1041,8 +1041,8 @@
     },
     "sprayPhotos": {
       "title": "Fotos de muros de spray",
-      "body1": "Cuando añades un muro de spray, guardamos su foto y las presas que marcas en un almacenamiento privado. Solo tú puedes abrir la foto. Alguien del equipo de Boardsesh puede revisar la foto y sus presas para comprobar que sirven para aprender.",
-      "body2": "Las usamos para entrenar el buscador de presas, la parte de la app que detecta las presas en la foto de un muro nuevo. Nunca las compartimos ni las publicamos. Eso incluye los muros privados.",
+      "body1": "Cuando añades un muro de spray, guardamos su foto y las presas que marcas. Quién puede ver la foto depende de la visibilidad del muro: privado, solo con enlace o público. Alguien del equipo de Boardsesh también puede revisar la foto y sus presas para comprobar que sirven para aprender.",
+      "body2": "Las usamos para entrenar el buscador de presas, la parte de la app que detecta las presas en la foto de un muro nuevo. Esto vale con cualquier visibilidad, también en los muros privados. La copia que usamos para entrenar se guarda en un almacenamiento privado y nunca se comparte ni se publica fuera de Boardsesh.",
       "body3": "Cada muro tiene un interruptor «Ayudar a entrenar la detección de presas». Viene activado. Puedes desactivarlo cuando quieras en los ajustes del muro.",
       "body4": "Si lo desactivas, eliminas el muro o borras tu cuenta, el muro sale de nuestros datos de entrenamiento en un plazo de 24 horas. Los modelos que ya entrenamos conservan lo que aprendieron, pero no guardan ninguna copia de tu foto."
     },

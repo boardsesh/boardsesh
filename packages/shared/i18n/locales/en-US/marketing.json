@@ -1041,8 +1041,8 @@
     },
     "sprayPhotos": {
       "title": "Spray wall photos",
-      "body1": "When you add a spray wall, we keep its photo and the holds you mark in private storage. Only you can open the photo. A Boardsesh team member may check the photo and its holds to make sure they are good to learn from.",
-      "body2": "We use them to train the hold finder, the part of the app that spots holds in a new wall photo. We never share or publish them. That includes private walls.",
+      "body1": "When you add a spray wall, we keep its photo and the holds you mark. Who can see the photo follows the wall's visibility setting: private, link-only or public. A Boardsesh team member may also check the photo and its holds to make sure they are good to learn from.",
+      "body2": "We use them to train the hold finder, the part of the app that spots holds in a new wall photo. That applies at every visibility, private walls included. The copy we use for training is kept in private storage and is never shared or published outside Boardsesh.",
       "body3": "Every wall has a Help train hold finding switch. It is on by default. Switch it off any time in the wall's settings.",
       "body4": "Switching it off, deleting the wall, or deleting your account takes the wall out of our training data within 24 hours. Models we already trained keep what they learned, but they hold no copy of your photo."
     },

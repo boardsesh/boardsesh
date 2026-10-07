@@ -34,6 +34,11 @@ import SprayTrainingReviewDialog, { type SprayTrainingDecision } from './spray-t
 const PAGE_SIZE = 25;
 /** Never refetch faster than this, so a clock-skewed expiry cannot loop. */
 const MIN_REFRESH_DELAY_MS = 5000;
+/** Photo links are re-read this long before the earliest one expires. */
+const REFRESH_LEAD_MS = 60_000;
+/** Backoff after a failed refresh: 15 s, doubling, capped at 5 min. */
+const REFRESH_RETRY_BASE_MS = 15_000;
+const REFRESH_RETRY_MAX_MS = 300_000;
 /** setTimeout fires at once for anything past 2^31 - 1 ms. */
 const MAX_TIMER_MS = 2_147_483_647;
 
@@ -62,6 +67,10 @@ export default function SprayTrainingPanel() {
   const [snackbar, setSnackbar] = useState('');
   // Drops a response that lands after the status tab changed.
   const requestCounter = useRef(0);
+  // Walls moved to another tab since the last full read. A refresh that was
+  // already in flight must not bring them back.
+  const decidedIds = useRef<Set<string>>(new Set());
+  const [refreshAttempt, setRefreshAttempt] = useState(0);
 
   const fetchPage = useCallback(
     async (offset: number, forStatus: SprayTrainingReviewStatus) => {
@@ -77,7 +86,11 @@ export default function SprayTrainingPanel() {
         );
         if (requestId !== requestCounter.current) return;
         const page = result.sprayTrainingQueue;
-        setItems((previous) => (offset === 0 ? page.items : [...previous, ...page.items]));
+        setItems((previous) => {
+          if (offset === 0) return page.items;
+          const known = new Set(previous.map((entry) => entry.versionId));
+          return [...previous, ...page.items.filter((entry) => !known.has(entry.versionId))];
+        });
         setHasMore(page.hasMore);
         setTotals(page.totals);
       } catch (err) {
@@ -93,6 +106,7 @@ export default function SprayTrainingPanel() {
 
   useEffect(() => {
     setItems([]);
+    decidedIds.current = new Set();
     void fetchPage(0, status);
   }, [fetchPage, status]);
 
@@ -107,12 +121,14 @@ export default function SprayTrainingPanel() {
 
   useEffect(() => {
     if (!token || earliestExpiry === null) return undefined;
-    const delay = Math.min(
-      MAX_TIMER_MS,
-      Math.max(MIN_REFRESH_DELAY_MS, msUntilExpiry(earliestExpiry, Date.now()) ?? 0),
-    );
+    const retryDelay = Math.min(REFRESH_RETRY_MAX_MS, REFRESH_RETRY_BASE_MS * 2 ** Math.max(0, refreshAttempt - 1));
+    const expiryDelay = (msUntilExpiry(earliestExpiry, Date.now()) ?? 0) - REFRESH_LEAD_MS;
+    const delay = Math.min(MAX_TIMER_MS, Math.max(MIN_REFRESH_DELAY_MS, refreshAttempt > 0 ? retryDelay : expiryDelay));
     const timer = setTimeout(async () => {
-      const requestId = ++requestCounter.current;
+      // Not bumped: a refresh must not cancel a load-more (nor leave its
+      // spinner stuck). Any fetchPage that starts meanwhile changes this and
+      // the stale refresh is dropped.
+      const startedAt = requestCounter.current;
       try {
         const client = createGraphQLHttpClient(token);
         const pages: SprayTrainingQueueItemData[] = [];
@@ -128,16 +144,25 @@ export default function SprayTrainingPanel() {
           latestHasMore = result.sprayTrainingQueue.hasMore;
           if (!result.sprayTrainingQueue.hasMore) break;
         }
-        if (requestId !== requestCounter.current) return;
-        setItems(pages);
+        if (startedAt !== requestCounter.current) return;
+        const seen = new Set<string>();
+        setItems(
+          pages.filter((entry) => {
+            if (decidedIds.current.has(entry.versionId) || seen.has(entry.versionId)) return false;
+            seen.add(entry.versionId);
+            return true;
+          }),
+        );
         setHasMore(latestHasMore);
         if (latestTotals) setTotals(latestTotals);
+        setRefreshAttempt(0);
       } catch (err) {
         console.error('[SprayTrainingPanel] Failed to refresh photo links:', err);
+        if (startedAt === requestCounter.current) setRefreshAttempt((attempt) => attempt + 1);
       }
     }, delay);
     return () => clearTimeout(timer);
-  }, [token, earliestExpiry, itemCount, status]);
+  }, [token, earliestExpiry, itemCount, status, refreshAttempt]);
 
   const selectedIndex = items.findIndex((item) => item.versionId === selectedId);
   const selectedItem = selectedIndex >= 0 ? items[selectedIndex] : null;
@@ -156,28 +181,37 @@ export default function SprayTrainingPanel() {
       setDeciding(true);
       try {
         const client = createGraphQLHttpClient(token);
-        await client.request<SetSprayTrainingReviewMutationResponse, SetSprayTrainingReviewMutationVariables>(
-          SET_SPRAY_TRAINING_REVIEW,
-          {
-            input: {
-              versionId: item.versionId,
-              status: decision.status,
-              reason: decision.reason ?? null,
-              notes: decision.notes ?? null,
-            },
+        const result = await client.request<
+          SetSprayTrainingReviewMutationResponse,
+          SetSprayTrainingReviewMutationVariables
+        >(SET_SPRAY_TRAINING_REVIEW, {
+          input: {
+            versionId: item.versionId,
+            status: decision.status,
+            reason: decision.reason ?? null,
+            notes: decision.notes ?? null,
           },
-        );
-        // The wall leaves this tab, so the next one takes its slot in the dialog.
-        const index = items.findIndex((entry) => entry.versionId === item.versionId);
-        const remaining = items.filter((entry) => entry.versionId !== item.versionId);
-        setItems(remaining);
-        setTotals((previous) => ({
-          ...previous,
-          [totalsKey(status)]: Math.max(0, previous[totalsKey(status)] - 1),
-          [totalsKey(decision.status)]: previous[totalsKey(decision.status)] + 1,
-        }));
-        const successor = remaining[Math.min(index, remaining.length - 1)];
-        setSelectedId(successor ? successor.versionId : null);
+        });
+        if (decision.status === status) {
+          // Same verdict, new reason or notes: the wall stays on this tab.
+          const { review } = result.setSprayTrainingReview;
+          setItems((previous) =>
+            previous.map((entry) => (entry.versionId === item.versionId ? { ...entry, review } : entry)),
+          );
+        } else {
+          // The wall leaves this tab, so the next one takes its slot in the dialog.
+          decidedIds.current.add(item.versionId);
+          const index = items.findIndex((entry) => entry.versionId === item.versionId);
+          const remaining = items.filter((entry) => entry.versionId !== item.versionId);
+          setItems((previous) => previous.filter((entry) => entry.versionId !== item.versionId));
+          setTotals((previous) => ({
+            ...previous,
+            [totalsKey(status)]: Math.max(0, previous[totalsKey(status)] - 1),
+            [totalsKey(decision.status)]: previous[totalsKey(decision.status)] + 1,
+          }));
+          const successor = remaining[Math.min(index, remaining.length - 1)];
+          setSelectedId(successor ? successor.versionId : null);
+        }
         if (decision.status === 'APPROVED') setSnackbar(t('sprayTraining.snackbar.approved'));
         else if (decision.status === 'REJECTED') setSnackbar(t('sprayTraining.snackbar.rejected'));
         else setSnackbar(t('sprayTraining.snackbar.reset'));
