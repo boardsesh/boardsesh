@@ -685,7 +685,21 @@
       "editEntry": "Modifier l'entrée du carnet",
       "report": "Signaler le bloc",
       "closeOverlay": "Fermer les actions de la voie",
-      "openQueue": "Ouvrir la file"
+      "openQueue": "Ouvrir la file",
+      "deleteClimb": {
+        "row": "Supprimer le bloc",
+        "title": "Supprimer ce bloc ?",
+        "message": "Il disparaît du spray wall pour tout le monde, avec ses commentaires. Impossible d'annuler.",
+        "confirm": "Supprimer",
+        "cancel": "Le garder",
+        "success": "Bloc supprimé.",
+        "hasTicks": "Quelqu'un a déjà fait la croix sur ce bloc, il reste donc sur le spray wall.",
+        "notFound": "Ce bloc n'existe plus.",
+        "notAllowed": "Seuls les blocs d'un spray wall peuvent être supprimés.",
+        "archived": "Ce spray wall est archivé, ses blocs restent tels quels.",
+        "offline": "Tu es hors ligne. Supprimer un bloc demande une connexion.",
+        "error": "Impossible de supprimer le bloc. Réessaie."
+      }
     },
     "create": {
       "brush": {

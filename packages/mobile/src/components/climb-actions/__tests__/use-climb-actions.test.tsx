@@ -23,6 +23,7 @@ const openers = vi.hoisted(() => ({
   toggleFavoriteMutate: vi.fn(),
   push: vi.fn(),
   shareClimb: vi.fn(async () => {}),
+  requestDelete: vi.fn(async (_climb: unknown, _boardName: string, _onDeleted?: () => void) => {}),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -74,6 +75,8 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 }));
 vi.mock('../../../hooks/use-share-climb', () => ({ useShareClimb: () => openers.shareClimb }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
+// The delete flow (confirm, mutation, toasts) has its own tests.
+vi.mock('../use-delete-climb-action', () => ({ useDeleteClimbAction: () => openers.requestDelete }));
 
 import { useClimbActions } from '../use-climb-actions';
 
@@ -265,6 +268,57 @@ describe('useClimbActions gating', () => {
     it("does not offer the wall's owner Edit on a climb somebody else set", () => {
       expect(asViewer(publishedHoursAgo(2), 'wall-owner')).not.toContain('edit');
       expect(asViewer(draftClimb, 'wall-owner')).not.toContain('edit');
+    });
+
+    // #5960: any age, since the server, not the clock, decides (no ticks yet).
+    it('offers the setter Delete, last, on their published climb at any age', () => {
+      for (const hours of [2, 30]) {
+        const actions = asViewer(publishedHoursAgo(hours), 'setter-1');
+        expect(actions[actions.length - 1]).toBe('delete');
+      }
+    });
+
+    it('offers Delete to nobody else, never on a draft, and never on an archived wall', () => {
+      expect(asViewer(publishedHoursAgo(2), 'wall-owner')).not.toContain('delete');
+      expect(asViewer(draftClimb, 'setter-1')).not.toContain('delete');
+      ctrl.wallArchived = true;
+      expect(asViewer(publishedHoursAgo(2), 'setter-1')).not.toContain('delete');
+    });
+
+    it('never offers Delete off a spray wall', () => {
+      expect(
+        ids({
+          climb: publishedHoursAgo(2),
+          boardConfig: kilterBoard,
+          isAuthenticated: true,
+          currentUserId: 'setter-1',
+        }),
+      ).not.toContain('delete');
+    });
+
+    it('delete.run closes the menu, then starts the delete; a success closes the player behind it', () => {
+      const onAfterAction = vi.fn();
+      const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+      const viewed = publishedHoursAgo(2);
+      const { result } = renderActions({
+        climb: viewed,
+        boardConfig: sprayBoard,
+        isAuthenticated: true,
+        currentUserId: 'setter-1',
+        onAfterAction,
+        dismissPlayerAndWait,
+      });
+
+      act(() => result.current.find((action) => action.id === 'delete')!.run());
+
+      expect(onAfterAction).toHaveBeenCalledTimes(1);
+      expect(openers.requestDelete).toHaveBeenCalledWith(viewed, 'spray', expect.any(Function));
+      expect(onAfterAction.mock.invocationCallOrder[0]).toBeLessThan(openers.requestDelete.mock.invocationCallOrder[0]);
+      expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+
+      const onDeleted = openers.requestDelete.mock.calls[0][2]!;
+      onDeleted();
+      expect(dismissPlayerAndWait).toHaveBeenCalledTimes(1);
     });
   });
 

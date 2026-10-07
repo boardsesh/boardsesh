@@ -20,6 +20,8 @@ import { CLIMB_SHARE_BASE_URL } from '../lib/env';
 import { track } from '../lib/analytics';
 import { useSprayWallIsArchived } from '../lib/spray/use-spray-wall-archive';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../providers/sheet-presentation-provider';
+import { canDeleteClimb } from './climb-actions/delete-climb-rules';
+import { useDeleteClimbAction } from './climb-actions/use-delete-climb-action';
 
 type ClimbActionsSheetProps = {
   visible: boolean;
@@ -55,6 +57,11 @@ type ClimbActionsSheetProps = {
   onShare?: () => void;
   /** Supplied only by the `/play` route; omitted by the persistent iPad pane. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
+  /**
+   * Runs after the setter deletes this climb from the "Delete climb" row (#5960).
+   * The play drawer closes itself here, since the climb it shows is gone.
+   */
+  onClimbDeleted?: () => void;
   onClose: () => void;
 };
 
@@ -87,6 +94,7 @@ function ClimbActionsSheet({
   onOpenQueue,
   onShare,
   dismissPlayerAndWait,
+  onClimbDeleted,
   onClose,
 }: ClimbActionsSheetProps) {
   const { t } = useTranslation('climbs');
@@ -222,6 +230,17 @@ function ClimbActionsSheet({
     return canEditClimb({ climb, boardType: boardName, currentUserId });
   }, [climb, currentUserId, boardName, wallArchived]);
 
+  // The setter's own published spray climb (#5960). The server decides whether
+  // anybody has logged it.
+  const canDelete = canDeleteClimb({ climb, boardName, currentUserId, wallArchived });
+  const requestDeleteClimb = useDeleteClimbAction();
+  const handleDelete = useCallback(() => {
+    if (!climb) return;
+    // Close this sheet first, so the confirm does not open over its dismiss.
+    onClose();
+    void requestDeleteClimb(climb, boardName, onClimbDeleted);
+  }, [climb, boardName, onClose, requestDeleteClimb, onClimbDeleted]);
+
   // Sized for the climb preview row plus the action list (a couple more rows show
   // for owners / Aurora-app climbs); the modal pans down to close.
   const snapPoints = useMemo(() => ['55%'], []);
@@ -336,7 +355,7 @@ function ClimbActionsSheet({
             title={t('mobile.climbActions.copyLink')}
             leading={<Icon name="copy" size={22} color={accentActionIconColor} />}
             onPress={handleCopyLink}
-            showSeparator={!!auroraAppUrl || !!onReportClimb}
+            showSeparator={!!auroraAppUrl || !!onReportClimb || canDelete}
           />
         )}
         {auroraAppUrl && (
@@ -344,7 +363,7 @@ function ClimbActionsSheet({
             title={t('mobile.climbActions.openInApp')}
             leading={<Icon name="open.external" size={22} color={accentActionIconColor} />}
             onPress={handleOpenInApp}
-            showSeparator={!!onReportClimb}
+            showSeparator={!!onReportClimb || canDelete}
           />
         )}
         {/* Last row, and last for a reason: the one action that acts AGAINST the
@@ -354,6 +373,14 @@ function ClimbActionsSheet({
             title={t('mobile.climbActions.report')}
             leading={<Icon name="flag" size={22} color={accentActionIconColor} />}
             onPress={handleReportClimb}
+            showSeparator={canDelete}
+          />
+        )}
+        {canDelete && (
+          <ListRow
+            title={t('mobile.climbActions.deleteClimb.row')}
+            leading={<Icon name="delete" size={22} color={accentActionIconColor} />}
+            onPress={handleDelete}
             showSeparator={false}
           />
         )}

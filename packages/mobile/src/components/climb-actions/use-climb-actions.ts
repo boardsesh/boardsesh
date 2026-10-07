@@ -30,6 +30,8 @@ import { useClimbModerationEnabled } from '../../providers/feature-flags-provide
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
 import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
+import { canDeleteClimb } from './delete-climb-rules';
+import { useDeleteClimbAction } from './use-delete-climb-action';
 
 export type ClimbActionId =
   | 'preview'
@@ -45,7 +47,8 @@ export type ClimbActionId =
   | 'fork'
   | 'share'
   | 'openInApp'
-  | 'report';
+  | 'report'
+  | 'delete';
 
 export type ClimbActionItem = {
   id: ClimbActionId;
@@ -187,6 +190,7 @@ export function useClimbActions({
   // useClimbModerationEnabled). Flipping it in PostHog takes reporting down
   // everywhere at once.
   const moderationEnabled = useClimbModerationEnabled();
+  const requestDeleteClimb = useDeleteClimbAction();
   // Native share sheet — the same action the play drawer uses.
   const shareClimb = useShareClimb({
     climb,
@@ -487,6 +491,27 @@ export function useClimbActions({
       });
     }
 
+    // The setter's own published spray climb (#5960). Below Report, which the
+    // setter never sees on their own climb, so it is the last row either way.
+    if (canDeleteClimb({ climb, boardName, currentUserId, wallArchived })) {
+      items.push({
+        id: 'delete',
+        title: t('mobile.climbActions.deleteClimb.row'),
+        icon: 'delete',
+        color: accentColor,
+        run: () => {
+          // Close the menu first: the confirm is a system dialog, and it must
+          // not open over an overlay that is on its way out.
+          after();
+          // Opened from `/play`, the climb on screen is the one being deleted, so
+          // the player closes behind it. Everywhere else the list refetches.
+          void requestDeleteClimb(climb, boardName, () => {
+            if (dismissPlayerAndWait) void dismissPlayerAndWait();
+          });
+        },
+      });
+    }
+
     return items;
   }, [
     climb,
@@ -521,5 +546,6 @@ export function useClimbActions({
     openReportClimb,
     activeBoardConfig,
     sessionId,
+    requestDeleteClimb,
   ]);
 }

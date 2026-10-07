@@ -685,7 +685,21 @@
       "editEntry": "Routenbuch-Eintrag bearbeiten",
       "report": "Boulder melden",
       "closeOverlay": "Boulder-Aktionen schließen",
-      "openQueue": "Warteschlange öffnen"
+      "openQueue": "Warteschlange öffnen",
+      "deleteClimb": {
+        "row": "Boulder löschen",
+        "title": "Diesen Boulder löschen?",
+        "message": "Er verschwindet für alle von der Spraywall, samt Kommentaren. Das lässt sich nicht rückgängig machen.",
+        "confirm": "Löschen",
+        "cancel": "Behalten",
+        "success": "Boulder gelöscht.",
+        "hasTicks": "Jemand hat diesen Boulder schon eingetragen, deshalb bleibt er an der Spraywall.",
+        "notFound": "Diesen Boulder gibt es nicht mehr.",
+        "notAllowed": "Löschen geht nur bei Bouldern an einer Spraywall.",
+        "archived": "Diese Spraywall ist archiviert, ihre Boulder bleiben, wie sie sind.",
+        "offline": "Du bist offline. Zum Löschen brauchst du eine Verbindung.",
+        "error": "Der Boulder konnte nicht gelöscht werden. Versuch es nochmal."
+      }
     },
     "create": {
       "brush": {

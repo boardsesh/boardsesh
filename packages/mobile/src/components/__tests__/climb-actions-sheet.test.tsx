@@ -21,6 +21,7 @@ const ctrl = vi.hoisted(() => ({
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn() }));
 const urlBuilder = vi.hoisted(() => ({ buildReadableClimbViewPath: vi.fn(() => '/readable/view/x') }));
+const deletion = vi.hoisted(() => ({ request: vi.fn(async () => {}) }));
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -72,6 +73,9 @@ vi.mock('../../lib/spray/use-spray-wall-archive', () => ({
   useSprayWallIsArchived: (boardName: string | null | undefined) => boardName === 'spray' && ctrl.wallArchived,
 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
+// The flow behind the row (confirm, mutation, toasts) has its own tests; here
+// only who is offered the row, and what it hands the flow.
+vi.mock('../climb-actions/use-delete-climb-action', () => ({ useDeleteClimbAction: () => deletion.request }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => {
@@ -135,6 +139,7 @@ beforeEach(() => {
   ctrl.variant = 'liquidGlass';
   ctrl.wallArchived = false;
   nav.push.mockClear();
+  deletion.request.mockClear();
 });
 
 describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
@@ -335,6 +340,54 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     expect(onReportClimb).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe('who is offered Delete climb (#5960)', () => {
+    const sprayProps = { ...baseProps, boardName: 'spray' as const, currentUserId: 'user-1' };
+    const rowsOf = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('[data-row]')).map((row) => row.getAttribute('data-row'));
+
+    it("offers it last on the setter's own published spray climb", () => {
+      const { container } = render(<ClimbActionsSheet visible={true} {...sprayProps} climb={publishedOwnerClimb} />);
+      const rows = rowsOf(container);
+      expect(rows[rows.length - 1]).toBe('mobile.climbActions.deleteClimb.row');
+    });
+
+    it.each([
+      ['somebody else', { ...sprayProps, climb: publishedOwnerClimb, currentUserId: 'user-2' }],
+      ['a signed-out viewer', { ...sprayProps, climb: publishedOwnerClimb, currentUserId: null }],
+      ['a draft, which keeps its own delete', { ...sprayProps, climb: ownerClimb }],
+      ['a climb on another board', { ...sprayProps, climb: publishedOwnerClimb, boardName: 'kilter' as const }],
+    ])('does not offer it to %s', (_label, props) => {
+      const { container } = render(<ClimbActionsSheet visible={true} {...props} />);
+      expect(rowsOf(container)).not.toContain('mobile.climbActions.deleteClimb.row');
+    });
+
+    it('does not offer it on an archived wall', () => {
+      ctrl.wallArchived = true;
+      const { container } = render(<ClimbActionsSheet visible={true} {...sprayProps} climb={publishedOwnerClimb} />);
+      expect(rowsOf(container)).not.toContain('mobile.climbActions.deleteClimb.row');
+    });
+
+    it('closes the sheet, then starts the delete with the host’s after-delete callback', () => {
+      const onClose = vi.fn();
+      const onClimbDeleted = vi.fn();
+      render(
+        <ClimbActionsSheet
+          visible={true}
+          {...sprayProps}
+          climb={publishedOwnerClimb}
+          onClose={onClose}
+          onClimbDeleted={onClimbDeleted}
+        />,
+      );
+
+      fireEvent.click(screen.getByText('mobile.climbActions.deleteClimb.row'));
+
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(deletion.request).toHaveBeenCalledWith(publishedOwnerClimb, 'spray', onClimbDeleted);
+      expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(deletion.request.mock.invocationCallOrder[0]);
+    });
   });
 
   it('opens the playlist sheet callback from the add-to-playlist row', () => {
