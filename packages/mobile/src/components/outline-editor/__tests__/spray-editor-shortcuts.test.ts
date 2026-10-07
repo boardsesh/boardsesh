@@ -15,6 +15,10 @@ const TITLES: Record<SprayShortcutId, string> = {
   delete: 'Switch off or delete hold',
   escape: 'Cancel',
   add: 'Add missing holds',
+  select: 'Select',
+  trace: 'Trace',
+  refine: 'Refine',
+  join: 'Join',
   smaller: 'Make smaller',
   bigger: 'Make bigger',
   previous: 'Previous hold',
@@ -112,6 +116,26 @@ describe('resolveSprayShortcut', () => {
     expect(resolveSprayShortcut('next', adding)).toBe('none');
     expect(resolveSprayShortcut('bigger', { ...RESTING, selectedRole: null })).toBe('none');
     expect(resolveSprayShortcut('next', { ...RESTING, canStep: false })).toBe('none');
+  });
+
+  it('picks a mode with its initial, and the same key again goes back to Select', () => {
+    expect(SPRAY_SHORTCUTS.find((shortcut) => shortcut.id === 'select')?.keys).toEqual([{ input: 'v', modifiers: [] }]);
+    expect(SPRAY_SHORTCUTS.find((shortcut) => shortcut.id === 'trace')?.keys).toEqual([{ input: 't', modifiers: [] }]);
+    expect(SPRAY_SHORTCUTS.find((shortcut) => shortcut.id === 'refine')?.keys).toEqual([{ input: 'r', modifiers: [] }]);
+    expect(SPRAY_SHORTCUTS.find((shortcut) => shortcut.id === 'join')?.keys).toEqual([{ input: 'j', modifiers: [] }]);
+
+    expect(resolveSprayShortcut('trace', RESTING)).toBe('modeTrace');
+    expect(resolveSprayShortcut('refine', RESTING)).toBe('modeRefine');
+    expect(resolveSprayShortcut('join', RESTING)).toBe('modeJoin');
+    // Nothing picked still opens the mode: the screen puts it in its pick step.
+    expect(resolveSprayShortcut('trace', { ...RESTING, selectedRole: null })).toBe('modeTrace');
+    expect(resolveSprayShortcut('select', RESTING)).toBe('none');
+
+    expect(resolveSprayShortcut('trace', { ...RESTING, tool: 'trace' })).toBe('modeSelect');
+    expect(resolveSprayShortcut('refine', { ...RESTING, tool: 'refine' })).toBe('modeSelect');
+    expect(resolveSprayShortcut('join', { ...RESTING, tool: 'join' })).toBe('modeSelect');
+    expect(resolveSprayShortcut('select', { ...RESTING, tool: 'add' })).toBe('modeSelect');
+    expect(resolveSprayShortcut('refine', { ...RESTING, tool: 'trace' })).toBe('modeRefine');
   });
 
   it('follows the buttons being disabled', () => {

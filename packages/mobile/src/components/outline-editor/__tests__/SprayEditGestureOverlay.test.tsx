@@ -89,6 +89,8 @@ type Options = { hover?: boolean; onStylusSeen?: () => void; onTwoFingerTap?: ()
 // board coordinates are the same, so the rows below read directly.
 function mount(options: Options = {}) {
   const onTap = vi.fn();
+  const onPlaceStart = vi.fn();
+  const placeHoldSV = shared<number[]>([]);
   const hoverSV = options.hover ? shared<number[]>([]) : undefined;
   render(
     <SprayEditGestureOverlay
@@ -108,12 +110,12 @@ function mount(options: Options = {}) {
       canMove
       canAdd
       medianRadiusSV={shared(12)}
-      placeHoldSV={shared<number[]>([])}
+      placeHoldSV={placeHoldSV}
       accessibility={{ label: '', value: '', hint: '', actions: [], onAction: vi.fn() }}
       onTap={onTap}
       onPickUp={vi.fn()}
       onMoveEnd={vi.fn()}
-      onPlaceStart={vi.fn()}
+      onPlaceStart={onPlaceStart}
       onPlace={vi.fn()}
       hoverSV={hoverSV}
       hoverRadiusSV={options.hover ? shared(12) : undefined}
@@ -123,7 +125,7 @@ function mount(options: Options = {}) {
   );
   const of = (kind: string, index = 0) => installed.gestures.filter((gesture) => gesture.kind === kind)[index];
   const fire = (kind: string, event: string, ...args: unknown[]) => of(kind)?.handlers.get(event)?.(...args);
-  return { onTap, hoverSV, of, fire };
+  return { onTap, onPlaceStart, placeHoldSV, hoverSV, of, fire };
 }
 
 beforeEach(() => {
@@ -239,5 +241,43 @@ describe('SprayEditGestureOverlay two-finger tap', () => {
   it('is not built without the opt-in', () => {
     const overlay = mount();
     expect(overlay.of('tap', 1)).toBeUndefined();
+  });
+});
+
+describe('SprayEditGestureOverlay off the photo', () => {
+  // The mount's photo is 100 x 100 board px at 1x: x = 150 is the dark band a
+  // zoomed spray wall leaves round its photo.
+  it('places a hold for a press and hold on bare wall on the photo', () => {
+    const overlay = mount();
+    const manager = { fail: vi.fn() };
+    overlay.fire('longPress', 'onTouchesDown', { numberOfTouches: 1, allTouches: [{ x: 80, y: 70 }] }, manager);
+    expect(manager.fail).not.toHaveBeenCalled();
+    overlay.fire('longPress', 'onStart', { x: 80, y: 70 });
+    expect(overlay.onPlaceStart).toHaveBeenCalledTimes(1);
+    expect(overlay.placeHoldSV.value).toEqual([80, 70, 12]);
+  });
+
+  it('places nothing for a press and hold past the photo’s edge', () => {
+    const overlay = mount();
+    const manager = { fail: vi.fn() };
+    overlay.fire('longPress', 'onTouchesDown', { numberOfTouches: 1, allTouches: [{ x: 150, y: 70 }] }, manager);
+    expect(manager.fail).toHaveBeenCalledTimes(1);
+    overlay.fire('longPress', 'onStart', { x: 150, y: 70 });
+    expect(overlay.onPlaceStart).not.toHaveBeenCalled();
+    expect(overlay.placeHoldSV.value).toEqual([]);
+  });
+
+  it('still hands a tap there to the screen, which only puts the picked ring down', () => {
+    const overlay = mount();
+    overlay.fire('tap', 'onStart', { x: 150, y: 70, pointerType: FINGER });
+    expect(overlay.onTap).toHaveBeenCalledExactlyOnceWith(150, 70, 1, false);
+  });
+
+  it('promises no Pencil tap past the edge: the hover ghost goes', () => {
+    const overlay = mount({ hover: true });
+    overlay.fire('hover', 'onUpdate', { x: 80, y: 70, pointerType: STYLUS });
+    expect(overlay.hoverSV!.value).toEqual([0, 80, 70, 12]);
+    overlay.fire('hover', 'onUpdate', { x: 150, y: 70, pointerType: STYLUS });
+    expect(overlay.hoverSV!.value).toEqual([]);
   });
 });

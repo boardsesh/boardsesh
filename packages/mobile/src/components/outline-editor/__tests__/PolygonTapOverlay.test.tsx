@@ -203,6 +203,31 @@ describe('Corners: touch, slide, lift', () => {
   });
 });
 
+describe('Corners: off the photo', () => {
+  // The mount draws a 100 × 100 render box (200 × 200 board px) at scale 2,
+  // translate (10, 20): screen x past 60 + 100 = 160 is past its right edge.
+  it('places no corner where the finger lifts in the dark band past the photo', () => {
+    const corners = mount();
+    corners.send('down', event([touch(7, 400, 60)]));
+    corners.send('up', upEvent([touch(7, 400, 60)]));
+    expect(corners.vertices.value).toEqual([]);
+    expect(corners.added).not.toHaveBeenCalled();
+    expect(corners.limit).not.toHaveBeenCalled();
+    // The touch is still let go of cleanly.
+    expect(corners.manager.end).toHaveBeenCalledTimes(1);
+    expect(corners.loupe.touchDownAtSV.value).toBe(0);
+  });
+
+  it('still places a corner for a finger that slid back onto the photo before lifting', () => {
+    const corners = mount();
+    corners.send('down', event([touch(7, 400, 60)]));
+    corners.send('move', event([touch(7, 200, 60)]));
+    corners.send('up', upEvent([touch(7, 48, 60)]));
+    expect(corners.vertices.value).toEqual([88, 90]);
+    expect(corners.added).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Corners: the loupe', () => {
   it('follows a finger from touch-down and lets go on the lift', () => {
     const corners = mount();

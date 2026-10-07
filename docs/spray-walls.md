@@ -365,10 +365,13 @@ bans it: the ban is about the iOS 26 NativeTabs, and iPad never mounts them.
 On the `tablet` layout the hold editor keeps every handler the phone has and
 changes where they live. The phone layout is untouched, key for key.
 
-- **A tool rail down one side** (`SprayToolRail`): Undo, Redo, Mark (the resting
-  pick-and-switch tool) and Add, the maybes' show-or-hide and Keep all, "Pencil
-  only" once a Pencil has been seen, Fit (the zoom reset), the wall-wide menu
-  (Start over) and the "?". It is the phone's bottom bar on its side, minus the
+- **A tool rail down one side** (`SprayToolRail`): Undo, Redo, the five modes
+  of the phone's switcher (Select, Add, Trace, Refine, Join, from the same
+  `SPRAY_MODES` table and the same `switchMode`), the maybes' show-or-hide and
+  Keep all, "Pencil only" once a Pencil has been seen, Fit (the zoom reset), the
+  wall-wide menu (Start over) and the "?". With every button showing it is
+  taller than an iPad mini's landscape editor, so past the window's height its
+  buttons scroll under the grip. It is the phone's bottom bar on its side, minus the
   counts and the primary button. It docks to the leading edge; dragging its grip
   past the middle of the screen springs it to the other edge, and the side is
   kept per device (`boardsesh_spray_editor_rail_side`, `useSprayRailSide`). A
@@ -387,9 +390,11 @@ changes where they live. The phone layout is untouched, key for key.
   away from the rail, and the banner and hints keep a column of up to 520 pt in
   the middle, narrower in landscape so it clears the inspector.
 - **A primary cluster along the bottom**: the count capsule
-  (`SprayCountCapsule`, shared with the phone's bottom bar) and the primary
-  button. Landscape docks it to the side away from the rail, portrait centres
-  it at up to 520 pt.
+  (`SprayCountCapsule`, shared with the phone's top-left corner) and the
+  primary button. Landscape docks it to the side away from the rail, portrait
+  centres it at up to 520 pt. The phone moved its primary into the header; the
+  iPad keeps it here, beside the counts it publishes, rather than splitting the
+  two across the screen, and its "?" stays on the rail.
 
 **The Pencil marks and fingers inspect.** The Pencil needs no mode: on the
 tablet layout every touch is checked for `PointerType.STYLUS`. "Pencil only"
@@ -486,8 +491,8 @@ ships on the `release/next` train because it moves the native fingerprint.
   Android, `command` means Ctrl or Meta, so undo is Ctrl+Z.
 - **The Pencil's double tap and squeeze follow the iPad's own Pencil setting**
   (`resolvePencilGesture`), on the tablet layout only. A switch setting ("switch
-  between current tool and eraser" or "…and last used") swaps between Mark and
-  Add. A palette setting opens `SprayPencilPalette`: Mark, Draw, Corners, Undo
+  between current tool and eraser" or "…and last used") swaps between Select
+  and Add (from any other mode it goes back to Select). A palette setting opens `SprayPencilPalette`: Mark, Draw, Corners, Undo
   and Redo in a ring round the Pencil tip, pulled in from the edges by
   `pencilPaletteCentre`, or mid-screen when the Pencil was not hovering.
   Ignore and a system shortcut are left alone. A squeeze (Pencil Pro, iPadOS
@@ -501,11 +506,13 @@ ships on the `release/next` train because it moves the native fingerprint.
 | Keys | Does | Only when |
 |---|---|---|
 | ⌘Z / ⇧⌘Z | Undo / Redo | there is something to undo or redo |
-| Delete or Backspace | switch the picked ring off; on a ghost, delete it | Mark, a ring picked |
-| Esc | close the Pencil palette or the wall menu; otherwise leave Add, cancel Trace or Join, or put the ring down | |
+| Delete or Backspace | switch the picked ring off; on a ghost, delete it | Select, a ring picked |
+| Esc | close the Pencil palette or the wall menu; otherwise leave Add, cancel Trace, Refine or Join (or their pick step), or put the ring down | |
 | A | Add on or off | |
-| − / = (or +) | smaller / bigger | Mark, a ring picked |
-| [ / ] | previous / next ring in reading order | Mark, more than one ring |
+| V | back to Select | another mode is on |
+| T / R / J | Trace / Refine / Join; the same key again goes back to Select | |
+| − / = (or +) | smaller / bigger | Select, a ring picked |
+| [ / ] | previous / next ring in reading order | Select, more than one ring |
 | ⌘↩ | the primary button | the button's own enabled rule |
 
 Each key is matched as its US layout types it, with exactly the modifiers in
@@ -1297,6 +1304,20 @@ What the editor does with a wall is decided by this document rather than by tast
 - **It edits THE draft.** One draft per wall, so there is no version to choose:
   the `versionId` handed in is the open one, and publishing or discarding are the
   two ways out (see "One open draft per wall").
+- **Zoomed in, the photo fills the editor.** At 1x the photo sits in its
+  fitted box (`fitSprayPhoto`, the same box the scan step sweeps). Once
+  zoomed, `InteractiveFilterBoard`'s opt-in `viewport` lets it spill over the
+  whole editor below the header: out to both sides and under the floating
+  bars. The pan clamp (`clampAxisTranslation` in
+  `play-drawer/zoom-viewport-clamp.ts`, shared with Previous / Next's
+  `zoomTargetForHold`) lets any edge of the photo reach the band the bottom bar
+  leaves clear (`slotHeight`; the whole editor on the iPad), and no further.
+  The board's overlays read a translate with the photo's offset folded in, so
+  their coordinate maths is unchanged. Past the photo's edge (`isOnPhoto`)
+  nothing is created: a press and hold or a stroke (Add, Trace, Refine, the
+  Pencil) that starts there and a Corners corner lifted there are ignored, and
+  a tap there only puts the picked ring down. Without a `viewport` the search
+  board, the outline editor and the play drawer behave exactly as before.
 - **Rings are holds. A tap picks one, and a tap on the picked one switches it.**
   At rest there are no finger modes, and no single tap changes the wall. The
   rule is pure (`resolveEditTap` in `spray-edit-tap.ts`, tested row by row) and
@@ -1328,11 +1349,57 @@ What the editor does with a wall is decided by this document rather than by tast
   (`clampPointToPhoto`): a hold centred off the photo would be saved and drawn
   nowhere. A zoomed
   board's one-finger pan still wins a finger that moves, because it activates
-  at 8 px and the long press allows 10. Add mode (the +, below) stays for
-  adding several in a row, and the screen reader keeps "Add a hold in the
-  middle of the view". Two fingers always zoom. Trace and Join are one-shot
-  tools with a banner and a Cancel; Join still takes its second hold with a
-  tap. The one mode is add mode, below.
+  at 8 px and the long press allows 10. Add mode (in the mode switcher, below)
+  stays for adding several in a row, and the screen reader keeps "Add a hold
+  in the middle of the view". Two fingers always zoom. Join still takes its
+  second hold with a tap.
+- **Modes live in one switcher** (`SprayModeSwitcher`, the rule in
+  `spray-editor-mode.ts`). The phone's bottom bar is one 48 pt row: the
+  Undo | Redo pill at the left and, at the right, a glass capsule of five
+  44 pt icon segments, Select (the resting tap-to-pick), Add, Trace, Refine and
+  Join. The mode that is on sits on a raised neutral pill
+  (`systemColors.elevatedSurface`), never brand colour, so the rings stay the
+  only violet. Icons only, so the row fits a 375 pt phone in every language; a
+  press and hold on a segment shows its name above the capsule, and a screen
+  reader hears a toolbar of buttons with a name, a hint and a selected state.
+  Tapping the mode that is on goes back to Select. Every way in goes through
+  one `switchMode`: the switcher, the iPad rail, the keys (V, A, T, R, J), the
+  Pencil and the inspector's buttons. `planModeSwitch(from, to,
+  {selectedHoldRole})` answers `exit` (back to Select), `enter`, `pick` or
+  `refuse` (the wall is locked, or `to` is already on), and the current mode is
+  left the way its own Done or Cancel would leave it: Add closes a ready
+  Corners outline, Refine keeps its strokes (one `SET_OUTLINE`), Trace and Join
+  drop theirs. If leaving is refused (an outline that will not close, a stroke
+  that cannot be kept) the mode stays on with its error and a warning buzz.
+  Trace and Join go back to Select once they have made their one edit; Add and
+  Refine stay on until they are left.
+- **Trace, Refine and Join need an ON hold, and ask for one.** With an ON ring
+  picked they start on it straight away. With nothing picked, or an OFF ring
+  or a maybe, they open in a pick step: the banner says "Tap a hold to trace"
+  (refine, "the first hold to join") with Cancel, the edit overlay keeps the
+  taps (no drag, no press-and-hold placement), and `resolveEditTap` answers the
+  next tap on an ON ring `pickTarget`: it is picked, not switched, and Trace
+  then waits for its loop, Refine opens its session on it and Join takes it as
+  the first hold and shows "Tap the hold to join it with". A tap on an OFF
+  ring or a maybe is `pickNeedsOn`: a warning buzz and "Switch the hold on
+  first". A screen reader's swipes move a cursor in the pick step and a double
+  tap picks. A hold that goes from under a mode (an undo toast, a re-seed)
+  drops the mode back to its pick step, not to Select; an open Refine session
+  on it goes with its strokes. The draw overlays (Trace's line, Refine's brush)
+  only mount once there is a hold.
+- **Publish is in the header, the counts at top-left.** On a phone the editor
+  sets its route's `headerRight` itself (`SprayEditorHeaderActions`): "?" for
+  the tips, then the primary button as a semibold label (the hold route's
+  "Publish holds", the wizard's "Pick a look"), with a spinner while it works
+  and disabled when nothing is ON, a Corners outline is half placed, Refine is
+  open, or the wall is locked. Setting it from the editor rather than from each
+  host keeps one enabled rule for both, and the header loses the buttons the
+  moment the editor unmounts. The count capsule sits at the editor's top-left
+  and opens the wall-wide menu downward; the zoomed-in reset control has the
+  top-right corner. With one row at the bottom the photo's reserve
+  (`SPRAY_BAR_RESERVE`) is 64 pt (48 + two 8 pt gutters) rather than 128, and
+  the scan step fits with the same constant, so the rings still land where the
+  band swept.
 - **Resizing is a handle on a 5% grid** (`SprayResizeHandle`). The selected
   ring carries a 12 pt dot (white edge) at the centre of a 44 pt touch box
   turned 45°, on the bottom-right diagonal. The box's flat face towards the
@@ -1344,7 +1411,7 @@ What the editor does with a wall is decided by this document rather than by tast
   keeping it off the disc is what keeps a tap on the selected ring a toggle and
   a press there a pick-up at every zoom. The spec's "10 pt outside" would have
   laid the box over the whole ring of a typical hold at 1x. It flips to another
-  diagonal when its touch box would leave the board or sit under the bottom
+  diagonal when its touch box would leave the editor or sit under the bottom
   dock (toast, chip bar) or bar (`resizeHandleAnchor`, which the dock's
   measured top feeds). It is placed in screen space, so it is the same size at
   any zoom. One finger
@@ -1372,10 +1439,10 @@ What the editor does with a wall is decided by this document rather than by tast
   the hold just added keeps the handle, without the chip bar, until the next
   add or the next touch on the wall. None of this touches the ring contract:
   outlines are stored in radius units, so a resize changes `r` alone.
-- **The chip bar is one set per role** (`SprayHoldChipBar`). ON: `[−] [+]
-  Trace Refine Join Switch off` (− and + are 44 pt icon chips; on a 375 pt
-  phone the row wraps to two). An OFF ghost: `Switch
-  on  Delete`. A maybe: `Keep  Switch off`. The picked ring is drawn in its
+- **The chip bar is one set per role** (`SprayHoldChipBar`), one-tap actions
+  only, in one row that never wraps. ON: `[−] [+] Switch off` (− and + are
+  44 pt icon chips). An OFF ghost: `Switch on  Delete`. A maybe:
+  `Keep  Switch off`. Trace, Refine and Join are modes in the switcher. The picked ring is drawn in its
   role's line pattern (`SelectedHoldOverlay`'s `role`), so the second tap
   visibly switches it.
 - **Refine touches up an outline with a brush; Trace redraws it.** The two sit
@@ -1446,7 +1513,7 @@ What the editor does with a wall is decided by this document rather than by tast
     storable hold, checked there and then, so Done never refuses.
   - **One edit.** Strokes have their own undo: while Refine is open the bar's
     (and the rail's) Undo takes back one stroke, up to 20, and Redo is hidden.
-    Cancel throws every stroke away. Done (and the rail's Mark, and a tap on +)
+    Cancel throws every stroke away. Done (and choosing any other mode)
     commits ONE `SET_OUTLINE`: the centre is the area's centroid (the hold's
     anchor when a concave area's centroid falls outside it), the radius the
     equivalent-area one grown until the ring fits (`radiusForRing`), and the
@@ -1519,20 +1586,18 @@ What the editor does with a wall is decided by this document rather than by tast
   on a hidden maybe picks it, so the chip bar can keep it or switch it off.
   Moving, resizing or tracing an OFF ring or a maybe switches it ON, so each is
   held to the hold cap like an add. To a screen reader the wall is one image
-  labelled with the counts, and activating it does nothing: the bar and the chip
-  bar are the accessible path. The wall also keeps its "Add a hold in the middle
+  labelled with the counts, and activating it does nothing: the bar, the mode
+  switcher and the chip bar are the accessible path. The wall also keeps its "Add a hold in the middle
   of the view" action in the resting editor, and its named actions follow the
   chip bar's roles (Make smaller / Make bigger for an ON ring, Delete for a
   ghost). Make smaller / Make bigger move four grid steps (about 22%) per
   swipe and one undo step, where a chip press moves one. Add mode itself is a
   touch tool.
 - **Add mode is for the holds detection missed** (#5906). At rest a tap never
-  adds, so a press and hold places one at a time and the glass + in the bottom
-  bar, after the count capsule, is how a run of them goes in. It is an icon, not a label, so the row fits a 375 pt phone with the
-  Undo | Redo pill at its widest and German counts.
-  While add mode is on the + becomes a check, and the check and the banner's
-  Done both leave it. It is the one tool that is a mode rather than one-shot: it
-  stays on until Done, so several missed holds go in one go. In add mode no
+  adds, so a press and hold places one at a time and Add in the mode switcher
+  is how a run of them goes in. Its segment, the banner's Done, a tap on
+  Select and choosing another mode all leave it. It stays on until then, so
+  several missed holds go in one go. In add mode no
   touch selects, toggles or picks up a ring. Because Draw takes every
   one-finger touch, the editor passes `pinchPans` to `InteractiveFilterBoard`:
   two fingers pan as well as zoom, so a climber can move across a zoomed wall
@@ -1691,7 +1756,7 @@ What the editor does with a wall is decided by this document rather than by tast
   or closes it, never just for showing; picking a ring or tapping bare wall is
   not an edit for the long-press gate. On iPad a fifth, the Pencil hint, is
   asked for by the first Pencil (see "The iPad editor and Apple Pencil"). The
-  top-right "?" (the rail's "?" on iPad) replays them all for the session. None show in screenshot mode or on a read-only wall. The tap
+  "?" in the header (the rail's "?" on iPad) replays them all for the session. None show in screenshot mode or on a read-only wall. The tap
   hint is stored under a new key (`onboarding_tip_spray_tap_select_seen`, not
   the old `..._toggle_seen`), so a climber who learned "a tap switches a ring"
   sees the new rule once.

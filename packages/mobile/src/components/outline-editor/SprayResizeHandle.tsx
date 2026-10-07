@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, type SharedValue } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  type DerivedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { overlays, spacing } from '../../theme/tokens';
@@ -49,10 +55,17 @@ type PillLabel = { magnet: number; percent: number };
 type SprayResizeHandleProps = {
   /** The board's live zoom transform, from `FilterBoardTransformContext`. */
   scaleSV: SharedValue<number>;
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
+  /**
+   * The surface this handle is laid out over (`FilterBoardTransformContext`'s
+   * viewport): the handle and its pill stay inside it. The render box when the
+   * board has no viewport; the whole editor when the zoomed photo fills it.
+   */
+  viewportWidthSV: SharedValue<number>;
+  viewportHeightSV: SharedValue<number>;
   isPinchingSV: SharedValue<boolean>;
   /** Declared as a relation, never composed — see `FilterBoardTransformContext.pinchGesture`. */
   pinchRef: MutableRefObject<GestureType | undefined>;
@@ -83,8 +96,9 @@ type SprayResizeHandleProps = {
   medianRadius: number;
   bounds: HoldRadiusBounds;
   /**
-   * The top of the screen's bottom dock and bar, in the board's own points: a
-   * handle whose touch box would reach below it flips to another diagonal.
+   * The top of the screen's bottom dock and bar, in this handle's own points
+   * (the viewport's): a handle whose touch box would reach below it flips to
+   * another diagonal.
    */
   avoidTopSV: SharedValue<number>;
   /** The finger lifted at a new size. The screen commits it (one `RESIZE_HOLD`) or refuses it. */
@@ -93,7 +107,7 @@ type SprayResizeHandleProps = {
 
 /**
  * The selected hold's resize handle: a 12 pt dot outside the ring, on the
- * bottom-right diagonal unless that would leave the board or sit under the
+ * bottom-right diagonal unless that would leave the viewport or sit under the
  * bars. Its 44 pt touch box never covers the ring's own disc (the ring, or a
  * fingertip around a small one), so a tap on the selected ring still toggles
  * it and a press there still picks it up — see `resizeHandleDistance`.
@@ -120,6 +134,8 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
   translateYSV,
   containerWidthSV,
   containerHeightSV,
+  viewportWidthSV,
+  viewportHeightSV,
   isPinchingSV,
   pinchRef,
   boardScale,
@@ -230,7 +246,7 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
         centre,
         reachPt,
         fingertipScreenPt(scale),
-        { width: containerWidthSV.value, height: containerHeightSV.value },
+        { width: viewportWidthSV.value, height: viewportHeightSV.value },
         avoid,
       );
     };
@@ -357,6 +373,8 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
     translateYSV,
     containerWidthSV,
     containerHeightSV,
+    viewportWidthSV,
+    viewportHeightSV,
     isPinchingSV,
     pinchRef,
     boardScaleSV,
@@ -420,7 +438,7 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
         centre,
         reachPt,
         fingertipScreenPt(scale),
-        { width: containerWidthSV.value, height: containerHeightSV.value },
+        { width: viewportWidthSV.value, height: viewportHeightSV.value },
         [{ x: -AVOID_RECT_SPAN, y: avoidTopSV.value, width: AVOID_RECT_SPAN * 2, height: AVOID_RECT_SPAN }],
       );
       x = anchor.x;
@@ -458,9 +476,9 @@ export const SprayResizeHandle = React.memo(function SprayResizeHandle({
     const distance = resizeHandleDistance(reachPt, fingertipScreenPt(scale));
     const handleX = centre.x + directionXSV.value * distance;
     const handleY = centre.y + directionYSV.value * distance;
-    const width = containerWidthSV.value;
+    const width = viewportWidthSV.value;
     // Above the touch box (so the finger never covers it), or below when there
-    // is no room above; kept inside the board sideways. The turned box's
+    // is no room above; kept inside the viewport sideways. The turned box's
     // corners reach `HIT × √½` above and below the dot.
     const boxHalfHeight = RESIZE_HANDLE_HIT_PT * Math.SQRT1_2;
     const above = handleY - boxHalfHeight - PILL_GAP - PILL_HEIGHT;

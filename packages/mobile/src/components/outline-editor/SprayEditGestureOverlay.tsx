@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, type MutableRefObject, type ReactNode } from 'react';
 import { StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import { Gesture, GestureDetector, PointerType, type GestureType } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
-import { fallbackRadiusAt, holdIdAtPoint, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
+import { runOnJS, useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
+import { fallbackRadiusAt, holdIdAtPoint, isOnPhoto, screenToBoard, selectedDragIdAt } from './spray-gesture-math';
 import {
   loupeIsTracking,
   pointerWantsLoupe,
@@ -51,8 +51,8 @@ export type SprayWallAccessibility = {
 type SprayEditGestureOverlayProps = {
   /** The board's live zoom transform, from `FilterBoardTransformContext`. */
   scaleSV: SharedValue<number>;
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   isPinchingSV: SharedValue<boolean>;
@@ -140,6 +140,14 @@ type SprayEditGestureOverlayProps = {
    * so a stylus rest places a hold exactly as a finger does.
    */
   stylusAddsElsewhere?: boolean;
+  /**
+   * The middle of the part of this surface the climber can see, in its own
+   * points: where a screen reader's "add a hold here" goes. Defaults to half
+   * the render box's size, the middle of this surface when the surface IS the
+   * render box. A surface spread over a bigger viewport must pass it: the spray
+   * editor passes the middle of the band its bars leave clear.
+   */
+  viewCentre?: { x: number; y: number };
 };
 
 /**
@@ -215,6 +223,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
   onStylusSeen,
   onTwoFingerTap,
   stylusAddsElsewhere = false,
+  viewCentre,
 }: SprayEditGestureOverlayProps) {
   // Mirrored into shared values rather than captured: a captured value would be
   // a gesture dependency, and rebuilding a live RNGH gesture mid-session has
@@ -393,7 +402,18 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
           // mid-stroke never drops a median circle as well. Without that
           // surface (Split View, Slide Over, an Android S-Pen) a stylus rest
           // places, like a finger.
-          if (!canAddSV.value || (stylusAddsElsewhereSV.value && event.pointerType === STYLUS_POINTER_TYPE)) {
+          // Off the photo (the dark band round a zoomed wall) there is no wall
+          // to put a hold on either.
+          if (
+            !canAddSV.value ||
+            (stylusAddsElsewhereSV.value && event.pointerType === STYLUS_POINTER_TYPE) ||
+            !isOnPhoto(
+              point.x,
+              point.y,
+              containerWidthSV.value * boardScaleSV.value,
+              containerHeightSV.value * boardScaleSV.value,
+            )
+          ) {
             manager.fail();
             return;
           }
@@ -656,6 +676,17 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
               return;
             }
           }
+          // Past the photo's edge a Pencil tap adds nothing, so nothing is promised.
+          const onPhoto = isOnPhoto(
+            point.x,
+            point.y,
+            containerWidthSV.value * boardScaleSV.value,
+            containerHeightSV.value * boardScaleSV.value,
+          );
+          if (!onPhoto) {
+            if (hoverSV.value.length > 0) hoverSV.value = NO_HOVER;
+            return;
+          }
           hoverSV.value = [0, point.x, point.y, hoverRadiusSV?.value ?? 0];
         })
         .onFinalize(() => {
@@ -719,13 +750,15 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
     twoFingerTapEnabled,
   ]);
 
+  const viewCentreX = viewCentre?.x;
+  const viewCentreY = viewCentre?.y;
   const fireAccessibilityAction = useCallback(
     (actionName: string) => {
       const containerWidth = containerWidthSV.value;
       const containerHeight = containerHeightSV.value;
       const centre = screenToBoard(
-        containerWidth / 2,
-        containerHeight / 2,
+        viewCentreX ?? containerWidth / 2,
+        viewCentreY ?? containerHeight / 2,
         scaleSV.value,
         translateXSV.value,
         translateYSV.value,
@@ -735,7 +768,7 @@ export const SprayEditGestureOverlay = React.memo(function SprayEditGestureOverl
       );
       callbacksRef.current.onAccessibilityAction(actionName, centre.x, centre.y);
     },
-    [containerWidthSV, containerHeightSV, scaleSV, translateXSV, translateYSV, boardScaleSV],
+    [containerWidthSV, containerHeightSV, scaleSV, translateXSV, translateYSV, boardScaleSV, viewCentreX, viewCentreY],
   );
   const handleAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => fireAccessibilityAction(event.nativeEvent.actionName),

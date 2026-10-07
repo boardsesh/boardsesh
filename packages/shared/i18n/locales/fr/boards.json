@@ -815,7 +815,6 @@
       "cancel": "Continuer à modifier"
     },
     "chips": {
-      "trace": "Tracer",
       "join": "Réunir",
       "switchOff": "Désactiver",
       "switchOn": "Activer",
@@ -823,6 +822,21 @@
       "keep": "Garder",
       "finish": "Terminer",
       "refine": "Retoucher"
+    },
+    "modes": {
+      "label": "Modes d'édition",
+      "select": "Choisir",
+      "add": "Ajouter",
+      "trace": "Tracer",
+      "refine": "Retoucher",
+      "join": "Réunir",
+      "hints": {
+        "select": "Touche les prises pour les choisir, puis les activer ou les désactiver",
+        "add": "Dessine le tour des prises que le scan a manquées",
+        "trace": "Redessine le contour d'une prise d'un seul geste. Agit sur la prise choisie, ou la prochaine que tu touches.",
+        "refine": "Agrandis ou rogne le contour d'une prise au pinceau. Agit sur la prise choisie, ou la prochaine que tu touches.",
+        "join": "Réunis deux prises en une. Part de la prise choisie, ou de la prochaine que tu touches."
+      }
     },
     "banner": {
       "trace": "Dessine le tour de la prise avec un doigt",
@@ -835,7 +849,10 @@
       "refineAdd": "Peins pour agrandir la prise. Pince pour zoomer.",
       "refineErase": "Peins pour rogner la prise. Pince pour zoomer.",
       "refineAddPencil": "Peins avec l'Apple Pencil pour agrandir la prise",
-      "refineErasePencil": "Peins avec l'Apple Pencil pour rogner la prise"
+      "refineErasePencil": "Peins avec l'Apple Pencil pour rogner la prise",
+      "tracePick": "Touche une prise pour la tracer",
+      "refinePick": "Touche une prise pour la retoucher",
+      "joinPick": "Touche la première prise à réunir"
     },
     "addShape": {
       "label": "Comment délimiter une prise",
@@ -874,7 +891,8 @@
         "delete": "Supprimer",
         "addHold": "Ajouter une prise au centre de la vue"
       },
-      "revealed": "Prises trouvées : {{summary}}"
+      "revealed": "Prises trouvées : {{summary}}",
+      "pickHint": "Balaie vers le haut ou le bas jusqu'à une prise, puis touche deux fois pour la choisir."
     },
     "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {
@@ -891,7 +909,8 @@
       "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise.",
       "refineNothingLeft": "Ça effacerait toute la prise. Désactive-la plutôt.",
       "refineTooDetailed": "Ce bord est trop détaillé pour être enregistré. Essaie un pinceau plus gros.",
-      "refineCantStore": "Ce tracé laisserait une forme impossible à enregistrer comme une seule prise, il n'a donc pas été appliqué."
+      "refineCantStore": "Ce tracé laisserait une forme impossible à enregistrer comme une seule prise, il n'a donc pas été appliqué.",
+      "needsOnHold": "Active d'abord la prise"
     },
     "empty": {
       "noPhoto": "Ce mur n'a pas encore de photo à modifier."

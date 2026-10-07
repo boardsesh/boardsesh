@@ -17,6 +17,7 @@ import {
   boardToScreen,
   fingertipScreenPt,
   holdReach,
+  isOnPhoto,
   projectOnto,
   RESIZE_HANDLE_CLEARANCE_PT,
   RESIZE_HANDLE_HIT_PT,
@@ -330,6 +331,70 @@ describe('boardToScreen', () => {
         expect(back.y).toBeCloseTo(boardY);
       }
     }
+  });
+});
+
+describe('boardToScreen over a viewport', () => {
+  // The zoomed spray editor: a 390 × 520 photo drawn at (0, 162) inside the
+  // editor's viewport. The board context hands overlays the translate with
+  // that offset folded in, so the same functions map viewport points.
+  const offsetX = 0;
+  const offsetY = 162;
+  const renderWidth = 390;
+  const renderHeight = 520;
+  const boardScale = 5.25;
+
+  it('puts the photo where the fitted box is at 1x', () => {
+    const corner = boardToScreen(0, 0, 1, offsetX, offsetY, renderWidth, renderHeight, boardScale);
+    expect(corner).toEqual({ x: 0, y: 162 });
+    const far = boardToScreen(
+      renderWidth * boardScale,
+      renderHeight * boardScale,
+      1,
+      offsetX,
+      offsetY,
+      renderWidth,
+      renderHeight,
+      boardScale,
+    );
+    expect(far.x).toBeCloseTo(390);
+    expect(far.y).toBeCloseTo(682);
+  });
+
+  it('matches a render-box view placed at the offset and transformed about its own centre', () => {
+    const scale = 6;
+    const panX = -310;
+    const panY = 420;
+    const boardX = 1200;
+    const boardY = 900;
+    const screen = boardToScreen(boardX, boardY, scale, panX + offsetX, panY + offsetY, 390, 520, boardScale);
+    // The view's own maths: offset + centre + scale · (local − centre) + translate.
+    expect(screen.x).toBeCloseTo(offsetX + 195 + scale * (boardX / boardScale - 195) + panX);
+    expect(screen.y).toBeCloseTo(offsetY + 260 + scale * (boardY / boardScale - 260) + panY);
+    const back = screenToBoard(screen.x, screen.y, scale, panX + offsetX, panY + offsetY, 390, 520, boardScale);
+    expect(back.x).toBeCloseTo(boardX);
+    expect(back.y).toBeCloseTo(boardY);
+  });
+
+  it('maps the dark band above the photo to a point off it', () => {
+    const point = screenToBoard(100, 40, 1, offsetX, offsetY, renderWidth, renderHeight, boardScale);
+    expect(point.y).toBeLessThan(0);
+    expect(isOnPhoto(point.x, point.y, renderWidth * boardScale, renderHeight * boardScale)).toBe(false);
+  });
+});
+
+describe('isOnPhoto', () => {
+  it('takes the photo and its edges', () => {
+    expect(isOnPhoto(0, 0, 4000, 3000)).toBe(true);
+    expect(isOnPhoto(4000, 3000, 4000, 3000)).toBe(true);
+    expect(isOnPhoto(2000, 1500, 4000, 3000)).toBe(true);
+  });
+
+  it('refuses anything past an edge', () => {
+    expect(isOnPhoto(-0.5, 10, 4000, 3000)).toBe(false);
+    expect(isOnPhoto(10, -0.5, 4000, 3000)).toBe(false);
+    expect(isOnPhoto(4000.5, 10, 4000, 3000)).toBe(false);
+    expect(isOnPhoto(10, 3000.5, 4000, 3000)).toBe(false);
   });
 });
 

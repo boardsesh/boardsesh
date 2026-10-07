@@ -22,15 +22,25 @@
  * the inspector) and puts it down on bare wall. With it off a finger follows the
  * phone rule above. The phone layout never passes `input: 'pencil'`, so none of
  * this reaches it.
+ *
+ * Zoomed in, the photo fills the screen and a tap can land past its edge. Off
+ * the photo there is nothing to pick, switch or add: in the resting tool such a
+ * tap puts the picked ring down, and otherwise does nothing.
+ *
+ * Trace, Refine and Join each work on one ON hold. Chosen from the mode
+ * switcher with none picked, they open in a pick step (`picking`): the next tap
+ * on an ON ring makes it the mode's hold, without switching it, and a tap on
+ * an OFF ring or a maybe is answered with "switch it on first". Nothing else
+ * in the pick step does anything, finger or Pencil.
  */
 
 /**
  * What the editor is doing with the next touch.
  *
- * `edit` is the resting state: taps pick and switch rings, long presses pick
- * them up. `trace` and `join` are one-shot tools a selected hold starts, each
- * with its own banner and a Cancel — never modes a climber has to remember to
- * leave. `refine` is the selected hold's touch-up brush: it takes as many
+ * `edit` is the resting state (the switcher's Select): taps pick and switch
+ * rings, long presses pick them up. `trace` and `join` are one-shot tools on
+ * one hold, each with its own banner and a Cancel, and each goes back to
+ * Select once it has done its one edit. `refine` is the selected hold's touch-up brush: it takes as many
  * strokes as the climber wants and ends with Done (one edit) or Cancel (none),
  * and while it is open every one-finger touch paints. `add` is the other
  * exception, and is a mode on purpose: the scan misses holds
@@ -53,6 +63,10 @@ export type SprayEditTapResult =
   | 'bareWallHint'
   /** A Pencil tap on bare wall: a circle at the median hold size goes there. */
   | 'addHold'
+  /** The pick step of Trace, Refine or Join, on an ON ring: it becomes the mode's hold. */
+  | 'pickTarget'
+  /** The pick step, on an OFF ring or a maybe: refused with "switch it on first". */
+  | 'pickNeedsOn'
   /** The tap means nothing in this tool. */
   | 'none';
 
@@ -65,15 +79,29 @@ export function resolveEditTap({
   selectedId,
   input = 'finger',
   pencilOnly = false,
+  onPhoto = true,
+  picking = false,
+  hitIsOn = true,
 }: {
   tool: SprayEditorTool;
   /** The ring the tap landed on, or null for bare wall. */
   hitId: number | null;
+  /** Whether that ring is ON. Only read in the pick step. */
+  hitIsOn?: boolean;
+  /** Trace, Refine or Join is waiting for the hold it will work on. */
+  picking?: boolean;
   selectedId: number | null;
   input?: SprayTapInput;
   /** "Pencil only" is on: fingers pick and never switch. Ignored for a Pencil tap. */
   pencilOnly?: boolean;
+  /** False when the tap landed past the photo's edge. `hitId` is ignored then. */
+  onPhoto?: boolean;
 }): SprayEditTapResult {
+  if (!onPhoto) return tool === 'edit' && selectedId != null ? 'deselect' : 'none';
+  if (picking && tool !== 'edit' && tool !== 'add') {
+    if (hitId == null) return 'none';
+    return hitIsOn ? 'pickTarget' : 'pickNeedsOn';
+  }
   if (tool === 'join') {
     // Join waits for the second hold and nothing else: bare wall or the
     // selected hold itself leaves it waiting.

@@ -25,6 +25,10 @@ export type SprayShortcutId =
   | 'delete'
   | 'escape'
   | 'add'
+  | 'select'
+  | 'trace'
+  | 'refine'
+  | 'join'
   | 'smaller'
   | 'bigger'
   | 'previous'
@@ -51,6 +55,12 @@ export const SPRAY_SHORTCUTS: readonly { id: SprayShortcutId; keys: readonly Spr
   },
   { id: 'escape', keys: [{ input: 'escape', modifiers: [] }] },
   { id: 'add', keys: [{ input: 'a', modifiers: [] }] },
+  // The rest of the mode switcher, one letter each: V is the pointer tool in
+  // most drawing apps, the others are the modes' initials.
+  { id: 'select', keys: [{ input: 'v', modifiers: [] }] },
+  { id: 'trace', keys: [{ input: 't', modifiers: [] }] },
+  { id: 'refine', keys: [{ input: 'r', modifiers: [] }] },
+  { id: 'join', keys: [{ input: 'j', modifiers: [] }] },
   { id: 'smaller', keys: [{ input: '-', modifiers: [] }] },
   {
     id: 'bigger',
@@ -109,6 +119,11 @@ export type SprayShortcutAction =
   | 'cancelTool'
   | 'deselect'
   | 'toggleAdd'
+  /** Choose a mode, as the switcher's segment would: back to Select when it is already on. */
+  | 'modeSelect'
+  | 'modeTrace'
+  | 'modeRefine'
+  | 'modeJoin'
   | 'shrink'
   | 'grow'
   | 'previous'
@@ -141,6 +156,14 @@ export function resolveSprayShortcut(id: SprayShortcutId, context: SprayShortcut
       return selectedRole === 'off' ? 'delete' : 'switchOff';
     case 'add':
       return 'toggleAdd';
+    case 'select':
+      return tool === 'edit' ? 'none' : 'modeSelect';
+    case 'trace':
+      return tool === 'trace' ? 'modeSelect' : 'modeTrace';
+    case 'refine':
+      return tool === 'refine' ? 'modeSelect' : 'modeRefine';
+    case 'join':
+      return tool === 'join' ? 'modeSelect' : 'modeJoin';
     case 'smaller':
       return tool === 'edit' && selectedRole != null ? 'shrink' : 'none';
     case 'bigger':

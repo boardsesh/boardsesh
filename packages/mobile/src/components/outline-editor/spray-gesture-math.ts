@@ -25,6 +25,12 @@ export const HIT_STRIDE = 4;
  * the container centre), followed by the render → board scale. The tested twin
  * of this is `screenToBoardPoint` in `stroke.ts`; `DrawStrokeOverlay` inlines
  * the same arithmetic.
+ *
+ * `containerWidth/Height` are the RENDER box, whose centre the board scales
+ * about. When the overlay is laid out over a bigger viewport (the zoomed spray
+ * editor), `translateX/Y` are the board's translate PLUS its offset in that
+ * viewport, as `FilterBoardTransformContext` hands them out, so the same
+ * formula holds.
  */
 export function screenToBoard(
   screenX: number,
@@ -42,6 +48,20 @@ export function screenToBoard(
   const renderX = (screenX - translateX - centreX) / scale + centreX;
   const renderY = (screenY - translateY - centreY) / scale + centreY;
   return { x: renderX * boardScale, y: renderY * boardScale };
+}
+
+/**
+ * True when a board point is on the photograph itself, edges included.
+ *
+ * Zoomed in, the spray editor draws the photo over the whole screen, so a touch
+ * can land on the dark band past the photo's edge. Nothing is created there: an
+ * add, a placement, a corner or a stroke that starts there is ignored, and a
+ * tap there only puts the picked hold down. `photoWidth/Height` are in board
+ * px — the render box times `boardScale`.
+ */
+export function isOnPhoto(boardX: number, boardY: number, photoWidth: number, photoHeight: number): boolean {
+  'worklet';
+  return boardX >= 0 && boardY >= 0 && boardX <= photoWidth && boardY <= photoHeight;
 }
 
 /**

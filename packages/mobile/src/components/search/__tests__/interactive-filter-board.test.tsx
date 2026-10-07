@@ -15,13 +15,29 @@ const zoomState = vi.hoisted(() => ({
   translateYSV: { value: 0 },
   containerWidthSV: { value: 400 },
   containerHeightSV: { value: 500 },
+  viewportWidthSV: { value: 400 },
+  viewportHeightSV: { value: 500 },
+  viewportOffsetXSV: { value: 0 },
+  viewportOffsetYSV: { value: 0 },
+  lastOptions: null as Record<string, unknown> | null,
 }));
 
 type ChildrenProps = { children?: ReactNode };
 type StyleProps = ChildrenProps & { style?: unknown };
 
+/** A flattened style as a data attribute, so a test can read a view's box. */
+function styleAttribute(style: unknown): string {
+  const flatten = (value: unknown): Record<string, unknown> =>
+    Array.isArray(value)
+      ? Object.assign({}, ...value.map(flatten))
+      : value && typeof value === 'object'
+        ? (value as Record<string, unknown>)
+        : {};
+  return JSON.stringify(flatten(style));
+}
+
 vi.mock('react-native', () => ({
-  View: ({ children }: StyleProps) => createElement('div', null, children),
+  View: ({ children, style }: StyleProps) => createElement('div', { 'data-style': styleAttribute(style) }, children),
   Pressable: ({ children, onPress }: StyleProps & { onPress?: () => void }) =>
     createElement('button', { 'data-pressable': 'true', onClick: onPress }, children),
   StyleSheet: {
@@ -32,8 +48,13 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-native-reanimated', () => ({
   // Animated.View → plain div; the zoom style is irrelevant to behaviour here.
-  default: { View: ({ children }: StyleProps) => createElement('div', { 'data-animated': 'true' }, children) },
+  default: {
+    View: ({ children, style }: StyleProps) =>
+      createElement('div', { 'data-animated': 'true', 'data-style': styleAttribute(style) }, children),
+  },
   runOnJS: (handler: (...args: unknown[]) => unknown) => handler,
+  // Evaluated once: enough to show what the board hands its overlays.
+  useDerivedValue: (updater: () => unknown) => ({ value: updater(), derived: true }),
 }));
 
 vi.mock('../../board-controls/ResetZoomButton', () => ({
@@ -69,21 +90,28 @@ vi.mock('react-native-gesture-handler', () => {
 });
 
 vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
-  useZoomPanGesture: () => ({
-    pinchGesture: {},
-    zoomPanGesture: {},
-    isZoomed: zoomState.isZoomed,
-    resetZoom: zoomState.resetZoom,
-    animatedZoomStyle: {},
-    // The transform shared values the board forwards through
-    // FilterBoardTransformContext. Stand-ins, not real shared values — the
-    // renderAboveBoard tests only assert they reach the overlay.
-    scaleSV: zoomState.scaleSV,
-    translateXSV: zoomState.translateXSV,
-    translateYSV: zoomState.translateYSV,
-    containerWidthSV: zoomState.containerWidthSV,
-    containerHeightSV: zoomState.containerHeightSV,
-  }),
+  useZoomPanGesture: (options: Record<string, unknown>) => {
+    zoomState.lastOptions = options;
+    return {
+      pinchGesture: {},
+      zoomPanGesture: {},
+      isZoomed: zoomState.isZoomed,
+      resetZoom: zoomState.resetZoom,
+      animatedZoomStyle: {},
+      // The transform shared values the board forwards through
+      // FilterBoardTransformContext. Stand-ins, not real shared values — the
+      // renderAboveBoard tests only assert they reach the overlay.
+      scaleSV: zoomState.scaleSV,
+      translateXSV: zoomState.translateXSV,
+      translateYSV: zoomState.translateYSV,
+      containerWidthSV: zoomState.containerWidthSV,
+      containerHeightSV: zoomState.containerHeightSV,
+      viewportWidthSV: zoomState.viewportWidthSV,
+      viewportHeightSV: zoomState.viewportHeightSV,
+      viewportOffsetXSV: zoomState.viewportOffsetXSV,
+      viewportOffsetYSV: zoomState.viewportOffsetYSV,
+    };
+  },
 }));
 
 // The composed overlay gesture is exercised by holdLayout unit tests + device
@@ -166,6 +194,11 @@ function renderBoard(overrides: Overrides = {}) {
 describe('InteractiveFilterBoard', () => {
   beforeEach(() => {
     zoomState.isZoomed = false;
+    zoomState.translateXSV.value = 0;
+    zoomState.translateYSV.value = 0;
+    zoomState.viewportOffsetXSV.value = 0;
+    zoomState.viewportOffsetYSV.value = 0;
+    zoomState.lastOptions = null;
     zoomState.resetZoom.mockClear();
     restTapCalls.length = 0;
   });
@@ -304,5 +337,90 @@ describe('InteractiveFilterBoard', () => {
       />,
     );
     expect(seen[0].pinchRef).toBeDefined();
+  });
+
+  it('passes no viewport to the zoom hook unless one is asked for', () => {
+    renderBoard();
+    expect(zoomState.lastOptions?.viewport).toBeUndefined();
+  });
+
+  describe('with a viewport (the spray hold editor)', () => {
+    const viewport = {
+      width: 390,
+      height: 844,
+      offsetX: 0,
+      offsetY: 162,
+      bandStartX: 0,
+      bandEndX: 390,
+      bandStartY: 0,
+      bandEndY: 720,
+    };
+
+    function renderInViewport(onContext: (context: Record<string, unknown>) => void) {
+      return render(
+        <InteractiveFilterBoard
+          boardName="kilter"
+          layoutId={1}
+          sizeId={10}
+          setIds="1,2"
+          boardWidth={1000}
+          boardHeight={1000}
+          holdTargets={holdTargets}
+          renderWidth={390}
+          renderHeight={520}
+          viewport={viewport}
+          renderInTransform={() => <div data-in-transform="true" />}
+          renderAboveBoard={(context) => {
+            onContext(context as unknown as Record<string, unknown>);
+            return <div data-above-board="true" />;
+          }}
+        />,
+      );
+    }
+
+    it('hands the viewport to the zoom hook', () => {
+      renderInViewport(() => {});
+      expect(zoomState.lastOptions?.viewport).toBe(viewport);
+    });
+
+    it('sizes the clip to the viewport and places the board at its offset, render-box sized', () => {
+      const { container } = renderInViewport(() => {});
+      const styles = [...container.querySelectorAll('[data-style]')].map((node) =>
+        JSON.parse(node.getAttribute('data-style') ?? '{}'),
+      );
+      expect(styles.some((style) => style.width === 390 && style.height === 844 && style.overflow === 'hidden')).toBe(
+        true,
+      );
+      // The photo layer and the in-transform overlay layer: both at the offset.
+      const boardBoxes = styles.filter(
+        (style) => style.position === 'absolute' && style.top === 162 && style.width === 390 && style.height === 520,
+      );
+      expect(boardBoxes).toHaveLength(2);
+    });
+
+    it('hands overlays the translate with the board offset folded in, and the viewport size', () => {
+      zoomState.translateXSV.value = -40;
+      zoomState.translateYSV.value = 25;
+      zoomState.viewportOffsetXSV.value = 0;
+      zoomState.viewportOffsetYSV.value = 162;
+      const seen: Record<string, unknown>[] = [];
+      renderInViewport((context) => seen.push(context));
+      const context = seen[0];
+      expect((context.translateXSV as { value: number }).value).toBe(-40);
+      expect((context.translateYSV as { value: number }).value).toBe(187);
+      expect(context.translateYSV).not.toBe(zoomState.translateYSV);
+      // The transform's centre is still the render box's.
+      expect(context.containerWidthSV).toBe(zoomState.containerWidthSV);
+      expect(context.viewportWidthSV).toBe(zoomState.viewportWidthSV);
+      expect(context.viewportHeightSV).toBe(zoomState.viewportHeightSV);
+    });
+
+    it('keeps the reset control inside the pan overlay, which fills the viewport', () => {
+      zoomState.isZoomed = true;
+      const { container } = renderInViewport(() => {});
+      const panDetector = container.querySelector('[data-zoom-pan="true"]');
+      expect(panDetector?.querySelector('[data-reset-zoom="true"]')).not.toBeNull();
+      expect(panDetector?.querySelector('[data-above-board="true"]')).not.toBeNull();
+    });
   });
 });

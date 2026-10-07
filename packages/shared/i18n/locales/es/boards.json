@@ -815,7 +815,6 @@
       "cancel": "Seguir editando"
     },
     "chips": {
-      "trace": "Trazar",
       "join": "Unir",
       "switchOff": "Desactivar",
       "switchOn": "Activar",
@@ -823,6 +822,21 @@
       "keep": "Conservar",
       "finish": "Terminar",
       "refine": "Retocar"
+    },
+    "modes": {
+      "label": "Modos de edición",
+      "select": "Elegir",
+      "add": "Añadir",
+      "trace": "Trazar",
+      "refine": "Retocar",
+      "join": "Unir",
+      "hints": {
+        "select": "Toca las presas para elegirlas y activarlas o desactivarlas",
+        "add": "Dibuja alrededor de las presas que el escaneo no encontró",
+        "trace": "Vuelve a dibujar el contorno de una presa de una sola pasada. Usa la presa elegida o la próxima que toques.",
+        "refine": "Amplía o recorta el contorno de una presa con un pincel. Usa la presa elegida o la próxima que toques.",
+        "join": "Une dos presas en una. Empieza por la presa elegida o la próxima que toques."
+      }
     },
     "banner": {
       "trace": "Dibuja con un dedo alrededor de la presa",
@@ -835,7 +849,10 @@
       "refineAdd": "Pinta para ampliar la presa. Pellizca para hacer zoom.",
       "refineErase": "Pinta para recortar la presa. Pellizca para hacer zoom.",
       "refineAddPencil": "Pinta con el Apple Pencil para ampliar la presa",
-      "refineErasePencil": "Pinta con el Apple Pencil para recortar la presa"
+      "refineErasePencil": "Pinta con el Apple Pencil para recortar la presa",
+      "tracePick": "Toca una presa para trazarla",
+      "refinePick": "Toca una presa para retocarla",
+      "joinPick": "Toca la primera presa que quieres unir"
     },
     "addShape": {
       "label": "Cómo perfilar una presa",
@@ -874,7 +891,8 @@
         "delete": "Eliminar",
         "addHold": "Añadir una presa en el centro de la vista"
       },
-      "revealed": "Presas encontradas: {{summary}}"
+      "revealed": "Presas encontradas: {{summary}}",
+      "pickHint": "Desliza hacia arriba o abajo hasta una presa y toca dos veces para elegirla."
     },
     "readOnly": "No puedes editar este muro.",
     "errors": {
@@ -891,7 +909,8 @@
       "cornersHollow": "Esa forma es demasiado hueca. Toca las esquinas por el borde exterior de la presa.",
       "refineNothingLeft": "Eso borraría la presa entera. Mejor desactívala.",
       "refineTooDetailed": "Ese borde queda demasiado detallado para guardarlo. Prueba con un pincel más grande.",
-      "refineCantStore": "Ese trazo dejaría una forma que no se puede guardar como una sola presa, así que no se ha aplicado."
+      "refineCantStore": "Ese trazo dejaría una forma que no se puede guardar como una sola presa, así que no se ha aplicado.",
+      "needsOnHold": "Activa la presa primero"
     },
     "empty": {
       "noPhoto": "Este muro todavía no tiene foto que editar."

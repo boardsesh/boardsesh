@@ -105,6 +105,7 @@ type OptIns = {
   declineHitHolds?: number[];
   onStylusSeen?: () => void;
   loupe?: SprayLoupeFeed;
+  startsOnPhotoOnly?: boolean;
 };
 function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = {}) {
   const points = shared<number[]>([]);
@@ -133,6 +134,7 @@ function mount(acceptStationaryTaps = true, fingerDraw = true, optIns: OptIns = 
       declineOnSelectionSV={selection}
       declineHitHoldsSV={optIns.declineHitHolds ? shared<number[]>(optIns.declineHitHolds) : undefined}
       onStylusSeen={optIns.onStylusSeen}
+      startsOnPhotoOnly={optIns.startsOnPhotoOnly}
     />,
   );
   function send(name: string, payload: unknown = event(), success?: boolean) {
@@ -247,9 +249,11 @@ describe('Add Draw pointer lifecycle', () => {
   });
   it('opts Add into stationary taps while leaving Trace on its default path', () => {
     const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
-    const addSection = source.slice(source.indexOf("if (tool === 'add')"), source.indexOf("if (tool === 'trace')"));
+    const traceStart = source.indexOf("if (tool === 'trace' && !modePicking)");
+    expect(traceStart).toBeGreaterThan(0);
+    const addSection = source.slice(source.indexOf("if (tool === 'add')"), traceStart);
     expect(addSection).toContain('acceptStationaryTaps');
-    const traceSection = source.slice(source.indexOf("if (tool === 'trace')"));
+    const traceSection = source.slice(traceStart);
     expect(traceSection).not.toContain('acceptStationaryTaps');
   });
   it('retains the Trace pan stroke path', () => {
@@ -331,14 +335,54 @@ describe('closing the loop', () => {
   it('opts the Refine brush out, and leaves every outline tool on the default', () => {
     const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
     const refineSection = source.slice(
-      source.indexOf("if (tool === 'refine')"),
-      source.indexOf("if (tool === 'trace')"),
+      source.indexOf("if (tool === 'refine' && !modePicking)"),
+      source.indexOf("if (tool === 'trace' && !modePicking)"),
     );
     expect(refineSection).toContain('closeOnReturn={false}');
     expect(source.match(/closeOnReturn/g)).toHaveLength(1);
   });
 });
 
+describe('strokes that start off the photo (startsOnPhotoOnly)', () => {
+  // The mount draws a 100 x 100 render box (200 x 200 board px) at scale 2,
+  // translate (10, 20): screen x = 400 lands well past its right edge, in the
+  // dark band a zoomed spray wall leaves round its photo.
+  const offPhoto = touch(7, 400, 60);
+
+  it('steps aside for an Add touch that lands off the photo, so the board can pan', () => {
+    const stroke = mount(true, true, { startsOnPhotoOnly: true });
+    stroke.send('down', event([offPhoto]));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.activate).not.toHaveBeenCalled();
+    expect(stroke.start).not.toHaveBeenCalled();
+    stroke.send('up', upEvent([offPhoto], []));
+    expect(stroke.end).not.toHaveBeenCalled();
+    expect(stroke.points.value).toEqual([]);
+  });
+
+  it('steps aside for a Trace touch that lands off the photo', () => {
+    const stroke = mount(false, true, { startsOnPhotoOnly: true });
+    stroke.send('down', event([offPhoto]));
+    expect(stroke.manager.fail).toHaveBeenCalledTimes(1);
+    expect(stroke.manager.activate).not.toHaveBeenCalled();
+  });
+
+  it('still draws a stroke that starts on the photo, wherever it then goes', () => {
+    const stroke = mount(true, true, { startsOnPhotoOnly: true });
+    stroke.send('down');
+    expect(stroke.manager.activate).toHaveBeenCalledTimes(1);
+    stroke.send('move', event([touch(7, 400, 60)]));
+    stroke.send('up', upEvent([touch(7, 400, 60)], []));
+    expect(stroke.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('changes nothing without the opt-in (the catalogue editor)', () => {
+    const stroke = mount(true, true);
+    stroke.send('down', event([offPhoto]));
+    expect(stroke.manager.fail).not.toHaveBeenCalled();
+    expect(stroke.start).toHaveBeenCalledTimes(1);
+  });
+});
 describe('the loupe feed', () => {
   it('follows a finger stroke in clip points and unzoomed render px, then lets go on UP', () => {
     const loupe = loupeFeed();

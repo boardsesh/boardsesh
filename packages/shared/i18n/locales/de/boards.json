@@ -815,7 +815,6 @@
       "cancel": "Weiter bearbeiten"
     },
     "chips": {
-      "trace": "Umranden",
       "join": "Verbinden",
       "switchOff": "Ausschalten",
       "switchOn": "Einschalten",
@@ -823,6 +822,21 @@
       "keep": "Behalten",
       "finish": "Abschließen",
       "refine": "Nachbessern"
+    },
+    "modes": {
+      "label": "Bearbeitungsmodi",
+      "select": "Auswählen",
+      "add": "Hinzufügen",
+      "trace": "Umranden",
+      "refine": "Nachbessern",
+      "join": "Verbinden",
+      "hints": {
+        "select": "Tippe auf Griffe, um sie auszuwählen und an- oder auszuschalten",
+        "add": "Zeichne um die Griffe, die der Scan übersehen hat",
+        "trace": "Zeichne den Umriss eines Griffs in einem Zug neu. Gilt für den ausgewählten Griff oder den nächsten, auf den du tippst.",
+        "refine": "Vergrößere oder verkleinere den Umriss eines Griffs mit dem Pinsel. Gilt für den ausgewählten Griff oder den nächsten, auf den du tippst.",
+        "join": "Verbinde zwei Griffe zu einem. Beginnt mit dem ausgewählten Griff oder dem nächsten, auf den du tippst."
+      }
     },
     "banner": {
       "trace": "Zeichne mit einem Finger um den Griff",
@@ -835,7 +849,10 @@
       "refineAdd": "Male, um den Griff zu vergrößern. Mit zwei Fingern zoomen.",
       "refineErase": "Male, um vom Griff wegzunehmen. Mit zwei Fingern zoomen.",
       "refineAddPencil": "Male mit dem Apple Pencil, um den Griff zu vergrößern",
-      "refineErasePencil": "Male mit dem Apple Pencil, um vom Griff wegzunehmen"
+      "refineErasePencil": "Male mit dem Apple Pencil, um vom Griff wegzunehmen",
+      "tracePick": "Tippe auf einen Griff zum Umranden",
+      "refinePick": "Tippe auf einen Griff zum Nachbessern",
+      "joinPick": "Tippe auf den ersten Griff zum Verbinden"
     },
     "addShape": {
       "label": "So umrandest du einen Griff",
@@ -874,7 +891,8 @@
         "delete": "Löschen",
         "addHold": "Griff in der Mitte der Ansicht hinzufügen"
       },
-      "revealed": "Gefundene Griffe: {{summary}}"
+      "revealed": "Gefundene Griffe: {{summary}}",
+      "pickHint": "Wisch nach oben oder unten zu einem Griff und tippe dann doppelt, um ihn auszuwählen."
     },
     "readOnly": "Du kannst diese Wand nicht bearbeiten.",
     "errors": {
@@ -891,7 +909,8 @@
       "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs.",
       "refineNothingLeft": "Damit wäre der ganze Griff weg. Schalte ihn lieber aus.",
       "refineTooDetailed": "Dieser Rand ist zu detailliert zum Speichern. Nimm einen größeren Pinsel.",
-      "refineCantStore": "Dieser Strich würde eine Form hinterlassen, die sich nicht als ein Griff speichern lässt, deshalb wurde er nicht übernommen."
+      "refineCantStore": "Dieser Strich würde eine Form hinterlassen, die sich nicht als ein Griff speichern lässt, deshalb wurde er nicht übernommen.",
+      "needsOnHold": "Schalte den Griff zuerst ein"
     },
     "empty": {
       "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."

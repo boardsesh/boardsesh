@@ -1,6 +1,6 @@
 import React, { type MutableRefObject } from 'react';
 import type { GestureType } from 'react-native-gesture-handler';
-import { useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { useSharedValue, type DerivedValue, type SharedValue } from 'react-native-reanimated';
 import { DrawStrokeOverlay } from './DrawStrokeOverlay';
 
 type SprayPencilSurfaceProps = {
@@ -14,8 +14,8 @@ type SprayPencilSurfaceProps = {
    */
   hitHoldsSV: SharedValue<number[]>;
   scaleSV: SharedValue<number>;
-  translateXSV: SharedValue<number>;
-  translateYSV: SharedValue<number>;
+  translateXSV: DerivedValue<number>;
+  translateYSV: DerivedValue<number>;
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   boardScale: number;
@@ -37,7 +37,9 @@ type SprayPencilSurfaceProps = {
  * own `selectedDragIdAt` rule); both fall through to the
  * edit overlay around it, where a finger picks and a Pencil on the selection
  * moves it. Everything else the Pencil does — a tap or a stroke — comes back
- * through `onStrokeEnd` for the screen to sort out.
+ * through `onStrokeEnd` for the screen to sort out. A Pencil touch past the
+ * photo's edge never starts a stroke (`startsOnPhotoOnly`): it falls through
+ * too, where its tap only puts the picked hold down.
  */
 export const SprayPencilSurface = React.memo(function SprayPencilSurface({
   pointsSV,
@@ -64,6 +66,7 @@ export const SprayPencilSurface = React.memo(function SprayPencilSurface({
       declineOnSelectionSV={selectedHoldSV}
       declineHitHoldsSV={hitHoldsSV}
       onStylusSeen={onStylusSeen}
+      startsOnPhotoOnly
       scaleSV={scaleSV}
       translateXSV={translateXSV}
       translateYSV={translateYSV}
