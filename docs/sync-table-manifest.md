@@ -218,7 +218,7 @@ composite-keyed sync table must keep this true (or version the encoding).
   `session_id`, `created_at`, `updated_at`.
   (Skip aurora*\_/kilter\_\_ bookkeeping, `board_id`, `inferred_session_id`.) Index `(climb_uuid, board_type, angle)` for logbook reads.
 - `climb_revision` is a nullable INTEGER: the climb revision the tick was logged against, 1 on a climb nobody has
-  edited (#6023, [spray-walls.md](spray-walls.md#which-revision-a-tick-was-logged-on)). NULL means unknown. That is
+  edited (#6023, [spray-walls.md](spray-walls.md#climb-revisions-retired)). NULL means unknown. That is
   every import, every tick older than the column, and locally also every tick this phone pulled before schema v11,
   whatever the server holds for it: a tick is only re-delivered when it changes, so those rows stay NULL.
 
@@ -286,7 +286,8 @@ composite-keyed sync table must keep this true (or version the encoding).
   `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`,
   `missing_hold_count` (schema v7), `revision_number` and `holds_revision_number` (schema v11), `updated_at`,
   `sync_seq`.
-- `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall — and is
+- `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall, written when
+  a hold-edit publish removes a hold the climb uses — and is
   spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a
   Kilter. It carries the "N holds gone" row chip on a downloaded wall's list. A climb that lost a hold is listed
   online and off; only a climb a full reset retired leaves the default list, through `retired_by_reset` (schema
@@ -300,9 +301,10 @@ composite-keyed sync table must keep this true (or version the encoding).
   conditions a bump exists to protect are therefore already met.
 - `revision_number` and `holds_revision_number` are the climb's current revision and the revision at which its
   holds last changed (#6023). On the server both are `NOT NULL DEFAULT 1`; on the device both are nullable
-  INTEGERs, because a row pulled before schema v11 has never been told its revision.
-- They were also added **without** bumping `refreshRevision`. Only an edit moves either number off 1, and an edit
-  bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
+  INTEGERs, because a row pulled before schema v11 has never been told its revision. Since revision history was
+  retired the server no longer moves either number, and `syncClimbs` keeps shipping the stored values.
+- They were also added **without** bumping `refreshRevision`. Only an edit (before the retirement) moved either
+  number off 1, and an edit bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
   never re-delivered is a climb nobody has edited. Its local NULL costs nothing: the app never sends a tick's
   revision, and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
   climb.

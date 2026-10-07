@@ -344,7 +344,10 @@ export type AscentFeedItem = {
   boardseshConfidence?: Maybe<Scalars['String']['output']>;
   /** Boardsesh grade on the shared difficulty scale (COALESCE of the cross-board universal grade and the within-board local grade) for this ascent's climb at its angle. Null when no grade row exists. Use boardseshConfidence to distinguish trusted, setter-only, and projected values. */
   boardseshDifficulty?: Maybe<Scalars['Float']['output']>;
-  /** The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue. */
+  /**
+   * Always null. Revision history was retired, so no log is marked as made on an earlier version.
+   * @deprecated Climb revision history was retired. Always null.
+   */
   climbCurrentRevision?: Maybe<Scalars['Int']['output']>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
@@ -1075,10 +1078,9 @@ export type Climb = {
   /** Animation pace between frames, in Aurora's native unit (treated as milliseconds). 0 when not set. */
   framesPace?: Maybe<Scalars['Int']['output']>;
   /**
-   * The revision at which this climb's holds last changed. Equal to
-   * `revisionNumber` straight after an edit that moved a hold, and behind it
-   * after a rename, a regrade or a pace change. A tick whose `climbRevision` is
-   * at or above this number was climbed on the holds the climb has now.
+   * The revision at which this climb's holds last changed, as stored. Edits no
+   * longer move it. A tick whose `climbRevision` is at or above this number was
+   * climbed on the holds the climb has now.
    */
   holdsRevisionNumber?: Maybe<Scalars['Int']['output']>;
   /** Whether this climb is a draft (unpublished) */
@@ -1092,12 +1094,11 @@ export type Climb = {
   /**
    * The holds this climb was set on that are no longer on the wall, carrying the
    * geometry they had while they were — so a client can draw ghost rings where
-   * they used to be and the climber can see what the reset took.
+   * they used to be and the climber can see what came off.
    *
    * Spray walls only: null on every catalogue board, where holds do not come off,
-   * and null on a climb that has lost nothing, so the common case costs no query.
-   * An empty list means the climb's holds are all still there but the server did
-   * look.
+   * and null when the climb's count is unknown. An empty list for a climb that has
+   * lost nothing (no query), or for a wall the viewer may not see.
    *
    * Coordinates are the wall's canonical frame — the same frame
    * `SprayWallRenderData.holds` uses — so the two sets draw on one photo without
@@ -1113,10 +1114,11 @@ export type Climb = {
    * How many of this climb's holds are no longer on the wall.
    *
    * Spray walls only — null on every catalogue board, where holds do not come off.
-   * 0 is an intact climb; anything higher is a climb that survived a reset minus
-   * some holds, which stays findable, gets a badge and can be remixed. Materialised
-   * on `board_climbs` rather than joined, because the offline mirror has no
-   * `board_climb_holds` table to join through.
+   * 0 is an intact climb; anything higher is a climb that lost holds when the
+   * owner edited the wall's holds (or to an old in-place reset). It stays listed,
+   * gets a badge and can be remixed, with `lostHolds` drawing the missing holds.
+   * Materialised on `board_climbs` rather than joined, because the offline mirror
+   * has no `board_climb_holds` table to join through.
    */
   missingHoldCount?: Maybe<Scalars['Int']['output']>;
   /** The signed-in climber's OWN grade for this climb at this angle: the difficulty of their latest tick that carries one, clamped to the boulder scale. Populated only when the search asked for useMyGrades — that search's filter and difficulty sort key off exactly this value (falling back to the crowd's grade where it is null), so a row can never disagree with its own position in the list. Never round-tripped through the party queue: it is one climber's private opinion, not a property of the climb. */
@@ -1130,11 +1132,11 @@ export type Climb = {
   /** Board configuration to draw this climb on, resolved against its setter's boards. Populated by userClimbs; null wherever the board is already known from the route. */
   renderBoard?: Maybe<RenderBoardConfig>;
   /**
-   * The climb's current revision. 1 for a climb nobody has edited since it was
-   * published, and one higher for every recorded edit after that (the same
-   * numbers `climbRevisions` returns). A client that logs a tick sends this
-   * back as `SaveTickInput.climbRevision`. Null on a fetch path that does not
-   * project the column.
+   * The climb's stored revision number. Edits no longer move it, so it is 1 for
+   * almost every climb and frozen at its last value for the few edited before
+   * revision history was retired. A client that logs a tick sends this back as
+   * `SaveTickInput.climbRevision`. Null on a fetch path that does not project
+   * the column.
    */
   revisionNumber?: Maybe<Scalars['Int']['output']>;
   /** Username of the person who created this climb */
@@ -1244,7 +1246,10 @@ export type ClimbLogItem = {
   attemptCount: Scalars['Int']['output'];
   /** Board type */
   boardType: Scalars['String']['output'];
-  /** The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue. */
+  /**
+   * Always null. Revision history was retired, so no log is marked as made on an earlier version.
+   * @deprecated Climb revision history was retired. Always null.
+   */
   climbCurrentRevision?: Maybe<Scalars['Int']['output']>;
   /** The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). */
   climbRevision?: Maybe<Scalars['Int']['output']>;
@@ -1710,23 +1715,24 @@ export type CommentsInput = {
 };
 
 /**
- * The reviewed outcome of a reset. Re-validated against the wall's current state
- * inside the commit transaction — a proposal computed ten minutes ago against a
- * generation that has since been published is rejected, not applied.
+ * Publish a wall's FIRST version. The in-place reset this input was built for is
+ * retired: a draft with a new photo on a published wall is refused with
+ * SPRAY_WALL_RESET_RETIRED. The decision lists are still required by the shape,
+ * so older apps' documents validate, and are ignored.
  */
 export type CommitSprayWallVersionInput = {
+  /** Ignored. Retired with the in-place reset. */
   added: Array<SprayWallAddedDecisionInput>;
   /**
-   * The owner marked this a FULL reset: the old set is coming down. Every climb
-   * that loses a hold in this reset is retired and drops out of the wall's default
-   * climb list; logbooks, playlists and share links still open it. Omitted or
-   * false is a partial reset, which retires nothing.
+   * Ignored. Partial and full resets were retired with the in-place reset.
+   * @deprecated Retired with the in-place reset. Ignored.
    */
   fullReset?: InputMaybe<Scalars['Boolean']['input']>;
+  /** Ignored. Retired with the in-place reset. */
   kept: Array<SprayWallKeptDecisionInput>;
-  /** Hold ids that came off the wall. */
+  /** Ignored. Retired with the in-place reset. */
   removed: Array<Scalars['Int']['input']>;
-  /** The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput). */
+  /** The DRAFT version to publish. */
   versionId: Scalars['ID']['input'];
   wallUuid: Scalars['ID']['input'];
 };
@@ -1971,7 +1977,10 @@ export type CreateSessionInput = {
 export type CreateSprayWallInput = {
   /** Fixed for the wall's life: stats are keyed by angle and a spray wall does not adjust. */
   angle: Scalars['Int']['input'];
-  /** Who can edit climbs on this wall. Defaults to SETTER. */
+  /**
+   * Accepted and ignored. Only a climb's setter edits it.
+   * @deprecated Retired. Accepted and ignored.
+   */
   climbEditPolicy?: InputMaybe<SprayClimbEditPolicy>;
   description?: InputMaybe<Scalars['String']['input']>;
   /** Attach the wall to a gym the caller may link boards to. */
@@ -2475,7 +2484,10 @@ export type FollowingAscentFeedItem = {
   attemptCount: Scalars['Int']['output'];
   /** Board type */
   boardType: Scalars['String']['output'];
-  /** The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Populated by followingClimbAscents; null on the paginated feeds. */
+  /**
+   * Always null. Revision history was retired, so no log is marked as made on an earlier version.
+   * @deprecated Climb revision history was retired. Always null.
+   */
   climbCurrentRevision?: Maybe<Scalars['Int']['output']>;
   /** Name of the climb */
   climbName: Scalars['String']['output'];
@@ -3466,8 +3478,8 @@ export type GymTopClimb = {
  *
  * ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
  * nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
- * reset takes holds off the wall; on a catalogue board every climb is INTACT, so
- * BROKEN there is an empty result rather than an error.
+ * hold edit (or an old reset) takes holds off the wall; on a catalogue board every
+ * climb is INTACT, so BROKEN there is an empty result rather than an error.
  */
 export type HoldIntegrityFilter = 'ANY' | 'BROKEN' | 'INTACT';
 
@@ -3945,6 +3957,7 @@ export type Mutation = {
    * The previous generation is superseded and every climb on the wall has its
    * `missingHoldCount` re-materialised, which is what makes the badge, the
    * Intact / Lost holds filter and the remix prompt agree. Owner only.
+   * @deprecated Only a wall's first publish still works here. Use publishSprayWallVersion.
    */
   commitSprayWallVersion: SprayWallResetResult;
   /**
@@ -6189,10 +6202,8 @@ export type Query = {
   /** Get proposals for a specific climb. */
   climbProposals: ProposalConnection;
   /**
-   * The edit history of a published climb, newest first. At most 50 rows.
-   *
-   * Empty for a climb nobody has edited, for a draft, and for a spray climb on a
-   * wall the caller cannot see.
+   * Retired: climb edits are no longer recorded as revisions. Always empty.
+   * @deprecated Climb revision history was retired. Always empty.
    */
   climbRevisions: Array<ClimbRevision>;
   /**
@@ -6491,6 +6502,7 @@ export type Query = {
    * frame, i.e. already mapped through the draft version's own homography, which
    * is the only reason two photographs taken from different spots can be compared
    * at all. Editor only, since a proposal describes an unpublished draft.
+   * @deprecated In-place resets were retired. Always refuses with SPRAY_WALL_RESET_RETIRED; use resetSprayWall.
    */
   proposeSprayWallReset?: Maybe<SprayWallResetProposal>;
   /** Get a public user profile by ID. */
@@ -6526,6 +6538,7 @@ export type Query = {
    *
    * The PARENT is shown even when it is no longer climbable (epic decision
    * 2026-09-14): a climb that lost three holds is exactly the one worth remixing.
+   * @deprecated Remix after a reset was retired. Always null.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
   /** Search public boards. */
@@ -8018,13 +8031,8 @@ export type SaveClimbInput = {
   /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
   /**
-   * The spray wall climb this one was remixed from.
-   *
-   * Writes a `spray_climb_lineage` row alongside the child, which is what the
-   * child's screen reads to link back to the parent's ticks and grade history.
-   * Only meaningful for `boardType: "spray"`, and the parent has to be a climb
-   * on the SAME wall. The parent is kept even when it is no longer climbable —
-   * that is usually why it was remixed.
+   * Accepted and ignored. Remix after a reset was retired, and no lineage is written.
+   * @deprecated Remix after a reset was retired. Accepted and ignored.
    */
   remixOfClimbUuid?: InputMaybe<Scalars['ID']['input']>;
   /** Physical board size the climb is set on. Required on Woods (1 = 8x10, 2 = 12x12), where the two walls number their holds from their own origins. Ignored on boards that derive size compatibility from the hold bounding box. */
@@ -9083,9 +9091,8 @@ export type SocialEntityType =
 export type SortMode = 'controversial' | 'hot' | 'new' | 'top';
 
 /**
- * Who may edit published climbs on this wall (#6025).
- * SETTER: only the setter and wall editors.
- * COLLABORATORS: anyone who can set climbs on the wall can also edit published climbs.
+ * Retired. A published spray climb follows the rule every board follows: only
+ * its setter edits it, within 24 hours of first publish. Every wall reads SETTER.
  */
 export type SprayClimbEditPolicy = 'COLLABORATORS' | 'SETTER';
 
@@ -9109,12 +9116,8 @@ export type SprayDetectionResult = {
 export type SprayHoldSource = 'AUTO' | 'MANUAL';
 
 /**
- * A remix starting point: the parent climb with every hold it has since lost
- * stripped out of its frames.
- *
- * Nothing is written by asking for one. Pass `parentUuid` back as
- * `SaveClimbInput.remixOfClimbUuid` and the lineage row is written with the
- * child.
+ * A remix starting point. Retired with `remixClimb`, which now always returns
+ * null; kept so older apps' documents still validate.
  */
 export type SprayRemixSeed = {
   __typename?: 'SprayRemixSeed';
@@ -9163,7 +9166,10 @@ export type SprayWall = {
    */
   archivedAt?: Maybe<Scalars['String']['output']>;
   board: UserBoard;
-  /** Who may edit published climbs on this wall (#6025). */
+  /**
+   * Always SETTER: only a climb's setter edits it, within 24 hours of first publish.
+   * @deprecated Retired. Only a climb's setter edits it, within 24 hours of first publish.
+   */
   climbEditPolicy: SprayClimbEditPolicy;
   /** The published version climbers see. Null until the first publish. */
   currentVersion?: Maybe<SprayWallVersion>;
@@ -9240,9 +9246,9 @@ export type SprayWall = {
    */
   viewerCanEdit: Scalars['Boolean']['output'];
   /**
-   * Whether the signed-in viewer can edit published climbs on this wall (#6025).
-   * True for wall editors, and — when climbEditPolicy is COLLABORATORS — also
-   * for anyone who can set climbs on the wall.
+   * Always false. Editing someone else's published climb on a wall was retired;
+   * the setter's own edit rights come from the climb, not the wall.
+   * @deprecated Retired. Only a climb's setter edits it, within 24 hours of first publish.
    */
   viewerCanEditClimbs: Scalars['Boolean']['output'];
 };
@@ -9562,9 +9568,8 @@ export type SprayWallResetKeptHold = {
 };
 
 /**
- * What a reset would do, computed and thrown away. `proposeSprayWallReset`
- * writes nothing at all — the owner reviews this and `commitSprayWallVersion`
- * is what lands it.
+ * What an in-place reset would have done. Retired with `proposeSprayWallReset`,
+ * which now always refuses; kept so older apps' documents still validate.
  */
 export type SprayWallResetProposal = {
   __typename?: 'SprayWallResetProposal';
@@ -9597,7 +9602,7 @@ export type SprayWallResetResult = {
   __typename?: 'SprayWallResetResult';
   /** Holds this commit put on the wall. */
   addedCount: Scalars['Int']['output'];
-  /** Climbs whose `missingHoldCount` or retired state moved as a result. */
+  /** Climbs whose `missingHoldCount` moved as a result. 0 on a first publish. */
   climbsChanged: Scalars['Int']['output'];
   /**
    * Holds still on the wall from the previous generation.
@@ -10111,9 +10116,8 @@ export type UpdateBoardInput = {
  * Input for updating an existing climb.
  *
  * A draft can be updated by its setter at any time. A published climb can be
- * updated by its setter within 24 hours of its first publish, except on a spray
- * wall, where the setter and anyone who can edit the wall can update it with no
- * time limit. Every edit to a published climb is kept (see climbRevisions).
+ * updated by its setter within 24 hours of its first publish, on every board,
+ * spray walls included. The edit is made in place; no revision is recorded.
  */
 export type UpdateClimbInput = {
   angle?: InputMaybe<Scalars['Int']['input']>;
@@ -10295,7 +10299,10 @@ export type UpdateSprayWallInput = {
    * rather than cascaded.
    */
   angle?: InputMaybe<Scalars['Int']['input']>;
-  /** Who can edit climbs on this wall. Only the wall creator may change this (#6025). */
+  /**
+   * Accepted and ignored. Only a climb's setter edits it.
+   * @deprecated Retired. Accepted and ignored.
+   */
   climbEditPolicy?: InputMaybe<SprayClimbEditPolicy>;
   description?: InputMaybe<Scalars['String']['input']>;
   /** Attach the wall to a gym the caller may link boards to, or pass null to detach. */

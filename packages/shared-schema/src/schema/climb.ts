@@ -80,36 +80,35 @@ export const climbTypeDefs = /* GraphQL */ `
     How many of this climb's holds are no longer on the wall.
 
     Spray walls only — null on every catalogue board, where holds do not come off.
-    0 is an intact climb; anything higher is a climb that survived a reset minus
-    some holds, which stays findable, gets a badge and can be remixed. Materialised
-    on \`board_climbs\` rather than joined, because the offline mirror has no
-    \`board_climb_holds\` table to join through.
+    0 is an intact climb; anything higher is a climb that lost holds when the
+    owner edited the wall's holds (or to an old in-place reset). It stays listed,
+    gets a badge and can be remixed, with \`lostHolds\` drawing the missing holds.
+    Materialised on \`board_climbs\` rather than joined, because the offline mirror
+    has no \`board_climb_holds\` table to join through.
     """
     missingHoldCount: Int
     """
-    The climb's current revision. 1 for a climb nobody has edited since it was
-    published, and one higher for every recorded edit after that (the same
-    numbers \`climbRevisions\` returns). A client that logs a tick sends this
-    back as \`SaveTickInput.climbRevision\`. Null on a fetch path that does not
-    project the column.
+    The climb's stored revision number. Edits no longer move it, so it is 1 for
+    almost every climb and frozen at its last value for the few edited before
+    revision history was retired. A client that logs a tick sends this back as
+    \`SaveTickInput.climbRevision\`. Null on a fetch path that does not project
+    the column.
     """
     revisionNumber: Int
     """
-    The revision at which this climb's holds last changed. Equal to
-    \`revisionNumber\` straight after an edit that moved a hold, and behind it
-    after a rename, a regrade or a pace change. A tick whose \`climbRevision\` is
-    at or above this number was climbed on the holds the climb has now.
+    The revision at which this climb's holds last changed, as stored. Edits no
+    longer move it. A tick whose \`climbRevision\` is at or above this number was
+    climbed on the holds the climb has now.
     """
     holdsRevisionNumber: Int
     """
     The holds this climb was set on that are no longer on the wall, carrying the
     geometry they had while they were — so a client can draw ghost rings where
-    they used to be and the climber can see what the reset took.
+    they used to be and the climber can see what came off.
 
     Spray walls only: null on every catalogue board, where holds do not come off,
-    and null on a climb that has lost nothing, so the common case costs no query.
-    An empty list means the climb's holds are all still there but the server did
-    look.
+    and null when the climb's count is unknown. An empty list for a climb that has
+    lost nothing (no query), or for a wall the viewer may not see.
 
     Coordinates are the wall's canonical frame — the same frame
     \`SprayWallRenderData.holds\` uses — so the two sets draw on one photo without
@@ -126,8 +125,8 @@ export const climbTypeDefs = /* GraphQL */ `
 
   ANY is the default and adds no filter at all. INTACT keeps climbs that have lost
   nothing; BROKEN keeps only the ones that have. Meaningful on spray walls, where a
-  reset takes holds off the wall; on a catalogue board every climb is INTACT, so
-  BROKEN there is an empty result rather than an error.
+  hold edit (or an old reset) takes holds off the wall; on a catalogue board every
+  climb is INTACT, so BROKEN there is an empty result rather than an error.
   """
   enum HoldIntegrityFilter {
     ANY

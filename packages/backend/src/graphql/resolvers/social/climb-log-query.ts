@@ -59,30 +59,6 @@ export async function resolveClimbLogUuid(boardType: string, climbUuid: string):
 }
 
 /**
- * The climb's revision now (`board_climbs.revision_number`), for
- * `climbCurrentRevision` on every row of a `climbLogs` page (#6023). Null when
- * the catalogue has no row for the climb.
- *
- * One primary-key probe per request, not a join: a request is for one climb, so
- * every row would carry the same number, and `climbLogs` deliberately pages
- * `boardsesh_ticks` without touching `board_climbs`.
- *
- * It needs no visibility check of its own. The caller attaches it to rows that
- * `climbLogConditions` already let through and to nothing else, so a viewer who
- * cannot see a spray wall gets an empty page and never reads this number.
- *
- * @param canonicalClimbUuid from `resolveClimbLogUuid`.
- */
-export async function readClimbCurrentRevision(boardType: string, canonicalClimbUuid: string): Promise<number | null> {
-  const [climb] = await db
-    .select({ revisionNumber: dbSchema.boardClimbs.revisionNumber })
-    .from(dbSchema.boardClimbs)
-    .where(and(eq(dbSchema.boardClimbs.uuid, canonicalClimbUuid), eq(dbSchema.boardClimbs.boardType, boardType)))
-    .limit(1);
-  return climb?.revisionNumber ?? null;
-}
-
-/**
  * True for a tick on `canonicalClimbUuid` or on any uuid deduplicated into it.
  *
  * `= ANY(array)` over an uncorrelated subquery, not `IN (subquery)` or a join:
@@ -191,8 +167,7 @@ export function toClimbLogBase({
     userDisplayName: userDisplayName || userName || undefined,
     userAvatarUrl: userAvatarUrl || userImage || undefined,
     climbUuid: tick.climbUuid,
-    // The revision this log was made on. The climb's current one is not on the
-    // tick: each reader adds `climbCurrentRevision` from the climb row it has.
+    // The revision this log was made on, as stored on the tick.
     climbRevision: tick.climbRevision,
     boardType: tick.boardType,
     angle: tick.angle,

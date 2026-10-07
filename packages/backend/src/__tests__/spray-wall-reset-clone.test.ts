@@ -308,7 +308,6 @@ describe('resetSprayWall: who and what', () => {
       longitude: -0.12,
       hideLocation: true,
       isUnlisted: true,
-      climbEditPolicy: 'COLLABORATORS',
     });
     await db.execute(sql`UPDATE user_boards SET gym_id = ${gym.id} WHERE uuid = ${wall.uuid}`);
     await db.execute(sql`
@@ -330,7 +329,6 @@ describe('resetSprayWall: who and what', () => {
       'longitude',
       'hide_location',
       'render_settings',
-      'climb_edit_policy',
     ]) {
       expect(copied[column], column).toEqual(source[column]);
     }

@@ -99,15 +99,11 @@ export const MAX_HOLDS_PER_WALL = 1500;
 export const MAX_VERSIONS_PER_WALL = 50;
 
 /**
- * Revisions kept per climb, on every board (not only spray).
+ * Revisions kept per climb, from when edits were recorded as revisions.
  *
- * A published spray climb can be edited with no time limit, so its history has to
- * be bounded somewhere. Editing is never refused at the cap: the oldest edit is
- * dropped and revision 1, the climb as first published, is always kept. Fifty is
- * a rename a week for a year.
- *
- * Here with the other spray caps because unlimited spray edits are the reason the
- * cap exists; a catalogue board's 24 hour edit window keeps it far below this.
+ * Retired: the server no longer writes `board_climb_revisions`, so nothing
+ * enforces this. Kept only because a mobile test on `release/next`
+ * (`revisions-section.test.tsx`) imports it; remove it once that file is gone.
  */
 export const MAX_REVISIONS_PER_CLIMB = 50;
 

@@ -247,7 +247,7 @@ describe('smartPlaylist resolver', () => {
     // The page and the count each build the per-climb subquery first, then
     // select from it: five selects with the user lookup. Behaviour (which
     // climbs count as projects, before and after a hold moves) is asserted
-    // against a real database in climb-revisions.test.ts.
+    // against a real database in climb-edit-in-place.test.ts.
     const { chain: pageLoggedChain, calls: pageLoggedCalls } = makeChain([]);
     mockDb.select.mockReturnValueOnce(pageLoggedChain);
     const { chain: pageChain, calls: pageCalls } = makeChain([]);

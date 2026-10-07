@@ -18,38 +18,28 @@ import type { BoardName } from '@boardsesh/board-constants';
 import { fingerprintFromHolds } from '@boardsesh/kilter-sync/sync';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { recomputeMissingHoldCountForClimb, type ClimbStatsKey } from '@boardsesh/db/queries';
+import { recomputeMissingHoldCountForClimb } from '@boardsesh/db/queries';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../db/queries/util/table-select';
 import { publishSocialEvent } from '../../../events';
 import { notifyClimbRevalidated } from '../../../lib/web-revalidate';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdminOrLeader } from '../social/roles';
-import { canEditBoard } from '../social/boards';
 import {
   CLIMB_EDIT_CONFLICT_ERROR_CODE,
   CLIMB_EDIT_REFUSAL_CODES,
   climbEditDecisionsAreStale,
-  lockClimbForRevision,
-  recordClimbRevision,
-  type ClimbRevisionNumbers,
-} from './climb-revisions';
+  lockClimbForEdit,
+} from './climb-edit-guard';
 import { deleteClimbDependentRows } from './climb-cleanup';
-import {
-  markStatsKeysForHoldsChange,
-  queueHoldsChangeStatsRefresh,
-  recomputeStatsAfterHoldsChange,
-} from './holds-change-stats';
 import {
   SPRAY_CLIMB_CODES,
   assertSprayAngleMatchesWall,
   assertSprayClimbIsSingleFrame,
-  recordRemixLineage,
   populateSprayClimbColumns,
   assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
   assertSprayTargetNotArchived,
   assertSprayWallAcceptsClimbsUnderLock,
-  findVisibleSprayWall,
   isSprayBoard,
   requireVisibleSprayWall,
   sprayWallMayAnnounceUnderLock,
@@ -86,37 +76,27 @@ import {
   UpdateClimbInputSchema,
 } from '../../../validation/schemas';
 
-/** How long a published climb stays editable on the boards that have a window. */
-const CLIMB_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 /**
- * Whether a published climb on this board stops being editable after
- * `CLIMB_EDIT_WINDOW_MS`.
+ * How long a published climb stays editable by its setter, on every board.
  *
- * Every board but spray. A catalogue board is shared by everyone who owns one, so
- * a published climb is something other people have already sent and logged, and
- * it has to hold still. A spray wall is one physical wall whose holds move, so
- * its climbs need fixing for as long as the wall exists (#5955); every edit is
- * kept as a revision instead.
+ * Spray walls included: a published climb is something other people have sent
+ * and logged, so after a day it holds still. A spray wall's holds are locked once
+ * it has a published climb, so its climbs no longer need fixing after a reset.
  */
-export function climbEditWindowApplies(boardType: string): boolean {
-  return !isSprayBoard(boardType);
-}
+const CLIMB_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type SaveClimbArgs = { input: unknown };
 type DeleteDraftClimbArgs = { uuid: unknown; boardType: unknown };
 
 /**
- * What `updateClimb`'s transaction hands back: the climb's revision numbers once
- * it has committed; `replayedPublishAt` only when the call turned out to be a
- * publish that had already landed and so wrote nothing; and the stats keys a
- * holds change recomputed, for the refresh that follows the commit. Returned
- * rather than assigned from inside the callback, so those keys exist only for a
- * transaction that committed.
+ * What `updateClimb`'s transaction hands back: the climb's stored revision
+ * numbers, which edits no longer move, and `replayedPublishAt` only when the call
+ * turned out to be a publish that had already landed and so wrote nothing.
  */
-type UpdateClimbOutcome = ClimbRevisionNumbers & {
+type UpdateClimbOutcome = {
+  revisionNumber: number;
+  holdsRevisionNumber: number;
   replayedPublishAt?: string | null;
-  holdsChangeStatsKeys: ClimbStatsKey[];
 };
 
 function generateClimbUuid(): string {
@@ -219,16 +199,8 @@ export const climbMutations = {
       assertSprayClimbIsSingleFrame(validated.framesCount, validated.frames);
     }
 
-    // A remix is a spray-wall idea and `spray_climb_lineage` is a spray table, so
-    // there is nothing a remix of a Kilter climb could write. Rejected rather than
-    // ignored: dropping the field silently would save the climb, report success,
-    // and leave the client believing a link exists that never will — and the
-    // lineage row can only be written once, with the child.
-    if (!sprayTarget && validated.remixOfClimbUuid) {
-      throw new GraphQLError('Only spray wall climbs can be remixed', {
-        extensions: { code: SPRAY_CLIMB_CODES.remixParentNotFound, boardType },
-      });
-    }
+    // `remixOfClimbUuid` is accepted and ignored on every board: remix after a
+    // reset was retired, and no `spray_climb_lineage` row is written any more.
 
     // Woods is code-driven: no board_placements to validate a hold against and
     // no board_product_sizes to derive compatibility from, so the shared
@@ -449,13 +421,6 @@ export const climbMutations = {
             })),
           )
           .onConflictDoNothing();
-      }
-
-      // The remix link, written with the child rather than after it: a lineage row
-      // is the only record of where a remix came from, and a climb that landed
-      // without it would look like an original forever.
-      if (sprayTarget && validated.remixOfClimbUuid) {
-        await recordRemixLineage(tx, sprayTarget, uuid, validated.remixOfClimbUuid);
       }
 
       // Derive the denormalised columns, then re-assert the spray ones — see
@@ -728,27 +693,18 @@ export const climbMutations = {
   /**
    * Update an existing climb in-place.
    *
-   * Who may edit, and for how long:
-   *
-   *  - a draft: its setter, indefinitely, on every board;
-   *  - a published climb on a catalogue board: its setter, within 24 hours of the
-   *    first publish;
-   *  - a published climb on a spray wall: its setter, or anyone who can edit the
-   *    wall (`canEditBoard`: the wall owner, the owner or an admin of its gym, a
-   *    community admin on a public wall) — or, when the wall's `climbEditPolicy` is
-   *    'collaborators' (#6025), anyone who can set climbs on the wall
-   *    (`viewerCanWriteSprayClimbs`) — with no time limit.
-   *
-   * An edit never changes who the setter is. `user_id` and `setter_username` are
-   * not in the update set, so a wall owner fixing somebody's climb leaves it
-   * theirs.
+   * Who may edit, and for how long, the same on every board, spray walls
+   * included: only the climb's setter; a draft indefinitely, a published climb
+   * within 24 hours of its first publish. Everyone else gets
+   * `CLIMB_EDIT_NOT_ALLOWED`, an expired window `CLIMB_EDIT_WINDOW_EXPIRED`.
    *
    * A climb can transition from draft → published via `isDraft: false`, which
-   * sets `publishedAt` to now (and, on a catalogue board, starts the 24h clock).
-   * The reverse transition is not allowed (can't un-publish).
+   * sets `publishedAt` to now and starts the 24h clock. The reverse transition is
+   * not allowed (can't un-publish).
    *
-   * Every edit to a published climb that changes something is kept as a row in
-   * `board_climb_revisions` — see `./climb-revisions.ts`.
+   * The edit is made in place. No revision is recorded and `revision_number` /
+   * `holds_revision_number` do not move, so a holds edit leaves the climb's sends,
+   * first ascent and stars as they were (docs/spray-walls.md, "Editing a climb").
    */
   updateClimb: async (
     _: unknown,
@@ -802,52 +758,25 @@ export const climbMutations = {
     const currentlyDraft = existing.isDraft === true;
     const callerIsSetter = existing.userId !== null && existing.userId === ctx.userId;
 
-    // Spray: the wall is resolved BEFORE the ownership check, because on a wall
-    // the answer to "may this caller edit?" depends on it.
-    //
-    // The setter gets the same view-access resolve `saveClimb` does. It has to run
-    // even on a metadata-only edit: the wall may have been deleted since the climb
-    // was set, and an edit to a climb on a wall the caller can no longer see is not
-    // an edit they should be making.
-    //
-    // Anyone else gets through only on a PUBLISHED climb, on a wall they can both
-    // see and edit. A draft stays the setter's alone: publishing somebody else's
-    // draft would announce a climb under the wrong name. All three ways of failing
-    // (wall not visible, wall not theirs to edit, climb is a draft) fall through
-    // to the one refusal below, so the message cannot tell a stranger which it
-    // was, or that the wall exists.
-    let sprayTarget: SprayClimbTarget | null = null;
-    if (isSprayBoard(boardType)) {
-      if (callerIsSetter) {
-        sprayTarget = await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
-      } else if (!currentlyDraft) {
-        const visibleWall = await findVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid);
-        // `findVisibleSprayWall` already asserted `viewerCanWriteSprayClimbs` (the caller may set
-        // climbs on this wall). When the wall's climbEditPolicy is 'collaborators', that write access
-        // authorizes editing published climbs (#6025); otherwise, only callers with board-level
-        // edit access (`canEditBoard`: owner, gym admin, community leader on public wall) may edit.
-        if (
-          visibleWall &&
-          (visibleWall.climbEditPolicy === 'collaborators' || (await canEditBoard(ctx.userId!, visibleWall.board)))
-        ) {
-          sprayTarget = visibleWall;
-        }
-      }
-    }
-
-    if (!callerIsSetter && !sprayTarget) {
+    // Only the setter edits a climb, on every board. Refused before the spray wall
+    // is resolved, so the refusal says nothing about whether a wall exists.
+    if (!callerIsSetter) {
       throw new GraphQLError('You can only update your own climbs', {
         extensions: { code: CLIMB_EDIT_REFUSAL_CODES.notAllowed },
       });
     }
-    // After the refusal above, so it tells nobody anything they could not already
-    // see. Every spray edit reaches this with a target: the setter's path throws
-    // without one, and anyone else's is refused above.
+
+    // Spray: the setter gets the same view-access resolve `saveClimb` does. It
+    // runs even on a metadata-only edit: the wall may have been deleted since the
+    // climb was set, and an edit to a climb on a wall the caller can no longer see
+    // is not an edit they should be making.
+    const sprayTarget: SprayClimbTarget | null = isSprayBoard(boardType)
+      ? await requireVisibleSprayWall(existing.layoutId, ctx.userId!, validated.sprayWallUuid)
+      : null;
     if (sprayTarget) assertSprayTargetNotArchived(sprayTarget);
 
-    if (!currentlyDraft && climbEditWindowApplies(boardType)) {
-      // Published, on a board with a window: only editable within 24h of the
-      // first publish.
+    if (!currentlyDraft) {
+      // Published: only editable within 24h of the first publish.
       if (!existing.publishedAt) {
         throw new GraphQLError('This climb can no longer be edited', {
           extensions: { code: CLIMB_EDIT_REFUSAL_CODES.notEditable },
@@ -872,9 +801,9 @@ export const climbMutations = {
       nextIsDraft = existing.isDraft ?? false;
     }
 
-    // Only ever true for the setter: a draft is refused to everyone else above.
-    // The `climb.created` event at the bottom leans on that when it names the
-    // caller as the actor.
+    // Only ever true for the setter: everyone else is refused above. The
+    // `climb.created` event at the bottom leans on that when it names the caller
+    // as the actor.
     const transitioningToPublished = currentlyDraft && validated.isDraft === false;
 
     const now = new Date().toISOString();
@@ -945,10 +874,8 @@ export const climbMutations = {
     // whatever it was graded the first time.
     //
     // No extra authorization: the gate above has already let through only the
-    // setter or someone who can edit the wall, and both may regrade. The caller
-    // is NOT always the setter here, so nothing below may write the caller's
-    // identity: the grade goes on the climb's stats row, and `fa_username` stays
-    // `existing.setterUsername`.
+    // setter, within the window. The grade goes on the climb's stats row, and
+    // `fa_username` stays `existing.setterUsername`.
     if (sprayTarget && sprayGradeToSeed === null && validated.userGrade != null) {
       sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
       if (sprayGradeToSeed === null) {
@@ -1147,11 +1074,10 @@ export const climbMutations = {
       }
 
       // Lock the row and read it as it stands NOW. After the wall lock, never
-      // before it (see `lockClimbForRevision`). This read, not `existing`, is the
-      // "before" side of the revision: `existing` was loaded outside the
-      // transaction, and with more than one possible editor on a spray wall
-      // another edit may have landed since.
-      const beforeEdit = await lockClimbForRevision(tx, boardType, validated.uuid);
+      // before it (see `lockClimbForEdit`). `existing` was loaded outside the
+      // transaction, and another edit by the same setter (a second device, a
+      // retry) may have landed since.
+      const beforeEdit = await lockClimbForEdit(tx, boardType, validated.uuid);
       if (!beforeEdit) {
         throw new Error('Climb not found');
       }
@@ -1189,7 +1115,6 @@ export const climbMutations = {
         if (replaysLandedPublish) {
           return {
             replayedPublishAt: beforeEdit.publishedAt,
-            holdsChangeStatsKeys: [],
             revisionNumber: beforeEdit.revisionNumber,
             holdsRevisionNumber: beforeEdit.holdsRevisionNumber,
           };
@@ -1198,19 +1123,6 @@ export const climbMutations = {
           extensions: { code: CLIMB_EDIT_CONFLICT_ERROR_CODE },
         });
       }
-
-      // A request that changes the frames string or the frame count may move
-      // the holds epoch, which restarts the climb's stats (#6023). Mark the
-      // affected stats keys now, before this edit writes any stats row: see
-      // `markStatsKeysForHoldsChange` for why the order matters. Whether the
-      // holds really moved is `recordClimbRevision`'s call, at the end; this is
-      // a superset of it (the same holds re-sent in another order also lands
-      // here). A draft has no revisions and no epoch to move.
-      const holdsMayMove =
-        !beforeEdit.isDraft &&
-        (framesChanged ||
-          (validated.framesCount !== undefined && validated.framesCount !== (beforeEdit.framesCount ?? 1)));
-      const sentStatsKeys = holdsMayMove ? await markStatsKeysForHoldsChange(tx, boardType, validated.uuid) : [];
 
       // Build the update set from provided fields only.
       const updateSet: Record<string, unknown> = {
@@ -1301,20 +1213,17 @@ export const climbMutations = {
             );
 
           // The climb just moved under the wall, so its integrity number now
-          // describes holds it no longer uses. A climber whose problem lost two
-          // holds and who edited it onto two that are still there has fixed it —
-          // but nothing else would ever say so: the wall-wide recompute only runs
-          // when a reset lands, so until somebody reset that wall again the climb
-          // would sit in BROKEN searches wearing a badge for a problem its setter
-          // had already dealt with.
+          // describes holds it no longer uses. A climb that lost a hold to a
+          // published hold edit, and that its setter re-set onto holds still on
+          // the wall, is fixed by this edit, and nothing else would say so: the
+          // wall-wide recompute only runs when a version publishes.
           //
           // Inside the same transaction as the hold rewrite it answers, and after
           // it, so the count is read off the rows this edit just wrote. The wall
           // lock is already held: `sprayWallMayAnnounceUnderLock` took it above —
           // it runs for every spray write — and `pg_advisory_xact_lock` holds to
           // commit. Not `assertSprayHoldsAreAlive`: that one returns before it
-          // locks when the edit touches no holds, which is the same reason
-          // `recordRemixLineage` refuses to lean on it.
+          // locks when the edit touches no holds.
           if (sprayTarget) {
             await recomputeMissingHoldCountForClimb(tx, sprayTarget.wallId, validated.uuid);
           }
@@ -1372,25 +1281,10 @@ export const climbMutations = {
           });
       }
 
-      // Last, so it reads the row and the stats row this edit just wrote. The
-      // editor is the CALLER, who on a spray wall may not be the setter.
-      const revisionNumbers = await recordClimbRevision(tx, {
-        boardType,
-        climbUuid: validated.uuid,
-        before: beforeEdit,
-        editorId: ctx.userId!,
-        sprayTarget,
-      });
-      // A moved hold starts the climb's sends, first ascent and stars over
-      // (#6023). The epoch only ever moves to a new, higher revision, so a
-      // different number than the locked row held means this edit moved it. In
-      // this transaction, so the new epoch and the stats that read it commit
-      // together.
-      const holdsEpochMoved = revisionNumbers.holdsRevisionNumber !== beforeEdit.holdsRevisionNumber;
-      if (holdsEpochMoved) {
-        await recomputeStatsAfterHoldsChange(tx, sentStatsKeys);
-      }
-      return { ...revisionNumbers, holdsChangeStatsKeys: holdsEpochMoved ? sentStatsKeys : [] };
+      // Revision numbers are not moved by an edit any more; hand back the stored
+      // ones, read under the row lock above, which this transaction's UPDATE did
+      // not touch.
+      return { revisionNumber: beforeEdit.revisionNumber, holdsRevisionNumber: beforeEdit.holdsRevisionNumber };
     });
 
     // A replayed publish: the first one did the work, announced the climb and
@@ -1410,14 +1304,12 @@ export const climbMutations = {
     // shows up immediately instead of waiting for the 1h TTL.
     void notifyClimbRevalidated(validated.uuid);
 
-    queueHoldsChangeStatsRefresh(outcome.holdsChangeStatsKeys);
-
     // On a draft → published transition, announce the new climb so follower
     // feeds pick it up, the same way saveClimb does.
     // Public walls only — see the note on `saveClimb`'s event.
     //
-    // The actor is the caller, which is right because only the setter can publish
-    // a draft (see `transitioningToPublished`). A wall editor never reaches this.
+    // The actor is the caller, which is right because only the setter can edit,
+    // and so publish, a climb.
     if (transitioningToPublished && (!sprayTarget || sprayMayAnnounce)) {
       const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
       const preferredSetter = displayName || name || null;
@@ -1450,8 +1342,8 @@ export const climbMutations = {
       createdAt: existing.createdAt,
       publishedAt: nextPublishedAt,
       isDraft: nextIsDraft,
-      // What the editing client stamps its next tick with (#6023), read under
-      // the row lock, so it does not have to refetch the climb to learn it.
+      // The stored numbers, which edits no longer move. An older client stamps
+      // its next tick with `revisionNumber` (#6023).
       revisionNumber: outcome.revisionNumber,
       holdsRevisionNumber: outcome.holdsRevisionNumber,
     };

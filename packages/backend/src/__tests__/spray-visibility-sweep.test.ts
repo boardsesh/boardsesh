@@ -601,6 +601,7 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.voteSummary': 'vote counts for an entity id the caller sent',
   'Query.setterStats': 'a setter name and a climb COUNT for the board config; no climb is named',
   'Query.syncClimbGrades': 'the offline grade pull; no spray rows exist in board_climb_grades to pull',
+  'Query.climbRevisions': 'retired with climb revision history: it always answers [] and reads no row',
 
   // --- user-shaped reads: aggregates and follow graphs ------------------------
   'Query.favorites': 'answers which of the uuids the CALLER sent they have favourited; nothing else',
@@ -976,11 +977,9 @@ async function seedWorld(): Promise<SeededWorld> {
     ctxFor(OWNER),
   )) as { uuid: string };
 
-  // ONE edit, so the climb has a revision history for `climbRevisions` to
-  // answer with. A climb nobody has edited has no revision rows at all, the
-  // owner would see nothing through that field, and its gate would be unproven.
-  // The edit is what writes the sentinel description, so every other reader
-  // still finds the climb exactly as it did before: name, description, frames.
+  // ONE edit, in place, inside the setter's 24 hours. It is what writes the
+  // sentinel description, so every reader finds the climb by name, description
+  // and frames.
   await climbMutations.updateClimb(
     {},
     { input: { uuid: savedClimb.uuid, boardType: 'spray', description: CLIMB_DESCRIPTION } },

@@ -19,13 +19,12 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   }
 
   """
-  Who may edit published climbs on this wall (#6025).
-  SETTER: only the setter and wall editors.
-  COLLABORATORS: anyone who can set climbs on the wall can also edit published climbs.
+  Retired. A published spray climb follows the rule every board follows: only
+  its setter edits it, within 24 hours of first publish. Every wall reads SETTER.
   """
   enum SprayClimbEditPolicy {
     SETTER
-    COLLABORATORS
+    COLLABORATORS @deprecated(reason: "Retired. Only a climb's setter edits it, within 24 hours of first publish.")
   }
 
   """
@@ -156,16 +155,15 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     them: they can edit the gym's page and not a wall's holds.
     """
     viewerCanEdit: Boolean!
-    """
-    Who may edit published climbs on this wall (#6025).
-    """
+    "Always SETTER: only a climb's setter edits it, within 24 hours of first publish."
     climbEditPolicy: SprayClimbEditPolicy!
+      @deprecated(reason: "Retired. Only a climb's setter edits it, within 24 hours of first publish.")
     """
-    Whether the signed-in viewer can edit published climbs on this wall (#6025).
-    True for wall editors, and — when climbEditPolicy is COLLABORATORS — also
-    for anyone who can set climbs on the wall.
+    Always false. Editing someone else's published climb on a wall was retired;
+    the setter's own edit rights come from the climb, not the wall.
     """
     viewerCanEditClimbs: Boolean!
+      @deprecated(reason: "Retired. Only a climb's setter edits it, within 24 hours of first publish.")
     """
     When an admin hid this wall, ISO 8601, or null for the overwhelmingly common
     case.
@@ -312,8 +310,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     latitude: Float
     longitude: Float
     hideLocation: Boolean
-    "Who can edit climbs on this wall. Defaults to SETTER."
-    climbEditPolicy: SprayClimbEditPolicy
+    "Accepted and ignored. Only a climb's setter edits it."
+    climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
   }
 
   "How many climbs on a wall use one hold. See \`sprayWallHoldUsage\`."
@@ -399,8 +397,8 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     rather than cascaded.
     """
     angle: Int
-    "Who can edit climbs on this wall. Only the wall creator may change this (#6025)."
-    climbEditPolicy: SprayClimbEditPolicy
+    "Accepted and ignored. Only a climb's setter edits it."
+    climbEditPolicy: SprayClimbEditPolicy @deprecated(reason: "Retired. Accepted and ignored.")
   }
 
   input SetSprayWallRenderSettingsInput {
@@ -485,9 +483,8 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
   }
 
   """
-  What a reset would do, computed and thrown away. \`proposeSprayWallReset\`
-  writes nothing at all — the owner reviews this and \`commitSprayWallVersion\`
-  is what lands it.
+  What an in-place reset would have done. Retired with \`proposeSprayWallReset\`,
+  which now always refuses; kept so older apps' documents still validate.
   """
   type SprayWallResetProposal {
     "The draft version number the proposal was computed against."
@@ -544,25 +541,23 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
   }
 
   """
-  The reviewed outcome of a reset. Re-validated against the wall's current state
-  inside the commit transaction — a proposal computed ten minutes ago against a
-  generation that has since been published is rejected, not applied.
+  Publish a wall's FIRST version. The in-place reset this input was built for is
+  retired: a draft with a new photo on a published wall is refused with
+  SPRAY_WALL_RESET_RETIRED. The decision lists are still required by the shape,
+  so older apps' documents validate, and are ignored.
   """
   input CommitSprayWallVersionInput {
     wallUuid: ID!
-    "The DRAFT version this reset lands as. It must carry anchors (see ProposeSprayWallResetInput)."
+    "The DRAFT version to publish."
     versionId: ID!
+    "Ignored. Retired with the in-place reset."
     kept: [SprayWallKeptDecisionInput!]!
-    "Hold ids that came off the wall."
+    "Ignored. Retired with the in-place reset."
     removed: [Int!]!
+    "Ignored. Retired with the in-place reset."
     added: [SprayWallAddedDecisionInput!]!
-    """
-    The owner marked this a FULL reset: the old set is coming down. Every climb
-    that loses a hold in this reset is retired and drops out of the wall's default
-    climb list; logbooks, playlists and share links still open it. Omitted or
-    false is a partial reset, which retires nothing.
-    """
-    fullReset: Boolean
+    "Ignored. Partial and full resets were retired with the in-place reset."
+    fullReset: Boolean @deprecated(reason: "Retired with the in-place reset. Ignored.")
   }
 
   "What a committed reset changed."
@@ -582,17 +577,13 @@ export const sprayWallResetTypeDefs = /* GraphQL */ `
     removedCount: Int!
     "Holds this commit put on the wall."
     addedCount: Int!
-    "Climbs whose \`missingHoldCount\` or retired state moved as a result."
+    "Climbs whose \`missingHoldCount\` moved as a result. 0 on a first publish."
     climbsChanged: Int!
   }
 
   """
-  A remix starting point: the parent climb with every hold it has since lost
-  stripped out of its frames.
-
-  Nothing is written by asking for one. Pass \`parentUuid\` back as
-  \`SaveClimbInput.remixOfClimbUuid\` and the lineage row is written with the
-  child.
+  A remix starting point. Retired with \`remixClimb\`, which now always returns
+  null; kept so older apps' documents still validate.
   """
   type SprayRemixSeed {
     "The climb being remixed."

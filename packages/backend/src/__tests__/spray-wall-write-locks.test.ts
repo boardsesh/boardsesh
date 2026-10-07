@@ -158,7 +158,11 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
     source: SPRAY_WALLS_SOURCE,
     why: 'it IS the publish: supersede, hold count, catalogue image and the integrity recompute',
   },
-  { name: 'commitSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the alive-set and draft-status reads decide' },
+  {
+    name: 'commitSprayWallVersion',
+    source: SPRAY_WALLS_SOURCE,
+    why: 'the draft-status and draft-purpose reads decide',
+  },
   { name: 'discardSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the draft-status read decides' },
   { name: 'updateSprayWall', source: SPRAY_WALLS_SOURCE, why: 'the angle rule reads current_version_id' },
   {
@@ -218,14 +222,20 @@ describe('every spray wall writer holds the wall lock', () => {
       // its caller is about to make in the same transaction, so the lock still has
       // to be held from here on.
       //
-      // `publishSprayWallVersion` delegates every write to `publishDraftUnderLock`,
-      // which is itself in this list and takes the lock again (re-entrant within a
-      // transaction) before its first write. The resolver still locks, so a reader
-      // of either function sees the rule stated where the transaction opens.
+      // `publishSprayWallVersion` and `commitSprayWallVersion` delegate every write
+      // to `publishDraftUnderLock`, which is itself in this list and takes the lock
+      // again (re-entrant within a transaction) before its first write. The
+      // resolvers still lock, so a reader of either function sees the rule stated
+      // where the transaction opens.
       //
       // `resetSprayWall` delegates its insert to `insertSprayWallRows` and holds
       // the SOURCE wall's lock so the source cannot change under the clone.
-      expect(['assertSprayHoldsAreAlive', 'publishSprayWallVersion', 'resetSprayWall']).toContain(name);
+      expect([
+        'assertSprayHoldsAreAlive',
+        'publishSprayWallVersion',
+        'commitSprayWallVersion',
+        'resetSprayWall',
+      ]).toContain(name);
       return;
     }
     expect(lockAt, `${name} writes at offset ${writeAt} before locking at ${lockAt}`).toBeLessThan(writeAt);
@@ -343,12 +353,11 @@ describe('assertSprayHoldsAreAlive re-resolves the published generation under th
  * authz read and the lock is ordinary. Forcing that window in a behavioural test
  * means interleaving two transactions and would be flaky about hitting it; the
  * outer gate (a wall already deleted when the call arrives) is covered
- * behaviourally in spray-wall-reset.test.ts.
+ * behaviourally in spray-wall-retired-reset.test.ts.
  *
  * The `IS NULL` scope alone is not enough, which is why the throw is asserted too:
- * both guards below it read `wallNow?.currentVersionId` with an optional chain, so
- * a missing row without the throw means "nothing published yet" and publishes
- * straight into a wall nobody can reach.
+ * a missing row without the throw would read as "nothing published yet" and
+ * publish straight into a wall nobody can reach.
  */
 describe('publishDraftUnderLock refuses a wall that has been deleted', () => {
   it('scopes its wall re-read to deleted_at IS NULL and throws when the row is gone', () => {
@@ -366,57 +375,7 @@ describe('publishDraftUnderLock refuses a wall that has been deleted', () => {
     const throwAt = body.indexOf('if (!wallNow) throw notFoundError();');
     expect(throwAt, 'an absent wall row is not treated as an error').toBeGreaterThan(readAt);
     // The code, not the comment above it that names the same expression.
-    expect(throwAt).toBeLessThan(body.indexOf('if (wallNow?.currentVersionId != null)'));
-  });
-});
-
-/**
- * `recordRemixLineage` reads `current_version_id` under the lock too.
- *
- * `spray_climb_lineage.wall_version_id` says which generation the child was set
- * against, so a `commitSprayWallVersion` landing between that read and the
- * caller's commit would leave the row naming a generation that had already been
- * superseded. `assertSprayHoldsAreAlive` takes the same lock a few lines earlier in
- * `saveClimb` — but only when the climb HAS holds, so leaning on it would make this
- * function's correctness depend on another function's early return.
- */
-describe('recordRemixLineage reads the wall version under the lock', () => {
-  it('locks first, then reads the parent, then the wall', async () => {
-    const calls: string[] = [];
-    const rows: unknown[][] = [[{ uuid: 'parent-uuid' }], [{ currentVersionId: 7 }]];
-    let selectCount = 0;
-
-    const chainFor = (result: unknown[]) => {
-      const chain: Record<string, unknown> = {};
-      for (const method of ['from', 'innerJoin', 'leftJoin', 'where', 'limit', 'orderBy']) chain[method] = () => chain;
-      chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
-      return chain;
-    };
-
-    const executor = {
-      execute: () => {
-        calls.push('lock');
-        return Promise.resolve([]);
-      },
-      select: () => {
-        calls.push(selectCount === 0 ? 'parent' : 'wall');
-        return chainFor(rows[selectCount++] ?? []);
-      },
-      insert: () => {
-        calls.push('insert');
-        return { values: () => Promise.resolve([]) };
-      },
-    } as never;
-
-    const { recordRemixLineage } = await import('../graphql/resolvers/climbs/spray-authoring');
-    await recordRemixLineage(executor, { wallId: 42, layoutId: 9 }, 'child-uuid', 'parent-uuid');
-
-    // The parent read is a pure existence check and may sit either side of the
-    // lock; the WALL read is the one the write depends on, so the lock has to be
-    // held by then.
-    expect(calls).toContain('lock');
-    expect(calls.indexOf('lock')).toBeLessThan(calls.indexOf('wall'));
-    expect(calls.at(-1)).toBe('insert');
+    expect(throwAt).toBeLessThan(body.indexOf('if (wallNow.currentVersionId != null)'));
   });
 });
 

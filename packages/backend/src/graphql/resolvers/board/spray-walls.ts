@@ -21,10 +21,6 @@ import {
 // draft's own additions and removals have to be visible to the session editing it
 // and to nothing else. The two readings are never accidental: each call site says
 // which generation it means.
-//
-// `proposeSprayWallReset` is the one deliberate no-version caller. A reset is a
-// reset OF the published wall, and matching a new photo against the draft's own
-// holds would compare the detections with themselves.
 import {
   allocateHoldIds,
   allocateWallIds,
@@ -47,11 +43,7 @@ import {
   homographyFromAnchors,
   IDENTITY_HOMOGRAPHY,
   isValidAnchorQuad,
-  matchHolds,
-  suggestMoves,
-  type AliveHold,
   type Quad,
-  type WallCircle,
 } from '@boardsesh/spray-wall-geometry';
 import {
   SPRAY_PHOTO_CONTENT_TYPE,
@@ -81,11 +73,9 @@ import {
   sprayWallArtView,
 } from '../../../services/spray-wall-art';
 import {
-  ClimbUuidSchema,
   CommitSprayWallVersionInputSchema,
   CreateSprayWallInputSchema,
   CreateSprayWallVersionInputSchema,
-  ProposeSprayWallResetInputSchema,
   PublishSprayWallVersionInputSchema,
   RemoveSprayWallHoldsInputSchema,
   ResetSprayWallInputSchema,
@@ -93,7 +83,6 @@ import {
   SetSprayWallRenderSettingsInputSchema,
   UpdateSprayWallInputSchema,
   SPRAY_VERSION_STATUS_WIRE_NAME,
-  SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME,
   UpsertSprayWallHoldsInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
@@ -162,11 +151,9 @@ export const SPRAY_WALL_CODES = {
   publishWouldGoBackwards: 'SPRAY_WALL_PUBLISH_BACKWARDS',
   draftAlreadyOpen: 'SPRAY_WALL_DRAFT_ALREADY_OPEN',
   draftPurposeMismatch: 'SPRAY_WALL_DRAFT_PURPOSE_MISMATCH',
-  resetReviewRequired: 'SPRAY_WALL_RESET_REVIEW_REQUIRED',
   sourceVersionNotCurrent: 'SPRAY_WALL_SOURCE_VERSION_NOT_CURRENT',
-  anchorsRequired: 'SPRAY_WALL_ANCHORS_REQUIRED',
   visibilityOwnerOnly: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY',
-  climbEditPolicyOwnerOnly: 'SPRAY_WALL_CLIMB_EDIT_POLICY_OWNER_ONLY',
+  resetRetired: 'SPRAY_WALL_RESET_RETIRED',
   archived: SPRAY_WALL_ARCHIVED_CODE,
   resetOwnerOnly: 'SPRAY_WALL_RESET_OWNER_ONLY',
   resetSourceUnpublished: 'SPRAY_WALL_RESET_SOURCE_UNPUBLISHED',
@@ -241,6 +228,28 @@ export async function assertSprayWallNotArchivedUnderLock(
     .where(eq(dbSchema.sprayWalls.id, wallId))
     .limit(1);
   if (row?.archivedAt != null) throw sprayWallArchivedError();
+}
+
+/**
+ * The refusal for the retired in-place reset: a new photo on a published wall,
+ * `proposeSprayWallReset`, and publishing a reset-purpose draft. A reset is now
+ * `resetSprayWall`, which clones the wall.
+ */
+function sprayWallResetRetiredError(): GraphQLError {
+  return new GraphQLError('Resets changed. Update Boardsesh, then use Reset wall.', {
+    extensions: { code: SPRAY_WALL_CODES.resetRetired },
+  });
+}
+
+/** The wall's published version, read under the wall lock. Null for a wall that has never published. */
+async function publishedVersionIdUnderLock(tx: SprayWriteTransaction, wallId: number): Promise<number | null> {
+  await lockWallForWrite(tx, wallId);
+  const [row] = await tx
+    .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
+    .from(dbSchema.sprayWalls)
+    .where(eq(dbSchema.sprayWalls.id, wallId))
+    .limit(1);
+  return row?.currentVersionId ?? null;
 }
 
 /**
@@ -607,7 +616,6 @@ async function toGraphQLWall(
   canEdit: boolean,
   preloadedVersions?: SprayWallVersionRow[],
   preloadedDeltas?: Map<number, { added: number; removed: number }>,
-  presentedWallUuid?: string | null,
   preloadedArchiveFacts?: SprayWallArchiveFacts,
 ) {
   const { wall, board } = loaded;
@@ -636,11 +644,6 @@ async function toGraphQLWall(
   // `visibleVersions` and this find only misses on a wall that has no published
   // version yet.
   const currentVersion = versions.find((version) => version.id === String(wall.currentVersionId)) ?? null;
-  // An archived wall refuses every climb write, so nobody is offered one. This is
-  // what keeps an app that predates archiving from showing an edit button that
-  // can only fail.
-  const viewerCanEditClimbs =
-    wall.archivedAt == null && (await computeCanEditClimbs(userId, wall, board, canEdit, presentedWallUuid));
 
   const archiveFacts = preloadedArchiveFacts ?? (await loadSprayWallArchiveFacts([wall]));
   const source = wall.resetFromWallId == null ? undefined : archiveFacts.sourcesById.get(wall.resetFromWallId);
@@ -658,8 +661,12 @@ async function toGraphQLWall(
     holdCount: wall.holdCount,
     publicPhotoUrl: publicWallPhotoUrl(board, wall),
     viewerCanEdit: canEdit,
-    climbEditPolicy: SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME[wall.climbEditPolicy ?? 'setter'],
-    viewerCanEditClimbs,
+    // Retired (docs/spray-walls.md, "What an older app gets back"). Only a climb's
+    // setter edits it, within 24 hours, and that right comes from the climb. False
+    // here keeps an older app from offering an edit of someone else's climb that
+    // `updateClimb` would refuse; the stored `climb_edit_policy` is not read.
+    climbEditPolicy: 'SETTER' as const,
+    viewerCanEditClimbs: false,
     // Only ever non-null for the owner: `loadVisibleWall` refuses a hidden wall to
     // everybody else, so nobody else can reach this field to read it.
     hiddenAt: wall.hiddenAt ? wall.hiddenAt.toISOString() : null,
@@ -762,26 +769,6 @@ async function viewerMayFollowToSuccessor(
     !archived.board.isPublic &&
     successor.board.isUnlisted
   );
-}
-
-/**
- * Whether the viewer can edit published climbs on this wall (#6025).
- * True for wall editors (canEdit), and — when policy is 'collaborators' — also
- * for anyone who can set climbs on the wall (viewerCanWriteSprayClimbs).
- */
-async function computeCanEditClimbs(
-  userId: string | null | undefined,
-  wall: SprayWallRow,
-  board: UserBoardRow,
-  canEdit: boolean,
-  presentedWallUuid?: string | null,
-): Promise<boolean> {
-  if (canEdit) return true;
-  if (!userId) return false;
-  if (wall.climbEditPolicy === 'collaborators') {
-    return viewerCanWriteSprayClimbs(wall, board, userId, presentedWallUuid);
-  }
-  return false;
 }
 
 /** Whether the caller can edit, without throwing — the `viewerCanEdit` field. */
@@ -1191,6 +1178,8 @@ export async function purgeSprayWallFeedItems(tx: SprayWriteExecutor, layoutId: 
  */
 type PublishedDraft = {
   version: SprayWallVersionRow;
+  /** Holds alive on the version just published. */
+  holdCount: number;
   climbsChanged: number;
   /** The creation-time visibility this publish applied to the board row, or null (#5513). */
   appliedVisibility: PendingVisibility | null;
@@ -1427,9 +1416,12 @@ async function archiveResetSourceUnderLock(
 /**
  * Publish a draft version: supersede the previous generation, flip this one to
  * `published`, refresh what the wall advertises, and re-materialise every climb's
- * integrity number. One sequence, called from `publishSprayWallVersion` (a plain
- * publish) and from `commitSprayWallVersion` (a reset that has just written its
- * decisions in the same transaction).
+ * integrity number. One sequence, called from `publishSprayWallVersion` and from
+ * `commitSprayWallVersion`, which older apps still use for a wall's first publish.
+ *
+ * A later publish is a hold edit on a live wall. A draft with a new photo there
+ * is the retired in-place reset and is refused. A first publish, of a wizard
+ * wall or a reset clone, has no such check.
  *
  * It takes the wall lock itself. `pg_advisory_xact_lock` is re-entrant within a
  * transaction, so a caller that already holds it pays nothing — and a caller that
@@ -1475,13 +1467,20 @@ async function publishDraftUnderLock(
     .limit(1);
   if (!wallNow) throw notFoundError();
 
+  const isFirstPublish = wallNow.currentVersionId == null;
+  if (!isFirstPublish) {
+    // A draft with a new photo on a live wall is a leftover of the retired
+    // in-place reset. It can be discarded, never published.
+    if ((await draftPurpose(tx, wall.id, draft)) === 'reset') throw sprayWallResetRetiredError();
+  }
+
   // Publishing a version that is not NEWER than the published one would walk
   // `current_version_id` backwards, and every hold read is bounded by the
   // published version NUMBER — so the wall would silently revert to an older
   // generation and climbs set since would point at holds that are no longer
   // alive. The one-draft rule makes this unreachable today; the guard stays
   // because it is the invariant, not a consequence of that rule.
-  if (wallNow?.currentVersionId != null) {
+  if (wallNow.currentVersionId != null) {
     const [publishedNow] = await tx
       .select({ versionNumber: dbSchema.sprayWallVersions.versionNumber })
       .from(dbSchema.sprayWallVersions)
@@ -1498,7 +1497,7 @@ async function publishDraftUnderLock(
 
   // The previous published generation becomes `superseded` — it is still the
   // generation older climbs were set against, so it is never deleted.
-  if (wallNow?.currentVersionId != null) {
+  if (wallNow.currentVersionId != null) {
     const superseded = await tx
       .update(dbSchema.sprayWallVersions)
       .set({ status: 'superseded', updatedAt: new Date() })
@@ -1550,7 +1549,6 @@ async function publishDraftUnderLock(
   // cleared it: a backend rolled back across this change publishes and changes
   // visibility without knowing the columns exist, and a pair left standing through
   // that would otherwise overturn the owner's later choice on their next reset.
-  const isFirstPublish = wallNow.currentVersionId == null;
   const parkedVisibility: PendingVisibility | null =
     isFirstPublish && (wallNow.pendingIsPublic != null || wallNow.pendingIsUnlisted != null)
       ? { isPublic: wallNow.pendingIsPublic === true, isUnlisted: wallNow.pendingIsUnlisted === true }
@@ -1608,11 +1606,11 @@ async function publishDraftUnderLock(
   }
 
   // Re-materialise every climb's integrity number. This publish is the moment a
-  // removal becomes real, so without it a climb that just lost two holds reads
-  // `missing_hold_count = 0` everywhere — the badge, the Intact / Lost holds
-  // filter, the remix prompt and the offline mirror all say the climb is fine.
-  // AFTER the status flip, because the recompute only counts removals by
-  // generations that have landed, and until that update this version is a draft.
+  // hold edit's removal becomes real, so a published or draft climb that used a
+  // hold it took off gets its lost-hold count here (the app confirms first, from
+  // `sprayWallHoldUsage`). AFTER the status flip, because the recompute only counts
+  // removals by generations that have landed, and until that update this version
+  // is a draft.
   const climbsChanged = await recomputeMissingHoldCounts(tx, wall.id);
 
   // The generated wall looks for the new generation, queued with the publish so
@@ -1637,116 +1635,7 @@ async function publishDraftUnderLock(
     });
   }
 
-  return { version: row, climbsChanged, appliedVisibility };
-}
-
-/**
- * How far the new photo's aspect ratio may differ from the wall's canonical
- * frame before the proposal says so. A tenth is roughly a phone turned from 4:3
- * to 3:2 — noticeable, and worth a sentence in the review, but not a reason to
- * refuse a photograph of the owner's own wall.
- */
-const ASPECT_MISMATCH_TOLERANCE = 0.1;
-
-/**
- * Whether two frames are shaped differently enough to be worth a warning.
- *
- * A WARNING and never a block (epic decision 2026-09-14). The anchors are what
- * put two photographs in one coordinate frame, and by the time detections reach
- * the server they have already been applied — so a different aspect ratio means
- * the owner stood somewhere else, not that the reset is wrong. It is still worth
- * saying, because the one case where it IS wrong (anchors tapped on the wrong
- * corners) shows up here first.
- */
-export function aspectRatiosDiffer(
-  frame: { width: number | null; height: number | null },
-  photo: { width: number | null; height: number | null },
-): boolean {
-  if (!frame.width || !frame.height || !photo.width || !photo.height) return false;
-  const frameRatio = frame.width / frame.height;
-  const photoRatio = photo.width / photo.height;
-  if (frameRatio <= 0 || photoRatio <= 0) return false;
-  return Math.abs(frameRatio - photoRatio) / frameRatio > ASPECT_MISMATCH_TOLERANCE;
-}
-
-/**
- * Refuse a reset whose photo was never pinned to the wall.
- *
- * The canonical frame is version 1's photo frame, forever. Version 1 may have no
- * anchors — with nothing to compare against, the frame IS that photo and the
- * identity homography is true by definition, not a fallback. It is never
- * re-anchored later, because every hold ever drawn is already stored in it.
- *
- * That makes anchors mandatory from version 2 on. Without them
- * `resolveVersionGeometry` stores the identity matrix again, which now asserts
- * that the new photograph has the same crop, framing and dimensions as the first
- * one — an assertion nobody made and a phone will not honour. The detections then
- * arrive as raw photo pixels labelled canonical, and the matcher, which is doing
- * nothing more than comparing two coordinate sets, reports the whole wall as
- * removed and the whole photo as added. Committing that would take every hold off
- * the wall and break every climb on it.
- *
- * Checked in BOTH `proposeSprayWallReset` and `commitSprayWallVersion`: the
- * proposal is the one a human reads, and the commit is the one that writes, and a
- * client is free to skip the first.
- */
-function assertResetVersionIsAnchored(version: SprayWallVersionRow): void {
-  if (version.versionNumber <= 1) return;
-  if (isValidAnchorQuad(version.anchors)) return;
-  throw new GraphQLError(
-    'Tap the four corners of the wall in the new photo before resetting — without them ' +
-      'there is no way to tell where a hold has moved to.',
-    { extensions: { code: SPRAY_WALL_CODES.anchorsRequired, versionNumber: version.versionNumber } },
-  );
-}
-
-/** A stored hold as the matcher wants it: canonical circle plus a string key. */
-function toMatcherHold(hold: SprayWallHoldRow): AliveHold {
-  return { holdId: String(hold.holdId), cx: hold.cx, cy: hold.cy, r: hold.r };
-}
-
-/** A submitted detection as the matcher wants it. Colour rides along when it is there. */
-function toMatcherCircle(detection: { cx: number; cy: number; r: number; colour?: number[] | null }): WallCircle {
-  return detection.colour && detection.colour.length > 0
-    ? { cx: detection.cx, cy: detection.cy, r: detection.r, colour: detection.colour }
-    : { cx: detection.cx, cy: detection.cy, r: detection.r };
-}
-
-/**
- * How many climbs on this wall use at least one of these holds.
- *
- * Reads `board_climb_holds` rather than `missing_hold_count`, because the whole
- * point of the number is to be shown BEFORE anything is written: the column still
- * says 0 for every one of these climbs.
- *
- * **Every climb on the wall counts, drafts and community-hidden ones included.**
- * That is deliberate, and the reason is consistency with what the commit does:
- * `recomputeMissingHoldCounts` stamps every climb on the layout without looking at
- * `is_draft` or `is_hidden`, so a preview that filtered either would promise the
- * owner a smaller number than the reset delivers. On the merits too — a setter's
- * unfinished climb losing a hold is exactly as broken as a published one, and a
- * hidden climb can be unhidden, at which point its badge had better be right.
- */
-async function climbsUsingHolds(layoutId: number, holdIds: number[]): Promise<number> {
-  if (holdIds.length === 0) return 0;
-  const [row] = await db
-    .select({ affected: sql<number>`COUNT(DISTINCT ${dbSchema.boardClimbHolds.climbUuid})::int` })
-    .from(dbSchema.boardClimbHolds)
-    .innerJoin(
-      dbSchema.boardClimbs,
-      and(
-        eq(dbSchema.boardClimbs.uuid, dbSchema.boardClimbHolds.climbUuid),
-        eq(dbSchema.boardClimbs.boardType, 'spray'),
-      ),
-    )
-    .where(
-      and(
-        eq(dbSchema.boardClimbHolds.boardType, 'spray'),
-        eq(dbSchema.boardClimbs.layoutId, layoutId),
-        inArray(dbSchema.boardClimbHolds.holdId, holdIds),
-      ),
-    );
-  return Number(row?.affected ?? 0);
+  return { version: row, holdCount: alive, climbsChanged, appliedVisibility };
 }
 
 // ============================================
@@ -1778,14 +1667,7 @@ export const sprayWallQueries = {
 
     const loaded = await loadVisibleWall(validatedUuid, ctx.userId);
     if (!loaded) return null;
-    return toGraphQLWall(
-      loaded,
-      ctx.userId,
-      await computeCanEdit(ctx, loaded.board),
-      undefined,
-      undefined,
-      loaded.board.uuid,
-    );
+    return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
   },
 
   sprayWallByLayout: async (_: unknown, { layoutId }: { layoutId: unknown }, ctx: ConnectionContext) => {
@@ -1798,14 +1680,7 @@ export const sprayWallQueries = {
     // sequence, so an unlisted wall must not resolve here. See that function.
     const loaded = await loadWall('layoutId', layoutId);
     if (!loaded || !(await viewerCanSeeSprayWallByLayout(loaded.wall, loaded.board, ctx.userId))) return null;
-    return toGraphQLWall(
-      loaded,
-      ctx.userId,
-      await computeCanEdit(ctx, loaded.board),
-      undefined,
-      undefined,
-      loaded.board.uuid,
-    );
+    return toGraphQLWall(loaded, ctx.userId, await computeCanEdit(ctx, loaded.board));
   },
 
   sprayWallRenderData: async (
@@ -1836,7 +1711,7 @@ export const sprayWallQueries = {
     const versionNumberById = await loadVersionNumbers(loaded.wall.id);
 
     return {
-      wall: await toGraphQLWall(loaded, ctx.userId, canEdit, undefined, undefined, loaded.board.uuid),
+      wall: await toGraphQLWall(loaded, ctx.userId, canEdit),
       versionNumber: versionRow.versionNumber,
       // A wall always has a frame by the time it has a photo — `createSprayWallVersion`
       // writes both in one transaction — so the photo fallbacks here only fire for
@@ -2017,15 +1892,7 @@ export const sprayWallQueries = {
     const archiveFacts = await loadSprayWallArchiveFacts(visible.map((row) => row.wall));
     return Promise.all(
       visible.map(async (row) =>
-        toGraphQLWall(
-          row,
-          ctx.userId,
-          await computeCanEdit(ctx, row.board),
-          undefined,
-          undefined,
-          row.board.uuid,
-          archiveFacts,
-        ),
+        toGraphQLWall(row, ctx.userId, await computeCanEdit(ctx, row.board), undefined, undefined, archiveFacts),
       ),
     );
   },
@@ -2061,189 +1928,23 @@ export const sprayWallQueries = {
     // The caller owns every row here, so `viewerCanEdit` is true without asking.
     return Promise.all(
       rows.map((row) =>
-        toGraphQLWall(
-          row,
-          ctx.userId,
-          true,
-          versionsByWall.get(Number(row.wall.id)) ?? [],
-          deltas,
-          row.board.uuid,
-          archiveFacts,
-        ),
+        toGraphQLWall(row, ctx.userId, true, versionsByWall.get(Number(row.wall.id)) ?? [], deltas, archiveFacts),
       ),
     );
   },
 
-  proposeSprayWallReset: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
+  /**
+   * Retired: the in-place reset. A reset is `resetSprayWall` now, which clones the
+   * wall. An older app still calls this from its reset screen and gets the
+   * message telling the climber to update.
+   */
+  proposeSprayWallReset: async (_: unknown, __: unknown, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
-    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'proposeSprayWallReset');
-
-    const validated = validateInput(ProposeSprayWallResetInputSchema, input, 'input');
-    // Editor access, not view access: a proposal describes an unpublished draft,
-    // and "here is what your wall would look like" is the owner's business.
-    const { wall } = await loadEditableWall(ctx, validated.wallUuid);
-
-    // A proposal only means anything against a DRAFT. A published or superseded
-    // version's holds are what climbs are already set on, so "here is what would
-    // change" against one describes a commit that can never happen — and
-    // `commitSprayWallVersion` would refuse it a moment later, after the owner had
-    // reviewed a whole screen of decisions. Same check, same error, one step
-    // earlier. No lock: nothing is written, and the commit re-reads under one.
-    const draft = await loadDraftVersion(db, wall.id, validated.versionId);
-    if ((await draftPurpose(db, wall.id, draft)) === 'hold-edit') throw wrongDraftPurposeError();
-    assertResetVersionIsAnchored(draft);
-
-    // The wall as CLIMBERS see it — alive at `current_version_id` — which is what
-    // a reset is a reset OF. Deliberately not the draft's own view: the draft's
-    // holds are whatever the last editing session left behind, and matching a new
-    // photo against those would compare the detections with themselves.
-    const current = await aliveHolds(db, wall.id);
-    const previousAlive = current.map(toMatcherHold);
-    const detections = validated.detections.map(toMatcherCircle);
-
-    const result = matchHolds(previousAlive, detections);
-    const moves = suggestMoves(previousAlive, detections, result);
-    const removedHoldIds = result.removed.map(Number);
-
-    return {
-      versionNumber: draft.versionNumber,
-      kept: result.kept.map((hold) => ({
-        holdId: Number(hold.holdId),
-        detectionIndex: hold.detectionIndex,
-        confidence: hold.confidence,
-      })),
-      removed: removedHoldIds,
-      added: result.added,
-      lowConfidence: result.lowConfidence.map(Number),
-      climbsAffected: await climbsUsingHolds(wall.layoutId, removedHoldIds),
-      movesSuggested: moves.map((move) => ({
-        movedFromHoldId: Number(move.movedFromHoldId),
-        detectionIndex: move.detectionIndex,
-        distance: move.distance,
-      })),
-      aspectMismatch: aspectRatiosDiffer(
-        { width: wall.referenceWidth, height: wall.referenceHeight },
-        { width: draft.photoWidth, height: draft.photoHeight },
-      ),
-    };
+    throw sprayWallResetRetiredError();
   },
 
-  remixClimb: async (
-    _: unknown,
-    { parentUuid, sprayWallUuid }: { parentUuid: unknown; sprayWallUuid?: unknown },
-    ctx: ConnectionContext,
-  ) => {
-    requireAuthenticated(ctx);
-    await applyRateLimit(ctx, WALL_QUERY_RATE_LIMIT, 'remixClimb');
-
-    // A climb uuid is Aurora's 32-hex form, not an RFC-4122 one — `UUIDSchema`
-    // would refuse every climb in the database.
-    const validatedUuid = validateInput(ClimbUuidSchema, parentUuid, 'parentUuid');
-
-    const [parent] = await db
-      .select({
-        uuid: dbSchema.boardClimbs.uuid,
-        name: dbSchema.boardClimbs.name,
-        layoutId: dbSchema.boardClimbs.layoutId,
-        angle: dbSchema.boardClimbs.angle,
-        frames: dbSchema.boardClimbs.frames,
-      })
-      .from(dbSchema.boardClimbs)
-      .where(and(eq(dbSchema.boardClimbs.uuid, validatedUuid), eq(dbSchema.boardClimbs.boardType, 'spray')))
-      .limit(1);
-    if (!parent) return null;
-
-    // The SAME gate `saveClimb` applies to a spray climb write, and for the same
-    // reason. A climb names its wall by layout id, which comes out of a sequence
-    // and is therefore no secret, so the default is the by-layout rule: the owner,
-    // a gym member, or a public wall. What the wall's own uuid adds is the
-    // share-link capability — somebody photographs their home wall, sends the link
-    // to their crew, and the crew sets climbs on it. A crew that can SET a climb
-    // and cannot remix one is an arbitrary hole, so the two use one helper.
-    //
-    // A PRIVATE wall still refuses everyone but its principals, uuid or not, and a
-    // uuid has to be THIS wall's: without that pairing one leaked uuid would open
-    // every wall in the sequence. `loadWall` also drops a deleted wall, whose
-    // climbs stop being remixable with it.
-    const presentedWallUuid = sprayWallUuid == null ? null : validateInput(UUIDSchema, sprayWallUuid, 'sprayWallUuid');
-    const loaded = await loadWall('layoutId', parent.layoutId);
-    if (!loaded || !(await viewerCanWriteSprayClimbs(loaded.wall, loaded.board, ctx.userId, presentedWallUuid)))
-      return null;
-
-    // The wall as it stands, read ONCE and used for both halves below: it splits
-    // the parent's own holds into kept and lost, and then filters the successors a
-    // move linked, because a successor that has itself since come off is not
-    // somewhere a remix can start.
-    //
-    // The parent is shown even when it is no longer climbable (epic decision
-    // 2026-09-14) — a climb that lost three holds is exactly the one worth
-    // remixing, and refusing the seed would strand it.
-    const aliveRows = await aliveHolds(db, loaded.wall.id);
-    const alive = new Set(aliveRows.map((hold) => hold.holdId));
-
-    // The frames grammar is `p<placementId>r<code>`, concatenated. Split on the
-    // token boundary rather than a separator: the string carries none, and a
-    // regex over the whole thing is what every other reader of it does.
-    const tokens = [...(parent.frames ?? '').matchAll(/p(\d+)r(\d+)/g)];
-    const keptHoldIds: number[] = [];
-    const lostHoldIds: number[] = [];
-    const survivingTokens: string[] = [];
-    for (const token of tokens) {
-      const holdId = Number(token[1]);
-      if (alive.has(holdId)) {
-        keptHoldIds.push(holdId);
-        survivingTokens.push(token[0]);
-      } else {
-        lostHoldIds.push(holdId);
-      }
-    }
-
-    // What replaced each lost hold, when the reset review linked a move.
-    //
-    // Read off the alive rows already in hand rather than queried again. Those rows
-    // ARE the answer: `aliveHolds` returned the published generation, and each one
-    // carries the `moved_from_hold_id` a reset wrote — so a successor that has since
-    // come off, and one an unpublished draft merely drew, are both absent by
-    // construction instead of being fetched and filtered out. A wall with a long
-    // reset history no longer ships every successor it has ever had over the wire,
-    // and there is no second predicate to keep in step with the alive rule.
-    //
-    // `aliveHolds` orders by hold id, so this does too. There is no ranking to
-    // preserve, but there IS a duplicate to collapse, and a commit alone does not
-    // rule it out: `commitSprayWallVersion` refuses two additions naming one
-    // `movedFromHoldId` AND pins the predecessor to that same commit's removals,
-    // yet `upsertSprayWallHolds` — the ordinary hold editor — accepts a
-    // `movedFromHoldId` at any hold the wall has ever had, an alive one included.
-    // So a hold-editor move off a live hold, followed by a reset that later takes
-    // that same hold off and links its own successor, leaves two alive rows
-    // pointing at one predecessor. Keep the LAST, which is the higher hold id
-    // under `aliveHolds`' ordering: it is the more recently installed of the two,
-    // and the one whose predecessor genuinely came off the wall.
-    const lost = new Set(lostHoldIds);
-    const successorByLostHold = new Map<number, number>();
-    for (const hold of aliveRows) {
-      if (hold.movedFromHoldId != null && lost.has(hold.movedFromHoldId)) {
-        successorByLostHold.set(hold.movedFromHoldId, hold.holdId);
-      }
-    }
-    const suggestedHoldIds = [...successorByLostHold.values()].sort((left, right) => left - right);
-
-    // `board_climbs.name` and `.angle` are both nullable, and `SprayRemixSeed`
-    // declares neither nullable. `saveClimb` requires both on a spray climb, so
-    // this is defence in depth — but without it a legacy NULL name would null the
-    // whole seed on a non-null violation, which a client cannot tell apart from
-    // "you may not see this wall", and a NULL angle would quietly read as 0°.
-    return {
-      parentUuid: parent.uuid,
-      parentName: parent.name || 'Unknown Climb',
-      layoutId: parent.layoutId,
-      angle: Number(parent.angle ?? loaded.board.angle),
-      frames: survivingTokens.join(''),
-      lostHoldIds,
-      keptHoldIds,
-      suggestedHoldIds,
-    };
-  },
+  /** Retired with lost-hold tracking. Null is the declared "nothing to remix" answer. */
+  remixClimb: () => null,
 };
 
 /** Version number per internal version id, for mapping hold lifecycles onto the wire. */
@@ -2296,8 +1997,6 @@ type NewSprayWallSettings = {
   gymId: number | null;
   hideLocation: boolean;
   angle: number;
-  /** Null takes the column default (`setter`). */
-  climbEditPolicy: SprayWallRow['climbEditPolicy'] | null;
   pendingVisibility: { pendingIsPublic: boolean | null; pendingIsUnlisted: boolean | null };
   renderSettings: SprayWallRow['renderSettings'];
   /** The wall this one is a reset clone of, or null for a fresh wall. */
@@ -2394,7 +2093,6 @@ async function insertSprayWallRows(tx: SprayWriteTransaction, settings: NewSpray
       referenceWidth: null,
       referenceHeight: null,
       holdCount: 0,
-      ...(settings.climbEditPolicy ? { climbEditPolicy: settings.climbEditPolicy } : {}),
       // Parked until the first publish applies it (#5513); see the callers.
       ...settings.pendingVisibility,
       renderSettings: settings.renderSettings,
@@ -2478,7 +2176,6 @@ export const sprayWallMutations = {
         gymId,
         hideLocation: validated.hideLocation ?? false,
         angle: validated.angle,
-        climbEditPolicy: validated.climbEditPolicy ?? null,
         // The visibility the climber picked, held server-side until the first
         // publish applies it. It used to live only in the wizard's React state,
         // so a climber who closed the app and resumed the wall published it
@@ -2510,7 +2207,7 @@ export const sprayWallMutations = {
       pendingIsUnlisted: created.wall.pendingIsUnlisted,
     });
 
-    return toGraphQLWall(created, userId, true, undefined, undefined, created.board.uuid);
+    return toGraphQLWall(created, userId, true);
   },
 
   /**
@@ -2629,7 +2326,6 @@ export const sprayWallMutations = {
         gymId: source.board.gymId,
         hideLocation: source.board.hideLocation,
         angle: source.board.angle,
-        climbEditPolicy: source.wall.climbEditPolicy,
         // The old wall's audience, parked until the clone's first publish applies
         // it — a clone with no photo is private until then, like any new wall.
         pendingVisibility: pendingVisibilityColumns({
@@ -2660,7 +2356,7 @@ export const sprayWallMutations = {
       });
     }
 
-    return toGraphQLWall(outcome.clone, userId, true, undefined, undefined, outcome.clone.board.uuid);
+    return toGraphQLWall(outcome.clone, userId, true);
   },
 
   createSprayWallVersion: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -2706,6 +2402,16 @@ export const sprayWallMutations = {
       // draft and both insert one — the exact state the rule exists to forbid.
       await lockWallForWrite(tx, wall.id);
       await assertSprayWallNotArchivedUnderLock(tx, wall.id);
+
+      // A new photo is only for a wall's FIRST version: the add-wall wizard and a
+      // reset clone. On a published wall it was the retired in-place reset, which
+      // is now `resetSprayWall`. Reusing the published photo (`sourceVersionId`) is
+      // a hold edit and always allowed. The check runs before the open-draft check,
+      // so an older app retrying a reset upload is told to update rather than
+      // handed back its leftover draft.
+      if (uploadedPhoto && (await publishedVersionIdUnderLock(tx, wall.id)) != null) {
+        throw sprayWallResetRetiredError();
+      }
 
       const [{ versions: versionCount }] = await tx
         .select({ versions: count() })
@@ -2823,7 +2529,7 @@ export const sprayWallMutations = {
           source.photoWidth <= 0 ||
           source.photoHeight <= 0
         ) {
-          throw new GraphQLError('That published photo is unavailable. Add a new photo to edit the wall.', {
+          throw new GraphQLError('That published photo is unavailable. Use Reset wall to photograph the wall again.', {
             extensions: { code: SPRAY_WALL_CODES.photoMissing },
           });
         }
@@ -2852,23 +2558,6 @@ export const sprayWallMutations = {
       // Validation requires exactly one source, so the upload branch has a photo.
       if (!uploadedPhoto) throw new Error('An uploaded photo is required');
       const { key: photoKey, width: photoWidth, height: photoHeight } = uploadedPhoto;
-
-      // Anchors are optional on version 1 ONLY, and that is not a convenience: on
-      // version 1 the photo's own pixel box IS the canonical frame, so the identity
-      // homography is correct. Every later version inherits a frame derived from a
-      // DIFFERENT photograph, and without anchors to map this photo onto it the
-      // identity homography silently puts every hold the owner draws at the wrong
-      // place on the wall — and the climbs set on it with them.
-      //
-      // Checked under the lock, against the version number this insert will actually
-      // take, so a concurrent discard of version 1 cannot make a v2 rule apply to a
-      // version that turns out to be v1.
-      if (versionNumber > 1 && !isValidAnchorQuad(validated.anchors ?? null)) {
-        throw new GraphQLError(
-          'Mark the four wall corners on this photo. Later photos need them to line up with the first one.',
-          { extensions: { code: SPRAY_WALL_CODES.anchorsRequired } },
-        );
-      }
 
       const geometry = resolveVersionGeometry({
         anchors: validated.anchors ?? null,
@@ -2956,12 +2645,6 @@ export const sprayWallMutations = {
     if ((validated.isPublic !== undefined || validated.isUnlisted !== undefined) && board.ownerId !== ctx.userId) {
       throw new GraphQLError('Only the climber who set this wall up can change who can see it', {
         extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
-      });
-    }
-
-    if (validated.climbEditPolicy !== undefined && board.ownerId !== ctx.userId) {
-      throw new GraphQLError('Only the climber who set this wall up can change who can edit climbs', {
-        extensions: { code: SPRAY_WALL_CODES.climbEditPolicyOwnerOnly },
       });
     }
 
@@ -3189,10 +2872,6 @@ export const sprayWallMutations = {
           if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
         }
 
-        if (validated.climbEditPolicy !== undefined) {
-          wallUpdates.climbEditPolicy = validated.climbEditPolicy;
-        }
-
         await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));
       });
     } catch (error) {
@@ -3215,7 +2894,7 @@ export const sprayWallMutations = {
 
     const reloaded = await loadWall('uuid', validated.uuid);
     if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true, undefined, undefined, reloaded.board.uuid);
+    return toGraphQLWall(reloaded, ctx.userId, true);
   },
 
   /**
@@ -3258,8 +2937,13 @@ export const sprayWallMutations = {
     if (explicitBackground !== undefined && explicitBackground !== 'photo') {
       const quality = artVersion ? sprayVersionQuality(artVersion, wall) : null;
       if (!quality || quality.verdict === 'fail') {
+        // A published wall takes no new photo (the in-place reset is retired), so
+        // the way to a front-on photo there is Reset wall. Before the first publish
+        // the wizard can still retake it.
         throw new GraphQLError(
-          'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.',
+          wall.currentVersionId == null
+            ? 'This wall\u2019s photo is too angled to straighten. Retake it front-on to use this look.'
+            : 'This wall\u2019s photo is too angled to straighten. Use Reset wall to photograph it front-on and use this look.',
           {
             extensions: { code: SPRAY_WALL_CODES.artNotAvailable, reason: quality?.reason ?? 'no-photo' },
           },
@@ -3292,7 +2976,7 @@ export const sprayWallMutations = {
 
     const reloaded = await loadWall('uuid', validated.uuid);
     if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true, undefined, undefined, reloaded.board.uuid);
+    return toGraphQLWall(reloaded, ctx.userId, true);
   },
 
   upsertSprayWallHolds: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -3599,231 +3283,41 @@ export const sprayWallMutations = {
     const { wall, board } = await loadEditableWall(ctx, validated.wallUuid);
 
     const committed = await db.transaction(async (tx) => {
-      // EVERY check runs inside the lock, and the lock is the first statement.
-      // A reset decides on a read — "these holds are alive, this version is a
-      // draft" — and then writes on the strength of it, so a publish landing in
-      // the window would turn the whole commit into a mutation of a PUBLISHED
-      // generation and move every climb set on it.
       await lockWallForWrite(tx, wall.id);
       await assertSprayWallNotArchivedUnderLock(tx, wall.id);
       const version = await loadDraftVersion(tx, wall.id, validated.versionId);
       if ((await draftPurpose(tx, wall.id, version)) === 'hold-edit') throw wrongDraftPurposeError();
-      assertResetVersionIsAnchored(version);
-
-      // The decisions are re-validated against the wall as it is NOW, not against
-      // whatever `proposeSprayWallReset` saw. A proposal is a screenshot: the owner
-      // may have sat on it while another editor published, and applying it then
-      // would remove holds that are already gone and keep ones that are.
-      //
-      // The draft's own view, like every other hold writer here: holds installed at
-      // or before this draft and not removed by it, which includes anything a
-      // previous editing session on this same draft already drew.
-      const existing = await aliveHolds(tx, wall.id, version.versionNumber);
-      const aliveById = new Map(existing.map((hold) => [hold.holdId, hold]));
-
-      const decidedIds = [...validated.kept.map((decision) => decision.holdId), ...validated.removed];
-      const strayId = decidedIds.find((holdId) => !aliveById.has(holdId));
-      if (strayId != null) {
-        throw new GraphQLError(`Hold ${strayId} is not on this wall`, {
-          extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: strayId },
-        });
-      }
-
-      // `movedFromHoldId` is lineage, and it has to name a hold THIS reset is
-      // taking off the wall.
-      //
-      // A move is one removal and one addition in the same sitting — that is the
-      // whole definition (`docs/spray-walls.md`, "Why a moved hold is removed +
-      // added"). Anything looser corrupts remix permanently, and quietly:
-      //
-      //  - a predecessor that is still ALIVE means two holds now claim the same
-      //    position on the wall, and the moment a later reset takes the
-      //    predecessor off, `remixClimb` offers this unrelated older hold as its
-      //    successor. Nothing ever notices, because by then the two events look
-      //    exactly like a move;
-      //  - a predecessor removed by an EARLIER version is history. Its successor
-      //    was decided in that reset, or it had none; back-filling one now
-      //    rewrites a generation that has already been published.
-      //
-      // The `removed` list has already been checked against the alive set above,
-      // so membership in it is the whole test: it proves the hold is on the wall
-      // today and is coming off in this commit.
-      const removedNow = new Set(validated.removed);
-      const strayPredecessor = validated.added
-        .map((decision) => decision.movedFromHoldId)
-        .find((holdId): holdId is number => holdId != null && !removedNow.has(holdId));
-      if (strayPredecessor != null) {
-        throw new GraphQLError(
-          `Hold ${strayPredecessor} is not coming off the wall in this reset, so nothing can have moved from it`,
-          { extensions: { code: SPRAY_WALL_CODES.holdNotAlive, holdId: strayPredecessor } },
-        );
-      }
-
-      // What the wall would hold afterwards. An alive hold the decisions never
-      // mention simply stays — a client that forgot one leaves a hold on the wall,
-      // which is the safe direction; the alternative silently unsets every climb
-      // through it.
-      const nextTotal = existing.length - validated.removed.length + validated.added.length;
-      if (nextTotal > MAX_HOLDS_PER_WALL) {
-        throw new GraphQLError(`A wall may hold at most ${MAX_HOLDS_PER_WALL} holds; this would make ${nextTotal}.`, {
-          extensions: { code: SPRAY_WALL_CODES.holdLimitReached, maxHolds: MAX_HOLDS_PER_WALL },
-        });
-      }
-
-      // 1. Removals. Stamped, never deleted: the climbs set on these holds have to
-      //    stay findable, and `missing_hold_count` has to stay countable.
-      if (validated.removed.length > 0) {
-        await tx
-          .update(dbSchema.sprayWallHolds)
-          .set({ removedVersionId: version.id, updatedAt: new Date() })
-          .where(
-            and(
-              eq(dbSchema.sprayWallHolds.wallId, wall.id),
-              inArray(dbSchema.sprayWallHolds.holdId, validated.removed),
-            ),
-          );
-      }
-
-      // 2. Additions: a fresh catalogue pair each, installed at this version.
-      const added = validated.added;
-      const newIds = await allocateHoldIds(tx, added.length);
-      if (added.length > 0) {
-        // The catalogue pair every hold needs — one `board_holes` row and one
-        // `board_placements` row SHARING the id — because a climb's frames string
-        // (`p<placementId>r<code>`) has to resolve to the row the reset drew.
-        await tx.insert(dbSchema.boardHoles).values(
-          added.map(({ detection }, index) => ({
-            boardType: 'spray' as const,
-            id: newIds[index],
-            productId: null,
-            name: null,
-            x: detection.cx,
-            y: detection.cy,
-            mirroredHoleId: null,
-          })),
-        );
-
-        await tx.insert(dbSchema.boardPlacements).values(
-          added.map((_decision, index) => ({
-            boardType: 'spray' as const,
-            id: newIds[index],
-            layoutId: wall.layoutId,
-            holeId: newIds[index],
-            setId: SPRAY_SET.id,
-            defaultPlacementRoleId: null,
-          })),
-        );
-
-        await tx.insert(dbSchema.sprayWallHolds).values(
-          added.map(({ detection, movedFromHoldId }, index) => ({
-            wallId: wall.id,
-            holdId: newIds[index],
-            cx: detection.cx,
-            cy: detection.cy,
-            r: detection.r,
-            outline: detection.outline ?? null,
-            installedVersionId: version.id,
-            movedFromHoldId: movedFromHoldId ?? null,
-            source: detection.source,
-            confidence: detection.confidence ?? null,
-          })),
-        );
-      }
-
-      // 3. Kept holds take a fresher SILHOUETTE from the new photo, and nothing
-      //    else.
-      //
-      //    `cx` / `cy` / `r` stay exactly as published, deliberately. Every climb
-      //    on the wall renders from those numbers, and a kept hold matched its
-      //    detection within six tenths of a radius — real, but enough to shift a
-      //    climb's start hold under the climber if it were written through. Two
-      //    photographs of a wall that did not change still disagree by a few
-      //    pixels; the hold did not move, the camera did. An outline is a picture
-      //    of the hold rather than a position, so a sharper one is free.
-      //    ONE statement for the whole batch, not one per hold. A reset on a capped
-      //    wall keeps 1,500 holds, and a round trip each would hold the wall lock
-      //    open for 1,500 of them — every other writer on that wall queueing behind
-      //    a loop whose only work is copying silhouettes.
-      const refreshed = validated.kept.filter((decision) => decision.detection?.outline != null);
-      if (refreshed.length > 0) {
-        await tx.execute(sql`
-          UPDATE spray_wall_holds
-          SET outline = refresh.outline, updated_at = now()
-          FROM (VALUES ${sql.join(
-            refreshed.map(
-              (decision) => sql`(${decision.holdId}::integer, ${JSON.stringify(decision.detection!.outline)}::jsonb)`,
-            ),
-            sql`, `,
-          )}) AS refresh(hold_id, outline)
-          WHERE spray_wall_holds.wall_id = ${wall.id}
-            AND spray_wall_holds.hold_id = refresh.hold_id
-        `);
-      }
-
-      // 4. A full reset is recorded on the version BEFORE the publish below,
-      //    because the publish's recompute is what reads it: every climb using a
-      //    hold this version removed comes out retired (#6024).
-      if (validated.fullReset === true) {
-        await tx
-          .update(dbSchema.sprayWallVersions)
-          .set({ isFullReset: true, updatedAt: new Date() })
-          .where(eq(dbSchema.sprayWallVersions.id, version.id));
-      }
-
-      // 5. …and publish, which is the moment every removal above becomes real.
-      //    Same transaction and same lock, so a reset is atomic: there is no
-      //    instant at which the holds have gone but the version has not landed.
-      const {
-        version: published,
-        climbsChanged,
-        appliedVisibility,
-      } = await publishDraftUnderLock(tx, wall, Number(version.id));
-
-      return {
-        published,
-        climbsChanged,
-        appliedVisibility,
-        // What is still on the wall from the previous generation, not the length
-        // of the `kept` list: an alive hold the decisions never mention stays,
-        // and a client that listed only what it had something to say about would
-        // otherwise be told most of its wall had vanished.
-        keptCount: existing.length - validated.removed.length,
-        removedCount: validated.removed.length,
-        addedCount: added.length,
-      };
+      // An 'initial' draft is a wall's first publish and goes straight through. A
+      // 'reset' draft (new photo on a published wall) is refused inside
+      // `publishDraftUnderLock`, before anything is written. The reset decisions
+      // (`kept`, `removed`, `added`, `fullReset`) are ignored: they only ever
+      // described an in-place reset.
+      return publishDraftUnderLock(tx, wall, Number(version.id));
     });
 
-    logger.info('Spray wall reset committed', {
+    logger.info('Spray wall version committed', {
       layoutId: wall.layoutId,
-      versionNumber: committed.published.versionNumber,
-      removed: committed.removedCount,
-      added: committed.addedCount,
+      versionNumber: committed.version.versionNumber,
       climbsChanged: committed.climbsChanged,
-      fullReset: validated.fullReset === true,
     });
 
     // The same public-copy refresh `publishSprayWallVersion` makes, on the same
-    // condition. A reset of a public wall moves the photo climbers see, so the
-    // public copy has to follow it or the gym page keeps last generation's wall;
-    // and a version-1 commit is a wall's FIRST publish, so it can be the one that
-    // applies a public creation-time choice (#5513). After the commit and best
-    // effort, for the reasons given there — `refreshPublicWallPhoto` re-checks the
-    // board is still public under the row lock.
+    // condition: a first publish can be the one that applies a public
+    // creation-time choice (#5513). After the commit and best effort, for the
+    // reasons given there — `refreshPublicWallPhoto` re-checks the board is still
+    // public under the row lock.
     if (board.isPublic || committed.appliedVisibility?.isPublic) {
-      await refreshPublicWallPhoto(
-        wall.id,
-        wall.boardUuid,
-        committed.published.photoKey,
-        Number(committed.published.id),
-      );
+      await refreshPublicWallPhoto(wall.id, wall.boardUuid, committed.version.photoKey, Number(committed.version.id));
     }
 
-    const deltas = await versionHoldDeltas([Number(committed.published.id)]);
+    const deltas = await versionHoldDeltas([Number(committed.version.id)]);
     return {
-      version: await toGraphQLVersion(committed.published, deltas.get(Number(committed.published.id))),
-      keptCount: committed.keptCount,
-      removedCount: committed.removedCount,
-      addedCount: committed.addedCount,
+      version: await toGraphQLVersion(committed.version, deltas.get(Number(committed.version.id))),
+      // What an empty set of decisions always reported: every hold the draft
+      // carries stays, and nothing was removed or added by the commit itself.
+      keptCount: committed.holdCount,
+      removedCount: 0,
+      addedCount: 0,
       climbsChanged: committed.climbsChanged,
     };
   },
@@ -3868,14 +3362,9 @@ export const sprayWallMutations = {
       await assertSprayWallNotArchivedUnderLock(tx, found.wall.id);
       // The re-read and every write live in `publishDraftUnderLock`, so
       // this path and `commitSprayWallVersion` cannot drift on what publishing
-      // means — the supersede, the hold count, the catalogue image and the
-      // integrity recompute are one sequence with one owner.
-      const draft = await loadDraftVersion(tx, found.wall.id, found.version.id);
-      if ((await draftPurpose(tx, found.wall.id, draft)) === 'reset') {
-        throw new GraphQLError('Review and confirm this reset before publishing the new photo.', {
-          extensions: { code: SPRAY_WALL_CODES.resetReviewRequired },
-        });
-      }
+      // means — the retired reset, the supersede, the hold count,
+      // the catalogue image and the integrity recompute are one sequence with one
+      // owner.
       return publishDraftUnderLock(tx, found.wall, found.version.id);
     });
     const published = publishedDraft.version;
@@ -3885,9 +3374,9 @@ export const sprayWallMutations = {
       versionNumber: published.versionNumber,
     });
 
-    // A public wall's photo copy is of the version climbers see, so a reset has to
-    // move it. Without this the gym page would keep showing last year's wall
-    // forever — the row it reads is only written on a visibility change.
+    // A public wall's photo copy is of the version climbers see, so a publish has
+    // to refresh it. Without this the gym page would keep showing a stale copy —
+    // the row it reads is only written on a visibility change.
     //
     // After the commit and outside the lock, best effort: the publish itself has
     // landed, and a copy that failed leaves the previous photo standing, which is

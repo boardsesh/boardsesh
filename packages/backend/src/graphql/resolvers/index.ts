@@ -216,7 +216,7 @@ export const resolvers = {
 
     // Spray only, and only for a climb whose materialised `missingHoldCount`
     // says it lost something — see resolveClimbLostHolds. Per-climb by design:
-    // a list must not select it.
+    // a list must not select it. The remix editor draws these as grey ghosts.
     //
     // `ctx` is not optional here: these rows are the geometry of somebody's
     // garage, the parent may be a synthetic `ClimbInput` a caller sent back

@@ -736,6 +736,7 @@ export const mutationsTypeDefs = /* GraphQL */ `
     Intact / Lost holds filter and the remix prompt agree. Owner only.
     """
     commitSprayWallVersion(input: CommitSprayWallVersionInput!): SprayWallResetResult!
+      @deprecated(reason: "Only a wall's first publish still works here. Use publishSprayWallVersion.")
 
     """
     Publish a draft version: it becomes the generation climbers set against, the

@@ -52,7 +52,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 const { db, dbRead } = await import('../db/client');
-const { sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
+const { sprayWallMutations, sprayWallQueries } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { resolveClimbLostHolds } = await import('../graphql/resolvers/climbs/lost-holds');
@@ -129,12 +129,14 @@ async function createPublishedWall(): Promise<{ wall: CreatedWall; holdIds: numb
   return { wall, holdIds: holds.map((hold) => hold.id) };
 }
 
-/** Open the next draft on a wall and hand back its version id. */
+/** Open a hold-edit draft on the published photo and hand back its version id. */
 async function openDraft(wall: CreatedWall): Promise<string> {
-  const photoId = registerUploadedPhoto(wall.uuid);
+  const read = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+    currentVersion: { id: string };
+  };
   const version = (await sprayWallMutations.createSprayWallVersion(
     {},
-    { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+    { input: { wallUuid: wall.uuid, sourceVersionId: read.currentVersion.id } },
     ctxFor(OWNER),
   )) as { id: string };
   return version.id;
@@ -248,24 +250,19 @@ describe('Climb.lostHolds after a reset', () => {
    * whichever mutation happened to be in flight. Building the fixture once keeps
    * that window as short as the assertions allow.
    */
-  it('returns the holds a landed reset took off, and nothing else', async () => {
+  it('returns the holds a published hold edit took off, and nothing else', async () => {
     const { wall, holdIds } = await createPublishedWall();
     const climbUuid = await saveClimbOn(wall, 'Loses two', holdIds);
 
+    // Holds stay editable on a live wall: the owner takes two of the climb's
+    // holds off (the app confirms first, from `sprayWallHoldUsage`) and publishes.
     const versionId = await openDraft(wall);
-    await sprayWallMutations.commitSprayWallVersion(
+    await sprayWallMutations.removeSprayWallHolds(
       {},
-      {
-        input: {
-          wallUuid: wall.uuid,
-          versionId,
-          kept: [{ holdId: holdIds[2] }],
-          removed: [holdIds[0], holdIds[1]],
-          added: [{ detection: { cx: 640, cy: 300, r: 26 }, movedFromHoldId: holdIds[0] }],
-        },
-      },
+      { input: { wallUuid: wall.uuid, versionId, holdIds: [holdIds[0], holdIds[1]] } },
       ctxFor(OWNER),
     );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
 
     // Two of the climb's three holds came off, so the materialised count — the
     // one the resolver is handed — says 2.
@@ -309,7 +306,7 @@ describe('Climb.lostHolds after a reset', () => {
     // Now the generation rule. An abandoned draft owns a version number and can
     // stamp `removed_version_id`; honouring it would draw a ghost ring over a
     // hold still bolted to the wall, for every climber, the moment an owner
-    // started a reset and walked away.
+    // started a hold edit and walked away.
     const draftVersionId = await openDraft(wall);
     await db.execute(sql`
       UPDATE spray_wall_holds SET removed_version_id = ${Number(draftVersionId)}

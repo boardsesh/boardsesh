@@ -186,7 +186,8 @@ cost of waiting is at most a week of one fewer candidate below the fold.
 ## Edit invalidation
 
 `updateClimb` (`packages/backend/src/graphql/resolvers/climbs/mutations.ts`)
-rewrites a climb's `board_climb_holds` when its frames change. In the same
+rewrites a climb's `board_climb_holds` when its frames change. That is only its
+setter, within 24 hours of first publish, on every board including spray walls. In the same
 transaction it deletes that climb's **own** `board_climb_neighbors` list, so
 until the next run the edited climb shows no similar climbs rather than a list
 scored on holds it no longer uses. Its slot in other climbs' lists stays until

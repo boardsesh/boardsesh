@@ -61,20 +61,12 @@ export const SPRAY_VERSION_STATUS_WIRE_NAME = {
   superseded: 'SUPERSEDED',
 } as const;
 
-/** Wire name ↔ stored value for a wall's climb-edit policy (#6025), mirroring the pgEnum. */
-export const SPRAY_CLIMB_EDIT_POLICY_BY_WIRE_NAME = {
-  SETTER: 'setter',
-  COLLABORATORS: 'collaborators',
-} as const;
-
-export const SPRAY_CLIMB_EDIT_POLICY_WIRE_NAME = {
-  setter: 'SETTER',
-  collaborators: 'COLLABORATORS',
-} as const;
-
-export const SprayClimbEditPolicySchema = z
-  .enum(['SETTER', 'COLLABORATORS'])
-  .transform((wireName) => SPRAY_CLIMB_EDIT_POLICY_BY_WIRE_NAME[wireName]);
+/**
+ * The retired climb-edit policy (#6025). Older apps still send it, so it is
+ * accepted on create and update and then ignored: only a climb's setter edits
+ * it, within 24 hours of first publish (docs/spray-walls.md, "Editing a climb").
+ */
+const RetiredSprayClimbEditPolicySchema = z.enum(['SETTER', 'COLLABORATORS']);
 
 /**
  * The four wall corners as tapped in one photo, TL/TR/BR/BL.
@@ -129,7 +121,7 @@ export const CreateSprayWallInputSchema = z.object({
   latitude: z.number().min(-90).max(90).optional().nullable(),
   longitude: z.number().min(-180).max(180).optional().nullable(),
   hideLocation: z.boolean().optional(),
-  climbEditPolicy: SprayClimbEditPolicySchema.optional(),
+  climbEditPolicy: RetiredSprayClimbEditPolicySchema.optional(),
   // `hasLeds` is deliberately ABSENT and must stay absent. A spray wall has no
   // firmware to encode for, and BLE suppression today is the per-row
   // `has_leds` data rather than the board type (`scanFamilyForBoard('spray')`
@@ -220,112 +212,19 @@ export const PublishSprayWallVersionInputSchema = z.object({
 });
 
 /**
- * One hold found in the new photo, already mapped into the wall's canonical
- * frame by the client through the draft version's homography.
- *
- * Shape only, like every other schema here — the server never re-runs detection
- * (epic decision 2026-09-14). What it adds over `SprayWallHoldInputSchema` is
- * `colour`, which is accepted and never reaches a column — and, until SW-12b
- * (#5485) gives a STORED hold a descriptor too, never reaches the matcher's
- * tie-breaker either, because that term needs both sides.
+ * `commitSprayWallVersion`, which older apps use to publish. Only the wall and the
+ * draft are read. The reset decisions are shape-checked by GraphQL and bounded
+ * here so a hostile payload is not parsed into memory, then ignored: the
+ * in-place reset they described is retired (docs/spray-walls.md).
  */
-export const SprayWallDetectionInputSchema = z.object({
-  cx: CanonicalPixelSchema,
-  cy: CanonicalPixelSchema,
-  r: z.number().int().min(1).max(10_000),
-  outline: SprayOutlineRingSchema.optional().nullable(),
-  /**
-   * A Lab triple, or Lab plus a small hue histogram. Bounded at 16 numbers
-   * because a descriptor is a handful of axes and anything longer is a client
-   * sending the wrong array; `colourDistance` refuses mismatched lengths anyway,
-   * so a hostile one degrades to "no colour term" rather than to a wrong match —
-   * which is what every value degrades to today, the stored holds having none.
-   */
-  colour: z.array(z.number().finite()).min(1).max(16).optional().nullable(),
-  source: SprayHoldSourceSchema,
-  confidence: z.number().min(0).max(1).optional().nullable(),
-});
-
-export const ProposeSprayWallResetInputSchema = z.object({
+export const CommitSprayWallVersionInputSchema = z.object({
   wallUuid: UUIDSchema,
   versionId: BigIntIdSchema,
-  // A full reset of a capped wall is the worst case and it is legitimate, so the
-  // bound is the per-wall cap. Empty is legitimate too: a photo in which the
-  // client found nothing proposes removing everything, which is exactly what the
-  // owner needs to see before they commit it.
-  detections: z.array(SprayWallDetectionInputSchema).max(MAX_HOLDS_PER_WALL),
+  kept: z.array(z.unknown()).max(MAX_HOLDS_PER_WALL),
+  removed: z.array(z.unknown()).max(MAX_HOLDS_PER_WALL),
+  added: z.array(z.unknown()).max(MAX_HOLDS_PER_WALL),
+  fullReset: z.boolean().nullish(),
 });
-
-const SprayWallKeptDecisionSchema = z.object({
-  holdId: z.number().int().positive(),
-  detection: SprayWallDetectionInputSchema.optional().nullable(),
-});
-
-const SprayWallAddedDecisionSchema = z.object({
-  detection: SprayWallDetectionInputSchema,
-  movedFromHoldId: z.number().int().positive().optional().nullable(),
-});
-
-/**
- * The reviewed reset.
- *
- * The three lists are disjoint by construction and the schema says so: a hold
- * cannot be both kept and removed, and a batch repeating an id would apply one
- * decision twice — which for a removal is harmless and for a keep is a second
- * outline write racing the first. Rejected rather than de-duplicated, because
- * there is no reading under which sending a hold twice is meaningful.
- *
- * The caps are the per-wall cap on each list rather than on the total: the
- * resolver counts what the wall would actually hold afterwards, which is the
- * number that matters, and a bound here only exists to keep a hostile payload
- * from being parsed into memory.
- */
-export const CommitSprayWallVersionInputSchema = z
-  .object({
-    wallUuid: UUIDSchema,
-    versionId: BigIntIdSchema,
-    kept: z.array(SprayWallKeptDecisionSchema).max(MAX_HOLDS_PER_WALL),
-    removed: z.array(z.number().int().positive()).max(MAX_HOLDS_PER_WALL),
-    added: z.array(SprayWallAddedDecisionSchema).max(MAX_HOLDS_PER_WALL),
-    // Optional so an app that predates full resets (#6024) commits exactly as
-    // before: a partial reset.
-    fullReset: z.boolean().nullish(),
-  })
-  .refine((input) => {
-    const keptIds = input.kept.map((decision) => decision.holdId);
-    return new Set(keptIds).size === keptIds.length;
-  }, 'The same hold is kept twice — send each hold once')
-  .refine(
-    (input) => new Set(input.removed).size === input.removed.length,
-    'The same hold is removed twice — send each hold once',
-  )
-  .refine((input) => {
-    const removed = new Set(input.removed);
-    return input.kept.every((decision) => !removed.has(decision.holdId));
-  }, 'A hold cannot be both kept and removed')
-  // One predecessor has at most one successor. Two additions naming the same
-  // `movedFromHoldId` would both get a `moved_from_hold_id` row pointing at it, and
-  // `remixClimb` walks that column the other way — so a climber remixing a problem
-  // that lost the hold would be offered two successors for it with nothing to say
-  // which is the one that replaced it.
-  .refine((input) => {
-    const predecessors = input.added
-      .map((decision) => decision.movedFromHoldId)
-      .filter((holdId): holdId is number => holdId != null);
-    return new Set(predecessors).size === predecessors.length;
-  }, 'Two new holds claim to have moved from the same hold — a hold has one successor')
-  // Two additions at the same centre and radius are the same hold twice. They would
-  // both land, with different catalogue ids and no DB conflict to notice, leaving
-  // the wall carrying an invisible duplicate that every hold read returns and the
-  // editor cannot tell apart. There is no reading under which it is meaningful.
-  .refine((input) => {
-    const positions = input.added.map(({ detection }) => `${detection.cx},${detection.cy},${detection.r}`);
-    return new Set(positions).size === positions.length;
-  }, 'Two new holds sit at the same place — send each hold once');
-
-export type SprayWallDetectionInput = z.infer<typeof SprayWallDetectionInputSchema>;
-export type ProposeSprayWallResetInput = z.infer<typeof ProposeSprayWallResetInputSchema>;
-export type CommitSprayWallVersionInput = z.infer<typeof CommitSprayWallVersionInputSchema>;
 
 export const UpdateSprayWallInputSchema = z
   .object({
@@ -345,7 +244,9 @@ export const UpdateSprayWallInputSchema = z
         `A spray wall's angle must be one of ${SPRAY_ANGLES.join(', ')}`,
       )
       .optional(),
-    climbEditPolicy: SprayClimbEditPolicySchema.optional(),
+    // Accepted and ignored. Kept in the "something to update" count below, so an
+    // older app flipping the retired toggle gets its wall back, not an error.
+    climbEditPolicy: RetiredSprayClimbEditPolicySchema.optional(),
   })
   // An update that changes nothing is a client bug, and answering it with a
   // success teaches the client that its no-op worked.

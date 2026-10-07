@@ -145,8 +145,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     frames: String
     "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field)."
     climbRevision: Int
-    "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue."
-    climbCurrentRevision: Int
+    "Always null. Revision history was retired, so no log is marked as made on an earlier version."
+    climbCurrentRevision: Int @deprecated(reason: "Climb revision history was retired. Always null.")
   }
 
   """
@@ -327,8 +327,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     commentCount: Int
     "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field). Populated by followingClimbAscents; null on the paginated feeds."
     climbRevision: Int
-    "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Populated by followingClimbAscents; null on the paginated feeds."
-    climbCurrentRevision: Int
+    "Always null. Revision history was retired, so no log is marked as made on an earlier version."
+    climbCurrentRevision: Int @deprecated(reason: "Climb revision history was retired. Always null.")
   }
 
   """
@@ -460,8 +460,8 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     climbedAt: String!
     "The climb revision this was logged against. 1 on a climb nobody has edited; null when it is not known (imports, and logs older than the field)."
     climbRevision: Int
-    "The climb's revision now. A log whose climbRevision is lower was made on an earlier version of the climb. Null when the climb is no longer in the catalogue."
-    climbCurrentRevision: Int
+    "Always null. Revision history was retired, so no log is marked as made on an earlier version."
+    climbCurrentRevision: Int @deprecated(reason: "Climb revision history was retired. Always null.")
   }
 
   """
