@@ -4182,8 +4182,12 @@ describe('a wall with no published version is listed to nobody but its owner', (
 
   it('keeps unfinished walls out of myBoards but available for resuming setup', async () => {
     const wall = await unpublishedPublicWall('Mine, unfinished');
-    const listed = async (userId: string) =>
-      (await socialBoardQueries.myBoards({}, { input: { limit: 50, offset: 0 } }, ctxFor(userId))) as {
+    const listed = async (userId: string, includeUnfinishedSprayWalls = false) =>
+      (await socialBoardQueries.myBoards(
+        {},
+        { input: { limit: 50, offset: 0, includeUnfinishedSprayWalls } },
+        ctxFor(userId),
+      )) as {
         boards: Array<{ uuid: string }>;
         totalCount: number;
       };
@@ -4191,6 +4195,10 @@ describe('a wall with no published version is listed to nobody but its owner', (
     const owner = await listed(OWNER);
     expect(owner.boards.map((board) => board.uuid)).not.toContain(wall.uuid);
     expect(owner.totalCount).toBe(0);
+    // My Boards and Manage opt in, and list it for its owner only.
+    const ownerWithImports = await listed(OWNER, true);
+    expect(ownerWithImports.boards.map((board) => board.uuid)).toEqual([wall.uuid]);
+    expect(ownerWithImports.totalCount).toBe(1);
     const resumable = (await sprayWallQueries.mySprayWalls({}, {}, ctxFor(OWNER))) as Array<{ uuid: string }>;
     expect(resumable.map((draftWall) => draftWall.uuid)).toContain(wall.uuid);
 
@@ -4202,6 +4210,9 @@ describe('a wall with no published version is listed to nobody but its owner', (
     const follower = await listed(STRANGER);
     expect(follower.boards).toHaveLength(0);
     expect(follower.totalCount).toBe(0);
+    const followerWithImports = await listed(STRANGER, true);
+    expect(followerWithImports.boards).toHaveLength(0);
+    expect(followerWithImports.totalCount).toBe(0);
 
     const draft = (await sprayWallMutations.createSprayWallVersion(
       {},

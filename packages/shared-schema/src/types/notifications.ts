@@ -18,7 +18,8 @@ export type NotificationType =
   | 'proposal_created'
   | 'new_climbs_synced'
   | 'gym_claim_approved'
-  | 'proposal_on_your_climb';
+  | 'proposal_on_your_climb'
+  | 'spray_wall_detection_completed';
 
 export type Notification = {
   uuid: string;
@@ -42,6 +43,10 @@ export type Notification = {
   proposalValue?: string | null;
   /** Gym name (for gym_claim_approved notifications). */
   gymName?: string | null;
+  sprayWallName?: string | null;
+  sprayWallUuid?: string | null;
+  sprayVersionId?: string | null;
+  sprayResetOfWallUuid?: string | null;
   isRead: boolean;
   createdAt: string;
 };
@@ -92,6 +97,10 @@ export type GroupedNotification = {
   setterUsername?: string | null;
   /** Gym name (for gym_claim_approved notifications). */
   gymName?: string | null;
+  sprayWallName?: string | null;
+  sprayWallUuid?: string | null;
+  sprayVersionId?: string | null;
+  sprayResetOfWallUuid?: string | null;
   isRead: boolean;
   createdAt: string;
 };

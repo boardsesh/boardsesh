@@ -54,7 +54,9 @@ vi.mock('../middleware/auth', async (importOriginal) => {
   return {
     ...actual,
     validateToken: async (token: string) =>
-      token === 'valid-token' ? { userId: 'user-1', isAuthenticated: true } : null,
+      token === 'valid-token'
+        ? { userId: 'user-1', isAuthenticated: true, credentialExpiresAt: 2_000_000_000_000 }
+        : null,
   };
 });
 
@@ -174,9 +176,11 @@ describe('buildHttpConnectionContext client IP', () => {
 
     expect(authenticated.isAuthenticated).toBe(true);
     expect(authenticated.userId).toBe('user-1');
+    expect(authenticated.credentialExpiresAt).toBe(2_000_000_000_000);
     expect(authenticated.clientIp).toBe('203.0.113.9');
     expect(anonymous.isAuthenticated).toBe(false);
     expect(anonymous.userId).toBeUndefined();
+    expect(anonymous.credentialExpiresAt).toBeUndefined();
     expect(anonymous.clientIp).toBe('203.0.113.9');
   });
 });

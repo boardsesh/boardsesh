@@ -26,3 +26,4 @@ export * from './util/conflict-guard';
 export * from './spray-walls/index';
 export * from './places/import';
 export * from './background-jobs';
+export * from './spray-walls/import-progress';

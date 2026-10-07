@@ -4,6 +4,7 @@ import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
 import { rowsFromResult } from '@boardsesh/db/client';
+import { readSprayWallImportProgress } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
@@ -44,7 +45,7 @@ import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { getPopularConfigs } from '../../../services/popular-board-configs';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
-import { listableSprayWallCondition } from '../board/spray-wall-listing';
+import { listableSprayWallCondition, ownedUnfinishedSprayWallCondition } from '../board/spray-wall-listing';
 
 // ============================================
 // Helpers
@@ -248,8 +249,10 @@ export async function resolveBoardFromPath(
  * Whether a user owns or is an admin member of a gym. Used to authorize editing
  * a board through its linked gym (gym owners/admins may fix the gym's boards).
  */
-async function viewerCanAdminGym(gymId: number, userId: string): Promise<boolean> {
-  const [ownedGym] = await db
+type BoardEditExecutor = NonNullable<Parameters<typeof getUserCommunityRoles>[1]>;
+
+async function viewerCanAdminGym(gymId: number, userId: string, executor: BoardEditExecutor = db): Promise<boolean> {
+  const [ownedGym] = await executor
     .select({ id: dbSchema.gyms.id })
     .from(dbSchema.gyms)
     .where(and(eq(dbSchema.gyms.id, gymId), eq(dbSchema.gyms.ownerId, userId), isNull(dbSchema.gyms.deletedAt)))
@@ -257,7 +260,7 @@ async function viewerCanAdminGym(gymId: number, userId: string): Promise<boolean
 
   if (ownedGym) return true;
 
-  const [adminMembership] = await db
+  const [adminMembership] = await executor
     .select({ role: dbSchema.gymMembers.role })
     .from(dbSchema.gymMembers)
     .innerJoin(dbSchema.gyms, eq(dbSchema.gyms.id, dbSchema.gymMembers.gymId))
@@ -296,10 +299,15 @@ function boardIsRoleEditable(board: { isPublic: boolean; ownerId: string }): boo
 export async function canEditBoard(
   userId: string,
   board: Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'isPublic' | 'boardType' | 'gymId'>,
+  executor: BoardEditExecutor = db,
 ): Promise<boolean> {
   if (board.ownerId === userId) return true;
-  if (boardIsRoleEditable(board) && (await hasAdminOrLeader(userId, board.boardType))) return true;
-  if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId))) return true;
+  if (
+    boardIsRoleEditable(board) &&
+    rolesGrantAdminOrLeader(await getUserCommunityRoles(userId, executor), board.boardType)
+  )
+    return true;
+  if (board.gymId != null && (await viewerCanAdminGym(board.gymId, userId, executor))) return true;
   return false;
 }
 
@@ -315,9 +323,50 @@ export async function canEditBoard(
 export async function requireBoardEditAccess(
   ctx: ConnectionContext,
   board: typeof dbSchema.userBoards.$inferSelect,
+  executor: BoardEditExecutor = db,
 ): Promise<void> {
-  if (await canEditBoard(ctx.userId!, board)) return;
+  if (await canEditBoard(ctx.userId!, board, executor)) return;
   throw new Error('Not authorized to update this board');
+}
+
+/** Batch edit gate for progress polling; missing/revoked boards are omitted. */
+export async function filterEditableBoards(
+  boards: Array<typeof dbSchema.userBoards.$inferSelect>,
+  userId: string,
+): Promise<Array<typeof dbSchema.userBoards.$inferSelect>> {
+  const nonOwnedBoards = boards.filter((board) => board.ownerId !== userId);
+  if (nonOwnedBoards.length === 0) return boards;
+  const gymIds = [...new Set(nonOwnedBoards.flatMap((board) => (board.gymId !== null ? [board.gymId] : [])))];
+  const [roles, editableGyms] = await Promise.all([
+    getUserCommunityRoles(userId),
+    gymIds.length > 0
+      ? db
+          .selectDistinct({ id: dbSchema.gyms.id })
+          .from(dbSchema.gyms)
+          .leftJoin(
+            dbSchema.gymMembers,
+            and(
+              eq(dbSchema.gymMembers.gymId, dbSchema.gyms.id),
+              eq(dbSchema.gymMembers.userId, userId),
+              eq(dbSchema.gymMembers.role, 'admin'),
+            ),
+          )
+          .where(
+            and(
+              inArray(dbSchema.gyms.id, gymIds),
+              isNull(dbSchema.gyms.deletedAt),
+              or(eq(dbSchema.gyms.ownerId, userId), isNotNull(dbSchema.gymMembers.id)),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  const editableGymIds = new Set(editableGyms.map((gym) => gym.id));
+  return boards.filter(
+    (board) =>
+      board.ownerId === userId ||
+      (boardIsRoleEditable(board) && rolesGrantAdminOrLeader(roles, board.boardType)) ||
+      (board.gymId !== null && editableGymIds.has(board.gymId)),
+  );
 }
 
 /**
@@ -466,7 +515,13 @@ async function enrichBoard(
     ? board.ownerId === authenticatedUserId || (canEditByRole && boardIsRoleEditable(board)) || canEditByGym
     : false;
 
+  const sprayImport =
+    canEdit && isSprayBoardType(board.boardType)
+      ? ((await readSprayWallImportProgress(db, [board.uuid]))[0] ?? null)
+      : null;
+
   return {
+    sprayImport,
     uuid: board.uuid,
     slug: board.slug,
     ownerId: board.ownerId,
@@ -680,6 +735,21 @@ export async function enrichBoards(
     ...(adminGymRows as Array<{ gymId: number }>).map((row) => row.gymId),
   ]);
 
+  const editableSprayWallUuids = authenticatedUserId
+    ? boards
+        .filter(
+          ({ board }) =>
+            isSprayBoardType(board.boardType) &&
+            (board.ownerId === authenticatedUserId ||
+              (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
+              (board.gymId != null && editableGymIds.has(board.gymId))),
+        )
+        .map(({ board }) => board.uuid)
+    : [];
+  const sprayImportByWall = new Map(
+    (await readSprayWallImportProgress(db, editableSprayWallUuids)).map((progress) => [progress.wallUuid, progress]),
+  );
+
   return boards.map(({ board, distanceMeters }) => {
     const owner = ownerMap.get(board.ownerId);
     const ticks = tickMap.get(board.id);
@@ -691,6 +761,7 @@ export async function enrichBoards(
       : false;
 
     return {
+      sprayImport: canEdit ? (sprayImportByWall.get(board.uuid) ?? null) : null,
       uuid: board.uuid,
       slug: board.slug,
       ownerId: board.ownerId,
@@ -1069,7 +1140,11 @@ export const socialBoardQueries = {
   /**
    * Get current user's boards (owned + followed)
    */
-  myBoards: async (_: unknown, { input }: { input?: { limit?: number; offset?: number } }, ctx: ConnectionContext) => {
+  myBoards: async (
+    _: unknown,
+    { input }: { input?: { limit?: number; offset?: number; includeUnfinishedSprayWalls?: boolean | null } },
+    ctx: ConnectionContext,
+  ) => {
     requireAuthenticated(ctx);
     const validatedInput = validateInput(MyBoardsInputSchema, input || {}, 'input');
     const userId = ctx.userId!;
@@ -1090,17 +1165,29 @@ export const socialBoardQueries = {
     const matchCondition = followedCondition ? or(ownerCondition, followedCondition)! : ownerCondition;
     // In the WHERE the COUNT and the paged read share, never a post-filter:
     // dropping rows from the page alone would leave the count promising results
-    // the last page does not have. Unfinished walls stay in mySprayWalls for
-    // resuming setup; this climbing picker requires a published generation.
+    // the last page does not have. Board pickers require a published generation
+    // (#6040); My Boards and Manage opt in to the viewer's own unfinished walls so
+    // they can show import progress. Nobody else's unfinished wall and no
+    // archived wall is ever listed, flag or not.
+    const ownedUnfinishedSprayWall = ownedUnfinishedSprayWallCondition(userId);
+    const publishedOrNotSpray = listableSprayWallCondition(userId, { requirePublished: true });
+
+    const includeUnfinished = validatedInput.includeUnfinishedSprayWalls === true;
     const whereClause = and(
       matchCondition,
       isNull(dbSchema.userBoards.deletedAt),
-      listableSprayWallCondition(userId, { requirePublished: true }),
+      includeUnfinished ? or(publishedOrNotSpray, ownedUnfinishedSprayWall)! : publishedOrNotSpray,
     );
 
     const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
 
     const totalCount = Number(countResult?.count || 0);
+
+    // Unpublished owned walls must stay on the first page while being imported,
+    // even when the caller already has twenty pinned/recently opened boards.
+    // They are only listed with the opt-in, so only then is the lead key added.
+    // Published resets retain the normal pin/recency order below.
+    const importsFirst = includeUnfinished ? [desc(ownedUnfinishedSprayWall)] : [];
 
     // Ordering (issue #4884): pinned boards first, then the ones you actually
     // used, most recent first, and only then the ones you have never opened.
@@ -1133,6 +1220,7 @@ export const socialBoardQueries = {
       )
       .where(whereClause)
       .orderBy(
+        ...importsFirst,
         // Pinned first. `pinned_at IS NULL` sorts false (pinned) before true.
         sql`${dbSchema.userBoardActivity.pinnedAt} IS NULL`,
         // Oldest pin leads, so pinning a second board never reshuffles the first.

@@ -1,3 +1,4 @@
+import { once } from 'node:events';
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vite-plus/test';
 import { type Client, createClient } from 'graphql-ws';
 // eslint-disable-next-line import/no-named-as-default -- `ws` exports both default and named `WebSocket`; default is the correct one for graphql-ws.
@@ -55,7 +56,7 @@ type SessionEvent =
 
 // Test fixtures
 const TEST_BOARD_PATH = '/kilter/1/2/3/40';
-const TEST_PORT = 8082;
+let testPort = 0;
 
 // Helper to generate unique session IDs for each test
 let testCounter = 0;
@@ -193,7 +194,7 @@ describe('Daemon Integration Tests', () => {
 
   const createTestClient = () => {
     const client = createClient({
-      url: `ws://localhost:${TEST_PORT}/graphql`,
+      url: `ws://localhost:${testPort}/graphql`,
       webSocketImpl: WebSocket,
       lazy: false,
       retryAttempts: 0,
@@ -203,8 +204,12 @@ describe('Daemon Integration Tests', () => {
   };
 
   beforeAll(async () => {
-    process.env.PORT = String(TEST_PORT);
+    process.env.PORT = '0';
     server = await startServer();
+    if (!server.httpServer.listening) await once(server.httpServer, 'listening');
+    const address = server.httpServer.address();
+    if (!address || typeof address === 'string') throw new Error('Expected a TCP test server address');
+    testPort = address.port;
     // Wait for server to be ready
     await new Promise((resolve) => setTimeout(resolve, 500));
   });
@@ -845,17 +850,17 @@ describe('Daemon Integration Tests', () => {
 
   describe('HTTP path handling', () => {
     it('returns 400 for /static/beta-link-thumbnails/ with no platform segment', async () => {
-      const res = await fetch(`http://localhost:${TEST_PORT}/static/beta-link-thumbnails/`);
+      const res = await fetch(`http://localhost:${testPort}/static/beta-link-thumbnails/`);
       expect(res.status).toBe(400);
     });
 
     it('returns 400 for /static/beta-link-thumbnails/<platform> with no filename', async () => {
-      const res = await fetch(`http://localhost:${TEST_PORT}/static/beta-link-thumbnails/instagram`);
+      const res = await fetch(`http://localhost:${testPort}/static/beta-link-thumbnails/instagram`);
       expect(res.status).toBe(400);
     });
 
     it('returns 400 for /static/beta-link-thumbnails/ with empty platform segment', async () => {
-      const res = await fetch(`http://localhost:${TEST_PORT}/static/beta-link-thumbnails//filename.jpg`);
+      const res = await fetch(`http://localhost:${testPort}/static/beta-link-thumbnails//filename.jpg`);
       expect(res.status).toBe(400);
     });
   });
