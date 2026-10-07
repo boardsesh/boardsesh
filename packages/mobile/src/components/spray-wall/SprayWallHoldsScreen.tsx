@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
@@ -9,16 +9,7 @@ import type { SprayWallVersion } from '@boardsesh/graphql/generated/graphql';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
-import {
-  SprayHoldEditorScreen,
-  confirmDiscardSprayEdits,
-  type SprayPutBackHold,
-} from '../outline-editor/SprayHoldEditorScreen';
-import {
-  getLostHoldPutBack,
-  markLostHoldPutBackPublished,
-  returnToClimbEditor,
-} from '../../lib/spray/lost-hold-put-back';
+import { SprayHoldEditorScreen, confirmDiscardSprayEdits } from '../outline-editor/SprayHoldEditorScreen';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { getHttpClient } from '../../lib/graphql/client';
@@ -26,17 +17,31 @@ import {
   extractGraphqlCode,
   extractGraphqlMessage,
   isGraphqlValidationFailedError,
+  sprayWallLifecycleRefusal,
+  sprayWallRefusalMeansStaleWall,
 } from '../../lib/graphql/extract-error-message';
-import { fetchSprayWallVersions, mySprayWallsQueryKey } from '../../lib/spray/use-create-spray-wall';
-import { sprayWallWithVersionsQueryKey } from '../../lib/spray/use-spray-wall-reset';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
+import {
+  fetchSprayWallVersions,
+  mySprayWallsQueryKey,
+  sprayWallWithVersionsQueryKey,
+  useDiscardSprayWallVersion,
+} from '../../lib/spray/use-create-spray-wall';
 import { refreshPublishedSprayClimbs } from '../../lib/spray/refresh-published-spray-climbs';
+import { askBeforeRemovingUsedHolds } from '../../lib/spray/spray-hold-usage';
 import { BIND_STAGE_DEADLINE_MS, withDeadline } from '../../lib/spray/post-publish-bind';
 import {
+  fetchSprayWallArchive,
   fetchSprayWallRenderData,
   invalidateSprayWallRenderData,
   registerRenderData,
 } from '../../lib/spray/spray-wall-loader';
-import { sprayWallRemovalGeneration, sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
+import {
+  findRegisteredSprayWallByUuid,
+  refreshSprayWall,
+  sprayWallRemovalGeneration,
+  sprayWallViewerGeneration,
+} from '../../lib/spray/spray-wall-registry';
 import {
   prepareSprayHoldDraft,
   publishSprayHoldDraft,
@@ -46,7 +51,18 @@ import {
 } from '../../lib/spray/spray-hold-maintenance';
 
 const maintenanceTransport: SprayHoldMaintenanceTransport = {
-  fetchWall: fetchSprayWallVersions,
+  // The wall and, from its own query, whether it is archived. Asked fresh every
+  // time: this is the gate in front of the editor and its Publish. Fail-soft
+  // like every other reader of that query: an unknown answer reads as live, and
+  // the server refuses a write to an archived wall anyway.
+  fetchWall: async (wallUuid) => {
+    const [wall, archive] = await Promise.all([
+      fetchSprayWallVersions(wallUuid),
+      fetchSprayWallArchive(wallUuid, { force: true }),
+    ]);
+    if (!wall) return null;
+    return { ...wall, archivedAt: archive?.archivedAt ?? null };
+  },
   createDraft: async (input) => {
     const response = await getHttpClient().request<{ createSprayWallVersion: SprayWallVersion }>(
       CREATE_SPRAY_WALL_VERSION,
@@ -64,15 +80,24 @@ const maintenanceTransport: SprayHoldMaintenanceTransport = {
 };
 
 type MaintenanceStatus = 'preparing' | 'editing' | 'publishing' | 'refreshing' | 'failed';
-/** Editing keeps the active board and visibility intact; leaving keeps its draft. */
-export function SprayWallHoldsScreen({
-  wallUuid,
-  putBackRequestId = null,
-}: {
-  wallUuid: string;
-  /** Set when a climb editor sent the owner here to put a removed hold back (#5493). */
-  putBackRequestId?: string | null;
-}) {
+
+/**
+ * A refusal that no retry can fix: the wall is archived. The screen explains it
+ * and offers only the way back.
+ */
+function isFinalRefusal(failure: unknown): boolean {
+  if (failure instanceof SprayHoldMaintenanceError) return failure.reason === 'archived';
+  return sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(failure));
+}
+
+/**
+ * Editing keeps the active board and visibility intact; leaving keeps its draft.
+ *
+ * Refuses an archived wall before any draft is opened (`prepareSprayHoldDraft`),
+ * so a deep link or a sheet that rendered before the archive cannot reach the
+ * editor.
+ */
+export function SprayWallHoldsScreen({ wallUuid }: { wallUuid: string }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const queryClient = useQueryClient();
@@ -93,38 +118,22 @@ export function SprayWallHoldsScreen({
   const editorDirtyRef = useRef(false);
   const editorHandingOverRef = useRef(false);
 
-  // The put-back request this visit serves, read once: a request for another
-  // wall (a stale link) is ignored and the editor opens as usual.
-  const [putBackRequest] = useState(() => {
-    const request = getLostHoldPutBack(putBackRequestId);
-    return request && request.wallUuid === wallUuid ? request : null;
-  });
-  const putBackHold = useMemo<SprayPutBackHold | null>(
-    () =>
-      putBackRequest
-        ? {
-            removedHoldId: putBackRequest.lostHold.id,
-            knownSuccessorIds: putBackRequest.knownSuccessorIds,
-            cx: putBackRequest.lostHold.cx,
-            cy: putBackRequest.lostHold.cy,
-            r: putBackRequest.lostHold.r,
-            outline: putBackRequest.lostHold.outline,
-          }
-        : null,
-    [putBackRequest],
-  );
-  // However this screen goes — published, backed out of, or failed — a climber
-  // who came from a climb goes back to that climb, not to the boards list.
-  useEffect(() => {
-    const requestId = putBackRequest?.requestId;
-    if (!requestId) return undefined;
-    return () => returnToClimbEditor(requestId);
-  }, [putBackRequest]);
-
   const returnToBoards = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/boards');
   }, [router]);
+
+  // The wall's registry entry, refreshed when the server says this device's
+  // picture of the wall is out of date (archived since).
+  const refreshRegisteredWall = useCallback((failure: unknown) => {
+    const stale =
+      failure instanceof SprayHoldMaintenanceError
+        ? failure.reason === 'archived'
+        : sprayWallRefusalMeansStaleWall(sprayWallLifecycleRefusal(failure));
+    if (!stale) return;
+    const registered = findRegisteredSprayWallByUuid(requestedWallUuidRef.current);
+    if (registered) refreshSprayWall(registered.layoutId);
+  }, []);
 
   const prepare = useCallback(async () => {
     if (busyRef.current) return;
@@ -138,13 +147,14 @@ export function SprayWallHoldsScreen({
       setDraft(prepared);
       setStatus('editing');
     } catch (error) {
+      refreshRegisteredWall(error);
       if (!mountedRef.current) return;
       setFailure(error);
       setStatus('failed');
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [refreshRegisteredWall]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -198,9 +208,6 @@ export function SprayWallHoldsScreen({
       ) {
         throw new Error('Published wall refresh was unavailable');
       }
-      // The wall is published and registered with the new hold in it: the climb
-      // editor this visit returns to can now find it.
-      if (putBackRequest) markLostHoldPutBackPublished(putBackRequest.requestId);
       // Started, not awaited: the wall is published and registered above, so
       // nothing left here decides whether the climber may leave. These are
       // invalidations over queries with live subscribers, and under
@@ -216,13 +223,38 @@ export function SprayWallHoldsScreen({
       if (!mountedRef.current) return;
       setFinished(true);
     } catch (error) {
+      refreshRegisteredWall(error);
       if (!mountedRef.current) return;
       setFailure(error);
       setStatus('failed');
     } finally {
       busyRef.current = false;
     }
-  }, [queryClient, putBackRequest]);
+  }, [queryClient, refreshRegisteredWall]);
+
+  // An open draft this screen cannot edit: a new-photo draft the retired
+  // in-place reset left. Discarding it keeps the wall and its climbs; only the
+  // draft goes. Only ever on a tap.
+  const discardLeftover = useDiscardSprayWallVersion(wallUuid);
+  const discardLeftoverAsync = discardLeftover.mutateAsync;
+  const [discardFailed, setDiscardFailed] = useState(false);
+  const discardOpenDraft = useCallback(
+    async (versionId: string) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setDiscardFailed(false);
+      try {
+        await discardLeftoverAsync(versionId);
+      } catch {
+        if (mountedRef.current) setDiscardFailed(true);
+        busyRef.current = false;
+        return;
+      }
+      busyRef.current = false;
+      if (mountedRef.current) void prepare();
+    },
+    [discardLeftoverAsync, prepare],
+  );
 
   const onDirtyChange = useCallback((dirty: boolean) => {
     editorDirtyRef.current = dirty;
@@ -232,6 +264,12 @@ export function SprayWallHoldsScreen({
     editorHandingOverRef.current = handingOver;
     setEditorHandingOver(handingOver);
   }, []);
+  // A live wall's holds stay editable, published climbs or not. Before a save
+  // takes off holds that published climbs use, the owner is told what it costs.
+  const confirmHoldRemoval = useCallback(
+    (holdIds: readonly number[]) => askBeforeRemovingUsedHolds(requestedWallUuidRef.current, holdIds, t),
+    [t],
+  );
   const onCommitted = useCallback(() => {
     // Publish even if this save changes no holds: a resumed draft can already
     // contain the edits to publish, so save counts do not gate completion.
@@ -279,39 +317,41 @@ export function SprayWallHoldsScreen({
         onCommitted={onCommitted}
         onDirtyChange={onDirtyChange}
         onHandoverChange={onHandoverChange}
-        putBackHold={putBackHold}
+        confirmHoldRemoval={confirmHoldRemoval}
       />
     );
   }
 
   const graphqlMessage = extractGraphqlMessage(failure);
+  const lifecycleRefusal = sprayWallLifecycleRefusal(failure);
   // Yoga input-coercion errors have no code and can include request variables.
   // Only coded backend guidance is suitable for displaying verbatim.
   const schemaOrUncodedError =
     isGraphqlValidationFailedError(failure) || (graphqlMessage !== null && extractGraphqlCode(failure) === null);
   const failureText =
     failure instanceof SprayHoldMaintenanceError
-      ? failure.reason === 'unavailable'
-        ? t('sprayMaintenance.unavailable')
-        : failure.reason === 'nothingPublished'
-          ? t('sprayMaintenance.nothingPublished')
-          : failure.reason === 'resetInProgress'
-            ? t('sprayMaintenance.resetInProgress')
-            : t('sprayMaintenance.draftUnavailable')
-      : schemaOrUncodedError
-        ? t('sprayMaintenance.temporarilyUnavailable')
-        : (graphqlMessage ??
-          (draft
-            ? publishedRef.current
-              ? t('sprayMaintenance.refreshFailed')
-              : t('sprayMaintenance.publishFailed')
-            : t('sprayMaintenance.loadFailed')));
+      ? maintenanceFailureText(failure.reason, t)
+      : lifecycleRefusal
+        ? sprayWallLifecycleMessage(lifecycleRefusal, t)
+        : schemaOrUncodedError
+          ? t('sprayMaintenance.temporarilyUnavailable')
+          : (graphqlMessage ??
+            (draft
+              ? publishedRef.current
+                ? t('sprayMaintenance.refreshFailed')
+                : t('sprayMaintenance.publishFailed')
+              : t('sprayMaintenance.loadFailed')));
   const workingText =
     status === 'preparing'
       ? t('sprayMaintenance.preparing')
       : status === 'publishing'
         ? t('sprayMaintenance.publishing')
         : t('sprayMaintenance.refreshing');
+  const leftoverVersionId =
+    failure instanceof SprayHoldMaintenanceError && failure.reason === 'leftoverPhotoDraft'
+      ? failure.leftoverVersionId
+      : null;
+  const finalRefusal = isFinalRefusal(failure);
 
   return (
     <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
@@ -320,7 +360,21 @@ export function SprayWallHoldsScreen({
           <Text variant="headline" style={styles.message}>
             {failureText}
           </Text>
-          <Button title={t('sprayMaintenance.retry')} onPress={() => void (draft ? finish() : prepare())} />
+          {discardFailed ? (
+            <Text variant="subheadline" style={styles.message}>
+              {t('sprayMaintenance.discardLeftoverFailed')}
+            </Text>
+          ) : null}
+          {leftoverVersionId ? (
+            <Button
+              title={t('sprayMaintenance.discardLeftover')}
+              onPress={() => void discardOpenDraft(leftoverVersionId)}
+              loading={discardLeftover.isPending}
+              disabled={discardLeftover.isPending}
+            />
+          ) : finalRefusal ? null : (
+            <Button title={t('sprayMaintenance.retry')} onPress={() => void (draft ? finish() : prepare())} />
+          )}
           <Button title={t('sprayWizard.back')} variant="text" onPress={returnToBoards} />
         </>
       ) : (
@@ -333,6 +387,22 @@ export function SprayWallHoldsScreen({
       )}
     </View>
   );
+}
+
+/** The sentence for each maintenance failure. Literal keys, for the i18n orphan check. */
+function maintenanceFailureText(reason: SprayHoldMaintenanceError['reason'], t: (key: string) => string): string {
+  switch (reason) {
+    case 'unavailable':
+      return t('sprayMaintenance.unavailable');
+    case 'nothingPublished':
+      return t('sprayMaintenance.nothingPublished');
+    case 'archived':
+      return t('sprayWallErrors.archived');
+    case 'leftoverPhotoDraft':
+      return t('sprayMaintenance.leftoverPhoto');
+    case 'draftUnavailable':
+      return t('sprayMaintenance.draftUnavailable');
+  }
 }
 
 const styles = StyleSheet.create({

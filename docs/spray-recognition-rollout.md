@@ -79,7 +79,7 @@ Python runtime scores: the int8 runtimes have previously differed.
 | Service check | Minimum evidence before promotion |
 | --- | --- |
 | Initial validation | At least 24 hours; a photographed, reset and climbed real wall; 20 reviewed walls across at least 5 users; uploads ≥95%; count-difference proxy ≤15%. |
-| Reset validation | At least another 24 hours; at least 10 reset previews; reset applies/previews ≥60%; upload and correction gates still pass; no unresolved worker/auth/privacy errors. |
+| Reset validation | At least another 24 hours; at least 10 walls reset (`Board Created` with `isReset: true`); upload and correction gates still pass; no unresolved worker/auth/privacy errors. The in-place reset preview and apply events no longer exist, so there is no preview-to-apply ratio. |
 | Ongoing operation | Continue monitoring queue age, failures, latency and RSS; roll the worker back on gate regression. |
 
 Use the existing `SPRAY_ROLLOUT_GATES` definitions. `Spray Holds Reviewed` now
@@ -90,7 +90,7 @@ not join unrelated users' detection/review events to manufacture a denominator.
 
 Record each observation window, image digest, model hash, participant count,
 reviewed-wall count, uploads attempted/succeeded, candidate/saved counts and
-reset previews/applies on #5451. No gate may be marked complete from unit tests,
+walls reset on #5451. No gate may be marked complete from unit tests,
 elapsed time alone or fabricated tester events.
 
 ## Rollback

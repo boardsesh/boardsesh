@@ -64,11 +64,9 @@ export type SprayEditorHold = HoldGeometry & {
   /** This session created or changed the hold, so it belongs in the next upsert. */
   dirty: boolean;
   /**
-   * The removed hold this one puts back (#5493): set on a hold added from a
-   * climb's "Put this hold back on the wall", and sent with it, so the climb
-   * editor can find the new hold once the wall is published. A removed hold's
-   * own id can never come back — the server refuses any id that is not alive —
-   * so putting a hold back is always a NEW hold that names the old one.
+   * The removed hold this one replaced, as the server has it: carried from the
+   * seed and sent back on every write, because the server writes the field as
+   * sent and leaving it out would wipe the link. Nothing in the app sets it now.
    */
   movedFromHoldId?: number;
 };
@@ -105,7 +103,7 @@ export type SprayEditorAction =
   /** An ON ring or a MAYBE goes OFF (a ghost). Already OFF does nothing. The maybe's "Switch off" chip. */
   | { type: 'SWITCH_OFF'; id: number }
   /** `select` picks the new hold in the same step, so nothing can take its id in between. */
-  | { type: 'ADD_HOLD'; geometry: HoldGeometry; movedFromHoldId?: number; select?: boolean }
+  | { type: 'ADD_HOLD'; geometry: HoldGeometry; select?: boolean }
   | { type: 'MOVE_HOLD'; id: number; cx: number; cy: number }
   | { type: 'RESIZE_HOLD'; id: number; r: number }
   | { type: 'SET_OUTLINE'; id: number; geometry: HoldGeometry }
@@ -280,7 +278,6 @@ export function sprayEditorReducer(state: SprayEditorState, action: SprayEditorA
         // review it.
         review: 'accepted',
         dirty: true,
-        ...(action.movedFromHoldId != null ? { movedFromHoldId: action.movedFromHoldId } : {}),
       };
       return commit(state, {
         ...snapshotOf(state),

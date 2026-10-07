@@ -8,7 +8,7 @@ describe('resolveProvisionalSetter', () => {
     expect(resolveProvisionalSetter(null, saver)).toEqual({ userId: 'wall-owner', setter_username: 'Wall Owner' });
   });
 
-  it('keeps the original setter when a wall editor edits their climb', () => {
+  it('keeps the original setter when the saver is somebody else', () => {
     const edited = { userId: 'setter-1', setter_username: 'Original Setter' };
     expect(resolveProvisionalSetter(edited, saver)).toEqual({ userId: 'setter-1', setter_username: 'Original Setter' });
   });

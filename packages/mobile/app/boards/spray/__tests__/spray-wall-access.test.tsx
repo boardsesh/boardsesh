@@ -5,11 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { FeatureFlagsProvider } from '../../../../src/providers/feature-flags-provider';
 import NewSprayWall from '../new';
-import ResetSprayWall from '../reset';
 import EditSprayWallHolds from '../holds';
 
 const accessState = vi.hoisted(() => ({
-  params: {} as { returnTo?: string; wallUuid?: string | string[]; boardUuid?: string | string[] },
+  params: {} as {
+    returnTo?: string;
+    wallUuid?: string | string[];
+    boardUuid?: string | string[];
+    resetOf?: string | string[];
+  },
   posthogFlags: {} as Record<string, boolean>,
   overrides: {} as Record<string, boolean>,
 }));
@@ -28,12 +32,8 @@ vi.mock('../../../../src/lib/feature-flag-overrides', () => ({
 }));
 vi.mock('../../../../src/lib/is-dev-build', () => ({ isDevBuild: () => true }));
 vi.mock('../../../../src/components/spray-wall/SprayWallWizardScreen', () => ({
-  SprayWallWizardScreen: ({ returnTo }: { returnTo: string }) =>
-    createElement('div', { 'data-testid': 'wizard' }, returnTo),
-}));
-vi.mock('../../../../src/components/spray-wall/SprayWallResetScreen', () => ({
-  SprayWallResetScreen: ({ wallUuid }: { wallUuid: string }) =>
-    createElement('div', { 'data-testid': 'reset' }, wallUuid),
+  SprayWallWizardScreen: ({ returnTo, resetOfWallUuid }: { returnTo: string; resetOfWallUuid: string | null }) =>
+    createElement('div', { 'data-testid': 'wizard', 'data-reset-of': resetOfWallUuid ?? '' }, returnTo),
 }));
 
 vi.mock('../../../../src/components/spray-wall/SprayWallHoldsScreen', () => ({
@@ -50,7 +50,7 @@ afterEach(cleanup);
 
 describe('spray-wall access after the rollout flag is retired', () => {
   it.each(['unresolved or unavailable flags', 'stale PostHog disable', 'stale tester override'])(
-    'opens all three flows immediately with %s',
+    'opens both flows immediately with %s',
     (flagCondition) => {
       if (flagCondition === 'stale PostHog disable') accessState.posthogFlags = { 'spray-walls': false };
       if (flagCondition === 'stale tester override') accessState.overrides = { 'spray-walls': false };
@@ -59,43 +59,45 @@ describe('spray-wall access after the rollout flag is retired', () => {
       render(
         <FeatureFlagsProvider>
           <NewSprayWall />
-          <ResetSprayWall />
           <EditSprayWallHolds />
         </FeatureFlagsProvider>,
       );
 
       expect(screen.getByTestId('wizard').textContent).toBe('/(tabs)/discover');
-      expect(screen.getByTestId('reset').textContent).toBe('wall-uuid');
       expect(screen.getByTestId('holds').textContent).toBe('wall-uuid');
       expect(screen.queryByTestId('redirect')).toBeNull();
     },
   );
 
-  it('accepts restored reset and hold-editor links using the legacy boardUuid alias', () => {
+  it('opens the wizard as a reset only with a single resetOf wall', () => {
+    accessState.params = { resetOf: 'wall-uuid' };
+    render(<NewSprayWall />);
+    expect(screen.getByTestId('wizard').getAttribute('data-reset-of')).toBe('wall-uuid');
+    cleanup();
+
+    accessState.params = { resetOf: ['wall-1', 'wall-2'] };
+    render(<NewSprayWall />);
+    expect(screen.getByTestId('wizard').getAttribute('data-reset-of')).toBe('');
+    cleanup();
+
+    accessState.params = { resetOf: ' ' };
+    render(<NewSprayWall />);
+    expect(screen.getByTestId('wizard').getAttribute('data-reset-of')).toBe('');
+  });
+
+  it('accepts restored hold-editor links using the legacy boardUuid alias', () => {
     accessState.params = { boardUuid: 'legacy-wall' };
-    render(
-      <>
-        <ResetSprayWall />
-        <EditSprayWallHolds />
-      </>,
-    );
-    expect(screen.getByTestId('reset').textContent).toBe('legacy-wall');
+    render(<EditSprayWallHolds />);
     expect(screen.getByTestId('holds').textContent).toBe('legacy-wall');
     expect(screen.queryByTestId('redirect')).toBeNull();
   });
 
   it.each([{}, { wallUuid: '' }, { wallUuid: ['wall-1'] }, { wallUuid: '', boardUuid: 'legacy-wall' }])(
-    'returns maintenance links with missing or ambiguous wall identity to the picker',
+    'returns hold-editor links with missing or ambiguous wall identity to the picker',
     (params) => {
       accessState.params = params;
-      render(
-        <>
-          <ResetSprayWall />
-          <EditSprayWallHolds />
-        </>,
-      );
-      expect(screen.getAllByTestId('redirect').map((redirect) => redirect.textContent)).toEqual(['/boards', '/boards']);
-      expect(screen.queryByTestId('reset')).toBeNull();
+      render(<EditSprayWallHolds />);
+      expect(screen.getAllByTestId('redirect').map((redirect) => redirect.textContent)).toEqual(['/boards']);
       expect(screen.queryByTestId('holds')).toBeNull();
     },
   );

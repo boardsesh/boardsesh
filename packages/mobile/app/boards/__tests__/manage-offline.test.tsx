@@ -251,11 +251,25 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     isError: false,
     refetch: vi.fn(),
   }),
+  useDeleteBoard: () => ({ mutateAsync: archived.deleteBoard }),
 }));
 
 vi.mock('../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: state.activeBoard }),
+  getActiveBoardWriteGeneration: () => 0,
+  useClearActiveBoardIfCurrentGeneration: () => vi.fn(),
 }));
+vi.mock('../../../src/providers/queue-provider', () => ({ useQueueActions: () => ({ clearSession: vi.fn() }) }));
+const archived = vi.hoisted(() => ({
+  lifecycle: undefined as unknown,
+  refetch: vi.fn(),
+  deleteBoard: vi.fn(async () => true),
+  forget: vi.fn(async () => {}),
+  reportError: vi.fn(),
+  rows: [] as { wall: { uuid: string; layoutId: number; name: string }; onDelete: (wall: unknown) => void }[],
+}));
+vi.mock('../../../src/lib/spray/forget-deleted-spray-wall', () => ({ forgetDeletedSprayWall: archived.forget }));
+vi.mock('../../../src/lib/error-reporting', () => ({ reportError: archived.reportError }));
 
 vi.mock('../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, refreshAuthState: vi.fn() }),
@@ -351,6 +365,19 @@ vi.mock('../../../src/components/Button', () => ({
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
+// The Archived section reads the owner's wall list and opens a wall by uuid;
+// neither has anything to do with the offline list these cases cover.
+vi.mock('../../../src/lib/spray/use-create-spray-wall', () => ({
+  useMySprayWallLifecycle: () => ({ data: archived.lifecycle, refetch: archived.refetch }),
+}));
+vi.mock('../../../src/lib/spray/use-open-spray-wall', () => ({ useOpenSprayWall: () => vi.fn() }));
+vi.mock('../../../src/lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
+vi.mock('../../../src/components/board-discovery/ArchivedWallManageRow', () => ({
+  ArchivedWallManageRow: (props: (typeof archived.rows)[number]) => {
+    archived.rows.push(props);
+    return null;
+  },
+}));
 vi.mock('../../../src/components/board-discovery/BoardManageRow', () => ({
   BoardManageRow: ({
     board: rowBoard,
@@ -420,6 +447,8 @@ beforeEach(() => {
   };
   state.activeBoard = undefined;
   state.myBoards = { data: undefined, isLoading: false, isError: false, isRefetching: false };
+  archived.lifecycle = undefined;
+  archived.rows = [];
 });
 
 describe('My Boards with no usable network list', () => {
@@ -1389,5 +1418,86 @@ describe('My Boards while offline storage is paused', () => {
     expect(screen.getByText('mobile.settings.storage.downgradeSubtitle')).toBeTruthy();
     // Creating a board needs no local database.
     expect(screen.getByRole('button', { name: 'Create a board' })).toBeTruthy();
+  });
+});
+
+describe('My Boards archived walls', () => {
+  function renderWithArchivedWall() {
+    state.profileId = 'me';
+    state.myBoards = {
+      data: { boards: [board({ uuid: 'net-1', name: 'Network board' })] },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+    };
+    archived.lifecycle = [
+      {
+        uuid: 'old-wall',
+        layoutId: 77,
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        resetOfWallUuid: null,
+        board: { uuid: 'old-wall', name: 'Garage' },
+      },
+    ];
+    render(createElement(ManageBoards));
+    const row = archived.rows.at(-1);
+    if (!row) throw new Error('archived row not rendered');
+    return row;
+  }
+
+  // The archive cap tells the owner to delete one; this is where they can.
+  it('deletes an archived wall behind the confirm, and forgets it on this phone', async () => {
+    confirmMock.mockResolvedValue(true);
+    const row = renderWithArchivedWall();
+    expect(row.wall).toMatchObject({ uuid: 'old-wall', layoutId: 77, name: 'Garage' });
+
+    await act(async () => row.onDelete(row.wall));
+
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'sprayArchive.deleteMessage', destructive: true }),
+    );
+    expect(archived.deleteBoard).toHaveBeenCalledExactlyOnceWith('old-wall');
+    expect(archived.forget).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'old-wall', layoutId: 77 }),
+      expect.anything(),
+    );
+    expect(archived.refetch).toHaveBeenCalled();
+  });
+
+  // The wall is gone on the server; a failure in this phone's own cleanup is
+  // reported, and the list still refreshes so the deleted row leaves.
+  it('still refreshes the list when the cleanup after a delete fails', async () => {
+    confirmMock.mockResolvedValue(true);
+    archived.forget.mockRejectedValueOnce(new Error('disk full'));
+    const row = renderWithArchivedWall();
+    await act(async () => row.onDelete(row.wall));
+    expect(archived.deleteBoard).toHaveBeenCalledTimes(1);
+    expect(archived.reportError).toHaveBeenCalledWith(expect.objectContaining({ message: 'disk full' }));
+    expect(archived.refetch).toHaveBeenCalled();
+  });
+
+  it('sends one delete for a second trash tap while the first is out', async () => {
+    let answer: (value: boolean) => void = () => {};
+    confirmMock.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const row = renderWithArchivedWall();
+    await act(async () => {
+      row.onDelete(row.wall);
+      row.onDelete(row.wall);
+    });
+    await act(async () => answer(true));
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(archived.deleteBoard).toHaveBeenCalledTimes(1);
+  });
+
+  it('deletes nothing when the owner backs out', async () => {
+    confirmMock.mockResolvedValue(false);
+    const row = renderWithArchivedWall();
+    await act(async () => row.onDelete(row.wall));
+    expect(archived.deleteBoard).not.toHaveBeenCalled();
+    expect(archived.forget).not.toHaveBeenCalled();
   });
 });

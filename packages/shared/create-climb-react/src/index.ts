@@ -15,19 +15,3 @@ export {
   type CanEditClimbInput,
 } from './helpers';
 export { applyHoldState, MAX_HOLDS_PER_CAPPED_ROLE } from './hold-paint';
-export {
-  applyHoldPlacements,
-  buildLostHoldGhosts,
-  findLostHoldIds,
-  isGhostCovered,
-  lostHoldPlacements,
-  rankReplacementCandidates,
-  FALLBACK_REPLACEMENT_CANDIDATES,
-  MAX_REPLACEMENT_CANDIDATES,
-  NEARBY_RADIUS_MULTIPLIER,
-  type HoldCircle,
-  type HoldPlacement,
-  type LostHoldGeometry,
-  type LostHoldGhost,
-  type ReplacementCandidate,
-} from './lost-holds';

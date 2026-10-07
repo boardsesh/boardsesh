@@ -4,9 +4,10 @@ import { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } f
  * The caps, as copy, at the three points they bite.
  *
  * A cap a climber only meets as "Something went wrong" is indistinguishable from
- * a bug, and the three spray caps are all reachable by ordinary use: ten walls is
- * a gym with a lot of bays, 1,500 holds is a dense commercial spray wall, fifty
- * resets is four years of monthly changes. So each one is said out loud with its
+ * a bug, and the spray caps are reachable by ordinary use: ten walls is a gym
+ * with a lot of bays, 1,500 holds is a dense commercial spray wall, and fifty
+ * versions is a lot of published hold edits on one wall (a reset makes a new
+ * wall, with its own count). So each one is said out loud with its
  * number, BEFORE it bites where there is a sensible place to say it (the wall
  * count on the create step) and at the moment it bites everywhere else.
  *

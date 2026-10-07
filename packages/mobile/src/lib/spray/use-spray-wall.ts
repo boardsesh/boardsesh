@@ -23,7 +23,6 @@ import {
   ensureSprayWallLoaded,
   getSprayWallLoadState,
   sprayWallViewerCanEdit,
-  sprayWallViewerCanEditClimbs,
   subscribeToSprayWalls,
   type SprayWallLoadState,
 } from './spray-wall-registry';
@@ -65,27 +64,6 @@ export function useSprayWallViewerCanEdit(boardName: string | null | undefined, 
     subscribeToSprayWalls,
     useCallback(
       () => (sprayLayoutId == null ? false : sprayWallViewerCanEdit('spray', sprayLayoutId)),
-      [sprayLayoutId],
-    ),
-  );
-}
-
-/**
- * Whether the viewer can edit climbs on the wall behind a board config (#6025).
- * `false` on every catalogue board, and until the wall has registered.
- */
-export function useSprayWallViewerCanEditClimbs(
-  boardName: string | null | undefined,
-  layoutId: number | null,
-): boolean {
-  const sprayLayoutId = boardName === 'spray' ? layoutId : null;
-  useEffect(() => {
-    if (sprayLayoutId != null) ensureSprayWallLoaded(sprayLayoutId);
-  }, [sprayLayoutId]);
-  return useSyncExternalStore(
-    subscribeToSprayWalls,
-    useCallback(
-      () => (sprayLayoutId == null ? false : sprayWallViewerCanEditClimbs('spray', sprayLayoutId)),
       [sprayLayoutId],
     ),
   );

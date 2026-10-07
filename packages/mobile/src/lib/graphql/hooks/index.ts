@@ -596,7 +596,6 @@ export function useUpdateSprayWall() {
       void queryClient.invalidateQueries({ queryKey: ['board', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['searchBoards'] });
-      void queryClient.invalidateQueries({ queryKey: ['sprayWall', updated.uuid] });
       void queryClient.invalidateQueries({ queryKey: ['sprayWallByLayout', updated.layoutId] });
       // The registered wall carries the slug and visibility Share reads
       // (`RegisteredSprayWall.share`), filled from the render payload. Without

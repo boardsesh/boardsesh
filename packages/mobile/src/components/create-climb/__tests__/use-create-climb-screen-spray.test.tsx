@@ -34,7 +34,6 @@ const createClimb = vi.hoisted(() => ({
   frameCount: 1,
   currentFrameIndex: 0,
   setHoldState: vi.fn(),
-  placeHold: vi.fn((_holdId: number, _placements: unknown) => true),
   generateFramesString: vi.fn(() => 'p1r1p2r3'),
   currentFrameBleString: vi.fn(() => 'p1r1p2r3'),
   startingCount: 1,
@@ -424,64 +423,6 @@ describe('the setter grade gates a publish', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
     act(() => result.current.setIsDraft(false));
     expect(result.current.setterGradeMissing).toBe(false);
-  });
-});
-
-describe('back from putting a lost hold back on the wall (#5493)', () => {
-  const draft = {
-    holdsJson: '{}',
-    framesJson: JSON.stringify([{ 1: { state: 'STARTING' } }]),
-    name: 'Left behind',
-    description: '',
-    isDraft: false,
-  };
-  const placements = [{ frameIndex: 0, state: 'HAND' as const }];
-
-  it("restores the working copy, then puts the new hold in the lost one's place", async () => {
-    createClimb.loadFrames.mockClear();
-    createClimb.placeHold.mockClear();
-    const onPutBackApplied = vi.fn();
-    const { result } = renderHook(() =>
-      useCreateClimbScreen({
-        board: SPRAY_BOARD,
-        putBackReturn: { lostHoldId: 5, draft, placements, newHoldId: 77 },
-        onPutBackApplied,
-      }),
-    );
-    await waitFor(() => expect(onPutBackApplied).toHaveBeenCalledTimes(1));
-    expect(createClimb.loadFrames).toHaveBeenCalledWith([{ 1: { state: 'STARTING' } }]);
-    expect(result.current.name).toBe('Left behind');
-    expect(createClimb.placeHold).toHaveBeenCalledWith(77, placements);
-    expect(onPutBackApplied).toHaveBeenCalledWith(false);
-  });
-
-  it('reports a hold whose role was already full, instead of dropping it silently', async () => {
-    createClimb.placeHold.mockClear();
-    createClimb.placeHold.mockReturnValueOnce(false);
-    const onPutBackApplied = vi.fn();
-    renderHook(() =>
-      useCreateClimbScreen({
-        board: SPRAY_BOARD,
-        putBackReturn: { lostHoldId: 5, draft, placements, newHoldId: 77 },
-        onPutBackApplied,
-      }),
-    );
-    await waitFor(() => expect(onPutBackApplied).toHaveBeenCalledWith(true));
-  });
-
-  it('restores the working copy and places nothing when the owner backed out', async () => {
-    createClimb.placeHold.mockClear();
-    const onPutBackApplied = vi.fn();
-    const { result } = renderHook(() =>
-      useCreateClimbScreen({
-        board: SPRAY_BOARD,
-        putBackReturn: { lostHoldId: 5, draft, placements, newHoldId: null },
-        onPutBackApplied,
-      }),
-    );
-    await waitFor(() => expect(onPutBackApplied).toHaveBeenCalledTimes(1));
-    expect(result.current.name).toBe('Left behind');
-    expect(createClimb.placeHold).not.toHaveBeenCalled();
   });
 });
 

@@ -288,8 +288,9 @@ composite-keyed sync table must keep this true (or version the encoding).
   `sync_seq`.
 - `missing_hold_count` is a nullable INTEGER — how many of a climb's holds have since come off the wall — and is
   spray-only in practice: it is NULL for every climb on the catalogue boards, because holds do not come off a
-  Kilter. It is what lets `search-climbs-local.ts` answer the Intact / Lost-holds filter (SW-12) offline instead
-  of declining it.
+  Kilter. It carries the "N holds gone" row chip on a downloaded wall's list. A climb that lost a hold is listed
+  online and off; only a climb a full reset retired leaves the default list, through `retired_by_reset` (schema
+  v12), mirroring the server's `retiredByResetCondition`, so the phone answers the search instead of declining it.
 - It was added **without** bumping `refreshRevision`, the exception noted in "Casing & types". A bump means every
   already-downloaded scope must re-crawl to backfill the field, which is every enabled Kilter and Tension
   catalogue — tens of thousands of rows each — replayed to fill in a column that is NULL on all of them. Spray

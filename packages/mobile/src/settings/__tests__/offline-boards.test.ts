@@ -30,6 +30,10 @@ import {
   forgetOfflineBoardScope,
   pruneOfflineBoards,
   clearOfflineBoards,
+  clearSprayWallArchives,
+  forgetSprayWallArchive,
+  getRememberedSprayWallArchive,
+  rememberSprayWallArchive,
 } from '../offline-boards';
 import { resetAllSettings } from '../hooks';
 
@@ -150,6 +154,18 @@ describe('offline board snapshots', () => {
     expect(getOfflineBoards().map((card) => card.uuid)).toEqual(['garage']);
   });
 
+  it('spares cards of the type the caller cannot vouch for', () => {
+    rememberOfflineBoards([
+      board({ uuid: 'garage', name: 'Garage' }),
+      board({ uuid: 'old-wall', name: 'Archived wall', boardType: 'spray', layoutId: 77, sizeId: 77 }),
+      board({ uuid: 'gone', name: 'Unfollowed elsewhere' }),
+    ]);
+
+    pruneOfflineBoards(['garage'], { keepBoardType: 'spray' });
+
+    expect(getOfflineBoards().map((card) => card.uuid)).toEqual(['garage', 'old-wall']);
+  });
+
   it('does not write when every card is still on the server list', () => {
     rememberOfflineBoards([board({ uuid: 'garage', name: 'Garage' })]);
     setSpy.mockClear();
@@ -190,5 +206,82 @@ describe('offline board snapshots', () => {
 
     mockStorage.set('offlineBoardsV1', 'not json at all');
     expect(getOfflineBoards()).toEqual([]);
+  });
+});
+
+describe('remembered spray wall archive state', () => {
+  beforeEach(() => {
+    mockStorage.clear();
+    setSpy.mockClear();
+    resetAllSettings();
+    setSpy.mockClear();
+  });
+
+  const archived = { archivedAt: '2026-10-01T09:00:00.000Z', replacedByWallUuid: 'new-wall' };
+
+  it('keeps archived walls only', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null });
+    expect(getRememberedSprayWallArchive('old-wall')).toEqual(archived);
+    expect(getRememberedSprayWallArchive('live-wall')).toBeNull();
+  });
+
+  // Every ten-minute revalidation calls this; a write wakes every settings reader.
+  it('writes only on a change', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    setSpy.mockClear();
+    rememberSprayWallArchive('old-wall', { ...archived });
+    rememberSprayWallArchive('live-wall', { archivedAt: null, replacedByWallUuid: null });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it('forgets a wall the server says is not archived, or that was deleted', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    rememberSprayWallArchive('old-wall', { archivedAt: null, replacedByWallUuid: null });
+    expect(getRememberedSprayWallArchive('old-wall')).toBeNull();
+    rememberSprayWallArchive('deleted-wall', archived);
+    forgetSprayWallArchive('deleted-wall');
+    expect(getRememberedSprayWallArchive('deleted-wall')).toBeNull();
+  });
+
+  it('drops an entry written in a shape this build does not know', () => {
+    mockStorage.set(
+      'offlineSprayWallArchiveV1',
+      JSON.stringify({
+        broken: { archivedAt: 4 },
+        live: { archivedAt: null, replacedByWallUuid: null },
+        'old-wall': archived,
+      }),
+    );
+    expect(getRememberedSprayWallArchive('broken')).toBeNull();
+    expect(getRememberedSprayWallArchive('live')).toBeNull();
+    expect(getRememberedSprayWallArchive('old-wall')).toEqual(archived);
+  });
+
+  it('stays bounded, dropping the least recently written wall first', () => {
+    for (let index = 0; index < 70; index += 1) {
+      rememberSprayWallArchive(`wall-${index}`, { ...archived, replacedByWallUuid: `next-${index}` });
+    }
+    expect(getRememberedSprayWallArchive('wall-0')).toBeNull();
+    expect(getRememberedSprayWallArchive('wall-69')).not.toBeNull();
+    const stored = JSON.parse(mockStorage.get('offlineSprayWallArchiveV1') ?? '{}') as Record<string, unknown>;
+    expect(Object.keys(stored)).toHaveLength(64);
+  });
+
+  // The offline loader can only ever draw a downloaded wall: its entry is the
+  // one worth keeping when the cap bites.
+  it('keeps a downloaded wall over an older entry for a wall that is not downloaded', () => {
+    rememberOfflineBoards([board({ uuid: 'wall-0', name: 'Old garage' })]);
+    for (let index = 0; index < 70; index += 1) {
+      rememberSprayWallArchive(`wall-${index}`, { ...archived, replacedByWallUuid: `next-${index}` });
+    }
+    expect(getRememberedSprayWallArchive('wall-0')).not.toBeNull();
+    expect(getRememberedSprayWallArchive('wall-1')).toBeNull();
+  });
+
+  it('clears everything at the account boundary', () => {
+    rememberSprayWallArchive('old-wall', archived);
+    clearSprayWallArchives();
+    expect(getRememberedSprayWallArchive('old-wall')).toBeNull();
   });
 });

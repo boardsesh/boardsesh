@@ -20,6 +20,11 @@
 // and its one draft version live on the server, so closing the app and coming
 // back tomorrow finds the work waiting (`docs/spray-walls.md`, "One open draft
 // per wall").
+//
+// The same flow builds a RESET (`resetOfWallUuid`). `resetSprayWall` clones the
+// old wall's settings into a new, unfinished wall, so the run skips the meta
+// step and rejoins at the photo like any resumed wall. Its first publish
+// archives the old wall (`docs/spray-walls.md`, "Archive and reset").
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
@@ -75,13 +80,19 @@ import { hapticSelection } from '../../lib/haptics';
 import { addErrorBreadcrumb, reportError } from '../../lib/error-reporting';
 import { openExternalUrl } from '../../lib/open-url';
 import { buildHelpUrl } from '../../lib/help-url';
-import { extractGraphqlCode, extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import {
+  extractGraphqlCode,
+  extractGraphqlMessage,
+  sprayWallLifecycleRefusal,
+} from '../../lib/graphql/extract-error-message';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import { SPRAY_CAP_VALUES, sprayCapFromErrorCode, sprayCapMessage } from '../../lib/spray/spray-cap-copy';
 import { useActivateBoard } from '../../lib/boards/use-activate-board';
 import { activatePublishedSprayWall } from '../../lib/spray/activate-published-spray-wall';
 import { DONE_EXIT_OFFER_MS, PostPublishStalledError, runPostPublishBind } from '../../lib/spray/post-publish-bind';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
-import { invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
+import { fetchSprayWallResetSource, invalidateSprayWallRenderData } from '../../lib/spray/spray-wall-loader';
+import { settleArchivedSprayWall } from '../../lib/spray/settle-archived-spray-wall';
 import { prefetchSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import {
   fetchSprayWallVersions,
@@ -89,8 +100,11 @@ import {
   useCreateSprayWallVersion,
   useDiscardSprayWallDraft,
   useMySprayWalls,
+  useMySprayWallLifecycle,
   usePublishSprayWallVersion,
+  useResetSprayWall,
   useUpdateSprayWallVisibility,
+  type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
@@ -138,10 +152,29 @@ const LEAVE_AFTER_BIND = () => {};
 
 /** The steps that get a "step N of M" counter — the ones a climber drives. */
 const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'look', 'publish'];
+/** A reset never shows the meta step (its settings came from the wall it replaces), so it counts from the photo. */
+const RESET_COUNTED_STEPS: readonly AddWallStep[] = ['photo', 'anchors', 'review', 'look', 'publish'];
+
+/**
+ * Reset refusals no retry can fix: the server will say the same thing again.
+ * The resume step offers only the way back for these.
+ */
+const FINAL_RESET_REFUSALS: ReadonlySet<string> = new Set([
+  'resetOwnerOnly',
+  'archived',
+  'resetSourceUnpublished',
+  'archiveLimitReached',
+]);
 
 type SprayWallWizardScreenProps = {
   /** Which tab the flow dismisses back to once the wall is bound. */
   returnTo: BoardReturnTo;
+  /**
+   * The published wall this run replaces, or null for a brand new wall. Set,
+   * the run builds that wall's reset clone instead of offering an unfinished
+   * wall back.
+   */
+  resetOfWallUuid?: string | null;
 };
 
 /** Hoisted for `useConnectivityField`: a stable selector keeps one subscription. */
@@ -149,7 +182,8 @@ function selectConnectivityReason(snapshot: ConnectivitySnapshot): ConnectivityS
   return snapshot.reason;
 }
 
-export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) {
+export function SprayWallWizardScreen({ returnTo, resetOfWallUuid = null }: SprayWallWizardScreenProps) {
+  const countedSteps = resetOfWallUuid != null ? RESET_COUNTED_STEPS : COUNTED_STEPS;
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
@@ -184,6 +218,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     (error: unknown, fallback: string): string => {
       const cap = sprayCapFromErrorCode(extractGraphqlCode(error));
       if (cap) return sprayCapMessage(cap, t);
+      const lifecycle = sprayWallLifecycleRefusal(error);
+      if (lifecycle) return sprayWallLifecycleMessage(lifecycle, t);
       return extractGraphqlMessage(error) ?? fallback;
     },
     [t],
@@ -229,6 +265,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
   const discardDraft = useDiscardSprayWallDraft();
   const discardDraftAsync = discardDraft.mutateAsync;
+  const resetWall = useResetSprayWall();
+  const resetWallAsync = resetWall.mutateAsync;
 
   /**
    * The initial board row, kept for creation analytics.
@@ -320,13 +358,24 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   // Only while the flow is actually asking. Once it has an answer the query is
   // dead weight, and refetching it mid-flow could offer to resume the very wall
   // this run just created.
-  const mySprayWalls = useMySprayWalls({ enabled: state.step === 'resuming' });
+  // A reset never asks: `resetSprayWall` hands back the clone to work on.
+  const mySprayWalls = useMySprayWalls({ enabled: state.step === 'resuming' && resetOfWallUuid == null });
   // `refetch` comes out with the rest of the fields on purpose. React Query keeps
   // it stable for the query's life, where the RESULT object is a fresh reference
   // on every render — so a callback closing over the whole thing would be rebuilt
   // on every commit, including each one an upload progress tick causes.
   const { isFetching: wallsFetching, dataUpdatedAt, errorUpdatedAt, refetch: refetchMySprayWalls } = mySprayWalls;
   const walls = mySprayWalls.data;
+  // Which of those walls are a reset's unfinished clone: those are finished from
+  // their own reset, never offered as a new wall. From the fail-soft lifecycle
+  // list, since the full wall payload no longer carries the reset fields; on a
+  // backend without them this fails, nothing is filtered, and the check behaves
+  // as it always did.
+  const sprayWallLifecycle = useMySprayWallLifecycle({
+    enabled: state.step === 'resuming' && resetOfWallUuid == null,
+  });
+  const lifecycleSettled = !sprayWallLifecycle.isFetching;
+  const lifecycleRows = sprayWallLifecycle.data;
   /**
    * When this screen opened.
    *
@@ -346,6 +395,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const resumeAskedRef = useRef(false);
 
   const [resumeError, setResumeError] = useState<string | null>(null);
+  // A reset refusal that "Try again" cannot fix (owner only, archived, …).
+  const [resumeErrorIsFinal, setResumeErrorIsFinal] = useState(false);
+  // For answers that land after the screen has gone: no alert over whatever the
+  // climber moved on to, and no state update on an unmounted screen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  // One reset request at a time: two fast "Try again" taps must not send two
+  // `resetSprayWall` calls or stack two prompts.
+  const resetInFlightRef = useRef(false);
 
   const decideResume = useCallback(
     async (resumable: NonNullable<ReturnType<typeof findResumableWall>>, choice: 'resume' | 'startOver') => {
@@ -392,35 +455,143 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   );
 
   useEffect(() => {
-    if (state.step !== 'resuming' || !wallsSettled || resumeAskedRef.current) return;
+    if (resetOfWallUuid != null) return;
+    if (state.step !== 'resuming' || !wallsSettled || !lifecycleSettled || resumeAskedRef.current) return;
     resumeAskedRef.current = true;
 
     // A failed list is not a reason to block: the worst case is one extra wall
     // against the cap, and refusing to let somebody add a wall because we could
     // not check for an old one is far worse.
-    const resumable = walls ? findResumableWall(walls) : null;
+    const cloneOf = new Map((lifecycleRows ?? []).map((row) => [row.uuid, row.resetOfWallUuid ?? null]));
+    const resumable = walls
+      ? findResumableWall(walls.map((wall) => ({ ...wall, resetOfWallUuid: cloneOf.get(wall.uuid) ?? null })))
+      : null;
     if (!resumable) {
       dispatch({ type: 'RESUME_DECLINED' });
       return;
     }
 
-    Alert.alert(t('sprayWizard.resume.title'), t('sprayWizard.resume.body', { name: resumable.board.name }), [
-      {
-        text: t('sprayWizard.resume.startOver'),
-        style: 'destructive',
-        onPress: () => void decideResume(resumable, 'startOver'),
-      },
-      { text: t('sprayWizard.resume.pickUp'), onPress: () => void decideResume(resumable, 'resume') },
-    ]);
-  }, [state.step, wallsSettled, walls, decideResume, t]);
+    const askToResume = () =>
+      Alert.alert(t('sprayWizard.resume.title'), t('sprayWizard.resume.body', { name: resumable.board.name }), [
+        {
+          text: t('sprayWizard.resume.startOver'),
+          style: 'destructive',
+          onPress: () => void decideResume(resumable, 'startOver'),
+        },
+        { text: t('sprayWizard.resume.pickUp'), onPress: () => void decideResume(resumable, 'resume') },
+      ]);
+    if (cloneOf.has(resumable.uuid)) {
+      askToResume();
+      return;
+    }
+    // The list did not answer for this wall (it failed, or predates it). A
+    // reset's clone offered here would publish through the plain path, leaving
+    // the wall it replaces unsettled, so ask about this one wall before offering
+    // it. A read that fails too offers it, as the check always did.
+    void fetchSprayWallResetSource(resumable.uuid).then((resetOf) => {
+      if (!mountedRef.current) return;
+      if (resetOf) {
+        dispatch({ type: 'RESUME_DECLINED' });
+        return;
+      }
+      askToResume();
+    });
+  }, [resetOfWallUuid, state.step, wallsSettled, lifecycleSettled, lifecycleRows, walls, decideResume, t]);
 
-  /** Ask again after a version-history request failed. */
+  // ============================================
+  // Step 0, for a reset — the clone to work on
+  // ============================================
+
+  /**
+   * Get the reset's clone and rejoin it where it stands.
+   *
+   * `resetSprayWall` is idempotent: while a clone is unfinished it returns that
+   * clone, so opening the reset again tomorrow lands on yesterday's photo. A
+   * clone with a photo draft asks first, like any unfinished wall; "Start over"
+   * deletes the CLONE (never the wall it replaces, which stays live) and starts
+   * a fresh one.
+   */
+  const startReset = useCallback(async () => {
+    if (resetOfWallUuid == null || resetInFlightRef.current) return;
+    resetInFlightRef.current = true;
+    setResumeError(null);
+    setResumeErrorIsFinal(false);
+    let fetched: CreatedSprayWall | null;
+    try {
+      const created = await resetWallAsync(resetOfWallUuid);
+      boardRef.current = created.board;
+      fetched = await fetchSprayWallVersions(created.uuid);
+    } catch (error) {
+      resetInFlightRef.current = false;
+      if (!mountedRef.current) return;
+      // The latch stays set: only "Try again" asks the server once more, so a
+      // refusal no retry can fix is never re-sent behind the climber's back.
+      const refusal = sprayWallLifecycleRefusal(error);
+      if (!refusal) reportError(error);
+      setResumeErrorIsFinal(refusal != null && FINAL_RESET_REFUSALS.has(refusal));
+      setResumeError(refusal ? sprayWallLifecycleMessage(refusal, t) : t('sprayWizard.reset.startFailed'));
+      return;
+    }
+    resetInFlightRef.current = false;
+    if (!mountedRef.current) return;
+    if (!fetched) {
+      setResumeError(t('sprayWizard.reset.startFailed'));
+      return;
+    }
+    const clone = fetched;
+    if (clone.board) boardRef.current = clone.board;
+    const versions = clone.versions ?? [];
+    const target = resumeTargetFor(clone, versions);
+    if (target.at === 'photo') {
+      dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
+      return;
+    }
+    const pickUp = () => {
+      if (!mountedRef.current) return;
+      dispatch({ type: 'RESUMED_AT_REVIEW', draft: target.draft, savedHoldCount: target.savedHoldCount });
+      if (target.savedHoldCount === 0) dispatch({ type: 'DETECTION_STARTED' });
+    };
+    const startOver = async () => {
+      const plan = startOverPlan(clone, versions);
+      try {
+        await discardDraftAsync({
+          versionId: plan.discardVersionId,
+          wallUuid: plan.deleteWallUuid,
+          layoutId: clone.layoutId,
+        });
+      } catch (error) {
+        // Best-effort, as for a new wall: the next reset call returns the clone
+        // that survived, and the prompt comes back.
+        reportError(error);
+      }
+      if (mountedRef.current) void startResetRef.current();
+    };
+    Alert.alert(t('sprayWizard.reset.resumeTitle'), t('sprayWizard.reset.resumeBody', { name: clone.board.name }), [
+      { text: t('sprayWizard.resume.startOver'), style: 'destructive', onPress: () => void startOver() },
+      { text: t('sprayWizard.resume.pickUp'), onPress: pickUp },
+    ]);
+  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, t]);
+  const startResetRef = useRef(startReset);
+  startResetRef.current = startReset;
+
+  useEffect(() => {
+    if (resetOfWallUuid == null || state.step !== 'resuming' || resumeAskedRef.current) return;
+    resumeAskedRef.current = true;
+    void startReset();
+  }, [resetOfWallUuid, state.step, startReset]);
+
+  /** Ask again after a version-history request (or, for a reset, the reset itself) failed. */
   const retryResume = useCallback(() => {
     setResumeError(null);
+    if (resetOfWallUuid != null) {
+      resumeAskedRef.current = true;
+      void startReset();
+      return;
+    }
     resumeAskedRef.current = false;
     mountedAtRef.current = Date.now();
     void refetchMySprayWalls();
-  }, [refetchMySprayWalls]);
+  }, [resetOfWallUuid, startReset, refetchMySprayWalls]);
 
   // ============================================
   // Step 2 — the photo
@@ -699,6 +870,9 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         // Latched before anything else can throw: past this point a failure
         // must retry the bind, never the publish the server would now refuse.
         dispatch({ type: 'PUBLISHED' });
+        // This publish archived the wall the reset replaces. Say so on this
+        // device now, rather than when its registration next revalidates.
+        if (resetOfWallUuid != null) settleArchivedSprayWall(queryClient, resetOfWallUuid, draft.wallUuid);
         // Built from the wall itself, not from `builder`: a resumed run never ran
         // the meta step, so the builder's fields are its constructor defaults and
         // reporting them would bias this funnel for every wall finished on a
@@ -720,6 +894,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
                   }
                 : null,
               pendingVisibility: visibility,
+              isReset: resetOfWallUuid != null,
             }),
           );
         } catch (error) {
@@ -769,6 +944,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     finish,
     leaveToReturnTo,
     closeBoardsModal,
+    resetOfWallUuid,
     t,
   ]);
 
@@ -878,13 +1054,15 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
     // `review`, `look` and `publish` have no step behind them — the draft is on
-    // the server by then — so back means leaving, which keeps the draft.
-    if (backLeavesFlow(state)) {
+    // the server by then — so back means leaving, which keeps the draft. A
+    // reset's photo step has nothing behind it either: the clone's name and
+    // angle came from the wall it replaces, so there is no meta step to return to.
+    if (backLeavesFlow(state) || (resetOfWallUuid != null && state.step === 'photo')) {
       router.back();
       return;
     }
     dispatch({ type: 'BACK' });
-  }, [state, router]);
+  }, [state, router, resetOfWallUuid]);
 
   const candidateCount = state.detection.candidates.length;
   const onHoldsCommitted = useCallback(
@@ -966,17 +1144,20 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       <SprayWallLookStep
         draft={state.draft}
         stepCounter={t('sprayWizard.stepCounter', {
-          current: COUNTED_STEPS.indexOf('look') + 1,
-          total: COUNTED_STEPS.length,
+          current: countedSteps.indexOf('look') + 1,
+          total: countedSteps.length,
         })}
         onSaveStarted={onLookSaveStarted}
         onSaveFailed={onLookSaveFailed}
         onConfirmed={onLookConfirmed}
+        // Said before the publish that does it, on every road in: a deep link
+        // or a resumed reset never saw the confirm that explained it.
+        notice={resetOfWallUuid != null ? t('sprayWizard.reset.archiveNotice') : undefined}
       />
     );
   }
 
-  const stepIndex = COUNTED_STEPS.indexOf(state.step);
+  const stepIndex = countedSteps.indexOf(state.step);
 
   // The crop step is a screenful of its own for the corner step's reason: a
   // drag on the crop box must never also be a scroll. It is not counted — it
@@ -1002,7 +1183,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
     return (
       <View style={styles.flex}>
         <SprayCornerStep
-          stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: COUNTED_STEPS.length })}
+          stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: countedSteps.length })}
           title={t('sprayWizard.anchors.title')}
           body={t('sprayWizard.anchors.body')}
           photo={state.photo}
@@ -1015,8 +1196,8 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
         <SprayCornerFooter
           primaryTitle={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
           onPrimary={() => dispatch({ type: 'ANCHORS_DONE' })}
-          // Unlike the reset flow, no corners is a valid answer here (that is
-          // Skip), so only a refused quad shuts the gate.
+          // No corners is a valid answer (that is Skip), so only a refused
+          // quad shuts the gate.
           primaryDisabled={state.anchorRejection != null}
           canClear={state.anchors != null}
           onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
@@ -1037,7 +1218,7 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
       >
         {stepIndex >= 0 ? (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stepCounter}>
-            {t('sprayWizard.stepCounter', { current: stepIndex + 1, total: COUNTED_STEPS.length })}
+            {t('sprayWizard.stepCounter', { current: stepIndex + 1, total: countedSteps.length })}
           </Text>
         ) : null}
 
@@ -1049,10 +1230,14 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
               color={resumeError ? iosSystemColors.systemRed : systemColors.secondaryLabel}
               accessibilityLiveRegion="polite"
             >
-              {resumeError ?? t('sprayWizard.resume.checking')}
+              {resumeError ??
+                (resetOfWallUuid != null ? t('sprayWizard.reset.starting') : t('sprayWizard.resume.checking'))}
             </Text>
-            {resumeError ? (
+            {resumeError && !resumeErrorIsFinal ? (
               <Button title={t('sprayWizard.resume.retry')} variant="filled" onPress={retryResume} />
+            ) : null}
+            {resumeError && resetOfWallUuid != null ? (
+              <Button title={t('sprayWizard.back')} variant="text" onPress={closeBoardsModal} />
             ) : null}
           </View>
         ) : null}
@@ -1106,9 +1291,11 @@ export function SprayWallWizardScreen({ returnTo }: SprayWallWizardScreenProps) 
 
         {state.step === 'photo' ? (
           <>
-            <Text variant="title3">{t('sprayWizard.photo.title')}</Text>
+            <Text variant="title3">
+              {resetOfWallUuid != null ? t('sprayWizard.reset.photoTitle') : t('sprayWizard.photo.title')}
+            </Text>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {t('sprayWizard.photo.body')}
+              {resetOfWallUuid != null ? t('sprayWizard.reset.photoBody') : t('sprayWizard.photo.body')}
             </Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.tip')}

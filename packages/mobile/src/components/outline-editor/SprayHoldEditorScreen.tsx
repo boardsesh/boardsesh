@@ -37,10 +37,15 @@ import { overlays, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { timingFor } from '../../theme/motion-config';
 import { hapticLight, hapticMedium, hapticSelection, hapticSuccess, hapticWarning } from '../../lib/haptics';
-import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import {
+  extractGraphqlMessage,
+  sprayWallLifecycleRefusal,
+  sprayWallRefusalMeansStaleWall,
+} from '../../lib/graphql/extract-error-message';
+import { sprayWallLifecycleMessage } from '../../lib/spray/spray-lifecycle-copy';
 import { SPRAY_CAP_VALUES } from '../../lib/spray/spray-cap-copy';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
-import { SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
+import { refreshSprayWall, SPRAY_BOARD_NAME } from '../../lib/spray/spray-wall-registry';
 import { useSprayWallDraft } from '../../lib/spray/use-spray-wall-draft';
 import { useSaveSprayHolds } from '../../lib/spray/use-spray-hold-writes';
 import { SegmentedControl } from '../SegmentedControl';
@@ -91,7 +96,6 @@ import {
   SPRAY_TABLET_CONTENT_MAX_WIDTH,
 } from './spray-tablet-layout';
 import { zoomTargetForHold } from './hold-navigation';
-import { planSprayPutBack, type SprayPutBackHold } from './spray-put-back';
 import { SprayUndoToast, type SprayUndoToastContent } from './SprayUndoToast';
 import { resolveEditTap, type SprayEditorTool } from './spray-edit-tap';
 import { SprayEditorBanner } from './SprayEditorBanner';
@@ -113,7 +117,7 @@ import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
-import { planHasWork, prepareCommit } from './spray-hold-writes';
+import { confirmPlanRemovals, planHasWork, prepareCommit } from './spray-hold-writes';
 import {
   buildEditorSeed,
   holdsToCarryOver,
@@ -303,17 +307,14 @@ export type SprayHoldEditorScreenProps = {
    */
   onHandoverChange?: (handingOver: boolean) => void;
   /**
-   * Put a removed hold back on the wall (#5493). Once the draft is on screen the
-   * editor adds a NEW hold at the removed one's geometry, linked to it by
-   * `movedFromHoldId`, selects it and zooms to it, so the owner only has to
-   * nudge it to where the hold went back on. A draft that already carries a hold
-   * linked to it (a put-back left unpublished) selects that one instead of
-   * adding a second.
+   * Asked before a save that takes stored holds off the wall (a removal, or a
+   * move, which the server records as a removal plus a new hold), with their
+   * ids. Resolves whether the save may go on. The hold route passes the
+   * "Remove a hold that climbs use?" check; left out (a new wall in the wizard,
+   * where no climb can use a hold yet), nothing is asked.
    */
-  putBackHold?: SprayPutBackHold | null;
+  confirmHoldRemoval?: (holdIds: readonly number[]) => Promise<boolean>;
 };
-
-export type { SprayPutBackHold } from './spray-put-back';
 
 /**
  * The spray-wall hold editor (issue #5441), rebuilt around one idea: rings are
@@ -366,7 +367,7 @@ export function SprayHoldEditorScreen({
   onCommitted,
   onDirtyChange,
   onHandoverChange,
-  putBackHold = null,
+  confirmHoldRemoval,
 }: SprayHoldEditorScreenProps) {
   const { systemColors, motion } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -813,7 +814,11 @@ export function SprayHoldEditorScreen({
   /** The next change to the wall's spoken value (or an error) is read out — set by actions a swipe did not start. */
   const announceNextRef = useRef(false);
 
-  const committing = saveHolds.isPending;
+  // True while the host reads whether climbs use the holds a save takes off,
+  // and while its confirm is up: the press owns the screen, so Save shows its
+  // spinner and editing waits, rather than refusing touches with no sign why.
+  const [askingRemoval, setAskingRemoval] = useState(false);
+  const committing = saveHolds.isPending || askingRemoval;
   // Nothing takes a touch until the rings have finished arriving: a tap during
   // the sweep would land on a ring that is not drawn yet.
   const canEdit = viewerCanEdit && !committing && !celebrating && revealDone;
@@ -822,27 +827,6 @@ export function SprayHoldEditorScreen({
   const toolRef = useRef(tool);
   toolRef.current = tool;
 
-  // ---- Put a removed hold back (#5493). Once, when the draft is ready to edit. ----
-  const putBackAppliedRef = useRef(false);
-  useEffect(() => {
-    if (!putBackHold || putBackAppliedRef.current) return;
-    if (!seeded || homography == null || !canEdit || boardRender.width <= 0) return;
-    putBackAppliedRef.current = true;
-    const plan = planSprayPutBack(stateRef.current, putBackHold, homography);
-    if (!plan) return;
-    dispatch(plan.action);
-    const target = { id: 0, ...plan.focus };
-    boardControlRef.current?.zoomTo(
-      zoomTargetForHold({
-        hold: target,
-        boardWidth: photoWidth,
-        renderWidth: boardRender.width,
-        renderHeight: boardRender.height,
-        contextRadii: STEP_FRAME_CONTEXT_RADII,
-        maxScale: SPRAY_EDITOR_MAX_SCALE,
-      }),
-    );
-  }, [putBackHold, seeded, homography, canEdit, boardRender.width, boardRender.height, photoWidth]);
   // A hover left over from before a tool change must not flash up on the way back.
   useEffect(() => {
     hoverSV.value = NO_POINTS;
@@ -1816,22 +1800,57 @@ export function SprayHoldEditorScreen({
     [setHandingOver, t],
   );
 
-  const handlePrimary = useCallback(() => {
-    if (!viewerCanEdit || homography == null || committingRef.current || toolRef.current === 'refine') return;
+  const confirmHoldRemovalRef = useRef(confirmHoldRemoval);
+  confirmHoldRemovalRef.current = confirmHoldRemoval;
+  const unmountedRef = useRef(false);
+  useEffect(
+    () => () => {
+      unmountedRef.current = true;
+    },
+    [],
+  );
+
+  /**
+   * The plan for this press, or null after saying why there is none. Re-run
+   * after the removal check, so holds taken off while it was up are asked
+   * about too.
+   */
+  const planPrimary = useCallback(() => {
+    if (homography == null) return null;
     const { state: prepared, plan } = prepareCommit(stateRef.current, homography);
     const holdCount = countEditorHolds(prepared.holds, 0).on;
-    if (holdCount === 0) return;
+    if (holdCount === 0) return null;
     if (plan.overCap) {
       refuseOverCap();
-      return;
+      return null;
     }
     if (plan.unmappableIds.length > 0) {
       // Rare — the homography has to send a hold to infinity — but publishing
       // without them would lose holds the screen is showing as ON.
       hapticWarning();
       setErrorText(t('sprayEditor.errors.someHoldsOffWall', { count: plan.unmappableIds.length }));
-      return;
+      return null;
     }
+    return { plan, holdCount };
+  }, [homography, refuseOverCap, t]);
+
+  const handlePrimary = useCallback(async () => {
+    if (!viewerCanEdit || homography == null || committingRef.current || toolRef.current === 'refine') return;
+    // Ask before taking stored holds off a live wall that climbs may use. The
+    // press owns the screen while the host asks (`committingRef`), so a second
+    // press waits, and a declined check leaves every edit where it was.
+    const askAboutRemoval = confirmHoldRemovalRef.current;
+    const planned = askAboutRemoval
+      ? await confirmPlanRemovals(planPrimary, askAboutRemoval, {
+          onAsking: (asking) => {
+            setHandingOver(asking);
+            setAskingRemoval(asking);
+          },
+          stillHere: () => !unmountedRef.current,
+        })
+      : planPrimary();
+    if (!planned) return;
+    const { plan, holdCount } = planned;
 
     setErrorText(null);
     clearCorners();
@@ -1877,14 +1896,22 @@ export function SprayHoldEditorScreen({
         onError: (error: unknown) => {
           setHandingOver(false);
           hapticWarning();
-          setErrorText(extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed'));
+          // Archived since the editor opened: say so in the climber's words and
+          // re-read the wall for every other surface that still offers an edit.
+          const refusal = sprayWallLifecycleRefusal(error);
+          if (sprayWallRefusalMeansStaleWall(refusal)) refreshSprayWall(layoutId);
+          setErrorText(
+            refusal
+              ? sprayWallLifecycleMessage(refusal, t)
+              : (extractGraphqlMessage(error) ?? t('sprayEditor.errors.saveFailed')),
+          );
         },
       },
     );
   }, [
     viewerCanEdit,
     homography,
-    refuseOverCap,
+    planPrimary,
     saveHolds,
     wallUuid,
     versionNumber,
@@ -1892,8 +1919,12 @@ export function SprayHoldEditorScreen({
     celebrateThenHandOver,
     setHandingOver,
     clearCorners,
+    layoutId,
     t,
   ]);
+  const pressPrimary = useCallback(() => {
+    void handlePrimary();
+  }, [handlePrimary]);
 
   /**
    * One rule for the bar, the rail, the Pencil palette and ⌘Z. While refining,
@@ -1985,7 +2016,7 @@ export function SprayHoldEditorScreen({
         handleSelectNext();
         return;
       case 'primary':
-        handlePrimary();
+        pressPrimary();
         return;
       case 'none':
         return;
@@ -3011,7 +3042,7 @@ export function SprayHoldEditorScreen({
           primaryLabel={primaryLabel}
           primaryLoading={committing}
           primaryDisabled={!canEdit || cornerCount > 0 || tool === 'refine' || counts.on === 0}
-          onPrimary={handlePrimary}
+          onPrimary={pressPrimary}
         />
       ) : (
         <>
@@ -3078,7 +3109,7 @@ export function SprayHoldEditorScreen({
             onKeepMaybes={handleKeepMaybes}
             onToggleMaybes={handleToggleMaybes}
             onStartOver={handleStartOver}
-            onPrimary={handlePrimary}
+            onPrimary={pressPrimary}
             menuOpen={menuOpen}
             onToggleMenu={toggleMenu}
             onCloseMenu={closeMenu}

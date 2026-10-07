@@ -25,7 +25,16 @@ import { useIsOffline } from '../hooks/use-is-offline';
  * Not gated on the offline-downloads flag: this reads one setting, and a flag flipped
  * off must not strand a device that has downloads.
  */
-export function useRememberDownloadedBoards(connection: UserBoardConnection | undefined): void {
+/**
+ * `archivedWallUuids` are the climber's archived spray walls. `myBoards` leaves
+ * them out, so without them a complete list would prune an archived wall's card
+ * and the wall could no longer be opened offline. Left out (unknown: a caller
+ * without the list, or the list failed), no spray card is pruned at all.
+ */
+export function useRememberDownloadedBoards(
+  connection: UserBoardConnection | undefined,
+  archivedWallUuids?: readonly string[],
+): void {
   const isOffline = useIsOffline();
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const boards = connection?.boards;
@@ -44,6 +53,9 @@ export function useRememberDownloadedBoards(connection: UserBoardConnection | un
     rememberOfflineBoards(downloadedBoards);
     // Only a COMPLETE list can say a board is gone. `myBoards` pages at 20, so a
     // truncated first page would otherwise delete every card past it.
-    if (!hasMore) pruneOfflineBoards(boards.map((board) => board.uuid));
-  }, [isOffline, boards, hasMore, enabledBoards]);
+    if (!hasMore) {
+      const known = [...boards.map((board) => board.uuid), ...(archivedWallUuids ?? [])];
+      pruneOfflineBoards(known, archivedWallUuids ? undefined : { keepBoardType: 'spray' });
+    }
+  }, [isOffline, boards, hasMore, enabledBoards, archivedWallUuids]);
 }

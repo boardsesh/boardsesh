@@ -73,12 +73,11 @@ const SPRAY_WALL_ENTITY_FIELDS = `
   holdCount
   publicPhotoUrl
   viewerCanEdit
-  climbEditPolicy
-  viewerCanEditClimbs
   # Only ever non-null for the OWNER — a hidden wall does not resolve for anybody
   # else — so a client can render the notice off its presence alone (SW-17).
   hiddenAt
-  # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK.
+  # The wall's stored look is deliberately absent: see GET_SPRAY_WALL_LOOK. So
+  # is its archive state: see GET_SPRAY_WALL_ARCHIVE, for the same reason.
   currentVersion {
     ${SPRAY_WALL_VERSION_FIELDS}
   }
@@ -334,6 +333,73 @@ export const GET_SPRAY_WALL_LOOK = gql`
 `;
 
 /**
+ * Where the wall stands in a reset (`docs/spray-walls.md`, "Archive and reset"):
+ * when a reset archived it, the wall it was cloned from, and the published wall
+ * that replaced it.
+ *
+ * Its own query, never part of `SPRAY_WALL_FIELDS`, for the reason
+ * `GET_SPRAY_WALL_LOOK` gives: a field the backend does not serve fails
+ * validation for the WHOLE operation, so an app that reached a phone before the
+ * backend (or a backend rolled back under it) would load no wall at all. Out
+ * here, a backend without the fields costs only this answer, and the app reads
+ * the wall as live. The server still refuses every write an archived wall does
+ * not allow.
+ */
+export const GET_SPRAY_WALL_ARCHIVE = gql`
+  query GetSprayWallArchive($uuid: ID!) {
+    sprayWall(uuid: $uuid) {
+      uuid
+      archivedAt
+      resetOfWallUuid
+      replacedByWallUuid
+    }
+  }
+`;
+
+/** The answer of `GET_SPRAY_WALL_ARCHIVE`. */
+export type SprayWallArchiveFields = {
+  uuid: string;
+  archivedAt?: string | null;
+  resetOfWallUuid?: string | null;
+  replacedByWallUuid?: string | null;
+};
+
+export type GetSprayWallArchiveQueryResponse = { sprayWall: SprayWallArchiveFields | null };
+
+/**
+ * The owner's walls with only what My Boards' Archived section and the add-a-wall
+ * resume check read: no current version, so no presigned photo URLs for every
+ * wall the owner ever had. Fail-soft like `GET_SPRAY_WALL_ARCHIVE`: on a backend
+ * without the archive fields the query fails on its own, the Archived section is
+ * simply absent, and the resume check offers what it always did.
+ */
+export const GET_MY_SPRAY_WALL_LIFECYCLE = gql`
+  query GetMySprayWallLifecycle {
+    mySprayWalls {
+      uuid
+      layoutId
+      archivedAt
+      resetOfWallUuid
+      board {
+        uuid
+        name
+      }
+    }
+  }
+`;
+
+/** One row of `GET_MY_SPRAY_WALL_LIFECYCLE`. */
+export type SprayWallLifecycleRow = {
+  uuid: string;
+  layoutId: number;
+  archivedAt?: string | null;
+  resetOfWallUuid?: string | null;
+  board: { uuid: string; name: string } | null;
+};
+
+export type GetMySprayWallLifecycleQueryResponse = { mySprayWalls: SprayWallLifecycleRow[] };
+
+/**
  * One version's generated wall looks and its photo-quality verdict. Its own
  * query for the reason `GET_SPRAY_WALL_LOOK` gives: a backend without
  * `sprayWallArt` costs only the art, and the wall draws on its photo.
@@ -430,101 +496,14 @@ export const DELETE_SPRAY_WALL = gql`
   }
 `;
 
-// ---------------------------------------------------------------------------
-// Resets (SW-12 / SW-13)
-//
-// Three documents for three very different acts. `PROPOSE_SPRAY_WALL_RESET` is a
-// QUERY and writes nothing at all, so the compare screen may re-ask as often as
-// the owner changes their mind. `COMMIT_SPRAY_WALL_VERSION` is the one call that
-// lands a new generation of the wall. `REMIX_CLIMB` writes nothing either — it
-// hands back a starting point, and the child is saved as an ordinary climb.
-// ---------------------------------------------------------------------------
-
 /**
- * What a reset would do, computed and thrown away.
+ * Where the holds a spray climb lost used to be. The remix editor draws a grey
+ * ring at each one, and the climber taps it away before Save comes back.
  *
- * `detections` are already in the wall's CANONICAL frame — the client maps them
- * through the draft version's own homography before sending, because the server
- * never warps an image and never re-runs detection. The draft must carry anchors
- * or this is refused with `SPRAY_WALL_ANCHORS_REQUIRED`: from version 2 on, the
- * four corners are the only thing that says where the new photograph's pixels
- * sit in the frame version 1 defined.
- */
-export const PROPOSE_SPRAY_WALL_RESET = gql`
-  query ProposeSprayWallReset($input: ProposeSprayWallResetInput!) {
-    proposeSprayWallReset(input: $input) {
-      versionNumber
-      kept {
-        holdId
-        detectionIndex
-        confidence
-      }
-      removed
-      added
-      lowConfidence
-      climbsAffected
-      movesSuggested {
-        movedFromHoldId
-        detectionIndex
-        distance
-      }
-      aspectMismatch
-    }
-  }
-`;
-
-/**
- * Apply the reviewed decisions and publish the draft, in one transaction.
- *
- * Every decision is re-validated under the wall lock against the wall as it is
- * NOW, so a proposal the owner sat on while another editor published is rejected
- * rather than applied.
- */
-export const COMMIT_SPRAY_WALL_VERSION = gql`
-  mutation CommitSprayWallVersion($input: CommitSprayWallVersionInput!) {
-    commitSprayWallVersion(input: $input) {
-      version {
-        ${SPRAY_WALL_VERSION_FIELDS}
-      }
-      keptCount
-      removedCount
-      addedCount
-      climbsChanged
-    }
-  }
-`;
-
-/**
- * A remix starting point: the parent's frames with the holds it has lost taken
- * out, plus the successors the reset review linked for them.
- *
- * `sprayWallUuid` carries the share-link capability — send it whenever the
- * viewer reached the wall by its uuid rather than by owning it, or a crew holding
- * an unlisted wall's link could set climbs on it and not remix one.
- */
-export const REMIX_CLIMB = gql`
-  query RemixClimb($parentUuid: ID!, $sprayWallUuid: ID) {
-    remixClimb(parentUuid: $parentUuid, sprayWallUuid: $sprayWallUuid) {
-      parentUuid
-      parentName
-      layoutId
-      angle
-      frames
-      lostHoldIds
-      keptHoldIds
-      suggestedHoldIds
-    }
-  }
-`;
-
-/**
- * The holds a climb lost to a reset, with the geometry they had (#5493).
- *
- * The create editor draws a dashed ghost ring at each one and offers a
- * replacement. Same arguments as `GetClimb`: `Climb.lostHolds` resolves off the
- * climb row that query returns, and decides the wall's visibility itself — a
- * stranger gets `[]`, never an error. A single-climb read; a list must not
- * select `lostHolds`.
+ * Same arguments as `GetClimb`: `Climb.lostHolds` resolves off the climb row
+ * that query returns and decides the wall's visibility itself, so a stranger
+ * gets `[]`, never an error. A single-climb read; a list must not select
+ * `lostHolds`.
  */
 export const GET_CLIMB_LOST_HOLDS = gql`
   query GetClimbLostHolds(
@@ -544,15 +523,12 @@ export const GET_CLIMB_LOST_HOLDS = gql`
       climbUuid: $climbUuid
     ) {
       uuid
-      missingHoldCount
       lostHolds {
         id
         cx
         cy
         r
         outline
-        movedFromHoldId
-        removedVersion
       }
     }
   }
@@ -574,12 +550,10 @@ export type ClimbLostHold = {
   cy: number;
   r: number;
   outline: number[] | null;
-  movedFromHoldId: number | null;
-  removedVersion: number | null;
 };
 
 export type GetClimbLostHoldsQueryResponse = {
-  climb: { uuid: string; missingHoldCount: number | null; lostHolds: ClimbLostHold[] | null } | null;
+  climb: { uuid: string; lostHolds: ClimbLostHold[] | null } | null;
 };
 
 /** Reports never accept free text; duplicate reports preserve the first reason. */

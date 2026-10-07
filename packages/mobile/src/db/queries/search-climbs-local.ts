@@ -146,10 +146,9 @@ export function isOfflineSearchSupported(input: ClimbSearchInput): boolean {
   // silently-ignored filter here is wrong results with no network fallback.
   if (input.onlyWithBetaVideos) return false;
   if (input.zoneBox) return false;
-  // Spray-wall hold integrity (SW-12) IS expressible now: SW-15 (#5448) mirrors
-  // `board_climbs.missing_hold_count` into the on-device schema at migration v7,
-  // and `buildJoinAndWhere` carries the same COALESCE predicate the server's
-  // `holdIntegrityCondition` uses. No fall-back clause here on purpose.
+  // A spray wall's retired-by-reset rule IS expressible: migration v12 mirrors
+  // `board_climbs.retired_by_reset` on the device, and `buildJoinAndWhere`
+  // applies it. No fall-back clause here on purpose.
   const { hasHoldState } = parseHoldsFilter(input.holdsFilter);
   if (hasHoldState) return false;
   return true;
@@ -424,32 +423,19 @@ export function buildJoinAndWhere(
     push('(c.angle = ? OR c.angle IS NULL OR s.climb_uuid IS NOT NULL)', angle);
   }
 
-  // Spray-wall hold integrity, mirroring `holdIntegrityCondition` in
-  // packages/db/src/queries/climbs/create-climb-filters.ts character for
-  // character — including the COALESCE, which is the whole of the NULL rule.
-  //
-  // `missing_hold_count` is NULL for every climb on the eight catalogue boards
-  // (holds do not come off a Kilter), for a spray climb written before the server
-  // materialised the column, and for any row pulled before on-device migration
-  // v7 added it — and the column is synced WITHOUT a refresh revision, so those
-  // pre-v7 rows are real and stay NULL until the climb is next touched. The
-  // honest reading of "unknown" is INTACT: a climb is presumed whole until a
-  // reset says otherwise. So INTACT keeps NULLs and BROKEN drops them. Reversed,
-  // one un-backfilled row would badge every Kilter climb on the device as broken.
-  //
-  // ANY (and an absent filter) carries no integrity predicate on either side.
-  if (input.holdIntegrity === 'INTACT') push('COALESCE(c.missing_hold_count, 0) = 0');
-  if (input.holdIntegrity === 'BROKEN') push('COALESCE(c.missing_hold_count, 0) > 0');
-
-  // Climbs retired by a full reset (#6024), mirroring `retiredByResetCondition`
-  // in packages/db/src/queries/climbs/create-climb-filters.ts: gone from a spray
-  // wall's DEFAULT list, back under an explicit ANY ("All"), under BROKEN ("Lost
-  // holds") and on a name search. A downloaded wall reads here even while
-  // online, so the two must agree or the list changes with the signal.
+  // A spray climb that lost a hold is listed like any other: it carries a badge
+  // and a Remix, and is not hidden. The one exception mirrors the server's
+  // `retiredByResetCondition` (packages/db/src/queries/climbs/create-climb-filters.ts),
+  // which applies when the request carries no `holdIntegrity` (the app never
+  // sends one for a wall list): a climb a full in-place reset retired (#6024)
+  // leaves the default list, and comes back on a name search. A downloaded wall
+  // reads here even while online, so the two must agree or the list changes
+  // with the signal. The drafts list is answered by the network
+  // (`isOfflineSearchSupported`), which sends `ANY` for it.
   //
   // COALESCE because NULL reads as not retired: every catalogue climb, and any
   // row pulled before on-device migration v12 added the column.
-  if (boardType === 'spray' && input.holdIntegrity == null && !hasNameQuery(input)) {
+  if (boardType === 'spray' && input.onlyDrafts !== true && !hasNameQuery(input)) {
     push('COALESCE(c.retired_by_reset, 0) = 0');
   }
 
@@ -697,12 +683,10 @@ export type LocalClimbRow = {
    *  NULL on every catalogue-board climb and on rows pulled before the column
    *  existed; read as 0 — "no reset has taken anything off this climb". */
   missing_hold_count: number | null;
-  /** `board_climbs.revision_number` and `holds_revision_number` (migration
-   *  v11): the version the climb is on and the version at which its holds last
-   *  moved. NULL on a row pulled before the columns existed and not delivered
-   *  again since, which reads as unknown. Optional so a reader that does not
-   *  select them still type-checks. */
-  revision_number?: number | null;
+  /** `board_climbs.holds_revision_number` (migration v11): the version at
+   *  which the climb's holds last moved. NULL on a row pulled before the column
+   *  existed and not delivered again since, which reads as unknown. Optional so
+   *  a reader that does not select it still type-checks. */
   holds_revision_number?: number | null;
   characteristics: string | null;
   created_at: string | null;
@@ -807,7 +791,6 @@ export function mapRowToClimb(
     missingHoldCount: row.missing_hold_count ?? null,
     // Left NULL when the phone does not know. The sent glyph reads a NULL
     // holds version as 1, so every tick on the climb counts.
-    revisionNumber: row.revision_number ?? null,
     holdsRevisionNumber: row.holds_revision_number ?? null,
     is_no_match: resolveClimbNoMatch(boardType, characteristics, row.description),
     characteristics,
@@ -890,7 +873,7 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
   const query = `
     SELECT
       c.uuid, c.setter_username, c.user_id, c.name, c.description, c.frames, c.is_draft, c.is_hidden,
-      c.missing_hold_count, c.revision_number, c.holds_revision_number, c.characteristics,
+      c.missing_hold_count, c.holds_revision_number, c.characteristics,
       c.created_at, c.published_at, c.frames_count, c.frames_pace, c.compatible_size_ids,
       ${eff('ascensionist_count')} AS ascensionist_count,
       ${eff('display_difficulty')} AS display_difficulty,

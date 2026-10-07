@@ -198,6 +198,57 @@ export function isSprayWallVisibilityOwnerOnlyError(error: unknown): boolean {
 }
 
 /**
+ * `extensions.code` values the spray API refuses a write with because of where
+ * the wall stands in its reset lifecycle (`docs/spray-walls.md`, "Archive and
+ * reset"). `resetRetired` comes from a later backend release; mapping it now
+ * means the copy is in place the day it arrives.
+ */
+export const SPRAY_WALL_LIFECYCLE_CODES = {
+  /** The wall is archived: nothing new can be set on it, and its holds cannot change. */
+  archived: 'SPRAY_WALL_ARCHIVED',
+  /** An old client called the retired in-place reset. */
+  resetRetired: 'SPRAY_WALL_RESET_RETIRED',
+  /** Only the wall's owner may reset it. */
+  resetOwnerOnly: 'SPRAY_WALL_RESET_OWNER_ONLY',
+  /** The wall has never been published, so there is nothing to reset. */
+  resetSourceUnpublished: 'SPRAY_WALL_RESET_SOURCE_UNPUBLISHED',
+  /** The owner already keeps the maximum number of archived walls. */
+  archiveLimitReached: 'SPRAY_WALL_ARCHIVE_LIMIT_REACHED',
+} as const;
+
+export type SprayWallLifecycleRefusal = keyof typeof SPRAY_WALL_LIFECYCLE_CODES;
+
+const LIFECYCLE_REFUSAL_BY_CODE = new Map<string, SprayWallLifecycleRefusal>(
+  (Object.entries(SPRAY_WALL_LIFECYCLE_CODES) as [SprayWallLifecycleRefusal, string][]).map(([refusal, code]) => [
+    code,
+    refusal,
+  ]),
+);
+
+/**
+ * Which lifecycle refusal a failed spray write was, or null for anything else.
+ *
+ * Matched on the code, never on the message text. Reads the code off an error
+ * that carries `extensions` itself (`GraphQLOperationError` lifts the first
+ * coded error's extensions onto itself) and off a raw graphql-request error.
+ */
+export function sprayWallLifecycleRefusal(error: unknown): SprayWallLifecycleRefusal | null {
+  if (!error || typeof error !== 'object') return null;
+  const lifted = (error as { extensions?: { code?: unknown } | null }).extensions?.code;
+  const code = typeof lifted === 'string' ? lifted : extractGraphqlCode(error);
+  return code ? (LIFECYCLE_REFUSAL_BY_CODE.get(code) ?? null) : null;
+}
+
+/**
+ * The refusal that means this device's picture of the wall is out of date: it
+ * was archived since the wall was last read. The caller refreshes the wall
+ * (`refreshSprayWall`) so the screen catches up.
+ */
+export function sprayWallRefusalMeansStaleWall(refusal: SprayWallLifecycleRefusal | null): boolean {
+  return refusal === 'archived';
+}
+
+/**
  * The wall's photo fails the generated-look quality gate, so the server will
  * not store a `wall-crop` / `hold-cutouts` background for it.
  */

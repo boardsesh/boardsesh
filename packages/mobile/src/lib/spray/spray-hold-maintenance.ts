@@ -7,6 +7,8 @@ export type SprayHoldMaintenanceWall = {
   uuid: string;
   layoutId: number;
   viewerCanEdit: boolean;
+  /** Set once a reset replaced the wall. An archived wall's holds never change. */
+  archivedAt?: string | null;
   currentVersion?: MaintenanceVersion | null;
   versions?: readonly MaintenanceVersion[] | null;
 };
@@ -25,24 +27,48 @@ export type SprayHoldMaintenanceTransport = {
   publishDraft: (versionId: string) => Promise<MaintenanceVersion>;
 };
 
+/**
+ * Why the hold editor cannot open, or cannot publish.
+ *
+ * - `archived`: a reset replaced the wall; it is read-only.
+ * - `leftoverPhotoDraft`: the wall's open draft carries a new photo, left by the
+ *   in-place reset that no longer exists. `leftoverVersionId` names it, so the
+ *   screen can offer to discard it.
+ */
+export type SprayHoldMaintenanceFailure =
+  | 'unavailable'
+  | 'nothingPublished'
+  | 'draftUnavailable'
+  | 'archived'
+  | 'leftoverPhotoDraft';
+
 export class SprayHoldMaintenanceError extends Error {
-  constructor(public readonly reason: 'unavailable' | 'nothingPublished' | 'draftUnavailable' | 'resetInProgress') {
+  constructor(
+    public readonly reason: SprayHoldMaintenanceFailure,
+    public readonly leftoverVersionId: string | null = null,
+  ) {
     super(reason);
     this.name = 'SprayHoldMaintenanceError';
   }
 }
 
+/**
+ * The viewer may edit the wall, and it is not archived. An archived wall is
+ * refused even with a draft already open: a deep link or a stale sheet must not
+ * reach an editor whose Publish the server will refuse.
+ */
 function requireEditableWall(wallUuid: string, wall: SprayHoldMaintenanceWall | null): SprayHoldMaintenanceWall {
   if (!wall || wall.uuid !== wallUuid || !wall.viewerCanEdit) {
     throw new SprayHoldMaintenanceError('unavailable');
   }
+  if (wall.archivedAt != null) throw new SprayHoldMaintenanceError('archived');
   return wall;
 }
 
 function prepareTarget(wall: SprayHoldMaintenanceWall, version: MaintenanceVersion): PreparedSprayHoldDraft {
   if (version.status !== 'DRAFT') throw new SprayHoldMaintenanceError('draftUnavailable');
   if (sprayDraftPurpose(version, wall.currentVersion) === 'reset') {
-    throw new SprayHoldMaintenanceError('resetInProgress');
+    throw new SprayHoldMaintenanceError('leftoverPhotoDraft', version.id);
   }
   return {
     wallUuid: wall.uuid,
@@ -99,7 +125,7 @@ export async function publishSprayHoldDraft(
   const version = findPreparedVersion(wall, draft);
   if (version.status !== 'DRAFT') return;
   if (sprayDraftPurpose(version, wall.currentVersion) === 'reset') {
-    throw new SprayHoldMaintenanceError('resetInProgress');
+    throw new SprayHoldMaintenanceError('leftoverPhotoDraft', version.id);
   }
 
   try {

@@ -11,20 +11,24 @@
 // uuid; a board config carries only a layout id. `sprayWallByLayout` turns one
 // into the other, and it is a separate query so it can be cached hard: a wall's
 // uuid never changes, while its render payload carries presigned photo URLs that
-// expire in fifteen minutes and holds that change on every reset.
+// expire in fifteen minutes and holds that change with every published version.
 
 import { getConnectivitySnapshot, subscribeConnectivity } from '../connectivity/connectivity-store';
 import { isNetworkError } from '@boardsesh/offline-sync/error-classification';
 import type { QueryClient } from '@tanstack/react-query';
 import {
+  GET_SPRAY_WALL_ARCHIVE,
   GET_SPRAY_WALL_ART,
   GET_SPRAY_WALL_BY_LAYOUT,
   GET_SPRAY_WALL_LOOK,
   GET_SPRAY_WALL_RENDER_DATA,
+  type GetSprayWallArchiveQueryResponse,
+  type SprayWallArchiveFields,
 } from '@boardsesh/graphql/operations/spray-walls';
 import type { SprayWall, SprayWallArt, SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import {
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
   REGISTERED_WALL_REVALIDATE_MS,
   getSprayWall,
   missingSprayArtVariant,
@@ -33,6 +37,7 @@ import {
   settleSprayWallDiscoveryMiss,
   registerSprayWall,
   resetSprayWallViewerAccess,
+  setSprayWallArchiveState,
   setSprayWallLoader,
   setSprayWallLook,
   sprayVersionToken,
@@ -40,12 +45,14 @@ import {
   unregisterSprayWall,
   sprayWallRemovalGeneration,
   subscribeToSprayWalls,
+  type SprayWallArchiveState,
   type SprayWallRenderSettingsValue,
   sprayWallLoaderGeneration,
   unsetSprayWallLoader,
   subscribeToSprayWallWithdrawals,
 } from './spray-wall-registry';
 import { clearSupersededSprayDrafts } from '../create-climb-draft-store';
+import { rememberSprayWallArchive } from '../../settings/offline-boards';
 import { sanitizeBoardRenderDefault } from '../board-render-settings';
 import { reportHandledError } from '../error-reporting';
 import { mapCanonicalHoldsToPhoto, scaleCanonicalHoldsToArt, type CanonicalSprayHold } from './spray-hold-geometry';
@@ -75,11 +82,8 @@ const privateWallQueryFamilies = new Set([
   'sprayWallArt',
   'sprayWallStoredLook',
   'sprayWallByLayout',
-  'sprayWall',
   'sprayWallRenderData',
-  'sprayWallRevisionRenderData',
   'sprayWallWithVersions',
-  'sprayWallResetProposal',
 ]);
 
 function recordFields(payload: unknown): Record<string, unknown> | undefined {
@@ -90,29 +94,15 @@ function recordFields(payload: unknown): Record<string, unknown> | undefined {
 function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, registeredUuid?: string): void {
   const queries = queryClient.getQueryCache().getAll();
   const wallUuids = new Set<string>(registeredUuid ? [registeredUuid] : []);
-  const versionIds = new Set<string>();
   if (layoutId != null) {
     for (const query of queries) {
       if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
       const response = recordFields(query.state.data);
       const render = recordFields(response?.sprayWallRenderData);
-      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
+      const wall = recordFields(response?.sprayWallByLayout ?? render?.wall ?? response);
       if (wall?.layoutId !== layoutId && !(query.queryKey[0] === 'sprayWallByLayout' && query.queryKey[1] === layoutId))
         continue;
       if (typeof wall?.uuid === 'string') wallUuids.add(wall.uuid);
-    }
-    for (const query of queries) {
-      if (!privateWallQueryFamilies.has(String(query.queryKey[0]))) continue;
-      const response = recordFields(query.state.data);
-      const render = recordFields(response?.sprayWallRenderData);
-      const wall = recordFields(response?.sprayWallByLayout ?? response?.sprayWall ?? render?.wall ?? response);
-      const knownUuid = typeof query.queryKey[1] === 'string' && wallUuids.has(query.queryKey[1]);
-      if (wall?.layoutId !== layoutId && !knownUuid) continue;
-      const versions = Array.isArray(wall?.versions) ? wall.versions : [];
-      for (const version of [...versions, wall?.currentVersion]) {
-        const versionId = recordFields(version)?.id;
-        if (typeof versionId === 'string') versionIds.add(versionId);
-      }
     }
   }
   queryClient.removeQueries({
@@ -121,7 +111,6 @@ function eraseWithdrawnWallQueries(queryClient: QueryClient, layoutId?: number, 
       if (!privateWallQueryFamilies.has(String(family))) return false;
       if (layoutId == null) return true;
       if (family === 'sprayWallByLayout') return identity === layoutId;
-      if (family === 'sprayWallResetProposal') return typeof identity === 'string' && versionIds.has(identity);
       return typeof identity === 'string' && wallUuids.has(identity);
     },
   });
@@ -161,7 +150,7 @@ export const WALL_IDENTITY_STALE_TIME_MS = 60 * 60 * 1000;
  *
  * Bounded by the photo signature, not by how often a wall changes: the URLs in
  * hand stop working after fifteen minutes, so ten leaves a margin for a surface
- * that was opened just before the boundary. A reset lands on the next refetch —
+ * that was opened just before the boundary. A new version lands on the next refetch —
  * the version moves, every cache key moves with it (`sprayCacheToken`), and the
  * new photo downloads under its own name.
  *
@@ -184,7 +173,8 @@ export function toCanonicalHolds(renderData: Pick<SprayWallRenderData, 'holds'>)
     // time it is nudged (#5441).
     source: hold.source === 'AUTO' ? 'AUTO' : 'MANUAL',
     confidence: hold.confidence ?? null,
-    // The reset review's move link, for the create editor's lost-hold swap (#5493).
+    // The hold this one replaced, as the server has it. The hold editor resends
+    // it on every write, because the server writes the field as sent.
     ...(hold.movedFromHoldId != null ? { movedFromHoldId: hold.movedFromHoldId } : {}),
   }));
 }
@@ -247,6 +237,11 @@ function reportDroppedHolds(renderData: SprayWallRenderData, expected: number, m
   });
 }
 
+/** The wall's archive state, off a `GET_SPRAY_WALL_ARCHIVE` answer. */
+export function sprayWallArchiveStateOf(wall: SprayWallArchiveFields): SprayWallArchiveState {
+  return { archivedAt: wall.archivedAt ?? null, replacedByWallUuid: wall.replacedByWallUuid ?? null };
+}
+
 /** Map one payload without replacing the published wall or its runtime geometry. */
 export function mapSprayWallRenderData(
   layoutId: number,
@@ -273,7 +268,8 @@ export function mapSprayWallRenderData(
     homography: renderData.homography,
     renderSettings: null,
     viewerCanEdit: renderData.wall.viewerCanEdit === true,
-    viewerCanEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
+    // Draft payloads are an unpublished wall's: nothing is archived.
+    archive: LIVE_SPRAY_WALL_ARCHIVE_STATE,
     registeredAtMs: receivedAtMs,
   };
 }
@@ -285,6 +281,11 @@ export function mapSprayWallRenderData(
  * reads it alongside the render data), so the wall registers drawn the right way
  * once. Left out, the wall registers keeping whatever look it already had and the
  * look is read in the background.
+ *
+ * `archive` is the same for the wall's archive state (`fetchSprayWallArchive`):
+ * left out, it is read in the background; `null` means the read failed (an
+ * older backend, no signal), and the wall registers keeping what it had, or as
+ * live with free holds. Either way the wall itself registers and draws.
  */
 export function registerRenderData(
   layoutId: number,
@@ -295,6 +296,7 @@ export function registerRenderData(
   // caller that cannot say whose answer this is does not get to show Edit.
   fetchedUnderViewerGeneration?: number,
   fetchedUnderRemovalGeneration?: number,
+  archive?: SprayWallArchiveState | null,
   // The wall's background and, when it is a generated look already on disk,
   // that look. Left out, the wall keeps the background it had and draws its
   // photo unless the art it already holds is for this very version.
@@ -348,6 +350,8 @@ export function registerRenderData(
     holds,
     homography: renderData.homography,
     renderSettings: look,
+    archive: archive ?? undefined,
+    hiddenAt: renderData.wall.hiddenAt ?? null,
     ...(drawing ? { background: drawing.background, art: drawing.art } : {}),
     // Strictly `true`: a payload from a backend that predates the field, or a
     // cached one missing it, must read as "cannot edit".
@@ -356,18 +360,23 @@ export function registerRenderData(
         ? undefined
         : {
             canEdit: renderData.wall.viewerCanEdit === true,
-            canEditClimbs: (renderData.wall.viewerCanEditClimbs ?? renderData.wall.viewerCanEdit) === true,
             generation: fetchedUnderViewerGeneration,
           },
   });
   if (look === undefined) void loadSprayWallLook(layoutId, renderData.wall.uuid);
+  if (archive === undefined) void loadSprayWallArchive(layoutId, renderData.wall.uuid);
+  else if (
+    archive &&
+    (fetchedUnderViewerGeneration === undefined || fetchedUnderViewerGeneration === sprayWallViewerGeneration())
+  )
+    keepSprayWallArchiveOffline(renderData.wall.uuid, archive);
 
-  // The create-climb draft slot is keyed on the version, so a reset moves it and
-  // leaves the old one holding holds that are no longer on the wall. Nothing else
+  // The create-climb draft slot is keyed on the version, so a new version moves
+  // it and leaves the old one holding holds that may be gone. Nothing else
   // would ever read or remove it. Fire-and-forget: losing this costs a few
   // kilobytes, and it must not sit in front of the first paint.
   void clearSupersededSprayDrafts(layoutId, sprayVersionToken('spray', layoutId)).catch(() => {
-    // AsyncStorage unavailable. The orphan survives until the next reset.
+    // AsyncStorage unavailable. The orphan survives until the next version.
   });
   return true;
 }
@@ -399,22 +408,14 @@ const lookWrites = new Map<string, number>();
 let lookEpoch = 0;
 
 /**
- * A wall's stored look, sanitised, or null when it has none.
+ * A wall's stored look (sanitised, or null when it has none) and its
+ * background, from the one `GET_SPRAY_WALL_LOOK` read.
  *
- * Never rejects. The look is optional: a failed read (offline, or a backend that
- * predates the field) keeps the last look this session knew, or none, and the
- * wall draws in the viewer's own settings. Answers are kept for the registry's
- * revalidation window, so a backend without the field is asked once per window,
- * not once per row.
- */
-export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSettingsValue | null> {
-  return fetchSprayWallLookState(wallUuid).then((state) => state.look);
-}
-
-/**
- * The look and the background together, from the one `GET_SPRAY_WALL_LOOK`
- * read. Same caching and failure rules as `fetchSprayWallLook`: a failed read
- * keeps what this session last knew, or the photo.
+ * Never rejects. Both are optional: a failed read (offline, or a backend that
+ * predates the fields) keeps what this session last knew, or no look and the
+ * photo, and the wall draws in the viewer's own settings. Answers are kept for
+ * the registry's revalidation window, so a backend without the fields is asked
+ * once per window, not once per row.
  */
 export function fetchSprayWallLookState(wallUuid: string): Promise<SprayWallLookState> {
   const known = looks.get(wallUuid);
@@ -511,6 +512,146 @@ export function clearSprayWallLooks(): void {
   looks.clear();
   looksInFlight.clear();
   lookWrites.clear();
+}
+
+// ============================================
+// The archive state, from its own query
+// ============================================
+
+/**
+ * How long a FAILED archive read stands before the next ask tries again. Short
+ * for the look's reason: usually a dropped connection. A backend that predates
+ * the fields fails every time, and is asked at most this often per wall.
+ */
+export const ARCHIVE_RETRY_AFTER_FAILURE_MS = 30 * 1000;
+
+type KnownArchive = { archive: SprayWallArchiveState | null; settledAtMs: number; freshForMs: number };
+
+const archives = new Map<string, KnownArchive>();
+const archivesInFlight = new Map<string, Promise<SprayWallArchiveState | null>>();
+/**
+ * Bumped, per wall, by every write to `archives` that is not a read's answer
+ * (`primeSprayWallArchive`). A read that started before one is stale: a reset
+ * that published here primes "archived", and a "live" read sent before the
+ * publish must not answer over it. `archiveEpoch` does the same for every wall
+ * at once when the account changes.
+ */
+const archiveWrites = new Map<string, number>();
+let archiveEpoch = 0;
+
+/**
+ * Keep an archived wall's state for the offline loader: SQLite has no column for
+ * it, so a downloaded wall opened with no signal reads it from here. A live wall
+ * is removed. Never throws.
+ */
+function keepSprayWallArchiveOffline(wallUuid: string, archive: SprayWallArchiveState): void {
+  try {
+    rememberSprayWallArchive(wallUuid, {
+      archivedAt: archive.archivedAt,
+      replacedByWallUuid: archive.replacedByWallUuid,
+    });
+  } catch (error) {
+    reportHandledError(error, { level: 'warning', tags: { boardName: 'spray' } });
+  }
+}
+
+/**
+ * A wall's archive state (`GET_SPRAY_WALL_ARCHIVE`), or `null`
+ * when it could not be read.
+ *
+ * Never rejects: a failed read, including the validation error of a backend
+ * that does not serve the fields, is "not known", and the caller registers the
+ * wall without it. Answers are kept for the registry's revalidation window;
+ * `force` asks again whatever is kept, for a caller that knows the wall just
+ * changed (a publish, a refusal that said the wall is archived).
+ */
+export function fetchSprayWallArchive(
+  wallUuid: string,
+  { force = false }: { force?: boolean } = {},
+): Promise<SprayWallArchiveState | null> {
+  const known = archives.get(wallUuid);
+  if (!force && known && Date.now() - known.settledAtMs < known.freshForMs) return Promise.resolve(known.archive);
+  const pending = archivesInFlight.get(wallUuid);
+  if (pending && !force) return pending;
+
+  const epochAtStart = archiveEpoch;
+  const writesAtStart = archiveWrites.get(wallUuid) ?? 0;
+  const request = Promise.resolve()
+    .then(() => getHttpClient().request<GetSprayWallArchiveQueryResponse>(GET_SPRAY_WALL_ARCHIVE, { uuid: wallUuid }))
+    .then(
+      (response) => ({
+        archive: response?.sprayWall ? sprayWallArchiveStateOf(response.sprayWall) : null,
+        freshForMs: REGISTERED_WALL_REVALIDATE_MS,
+      }),
+      () => ({ archive: null, freshForMs: ARCHIVE_RETRY_AFTER_FAILURE_MS }),
+    )
+    .then(({ archive, freshForMs }) => {
+      // Asked under another account: whose answer it is cannot be said, so it
+      // is "not known" rather than handed to the account that is here now.
+      if (archiveEpoch !== epochAtStart) return null;
+      // Something this device knows better landed while the read was out.
+      if ((archiveWrites.get(wallUuid) ?? 0) !== writesAtStart) return archives.get(wallUuid)?.archive ?? null;
+      archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs });
+      return archive;
+    })
+    .finally(() => {
+      if (archivesInFlight.get(wallUuid) === request) archivesInFlight.delete(wallUuid);
+    });
+  archivesInFlight.set(wallUuid, request);
+  return request;
+}
+
+/**
+ * The wall a reset cloned this one from, `null` for a wall that is not a clone,
+ * or `undefined` when it could not be read. Uncached: the one caller asks once,
+ * before offering an unfinished wall back.
+ */
+export async function fetchSprayWallResetSource(wallUuid: string): Promise<string | null | undefined> {
+  try {
+    const response = await getHttpClient().request<GetSprayWallArchiveQueryResponse>(GET_SPRAY_WALL_ARCHIVE, {
+      uuid: wallUuid,
+    });
+    return response?.sprayWall ? (response.sprayWall.resetOfWallUuid ?? null) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read a wall's archive state and hand it to the registered wall, if it is still that wall. */
+export async function loadSprayWallArchive(
+  layoutId: number,
+  wallUuid: string,
+  options?: { force?: boolean },
+): Promise<void> {
+  const viewerGeneration = sprayWallViewerGeneration();
+  const archive = await fetchSprayWallArchive(wallUuid, options);
+  if (!archive || viewerGeneration !== sprayWallViewerGeneration()) return;
+  setSprayWallArchiveState(layoutId, wallUuid, archive);
+  keepSprayWallArchiveOffline(wallUuid, archive);
+}
+
+/**
+ * Record an archive state this device just caused (a reset's replacement
+ * published here), so a read within the window does not hand back the live
+ * answer from before, and so the offline loader knows it before any refetch.
+ */
+export function primeSprayWallArchive(wallUuid: string, archive: SprayWallArchiveState): void {
+  archiveWrites.set(wallUuid, (archiveWrites.get(wallUuid) ?? 0) + 1);
+  archivesInFlight.delete(wallUuid);
+  archives.set(wallUuid, { archive, settledAtMs: Date.now(), freshForMs: REGISTERED_WALL_REVALIDATE_MS });
+  keepSprayWallArchiveOffline(wallUuid, archive);
+}
+
+/**
+ * Forget every archive answer this session has read, and disown reads in
+ * flight. Runs on every account change (who replaced a wall is only shown to a
+ * viewer who may see the replacement); tests use it as a reset too.
+ */
+export function clearSprayWallArchiveAnswers(): void {
+  archiveEpoch += 1;
+  archives.clear();
+  archivesInFlight.clear();
+  archiveWrites.clear();
 }
 
 /** The wall's uuid for a layout id, through React Query so two callers share one request. */
@@ -734,6 +875,9 @@ async function loadSprayWallOnline(
   // draws in the viewer's settings, then draws again when the look lands, which
   // on a cold start doubles every spray surface's renders. Never rejects.
   const lookRead = fetchSprayWallLookState(wallUuid);
+  // Same for the archive state, from its own fail-soft query. A forced load is
+  // one that follows a change (a publish, a refusal), so it asks again too.
+  const archiveRead = fetchSprayWallArchive(wallUuid, { force: options?.force });
   let renderData = await renderDataRead;
   if (!isCurrent()) return;
   if (viewerGeneration !== sprayWallViewerGeneration()) {
@@ -752,14 +896,14 @@ async function loadSprayWallOnline(
     unregisterSprayWall(layoutId);
     return;
   }
-  const { look, background } = await lookRead;
+  const [{ look, background }, archive] = await Promise.all([lookRead, archiveRead]);
   if (!isCurrent()) return;
   // Before registering, so the wall that lands is drawn on the right picture
   // once, and a switch to a generated look is one write: its image is on disk
   // and its holds are with it.
   const art = await loadArtForRegistration(queryClient, layoutId, renderData, background, options?.force === true);
   if (!isCurrent()) return;
-  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration, { background, art });
+  registerRenderData(layoutId, renderData, look, viewerGeneration, removalGeneration, archive, { background, art });
 }
 
 /** Online authority wins; local mirrors are only a transport-unavailable fallback. */
@@ -803,17 +947,16 @@ export async function loadSprayWall(
 /**
  * Re-register a wall immediately after THIS device changed it.
  *
- * The revalidation gate closes the cross-device hole (another climber publishes
- * a reset; this session picks it up within the stale window), but the device that
- * published should not wait on a window at all — it already knows the version
- * moved. `publishSprayWallVersion` and, once SW-12 lands it,
- * `commitSprayWallVersion` call this on success: the cached payload is dropped
- * and the wall re-registers under its new version, which moves every spray cache
- * key with it.
+ * The revalidation gate closes the cross-device hole (another editor publishes
+ * a version, or the wall is archived; this session picks it up within the stale
+ * window), but the device that made the change should not wait on a window at
+ * all. A published hold edit and a reset's publish (for the wall it archives,
+ * `settleArchivedSprayWall`) call this: the cached payload is dropped and the
+ * wall re-registers, under its new version where there is one, which moves every
+ * spray cache key with it.
  *
- * SW-08's editor calls it on unmount, to put the published generation back for
- * whatever outlives the screen (`use-spray-wall-draft.ts`). SW-12's
- * `commitSprayWallVersion` is the other caller, once it lands.
+ * The hold editor also calls it on unmount, to put the published generation
+ * back for whatever outlives the screen (`use-spray-wall-draft.ts`).
  */
 export async function invalidateSprayWallRenderData(
   queryClient: QueryClient,
@@ -841,6 +984,9 @@ export async function invalidateSprayWallRenderData(
  * next surface to ask for it fetches.
  */
 export function refreshSprayWallViewerAccess(): void {
+  // Who replaced a wall is only shown to a viewer who may see the replacement,
+  // so the archive answers go with the account too.
+  clearSprayWallArchiveAnswers();
   for (const layoutId of resetSprayWallViewerAccess()) refreshSprayWall(layoutId);
 }
 
@@ -857,6 +1003,7 @@ export function refreshSprayWallViewerAccess(): void {
  * on sign-in or after the signed-out cleanup.
  */
 export function dropSprayWallViewerAccess(): void {
+  clearSprayWallArchiveAnswers();
   resetSprayWallViewerAccess({ markStale: false });
 }
 

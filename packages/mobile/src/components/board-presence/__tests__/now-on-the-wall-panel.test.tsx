@@ -153,6 +153,7 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}:${Object.values(opts).join(',')}` : key),
+    i18n: { resolvedLanguage: 'en-US', language: 'en-US' },
   }),
 }));
 
@@ -270,7 +271,39 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { md: 8, lg: 12 },
 }));
 
+// The archived notice's "Switch to the new wall" reads the board over the
+// network and binds it; here it is only asked to exist.
+const openSprayWall = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/spray/use-open-spray-wall', () => ({ useOpenSprayWall: () => openSprayWall }));
+vi.mock('../../../lib/graphql/use-active-board', () => ({ useSetActiveBoard: () => vi.fn() }));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
 import { NowOnTheWallPanel } from '../NowOnTheWallPanel';
+import {
+  clearSprayWallRegistry,
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  registerSprayWall,
+  type SprayWallArchiveState,
+} from '../../../lib/spray/spray-wall-registry';
+
+/** Register a spray wall in the real registry, so the sheet knows whether it is archived. */
+function registerSprayWallFixture(layoutId: number, wallUuid: string, archive: Partial<SprayWallArchiveState> = {}) {
+  registerSprayWall(layoutId, {
+    wallUuid,
+    angle: 40,
+    version: 1,
+    versionId: 1,
+    photoWidth: 100,
+    photoHeight: 100,
+    photoUrl: 'https://example.invalid/wall.jpg',
+    photoThumbUrl: null,
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
+    holds: [],
+    archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, ...archive },
+  });
+}
 
 const noop = () => {};
 const boardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
@@ -368,35 +401,103 @@ describe('NowOnTheWallPanel', () => {
   };
 
   it('mounts all wall actions in the live sheet and forwards the active wall identity', () => {
+    clearSprayWallRegistry();
+    registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid);
     const onOpenSprayMaintenance = vi.fn();
     const onShareSprayWall = vi.fn();
     const { getByLabelText } = render(
-      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, onShareSprayWall }),
+      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, onShareSprayWall, viewerUserId: 'owner-1' }),
     );
     fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
-    fireEvent.click(getByLabelText('mobile.boardDetail.spray.newPhoto'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.resetWall'));
     fireEvent.click(getByLabelText('mobile.boardDetail.spray.shareLink'));
     expect(onOpenSprayMaintenance.mock.calls).toEqual([
       [sprayWall.uuid, 'editHolds'],
-      [sprayWall.uuid, 'newPhoto'],
+      [sprayWall.uuid, 'resetWall'],
     ]);
     expect(onShareSprayWall).toHaveBeenCalledExactlyOnceWith(sprayWall.uuid);
   });
 
   it('keeps public sharing for viewers and hides maintenance on the kiosk and catalogue boards', () => {
+    clearSprayWallRegistry();
+    registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid);
     const callbacks = { onOpenSprayMaintenance: vi.fn(), onShareSprayWall: vi.fn() };
     const { queryByLabelText, rerender } = render(
-      panelElement({ activeBoard: { ...sprayWall, canEdit: false }, ...callbacks }),
+      panelElement({ activeBoard: { ...sprayWall, canEdit: false }, viewerUserId: 'someone', ...callbacks }),
     );
     expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
-    expect(queryByLabelText('mobile.boardDetail.spray.newPhoto')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
     expect(queryByLabelText('mobile.boardDetail.spray.shareLink')).not.toBeNull();
-    rerender(panelElement({ activeBoard: sprayWall, variant: 'column', ...callbacks }));
+    rerender(panelElement({ activeBoard: sprayWall, variant: 'column', viewerUserId: 'owner-1', ...callbacks }));
     expect(queryByLabelText('mobile.boardDetail.spray.shareLink')).toBeNull();
     expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
-    rerender(panelElement({ activeBoard: { ...sprayWall, boardType: 'kilter' }, ...callbacks }));
+    rerender(
+      panelElement({ activeBoard: { ...sprayWall, boardType: 'kilter' }, viewerUserId: 'owner-1', ...callbacks }),
+    );
     expect(queryByLabelText('mobile.boardDetail.spray.shareLink')).toBeNull();
-    expect(queryByLabelText('mobile.boardDetail.spray.newPhoto')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
+  });
+
+  // Holds stay editable on a live wall, published climbs or not: the owner
+  // gets Edit holds and Reset, an editor who is not the owner Edit holds alone.
+  it('keeps Edit holds on a live wall for the owner and for an editor', () => {
+    clearSprayWallRegistry();
+    registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid, {});
+    const onOpenSprayMaintenance = vi.fn();
+    const { getByLabelText, queryByLabelText, rerender } = render(
+      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, viewerUserId: 'owner-1' }),
+    );
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
+    expect(onOpenSprayMaintenance).toHaveBeenCalledExactlyOnceWith(sprayWall.uuid, 'editHolds');
+    expect(getByLabelText('mobile.boardDetail.spray.resetWall')).toBeTruthy();
+
+    rerender(panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance, viewerUserId: 'gym-admin' }));
+    expect(getByLabelText('mobile.boardDetail.spray.editHolds')).toBeTruthy();
+    expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
+  });
+
+  // Only the owner can still see a wall an admin hid after a report; a wall
+  // that quietly vanished for everyone else would read as data loss.
+  it('tells the owner, and only the owner, that their wall is hidden', () => {
+    clearSprayWallRegistry();
+    registerSprayWall(sprayWall.layoutId, {
+      wallUuid: sprayWall.uuid,
+      angle: 40,
+      version: 1,
+      versionId: 1,
+      photoWidth: 100,
+      photoHeight: 100,
+      photoUrl: 'https://example.invalid/wall.jpg',
+      photoThumbUrl: null,
+      photoExpiresAt: '2099-01-01T00:00:00.000Z',
+      holds: [],
+      hiddenAt: '2026-10-02T09:00:00.000Z',
+    });
+    const { getByText, queryByText, rerender } = render(
+      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance: vi.fn(), viewerUserId: 'owner-1' }),
+    );
+    expect(getByText('sprayHidden.title')).toBeTruthy();
+    expect(getByText('sprayHidden.body')).toBeTruthy();
+    rerender(panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance: vi.fn(), viewerUserId: 'gym-admin' }));
+    expect(queryByText('sprayHidden.title')).toBeNull();
+  });
+
+  // An archived wall keeps its climbs: the sheet says so, offers the wall that
+  // replaced it, and drops every maintenance row.
+  it('shows the archived notice and no maintenance on an archived wall', () => {
+    clearSprayWallRegistry();
+    registerSprayWallFixture(sprayWall.layoutId, sprayWall.uuid, {
+      archivedAt: '2026-10-01T09:00:00.000Z',
+      replacedByWallUuid: 'new-wall',
+    });
+    const { getByText, queryByLabelText } = render(
+      panelElement({ activeBoard: sprayWall, onOpenSprayMaintenance: vi.fn(), viewerUserId: 'owner-1' }),
+    );
+    expect(getByText(/^sprayArchive\.banner:/)).toBeTruthy();
+    fireEvent.click(getByText('sprayArchive.switchToNew'));
+    expect(openSprayWall).toHaveBeenCalledExactlyOnceWith('new-wall');
+    expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
+    expect(queryByLabelText('mobile.boardDetail.spray.resetWall')).toBeNull();
   });
 
   it('mounts the live-sessions block in the sheet with the board id and whoever holds the board now', () => {

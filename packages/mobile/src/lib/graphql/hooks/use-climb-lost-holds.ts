@@ -22,15 +22,16 @@ const LOADING: ClimbLostHoldsState = { status: 'loading' };
 const UNAVAILABLE: ClimbLostHoldsState = { status: 'unavailable' };
 
 /**
- * The geometry of the holds a spray climb lost to a reset (#5493).
+ * Where the holds a spray climb lost used to be, for the remix editor's grey
+ * rings.
  *
  * Network only, on purpose: the offline mirror keeps the count
  * (`missing_hold_count`) but not the hold history, so there is nothing local to
  * answer from. `networkMode: 'always'` makes a request with no signal fail at
- * once instead of pausing, and the editor then says the rings need a connection
- * rather than spinning.
+ * once instead of pausing, and the editor then draws no rings rather than
+ * waiting on them.
  *
- * `variables` null disables it — a catalogue board, an intact climb, a fresh climb.
+ * `variables` null disables it: a catalogue board, an intact climb, a fresh climb.
  */
 export function useClimbLostHolds(variables: GetClimbLostHoldsQueryVariables | null): ClimbLostHoldsState {
   const query = useQuery({

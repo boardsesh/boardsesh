@@ -109,7 +109,7 @@ function BoardsLayout() {
           full-screen pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md`
           rule 3 keeps off a sheet's own drag.
 
-          On iPad the three spray screens cover the whole screen
+          On iPad the two spray screens cover the whole screen
           (`sprayFlowScreenOptions`) when pushed over the picker. Opened straight
           from the live board sheet, one is this stack's FIRST screen, which
           ignores its own presentation; app/_layout.tsx covers that case on the
@@ -118,7 +118,11 @@ function BoardsLayout() {
         name="spray/new"
         options={({ route }) => ({
           ...sprayFlowScreenOptions(),
-          title: tBoards('sprayWizard.screenTitle'),
+          // The same wizard builds a reset's replacement wall (`?resetOf=`).
+          title:
+            typeof (route.params as { resetOf?: unknown } | undefined)?.resetOf === 'string'
+              ? tBoards('sprayWizard.reset.screenTitle')
+              : tBoards('sprayWizard.screenTitle'),
           headerBackButtonMenuEnabled: false,
           headerLeft: ({ tintColor }) => {
             const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
@@ -138,34 +142,6 @@ function BoardsLayout() {
           headerBackButtonMenuEnabled: false,
           ...sprayMaintenanceOptions(),
         }}
-      />
-      {/* Resetting a wall — a new photograph of a wall that already carries
-          climbs. Same route-not-sheet reasoning as the flow above: the corner
-          markers and the compare view are both full-screen pan-and-pinch
-          surfaces.
-
-          The live board sheet's "New photo" row opens this route after its
-          native dismissal has settled. */}
-      {/* The live board sheet opens this as the first screen of the modal, so
-          there is no back chevron; swiping down was the only way out (#5960).
-          The X goes through the same removal as a swipe, so the screen's leave
-          guard still asks before a half-done reset is dropped. */}
-      <Stack.Screen
-        name="spray/reset"
-        options={({ route }) => ({
-          ...sprayFlowScreenOptions(),
-          title: tBoards('sprayReset.screenTitle'),
-          headerBackButtonMenuEnabled: false,
-          headerLeft: ({ tintColor }) => {
-            const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
-            return (
-              <SprayWizardExitButton
-                returnTo={resolveBoardReturnTo(typeof returnTo === 'string' ? returnTo : undefined)}
-                tintColor={tintColor}
-              />
-            );
-          },
-        })}
       />
     </Stack>
   );

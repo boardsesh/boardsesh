@@ -38,6 +38,7 @@ vi.mock('../../error-reporting', () => ({ reportHandledError: reportHandledError
 const {
   clearSprayWallRegistry,
   ensureSprayWallLoaded,
+  markSprayWallArchived,
   getSprayWall,
   registerSprayWall,
   unregisterSprayWall,
@@ -50,6 +51,10 @@ const {
 } = await import('../spray-wall-registry');
 const {
   LOOK_RETRY_AFTER_FAILURE_MS,
+  clearSprayWallArchiveAnswers,
+  fetchSprayWallArchive,
+  loadSprayWallArchive,
+  primeSprayWallArchive,
   clearSprayWallLooks,
   dropSprayWallViewerAccess,
   loadSprayWall,
@@ -61,6 +66,7 @@ const {
   sprayWallRenderDataQueryKey,
 } = await import('../spray-wall-loader');
 const { createSprayWallDeletedSink } = await import('../../../offline/spray-photo-sink');
+const { clearSprayWallArchives, getRememberedSprayWallArchive } = await import('../../../settings/offline-boards');
 const sprayOperations = await import('@boardsesh/graphql/operations/spray-walls');
 
 const LAYOUT_ID = 4200;
@@ -118,6 +124,14 @@ function answerLook(answer: () => Promise<unknown>) {
   );
 }
 
+/** The archive request, answered by its operation like the look. */
+function answerArchive(answer: () => Promise<unknown>) {
+  const fallback = requestMock.getMockImplementation();
+  requestMock.mockImplementation((operation: unknown, variables: unknown) =>
+    operation === sprayOperations.GET_SPRAY_WALL_ARCHIVE ? answer() : fallback?.(operation, variables),
+  );
+}
+
 function lookRequests(): number {
   return requestMock.mock.calls.filter(([operation]) => operation === sprayOperations.GET_SPRAY_WALL_LOOK).length;
 }
@@ -140,6 +154,8 @@ beforeEach(() => {
   offlineState.localLoad.mockReset();
   clearSprayWallRegistry();
   clearSprayWallLooks();
+  clearSprayWallArchiveAnswers();
+  clearSprayWallArchives();
   requestMock.mockReset();
   reportHandledErrorMock.mockReset();
   invalidateQueriesMock.mockClear();
@@ -173,11 +189,9 @@ describe('withdrawal erases React Query payloads', () => {
     const erasedKeys = [
       ['sprayWallByLayout', LAYOUT_ID, 'old'],
       ['sprayWallByLayout', LAYOUT_ID, 'older'],
-      ['sprayWall', WALL_UUID, 'old'],
       ['sprayWallRenderData', WALL_UUID, 'old'],
       ['sprayWallRenderData', WALL_UUID, 3, 'old'],
       ['sprayWallWithVersions', WALL_UUID],
-      ['sprayWallResetProposal', 'draft-a', 20],
     ];
     for (const key of erasedKeys)
       queryClient.setQueryData(
@@ -187,7 +201,6 @@ describe('withdrawal erases React Query payloads', () => {
     const preservedKeys = [
       ['sprayWallByLayout', 4300, 'old'],
       ['sprayWallRenderData', 'wall-b', 'old'],
-      ['sprayWallResetProposal', 'draft-b', 20],
       ['catalogue', 'kilter'],
     ];
     for (const key of preservedKeys) queryClient.setQueryData(key, { secret: 'other payload' });
@@ -203,7 +216,7 @@ describe('withdrawal erases React Query payloads', () => {
   it('erases an unregistered identity discovered only in cached data', () => {
     const queryClient = privateQueryClient();
     const teardown = installSprayWallLoader(queryClient);
-    queryClient.setQueryData(['sprayWall', WALL_UUID, 'old'], { sprayWall: { uuid: WALL_UUID, layoutId: LAYOUT_ID } });
+    queryClient.setQueryData(['sprayWallWithVersions', WALL_UUID], { uuid: WALL_UUID, layoutId: LAYOUT_ID });
     queryClient.setQueryData(['sprayWallRenderData', WALL_UUID, 'old'], renderDataPayload());
     unregisterSprayWall(LAYOUT_ID);
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
@@ -214,13 +227,7 @@ describe('withdrawal erases React Query payloads', () => {
   it('global withdrawal erases spray families and retains catalogue queries', () => {
     const queryClient = privateQueryClient();
     const teardown = installSprayWallLoader(queryClient);
-    for (const family of [
-      'sprayWallByLayout',
-      'sprayWall',
-      'sprayWallRenderData',
-      'sprayWallWithVersions',
-      'sprayWallResetProposal',
-    ]) {
+    for (const family of ['sprayWallByLayout', 'sprayWallRenderData', 'sprayWallWithVersions']) {
       queryClient.setQueryData([family, 'unknown'], { secret: 'private' });
     }
     queryClient.setQueryData(['catalogue'], { board: 'kilter' });
@@ -279,7 +286,7 @@ describe('withdrawal erases React Query payloads', () => {
 });
 
 describe('loadSprayWall', () => {
-  it.each(['sprayWallWithVersions', 'sprayWallRevisionRenderData'])(
+  it.each(['sprayWallWithVersions', 'sprayWallRenderData'])(
     'cancels inactive %s requests without clearing another wall',
     async (queryPrefix) => {
       const queryClient = new QueryClient();
@@ -740,7 +747,7 @@ describe('loadSprayWall', () => {
     expect(getSprayWall(LAYOUT_ID)?.viewerCanEdit).toBe(false);
   });
 
-  it('keeps the homography and the move links, for drawing lost-hold ghosts (#5493)', async () => {
+  it('keeps the homography and the move links, for drawing lost-hold ghosts', async () => {
     const { registerRenderData } = await import('../spray-wall-loader');
     const payload = renderDataPayload({
       homography: [2, 0, 0, 0, 2, 0, 0, 0, 1],
@@ -784,6 +791,123 @@ describe('loadSprayWall', () => {
       if (name === 'GET_SPRAY_WALL_LOOK' || name === 'SET_SPRAY_WALL_RENDER_SETTINGS') continue;
       expect(JSON.stringify(operation) ?? '', name).not.toContain('renderSettings');
     }
+  });
+
+  // Merge-order safety: a field the backend does not serve fails the WHOLE
+  // operation, so the archive fields live in their own query and nowhere else.
+  it('never asks for the archive fields inside a query or mutation that loads, creates or draws a wall', () => {
+    for (const [name, operation] of Object.entries(sprayOperations)) {
+      if (name === 'GET_SPRAY_WALL_ARCHIVE' || name === 'GET_MY_SPRAY_WALL_LIFECYCLE') continue;
+      const text = JSON.stringify(operation) ?? '';
+      for (const field of ['archivedAt', 'resetOfWallUuid', 'replacedByWallUuid']) {
+        expect(text, `${name}.${field}`).not.toContain(field);
+      }
+    }
+  });
+
+  it('registers and draws the wall when the archive query fails, as live', async () => {
+    answerArchive(async () => {
+      throw new Error('Cannot query field "archivedAt" on type "SprayWall".');
+    });
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({
+      version: 2,
+      archive: { archivedAt: null, replacedByWallUuid: null },
+    });
+    expect(getRememberedSprayWallArchive(WALL_UUID)).toBeNull();
+    expect(reportHandledErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('registers an archived wall as archived, and keeps it for the offline loader', async () => {
+    answerArchive(async () => ({
+      sprayWall: {
+        uuid: WALL_UUID,
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        resetOfWallUuid: null,
+        replacedByWallUuid: 'new-wall',
+      },
+    }));
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID);
+
+    expect(getSprayWall(LAYOUT_ID)?.archive).toEqual({
+      archivedAt: '2026-10-01T09:00:00.000Z',
+      replacedByWallUuid: 'new-wall',
+    });
+    expect(getRememberedSprayWallArchive(WALL_UUID)).toEqual({
+      archivedAt: '2026-10-01T09:00:00.000Z',
+      replacedByWallUuid: 'new-wall',
+    });
+  });
+
+  // A failed read is "not known", not "live": a wall this session already knew
+  // as archived stays archived through a dropped connection.
+  it('keeps the archive this session already knew when a later read fails', async () => {
+    registerSprayWall(LAYOUT_ID, {
+      ...existingWall(),
+      archive: {
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        replacedByWallUuid: null,
+      },
+    });
+    answerArchive(async () => {
+      throw new Error('offline');
+    });
+    requestMock
+      .mockResolvedValueOnce({ sprayWallByLayout: { uuid: WALL_UUID } })
+      .mockResolvedValueOnce(renderDataPayload());
+
+    await loadSprayWall(fakeQueryClient(), LAYOUT_ID, { force: true });
+
+    expect(getSprayWall(LAYOUT_ID)).toMatchObject({ version: 2, archive: { archivedAt: '2026-10-01T09:00:00.000Z' } });
+  });
+
+  // A reset that published here primes "archived"; a "live" read sent before
+  // the publish must not answer over it, in the cache, the registry or offline.
+  it('a primed archive survives an older read that resolves later', async () => {
+    registerSprayWall(LAYOUT_ID, existingWall());
+    const read = deferredResponse();
+    answerArchive(() => read.promise);
+    const loading = loadSprayWallArchive(LAYOUT_ID, WALL_UUID, { force: true });
+    await Promise.resolve();
+
+    const archived = { archivedAt: '2026-10-06T10:00:00.000Z', replacedByWallUuid: 'new-wall' };
+    primeSprayWallArchive(WALL_UUID, archived);
+    markSprayWallArchived(LAYOUT_ID, WALL_UUID, { archivedAt: archived.archivedAt, replacedByWallUuid: 'new-wall' });
+    read.resolve({
+      sprayWall: { uuid: WALL_UUID, archivedAt: null, replacedByWallUuid: null },
+    });
+    await loading;
+
+    expect(getSprayWall(LAYOUT_ID)?.archive.archivedAt).toBe(archived.archivedAt);
+    expect(getRememberedSprayWallArchive(WALL_UUID)?.archivedAt).toBe(archived.archivedAt);
+    await expect(fetchSprayWallArchive(WALL_UUID)).resolves.toEqual(archived);
+  });
+
+  // A read sent under one account and answered under the next is "not known":
+  // who replaced a wall is only shown to a viewer who may see the replacement.
+  it('answers "not known" for a read that outlived an account change', async () => {
+    const read = deferredResponse();
+    answerArchive(() => read.promise);
+    const reading = fetchSprayWallArchive(WALL_UUID);
+    await Promise.resolve();
+    clearSprayWallArchiveAnswers();
+    read.resolve({
+      sprayWall: {
+        uuid: WALL_UUID,
+        archivedAt: '2026-10-01T09:00:00.000Z',
+        replacedByWallUuid: 'x',
+      },
+    });
+    await expect(reading).resolves.toBeNull();
   });
 
   it('registers the wall with its stored look, sanitised, in one registration', async () => {

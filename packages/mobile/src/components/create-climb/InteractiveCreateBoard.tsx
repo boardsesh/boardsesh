@@ -72,10 +72,10 @@ type InteractiveCreateBoardProps = {
    *  scrollRef — see the import comment at the top of CreateDrawer.tsx. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
   /**
-   * Holds a reset took off this climb, drawn as ghosts by the `overlay` (#5493),
-   * as tap targets in the same photo pixels as `holdTargets`. A lost hold's id
-   * can never be a live hold's id, so the two sets share one hit list and the
-   * nearest centre still decides; a hit on a ghost goes to `onGhostPress`
+   * Holds a remixed climb lost, drawn as grey rings by the `overlay`, as tap
+   * targets in the same photo pixels as `holdTargets`. A lost hold's id can
+   * never be a live hold's id, so the two sets share one hit list and the
+   * nearest centre still decides; a hit on a ring goes to `onGhostPress`
    * instead of painting.
    */
   ghostTargets?: readonly BoardHoldTarget[];
@@ -184,11 +184,14 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   }, [holdTargets]);
 
   // Hit circles both tap overlays resolve a point against, so the two zoom
-  // levels agree on which hold a touch belongs to.
+  // levels agree on which hold a touch belongs to. Rings go FIRST: the nearest
+  // centre wins and a tie keeps the earlier target, and a ring often sits right
+  // under the live hold that replaced it (a resize or a traced outline keeps
+  // the centre). The tap takes the ring away, and the next one paints the hold.
   const hitTargets = useMemo(
     () =>
       buildHoldHitTargets(
-        ghostTargets.length > 0 ? [...holdTargets, ...ghostTargets] : holdTargets,
+        ghostTargets.length > 0 ? [...ghostTargets, ...holdTargets] : holdTargets,
         boardWidth,
         boardHeight,
         renderWidth,
@@ -198,7 +201,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     [holdTargets, ghostTargets, boardWidth, boardHeight, renderWidth, renderHeight, mirrored],
   );
 
-  // A tap or long-press that resolved to a ghost opens its sheet; anything else
+  // A tap or long-press that resolved to a ring dismisses it; anything else
   // paints (or opens the role sheet) as before.
   const ghostIds = useMemo(() => new Set(ghostTargets.map((target) => target.id)), [ghostTargets]);
   const handleTap = useCallback(

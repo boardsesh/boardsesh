@@ -5,12 +5,14 @@ import { readLocalUserId } from '../local-user-id';
 import { mapCanonicalHoldsToPhoto } from './spray-hold-geometry';
 import { tryGetStoredSprayPhotoPathSync } from './spray-photo-store';
 import {
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
   getSprayWall,
   registerSprayWall,
   sprayWallRemovalGeneration,
   sprayWallViewerGeneration,
   type RegisteredSprayArt,
 } from './spray-wall-registry';
+import { getRememberedSprayWallArchive } from '../../settings/offline-boards';
 import { tryGetSprayPhotoPathSync } from './spray-photo-cache';
 import type { SprayVersionIdentity } from './spray-photo-keys';
 
@@ -75,6 +77,11 @@ export async function loadLocalSprayWall(
     if (!verified || verified.photoKey !== wall.photoKey || verified.version !== wall.version || !stillCurrent())
       return false;
     const versionId: SprayVersionIdentity = `local-${photoMatch[2]}-${wall.version}`;
+    // The mirror has no archive columns: what the server last said is kept
+    // beside the offline boards (`rememberSprayWallArchive`), so an archived wall
+    // still refuses new climbs offline. Nothing remembered keeps what this session
+    // already knew about the wall, or reads it as live.
+    const remembered = getRememberedSprayWallArchive(wall.boardUuid);
     registerSprayWall(layoutId, {
       art: heldArtFor(layoutId, wall.boardUuid, wall.version),
       wallUuid: wall.boardUuid,
@@ -90,6 +97,13 @@ export async function loadLocalSprayWall(
       holds,
       homography: wall.homography,
       viewerAccess: { canEdit: false, generation: viewerGeneration },
+      archive: remembered
+        ? {
+            ...LIVE_SPRAY_WALL_ARCHIVE_STATE,
+            archivedAt: remembered.archivedAt,
+            replacedByWallUuid: remembered.replacedByWallUuid,
+          }
+        : undefined,
     });
     return true;
   } catch {

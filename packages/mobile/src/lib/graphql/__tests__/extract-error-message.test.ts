@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sprayWallLifecycleMessage } from '../../spray/spray-lifecycle-copy';
 import {
   extractGraphqlMessage,
   isExpectedAuthError,
@@ -7,6 +8,8 @@ import {
   readGraphqlRateLimit,
   isGraphqlValidationFailedError,
   readGraphqlValidationFailedMessage,
+  sprayWallLifecycleRefusal,
+  sprayWallRefusalMeansStaleWall,
 } from '../extract-error-message';
 
 describe('GraphQL error extraction', () => {
@@ -187,5 +190,51 @@ describe('isExpectedBetaValidationError', () => {
   it('returns false for non-GraphQL errors', () => {
     expect(isExpectedBetaValidationError(new Error('plain'))).toBe(false);
     expect(isExpectedBetaValidationError(null)).toBe(false);
+  });
+});
+
+describe('spray wall lifecycle refusals', () => {
+  const coded = (code: string) => ({ response: { errors: [{ message: 'Server prose.', extensions: { code } }] } });
+
+  it.each([
+    ['SPRAY_WALL_ARCHIVED', 'archived', 'sprayWallErrors.archived'],
+    ['SPRAY_WALL_RESET_RETIRED', 'resetRetired', 'sprayWallErrors.resetRetired'],
+    ['SPRAY_WALL_RESET_OWNER_ONLY', 'resetOwnerOnly', 'sprayWallErrors.resetOwnerOnly'],
+    ['SPRAY_WALL_RESET_SOURCE_UNPUBLISHED', 'resetSourceUnpublished', 'sprayWallErrors.resetSourceUnpublished'],
+    ['SPRAY_WALL_ARCHIVE_LIMIT_REACHED', 'archiveLimitReached', 'sprayWallErrors.archiveLimitReached'],
+  ] as const)('maps %s to its own sentence, never the server prose', (code, refusal, key) => {
+    const t = (catalogKey: string) => catalogKey;
+    expect(sprayWallLifecycleRefusal(coded(code))).toBe(refusal);
+    expect(sprayWallLifecycleMessage(refusal, t)).toBe(key);
+  });
+
+  it('reads the code off an error that lifted it onto itself', () => {
+    expect(sprayWallLifecycleRefusal({ extensions: { code: 'SPRAY_WALL_ARCHIVED' } })).toBe('archived');
+  });
+
+  it('says the archive cap with its number', () => {
+    const seen: unknown[] = [];
+    sprayWallLifecycleMessage('archiveLimitReached', (key, values) => {
+      seen.push(values);
+      return key;
+    });
+    expect(seen).toEqual([{ max: 50 }]);
+  });
+
+  it.each([
+    null,
+    undefined,
+    new Error('offline'),
+    coded('SPRAY_WALL_LIMIT_REACHED'),
+    coded('SPRAY_WALL_HOLDS_LOCKED'),
+    coded('FORBIDDEN'),
+  ])('leaves anything else alone: %j', (error) => {
+    expect(sprayWallLifecycleRefusal(error)).toBeNull();
+  });
+
+  it('asks for a fresh read of the wall only when it was archived since', () => {
+    expect(sprayWallRefusalMeansStaleWall('archived')).toBe(true);
+    expect(sprayWallRefusalMeansStaleWall('resetOwnerOnly')).toBe(false);
+    expect(sprayWallRefusalMeansStaleWall(null)).toBe(false);
   });
 });

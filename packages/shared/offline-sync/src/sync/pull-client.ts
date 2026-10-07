@@ -819,12 +819,7 @@ function invalidateDeletedSprayWalls(queryClient: QueryInvalidator, rows: Record
       queryClient.invalidateQueries({ queryKey: ['sprayWallByLayout', row.layout_id], exact: true });
     }
     if (typeof row.board_uuid === 'string') {
-      for (const namespace of [
-        'sprayWallRenderData',
-        'sprayWall',
-        'sprayWallWithVersions',
-        'sprayWallRevisionRenderData',
-      ]) {
+      for (const namespace of ['sprayWallRenderData', 'sprayWallWithVersions']) {
         queryClient.invalidateQueries({ queryKey: [namespace, row.board_uuid] });
       }
     }

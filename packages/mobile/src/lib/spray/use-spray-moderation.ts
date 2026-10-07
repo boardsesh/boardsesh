@@ -96,7 +96,6 @@ export function useReviewSprayWall() {
       );
       for (const queryKey of [
         SPRAY_REPORTS_QUERY_KEY,
-        ['sprayWall'],
         ['sprayWallByLayout'],
         ['sprayWallRenderData'],
         ['myBoards'],

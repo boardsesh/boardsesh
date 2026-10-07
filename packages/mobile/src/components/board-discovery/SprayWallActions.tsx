@@ -7,72 +7,116 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
-import { sprayDetailRows, sprayShareTarget, type SprayDetailRowKey } from './spray-detail-rows';
+import { useSprayWallArchiveState, useSprayWallHiddenAt } from '../../lib/spray/use-spray-wall-archive';
+import { SprayWallArchivedBanner } from '../spray-wall/SprayWallArchivedBanner';
+import { sprayDetailRows, sprayShareTarget, viewerOwnsSprayWall, type SprayDetailRowKey } from './spray-detail-rows';
 
 type SprayWallActionsProps = {
   board: UserBoard | null;
   onOpenMaintenance?: (wallUuid: string, action: SprayDetailRowKey) => void;
   onShare?: (wallUuid: string) => void;
+  /** The signed-in climber's id: the reset rows are the wall owner's alone. */
+  viewerUserId?: string | null;
 };
 
-/** Static actions inside the live board sheet's virtualized list header. */
+/**
+ * Static actions inside the live board sheet's virtualized list header, under
+ * the archived-wall notice when the wall is archived.
+ */
 export const SprayWallActions = memo(function SprayWallActions({
   board,
   onOpenMaintenance,
   onShare,
+  viewerUserId = null,
 }: SprayWallActionsProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const maintenanceRows = useMemo(() => sprayDetailRows(board), [board]);
+  const archive = useSprayWallArchiveState(board?.boardType, board?.layoutId ?? null);
+  const hiddenAt = useSprayWallHiddenAt(board?.boardType, board?.layoutId ?? null);
+  const isOwner = board != null && viewerOwnsSprayWall(board, viewerUserId);
+  const maintenanceRows = useMemo(
+    () => sprayDetailRows(board, { viewerUserId, archive }),
+    [board, viewerUserId, archive],
+  );
   const shareTarget = useMemo(() => sprayShareTarget(board), [board]);
   const wallUuid = board?.uuid;
   const editHolds = useCallback(() => {
     if (wallUuid) onOpenMaintenance?.(wallUuid, 'editHolds');
   }, [onOpenMaintenance, wallUuid]);
-  const newPhoto = useCallback(() => {
-    if (wallUuid) onOpenMaintenance?.(wallUuid, 'newPhoto');
+  const resetWall = useCallback(() => {
+    if (wallUuid) onOpenMaintenance?.(wallUuid, 'resetWall');
   }, [onOpenMaintenance, wallUuid]);
   const share = useCallback(() => {
     if (wallUuid) onShare?.(wallUuid);
   }, [onShare, wallUuid]);
 
-  if ((!onOpenMaintenance || maintenanceRows.length === 0) && (!onShare || !shareTarget)) return null;
+  // An admin hid the wall after a report: only the owner can still see it, and
+  // a wall that quietly vanished for everyone else would read as data loss.
+  const hiddenNotice =
+    hiddenAt && isOwner ? (
+      <View
+        style={[styles.notice, { backgroundColor: systemColors.secondaryBackground }]}
+        accessible
+        accessibilityLabel={`${t('sprayHidden.title')}. ${t('sprayHidden.body')}`}
+      >
+        <Text variant="headline" color={systemColors.label}>
+          {t('sprayHidden.title')}
+        </Text>
+        <Text variant="subheadline" color={systemColors.secondaryLabel}>
+          {t('sprayHidden.body')}
+        </Text>
+      </View>
+    ) : null;
+  const banner = (
+    <>
+      {hiddenNotice}
+      <SprayWallArchivedBanner boardName={board?.boardType} layoutId={board?.layoutId ?? null} />
+    </>
+  );
+  const showMaintenance = onOpenMaintenance != null && maintenanceRows.length > 0;
+  const showShare = onShare != null && shareTarget != null;
+  if (!showMaintenance && !showShare)
+    return archive?.archivedAt || hiddenNotice ? <View style={styles.block}>{banner}</View> : null;
 
   return (
-    <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-      {onOpenMaintenance && maintenanceRows.length > 0 ? (
-        <>
-          {maintenanceRows.some((row) => row.key === 'editHolds') ? (
-            <WallActionRow
-              icon="edit"
-              label={t('mobile.boardDetail.spray.editHolds')}
-              hint={t('mobile.boardDetail.spray.editHoldsHint')}
-              onPress={editHolds}
-            />
-          ) : null}
-          {maintenanceRows.some((row) => row.key === 'newPhoto') ? (
-            <WallActionRow
-              icon="camera"
-              label={t('mobile.boardDetail.spray.newPhoto')}
-              hint={t('mobile.boardDetail.spray.newPhotoHint')}
-              onPress={newPhoto}
-            />
-          ) : null}
-        </>
-      ) : null}
-      {onShare && shareTarget ? (
-        <WallActionRow
-          icon="share"
-          label={t('mobile.boardDetail.spray.shareLink')}
-          hint={
-            shareTarget.visibility === 'public'
-              ? t('mobile.boardDetail.spray.shareLinkPublicHint')
-              : t('mobile.boardDetail.spray.shareLinkUnlistedHint')
-          }
-          onPress={share}
-          separator={onOpenMaintenance != null && maintenanceRows.length > 0}
-        />
-      ) : null}
+    <View style={styles.block}>
+      {banner}
+      <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+        {showMaintenance ? (
+          <>
+            {maintenanceRows.some((row) => row.key === 'editHolds') ? (
+              <WallActionRow
+                icon="edit"
+                label={t('mobile.boardDetail.spray.editHolds')}
+                hint={t('mobile.boardDetail.spray.editHoldsHint')}
+                onPress={editHolds}
+              />
+            ) : null}
+            {maintenanceRows.some((row) => row.key === 'resetWall') ? (
+              <WallActionRow
+                icon="camera"
+                label={t('mobile.boardDetail.spray.resetWall')}
+                hint={t('mobile.boardDetail.spray.resetWallHint')}
+                onPress={resetWall}
+                separator={maintenanceRows[0]?.key !== 'resetWall'}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {showShare ? (
+          <WallActionRow
+            icon="share"
+            label={t('mobile.boardDetail.spray.shareLink')}
+            hint={
+              shareTarget.visibility === 'public'
+                ? t('mobile.boardDetail.spray.shareLinkPublicHint')
+                : t('mobile.boardDetail.spray.shareLinkUnlistedHint')
+            }
+            onPress={share}
+            separator={showMaintenance}
+          />
+        ) : null}
+      </View>
     </View>
   );
 });
@@ -87,22 +131,16 @@ const WallActionRow = memo(function WallActionRow({
   icon: IconName;
   label: string;
   hint: string;
-  onPress: () => void;
+  /** Left out for a row that only informs: no button role, no chevron. */
+  onPress?: () => void;
   separator?: boolean;
 }) {
   const { systemColors } = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityHint={hint}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        separator ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: systemColors.separator } : null,
-        pressed ? styles.pressed : null,
-      ]}
-    >
+  const separatorStyle = separator
+    ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: systemColors.separator }
+    : null;
+  const content = (
+    <>
       <Icon name={icon} size={20} color={systemColors.secondaryLabel} />
       <View style={styles.copy}>
         <Text variant="body" color={systemColors.label}>
@@ -112,13 +150,33 @@ const WallActionRow = memo(function WallActionRow({
           {hint}
         </Text>
       </View>
-      <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+      {onPress ? <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} /> : null}
+    </>
+  );
+  if (!onPress) {
+    return (
+      <View style={[styles.row, separatorStyle]} accessible accessibilityLabel={`${label}. ${hint}`}>
+        {content}
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, separatorStyle, pressed ? styles.pressed : null]}
+    >
+      {content}
     </Pressable>
   );
 });
 
 const styles = StyleSheet.create({
-  card: { borderRadius: borderRadius.lg, overflow: 'hidden', marginVertical: spacing[3] },
+  block: { gap: spacing[3], marginVertical: spacing[3] },
+  card: { borderRadius: borderRadius.lg, overflow: 'hidden' },
+  notice: { borderRadius: borderRadius.md, padding: spacing[3], gap: spacing[1] },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing[3], padding: spacing[4], minHeight: 44 },
   copy: { flex: 1, gap: spacing[1] },
   pressed: { opacity: 0.6 },

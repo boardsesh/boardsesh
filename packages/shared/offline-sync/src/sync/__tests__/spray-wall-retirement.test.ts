@@ -109,20 +109,14 @@ describe('confirmed inaccessible spray walls', () => {
     expect(await db.getFirstAsync('SELECT 1 FROM board_climb_hold_sets WHERE climb_id = 5')).not.toBeNull();
     expect(await db.getFirstAsync('SELECT 1 FROM board_climb_hold_postings WHERE layout_id = 4')).toBeNull();
   });
+  // The query families that draw a wall, as the retirement sink busts them.
+  const WALL_RENDERER_FAMILIES = ['sprayWallByLayout', 'sprayWallRenderData', 'sprayWallWithVersions'];
   it('invalidates only the retired wall renderer keys after the deletion sink finishes', async () => {
     await seed();
     await seed(5);
     let sinkFinished = false;
     const invalidateQueries = vi.fn((filters: Parameters<QueryInvalidator['invalidateQueries']>[0]) => {
-      if (
-        [
-          'sprayWallByLayout',
-          'sprayWallRenderData',
-          'sprayWall',
-          'sprayWallWithVersions',
-          'sprayWallRevisionRenderData',
-        ].includes(String(filters.queryKey[0]))
-      ) {
+      if (WALL_RENDERER_FAMILIES.includes(String(filters.queryKey[0]))) {
         expect(sinkFinished).toBe(true);
       }
     });
@@ -135,21 +129,16 @@ describe('confirmed inaccessible spray walls', () => {
     });
     const wallInvalidations = invalidateQueries.mock.calls
       .map(([filters]) => filters)
-      .filter((filters) =>
-        [
-          'sprayWallByLayout',
-          'sprayWallRenderData',
-          'sprayWall',
-          'sprayWallWithVersions',
-          'sprayWallRevisionRenderData',
-        ].includes(String(filters.queryKey[0])),
-      );
+      .filter((filters) => WALL_RENDERER_FAMILIES.includes(String(filters.queryKey[0])));
+    // No other wall family is busted, so a renamed or added one shows up here.
+    const otherWallFamilies = invalidateQueries.mock.calls
+      .map(([filters]) => String(filters.queryKey[0]))
+      .filter((family) => family.startsWith('sprayWall') && !WALL_RENDERER_FAMILIES.includes(family));
+    expect(otherWallFamilies).toEqual([]);
     expect(wallInvalidations).toEqual([
       { queryKey: ['sprayWallByLayout', 4], exact: true },
       { queryKey: ['sprayWallRenderData', 'board-4'] },
-      { queryKey: ['sprayWall', 'board-4'] },
       { queryKey: ['sprayWallWithVersions', 'board-4'] },
-      { queryKey: ['sprayWallRevisionRenderData', 'board-4'] },
     ]);
     const cachedKeys = [
       ['sprayWallRenderData', 'board-4', { viewerGeneration: 1 }],

@@ -218,15 +218,16 @@
       "boardCannotAuthor": "Tu ne peux pas encore ouvrir de blocs sur cette board.",
       "boardConfigIncomplete": "Les détails de la board sont manquants ou invalides. Choisis à nouveau la board pour ouvrir ton bloc.",
       "noUsableBoard": "Choisis d'abord une board, puis ouvre ton bloc.",
-      "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board."
+      "boardTypeUnsupported": "Cette version de l'app ne permet pas encore d'ouvrir des blocs sur cette board. Choisis une autre board.",
+      "wallArchived": "Ce mur est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc."
     },
     "alerts": {
       "publishDuplicateNamed": "Cette configuration de prises correspond à « {{name}} ». Activez Brouillon pour l'enregistrer sans la publier, ou changez une prise.",
       "publishDuplicateUnnamed": "Cette configuration de prises correspond à un bloc existant. Activez Brouillon pour l'enregistrer sans le publier, ou changez une prise.",
       "viewMatchingClimb": "Voir le bloc correspondant",
       "saveFailedFallback": "Échec de l'enregistrement du bloc. Veuillez réessayer.",
-      "editConflict": "Quelqu’un vient de modifier ce bloc. Rouvre-le pour voir la dernière version.",
-      "editNotAllowed": "Tu ne peux pas modifier ce bloc. Seuls son ouvreur et les personnes qui gèrent le mur le peuvent.",
+      "editConflict": "Ce bloc a changé ailleurs. Rouvre-le pour voir la dernière version.",
+      "editNotAllowed": "Tu ne peux pas modifier ce bloc. Seul son ouvreur ou son ouvreuse le peut.",
       "editWindowExpired": "Ce bloc a été publié il y a plus de 24 heures, il ne peut plus être modifié.",
       "editNotEditable": "Ce bloc ne peut plus être modifié.",
       "localRefreshFailed": "Voie enregistrée. La liste téléchargée n’a pas été actualisée. Reconnecte-toi pour l’actualiser."
@@ -485,13 +486,6 @@
         "label": "Collection",
         "any": "Toutes"
       },
-      "holdIntegrity": {
-        "label": "Prises",
-        "current": "Actuelles",
-        "any": "Toutes",
-        "intact": "Intacts seulement",
-        "broken": "Prises perdues"
-      },
       "pin": "Épingler comme raccourci",
       "unpin": "Retirer des raccourcis",
       "established2plus": "Établies 2+",
@@ -670,35 +664,10 @@
       "chip_other": "{{count}} prises en moins",
       "chipAria_one": "{{count}} prise n'est plus sur le mur",
       "chipAria_other": "{{count}} prises ne sont plus sur le mur",
-      "banner_one": "{{count}} prise de ce bloc n'est plus là",
-      "banner_other": "{{count}} prises de ce bloc ne sont plus là",
-      "bannerBody": "Remixe-le avec ce qu'il y a sur le mur maintenant.",
-      "bannerBodyEdit": "Modifie-le avec les prises qui restent, ou remixe-le.",
+      "banner": "Ce bloc a perdu une prise. Remixe-le avec les prises qui sont sur le mur maintenant.",
       "remix": "Remixer",
-      "edit": "Modifier",
-      "editor": {
-        "tapGhost_one": "{{count}} prise de ce bloc n'est plus là : touche le cercle en pointillés pour la remplacer",
-        "tapGhost_other": "{{count}} prises de ce bloc ne sont plus là : touche un cercle en pointillés pour en remplacer une",
-        "offline_one": "{{count}} prise de ce bloc n'est plus là. Connecte-toi pour voir où elle était.",
-        "offline_other": "{{count}} prises de ce bloc ne sont plus là. Connecte-toi pour voir où elles étaient.",
-        "pickNearby": "Touche une prise en surbrillance pour l'utiliser à la place.",
-        "roleFull": "Un bloc a au plus deux prises de départ et deux d'arrivée. Efface-en une, puis touche à nouveau.",
-        "noPositions_one": "{{count}} prise de ce bloc n'est plus là. Impossible de montrer où elle était.",
-        "noPositions_other": "{{count}} prises de ce bloc ne sont plus là. Impossible de montrer où elles étaient."
-      },
-      "sheet": {
-        "title": "Cette prise n'est plus là",
-        "wasStart": "C'était une prise de départ.",
-        "wasHand": "C'était une prise de main.",
-        "wasFinish": "C'était une prise d'arrivée.",
-        "wasFoot": "C'était une prise de pied.",
-        "useNearby": "Utiliser une prise proche",
-        "useNearbyHint": "Les prises libres les plus proches s'allument sur le mur.",
-        "useNearbySuccessor": "La prise qui l'a remplacée s'allume en premier.",
-        "noneNearby": "Aucune prise libre sur le mur pour la remplacer.",
-        "putBack": "Remettre cette prise sur le mur",
-        "putBackHint": "Ouvre l'éditeur de prises là où elle était. Publie, et elle revient dans ce bloc."
-      }
+      "editorHint_one": "Retire la prise grise pour enregistrer",
+      "editorHint_other": "Retire les prises grises pour enregistrer"
     },
     "climbActions": {
       "preview": "Aperçu",

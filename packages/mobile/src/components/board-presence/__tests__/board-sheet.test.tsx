@@ -355,6 +355,29 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 import { BoardSheet, type BoardSheetHandle } from '../BoardSheet';
+import {
+  clearSprayWallRegistry,
+  LIVE_SPRAY_WALL_ARCHIVE_STATE,
+  registerSprayWall,
+  type SprayWallArchiveState,
+} from '../../../lib/spray/spray-wall-registry';
+
+/** Register a spray wall in the real registry, so the sheet knows whether it is archived. */
+function registerSprayWallFixture(layoutId: number, wallUuid: string, archive: Partial<SprayWallArchiveState> = {}) {
+  registerSprayWall(layoutId, {
+    wallUuid,
+    angle: 40,
+    version: 1,
+    versionId: 1,
+    photoWidth: 100,
+    photoHeight: 100,
+    photoUrl: 'https://example.invalid/wall.jpg',
+    photoThumbUrl: null,
+    photoExpiresAt: '2099-01-01T00:00:00.000Z',
+    holds: [],
+    archive: { ...LIVE_SPRAY_WALL_ARCHIVE_STATE, ...archive },
+  });
+}
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { GET_CLIMB } from '../../../lib/graphql/operations';
 
@@ -475,6 +498,8 @@ describe('BoardSheet', () => {
       isFollowedByMe: false,
       canEdit: true,
     };
+    clearSprayWallRegistry();
+    registerSprayWallFixture(4242, activeSprayWall.uuid);
     const ref = createRef<BoardSheetHandle>();
     const onOpenSprayMaintenance = vi.fn();
     const onShareSprayWall = vi.fn();
@@ -488,18 +513,19 @@ describe('BoardSheet', () => {
         activeBoard: activeSprayWall,
         onOpenSprayMaintenance,
         onShareSprayWall,
+        viewerUserId: 'owner-1',
       }),
     );
     expect(queryByLabelText('mobile.boardDetail.spray.editHolds')).toBeNull();
 
     act(() => ref.current?.present());
     fireEvent.click(getByLabelText('mobile.boardDetail.spray.editHolds'));
-    fireEvent.click(getByLabelText('mobile.boardDetail.spray.newPhoto'));
+    fireEvent.click(getByLabelText('mobile.boardDetail.spray.resetWall'));
     fireEvent.click(getByLabelText('mobile.boardDetail.spray.shareLink'));
 
     expect(onOpenSprayMaintenance.mock.calls).toEqual([
       [activeSprayWall.uuid, 'editHolds'],
-      [activeSprayWall.uuid, 'newPhoto'],
+      [activeSprayWall.uuid, 'resetWall'],
     ]);
     expect(onShareSprayWall).toHaveBeenCalledExactlyOnceWith(activeSprayWall.uuid);
   });

@@ -3,7 +3,7 @@ import { Alert, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { SHARED_EVENTS, sprayWallResetStarted } from '@boardsesh/analytics';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   useBoard,
@@ -34,7 +34,12 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { useTheme } from '../../src/providers/theme-provider';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
-import { sprayResetHref } from '../../src/lib/spray/spray-routes';
+import { sprayResetWizardHref } from '../../src/lib/spray/spray-routes';
+import { confirmSprayWallReset } from '../../src/lib/spray/confirm-spray-wall-reset';
+import { trackSprayEvent } from '../../src/lib/spray/spray-telemetry';
+import { useSprayWallIsArchived } from '../../src/lib/spray/use-spray-wall-archive';
+import { useStoredUserId } from '../../src/hooks/use-current-user-id';
+import { viewerOwnsSprayWall } from '../../src/components/board-discovery/spray-detail-rows';
 import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
 import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
@@ -146,7 +151,36 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   });
   const saveBackground = backgroundEditor.save;
   const backgroundChanged = backgroundEditor.changed;
-  const openRetake = useCallback(() => router.push(sprayResetHref(board.uuid)), [router, board.uuid]);
+
+  // "Reset wall with a new photo" for a photo too skewed to draw a look from.
+  // It is a reset like every other: the owner's alone (the server refuses
+  // anyone else), never on an archived wall, and behind the same confirm as the
+  // board sheet's. The owner is the profile's id, falling back to the one the
+  // signed token carries, as the sheet reads it.
+  const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
+  const viewerUserId = profile?.id ?? storedUserId ?? null;
+  const wallArchived = useSprayWallIsArchived(board.boardType, board.layoutId);
+  const canResetWall = isSprayWall && !wallArchived && viewerOwnsSprayWall(board, viewerUserId);
+  const resetPendingRef = useRef(false);
+  const openRetake = useCallback(() => {
+    if (resetPendingRef.current) return;
+    resetPendingRef.current = true;
+    void (async () => {
+      try {
+        const confirmed = await confirmSprayWallReset({
+          title: t('sprayResetConfirm.title'),
+          body: t('sprayResetConfirm.body'),
+          start: t('sprayResetConfirm.start'),
+          cancel: t('sprayResetConfirm.cancel'),
+        });
+        if (!confirmed) return;
+        trackSprayEvent(sprayWallResetStarted('board_edit'));
+        router.push(sprayResetWizardHref(board.uuid));
+      } finally {
+        resetPendingRef.current = false;
+      }
+    })();
+  }, [router, board.uuid, t]);
 
   const seed = useMemo<BoardBuilderSeed>(() => {
     const seedBoardName = toBoardName(board.boardType)!;
@@ -413,7 +447,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
             value={backgroundEditor.value}
             onChange={backgroundEditor.onChange}
             disabled={submitting}
-            onRetakePhoto={openRetake}
+            onRetakePhoto={canResetWall ? openRetake : undefined}
           />
         ) : undefined
       }

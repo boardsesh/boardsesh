@@ -36,12 +36,20 @@ const editorProps = vi.hoisted(() => ({
   last: null as null | { onDirtyChange?: (dirty: boolean) => void; onHandoverChange?: (handingOver: boolean) => void },
 }));
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
+const resetWallMock = vi.hoisted(() => vi.fn());
+const discardDraftMock = vi.hoisted(() => vi.fn(async () => true));
+const routerMock = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), dismissTo: vi.fn() }));
+/** The fail-soft lifecycle list: which walls are a reset's clone. */
+const lifecycleQuery = vi.hoisted(() => ({
+  current: { data: undefined as unknown, isFetching: false },
+}));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { isReduceMotionEnabled: vi.fn(async () => false), addEventListener: () => ({ remove() {} }) },
   Alert: { alert: alertMock },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
+  Pressable: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   StyleSheet: { hairlineWidth: 1, absoluteFillObject: {}, create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
@@ -49,7 +57,7 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ back: vi.fn(), replace: vi.fn(), dismissTo: vi.fn() }),
+  useRouter: () => routerMock,
   useNavigation: () => ({ getParent: () => undefined }),
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -75,7 +83,8 @@ vi.mock('@boardsesh/analytics', () => ({
   sprayWallPhotoPicked: () => ({ name: 'p', properties: {} }),
   sprayWallUploadFinished: () => ({ name: 'u', properties: {} }),
 }));
-vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: vi.fn() }));
+const trackSprayMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../lib/spray/spray-telemetry', () => ({ trackSprayEvent: trackSprayMock }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 // The photo step's shooting-guide link (#6141). The real module loads
@@ -84,10 +93,20 @@ vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/graphql/extract-error-message', () => ({
   extractGraphqlMessage: () => undefined,
   extractGraphqlCode: () => undefined,
+  // A test error names its refusal directly; the real code mapping has its own suite.
+  sprayWallLifecycleRefusal: (error: unknown) => (error as { refusal?: string } | null)?.refusal ?? null,
 }));
+vi.mock('../../../lib/spray/spray-lifecycle-copy', () => ({
+  sprayWallLifecycleMessage: (refusal: string) => `lifecycle:${refusal}`,
+}));
+vi.mock('../../../lib/spray/settle-archived-spray-wall', () => ({ settleArchivedSprayWall: vi.fn() }));
 vi.mock('../../../lib/boards/use-activate-board', () => ({ useActivateBoard: () => vi.fn() }));
 vi.mock('../../../lib/spray/activate-published-spray-wall', () => ({ activatePublishedSprayWall: vi.fn() }));
-vi.mock('../../../lib/spray/spray-wall-loader', () => ({ invalidateSprayWallRenderData: vi.fn() }));
+const resetSourceMock = vi.hoisted(() => vi.fn(async (): Promise<string | null | undefined> => undefined));
+vi.mock('../../../lib/spray/spray-wall-loader', () => ({
+  invalidateSprayWallRenderData: vi.fn(),
+  fetchSprayWallResetSource: resetSourceMock,
+}));
 vi.mock('../../../lib/spray/use-spray-wall-draft', () => ({ prefetchSprayWallDraft: vi.fn() }));
 vi.mock('../../../lib/spray/spray-wall-photo-upload', () => ({ uploadSprayWallPhoto: vi.fn() }));
 vi.mock('../../../lib/spray/camera-capability', () => ({ canPhotographWall: () => false }));
@@ -108,7 +127,9 @@ vi.mock('../../../lib/spray/use-create-spray-wall', () => ({
   useCreateSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   usePublishSprayWallVersion: () => ({ mutateAsync: vi.fn() }),
   useUpdateSprayWallVisibility: () => ({ mutateAsync: vi.fn() }),
-  useDiscardSprayWallDraft: () => ({ mutateAsync: vi.fn(async () => true) }),
+  useDiscardSprayWallDraft: () => ({ mutateAsync: discardDraftMock }),
+  useResetSprayWall: () => ({ mutateAsync: resetWallMock }),
+  useMySprayWallLifecycle: () => lifecycleQuery.current,
 }));
 
 vi.mock('../../Text', () => ({
@@ -194,6 +215,15 @@ function lastAlertButton(label: string): { onPress: () => void } {
 beforeEach(() => {
   vi.clearAllMocks();
   wallsQuery.current = { data: undefined, isFetching: true, dataUpdatedAt: 0, errorUpdatedAt: 0 };
+  // The lifecycle list answered for the unfinished wall: not a clone.
+  lifecycleQuery.current = {
+    data: [{ uuid: 'wall-1', layoutId: 7, archivedAt: null, resetOfWallUuid: null, board: null }],
+    isFetching: false,
+  };
+  resetSourceMock.mockReset();
+  // Once-queued answers must not leak from one case into the next.
+  resetWallMock.mockReset();
+  fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
   editorProps.last = null;
 });
@@ -330,5 +360,232 @@ describe('native back guard', () => {
     expect(alertMock).not.toHaveBeenCalled();
     expect(confirmDiscardMock).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('a reset (`resetOf`)', () => {
+  /** The clone `resetSprayWall` hands back: the old wall's settings, nothing else. */
+  const CLONE = {
+    uuid: 'clone-1',
+    layoutId: 8,
+    viewerCanEdit: true,
+    currentVersion: null,
+    resetOfWallUuid: 'old-wall',
+    board: { name: 'Garage wall' },
+  };
+  const CLONE_WITH_PHOTO = {
+    ...CLONE,
+    versions: [{ id: 'clone-v1', number: 1, status: 'DRAFT', photo: { url: 'https://img/c.jpg' }, addedHoldCount: 4 }],
+  };
+
+  async function mountReset() {
+    const view = render(<SprayWallWizardScreen returnTo="/(tabs)/climbs" resetOfWallUuid="old-wall" />);
+    await act(async () => {});
+    return view;
+  }
+
+  it('builds the clone and rejoins it at the photo, never asking for a name or angle', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText, queryByTestId } = await mountReset();
+
+    expect(resetWallMock).toHaveBeenCalledExactlyOnceWith('old-wall');
+    expect(fetchVersionsMock).toHaveBeenCalledWith('clone-1');
+    // No list-and-prompt: the reset hands back its own clone.
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+    expect(queryByTestId('identity')).toBeNull();
+  });
+
+  it('leaves the flow from the photo step rather than opening the meta form', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText, queryByTestId } = await mountReset();
+
+    act(() => getByText('sprayWizard.back').click());
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(queryByTestId('identity')).toBeNull();
+  });
+
+  it('asks before rejoining a clone that already has a photo, and picks it up at the editor', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue(CLONE_WITH_PHOTO);
+    const { queryByTestId } = await mountReset();
+
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    const [title, body] = alertMock.mock.calls[0] as [string, string];
+    expect(title).toBe('sprayWizard.reset.resumeTitle');
+    expect(body).toBe('sprayWizard.reset.resumeBody');
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+    expect(queryByTestId('editor')).not.toBeNull();
+  });
+
+  // Start over throws away the CLONE and starts a fresh one. The wall being
+  // replaced is never named in the discard: it stays live.
+  it('starts over by deleting the clone only, then building a fresh one', async () => {
+    resetWallMock.mockResolvedValueOnce(CLONE).mockResolvedValueOnce({ ...CLONE, uuid: 'clone-2' });
+    fetchVersionsMock
+      .mockResolvedValueOnce(CLONE_WITH_PHOTO)
+      .mockResolvedValueOnce({ ...CLONE, uuid: 'clone-2', versions: [] });
+    const { getByText } = await mountReset();
+
+    await act(async () => lastAlertButton('sprayWizard.resume.startOver').onPress());
+
+    expect(discardDraftMock).toHaveBeenCalledExactlyOnceWith({
+      versionId: 'clone-v1',
+      wallUuid: 'clone-1',
+      layoutId: 8,
+    });
+    expect(JSON.stringify(discardDraftMock.mock.calls)).not.toContain('old-wall');
+    expect(resetWallMock).toHaveBeenCalledTimes(2);
+    expect(resetWallMock).toHaveBeenLastCalledWith('old-wall');
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+  });
+
+  it('says a failed reset plainly, and Try again asks once more', async () => {
+    resetWallMock.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText } = await mountReset();
+
+    expect(getByText('sprayWizard.reset.startFailed')).toBeTruthy();
+    await act(async () => getByText('sprayWizard.resume.retry').click());
+    expect(resetWallMock).toHaveBeenCalledTimes(2);
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+  });
+
+  it('falls back to a plain sentence for a failure without a code', async () => {
+    resetWallMock.mockRejectedValueOnce(new Error('offline'));
+    const { getByText } = await mountReset();
+    expect(getByText('sprayWizard.reset.startFailed')).toBeTruthy();
+    expect(getByText('sprayWizard.back')).toBeTruthy();
+  });
+
+  // The reset is counted once per confirm tap, on the board sheet. Reopening
+  // a clone with nothing on it yet (one abandoned at the photo) counts nothing.
+  it('fires nothing when a draft-less clone is reopened', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const { getByText } = await mountReset();
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+    expect(trackSprayMock).not.toHaveBeenCalled();
+  });
+
+  it('does not count reopening an unfinished reset as a new one', async () => {
+    resetWallMock.mockResolvedValue(CLONE);
+    fetchVersionsMock.mockResolvedValue(CLONE_WITH_PHOTO);
+    await mountReset();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+    expect(trackSprayMock).not.toHaveBeenCalled();
+  });
+
+  // The second reset call fails: the climber gets the error with Try again and
+  // a way back, and the wall being replaced was never named in a discard.
+  it('says why when the fresh clone after Start over cannot be made', async () => {
+    resetWallMock.mockResolvedValueOnce(CLONE).mockRejectedValueOnce(new Error('offline'));
+    fetchVersionsMock.mockResolvedValueOnce(CLONE_WITH_PHOTO);
+    const { getByText } = await mountReset();
+    await act(async () => lastAlertButton('sprayWizard.resume.startOver').onPress());
+    expect(getByText('sprayWizard.reset.startFailed')).toBeTruthy();
+    expect(getByText('sprayWizard.resume.retry')).toBeTruthy();
+    expect(getByText('sprayWizard.back')).toBeTruthy();
+    expect(JSON.stringify(discardDraftMock.mock.calls)).not.toContain('old-wall');
+  });
+
+  // Owner only, archived, never published, the archive cap: asking again would
+  // get the same answer, so only the way back is offered.
+  it.each(['resetOwnerOnly', 'archived', 'resetSourceUnpublished', 'archiveLimitReached'])(
+    'offers no Try again for a %s refusal',
+    async (refusal) => {
+      resetWallMock.mockRejectedValueOnce({ refusal });
+      const { getByText, queryByText } = await mountReset();
+      expect(getByText(`lifecycle:${refusal}`)).toBeTruthy();
+      expect(queryByText('sprayWizard.resume.retry')).toBeNull();
+      expect(getByText('sprayWizard.back')).toBeTruthy();
+    },
+  );
+
+  it('sends one reset for two fast taps on Try again', async () => {
+    resetWallMock.mockRejectedValueOnce(new Error('offline'));
+    const { getByText } = await mountReset();
+    let answer: (clone: typeof CLONE) => void = () => {};
+    resetWallMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
+    const retry = getByText('sprayWizard.resume.retry');
+    await act(async () => {
+      retry.click();
+      retry.click();
+    });
+    expect(resetWallMock).toHaveBeenCalledTimes(2);
+    await act(async () => answer(CLONE));
+    expect(getByText('sprayWizard.reset.photoTitle')).toBeTruthy();
+  });
+
+  // The screen went before the server answered: no prompt over whatever the
+  // climber moved on to.
+  it('raises no prompt when the screen is gone before the reset answers', async () => {
+    let answer: (clone: typeof CLONE) => void = () => {};
+    resetWallMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    fetchVersionsMock.mockResolvedValue(CLONE_WITH_PHOTO);
+    const view = await mountReset();
+    view.unmount();
+    await act(async () => answer(CLONE));
+    expect(alertMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('a plain "Add a wall" run and reset clones', () => {
+  // The full wall payload no longer carries the reset fields; the lifecycle
+  // list says which unfinished wall is a reset's clone, and that one is left
+  // to its reset.
+  it('does not offer a reset clone back as a new wall', () => {
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    lifecycleQuery.current = {
+      data: [{ uuid: 'wall-1', layoutId: 7, archivedAt: null, resetOfWallUuid: 'live-wall', board: null }],
+      isFetching: false,
+    };
+    const { queryByTestId } = mountWizard();
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(queryByTestId('identity')).not.toBeNull();
+  });
+
+  it('waits for the lifecycle list before deciding', () => {
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    lifecycleQuery.current = { data: undefined, isFetching: true };
+    mountWizard();
+    expect(alertMock).not.toHaveBeenCalled();
+  });
+
+  // On a backend without the archive fields the list fails, the one-wall read
+  // fails too, and the check behaves as it always did.
+  it('still offers an unfinished wall when the lifecycle list failed', async () => {
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    lifecycleQuery.current = { data: undefined, isFetching: false };
+    resetSourceMock.mockResolvedValueOnce(undefined);
+    mountWizard();
+    await act(async () => {});
+    expect(alertMock).toHaveBeenCalledTimes(1);
+  });
+
+  // A transient list failure must not offer a reset's clone as a new wall: it
+  // would publish through the plain path and never archive the wall it replaces.
+  it('asks about the one wall when the list failed, and leaves a clone alone', async () => {
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    lifecycleQuery.current = { data: undefined, isFetching: false };
+    resetSourceMock.mockResolvedValueOnce('live-wall');
+    const { queryByTestId } = mountWizard();
+    await act(async () => {});
+    expect(resetSourceMock).toHaveBeenCalledWith('wall-1');
+    expect(alertMock).not.toHaveBeenCalled();
+    expect(queryByTestId('identity')).not.toBeNull();
   });
 });

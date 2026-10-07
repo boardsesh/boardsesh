@@ -43,7 +43,7 @@ export type SeedableWall = {
     /** Absent on a payload written before provenance was carried; manual is the honest default. */
     source?: 'MANUAL' | 'AUTO';
     confidence?: number | null;
-    /** The removed hold this one replaced, when a reset review or a put-back linked them. */
+    /** The removed hold this one replaced, when an older reset linked them. */
     movedFromHoldId?: number;
   }[];
 };

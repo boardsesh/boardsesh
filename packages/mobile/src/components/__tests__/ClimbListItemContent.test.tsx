@@ -442,8 +442,8 @@ describe('ClimbListItemContent personal grade', () => {
   });
 });
 
-// SW-13 (#5446): a spray wall reset under a climb. The row has to say so, or the
-// climber taps into a problem whose holds are no longer bolted to the wall.
+// A spray climb that lost a hold is listed like any other, with a badge, so the
+// climber knows before tapping in that a hold it names is gone.
 describe('ClimbListItemContent lost-holds chip', () => {
   beforeEach(() => {
     resolveGrade.mockReturnValue({ label: 'V4', color: '#111111', isBoardsesh: false });
