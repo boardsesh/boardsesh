@@ -4154,6 +4154,7 @@ export type Mutation = {
    * Returns the number of notifications that were marked as read.
    */
   markGroupNotificationsRead: Scalars['Int']['output'];
+  /** Mark a notification as read. */
   markNotificationRead: Scalars['Boolean']['output'];
   /**
    * Fold one or more duplicate gyms into a canonical survivor (admin only). Every
@@ -4229,7 +4230,10 @@ export type Mutation = {
    */
   registerActivityPushToken: Scalars['Boolean']['output'];
   registerController: ControllerRegistration;
-  /** Mark a notification as read. */
+  /**
+   * Register this installation's Expo push token for the signed-in account. The
+   * registration lasts until the credential expires (24 hours at most).
+   */
   registerNotificationDevice: Scalars['Boolean']['output'];
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
@@ -4518,6 +4522,7 @@ export type Mutation = {
    * be used to clear another session's registration.
    */
   unregisterActivityPushToken: Scalars['Boolean']['output'];
+  /** Stop pushes to this installation for the signed-in account. */
   unregisterNotificationDevice: Scalars['Boolean']['output'];
   /** Unsubscribe from new climbs for a board type and layout. */
   unsubscribeNewClimbs: Scalars['Boolean']['output'];

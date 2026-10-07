@@ -109,7 +109,7 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
     await transaction.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`);
     const current = await completionNotification(detectionId, transaction);
     if (!current) return null;
-    await transaction
+    const feedRow = await transaction
       .insert(notifications)
       .values({
         uuid: detectionId,
@@ -119,7 +119,8 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
         entityId: current.notification.entityId,
         createdAt: new Date(current.notification.createdAt),
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ uuid: notifications.uuid });
     const devices = await transaction
       .select()
       .from(notificationDevices)
@@ -153,9 +154,10 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
       // Roll back the feed entry and every delivery together; the completion job retries the atomic enqueue.
       if (!jobId) throw new Error('PUSH_ENQUEUE_FAILED');
     }
-    return current;
+    // A replay (registration catch-up, pg-boss retry) only adds deliveries for
+    // new devices; the feed already holds this entry, so it is not republished.
+    return feedRow.length > 0 ? current : null;
   });
-  // Replays may republish the same UUID; clients deduplicate by UUID.
   if (event) pubsub.publishNotificationEvent(event.recipientId, { notification: event.notification });
 }
 

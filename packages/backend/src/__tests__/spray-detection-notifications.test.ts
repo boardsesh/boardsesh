@@ -27,6 +27,7 @@ import {
 import { notificationDeviceMutations } from '../graphql/resolvers/social/notification-devices';
 import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
 import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
+import { pubsub } from '../pubsub';
 
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().mockResolvedValue(undefined) }));
 const context = (userId: string): ConnectionContext => ({ userId, isAuthenticated: true, connectionId: userId });
@@ -132,8 +133,12 @@ describe('spray import completion notifications', () => {
     };
     expect(await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal, enqueue)).toBe(true);
     expect(jobId).not.toBeNull();
+    const publish = vi.spyOn(pubsub, 'publishNotificationEvent');
     await notifySprayDetectionCompleted(boss, target.detectionId);
     await notifySprayDetectionCompleted(boss, target.detectionId);
+    // The replay finds the feed row already there and does not republish it.
+    expect(publish.mock.calls.filter(([recipientId]) => recipientId === target.ctx.userId)).toHaveLength(1);
+    publish.mockRestore();
     const feed = await socialNotificationQueries.groupedNotifications({}, {}, target.ctx);
     expect(feed.groups).toHaveLength(1);
     expect(feed.groups[0]).toMatchObject({
