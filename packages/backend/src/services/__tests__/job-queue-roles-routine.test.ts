@@ -96,6 +96,11 @@ const FIRST_SYNC_USER = 'psync-rgrant-first';
 const SHARED_BOARD = 'soill';
 const SHARED_CLIMB = 'psync-shared-climb';
 const HEAL_CLIMB = 'psync-heal-climb';
+// A spray climb whose grade is an approved community grade (#5971): its
+// recompute reads climb_community_status and board_difficulty_grades.
+const SPRAY_HEAL_CLIMB = 'psync-heal-spray-climb';
+const SPRAY_PINNED_GRADE = 'psync/V99';
+const SPRAY_PINNED_DIFFICULTY = 99;
 const SETTER = 'psync-rgrant-setter';
 const CATALOG_ID = 990_001;
 const KILTER_PRODUCT = 'Psync Kilter Product';
@@ -461,7 +466,11 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     await removeFixtures(
       database,
       [AURORA_USER, KILTER_USER, DONOR_USER, FOLLOWER_USER, HEAL_USER, FIRST_SYNC_USER],
-      [AURORA_CLIMB, KILTER_CLIMB, HEAL_CLIMB],
+      [AURORA_CLIMB, KILTER_CLIMB, HEAL_CLIMB, SPRAY_HEAL_CLIMB],
+    );
+    await database.execute(sql`DELETE FROM climb_community_status WHERE climb_uuid = ${SPRAY_HEAL_CLIMB}`);
+    await database.execute(
+      sql`DELETE FROM board_difficulty_grades WHERE board_type = 'spray' AND difficulty = ${SPRAY_PINNED_DIFFICULTY}`,
     );
     await database.execute(sql`DELETE FROM background_job_runs WHERE payload->>'userId' = ${FIRST_SYNC_USER}`);
     await database.execute(sql`DELETE FROM notifications WHERE recipient_id = ${FOLLOWER_USER}`);
@@ -602,6 +611,20 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
                                    climbed_at, created_at, updated_at)
       VALUES (gen_random_uuid()::text, ${HEAL_USER}, 'kilter', ${HEAL_CLIMB}, 40, 'send'::tick_status,
               'native'::tick_origin, 1, '2026-01-01 00:00:00', now(), now())`);
+    // A spray climb with an approved community grade, for the self-heal's vote rule.
+    await database.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, frames, is_listed)
+      VALUES (${SPRAY_HEAL_CLIMB}, 'spray', 1, 'setter', 'Heal spray', 'p1r1', false)`);
+    await database.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle, upstream_ascensionist_count, ascensionist_count,
+                                     boardsesh_ascensionist_count, updated_at)
+      VALUES ('spray', ${SPRAY_HEAL_CLIMB}, 40, 0, 0, 0, now() - interval '30 days')`);
+    await database.execute(sql`
+      INSERT INTO board_difficulty_grades (board_type, difficulty, boulder_name, route_name, is_listed)
+      VALUES ('spray', ${SPRAY_PINNED_DIFFICULTY}, ${SPRAY_PINNED_GRADE}, ${SPRAY_PINNED_GRADE}, false)`);
+    await database.execute(sql`
+      INSERT INTO climb_community_status (climb_uuid, board_type, angle, community_grade)
+      VALUES (${SPRAY_HEAL_CLIMB}, 'spray', 40, ${SPRAY_PINNED_GRADE})`);
     if (full) {
       await database.execute(sql`
         INSERT INTO board_products (board_type, id, name, is_listed) VALUES ('kilter', ${CATALOG_ID}, ${KILTER_PRODUCT}, true)`);
@@ -712,7 +735,8 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     //    left pending, and a send whose recompute a deploy dropped.
     await database.execute(sql`
       INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
-      VALUES ('kilter', ${HEAL_CLIMB}, 45, now() - interval '5 minutes')`);
+      VALUES ('kilter', ${HEAL_CLIMB}, 45, now() - interval '5 minutes'),
+             ('spray', ${SPRAY_HEAL_CLIMB}, 40, now() - interval '5 minutes')`);
     await runAs('maintenance-delivery', maintenance, 'climb-stats-self-heal', {});
     expect(
       await count(
@@ -723,6 +747,17 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
       await count(sql`SELECT boardsesh_ascensionist_count::int AS count FROM board_climb_stats
                        WHERE board_type = 'kilter' AND climb_uuid = ${HEAL_CLIMB} AND angle = 40`),
     ).toBe(1);
+    // The spray key took its pinned community grade (#5971): the recompute read
+    // climb_community_status and board_difficulty_grades as the maintenance login.
+    expect(
+      await count(
+        sql`SELECT count(*)::int AS count FROM climb_stats_recompute_pending WHERE climb_uuid = ${SPRAY_HEAL_CLIMB}`,
+      ),
+    ).toBe(0);
+    expect(
+      await count(sql`SELECT display_difficulty::int AS count FROM board_climb_stats
+                       WHERE board_type = 'spray' AND climb_uuid = ${SPRAY_HEAL_CLIMB} AND angle = 40`),
+    ).toBe(SPRAY_PINNED_DIFFICULTY);
 
     // Nothing was refused and swallowed on the way.
     expect(logged.filter((line) => /permission denied|"sqlState":"42501"/i.test(line))).toEqual([]);

@@ -122,13 +122,20 @@ A role with a whole-table grant (`batch` on `board_climbs`, the provider roles)
 needs no grant change for a new column, but its jobs still hit the
 missing-column half of this if they select it before `migrate` has run.
 
+Both recompute roles read `climb_community_status` and `board_difficulty_grades`
+for the spray climbers'-vote grade (#5971, `RECOMPUTE_VOTE_GRADE_GRANTS`). The
+recompute names those tables only in a statement that holds a spray key, so a
+Kilter or Aurora recompute does not need the grant, and a worker that starts
+before `migrate` keeps syncing those boards; only a spray recompute waits for
+the grant.
+
 `interactive-import` and `routine-provider` share the provider sync list
 (`PROVIDER_SYNC_GRANTS`):
 
 | Grant | Tables |
 | --- | --- |
 | SELECT, UPDATE | `aurora_credentials`, `provider_sync_controls` |
-| SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases` |
+| SELECT | `users (id, name)`, `user_profiles (user_id, display_name)`, `user_board_mappings`, `board_climb_aliases`, `climb_community_status (board_type, climb_uuid, angle, community_grade)`, `board_difficulty_grades (board_type, difficulty, boulder_name)` |
 | SELECT, INSERT, UPDATE, DELETE | `boardsesh_ticks`, `logbook_sync_skips`, `board_users`, `board_walls`, `board_climbs`, `board_tags`, `board_circuits`, `board_user_syncs`, `board_climb_stats`, `board_climb_ratings`, `playlists`, `playlist_climbs`, `playlist_ownership`, `climb_stats_recompute_pending` |
 | INSERT | `sync_deletions` (the `boardsesh_ticks` and `playlist*` delete triggers write it as the caller) |
 
@@ -153,7 +160,7 @@ these grants. A table the appliers start writing fails that test first.
 
 | Grant | Tables |
 | --- | --- |
-| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at, climb_revision)`, `board_climbs (uuid, board_type, user_id, holds_revision_number)`, `users (id, name)`, `user_profiles (user_id, display_name)` |
+| SELECT | `boardsesh_ticks (id, user_id, board_type, climb_uuid, angle, status, origin, quality, difficulty, climbed_at, updated_at, kilter_id, kilter_synced_at, kilter_detached_at, climb_revision)`, `board_climbs (uuid, board_type, user_id, holds_revision_number)`, `users (id, name)`, `user_profiles (user_id, display_name)`, `climb_community_status (board_type, climb_uuid, angle, community_grade)`, `board_difficulty_grades (board_type, difficulty, boulder_name)` |
 | SELECT, INSERT, UPDATE | `board_climb_stats` |
 | SELECT, INSERT, UPDATE, DELETE | `climb_stats_recompute_pending` (UPDATE because the drain reads it `FOR UPDATE SKIP LOCKED`; INSERT because every recompute batch first upserts a marker per key to hold its lock) |
 

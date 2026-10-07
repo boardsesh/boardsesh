@@ -5,7 +5,7 @@ import { setSerialPlan } from '../util/serial-plan';
 import { holdsEpochOrFirstSql, tickAliasOnCurrentHoldsSql } from './holds-epoch';
 import { blendedQualityAverageSql } from './quality-blend';
 import { deriveGradeFromTicksSql, ownedGradeIsOursSql } from './real-catalog-data';
-import { climberVoteGradeAppliesSql, climberVoteGradedAtSql, climberVoteGradeSql } from './climber-vote-grade';
+import { climberVoteGradeArms } from './climber-vote-grade';
 
 // Any drizzle-orm PgDatabase (postgres-js client, the script client, the
 // Neon HTTP client the web app uses) and the PgTransaction handle backend
@@ -216,9 +216,8 @@ export async function recomputeClimbStats(
     climbUuid: sql`${climbUuid}::text`,
     angle: sql`${angle}::integer`,
   };
-  const singleKeyVoteBoard = climberVoteGradeAppliesSql(sql`${boardType}::text`);
-  const singleKeyVoteGrade = climberVoteGradeSql(singleKeyVoteKey, 's');
-  const singleKeyVoteGradedAt = climberVoteGradedAtSql(singleKeyVoteKey);
+  // Empty on every other board, so their recompute never names the vote's tables.
+  const singleKeyVote = climberVoteGradeArms([boardType], singleKeyVoteKey, 's');
 
   await db.transaction(async (tx) => {
     // The aggregate UPDATE below hash-joins boardsesh_ticks against
@@ -439,14 +438,14 @@ export async function recomputeClimbStats(
                -- Grade columns (#4798): derive when the climb is ours or the row's
                -- grade is ours to write; otherwise upstream's grade stands.
                difficulty_average = CASE
-                 WHEN ${singleKeyVoteBoard} THEN ${singleKeyVoteGrade}
+                 ${singleKeyVote.grade}
                  WHEN COALESCE((SELECT boardsesh_graded FROM owner), FALSE)
                    OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN agg.avg_difficulty
                  ELSE s.difficulty_average
                END,
                display_difficulty = CASE
-                 WHEN ${singleKeyVoteBoard} THEN ${singleKeyVoteGrade}
+                 ${singleKeyVote.grade}
                  WHEN COALESCE((SELECT boardsesh_graded FROM owner), FALSE)
                    OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN agg.avg_difficulty
@@ -455,7 +454,7 @@ export async function recomputeClimbStats(
                -- Provenance marker: set when a grade was derived, cleared when the
                -- derive yields nothing. UTC wall time, like the upstream stamps.
                tick_graded_at = CASE
-                 WHEN ${singleKeyVoteBoard} THEN ${singleKeyVoteGradedAt}
+                 ${singleKeyVote.gradedAt}
                  WHEN COALESCE((SELECT boardsesh_graded FROM owner), FALSE)
                    OR COALESCE((SELECT derive_from_ticks FROM grade_source), FALSE)
                    THEN (CASE WHEN agg.avg_difficulty IS NULL THEN NULL ELSE (now() AT TIME ZONE 'UTC') END)
@@ -536,12 +535,16 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
 
   // The climbers'-vote grade rule (#5971), per key of the UPDATE below.
   const bulkVoteKey = { boardType: sql`k.board_type`, climbUuid: sql`k.climb_uuid`, angle: sql`k.angle` };
-  const bulkVoteBoard = climberVoteGradeAppliesSql(sql`k.board_type`);
-  const bulkVoteGrade = climberVoteGradeSql(bulkVoteKey, 's');
-  const bulkVoteGradedAt = climberVoteGradedAtSql(bulkVoteKey);
 
   for (let i = 0; i < distinct.length; i += BULK_CHUNK_SIZE) {
     const chunk = distinct.slice(i, i + BULK_CHUNK_SIZE);
+    // Empty unless the chunk holds a climbers'-vote key, so a Kilter or Aurora
+    // chunk never names the vote's tables.
+    const bulkVote = climberVoteGradeArms(
+      chunk.map((key) => key.boardType),
+      bulkVoteKey,
+      's',
+    );
     const payload = JSON.stringify(
       chunk.map((key) => ({ board_type: key.boardType, climb_uuid: key.climbUuid, angle: key.angle })),
     );
@@ -711,15 +714,15 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
              quality_normalized = CASE WHEN owned.boardsesh_owned THEN TRUE              ELSE s.quality_normalized END,
              -- Grade columns (#4798): derive when the climb is ours or the row's
              -- grade is ours to write; otherwise upstream's grade stands.
-             difficulty_average = CASE WHEN ${bulkVoteBoard} THEN ${bulkVoteGrade}
+             difficulty_average = CASE ${bulkVote.grade}
                                        WHEN owned.boardsesh_graded OR ${deriveGradeFromTicksSql('s')}
                                          THEN sd.avg_difficulty ELSE s.difficulty_average END,
-             display_difficulty = CASE WHEN ${bulkVoteBoard} THEN ${bulkVoteGrade}
+             display_difficulty = CASE ${bulkVote.grade}
                                        WHEN owned.boardsesh_graded OR ${deriveGradeFromTicksSql('s')}
                                          THEN sd.avg_difficulty ELSE s.display_difficulty END,
              -- Provenance marker: set when a grade was derived, cleared when the
              -- derive yields nothing. UTC wall time, like the upstream stamps.
-             tick_graded_at     = CASE WHEN ${bulkVoteBoard} THEN ${bulkVoteGradedAt}
+             tick_graded_at     = CASE ${bulkVote.gradedAt}
                                        WHEN owned.boardsesh_graded OR ${deriveGradeFromTicksSql('s')}
                                          THEN (CASE WHEN sd.avg_difficulty IS NULL THEN NULL ELSE (now() AT TIME ZONE 'UTC') END)
                                          ELSE s.tick_graded_at END

@@ -100,3 +100,31 @@ export function climberVoteGradedAtSql(key: StatsKeySql): SQL {
     ELSE (now() AT TIME ZONE 'UTC')
   END`;
 }
+
+/** Is `boardType` a board whose grade is the climbers' vote? */
+export function climberVoteGradeApplies(boardType: string): boolean {
+  return (CLIMBER_VOTE_GRADE_BOARDS as readonly string[]).includes(boardType);
+}
+
+/**
+ * The leading CASE arms the rule adds to the recompute's grade columns, or
+ * empty arms when none of `boardTypes` (the boards of the statement's keys) is
+ * a climbers'-vote board. The arms name `climb_community_status` and
+ * `board_difficulty_grades`, and Postgres checks table privileges when it plans
+ * a statement, not when a CASE arm runs. Leaving them out keeps a Kilter or
+ * Aurora recompute off those tables, so it runs as a worker role that has not
+ * been granted them yet (a worker image can start before the migrator grants;
+ * docs/background-workers.md).
+ */
+export function climberVoteGradeArms(
+  boardTypes: readonly string[],
+  key: StatsKeySql,
+  statsAlias: 's',
+): { grade: SQL; gradedAt: SQL } {
+  if (!boardTypes.some(climberVoteGradeApplies)) return { grade: sql``, gradedAt: sql`` };
+  const applies = climberVoteGradeAppliesSql(key.boardType);
+  return {
+    grade: sql`WHEN ${applies} THEN ${climberVoteGradeSql(key, statsAlias)}`,
+    gradedAt: sql`WHEN ${applies} THEN ${climberVoteGradedAtSql(key)}`,
+  };
+}
