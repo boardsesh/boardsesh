@@ -376,6 +376,18 @@
         "subtitle": "Such dir das Board aus, an dem du kletterst, um seine Boulder zu durchstöbern und sie am Board zu beleuchten.",
         "cta": "Mein Board finden"
       },
+      "noBoardPreview": {
+        "heroEyebrow": "Die meisten Begehungen auf einem {{board}} Board bei {{angle}}°",
+        "heroEyebrow_moonboard": "Die meisten Begehungen auf einem MoonBoard bei {{angle}}°",
+        "heroHint": "Öffnet die Board-Auswahl. Wähl dein Board, um diesen Boulder am Board zu beleuchten.",
+        "boardTypeGroup": "Board-Typ",
+        "rowHint": "Öffnet die Board-Auswahl. Wähl dein Board, um diesen Boulder zu öffnen.",
+        "footer": "Das sind die Top {{shown}}. Finde dein Board, um alle Boulder darauf zu sehen.",
+        "searchTitle": "Boulder passend zu „{{name}}“",
+        "searchEmpty": "Kein Boulder namens „{{name}}“ auf diesem Board.",
+        "loadError": "Diese Boulder konnten nicht geladen werden.",
+        "retry": "Erneut versuchen"
+      },
       "noClimbs": {
         "title": "Keine Boulder gefunden",
         "subtitle": "Pass deine Board-Einstellungen an"

@@ -8,6 +8,12 @@
 // than silently picking a board for them. Exposed through React Query so every
 // reader updates reactively the instant the board switches.
 //
+// A preview is not a board. Climbs shows an account with no boards a read-only
+// list of climbs from a popular setup (`NoBoardClimbsPreview`), and that list
+// searches a config tuple without ever writing here. `null` still means "no
+// board", and every reader that needs one (the play drawer, the queue, BLE,
+// ticks) still sends the climber to the picker.
+//
 // The queryFn returns `UserBoard | null`.
 
 import { useCallback } from 'react';

@@ -29,7 +29,11 @@ vi.mock('../../../boardsesh-grades-preference', () => ({
   }),
 }));
 
-import { keepSameBoardSearchResults, useInfiniteSearchClimbs } from '../use-infinite-search-climbs';
+import {
+  keepSameBoardSearchResults,
+  staleTimeUnlessEmpty,
+  useInfiniteSearchClimbs,
+} from '../use-infinite-search-climbs';
 
 const baseInput: ClimbSearchInput = {
   boardName: 'kilter',
@@ -95,6 +99,85 @@ describe('cold offline downloaded-board search', () => {
       await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
       expect(requestMock).toHaveBeenCalledTimes(2);
       expect(lastInput()).toMatchObject({ page: 1, boardName });
+    } finally {
+      unmount();
+    }
+  });
+});
+
+// With no connection and nothing downloaded the request adapter answers with an
+// empty page, and React Query caches it as a success. Under a long `staleTime`
+// that page outlived the outage: the no-board preview read "No climbs found"
+// for a board full of climbs until the climber tapped "Try again".
+describe('an empty page under a long staleTime', () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const emptyPage: SearchClimbsQueryResponse = { searchClimbs: { climbs: [], hasMore: false } };
+  const fullPage = {
+    searchClimbs: { climbs: [{ uuid: 'climb-1' }], hasMore: false },
+  } as unknown as SearchClimbsQueryResponse;
+
+  beforeEach(() => {
+    featureFlags.values = {};
+    requestMock.mockReset();
+  });
+  afterEach(() => onlineManager.setOnline(true));
+
+  it('is asked for again when the connection returns', async () => {
+    requestMock.mockResolvedValueOnce(emptyPage).mockResolvedValue(fullPage);
+    onlineManager.setOnline(false);
+    const { result, unmount } = renderHook(
+      () => useInfiniteSearchClimbs(baseInput, true, { staleTime: staleTimeUnlessEmpty(HOUR_MS) }),
+      { wrapper: wrapper('offlineFirst') },
+    );
+    try {
+      await waitFor(() => expect(result.current.data?.pages[0].climbs).toEqual([]));
+      expect(requestMock).toHaveBeenCalledTimes(1);
+
+      act(() => onlineManager.setOnline(true));
+
+      await waitFor(() => expect(result.current.data?.pages[0].climbs).toHaveLength(1));
+      expect(requestMock).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('stays cached when the page has climbs on it', async () => {
+    requestMock.mockResolvedValue(fullPage);
+    onlineManager.setOnline(false);
+    const { result, unmount } = renderHook(
+      () => useInfiniteSearchClimbs(baseInput, true, { staleTime: staleTimeUnlessEmpty(HOUR_MS) }),
+      { wrapper: wrapper('offlineFirst') },
+    );
+    try {
+      await waitFor(() => expect(result.current.data?.pages[0].climbs).toHaveLength(1));
+
+      act(() => onlineManager.setOnline(true));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(requestMock).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+    }
+  });
+
+  it('keeps the fixed staleTime behaviour: a plain number does not refetch an empty page', async () => {
+    requestMock.mockResolvedValue(emptyPage);
+    onlineManager.setOnline(false);
+    const { result, unmount } = renderHook(() => useInfiniteSearchClimbs(baseInput, true, { staleTime: HOUR_MS }), {
+      wrapper: wrapper('offlineFirst'),
+    });
+    try {
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      act(() => onlineManager.setOnline(true));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(requestMock).toHaveBeenCalledTimes(1);
     } finally {
       unmount();
     }

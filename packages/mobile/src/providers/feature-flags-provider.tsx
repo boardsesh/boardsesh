@@ -205,6 +205,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Emergency kill switch for the board picker the launch gate opens by itself for a new account (at most 7 days old) with no board (#5654). With it on, the gate logs would_present and opens nothing; Find my board and every other way into the picker keep working. Unresolved reads as enabled, but the gate waits for flags to resolve before it pushes.',
   },
   {
+    key: 'no-board-preview-kill',
+    label: 'Disable the no-board climbs preview',
+    description:
+      'Emergency kill switch for the read-only climbs preview Climbs shows an account with no boards. With it on, everyone with no board bound gets the "Pick your board" placard again; Find my board and the picker keep working, and the exposure event keeps firing. Unresolved reads as enabled, but Climbs waits for flags to resolve before it swaps the placard for the preview.',
+  },
+  {
     key: 'first-connect-cta-kill',
     label: 'Disable the connect step',
     description:
@@ -503,6 +509,17 @@ export function useSendRecoveryGateEnabled(): boolean {
  */
 export function useFirstBoardPickerEnabled(): boolean {
   return useFeatureFlag('first-board-picker-kill') !== true;
+}
+
+/**
+ * Kill switch for the read-only climbs preview on Climbs' no-board state. The
+ * preview ships to every account with no boards and no experiment arm, so this
+ * is the only way to take it back without a release. Unresolved reads as "not
+ * killed"; `NoBoardState` waits for `useFeatureFlagsResolved()` before it swaps
+ * the placard for the preview, so a switch flipped in PostHog lands first.
+ */
+export function useNoBoardPreviewEnabled(): boolean {
+  return useFeatureFlag('no-board-preview-kill') !== true;
 }
 
 /**

@@ -4,6 +4,7 @@ import { normalizeSetIdsForCompare, type UserBoard } from '@boardsesh/shared-sch
 import { track } from '../analytics';
 import type { BoardReturnTo } from './board-return-to';
 import type { BoundBoard } from './use-activate-board';
+import type { NoBoardPickerTrigger } from './first-board-mode';
 
 /**
  * Which screen is measuring.
@@ -29,6 +30,11 @@ type PickerAnalyticsOptions = {
   surface?: PickerSurface;
   /** Opened from Climbs' "Pick your board" empty state (`source=no_board`). */
   fromNoBoard?: boolean;
+  /**
+   * What on Climbs' no-board state opened the picker (`noBoardPickerTrigger`).
+   * Null for every other opening.
+   */
+  trigger?: NoBoardPickerTrigger | null;
 };
 
 /** Measures the picker itself, including same-board reselection. A read failure
@@ -40,6 +46,7 @@ export function useBoardPickerAnalytics({
   fromOnboarding,
   surface = 'picker',
   fromNoBoard = false,
+  trigger = null,
 }: PickerAnalyticsOptions) {
   const opened = useRef(false);
   const trackOpened = surface !== 'gym_finder_from_picker';
@@ -65,8 +72,9 @@ export function useBoardPickerAnalytics({
       returnTo: analyticsReturnTo,
       hadActiveBoard: activeBoard === undefined ? null : activeBoard !== null,
       restoreFailed,
+      trigger,
     });
-  }, [activeBoard, restoreFailed, analyticsReturnTo, source, trackOpened]);
+  }, [activeBoard, restoreFailed, analyticsReturnTo, source, trackOpened, trigger]);
 
   // Supplied as useActivateBoard.onBound: called only after persistence succeeds,
   // with the previous board captured before the write updates the query cache.

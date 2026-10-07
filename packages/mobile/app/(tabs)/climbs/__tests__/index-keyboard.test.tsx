@@ -147,6 +147,7 @@ vi.mock('expo-router', () => ({
   useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
   useFocusEffect: () => {},
+  useIsFocused: () => true,
 }));
 
 // The onboarding reveal banner + its storage pull expo-haptics / expo-secure-store
@@ -215,6 +216,8 @@ vi.mock('../../../../src/providers/climb-search-provider', () => ({
     patchFilters: vi.fn(),
     patchBoardFilters: vi.fn(),
   }),
+  // The no-board state reads the typed name from here.
+  useOptionalClimbSearch: () => mocks.searchState,
 }));
 
 vi.mock('../../../../src/components/ClimbListRow', () => ({
@@ -343,6 +346,16 @@ vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useGrades: () => ({ data: [] }),
   useMyBoards: () => ({ data: undefined }),
+  // Read by the real `NoBoardState` below. With the board list never arriving
+  // it stays on the placard, which is the branch this file exercises.
+  useProfile: () => ({ data: undefined, isPending: false, isFetching: false }),
+  usePopularBoardConfigs: () => ({ data: undefined, isError: false }),
+}));
+// `NoBoardState` runs for real, so binding a board on the mounted screen swaps
+// a child with hooks of its own in and out (BOARDSESH-K1 / BOARDSESH-K2). Its
+// preview list has its own suite and would pull the board thumbnails in here.
+vi.mock('../../../../src/components/no-board/NoBoardClimbsPreview', () => ({
+  NoBoardClimbsPreview: () => null,
 }));
 // Screenshot-only board roster. Real in a capture build; here it would be the
 // screen's only live useQuery, and this test renders without a QueryClientProvider.
@@ -541,7 +554,7 @@ describe('ClimbList with no board bound', () => {
 
     fireEvent.click(await findByRole('button', { name: 'mobile.emptyState.noBoard.cta' }));
 
-    expect(mocks.push).toHaveBeenCalledWith({ pathname: '/boards', params: { source: 'no_board' } });
+    expect(mocks.push).toHaveBeenCalledWith({ pathname: '/boards', params: { source: 'no_board', trigger: 'cta' } });
   });
 });
 

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
 // The kill switches for the launch surfaces #5654 woke up, for the
-// first-board picker the onboarding gate now opens for new accounts, and for
-// the connect-step test. What is
+// first-board picker the onboarding gate now opens for new accounts, for the
+// connect-step test, and for the no-board climbs preview. What is
 // pinned here is their DIRECTION: each surface is shipped behaviour the moment
 // the OTA lands, so an unresolved flag must read as "not killed", and only an
 // explicit `true` in PostHog takes a surface down.
@@ -16,6 +16,7 @@ import {
   useConnectivityBannerEnabled,
   useFirstBoardPickerEnabled,
   useFirstConnectCtaEnabled,
+  useNoBoardPreviewEnabled,
   useQaTesterGateEnabled,
   useSendRecoveryGateEnabled,
 } from '../feature-flags-provider';
@@ -34,6 +35,7 @@ const KILL_SWITCHES = [
   { key: 'send-recovery-gate-kill', useEnabled: useSendRecoveryGateEnabled },
   { key: 'first-board-picker-kill', useEnabled: useFirstBoardPickerEnabled },
   { key: 'first-connect-cta-kill', useEnabled: useFirstConnectCtaEnabled },
+  { key: 'no-board-preview-kill', useEnabled: useNoBoardPreviewEnabled },
 ] as const;
 
 function readEnabled(useEnabled: () => boolean, flags?: Record<string, boolean | string | undefined>): boolean {

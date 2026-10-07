@@ -376,6 +376,18 @@
         "subtitle": "Sélectionne la board où tu grimpes pour parcourir ses blocs et les allumer.",
         "cta": "Trouver ma board"
       },
+      "noBoardPreview": {
+        "heroEyebrow": "Le bloc aux plus de croix sur une board {{board}} à {{angle}}°",
+        "heroEyebrow_moonboard": "Le bloc aux plus de croix sur un MoonBoard à {{angle}}°",
+        "heroHint": "Ouvre le sélecteur de board. Choisis ta board pour allumer ce bloc.",
+        "boardTypeGroup": "Type de board",
+        "rowHint": "Ouvre le sélecteur de board. Choisis ta board pour ouvrir ce bloc.",
+        "footer": "Voilà les {{shown}} premiers. Trouve ta board pour voir tous ses blocs.",
+        "searchTitle": "Blocs correspondant à « {{name}} »",
+        "searchEmpty": "Aucun bloc nommé « {{name}} » sur cette board.",
+        "loadError": "Impossible de charger ces blocs.",
+        "retry": "Réessayer"
+      },
       "noClimbs": {
         "title": "Aucun bloc trouvé",
         "subtitle": "Essayez d'ajuster les paramètres de votre board"

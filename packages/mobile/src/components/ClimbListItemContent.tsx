@@ -620,7 +620,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   );
 });
 
-export { ClimbListItemContent };
+// The subtitle and grade are also drawn on their own by the no-board preview's
+// hero, which shows one climb at board size instead of as a row.
+export { ClimbListItemContent, LiveClimbGrade, LiveClimbSubtitle };
 
 const styles = StyleSheet.create({
   thumbnailContainer: {

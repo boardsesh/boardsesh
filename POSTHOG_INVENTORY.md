@@ -674,6 +674,44 @@ an ordinary pick: no `Onboarding Board Activated`, no reveal banner.
   tip, against Android, using `$screen` views. `Climbs Tab Tip Shown` is the exposure count; the tip
   goes away when they tap back to Climbs or close it, and never shows again on that device.
 
+### No-board climbs preview
+
+An account with no boards at all now gets a read-only list of climbs on Climbs instead of the
+"Pick your board" placard: one page of 30 from the most used setup, a chip per board type the
+popular list carries, and **Find my board** docked above the tab bar. The most sent climb is drawn
+lit on a large board at the top; the other 29 are rows. Tapping the board or a row opens the picker.
+Typing a name in the Climbs search field lists that setup's climbs with the name in place of the
+board (no event of its own). Nothing is bound. Everyone else with no board bound (their own boards exist, they are offline, the kill
+switch `no-board-preview-kill` is on) keeps the placard. No experiment arm: read it before/after.
+
+| Event | Properties | Emit site | Volume |
+| --- | --- | --- | --- |
+| `Climbs No Board State Viewed` | `variant` (`placard` / `preview`), `owned_board_count` (null when the board list could not be read), `account_age_hours` (null when the profile could not), `preview_board_type` (the board type listed first; null on a placard), `fallback_reason` (null on a preview; `kill_switch` / `signed_out` / `offline` / `boards_unknown` / `has_boards` / `no_config` / `search_error` / `no_climbs`) | `NoBoardState.tsx` | Once per variant per mount of Climbs' no-board state, while Climbs is focused |
+| `No Board Preview Climb Tapped` | `board_type`, `row_index` (0-based place among the climbs shown: `0` is the lit board at the top, rows run `1` to `29` under it; a name search has no board, so its rows start at `0`) | `NoBoardState.tsx` | Per tap on the board or a row |
+| `Board Picker Opened` (changed) | adds `trigger` (`cta` = Find my board, `preview_hero` = the lit board at the top of the preview, `preview_row` = a row under it; null outside `source = no_board`) | `use-board-picker-analytics.ts` | Unchanged |
+
+- **Exposure is what they got, not what was planned.** The event waits for the board list, the
+  flags and the profile (or an offline phone), and a preview waits for its first page of climbs. A
+  first search that fails or comes back empty reports `variant = placard` with `search_error` /
+  `no_climbs`. Someone who leaves Climbs before that settles is not counted.
+- **Only while Climbs is on screen.** The no-board state also mounts underneath the launch gate's
+  first-board picker. Nothing is searched or reported there until the picker closes, so a newcomer
+  who binds straight from that picker has no exposure and is not a preview conversion.
+- **Up to two events per mount.** A placard shown for a passing reason (`offline`, `boards_unknown`,
+  `no_config`, `search_error`) is decided again, and the preview that replaces it reports its own
+  exposure. Count preview exposures by `variant = preview`, not by a person's first event.
+  `has_boards` and `kill_switch` are held for the mount.
+- **A later board type that fails stays a preview.** Once climbs have shown, a chip whose search
+  fails or is empty shows that in the list, with **Try again**. No second event.
+- **Bind rate**: of people with `Climbs No Board State Viewed` and `owned_board_count = 0`, the share
+  with `Board Picker Selection Completed`, `Onboarding Board Activated`, `Board Created` or
+  `Board Create Reused Existing` within 7 days. The event did not exist before the preview shipped,
+  so there is no measured "before": the baseline is the proxies on #5654, or a window with the kill
+  switch on.
+- **Climb taps that end nowhere**: `Board Picker Opened` with `trigger = preview_row` or
+  `preview_hero` and no pick after it. A high share means the tap reads as bait and the preview needs a real climb view.
+- MoonBoard gets no chip while the popular list carries only Kilter and Tension setups.
+
 ## Board account linking
 
 Mobile Connected apps emits `Board Account Link Started` on credential submission,
