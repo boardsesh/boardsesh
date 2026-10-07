@@ -408,6 +408,11 @@ export function CreateDrawer({
   const handleDuplicateBannerFootprint = useCallback((height: number) => {
     duplicateBannerFootprintRef.current = height;
   }, []);
+  const nameHintFootprintRef = useRef(0);
+  const handleNameHintFootprint = useCallback((height: number) => {
+    nameHintFootprintRef.current = height;
+  }, []);
+  const nameHintShown = controller.nameMissingHint;
   const confirmBannerShown = controller.pendingNewClimb;
   const duplicateBannerShown = controller.publishDuplicateError != null;
   const scrollToGradeRef = useRef<() => void>(() => {});
@@ -417,7 +422,8 @@ export function CreateDrawer({
     if (!gradeBox || aboveFoldHeight === 0) return;
     const bannersHeight =
       (confirmBannerShown ? confirmBannerFootprintRef.current : 0) +
-      (duplicateBannerShown ? duplicateBannerFootprintRef.current : 0);
+      (duplicateBannerShown ? duplicateBannerFootprintRef.current : 0) +
+      (nameHintShown ? nameHintFootprintRef.current : 0);
     // Content offset of the rail's bottom edge: the scroll padding, the measured
     // above-fold blocks, any banner between them, the below-fold padding, then
     // the rail inside the form.
@@ -516,7 +522,10 @@ export function CreateDrawer({
             />
           ) : null}
 
-          {controller.nameMissingHint ? <NameRequiredHint /> : null}
+          {controller.nameMissingHint ? <NameRequiredHint
+              announceKey={controller.nameMissingTick}
+              onFootprint={handleNameHintFootprint}
+            /> : null}
 
           {controller.publishDuplicateError ? (
             <DuplicateBanner
