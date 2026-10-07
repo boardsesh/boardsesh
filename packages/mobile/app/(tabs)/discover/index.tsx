@@ -48,7 +48,6 @@ import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { iconMap } from '../../../src/components/icon-map';
 import { selectByVariant } from '../../../src/theme/variants';
 import { spacing } from '../../../src/theme/tokens';
-import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
 import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
 import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
 
@@ -113,13 +112,13 @@ export default function DiscoverLibrary() {
   const { brandColors, systemColors, variant } = useTheme();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const bottomChrome = useBottomChromeMetrics();
-  // The screen sits ABOVE the in-flow Material tab bar, so the FAB's `bottom` is
-  // measured from the tab-bar top. It only needs to clear the docked queue accessory
-  // bar (a root overlay that covers the screen's bottom edge when a climb is queued),
-  // plus a 16dp gap. Computed directly rather than via floatingControlBottom /
-  // fixedFooterBottom, which re-add the tab-bar height (built for full-screen overlays)
-  // and floated the FAB ~tab-bar-height too high above the accessory bar.
-  const createFabBottom = (bottomChrome.jsQueueToolbarVisible ? MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT : 0) + spacing[4];
+  // The FAB only renders on Material, where the JS tab bar sits in flow and the
+  // screen ends at the bar's top edge. `fixedFooterBottom` is the offset measured
+  // from exactly there: on the in-flow bar it carries no tab-bar term, only the
+  // docked queue bar while one shows plus the rest-timer pill while it is armed
+  // (see bottom-chrome-metrics). `floatingControlBottom` is for root overlays and
+  // would add the tab bar a second time. 16dp gap on top.
+  const createFabBottom = bottomChrome.fixedFooterBottom + spacing[4];
   const insets = useSafeAreaInsets();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { data: token = null, isLoading: tokenLoading } = useAuthToken();

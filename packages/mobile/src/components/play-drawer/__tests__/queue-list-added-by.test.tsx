@@ -80,8 +80,12 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     ),
 }));
 
+// The local (mount-point) inset, and every bottom inset QueueList hands to
+// withSheetBottomInset, so the window-inset test can see which one it used.
+const insetProbe = vi.hoisted(() => ({ localBottom: 0, sheetInsets: [] as number[] }));
+
 vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaInsets: () => ({ top: 0, bottom: insetProbe.localBottom, left: 0, right: 0 }),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -100,7 +104,12 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 10: 40, 16: 64 },
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({ useSearchClimbs: () => ({ data: undefined }) }));
-vi.mock('../../sheet-content-inset', () => ({ withSheetBottomInset: (style: unknown) => style }));
+vi.mock('../../sheet-content-inset', () => ({
+  withSheetBottomInset: (style: unknown, insetBottom: number) => {
+    insetProbe.sheetInsets.push(insetBottom);
+    return style;
+  },
+}));
 vi.mock('../use-queue-drag', () => ({
   useQueueDrag: () => ({
     isDragging: false,
@@ -145,6 +154,7 @@ vi.mock('../../../providers/party-profile-provider', async () => {
 });
 
 import { QueueList } from '../QueueList';
+import { publishWindowInsetBottom, resetWindowInsetForTests } from '../../../lib/window-inset-store';
 
 const board = { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
 
@@ -305,5 +315,24 @@ describe('QueueList showcase avatar anchor', () => {
     expect(capturedRows.props).toHaveLength(5);
     expect(capturedRows.props.every((props) => !props.showcaseAvatarAnchor)).toBe(true);
     expect(capturedRows.props.slice(2).map((props) => props.showcaseAvatarAnchor)).toEqual([false, false, false]);
+  });
+});
+
+describe('QueueList bottom inset', () => {
+  beforeEach(() => {
+    insetProbe.localBottom = 0;
+    insetProbe.sheetInsets = [];
+    resetWindowInsetForTests();
+  });
+
+  it('pads the list by the WINDOW inset, not the in-tab inset that folds in the tab bar (#3776)', () => {
+    // QueueList only renders inside the native QueueSheet, which covers the tab
+    // bar + accessory folded into a 139pt in-tab inset (DEVICE_VERIFIED iPhone
+    // 17 Pro). The last row must clear only the window's 34.
+    insetProbe.localBottom = 139;
+    act(() => publishWindowInsetBottom(34));
+    renderList();
+
+    expect(insetProbe.sheetInsets.at(-1)).toBe(34);
   });
 });

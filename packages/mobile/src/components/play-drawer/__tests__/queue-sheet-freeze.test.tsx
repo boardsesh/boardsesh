@@ -45,11 +45,19 @@ const managedSheet = vi.hoisted(() => ({
 const queueList = vi.hoisted(() => ({ renders: 0, lastQueue: null as ClimbQueueItem[] | null }));
 
 const platform = vi.hoisted(() => ({ os: 'ios' }));
+// The local (mount-point) inset, and the callbacks the header / list mocks
+// capture so a test can drive edit mode + selection to reveal the bulk bar.
+const safeArea = vi.hoisted(() => ({ bottom: 0 }));
+const sheetCallbacks = vi.hoisted(() => ({
+  toggleEditMode: null as (() => void) | null,
+  toggleSelect: null as ((uuid: string) => void) | null,
+}));
 const gestureRoot = vi.hoisted(() => ({ style: undefined as unknown }));
 
 type ViewProps = { children?: ReactNode; testID?: string; style?: unknown };
 vi.mock('react-native', () => ({
-  View: ({ children, testID }: ViewProps) => createElement('div', { 'data-testid': testID }, children),
+  View: ({ children, testID, style }: ViewProps) =>
+    createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(style) }, children),
   Pressable: ({ children }: ViewProps) => createElement('div', null, children),
   Platform: {
     get OS() {
@@ -90,7 +98,7 @@ vi.mock('../../../providers/sheet-presentation-provider', () => ({
 }));
 
 vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaInsets: () => ({ top: 0, bottom: safeArea.bottom, left: 0, right: 0 }),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -111,21 +119,29 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 3: 12, 4: 16 },
 }));
 
-vi.mock('../QueueSheetHeader', () => ({ QueueSheetHeader: () => null }));
+vi.mock('../QueueSheetHeader', () => ({
+  QueueSheetHeader: ({ onToggleEditMode }: { onToggleEditMode: () => void }) => {
+    sheetCallbacks.toggleEditMode = onToggleEditMode;
+    return null;
+  },
+}));
 vi.mock('../../UndoSnackbar', () => ({ UndoSnackbar: () => null }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('div', null, children) }));
 
 vi.mock('../QueueList', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
   return {
-    QueueList: React.memo(({ queue }: { queue: ClimbQueueItem[] }) => {
-      queueList.renders += 1;
-      queueList.lastQueue = queue;
-      return React.createElement('div', {
-        'data-testid': 'queue-list',
-        'data-uuids': queue.map((item) => item.uuid).join(','),
-      });
-    }),
+    QueueList: React.memo(
+      ({ queue, onToggleSelect }: { queue: ClimbQueueItem[]; onToggleSelect: (uuid: string) => void }) => {
+        sheetCallbacks.toggleSelect = onToggleSelect;
+        queueList.renders += 1;
+        queueList.lastQueue = queue;
+        return React.createElement('div', {
+          'data-testid': 'queue-list',
+          'data-uuids': queue.map((item) => item.uuid).join(','),
+        });
+      },
+    ),
   };
 });
 
@@ -148,6 +164,7 @@ vi.mock('../../../providers/queue-provider', () => ({
 }));
 
 import { QueueSheet, type QueueSheetHandle } from '../QueueSheet';
+import { publishWindowInsetBottom, resetWindowInsetForTests } from '../../../lib/window-inset-store';
 
 function makeQueueItem(uuid: string): ClimbQueueItem {
   return {
@@ -204,6 +221,8 @@ describe('QueueSheet freeze contract', () => {
     managedSheet.dismissAndWait.mockClear();
     queueList.renders = 0;
     queueList.lastQueue = null;
+    safeArea.bottom = 0;
+    resetWindowInsetForTests();
   });
 
   it('hosts Android queue gestures inside the native dialog with a flex root', () => {
@@ -269,5 +288,30 @@ describe('QueueSheet freeze contract', () => {
     if (!handleRef.current) throw new Error('queue sheet handle did not mount');
     await expect(handleRef.current.dismissAndWait()).resolves.toEqual({ status: 'dismissed' });
     expect(managedSheet.dismissAndWait).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('QueueSheet bulk-remove bar', () => {
+  beforeEach(() => {
+    platform.os = 'ios';
+    queueData.current = makeData(['a', 'b']);
+    safeArea.bottom = 0;
+    resetWindowInsetForTests();
+  });
+
+  it('pads by the WINDOW inset, not the in-tab inset that folds in the tab bar (#3776)', () => {
+    // A mount point inside a NativeTabs tab reports 139 (34 + 49 bar + 56
+    // accessory, DEVICE_VERIFIED iPhone 17 Pro); the sheet covers that chrome,
+    // so the bar clears only the window's 34 + spacing[3].
+    safeArea.bottom = 139;
+    act(() => publishWindowInsetBottom(34));
+    const { container } = renderSheet(createRef<QueueSheetHandle>());
+
+    act(() => sheetCallbacks.toggleEditMode?.());
+    act(() => sheetCallbacks.toggleSelect?.('a'));
+
+    const styles = [...container.querySelectorAll('[data-style]')].map((node) => node.getAttribute('data-style') ?? '');
+    const bulkBarStyle = styles.find((style) => style.includes('"paddingBottom"'));
+    expect(bulkBarStyle).toContain('"paddingBottom":46');
   });
 });

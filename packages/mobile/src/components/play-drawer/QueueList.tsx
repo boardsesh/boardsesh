@@ -2,7 +2,6 @@ import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, type FlatList } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import {
@@ -23,6 +22,7 @@ import { usePartyProfile } from '../../providers/party-profile-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { useBoardContinuationFeed } from '../../providers/queue/use-board-continuation-feed';
 import { useQueueDrag } from './use-queue-drag';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 // Synthetic suggestion-source id for tapping a climb from the queue sheet's
 // suggestion feed — distinct from real playlist activations. This is a plain
@@ -86,7 +86,9 @@ function QueueListComponent({
 }: QueueListProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
-  const insets = useSafeAreaInsets();
+  // QueueList only renders inside QueueSheet (a native sheet), so it clears the
+  // WINDOW's bottom inset, never the mount point's (#3776).
+  const windowBottomInset = useWindowBottomInset();
   const flatListRef = useRef<FlatList<QueueListRow> | null>(null);
 
   // Attribution is a session artifact: faces appear while a party session is
@@ -109,11 +111,11 @@ function QueueListComponent({
 
   // Clear the queue toolbar (styles.listContent's spacing[10]) AND the Android
   // edge-to-edge navigation bar, so the last row never sits under the 3-button nav
-  // bar when fully scrolled. withSheetBottomInset adds insets.bottom on top of the
+  // bar when fully scrolled. withSheetBottomInset adds the window inset on top of the
   // toolbar padding (and returns the base unchanged when there's no inset).
   const listContentContainerStyle = useMemo(
-    () => withSheetBottomInset(styles.listContent, insets.bottom),
-    [insets.bottom],
+    () => withSheetBottomInset(styles.listContent, windowBottomInset),
+    [windowBottomInset],
   );
 
   const { flatRows, currentItemFlatIndex } = useMemo(

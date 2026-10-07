@@ -5,7 +5,6 @@ import { View, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { QueueSheetHeader } from './QueueSheetHeader';
@@ -29,6 +28,7 @@ import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 // Long enough to notice and reach for the button; the removal is already live
 // for the crew, so it isn't held open forever.
@@ -78,7 +78,9 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   ref,
 ) {
   const { t } = useTranslation('session');
-  const insets = useSafeAreaInsets();
+  // Native sheet: clear the WINDOW's bottom inset, never the mount point's
+  // (#3776; docs/mobile-sheets-vs-routes.md).
+  const windowBottomInset = useWindowBottomInset();
   const { systemColors, sheet } = useTheme();
   const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -344,7 +346,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
           style={[
             styles.bulkBar,
             {
-              paddingBottom: insets.bottom + spacing[3],
+              paddingBottom: windowBottomInset + spacing[3],
               backgroundColor: systemColors.background,
               borderTopColor: systemColors.separator,
             },

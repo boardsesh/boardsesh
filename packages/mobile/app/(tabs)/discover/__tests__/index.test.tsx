@@ -109,6 +109,12 @@ const createPlaylist = vi.hoisted(() => vi.fn());
 const pinPlaylist = vi.hoisted(() => vi.fn());
 const unpinPlaylist = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
+// Theme variant + bottom-chrome metrics, so the Material create FAB's offset can
+// be asserted. Defaults keep every other test on the variant-less glass path.
+const chromeState = vi.hoisted(() => ({
+  variant: undefined as 'material' | 'liquidGlass' | undefined,
+  metrics: { scrollBottomPadding: 0, fixedFooterBottom: 0, floatingControlBottom: 0 },
+}));
 const discoverOptions = vi.hoisted(() => [] as DiscoverOptions[]);
 type UserPlaylistsOptions = { token: string | null; boardType?: string; layoutId?: number };
 const userPlaylistsOptions = vi.hoisted(() => [] as UserPlaylistsOptions[]);
@@ -225,12 +231,21 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { primary: '#6D28D9' },
+    variant: chromeState.variant,
     systemColors: {
       separator: 'theme-separator',
       secondaryLabel: 'theme-secondary-label',
       tertiaryLabel: 'theme-tertiary-label',
     },
   }),
+}));
+vi.mock('react-native-paper', () => ({
+  FAB: ({ style, accessibilityLabel }: { style?: unknown; accessibilityLabel?: string }) =>
+    createElement('div', {
+      'data-create-fab': 'true',
+      'aria-label': accessibilityLabel,
+      'data-style': JSON.stringify(style),
+    }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({
   useAuth: () => authState,
@@ -249,7 +264,7 @@ vi.mock('../../../../src/lib/graphql/use-active-board', () => ({
   useActiveBoard: () => activeBoardState,
 }));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
-  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+  useBottomChromeMetrics: () => chromeState.metrics,
 }));
 vi.mock('../../../../src/lib/smart-playlists', () => ({
   DEFAULT_PINNED_SMART_PLAYLIST_TYPES: ['LIKED_CLIMBS', 'FIVE_STARS'],
@@ -430,6 +445,8 @@ function renderHub() {
 
 beforeEach(() => {
   rootHeaderState.native = false;
+  chromeState.variant = undefined;
+  chromeState.metrics = { scrollBottomPadding: 0, fixedFooterBottom: 0, floatingControlBottom: 0 };
   followedSettersHook.data = [];
   followedSettersHook.isLoading = false;
   followedSettersHook.isError = false;
@@ -1118,5 +1135,41 @@ describe('DiscoverLibrary pull to refresh', () => {
     userHook.isLoading = false;
     rerender(hub());
     expect(spinnerOn(container)).toBe('false');
+  });
+});
+
+describe('DiscoverLibrary Material create FAB', () => {
+  function readFabBottom(container: HTMLElement): number {
+    const style = container.querySelector('[data-create-fab]')?.getAttribute('data-style') ?? '';
+    const match = /"bottom":(-?\d+(?:\.\d+)?)/.exec(style);
+    if (!match) throw new Error(`no bottom in FAB style: ${style}`);
+    return Number(match[1]);
+  }
+
+  it('sits 16dp above the fixed-footer offset, which already carries the queue bar and rest pill', () => {
+    chromeState.variant = 'material';
+    // Material, climb on the wall, rest timer armed: 48dp queue bar + 54dp pill.
+    // floatingControlBottom also carries the 80dp in-flow tab bar plus the inset,
+    // which this screen already sits above, so the FAB must not read it.
+    chromeState.metrics = {
+      scrollBottomPadding: 0,
+      fixedFooterBottom: 48 + 54,
+      floatingControlBottom: 24 + 80 + 48 + 54,
+    };
+    const { container } = renderHub();
+    expect(readFabBottom(container)).toBe(48 + 54 + 16);
+  });
+
+  it('drops to 16dp when nothing is docked', () => {
+    chromeState.variant = 'material';
+    chromeState.metrics = { scrollBottomPadding: 0, fixedFooterBottom: 0, floatingControlBottom: 24 + 80 };
+    const { container } = renderHub();
+    expect(readFabBottom(container)).toBe(16);
+  });
+
+  it('does not render on Liquid Glass, where create lives in the top chrome', () => {
+    chromeState.variant = 'liquidGlass';
+    const { container } = renderHub();
+    expect(container.querySelector('[data-create-fab]')).toBeNull();
   });
 });

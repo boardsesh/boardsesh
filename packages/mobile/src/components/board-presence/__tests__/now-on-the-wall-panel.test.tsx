@@ -300,6 +300,7 @@ vi.mock('../../Button', () => ({
     createElement('button', { onClick: onPress }, title),
 }));
 import { NowOnTheWallPanel } from '../NowOnTheWallPanel';
+import { publishWindowInsetBottom, resetWindowInsetForTests } from '../../../lib/window-inset-store';
 import {
   clearSprayWallRegistry,
   LIVE_SPRAY_WALL_ARCHIVE_STATE,
@@ -387,6 +388,7 @@ describe('NowOnTheWallPanel', () => {
     presence.history = [];
     presence.stats = null;
     safeArea.insets = { top: 0, bottom: 0, left: 0, right: 0 };
+    resetWindowInsetForTests();
     graphql.request.mockReset();
     toast.showToast.mockClear();
     pressableAvatar.mockClear();
@@ -575,6 +577,22 @@ describe('NowOnTheWallPanel', () => {
     rerender(panelElement({ variant: 'column' }));
 
     expect(getByLabelText('mobile.boardPresence.switchBoardAria').getAttribute('data-padding-bottom')).toBe('46');
+  });
+
+  it('pads the sheet footer by the WINDOW inset, not an in-tab inset that folds in the tab bar (#3776)', () => {
+    // Mounted inside a NativeTabs tab, the local inset is 139 (34 home indicator
+    // + 49 bar + 56 accessory, DEVICE_VERIFIED iPhone 17 Pro). The sheet covers
+    // that chrome, so its footer clears only the window's 34 + spacing[3].
+    safeArea.insets = { top: 0, bottom: 139, left: 0, right: 0 };
+    act(() => publishWindowInsetBottom(34));
+    const { getByLabelText, rerender } = render(panelElement({ variant: 'sheet' }));
+
+    expect(getByLabelText('mobile.boardPresence.switchBoardAria').getAttribute('data-padding-bottom')).toBe('46');
+
+    // The inline column is not a sheet: it keeps the inset of the surface it sits in.
+    rerender(panelElement({ variant: 'column' }));
+
+    expect(getByLabelText('mobile.boardPresence.switchBoardAria').getAttribute('data-padding-bottom')).toBe('151');
   });
 
   // The point of this event is to be provable evidence that the tap reached JS.
