@@ -795,11 +795,29 @@ export const socialBoardQueries = {
    * This follows the same anonymous-only mask as `board(boardUuid)`: direct
    * private-board links keep working for signed-in climbers, while anonymous
    * requests cannot disclose a private board through the shared web cache.
+   *
+   * `wallUuid` is a spray wall's share link (`/b/{slug}/...?wall=<uuid>`). The
+   * slug alone is a guess, so it never opens an unlisted wall; the uuid is the
+   * capability `sprayWall(uuid)` and `board(boardUuid)` already honour. It counts
+   * only when it is the uuid of the row the slug resolved to. Without that
+   * pairing, one leaked uuid would open every wall behind any slug. Then the wall
+   * takes the `'capability'` rule, exactly as `board(boardUuid)` would: unlisted
+   * and not hidden opens for anyone, private stays with its owner and gym. A
+   * wrong uuid is ignored rather than refused, so the answer is the same as a
+   * request without one and says nothing about which slugs are unlisted walls.
    */
-  boardBySlug: async (_: unknown, { slug }: { slug: string }, ctx: ConnectionContext) => {
+  boardBySlug: async (
+    _: unknown,
+    { slug, wallUuid }: { slug: string; wallUuid?: string | null },
+    ctx: ConnectionContext,
+  ) => {
     const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
     const canonical = await resolveBoardBySlug(slug);
     if (!canonical) return null;
+    if (isSprayBoardType(canonical.boardType) && typeof wallUuid === 'string' && wallUuid === canonical.uuid) {
+      if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
+      return enrichBoard(canonical, viewerId);
+    }
     // Same anonymous mask as the active path and `board(boardUuid)`: following a
     // tombstone must not disclose a private survivor to an anonymous caller.
     if (!viewerId && !isRowAnonReadable(canonical)) return null;
@@ -2190,6 +2208,7 @@ export const socialBoardMutations = {
         // row to C2, producing an unchecked S+C2 duplicate.
         const [lockedBoard] = rowsFromResult<{
           serialNumber: string | null;
+          ownerId: string;
           boardType: string;
           layoutId: number | string;
           sizeId: number | string;
@@ -2198,6 +2217,7 @@ export const socialBoardMutations = {
         }>(
           await tx.execute(sql`
             SELECT serial_number AS "serialNumber",
+                   owner_id AS "ownerId",
                    board_type AS "boardType",
                    layout_id AS "layoutId",
                    size_id AS "sizeId",
@@ -2209,6 +2229,14 @@ export const socialBoardMutations = {
           `),
         );
         if (!lockedBoard) {
+          throw new Error('Board not found');
+        }
+        // A staged edit must not restore or repopulate an account-deletion
+        // tombstone after its owner has been detached.
+        if (
+          lockedBoard.boardType === 'spray' &&
+          (lockedBoard.ownerId !== board.ownerId || (lockedBoard.deletedAt === null) !== (board.deletedAt === null))
+        ) {
           throw new Error('Board not found');
         }
 

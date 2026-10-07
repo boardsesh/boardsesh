@@ -30,6 +30,12 @@ type ClimbHandoffCtaProps = {
   angle: number;
   climbUuid?: string;
   locale: string;
+  /**
+   * What sits under the hand-off, in the same block: the store button for a
+   * reader who has no app to open yet. Rendered by the server page, so this
+   * component stays unaware of stores and its own event stays what it was.
+   */
+  children?: React.ReactNode;
 };
 
 const wrapperSx = {
@@ -43,7 +49,7 @@ const wrapperSx = {
 const helperSx = { color: 'var(--neutral-400)' };
 
 /**
- * The one action on the front door: open this exact route in the app.
+ * The primary action on the front door: open this exact route in the app.
  *
  * It is a real `<a href>` rendered on the server, so it is crawlable and it
  * works with JavaScript off; the click handler only adds telemetry. The href
@@ -63,6 +69,7 @@ export default function ClimbHandoffCta({
   angle,
   climbUuid,
   locale,
+  children,
 }: ClimbHandoffCtaProps) {
   const href = buildAppHandoffUrl(pathname);
 
@@ -127,6 +134,7 @@ export default function ClimbHandoffCta({
           {helperText}
         </Typography>
       ) : null}
+      {children}
     </Box>
   );
 }

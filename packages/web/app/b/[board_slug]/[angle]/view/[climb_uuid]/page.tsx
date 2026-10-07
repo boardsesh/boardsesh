@@ -14,6 +14,7 @@ import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { selectCanonicalClimbAngle } from '@/app/lib/seo/canonical-climb-angle';
 import { buildOgClimbCardIdentity } from '@/app/lib/seo/og-climb-identity';
+import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 import SprayViewPage, { buildSprayViewMetadata } from './spray-view';
 
 /**
@@ -29,14 +30,18 @@ type BoardSlugViewRouteParams = { board_slug: string; angle: string; climb_uuid:
 
 type BoardSlugViewPageProps = {
   params: Promise<BoardSlugViewRouteParams>;
+  // Only `?wall=`, a spray wall's share-link capability, is read here. See
+  // `./spray-view` for what it opens.
+  searchParams: Promise<{ [WALL_CAPABILITY_PARAM]?: string | string[] }>;
 };
 
 export async function generateMetadata(props: BoardSlugViewPageProps): Promise<Metadata> {
-  const params = await props.params;
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
   const { t, locale } = await getServerTranslation('climbs');
+  const wallParam = searchParams[WALL_CAPABILITY_PARAM];
 
   try {
-    const board = await resolveBoardBySlug(params.board_slug);
+    const board = await resolveBoardBySlug(params.board_slug, readWallCapability(wallParam));
     if (!board) {
       return createBoardContentPageMetadata({
         title: t('metadata.view.fallbackTitle'),
@@ -62,6 +67,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
         board,
         parsedParams,
         boardSlugParam: params.board_slug,
+        wallParam,
       });
     }
 
@@ -144,9 +150,12 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
 }
 
 export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
-  const params = await props.params;
+  const [params, searchParams] = await Promise.all([props.params, props.searchParams]);
+  const wallParam = searchParams[WALL_CAPABILITY_PARAM];
 
-  const board = await resolveBoardBySlug(params.board_slug);
+  // The capability has to reach the backend: without it an anonymous caller gets
+  // no row at all for an unlisted wall, because a slug alone is a guess.
+  const board = await resolveBoardBySlug(params.board_slug, readWallCapability(wallParam));
   if (!board) {
     return notFound();
   }
@@ -160,7 +169,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
     // failed read from being reported as a 404 on an indexed URL, and the spray
     // branch already makes the same split itself — `notFound()` for a wall
     // nobody may see or a climb that is not there, a throw for anything else.
-    return <SprayViewPage board={board} parsedParams={parsedParams} />;
+    return <SprayViewPage board={board} parsedParams={parsedParams} wallParam={wallParam} />;
   }
 
   try {

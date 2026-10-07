@@ -7,9 +7,10 @@ import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
-const { uploadedObjects, isS3ConfiguredMock } = vi.hoisted(() => ({
+const { uploadedObjects, isS3ConfiguredMock, uploadRace } = vi.hoisted(() => ({
   uploadedObjects: [] as Array<{ bucket: string; key: string; body: Buffer; contentType: string; options: unknown }>,
   isS3ConfiguredMock: vi.fn(() => true),
+  uploadRace: { onUpload: null as (() => Promise<void>) | null, failDelete: false },
 }));
 
 vi.mock('../middleware/auth', () => ({
@@ -23,7 +24,13 @@ vi.mock('../storage/s3', () => ({
   isS3Configured: isS3ConfiguredMock,
   uploadToS3: vi.fn(async (bucket: string, body: Buffer, key: string, contentType: string, options: unknown = {}) => {
     uploadedObjects.push({ bucket, key, body, contentType, options });
+    if (!key.includes('@') && uploadRace.onUpload) await uploadRace.onUpload();
     return { key };
+  }),
+  deleteFromS3: vi.fn(async (_bucket: string, key: string) => {
+    if (uploadRace.failDelete) throw new Error('synthetic erase failure');
+    const index = uploadedObjects.findIndex((object) => object.key === key);
+    if (index >= 0) uploadedObjects.splice(index, 1);
   }),
 }));
 
@@ -31,6 +38,7 @@ const { db } = await import('../db/client');
 const {
   handleSprayWallPhotoUpload,
   resetSprayWallPhotoRateLimit,
+  sprayWallFullPhotoKey,
   sprayWallPhotoKey,
   SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES,
 } = await import('../handlers/spray-wall-photos');
@@ -86,6 +94,21 @@ async function exifTaggedJpeg(): Promise<Buffer> {
     .toBuffer();
 }
 
+/**
+ * A landscape 5000x2500 JPEG tagged orientation 6, so the stored photo is a
+ * 2500x5000 portrait — larger than both caps, and transposed, so a size read
+ * before the rotate would show up in every dimension asserted below.
+ */
+async function largeExifTaggedJpeg(): Promise<Buffer> {
+  return sharp({ create: { width: 5000, height: 2500, channels: 3, background: '#4488cc' } })
+    .withMetadata({
+      orientation: 6,
+      exif: { IFD0: { ImageDescription: EXIF_MARKER, Copyright: EXIF_MARKER } },
+    })
+    .jpeg()
+    .toBuffer();
+}
+
 async function plainPng(width = 40, height = 30): Promise<Buffer> {
   return sharp({ create: { width, height, channels: 3, background: '#112233' } })
     .png()
@@ -121,7 +144,14 @@ function closeServer(server: Server): Promise<void> {
 
 function uploadPhoto(
   baseUrl: string,
-  opts: { token?: string; wallUuid?: string; bytes?: Buffer; mimeType?: string; fileName?: string },
+  opts: {
+    token?: string;
+    wallUuid?: string;
+    bytes?: Buffer;
+    mimeType?: string;
+    fileName?: string;
+    signal?: AbortSignal;
+  },
 ): Promise<Response> {
   const formData = new FormData();
   if (opts.wallUuid !== undefined) formData.set('wallUuid', opts.wallUuid);
@@ -135,6 +165,7 @@ function uploadPhoto(
     method: 'POST',
     headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : {},
     body: formData,
+    signal: opts.signal,
   });
 }
 
@@ -154,6 +185,8 @@ afterEach(async () => {
 });
 
 beforeEach(async () => {
+  uploadRace.onUpload = null;
+  uploadRace.failDelete = false;
   await db.execute(sql`TRUNCATE TABLE "spray_walls", "user_boards" RESTART IDENTITY CASCADE`);
   await Promise.all(ALL_USERS.map(insertUser));
   uploadedObjects.length = 0;
@@ -267,6 +300,103 @@ describe('POST /api/spray-wall-photos', () => {
     expect(uploadedObjects.some((object) => object.key === `spray-walls/${wallUuid}/${photoId}.jpg`)).toBe(true);
   });
 
+  it('erases a photo and variant when the wall is deleted during upload', async () => {
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(404);
+    expect(uploadedObjects).toEqual([]);
+  });
+
+  it('restores a durable purge retry when withdrawn upload cleanup fails', async () => {
+    uploadRace.failDelete = true;
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(404);
+    const [wall] = (await db.execute(
+      sql`SELECT photos_purged_at FROM spray_walls WHERE board_uuid = ${wallUuid}`,
+    )) as unknown as Array<{ photos_purged_at: Date | null }>;
+    expect(wall.photos_purged_at).toBeNull();
+    expect(uploadedObjects).toHaveLength(2);
+  });
+
+  it.each([false, true])(
+    'cleans up a late upload if its ownership recheck throws (erase fails: %s)',
+    async (failDelete) => {
+      uploadRace.failDelete = failDelete;
+      uploadRace.onUpload = async () => {
+        await db.execute(
+          sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+        );
+        vi.spyOn(db, 'select').mockImplementationOnce(() => {
+          throw new Error('synthetic final ownership lookup failure');
+        });
+      };
+      const response = await uploadPhoto(baseUrl, {
+        token: OWNER,
+        wallUuid,
+        bytes: await plainPng(),
+        mimeType: 'image/png',
+      });
+      expect(response.status).toBe(500);
+      expect(uploadedObjects).toHaveLength(failDelete ? 2 : 0);
+      if (failDelete) {
+        const rows = await db.execute(sql`SELECT photos_purged_at FROM spray_walls WHERE board_uuid = ${wallUuid}`);
+        expect(Array.from(rows)[0].photos_purged_at).toBeNull();
+      }
+      vi.restoreAllMocks();
+    },
+  );
+
+  it.each([false, true])(
+    'preserves the response when erase and retry both fail (lookup throws: %s)',
+    async (lookupThrows) => {
+      uploadRace.failDelete = true;
+      uploadRace.onUpload = async () => {
+        await db.execute(
+          sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+        );
+        if (lookupThrows)
+          vi.spyOn(db, 'select').mockImplementationOnce(() => {
+            throw new Error('synthetic ownership lookup failure');
+          });
+        vi.spyOn(db, 'transaction').mockRejectedValue(new Error('synthetic retry transaction failure'));
+      };
+      try {
+        const response = await uploadPhoto(baseUrl, {
+          token: OWNER,
+          wallUuid,
+          bytes: await plainPng(),
+          mimeType: 'image/png',
+          signal: AbortSignal.timeout(1500),
+        });
+        expect(response.status).toBe(lookupThrows ? 500 : 404);
+        expect(await response.json()).toMatchObject({
+          error: lookupThrows ? 'Failed to save the wall photo' : 'Spray wall not found',
+        });
+      } finally {
+        vi.restoreAllMocks();
+      }
+    },
+  );
+
   it('refuses a stranger and a missing token', async () => {
     const stranger = await uploadPhoto(baseUrl, {
       token: STRANGER,
@@ -336,8 +466,69 @@ describe('POST /api/spray-wall-photos', () => {
     expect(uploadedObjects).toHaveLength(0);
   });
 
-  it('caps the upload at 10MB', () => {
-    expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(10 * 1024 * 1024);
+  it('caps the upload at 15MB', () => {
+    // Raised from 10MB for #5911: the app now sends up to 4096 px, and a busy
+    // 4096 px wall photo at JPEG 0.85 runs to 8MB or so.
+    expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(15 * 1024 * 1024);
+  });
+
+  it('keeps the base at 2048 px and stores a stripped full copy of a larger photo', async () => {
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: await largeExifTaggedJpeg() });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { photoId: string; width: number; height: number };
+
+    // The response and the base metadata carry the BASE size: that is what the
+    // canonical frame, the detector and the climb view read, unchanged by #5911.
+    expect(body).toMatchObject({ width: 1024, height: 2048 });
+    const baseKey = sprayWallPhotoKey(wallUuid, body.photoId);
+    const base = uploadedObjects.find((object) => object.key === baseKey);
+    expect((base!.options as { metadata?: Record<string, string> }).metadata).toEqual({
+      width: '1024',
+      height: '2048',
+    });
+    expect(await sharp(base!.body).metadata()).toMatchObject({ width: 1024, height: 2048 });
+
+    // The full copy: same orientation, capped at 4096 on its long side, and as
+    // stripped as the base — it is the SHARPER picture of somebody's home.
+    const fullKey = sprayWallFullPhotoKey(baseKey);
+    expect(fullKey).toBe(`spray-walls/${wallUuid}/${body.photoId}-full.jpg`);
+    const full = uploadedObjects.find((object) => object.key === fullKey);
+    expect(full).toBeDefined();
+    const fullMetadata = await sharp(full!.body).metadata();
+    expect(fullMetadata).toMatchObject({ width: 2048, height: 4096, format: 'jpeg' });
+    expect(fullMetadata.exif).toBeUndefined();
+    expect(full!.body.includes(EXIF_MARKER)).toBe(false);
+    expect(full!.bucket).toBe('private');
+    expect(full!.options).toMatchObject({ acl: null, cacheControl: 'private, no-store' });
+
+    // Base last, so a reader that can see the photo can always see its copies.
+    expect(uploadedObjects.map((object) => object.key)).toEqual([`${baseKey}@280.jpg`, fullKey, baseKey]);
+  });
+
+  it('writes no full copy when the photo already fits the base cap', async () => {
+    const response = await uploadPhoto(baseUrl, {
+      token: OWNER,
+      wallUuid,
+      bytes: await plainPng(2048, 1536),
+      mimeType: 'image/png',
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { photoId: string; width: number; height: number };
+
+    expect(body).toMatchObject({ width: 2048, height: 1536 });
+    const baseKey = sprayWallPhotoKey(wallUuid, body.photoId);
+    expect(uploadedObjects.map((object) => object.key)).toEqual([`${baseKey}@280.jpg`, baseKey]);
+  });
+
+  it('erases the full copy too when the wall is deleted during upload', async () => {
+    uploadRace.onUpload = async () => {
+      await db.execute(
+        sql`UPDATE spray_walls SET deleted_at = now(), photos_purged_at = now() WHERE board_uuid = ${wallUuid}`,
+      );
+    };
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: await largeExifTaggedJpeg() });
+    expect(response.status).toBe(404);
+    expect(uploadedObjects).toEqual([]);
   });
 
   it('spends a per-user budget and then answers 429', async () => {

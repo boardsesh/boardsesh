@@ -1,5 +1,6 @@
 import type { SqlExecutor } from '../database';
-import { TABLE_CONFIGS } from './table-config';
+import { refreshRevisionFor } from './table-config';
+import { parseOfflineBoardKey } from '../offline-board-key';
 import { compareCheckpoints, getCheckpoint, getCheckpointKey, setCheckpoint, type SyncCheckpoint } from './checkpoints';
 
 export const SCHEMA_REFRESH_PREFIX = 'schema-refresh:';
@@ -69,7 +70,7 @@ export async function markSchemaRefreshComplete(
   cursor: SyncCheckpoint,
   mode: SchemaRefreshState['mode'] = 'download',
 ): Promise<void> {
-  const revision = TABLE_CONFIGS[tableName].refreshRevision;
+  const revision = refreshRevisionFor(tableName, parseOfflineBoardKey(scopeKey)?.boardType);
   if (!revision) return;
   // Refreshes use a separate cursor so ordinary deltas continue on cellular.
   // Completing a refresh must never regress a checkpoint advanced by those deltas.

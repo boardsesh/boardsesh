@@ -4,6 +4,27 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-06
+
+### App update
+
+A new version shipped to the App Store and Play Store.
+
+### New
+
+- Spray wall owners can show their wall straightened out, or just the holds on a clean background, like an LED board. ([#6178](https://github.com/boardsesh/boardsesh/pull/6178))
+- The hold heatmap moved to the hold filter: pick holds with the heat showing where climbs go ([#6144](https://github.com/boardsesh/boardsesh/pull/6144))
+- Get the app straight from a climb page, a climb list or the gym directory on boardsesh.com ([#6083](https://github.com/boardsesh/boardsesh/pull/6083))
+  iPhone Safari now offers to open the page you're on in the app
+
+### Fixed
+
+- Share your unlisted spray wall and friends without the app can open the link in a browser ([#6165](https://github.com/boardsesh/boardsesh/pull/6165))
+- Data export now says it's unavailable up front instead of offering a button that can't work ([#6138](https://github.com/boardsesh/boardsesh/pull/6138))
+- Spray walls load again on the 2.6.0 beta, and you can create new ones. ([#6142](https://github.com/boardsesh/boardsesh/pull/6142))
+- Delete your account even if you created a spray wall. Your walls and photos go away; other climbers keep their logged sends. ([#6115](https://github.com/boardsesh/boardsesh/pull/6115))
+- Writes to spray walls you can't see are now refused at the server — private walls' climbs no longer accept strangers' proposals, reports, or log ticks, and a draft's or private wall's climb details stop leaking into other people's activity feeds. ([#6118](https://github.com/boardsesh/boardsesh/pull/6118))
+
 ## 2026-10-05
 
 ### App update

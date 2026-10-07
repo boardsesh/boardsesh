@@ -71,6 +71,20 @@ describe('ClimbSearchInputSchema personal rating filters (#2645)', () => {
   });
 });
 
+describe('ClimbSearchInputSchema onlyFavorited (#6077)', () => {
+  it('accepts a boolean, rejects anything else, and stays optional', () => {
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyFavorited: true }).success).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyFavorited: false }).success).toBe(true);
+    expect(ClimbSearchInputSchema.safeParse({ ...base, onlyFavorited: 'true' }).success).toBe(false);
+    expect(ClimbSearchInputSchema.parse(base).onlyFavorited).toBeUndefined();
+  });
+
+  it('survives parsing and reaches the search params', () => {
+    const parsed = ClimbSearchInputSchema.parse({ ...base, onlyFavorited: true });
+    expect(mapSearchInputToParams(parsed).onlyFavorited).toBe(true);
+  });
+});
+
 describe('ClimbSearchInputSchema gradeSource (#5643)', () => {
   it('accepts the two enum values and rejects anything else', () => {
     expect(ClimbSearchInputSchema.safeParse({ ...base, gradeSource: 'UPSTREAM' }).success).toBe(true);

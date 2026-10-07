@@ -5,7 +5,8 @@ import Typography from '@mui/material/Typography';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import SprayBoardArt from '@/app/components/spray-wall/spray-board-art';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { resolveSprayPhotoFrame } from '@/app/lib/spray/spray-climb-view';
+import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
+import { resolveSprayWallDrawing, type SprayWallArtChoice } from '@/app/lib/spray/spray-climb-view';
 import type { SprayWallPageData } from '@/app/lib/spray/spray-wall-render-data.server';
 import { themeTokens } from '@/app/theme/theme-config';
 
@@ -13,6 +14,10 @@ type SprayWallFrontDoorProps = {
   wallData: SprayWallPageData;
   /** The photograph to draw, already chosen by visibility. Null when there is none. */
   photoUrl: string | null;
+  /** The owner's generated look, when the backend has it ready; null draws the photo. */
+  art: SprayWallArtChoice | null;
+  /** The stable path the generated look is served at, or null with no art. */
+  artUrl: string | null;
   angle: number;
 };
 
@@ -34,15 +39,20 @@ const containerSx = {
  * No marks over the photograph: `SprayBoardArt` takes an empty set of them, which
  * is the honest drawing for a page about the wall rather than about one climb.
  */
-export default async function SprayWallFrontDoor({ wallData, photoUrl, angle }: SprayWallFrontDoorProps) {
+export default async function SprayWallFrontDoor({ wallData, photoUrl, art, artUrl, angle }: SprayWallFrontDoorProps) {
   const { t } = await getServerTranslation('climbs');
   const wallName = wallData.wall.name;
 
-  const frame = resolveSprayPhotoFrame({
+  const drawing = resolveSprayWallDrawing({
+    photoUrl,
+    artUrl,
+    art,
     photoWidth: wallData.photo.width,
     photoHeight: wallData.photo.height,
     boardWidth: wallData.boardWidth,
     boardHeight: wallData.boardHeight,
+    homography: wallData.homography,
+    darkFieldColor: BOARD_FIELD_COLORS.dark,
   });
 
   return (
@@ -55,12 +65,13 @@ export default async function SprayWallFrontDoor({ wallData, photoUrl, angle }: 
         {t('spray.wall.summary', { angle, holdCount: wallData.wall.holdCount })}
       </Typography>
 
-      {photoUrl ? (
+      {drawing ? (
         <SprayBoardArt
-          photoUrl={photoUrl}
+          imageUrl={drawing.imageUrl}
+          fieldColor={drawing.fieldColor}
           photoAlt={t('spray.wall.photoAlt', { wallName })}
-          frameWidth={frame.width}
-          frameHeight={frame.height}
+          frameWidth={drawing.frame.width}
+          frameHeight={drawing.frame.height}
           marks={[]}
         />
       ) : (

@@ -120,7 +120,9 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../hooks/use-grade-format', () => ({
   useGradeFormat: () => ({
     formatGrade: (g: string | null | undefined) => g ?? null,
-    formatGradeByDifficultyId: (id: number | null | undefined) => (id != null ? `V${id}` : null),
+    // Tags a non-default board so a test can see which board the row formatted on.
+    formatGradeByDifficultyId: (id: number | null | undefined, boardName?: string | null) =>
+      id != null ? `V${id}${boardName && boardName !== 'kilter' ? ` (${boardName})` : ''}` : null,
   }),
 }));
 vi.mock('../../../hooks/use-display-grade', () => ({
@@ -202,6 +204,11 @@ describe('LogbookRow — grade column', () => {
     // The crowd can't disagree with a grade that was never logged.
     expect(icons).not.toContain('chevron.up');
     expect(icons).not.toContain('chevron.down');
+  });
+
+  it("formats the grade on the ascent's own board, not the board in scope", () => {
+    const { getByText } = renderRow(ascent({ boardType: 'moonboard', difficulty: 16, difficultyName: '6a/V2' }));
+    getByText('V16 (moonboard)');
   });
 
   it('renders the consensus sub-line with a down arrow when you graded softer than the crowd', () => {

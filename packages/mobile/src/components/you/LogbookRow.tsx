@@ -33,7 +33,7 @@ import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
-import { resolveCrowdDifficultyId, GRADE_BY_ID, clampDifficultyId } from '../../lib/boardsesh-grade-display';
+import { resolveCrowdDifficultyId, getBoulderGradeById, clampDifficultyId } from '../../lib/boardsesh-grade-display';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { hapticSelection, hapticMedium, hapticLight, hapticSuccess } from '../../lib/haptics';
 
@@ -178,19 +178,24 @@ export const LogbookRow = memo(function LogbookRow({
   const { showConsensusSecondary, gradeIsConsensus } = deriveLogbookGradeDisplay(ascent.difficulty, crowdDifficulty);
   const rawGradeLabel = ascent.difficultyName ?? ascent.consensusDifficultyName;
   const bigGradeDifficulty = ascent.difficulty ?? crowdDifficulty;
-  const gradeLabel = formatGradeByDifficultyId(bigGradeDifficulty) ?? formatGrade(rawGradeLabel) ?? rawGradeLabel;
+  // Each row formats on its own ascent's board: the logbook mixes boards, and
+  // MoonBoard converts Font to V differently.
+  const gradeLabel =
+    formatGradeByDifficultyId(bigGradeDifficulty, ascent.boardType) ??
+    formatGrade(rawGradeLabel, ascent.boardType) ??
+    rawGradeLabel;
   // Colour the big grade to match the value actually shown: when the row is
   // showing a crowd grade (Boardsesh grade when active), colour it from that
   // grade's own difficulty bucket rather than the legacy consensus name; the
   // climber's own logged-grade colour path is untouched.
   const gradeColorName =
     gradeIsConsensus && crowdDifficulty != null
-      ? (GRADE_BY_ID.get(clampDifficultyId(crowdDifficulty))?.difficulty_name ?? rawGradeLabel)
+      ? (getBoulderGradeById(clampDifficultyId(crowdDifficulty), ascent.boardType)?.difficulty_name ?? rawGradeLabel)
       : rawGradeLabel;
   const gradeColor = gradeColorName ? (getGradeColor(gradeColorName) ?? DEFAULT_GRADE_COLOR) : DEFAULT_GRADE_COLOR;
   const consensusGradeLabel = showConsensusSecondary
-    ? (formatGradeByDifficultyId(crowdDifficulty) ??
-      formatGrade(ascent.consensusDifficultyName) ??
+    ? (formatGradeByDifficultyId(crowdDifficulty, ascent.boardType) ??
+      formatGrade(ascent.consensusDifficultyName, ascent.boardType) ??
       ascent.consensusDifficultyName)
     : null;
   // 'up' = you found it harder than the crowd. Informational, not a warning —

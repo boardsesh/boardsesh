@@ -391,8 +391,9 @@ export const climbQueries = {
       );
     }
 
-    // Drafts require authentication — return empty results if not signed in
-    if (parsedInput.onlyDrafts && !ctx.isAuthenticated) {
+    // Drafts and liked climbs require authentication — return empty results if
+    // not signed in. A signed-out "liked" list is empty, never the full catalogue.
+    if ((parsedInput.onlyDrafts || parsedInput.onlyFavorited) && !ctx.isAuthenticated) {
       return {
         params,
         searchParams,
@@ -806,7 +807,7 @@ export const climbQueries = {
     return rows.map((row) => ({
       ...row,
       // Mirror the REST endpoint: round display difficulty to a grade id and label it.
-      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty)),
+      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
       syncSeq: row.syncSeq,
     }));
   },
@@ -864,7 +865,7 @@ export const climbQueries = {
 
     return rows.map((row) => ({
       ...row,
-      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty)),
+      difficulty: row.displayDifficulty == null ? null : getGradeLabel(Math.round(row.displayDifficulty), boardName),
       syncSeq: row.syncSeq,
     }));
   },

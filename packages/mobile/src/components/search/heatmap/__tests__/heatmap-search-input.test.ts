@@ -4,7 +4,8 @@ import { DEFAULT_FILTERS } from '../../../../lib/climb-filter-types';
 import {
   heatmapSearchInput,
   isHeatmapSearchFiltered,
-  localHeatmapInput,
+  parseHeatmapSearch,
+  withoutHoldPicks,
   type HeatmapSearch,
 } from '../heatmap-search-input';
 
@@ -55,25 +56,41 @@ describe('isHeatmapSearchFiltered', () => {
   });
 });
 
-describe('localHeatmapInput', () => {
-  const base = heatmapSearchInput(board, null);
-
-  it('passes a search the phone can run straight through', () => {
-    expect(localHeatmapInput(base)).toEqual({ input: base, holdPicksSkipped: false, unsupported: false });
+describe('withoutHoldPicks', () => {
+  it('drops the hold picks and keeps every other filter', () => {
+    const picked = search({
+      searchText: 'crimp',
+      boardFilters: { onlyBenchmarks: true, holdsFilter: { hold_7: { STARTING: 'include' as const } } },
+    });
+    const result = withoutHoldPicks(picked);
+    expect(result.boardFilters).toEqual({ onlyBenchmarks: true });
+    expect(result.searchText).toBe('crimp');
+    expect(heatmapSearchInput(board, result).holdsFilter).toBeUndefined();
   });
 
-  it('drops hold-state picks the phone cannot run, keeps the rest, and says so', () => {
-    const withPicks = { ...base, minGrade: 16, holdsFilter: { hold_7: { STARTING: 'include' as const } } };
-    const result = localHeatmapInput(withPicks);
-    expect(result.holdPicksSkipped).toBe(true);
-    expect(result.unsupported).toBe(false);
-    expect(result.input.holdsFilter).toBeUndefined();
-    expect(result.input.minGrade).toBe(16);
+  it('leaves a holds-only search unfiltered, so the heat covers the whole board', () => {
+    const holdsOnly = search({ boardFilters: { holdsFilter: { hold_7: { ANY: 'include' as const } } } });
+    expect(isHeatmapSearchFiltered(holdsOnly)).toBe(true);
+    expect(isHeatmapSearchFiltered(withoutHoldPicks(holdsOnly))).toBe(false);
+  });
+});
+
+describe('parseHeatmapSearch', () => {
+  it('reads back the draft the filter sheet serialises', () => {
+    const draft = search({ searchText: 'crimp', boardFilters: { onlyBenchmarks: true } });
+    expect(parseHeatmapSearch(JSON.stringify(draft))).toEqual(draft);
   });
 
-  it('still refuses a filter it cannot run even without the picks', () => {
-    const result = localHeatmapInput({ ...base, onlyDrafts: true });
-    expect(result.unsupported).toBe(true);
-    expect(result.holdPicksSkipped).toBe(false);
+  it.each([
+    ['no param (a deep link)', undefined],
+    ['an empty string', ''],
+    ['malformed JSON', '{"filters":'],
+    ['an array', '[]'],
+    ['null', 'null'],
+    ['missing filters', JSON.stringify({ boardFilters: {}, searchText: '' })],
+    ['array boardFilters', JSON.stringify({ filters: {}, boardFilters: [], searchText: '' })],
+    ['a non-string searchText', JSON.stringify({ filters: {}, boardFilters: {}, searchText: 4 })],
+  ])('reads %s as the whole board', (_label, serialized) => {
+    expect(parseHeatmapSearch(serialized)).toBeNull();
   });
 });

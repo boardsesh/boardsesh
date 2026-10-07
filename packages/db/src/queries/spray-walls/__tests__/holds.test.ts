@@ -73,6 +73,17 @@ void describe('recomputeMissingHoldCounts', () => {
     assert.match(db.queries[0], /missing_hold_count IS DISTINCT FROM/);
   });
 
+  void it('re-derives the full-reset retired flag in the same pass, NULL-safe (#6024)', async () => {
+    const db = makeDb();
+    await recomputeMissingHoldCounts(db.handle, 12);
+    const statement = db.queries[0];
+    assert.match(statement, /retired_by_reset = m\.retired_by_reset/);
+    assert.match(statement, /rv\.is_full_reset/);
+    // NULL (never computed) and false are the same answer, so the first pass
+    // after the column ships does not rewrite every climb on the wall.
+    assert.match(statement, /COALESCE\(board_climbs\.retired_by_reset, false\) IS DISTINCT FROM m\.retired_by_reset/);
+  });
+
   void it('reports how many climbs changed', async () => {
     const handle = {
       execute: () => Promise.resolve([{ uuid: 'a' }, { uuid: 'b' }]),

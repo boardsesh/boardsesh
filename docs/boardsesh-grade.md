@@ -131,6 +131,14 @@ Touchstone: fractional, and it moves as ascents accumulate.
   (§3, "MoonBoard's angle transpose") and get a real `confirmed`/`provisional`
   grade for a problem graded at both of its real angles (25°/40°) — the case
   neither of MoonBoard's own standalone mechanisms below covers.
+- **MoonBoard has its own Font → V conversion.** Moon labels 6A as V2, where
+  the shared (Aurora) table says 6a/V3, and its scale skips 5b and 5c. The ids
+  stay on the shared scale, so the model, ticks and filters compare across
+  boards unchanged; only the label moves. `MOONBOARD_BOULDER_GRADES` in
+  `@boardsesh/board-constants` and the MoonBoard rows of
+  `board_difficulty_grades` (migration 0257) carry it, and the display helpers
+  (`formatGrade`, `getGradeLabel`, `getDifficultyMapping`) take the board name
+  so MoonBoard 6A+ reads V3, not V3+.
 - **Zero shrinkage upstream.** A one-ascent "grade" is one person's opinion
   surfaced raw. On Kilter, 34% of climb+angle rows have exactly one ascent and
   70% have four or fewer. The ≥20-ascent head is already stable (p90 lifetime

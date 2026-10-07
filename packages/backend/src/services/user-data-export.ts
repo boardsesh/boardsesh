@@ -208,6 +208,15 @@ const unavailableStatus = (payload: UserDataExportJobPayload): UserDataExportSta
   error: UNAVAILABLE_MESSAGE,
 });
 
+/** The job queue, when this process may enqueue an export; `null` otherwise. */
+function producerAvailable() {
+  return enabledBatchFamiliesOrNone().has(USER_DATA_EXPORT_FAMILY) ? getJobQueue() : null;
+}
+
+/** Statuses the app answers with a Prepare or Retry button. */
+const offersNewRun = (status: UserDataExportStatus): boolean =>
+  status.status === 'not_requested' || (status.status === 'failed' && !status.errorCode);
+
 export async function getUserDataExportStatus(
   userId: string,
   boardType: BoardName,
@@ -232,7 +241,10 @@ export async function getUserDataExportStatus(
     // after terminal settlement, while respecting a known invalid archive.
     if (files.length !== expectedFormats(boardType).length && runs[0] && !NON_TERMINAL.has(runs[0].status))
       files = await readFiles(payload);
-    return exportStatus(payload, files, runs);
+    const status = exportStatus(payload, files, runs);
+    // Never offer a Prepare or Retry button the request path would refuse.
+    if (offersNewRun(status) && !producerAvailable()) return { ...unavailableStatus(payload), files: status.files };
+    return status;
   } catch (error) {
     logger.error('[User Data Export] Status unavailable', error);
     return unavailableStatus(payload);
@@ -259,8 +271,7 @@ export async function requestUserDataExport(userId: string, boardType: BoardName
         });
       return cached;
     }
-    if (!enabledBatchFamiliesOrNone().has(USER_DATA_EXPORT_FAMILY)) return { ...unavailableStatus(payload), files };
-    const boss = getJobQueue();
+    const boss = producerAvailable();
     if (!boss) return { ...unavailableStatus(payload), files };
     const requested = await db.transaction(async (transaction) => {
       const [user] = await transaction.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');

@@ -54,12 +54,14 @@ const ANNOUNCE_DEBOUNCE_MS = 600;
 type WallStatusCapsuleProps = {
   /** The wall's lit climb (already resolved as distinct from the queue head). */
   climb: BoardPresenceClimb;
+  /** The board in scope, so the grade reads on its scale. The wall payload names no board. */
+  boardName?: string | null;
 };
 
 // memo'd so a ClimbTopChrome re-render (filter/board/search change) doesn't rebuild
 // the capsule's hooks while the wall climb is unchanged — the `climb` prop is the
 // stable BoardPresenceClimb from useWallClimbIfDistinct (changes only on a wall event).
-function WallStatusCapsuleImpl({ climb }: WallStatusCapsuleProps) {
+function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const { t } = useTranslation('session');
   const { variant, colorScheme, systemColors, brandColors, m3, m3SurfaceContainers } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -70,7 +72,7 @@ function WallStatusCapsuleImpl({ climb }: WallStatusCapsuleProps) {
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
   // back to the legacy label + colour — the capsule swaps to the Boardsesh grade
   // once the backend stamps presence climbs.
-  const resolvedGrade = resolveGrade({ difficulty: climb.grade ?? '' });
+  const resolvedGrade = resolveGrade({ difficulty: climb.grade ?? '' }, boardName);
   const formattedGrade = climb.grade ? resolvedGrade.label : null;
   const gradeColor = resolvedGrade.color;
   const senderName = climb.sentByDisplayName?.trim() || null;

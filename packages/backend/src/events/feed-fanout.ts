@@ -5,6 +5,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { and, eq, or } from 'drizzle-orm';
 import { buildFeedItemMetadata } from './feed-metadata';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
+import { sprayWallMayAnnounceByLayout } from '../graphql/resolvers/shared/spray-wall-announce';
 import { climbStatsJoinConditions, resolvedClimbAngleSql } from '../db/queries/util/climb-stats-join';
 
 export { buildFeedItemMetadata } from './feed-metadata';
@@ -227,6 +228,14 @@ async function getCommentContextMetadata(
     if (!tickContext) return {};
     if (tickContext.climbIsDraft === true || tickContext.climbIsListed === false) return null;
 
+    // #6032: the tick's own board type is authoritative even when the climb row
+    // is gone, and a spray tick whose climb was hard-deleted answers false
+    // inside the helper — no wall, no announce. Same rule `saveClimb` and
+    // `saveTick` apply before they publish.
+    if (tickContext.boardType === 'spray' && !(await sprayWallMayAnnounceByLayout(tickContext.layoutId))) {
+      return null;
+    }
+
     return {
       climbUuid: tickContext.climbUuid,
       boardType: tickContext.boardType,
@@ -273,6 +282,12 @@ async function getCommentContextMetadata(
 
     if (!climbContext) return {};
     if (climbContext.isDraft === true || climbContext.isListed === false) return null;
+
+    // #6032, same rule as the tick branch: the wall can flip private between the
+    // comment being written (which did check visibility) and this fan-out.
+    if (climbContext.boardType === 'spray' && !(await sprayWallMayAnnounceByLayout(climbContext.layoutId))) {
+      return null;
+    }
 
     return {
       climbName: climbContext.climbName,
@@ -323,7 +338,7 @@ async function buildCommentMetadata(event: SocialEvent): Promise<Record<string, 
   };
 }
 
-async function getProposalContextMetadata(proposalUuid: string): Promise<Record<string, unknown>> {
+async function getProposalContextMetadata(proposalUuid: string): Promise<Record<string, unknown> | null> {
   const [proposalContext] = await db
     .select({
       proposalType: dbSchema.climbProposals.type,
@@ -336,6 +351,11 @@ async function getProposalContextMetadata(proposalUuid: string): Promise<Record<
       setterUsername: dbSchema.boardClimbs.setterUsername,
       description: dbSchema.boardClimbs.description,
       characteristics: dbSchema.boardClimbs.characteristics,
+      // LEFT JOIN → null when the climb row is gone. `climbExists` is what
+      // tells "joined, and the climb is a draft" from "no climb row to judge".
+      climbExists: dbSchema.boardClimbs.uuid,
+      isDraft: dbSchema.boardClimbs.isDraft,
+      isListed: dbSchema.boardClimbs.isListed,
     })
     .from(dbSchema.climbProposals)
     .leftJoin(
@@ -349,6 +369,21 @@ async function getProposalContextMetadata(proposalUuid: string): Promise<Record<
     .limit(1);
 
   if (!proposalContext) return {};
+
+  // #6032: a proposal on a draft, or on the climb of a wall that may not
+  // announce, must not fan its climb name / frames / layout id into the feed
+  // table of people who cannot see the wall. The read side already hides these
+  // rows (#5981/#6034 + `activityFeed`'s visibility fold), but the row is still
+  // WRITTEN with the private data in its metadata. Same convention as the tick
+  // and climb branches of `getCommentContextMetadata`: null means skip.
+  if (proposalContext.climbExists && (proposalContext.isDraft === true || proposalContext.isListed === false)) {
+    return null;
+  }
+  // A missing climb row answers false inside the helper (no wall, nothing to
+  // announce), so a spray proposal on a hard-deleted climb skips fan-out too.
+  if (proposalContext.boardType === 'spray' && !(await sprayWallMayAnnounceByLayout(proposalContext.layoutId))) {
+    return null;
+  }
 
   return {
     proposalType: proposalContext.proposalType,
@@ -367,11 +402,14 @@ async function getProposalContextMetadata(proposalUuid: string): Promise<Record<
   };
 }
 
-async function buildProposalApprovedMetadata(event: SocialEvent): Promise<Record<string, unknown>> {
+async function buildProposalApprovedMetadata(event: SocialEvent): Promise<Record<string, unknown> | null> {
   const [actorMetadata, proposalMetadata] = await Promise.all([
     getActorMetadata(event.actorId),
     getProposalContextMetadata(event.entityId),
   ]);
+  // #6032: the proposal's climb may not be fanned out (draft, or a spray wall
+  // that may not announce). Null from the metadata builder means "write nothing".
+  if (proposalMetadata === null) return null;
 
   return {
     ...buildFeedItemMetadata(event),
@@ -470,6 +508,7 @@ export async function fanoutProposalApprovedFeedItems(event: SocialEvent): Promi
   if (recipientIds.length === 0) return;
 
   const metadata = await buildProposalApprovedMetadata(event);
+  if (!metadata) return;
 
   const rows = recipientIds.map((recipientId) => ({
     recipientId,

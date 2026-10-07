@@ -207,6 +207,7 @@ function legacyViewMetadata() {
 
 function slugViewMetadata() {
   return slugViewPage.generateMetadata({
+    searchParams: Promise.resolve({}),
     params: Promise.resolve({
       board_slug: 'kilter-original-12x12',
       angle: String(boardConfig.angle),
@@ -232,6 +233,7 @@ function legacyListMetadata(searchParams: Record<string, string> = {}) {
 async function renderSlugViewPage() {
   renderToString(
     await slugViewPage.default({
+      searchParams: Promise.resolve({}),
       params: Promise.resolve({
         board_slug: 'kilter-original-12x12',
         angle: String(boardConfig.angle),

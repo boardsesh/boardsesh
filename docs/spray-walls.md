@@ -137,10 +137,11 @@ that the frame is the photo.
 
 Three consequences worth stating plainly.
 
-- **No image is ever warped.** The matrix is stored on the version; the renderer
-  maps holds through `invert()` at draw time and paints them over the untouched
-  photo. Warping would cost a re-encode per version and lose pixels at the edges
-  for no gain.
+- **The stored photo is never warped.** The matrix is stored on the version;
+  the renderer maps holds through `invert()` at draw time and paints them over
+  the untouched photo. The one warped copy is DERIVED art the owner can choose to
+  show instead (see "Generated wall looks"): made once per version from the
+  photo, never replacing it, and always regenerable.
 - **A version without anchors stores the identity**, which is the honest answer
   for a wall whose photo *is* its frame. Anchors are optional at creation and
   required at the first reset, because that is the first moment two photographs
@@ -713,6 +714,143 @@ previews and the stored bundle cannot disagree.
 - **No wall lock.** No hold, version or publish path reads or writes the column, so
   there is no concurrent writer to order against; the last call wins.
 
+### Generated wall looks
+
+A wall's owner picks what the wall is drawn on, as
+`render_settings.background`:
+
+| Value | In the app | What it is |
+| --- | --- | --- |
+| `photo` (or missing) | Photo | The stored photo, holds mapped through `invert()`. Every wall before this shipped. |
+| `wall-crop` | Wall only | The photo flattened into the canonical frame through the version's corner-pin homography. The room falls outside the pinned quad, so there is nothing to mask. The recommended look once the photo passes the quality gate. |
+| `hold-cutouts` | Holds only | Only the hold pixels, on a transparent background. Clients draw the Aura field colour behind it (`BOARD_FIELD_COLORS`: `#FFFFFF` light, `#181225` dark), so it reads like an LED board. Volumes are not detected as holds, so they drop out; an owner with volumes uses Wall only. |
+
+Both generated looks are drawn in the CANONICAL frame, the frame hold
+coordinates already live in, so a renderer draws holds on them with no
+homography: frame = the art's own size, holds scaled by `art.width /
+boardWidth`. The pixel maths is `@boardsesh/spray-wall-geometry`
+(`clean-art.ts`, `photo-quality.ts`), dependency-free, so the backend job and
+the app agree on the frame, the mask and the gate.
+
+**The quality gate.** A photo taken from a sharp angle has to stretch its far
+side much more than its near side, and the far side comes out smeared.
+`photoQuality` puts one number on that: sample the canonical -> photo map on a
+15 x 15 grid over the middle 90% of the frame, take `|det J|` at each sample,
+and `stretch = sqrt(max / min)`.
+
+| Verdict | Rule | What the client does |
+| --- | --- | --- |
+| `good` | stretch <= 1.7 | Offers both generated looks. |
+| `soft` | 1.7 < stretch <= 2.2 | Offers them, and nudges "retake front-on". |
+| `fail` | stretch > 2.2, no corner pins, or a frame whose short edge is under 1000 px | Offers only the photo. The server refuses a generated background too, so an old or hand-rolled client cannot store one (`SPRAY_WALL_ART_NOT_AVAILABLE`, with the reason). |
+
+The numbers come from a spike over real climbers' wall photos in October 2026:
+a near front-on wall (bottom corners pinned 7-8% in from the sides) scored 1.25 and flattened
+cleanly; a strongly keystoned one (bottom edge pinned at half the width of the
+top) scored 2.87 and its far side was visibly smeared. Both are pinned in
+`photo-quality.test.ts`. Pins tapped on the photo's own corners solve to the
+identity, so the gate reads the version's PINS, not its matrix: a stored
+identity with no pins is "no pins", the same identity from pins is a front-on
+photo.
+
+**Where the art lives.** `spray_wall_versions.art` (jsonb, nullable) holds
+`{ recipe, status, width, height, cropKey, cutoutKey, quality, error }`, with
+status `pending` / `ready` / `failed` / `refused`. The images are in the PRIVATE
+bucket beside the photo, under the same `private, no-store` cache rule:
+
+```
+spray-walls/<wall uuid>/art/<versionId>-r<recipe>-crop.jpg       (+ @280.jpg thumbnail)
+spray-walls/<wall uuid>/art/<versionId>-r<recipe>-cutout.webp    (+ @280.webp thumbnail, alpha kept)
+```
+
+Under the wall's own prefix, so the retention purge and account deletion, which
+delete the whole `spray-walls/<wall uuid>/` prefix, take the art with the photo.
+
+**The recipe lever.** `ART_RECIPE` (now 1) is in every key and on every row.
+Bump it whenever a rendering number changes (dilate 4% of each hold's radius,
+feather sigma 6% of the median radius, 32-point circle for an untraced hold,
+2048 px long edge). A row whose recipe is not the running one reads as `NONE`
+(clients draw the photo). Nothing sweeps every wall on a bump: the job is
+re-queued the next time `sprayWallArt` is read for the PUBLISHED version of a
+wall whose chosen background is generated, or when the owner chooses one again.
+Walls on the photo are left alone. Old objects are never overwritten; the
+re-render deletes them once the new recipe's images are ready.
+
+The recipe is also the only way to WITHDRAW art. A READY row of the running
+recipe is served whatever the live quality gate says, so tightening
+`ART_STRETCH_GOOD_MAX`, `ART_STRETCH_SOFT_MAX` or `ART_MIN_FRAME_SHORT_EDGE`
+later only stops new art from being made (and stops owners choosing a
+generated look). Art already READY stays on show until `ART_RECIPE` is bumped,
+after which the old rows read as `NONE` and a photo that now fails the gate
+reads as `REFUSED`.
+
+**The job.** `spray-wall-art` on the `maintenance-delivery` role
+(`docs/background-workers.md`), keyed `art:<versionId>:<recipe>`. It re-checks the
+gate with the shared function (writing `refused` if it fails), decodes the photo
+with sharp, warps it with `warpBilinear`, draws the hold mask as an SVG (each
+outline filled and stroked round by twice its grow, which dilates it), blurs it,
+joins it as the cutout's alpha, uploads thumbnails before their base images, and
+writes `ready`, then deletes this version's images from any older recipe. The
+mask is bounded whatever radius an owner types: the feather sigma is capped at
+`ART_FEATHER_MAX_SIGMA` (24 art px) and each hold's dilation at
+`ART_DILATE_MAX_PX` (24), because an uncapped sigma of 600 (a 10,000 px hold)
+kept the worker busy for minutes. sharp cannot be interrupted, so the job checks
+its lease between stages. A failure writes `failed` with a bounded code before it rethrows,
+so a retry, or the owner picking the look again, can heal it. That write
+survives a worker shutdown or a lost attempt: it goes through
+`transactionAfterAbort`, the same attempt fence without the abort check, and is
+recorded as `SPRAY_ART_ABORTED`. It does not survive a lease timeout: that abort
+fires exactly when the fence's active-attempt check stops passing, so the fence
+refuses the write. A timeout (now unlikely, with the blur capped), a crash, or an
+abort whose fence another attempt already took writes nothing, so every
+`pending` row carries `requestedAt`; one older than the job's 1 h deadline reads
+as `FAILED` and is re-queued.
+
+Who queues it:
+
+- **`publishDraftUnderLock`**, inside the publish transaction (a savepoint, so a
+  queue failure never fails the publish), for every new generation whatever the
+  background, so the owner's picker has art to offer straight away. A photo
+  that fails the gate gets `refused` and no job.
+- **`setSprayWallRenderSettings`**, when a generated background is chosen and
+  the PUBLISHED version has no current art (a wall published before this
+  shipped, or a failed run). Before the first publish the choice is checked
+  against the newest draft and the publish queues the art. A write that omits
+  `background` (every older client sends `{ mode, boardsesh }` only) keeps the
+  stored one rather than resetting it to the photo, and is not re-gated.
+- **`sprayWallArt` reads**, for the PUBLISHED version of a wall whose chosen
+  background is generated, when its art is missing, from an older recipe, or
+  `failed` / `pending` past the 1 h deadline (a `failed` row is retried at most
+  hourly, not on every read). Queue only, never rendered inline, deduplicated by
+  the singleton key, and never for a photo the gate refuses. A read opens no
+  transaction while the family is off or no queue is running, asks at most once
+  per version per 10 minutes per process, and logs a failed request at `warn`
+  (a publish's failure stays `error`), so a queue outage costs neither
+  Postgres round trips nor alert noise on every read.
+
+Nothing is queued while `spray-wall-art` is in `BATCH_FAMILIES_DISABLED` (every
+dev machine): the row stays NULL and the wall draws its photo.
+
+**Reading it.** `sprayWallArt(uuid, version)`, its own query and never a field
+on the shared fragments, for the reason the look has its own query. Same gate
+as `sprayWallRenderData`: the wall's view rule, then a draft only for an editor.
+It returns the live quality verdict (so a client can grey out the choice before
+any job has run), the status, the size, and presigned `crop` / `cutout`
+`SprayWallPhoto`s when ready.
+
+**Fallback, everywhere.** A client draws the photo whenever the art is not
+`READY` for the version it is drawing: no art yet, an older recipe, a failed or
+refused run, a backend without `sprayWallArt`, or art for a different version
+than the render payload's. The photo is always a correct picture of the wall.
+
+**Public walls have no public copy of the art.** The web page links the art
+through the same redirect route the unlisted photo uses
+(`/api/v1/spray-walls/{uuid}/photo?look=wall-crop|hold-cutouts`, a fresh
+signature per fetch), for public walls too. A world-readable copy would need its
+own random key, demotion delete and hide rule, the way the photo's has (SW-14);
+that is deferred until a crawler or an unfurler needs the art. OG cards keep
+drawing the photo.
+
 ### Versions, anchors and the homography
 
 `createSprayWallVersion` takes the `photoId` the upload handler returned and
@@ -753,10 +891,11 @@ The geometry all lives in **`@boardsesh/spray-wall-geometry`** (SW-06, #5466) �
 `mapRadius`. The backend imports it and owns no copy.
 
 One contract to know before adding a backend caller: **`invert` THROWS on a
-singular matrix** rather than returning the identity. Nothing on the server inverts
-today — the stored matrix is the forward photo→canonical one and the client inverts
-at draw time — so there is no call site to guard yet. When one appears, let the
-throw surface as a clear error rather than catching it into the identity: a corrupt
+singular matrix** rather than returning the identity. The one server call site is
+the `spray-wall-art` job, which turns the throw into a non-retryable
+`SPRAY_ART_SINGULAR_HOMOGRAPHY` failure (the gate refuses most such matrices
+first). Any new caller should do the same — surface it as a clear error rather
+than catching it into the identity: a corrupt
 stored homography that silently becomes the identity renders every hold at the
 wrong place, which is far harder to notice than a failed request.
 
@@ -765,8 +904,8 @@ The homography is a 4-point DLT in pure TS
 the identity matrix when a version has no anchors. A degenerate quad — anchors
 collinear or coincident — also falls back to the identity: a worse map than a
 correct one, and a far better outcome than a matrix of NaN that would render every
-hold at nowhere. No image is ever warped in v1; the client maps holds through the
-INVERSE at draw time. SW-06 (#5439) moves the module into
+hold at nowhere. The stored photo is never warped; the client maps holds through
+the INVERSE at draw time. Generated art (below) is a separate derived image. SW-06 (#5439) moves the module into
 `@boardsesh/spray-wall-geometry` unchanged.
 
 ### Adding and removing holds
@@ -1068,6 +1207,20 @@ applies the wall's own: `'capability'` for the uuid (an unlisted wall opens, lik
 `sprayWall(uuid)`), `'enumerable'` for the slug — which is derived from the
 wall's NAME, so it is a guess, not a capability.
 
+`boardBySlug(slug, wallUuid)` takes the share link's `?wall=` as `wallUuid`. When
+it is the uuid of the row the slug resolved to, the lookup uses `'capability'`
+instead, so www's `/b/{slug}/...` pages can open an unlisted wall for whoever
+holds the link. A uuid that names a different wall is ignored, so the answer is
+the same as a request without one. A private or hidden wall stays shut to
+everybody but its owner (and its gym). www's layouts under `/b/[board_slug]/[angle]` do not
+resolve the board, because a layout never sees the query string; each page
+resolves it with the capability and runs `resolveSprayWallAccess`
+(`packages/web/app/lib/spray/spray-visibility.ts`) on the row. That page-side check
+is still needed because a signed-in owner gets their unlisted row without a uuid,
+and these paths carry a shared `s-maxage`. Every such page is `noindex, follow`
+with no canonical and no OG card, so the uuid only appears in the URL the reader
+already has.
+
 All four express the same **by-layout** rule — owner, gym member, or a public
 wall — the one `viewerCanSeeSprayWallByLayout` applies, with no unlisted
 exemption. The board-ROW shape is the only one with a second mode, and its
@@ -1098,7 +1251,31 @@ lot for an anonymous caller, a stranger and the owner. A new resolver is swept t
 day it lands, and its author has to either make it reach the wall or name it in
 that file's `NOT_APPLICABLE` with a reason.
 
-### The server validates shape, and never re-runs detection
+#### Writing to a climb is a fifth rule
+
+The read side cannot leak a wall whose existence it never confirms, but a write
+that accepts the climb anyway answers "found" versus "not found" — an existence
+oracle in the error message — and lands rows that the reads then have to keep
+masking. So the same by-layout rule sits in front of the writes too (#6032):
+
+| Write | Where the gate lives | Answers |
+| --- | --- | --- |
+| `createProposal`, `reportClimb` | `loadTargetClimb` (`social/proposals/lifecycle.ts`) — `sprayClimbVisibilityCondition` in the load's WHERE, plus the draft/unlisted check `validateEntityExists` already applies to comments, on every board type | `Climb not found`, the same words a missing uuid gets |
+| `saveTick` | one primary read before the insert, spray-only — the climb row must exist and the wall must be visible, with the tick's `boardUuid` honoured as the unlisted capability | `Climb not found` with code `CLIMB_NOT_FOUND`, which the offline drainer treats as permanent: a replay whose climb was hard-deleted dead-letters on attempt one |
+| the feed fan-out | `getProposalContextMetadata` and the tick/climb branches of `getCommentContextMetadata` (`events/feed-fanout.ts`) skip rows whose climb is a draft, and whose spray wall may not announce | nothing written |
+
+Proposals carry no wall-uuid input, so unlike `saveTick` they get no unlisted
+capability — exactly as comments already treat an unlisted wall. And the fan-out
+gate is the WALL's rule ("public and unhidden", the same `publishesFeedEvents`
+answer `saveClimb` and `saveTick` consult before they announce), never a
+per-recipient one: the fan-out writes rows for many readers at once, and which
+reader may see their own rows stays the read side's job.
+
+`packages/backend/src/__tests__/spray-write-visibility.test.ts` pins all of it,
+including the oracle itself: an invisible wall and a uuid with no row must answer
+with identical text.
+
+
 
 `packages/backend/src/validation/schemas/spray-walls.ts` checks the ring contract
 (`isValidOutlineRing` from `@boardsesh/board-art-geometry/ring` — the same
@@ -1964,7 +2141,11 @@ editor published, and applying it then would remove holds that are already gone.
    not change still disagree by a few pixels; the hold did not move, the camera
    did. An outline is a picture of the hold rather than a position, so a sharper
    one is free.
-4. Then the ordinary publish, through the same `publishDraftUnderLock` helper
+4. When the owner marked it a full reset (`fullReset: true`), the version is
+   stamped `is_full_reset` before the publish, so the publish's recompute retires
+   every climb that lost a hold in it (see "A full reset retires the old set's
+   climbs" below).
+5. Then the ordinary publish, through the same `publishDraftUnderLock` helper
    `publishSprayWallVersion` uses: the previous generation is superseded, this one
    becomes `published`, `current_version_id` / `hold_count` / the catalogue image
    move, and `recomputeMissingHoldCounts(wallId)` re-materialises every climb's
@@ -2040,6 +2221,65 @@ It reaches three places:
 `recomputeMissingHoldCounts` writes only the climbs whose number actually moved
 (`IS DISTINCT FROM`) and stamps `updated_at` on those, so the offline sync cursor
 ships the change without re-shipping the whole partition after every reset.
+
+### A full reset retires the old set's climbs
+
+When a gym strips a wall (or a section of it) and sets a new problem set, the old
+climbs should leave the list without being deleted (#6024, owner decision
+2026-10-06). The owner says which kind of reset it is: `commitSprayWallVersion`
+takes an optional `fullReset: Boolean`. Omitted or false is a partial reset, which
+is also what every app built before this sends.
+
+- **The fact lives on the version.** `spray_wall_versions.is_full_reset` records
+  that this reset was a full one. It is never derived and never changes after the
+  commit.
+- **The climb flag is derived from it.** `board_climbs.retired_by_reset` is true
+  when at least one of the climb's holds was removed by a landed full-reset
+  version. Both recomputes (`recomputeMissingHoldCounts` and
+  `recomputeMissingHoldCountForClimb`) write it beside `missing_hold_count`, from
+  the holds the climb uses now. So:
+  - a full reset retires every climb that lost a hold in it, and no other climb;
+  - a later partial reset leaves a retired climb retired and retires nothing new;
+  - a climb edited onto holds still on the wall uses no removed hold any more, so
+    the per-climb recompute after the edit un-retires it. A remix is a new climb
+    and starts out not retired. Its parent stays retired.
+- **NULL reads as not retired.** Every catalogue climb is NULL, and so is a spray
+  climb that has never been recomputed. The recompute guard compares
+  `COALESCE(retired_by_reset, false)`, so the first pass after the column shipped
+  does not rewrite every climb on a wall.
+
+`retiredByResetCondition` in `create-climb-filters.ts` hides retired climbs from a
+spray wall's **default** list. Search, the count badge and the hold heatmap all
+apply it, because they build their WHERE from the same builder. It is skipped when:
+
+- `holdIntegrity: ANY` ("All") is sent explicitly. `normalizeHoldIntegrity` keeps
+  `any` for this reason; an omitted value is the default view;
+- `holdIntegrity: BROKEN` ("Lost holds") is sent, since a retired climb always
+  lost a hold;
+- the search has a name, the same exception community-hidden climbs get.
+
+`INTACT` already drops retired climbs through `missing_hold_count`.
+
+Retired climbs are never deleted. `climb(uuid)`, logbooks, playlists and share
+links never go through the search builder, so they still open them. The setter
+picker's counts (`getSetterStats`) do not apply the rule; it has no
+`holdIntegrity` input.
+
+The flag reaches phones through the `syncClimbs` pull and the saved-climb mirror
+document as `retired_by_reset`. On-device migration v12 adds the column, and
+`search-climbs-local.ts` applies the same rule, because a downloaded wall reads
+locally even while online. Spray scopes have their own refresh revision (2,
+`refreshRevisionByBoardType`) and require the column on refresh pages
+(`refreshColumnsByBoardType`). So a climb retired while a phone ran an older
+bundle, which dropped the field, gets backfilled once on an unmetered network.
+No catalogue board is re-crawled for it. A backend that does not serve the
+column yet (an OTA preview pointed at prod before migration 0255 ships) makes
+the replay's first page come back without it. The replay then stops before it
+writes, leaves the revision at 1, and the rest of the sync carries on; the next
+cycle retries.
+
+There is no backfill on the server: no reset was marked full before the column
+existed.
 
 ### Why a moved hold is removed + added, and what remix is for
 
@@ -2346,6 +2586,43 @@ reason:
    it without probing candidate extensions and a cleanup sweep can enumerate a
    wall's objects by prefix.
 
+**Two sizes per photo (#5911).** The hold editor zooms to 8×, where a 2048 px
+photo shows about 190 photo pixels across a phone screen and a small hold goes
+soft. So a photo larger than 2048 px on its long side is stored twice:
+
+| Object | Key | Long side | Read by |
+| --- | --- | --- | --- |
+| Base | `spray-walls/<wallUuid>/<photoId>.jpg` | ≤ 2048 px (`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION`) | the canonical frame, the hold detector, the climb view, search, offline sync, the public copy |
+| Thumbnail | `<base key>@280.jpg` | 280 px square | list rows, the reset compare view |
+| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution |
+
+- **The base keeps every number it had.** The response's `width`/`height` and
+  the base object's metadata are the BASE's, so `createSprayWallVersion`, the
+  canonical frame and every hold coordinate stay in the base's pixels. The full copy
+  is the same picture with more pixels, never a different frame: a client scales
+  it down to the base's size and draws holds exactly as before.
+- **No full copy for a photo that already fits.** A source at or under 2048 px
+  is stored once, as before. Both sizes are resized from the source, so the base
+  takes one JPEG generation and the full copy goes through the same
+  `rotate()` + re-encode that strips EXIF and GPS.
+- **Write order:** thumbnail, full, base. A reader who can see the base can see
+  both copies.
+- **The full key is derived from the base key** (`sprayWallFullPhotoKey`), never
+  stored. Every path that follows `photo_key` follows the copy for free: a
+  `sourceVersionId` version reuses the key, the purge and account deletion erase
+  the whole `spray-walls/<wallUuid>/` prefix, and a withdrawn upload erases every
+  key it wrote. SW-14's public promotion copies the BASE only; the full copy is
+  never public.
+- **`SprayWallRenderData.photoFullUrl`** is the presigned GET, minted with the
+  base's and expiring with `photo.expiresAt`. It is on the render payload and not
+  on `SprayWallPhoto`, so version lists and moderation previews never pay for it.
+  It is null when the version has no full copy. A base whose long side is not
+  exactly 2048 px cannot have one, so most versions cost no storage call; the rest
+  (including every pre-#5911 photo the app compressed to exactly 2048 px) get one
+  `HEAD` per key per backend process, remembered after because the answer never
+  changes for a key. An outage reads as null and is not remembered. No column
+  records it, because the check costs less than a migration and a backfill.
+
 Every stored object carries **`Cache-Control: private, no-store`**.
 `uploadToS3` defaults to `public, max-age=31536000, immutable`, which is right for
 an avatar and catastrophic here: a shared cache would keep serving the photo long
@@ -2353,14 +2630,14 @@ past the 15-minute presign that is supposed to BE the access control, and past t
 owner making the wall private. The public-promotion copy SW-14 (#5447) writes to
 `media` is the only place a long lifetime may ever be set.
 
-The cap is 10MB, `files: 1`, the magic bytes decide the format regardless of the
+The cap is 15MB (10MB before #5911 raised the app's upload to 4096 px), `files: 1`, the magic bytes decide the format regardless of the
 declared Content-Type, and the caller must **own** the wall — not merely be able
 to edit it. Nobody uploads a photograph of a stranger's living room.
 
 There is also a **per-user budget of 20 uploads per 10 minutes**, answering `429`
 with a `Retry-After: 600` once it is spent. It is the `feedback-screenshots.ts`
 pattern and it is here for the same reason: every POST mints a NEW object, so one
-authenticated account could otherwise fill the private bucket with 10MB objects,
+authenticated account could otherwise fill the private bucket with 15MB objects,
 and `MAX_VERSIONS_PER_WALL` does not help because it caps the ROWS rather than the
 uploads that never become one. A rejected upload is charged too — it still costs a
 multipart parse and a sharp decode, which is exactly what a spammer would loop on
@@ -2491,6 +2768,35 @@ are refreshed when expired, and never enter persistent storage.
 
 ## Retention: what happens to a deleted wall's photographs
 
+### Account deletion
+
+Deleting a wall owner's account also deletes every wall they owned, including
+walls already soft-deleted. The account transaction keeps inaccessible wall,
+version, hold and climb identities so other climbers' logs retain their references.
+It writes deletion tombstones before moving the deleted board rows to the existing
+system owner, clears sharing and gym links, and scrubs wall names, location,
+description and version notes. This is a deleted-row retention mechanism: no wall
+is transferred for somebody else to climb, and the system-owner visibility exception
+does not override either deletion timestamp.
+
+Photo erasure runs after commit, across both bucket prefixes, including resize
+variants and uploads never adopted by a version. Account-deleted walls skip the
+ordinary thirty-day retention window. Storage failure leaves `photos_purged_at`
+NULL and the existing daily purge retries immediately eligible work; it never
+prevents the committed account deletion. SQL rollback never erases photos.
+
+Wall creation and account deletion share a transaction advisory lock for the
+account. The account's user row is deleted last: locking that row first would
+deadlock against a version writer holding a wall lock while checking its creator
+foreign key. An upload or public-photo promotion that passed its first check before
+deletion must recheck before reporting success or attaching a public copy. Failed
+late-upload erasure marks a durable retry. The purge compares the wall's exact
+database `updated_at` token under its wall lock after erasure, so an older prefix
+listing cannot overwrite that newer retry with a success stamp.
+
+Other climbers' logs remain stored under the existing deleted-wall privacy rules;
+deleting the account does not delete their ticks or make private logs public.
+
 Deleting a wall is a **soft** delete, and it always will be: the catalogue rows
 and every climb ever set on the wall stay behind, because a deleted wall stops
 being reachable and does not un-set anybody's climbs. The PHOTOGRAPHS are the
@@ -2512,8 +2818,8 @@ behind a second service.
 What the mutation does, per wall, in this order:
 
 1. list `spray-walls/<wallUuid>/` in the `private` bucket and delete every
-   object — the photos, their resize variants, and any upload that was never
-   adopted as a version;
+   object — the photos, their resize variants, their `-full` copies (#5911), and
+   any upload that was never adopted as a version;
 2. the same prefix in `media`, which is where SW-14's public promotion copies a
    published photo. That is the one copy that would survive a private-bucket
    delete and stay fetchable by anybody;
@@ -3661,6 +3967,13 @@ wall has no such copy by design, so it shows the presigned URL from
 `sprayWallRenderData`, which is right for a page read by whoever has the link
 and never indexed. Never the other way round: a presigned URL in a public page's
 HTML is a dead image fifteen minutes later.
+
+When the owner chose a generated background and the backend reports it READY
+for the version the page draws, the page shows that instead
+(`fetchSprayWallArtChoice`, `resolveSprayWallDrawing`): through the redirect
+route for public and unlisted walls alike, in canonical mode, with the dark Aura
+field behind Holds only (www has one colour scheme). Any miss draws the photo
+as above.
 
 ### Drawing the climb
 

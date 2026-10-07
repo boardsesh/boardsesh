@@ -28,6 +28,12 @@ describe('buildAngleGradeBars', () => {
     expect(bars.map((bar) => bar.gradeName)).toEqual(['V5', 'V6']);
   });
 
+  it("labels by the climb's board: MoonBoard's 6A is V2 and its 6A+ a plain V3", () => {
+    const history = [makeEntry({ angle: 25, displayDifficulty: 16 }), makeEntry({ angle: 40, displayDifficulty: 17 })];
+    expect(buildAngleGradeBars(history, 'v-grade', 'moonboard').map((bar) => bar.gradeName)).toEqual(['V2', 'V3']);
+    expect(buildAngleGradeBars(history, 'v-grade', 'kilter').map((bar) => bar.gradeName)).toEqual(['V3', 'V3+']);
+  });
+
   it('uses font labels when requested', () => {
     const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 20 })], 'font');
     expect(bars[0].gradeName).toBe('6C');

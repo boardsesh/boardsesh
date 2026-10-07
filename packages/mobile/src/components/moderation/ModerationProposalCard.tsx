@@ -86,7 +86,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
   const extraReasons = extraReasonCount(proposal);
   // A label the formatter can't parse still shows: the raw grade beats a blank.
   const displayGrade = proposal.climbDifficulty
-    ? (formatGrade(proposal.climbDifficulty) ?? proposal.climbDifficulty)
+    ? (formatGrade(proposal.climbDifficulty, proposal.boardType) ?? proposal.climbDifficulty)
     : null;
 
   const handleOpenClimb = useCallback(() => {

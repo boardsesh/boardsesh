@@ -26,7 +26,7 @@ type HeatmapDownloadLineProps = {
 /**
  * One line in the legend's slot while the heatmap is on for a board that is not
  * on this phone: why nothing is drawn, and a Download button. It replaces the
- * full nudge card, so the flame can stay lit without the drawer growing a card.
+ * full nudge card, so the flame can stay lit without the panel growing a card.
  * Still counted as the `hold_heatmap` nudge surface, so a download from here
  * lands in the same funnel.
  */

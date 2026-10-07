@@ -6,13 +6,12 @@ import { MOONBOARD_GRID } from '@boardsesh/board-constants/moonboard';
 // Feature flag - enabled by default
 export const MOONBOARD_ENABLED = true;
 
-// MoonBoard grade values keep compatibility with the grade strings used by the
-// MoonBoard create flow; labels match board_difficulty_grades and BOULDER_GRADES.
+// MoonBoard grade values are the grade strings the MoonBoard app writes; labels
+// match board_difficulty_grades and MOONBOARD_BOULDER_GRADES. Moon's scale has
+// no 5B/5C, and Moon converts 6A to V2 where the shared table says V3.
 export const MOONBOARD_GRADES = [
   { value: '5+', label: '5a/V1', difficultyId: 13 },
-  { value: '5B', label: '5b/V1', difficultyId: 14 },
-  { value: '5C', label: '5c/V2', difficultyId: 15 },
-  { value: '6A', label: '6a/V3', difficultyId: 16 },
+  { value: '6A', label: '6a/V2', difficultyId: 16 },
   { value: '6A+', label: '6a+/V3', difficultyId: 17 },
   { value: '6B', label: '6b/V4', difficultyId: 18 },
   { value: '6B+', label: '6b+/V4', difficultyId: 19 },

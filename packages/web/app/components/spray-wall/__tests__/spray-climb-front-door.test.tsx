@@ -28,7 +28,11 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
+// The store button is a client island that imports the analytics client.
+vi.mock('@/app/lib/analytics', () => ({ track: vi.fn() }));
+
 const { default: SprayClimbFrontDoor } = await import('../spray-climb-front-door');
+const { buildStoreUrl } = await import('@/app/lib/store-links');
 
 const PRESIGNED_URL = 'https://private.example/spray-walls/wall/photo.jpg?X-Amz-Signature=deadbeef';
 
@@ -65,13 +69,17 @@ const CLIMB = {
   description: 'Sit start on the two crimps.',
 };
 
-async function render(overrides: { photoUrl?: string | null } = {}) {
+type ArtProps = Parameters<typeof SprayClimbFrontDoor>[0]['art'];
+
+async function render(overrides: { photoUrl?: string | null; art?: ArtProps; artUrl?: string | null } = {}) {
   const element = await SprayClimbFrontDoor({
     // The component's prop types are the page's; the fixtures above are the
     // shapes those types describe, narrowed to what this component reads.
     climb: CLIMB as unknown as Parameters<typeof SprayClimbFrontDoor>[0]['climb'],
     wallData: WALL_DATA,
     photoUrl: 'photoUrl' in overrides ? (overrides.photoUrl ?? null) : WALL_DATA.wall.publicPhotoUrl,
+    art: overrides.art ?? null,
+    artUrl: overrides.artUrl ?? null,
     angle: 40,
   });
   return renderToStaticMarkup(element);
@@ -106,6 +114,18 @@ describe('SprayClimbFrontDoor', () => {
     expect(html).toContain('href="/"');
   });
 
+  it('ships a store link with the spray-climb link id (#6027)', async () => {
+    // The page had no way to the app at all: its only links were /setter, /gyms
+    // and home. Server-rendered, so it is in the HTML the CDN caches.
+    const html = await render();
+
+    expect(html).toContain(`href="${buildStoreUrl('ios', { placement: 'spray-climb' }).replaceAll('&', '&amp;')}"`);
+    expect(html).toContain('ct=spray-climb');
+    expect(html).toContain('spray.install.heading');
+    expect(html).toContain('spray.install.body');
+    expect(html).toContain('home.hero.ctaInstallIos');
+  });
+
   it('never puts a presigned private-bucket URL in the markup', async () => {
     // The page is CDN-cached for a day and the signature lives fifteen minutes,
     // so the URL in the HTML is always either the public copy or the redirect
@@ -121,5 +141,26 @@ describe('SprayClimbFrontDoor', () => {
 
     expect(html).toContain('spray.noPhoto');
     expect(html).not.toContain('<img');
+  });
+
+  it('draws the holds-only look in canonical mode on the dark field when the owner chose it', async () => {
+    const artUrl = `/api/v1/spray-walls/${WALL_DATA.wall.uuid}/photo?look=hold-cutouts`;
+    // Art at half the canonical frame: canonical (200, 400) lands at (100, 200).
+    const html = await render({ art: { background: 'hold-cutouts', width: 600, height: 800 }, artUrl });
+
+    expect(html).toContain(`src="${artUrl.replaceAll('&', '&amp;')}"`);
+    expect(html).not.toContain(WALL_DATA.wall.publicPhotoUrl);
+    expect(html).toContain('viewBox="0 0 600 800"');
+    expect(html).toContain('cx="100"');
+    expect(html).toContain('cy="200"');
+    expect(html).toContain('background-color:#181225');
+  });
+
+  it('draws the wall-only look with no field behind it', async () => {
+    const artUrl = `/api/v1/spray-walls/${WALL_DATA.wall.uuid}/photo?look=wall-crop`;
+    const html = await render({ art: { background: 'wall-crop', width: 1200, height: 1600 }, artUrl });
+
+    expect(html).toContain('look=wall-crop');
+    expect(html).not.toContain('#181225');
   });
 });

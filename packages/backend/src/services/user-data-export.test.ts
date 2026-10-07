@@ -249,6 +249,43 @@ describe('weekly user exports', () => {
     expect((await service.requestUserDataExport('user-1', 'kilter')).status).toBe('unavailable');
     expect(jobMocks.enqueueBackgroundJobOn).not.toHaveBeenCalled();
   });
+  it('reports unavailable instead of offering a new run the request path would refuse', async () => {
+    expect((await service.getUserDataExportStatus('user-1', 'kilter')).status).toBe('not_requested');
+    fixtures.enabled = false;
+    expect(await service.getUserDataExportStatus('user-1', 'kilter')).toMatchObject({
+      status: 'unavailable',
+      error: 'Export service is temporarily unavailable.',
+    });
+    fixtures.enabled = true;
+    fixtures.queue = false;
+    expect((await service.getUserDataExportStatus('user-1', 'kilter')).status).toBe('unavailable');
+    fixtures.runs = [run('failed')];
+    expect((await service.getUserDataExportStatus('user-1', 'kilter')).status).toBe('unavailable');
+  });
+  it('keeps completed files downloadable in status while producers are disabled', async () => {
+    fixtures.enabled = false;
+    storageMocks.getS3ObjectMetadataStrict.mockResolvedValue(metadata);
+    const status = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(status.status).toBe('ready');
+    expect(status.files.map((file) => file.format)).toEqual(['boardsesh', 'aurora']);
+  });
+  it('keeps partial files on an unavailable status and passes non-offering statuses through', async () => {
+    fixtures.enabled = false;
+    fixtures.runs = [run('failed')];
+    storageMocks.getS3ObjectMetadataStrict.mockImplementation(async (_bucket, key: string) =>
+      key.endsWith('.boardsesh.json') ? metadata : null,
+    );
+    const partial = await service.getUserDataExportStatus('user-1', 'kilter');
+    expect(partial.status).toBe('unavailable');
+    expect(partial.files.map((file) => file.format)).toEqual(['boardsesh']);
+    fixtures.runs = [run('running')];
+    expect((await service.getUserDataExportStatus('user-1', 'kilter')).status).toBe('generating');
+    fixtures.runs = [{ ...run('failed'), errorCode: 'EXPORT_TOO_LARGE' }];
+    expect(await service.getUserDataExportStatus('user-1', 'kilter')).toMatchObject({
+      status: 'failed',
+      errorCode: 'EXPORT_TOO_LARGE',
+    });
+  });
   it('requires five minutes before a manual retry and permits at most two runs weekly', async () => {
     fixtures.runs = [run('failed')];
     expect(await service.requestUserDataExport('user-1', 'kilter')).toMatchObject({

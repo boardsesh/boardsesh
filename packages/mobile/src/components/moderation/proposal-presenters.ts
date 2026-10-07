@@ -14,8 +14,11 @@ import type { Climb, Proposal } from '@boardsesh/shared-schema';
 /** The two values `voteOnProposal` accepts. Re-sending one clears the vote. */
 export type ProposalVoteValue = 1 | -1;
 
-/** Formats a raw grade label (`6b+/V4`) for display; `useGradeFormat().formatGrade`. */
-export type GradeFormatter = (difficulty: string | null | undefined) => string | null;
+/**
+ * Formats a raw grade label (`6b+/V4`) for display on `boardName`'s scale;
+ * `useGradeFormat().formatGrade`.
+ */
+export type GradeFormatter = (difficulty: string | null | undefined, boardName?: string | null) => string | null;
 
 /** One line of copy describing what a proposal asks for. */
 export type ProposalTypeLine = {
@@ -78,7 +81,7 @@ export function extraReasonCount(proposal: Pick<Proposal, 'commentCount' | 'reas
  * rendering an empty arrow.
  */
 export function proposalTypeLine(
-  proposal: Pick<Proposal, 'type' | 'proposedValue' | 'currentValue'>,
+  proposal: Pick<Proposal, 'type' | 'proposedValue' | 'currentValue' | 'boardType'>,
   formatGrade: GradeFormatter,
 ): ProposalTypeLine {
   switch (proposal.type) {
@@ -90,8 +93,8 @@ export function proposalTypeLine(
       return {
         textI18nKey: 'climbs:mobile.moderation.type.grade',
         params: {
-          from: formatGrade(proposal.currentValue) ?? proposal.currentValue,
-          to: formatGrade(proposal.proposedValue) ?? proposal.proposedValue,
+          from: formatGrade(proposal.currentValue, proposal.boardType) ?? proposal.currentValue,
+          to: formatGrade(proposal.proposedValue, proposal.boardType) ?? proposal.proposedValue,
         },
       };
     case 'classic':

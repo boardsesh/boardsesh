@@ -56,6 +56,12 @@ vi.mock('../storage/s3', () => ({
     const metadata = storedPhotoMetadata.get(key);
     return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
   }),
+  // The full-resolution existence check (#5911). Same object set; the real one
+  // differs only in throwing on an outage instead of answering null.
+  getS3ObjectMetadataStrict: vi.fn(async (_bucket: string, key: string) => {
+    const metadata = storedPhotoMetadata.get(key);
+    return metadata ? { contentType: 'image/jpeg', contentLength: 1024, lastModified: new Date(), metadata } : null;
+  }),
   uploadToS3: vi.fn(async (_bucket: string, _body: Buffer, key: string) => ({ key })),
   // The public-promotion path (SW-14). `storedPhotoMetadata` is the set of
   // objects that exist in the private bucket, so a copy of a key nothing
@@ -96,7 +102,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 const { db } = await import('../db/client');
 const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
-const { sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
+const { sprayWallFullPhotoKey, sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
 const { socialBoardQueries, socialBoardMutations } = await import('../graphql/resolvers/social/boards');
 const { newClimbSubscriptionResolvers } = await import('../graphql/resolvers/social/new-climb-subscriptions');
@@ -114,7 +120,7 @@ const { climbStatsSubscriptions } = await import('../graphql/resolvers/ticks/cli
 const { socialProposalQueries } = await import('../graphql/resolvers/social/proposals/queries');
 const { MAX_HOLDS_PER_WALL, MAX_SPRAY_WALLS_PER_USER, MAX_VERSIONS_PER_WALL } = await import('@boardsesh/board-config');
 const { recomputeClimbStatsBulk } = await import('@boardsesh/db/queries');
-const { lockWallForWrite } = await import('../graphql/resolvers/board/spray-walls');
+const { lockWallForWrite, resetSprayFullPhotoPresenceCache } = await import('../graphql/resolvers/board/spray-walls');
 const { betaLinkQueries } = await import('../graphql/resolvers/beta-videos/queries');
 const { tickQueries } = await import('../graphql/resolvers/ticks/queries');
 
@@ -548,6 +554,47 @@ describe('who can see and who can edit a wall', () => {
       uuid: string;
     } | null;
     expect(ownerRead?.uuid).toBe(privateWall.wall.uuid);
+  });
+
+  it("opens an UNLISTED wall through boardBySlug only when the request carries that wall's uuid", async () => {
+    // The web share link is `/b/{slug}/...?wall=<uuid>`. The slug is the guess,
+    // the uuid is the capability, and www forwards it as `wallUuid`.
+    const slugOf = async (wallUuid: string) => {
+      const [row] = (await db.execute(sql`SELECT slug FROM user_boards WHERE uuid = ${wallUuid}`)) as unknown as Array<{
+        slug: string;
+      }>;
+      return row.slug;
+    };
+    const readBySlug = async (slug: string, wallUuid: string | undefined, viewer: string | null) =>
+      (await socialBoardQueries.boardBySlug({}, { slug, wallUuid }, ctxFor(viewer))) as { uuid: string } | null;
+
+    const unlisted = await createPublishedWall(OWNER, { isUnlisted: true });
+    const unlistedSlug = await slugOf(unlisted.wall.uuid);
+
+    // The right uuid opens it, signed out or signed in as a stranger.
+    expect((await readBySlug(unlistedSlug, unlisted.wall.uuid, null))?.uuid).toBe(unlisted.wall.uuid);
+    expect((await readBySlug(unlistedSlug, unlisted.wall.uuid, STRANGER))?.uuid).toBe(unlisted.wall.uuid);
+
+    // A WRONG uuid is no capability: a random one, and another unlisted wall's
+    // real uuid. Without the pairing, one leaked uuid would open every slug.
+    const otherUnlisted = await createPublishedWall(OWNER, { isUnlisted: true });
+    expect(await readBySlug(unlistedSlug, uuidv4(), null)).toBeNull();
+    expect(await readBySlug(unlistedSlug, otherUnlisted.wall.uuid, null)).toBeNull();
+    expect(await readBySlug(unlistedSlug, otherUnlisted.wall.uuid, STRANGER)).toBeNull();
+
+    // A PRIVATE wall stays shut even with its own uuid: its owner sent nobody a link.
+    const privateWall = await createPublishedWall(OWNER);
+    const privateSlug = await slugOf(privateWall.wall.uuid);
+    expect(await readBySlug(privateSlug, privateWall.wall.uuid, null)).toBeNull();
+    expect(await readBySlug(privateSlug, privateWall.wall.uuid, STRANGER)).toBeNull();
+    // Its owner still reads it, with or without the param.
+    expect((await readBySlug(privateSlug, privateWall.wall.uuid, OWNER))?.uuid).toBe(privateWall.wall.uuid);
+    expect((await readBySlug(privateSlug, undefined, OWNER))?.uuid).toBe(privateWall.wall.uuid);
+
+    // An admin-hidden wall: the link its owner sent before the hide stops working.
+    await db.execute(sql`UPDATE spray_walls SET hidden_at = now() WHERE board_uuid = ${unlisted.wall.uuid}`);
+    expect(await readBySlug(unlistedSlug, unlisted.wall.uuid, null)).toBeNull();
+    expect(await readBySlug(unlistedSlug, unlisted.wall.uuid, STRANGER)).toBeNull();
   });
 
   it('refuses every wall mutation from a user who does not own the wall', async () => {
@@ -5193,6 +5240,105 @@ describe('the publish path’s bookkeeping', () => {
   });
 });
 
+describe('the full-resolution photo copy (#5911)', () => {
+  type RenderWithFull = { photo: { url: string; expiresAt: string }; photoFullUrl: string | null } | null;
+
+  /** A published wall whose v1 photo has the given stored size, plus its base key. */
+  async function publishedWallWithPhoto(size: { width: number; height: number }) {
+    const wall = await createWall(OWNER);
+    const photoId = registerUploadedPhoto(wall.uuid, size);
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: version.id, holds: [{ cx: 300, cy: 300, r: 24 }] } },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+    return { wall, baseKey: sprayWallPhotoKey(wall.uuid, photoId) };
+  }
+
+  const renderFor = async (uuid: string, userId = OWNER) =>
+    (await sprayWallQueries.sprayWallRenderData({}, { uuid }, ctxFor(userId))) as RenderWithFull;
+
+  beforeEach(() => {
+    resetSprayFullPhotoPresenceCache();
+  });
+
+  it('signs the full copy when the upload wrote one, and checks storage once per key', async () => {
+    const { wall, baseKey } = await publishedWallWithPhoto({ width: 2048, height: 1536 });
+    const fullKey = sprayWallFullPhotoKey(baseKey);
+    storedPhotoMetadata.set(fullKey, { width: '4096', height: '3072' });
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadataStrict).mockClear();
+
+    const first = await renderFor(wall.uuid);
+    expect(first!.photoFullUrl).toBe(`https://private.example/${fullKey}?X-Amz-Signature=stub`);
+    // Same pixels as `photo`, so the canonical frame the holds live in is untouched.
+    expect(first!.photo.url).toContain(baseKey);
+
+    // The answer never changes for a key, so a second read costs no HEAD.
+    const second = await renderFor(wall.uuid);
+    expect(second!.photoFullUrl).toContain(fullKey);
+    expect(storage.getS3ObjectMetadataStrict).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers null for a 2048 px photo the upload kept as-is', async () => {
+    // Every photo the app compressed to 2048 px before #5911 looks like this: a
+    // base at exactly the cap and nothing beside it.
+    const { wall } = await publishedWallWithPhoto({ width: 1536, height: 2048 });
+    expect((await renderFor(wall.uuid))!.photoFullUrl).toBeNull();
+  });
+
+  it('answers null for a smaller photo without asking storage', async () => {
+    // A base under the cap was never resized, so no full copy can exist.
+    const { wall } = await publishedWallWithPhoto({ width: 1200, height: 900 });
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadataStrict).mockClear();
+
+    expect((await renderFor(wall.uuid))!.photoFullUrl).toBeNull();
+    expect(storage.getS3ObjectMetadataStrict).not.toHaveBeenCalled();
+  });
+
+  it('answers null on a storage outage, still renders the base, and asks again next time', async () => {
+    const { wall, baseKey } = await publishedWallWithPhoto({ width: 2048, height: 1536 });
+    storedPhotoMetadata.set(sprayWallFullPhotoKey(baseKey), { width: '4096', height: '3072' });
+    const storage = await import('../storage/s3');
+    vi.mocked(storage.getS3ObjectMetadataStrict).mockRejectedValueOnce(new Error('synthetic R2 outage'));
+
+    const duringOutage = await renderFor(wall.uuid);
+    expect(duringOutage!.photo.url).toContain(baseKey);
+    expect(duringOutage!.photoFullUrl).toBeNull();
+
+    // The outage was not remembered as "no full copy".
+    expect((await renderFor(wall.uuid))!.photoFullUrl).toContain(sprayWallFullPhotoKey(baseKey));
+  });
+
+  it('follows the photo key, so a version reusing the published photo gets the same full copy', async () => {
+    const { wall, baseKey } = await publishedWallWithPhoto({ width: 2048, height: 1536 });
+    storedPhotoMetadata.set(sprayWallFullPhotoKey(baseKey), { width: '4096', height: '3072' });
+    const current = (await sprayWallQueries.sprayWall({}, { uuid: wall.uuid }, ctxFor(OWNER))) as {
+      currentVersion: { id: string };
+    };
+
+    const reuse = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, sourceVersionId: current.currentVersion.id } },
+      ctxFor(OWNER),
+    )) as { number: number };
+
+    const draft = (await sprayWallQueries.sprayWallRenderData(
+      {},
+      { uuid: wall.uuid, version: reuse.number },
+      ctxFor(OWNER),
+    )) as RenderWithFull;
+    expect(draft!.photoFullUrl).toContain(sprayWallFullPhotoKey(baseKey));
+  });
+});
+
 describe('the two readers #5495 left without an explicit gate test', () => {
   it('recentBetaLinks drops a private wall’s beta, and keeps the owner’s', async () => {
     // The rows carry the climb NAME, and the cache below the gate is keyed on the
@@ -5864,5 +6010,223 @@ describe('draft purpose separates hold editing and photo resets', () => {
         sprayWallMutations.createSprayWallVersion({}, { input: changed }, ctxFor(OWNER)),
       ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_DRAFT_ALREADY_OPEN' } });
     }
+  });
+});
+
+describe('generated wall looks (sprayWallArt and the background setting)', () => {
+  /** Pins on a front-on photo big enough for the quality gate: a 2200 x 1600 frame. */
+  const STRAIGHT_ANCHORS: [number, number][] = [
+    [100, 100],
+    [2300, 100],
+    [2300, 1700],
+    [100, 1700],
+  ];
+
+  type ArtRead = {
+    status: string;
+    versionNumber: number;
+    width: number | null;
+    quality: { verdict: string; reason: string; stretch: number | null };
+    crop: { url: string; thumbUrl: string | null } | null;
+    cutout: { url: string; thumbUrl: string | null } | null;
+  } | null;
+
+  async function straightWall(overrides: Record<string, unknown> = {}) {
+    const wall = await createWall(OWNER, overrides);
+    const photoId = registerUploadedPhoto(wall.uuid, { width: 2400, height: 1800 });
+    const version = (await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: STRAIGHT_ANCHORS } },
+      ctxFor(OWNER),
+    )) as { id: string };
+    await sprayWallMutations.upsertSprayWallHolds(
+      {},
+      { input: { wallUuid: wall.uuid, versionId: version.id, holds: [{ cx: 400, cy: 400, r: 40 }] } },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId: version.id } }, ctxFor(OWNER));
+    return { wall, versionId: version.id };
+  }
+
+  const readArt = (uuid: string, userId: string | null, version?: number) =>
+    sprayWallQueries.sprayWallArt({}, { uuid, version }, ctxFor(userId)) as Promise<ArtRead>;
+
+  async function versionArt(versionId: string) {
+    const [row] = await db
+      .select({ art: sprayWallVersions.art })
+      .from(sprayWallVersions)
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+    return row.art;
+  }
+
+  const AURA = {
+    mode: 'aura',
+    boardsesh: {
+      glowFalloff: 'plateau',
+      glowReach: 1.4,
+      plateauShare: 0.5,
+      veil: 'custom',
+      veilOpacity: 0.45,
+      markStyle: 'glow-fill',
+      fillOpacity: 0.6,
+      softDisc: false,
+      smallHoldBoost: true,
+      ledDots: true,
+      roleGlyphs: false,
+      thumbnailStyle: 'fill',
+      holdShape: 'silhouette',
+    },
+  } as const;
+
+  const setLook = (uuid: string, renderSettings: unknown) =>
+    sprayWallMutations.setSprayWallRenderSettings({}, { input: { uuid, renderSettings } }, ctxFor(OWNER)) as Promise<{
+      renderSettings: unknown;
+    }>;
+
+  it('refuses art at publish for a photo the gate fails, and says why', async () => {
+    // ANCHORS make an 800 x 620 frame: under the 1000 px short edge.
+    const { wall, versionId } = await createPublishedWall(OWNER);
+    expect(await versionArt(versionId)).toMatchObject({ status: 'refused', error: 'small-frame' });
+
+    const art = await readArt(wall.uuid, OWNER);
+    expect(art).toMatchObject({ status: 'REFUSED', quality: { verdict: 'FAIL', reason: 'small-frame' } });
+    expect(art?.crop).toBeNull();
+  });
+
+  it('reads a front-on wall as GOOD with no art yet when no queue is running', async () => {
+    const { wall, versionId } = await straightWall();
+    // No job queue in this file, so nothing was queued and nothing was written.
+    expect(await versionArt(versionId)).toBeNull();
+    const art = await readArt(wall.uuid, OWNER);
+    expect(art).toMatchObject({ status: 'NONE', versionNumber: 1, quality: { verdict: 'GOOD', reason: 'ok' } });
+    expect(art?.quality.stretch).toBeCloseTo(1, 5);
+  });
+
+  it('presigns both images and their thumbnails once the art is ready', async () => {
+    const { wall, versionId } = await straightWall();
+    const { sprayWallArtKeys } = await import('../lib/spray-wall-art');
+    const { ART_RECIPE } = await import('@boardsesh/spray-wall-geometry');
+    const keys = sprayWallArtKeys(wall.uuid, Number(versionId));
+    expect(keys.cropKey).toBe(`spray-walls/${wall.uuid}/art/${versionId}-r${ART_RECIPE}-crop.jpg`);
+    await db
+      .update(sprayWallVersions)
+      .set({
+        art: {
+          recipe: ART_RECIPE,
+          status: 'ready',
+          width: 2048,
+          height: 1489,
+          ...keys,
+          quality: { stretch: 1, verdict: 'good' },
+          error: null,
+        },
+      })
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+
+    const art = await readArt(wall.uuid, OWNER);
+    expect(art).toMatchObject({ status: 'READY', width: 2048 });
+    expect(art?.crop?.url).toContain(keys.cropKey);
+    expect(art?.crop?.thumbUrl).toContain(`${keys.cropKey}@280.jpg`);
+    expect(art?.cutout?.url).toContain(keys.cutoutKey);
+    expect(art?.cutout?.thumbUrl).toContain(`${keys.cutoutKey}@280.webp`);
+
+    // Art from an older recipe is not served.
+    await db
+      .update(sprayWallVersions)
+      .set({ art: { ...(await versionArt(versionId))!, recipe: ART_RECIPE - 1 } })
+      .where(eq(sprayWallVersions.id, Number(versionId)));
+    expect((await readArt(wall.uuid, OWNER))?.status).toBe('NONE');
+  });
+
+  it('follows the photo’s visibility: nothing for a stranger on a private wall, nothing for a draft', async () => {
+    const { wall } = await straightWall();
+    expect(await readArt(wall.uuid, STRANGER)).toBeNull();
+    expect(await readArt(wall.uuid, null)).toBeNull();
+
+    const { wall: shared } = await straightWall({ isUnlisted: true });
+    expect((await readArt(shared.uuid, STRANGER))?.status).toBe('NONE');
+    // Version 2 does not exist; a draft would be null for a non-editor the same way.
+    expect(await readArt(shared.uuid, STRANGER, 2)).toBeNull();
+  });
+
+  it('stores a generated background on a wall that passes the gate', async () => {
+    const { wall } = await straightWall();
+    const look = { ...AURA, background: 'wall-crop' };
+    expect((await setLook(wall.uuid, look)).renderSettings).toEqual(look);
+    expect((await setLook(wall.uuid, { ...AURA, background: 'hold-cutouts' })).renderSettings).toMatchObject({
+      background: 'hold-cutouts',
+    });
+  });
+
+  it('refuses a generated background when the photo fails the gate, but always allows the photo', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await expect(setLook(wall.uuid, { ...AURA, background: 'wall-crop' })).rejects.toMatchObject({
+      extensions: { code: 'SPRAY_WALL_ART_NOT_AVAILABLE', reason: 'small-frame' },
+    });
+    expect((await setLook(wall.uuid, { ...AURA, background: 'photo' })).renderSettings).toMatchObject({
+      background: 'photo',
+    });
+  });
+
+  it('hands a draft’s art to its editor and to nobody else', async () => {
+    const { wall } = await straightWall({ isUnlisted: true });
+    const photoId = registerUploadedPhoto(wall.uuid, { width: 2400, height: 1800 });
+    await sprayWallMutations.createSprayWallVersion(
+      {},
+      { input: { wallUuid: wall.uuid, photoId, anchors: STRAIGHT_ANCHORS } },
+      ctxFor(OWNER),
+    );
+
+    // The stranger can read the unlisted wall's published art, not the draft's.
+    expect((await readArt(wall.uuid, STRANGER, 1))?.status).toBe('NONE');
+    expect(await readArt(wall.uuid, STRANGER, 2)).toBeNull();
+    expect(await readArt(wall.uuid, null, 2)).toBeNull();
+    expect(await readArt(wall.uuid, OWNER, 2)).toMatchObject({ versionNumber: 2, status: 'NONE' });
+  });
+
+  it('reads a pending run past the job deadline as FAILED, and a fresh one as PENDING', async () => {
+    const { wall, versionId } = await straightWall();
+    const { ART_RECIPE } = await import('@boardsesh/spray-wall-geometry');
+    const pendingAt = async (requestedAt: string) => {
+      await db
+        .update(sprayWallVersions)
+        .set({
+          art: {
+            recipe: ART_RECIPE,
+            status: 'pending',
+            width: null,
+            height: null,
+            cropKey: null,
+            cutoutKey: null,
+            quality: { stretch: 1, verdict: 'good' },
+            error: null,
+            requestedAt,
+          },
+        })
+        .where(eq(sprayWallVersions.id, Number(versionId)));
+      return (await readArt(wall.uuid, OWNER))?.status;
+    };
+    expect(await pendingAt(new Date().toISOString())).toBe('PENDING');
+    expect(await pendingAt(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())).toBe('FAILED');
+  });
+
+  it('keeps the stored background when an older client saves a look without one', async () => {
+    const { wall } = await straightWall();
+    await setLook(wall.uuid, { ...AURA, background: 'hold-cutouts' });
+
+    // `{ mode, boardsesh }` only: what every client before this field sends.
+    const classic = { ...AURA, mode: 'classic' };
+    expect((await setLook(wall.uuid, classic)).renderSettings).toEqual({ ...classic, background: 'hold-cutouts' });
+
+    // An explicit photo still switches back, and null still clears everything.
+    expect((await setLook(wall.uuid, { ...AURA, background: 'photo' })).renderSettings).toMatchObject({
+      background: 'photo',
+    });
+    expect((await setLook(wall.uuid, null)).renderSettings).toBeNull();
+  });
+
+  it('refuses a background name it does not know', async () => {
+    const { wall } = await straightWall();
+    await expect(setLook(wall.uuid, { ...AURA, background: 'blurred' })).rejects.toThrow(/background/);
   });
 });

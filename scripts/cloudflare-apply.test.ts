@@ -43,6 +43,7 @@ import {
   RSC_QUERY_PARAM,
   RSC_REQUEST_HEADER_NAME,
   SESSION_COOKIE_NAME_SUBSTRING,
+  SPRAY_WALL_CAPABILITY_QUERY,
   WWW_HOSTNAME,
   WWW_HTML_CACHE_EXCLUDED_BOARDS,
   WWW_HTML_CACHE_LOCALE_PREFIXES,
@@ -2304,6 +2305,13 @@ describe('www list + climb-view HTML cache rule (#4652)', () => {
     // (measured 2026-09-02 — `RSC: 2` and an empty `RSC:` both return the
     // ordinary 200), and pinning to "1" would let a Next.js change reopen this.
     expect(expression).not.toContain(`http.request.headers["${RSC_REQUEST_HEADER_NAME}"][*] == "1"`);
+  });
+
+  it("bypasses a spray wall's ?wall= share link, whatever the origin header says", () => {
+    // An unlisted wall's page stops answering 200 the moment it is hidden or made
+    // private; an edge copy would keep serving it for a day plus SWR.
+    expect(expression).toContain(`not (http.request.uri.query contains "${SPRAY_WALL_CAPABILITY_QUERY}")`);
+    expect(expression).toContain('not (http.request.uri.query contains "wall=")');
   });
 
   it('reads the RSC header through the map accessor, not the field the plan rejects', () => {

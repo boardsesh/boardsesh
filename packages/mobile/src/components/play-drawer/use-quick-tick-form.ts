@@ -40,6 +40,7 @@ import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
+import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 
 // Read once at module load rather than allocating a fresh createInitialTickState()
 // on every field-snapshot sync (see below) just to read this one default.
@@ -84,6 +85,8 @@ export type QuickTickForm = {
    *  tell "a new climb loaded" from "the climber changed a field" — the hosting
    *  sheet stays mounted across climbs, so no value change is a reliable signal. */
   climbUuid: string;
+  /** The climb's board, so the grade rail labels follow its scale. */
+  boardName?: string;
   tickState: QuickTickState;
   comment: string;
   climbedAt: Date;
@@ -273,7 +276,12 @@ export function useQuickTickForm({
   // GradeSingleSelectRail compares against each chip's `difficultyId`.
   const consensusDifficultyId = useMemo(() => {
     if (!consensusGradeName || !grades) return undefined;
-    return grades.find((grade) => grade.name === consensusGradeName)?.difficultyId;
+    // Fall back to the id behind the name: a label from another source can
+    // spell the same grade differently (MoonBoard's 16 was "6a/V3" before it
+    // became "6a/V2").
+    const consensusId = getDifficultyIdForGradeName(consensusGradeName);
+    return grades.find((grade) => grade.name === consensusGradeName || grade.difficultyId === consensusId)
+      ?.difficultyId;
   }, [consensusGradeName, grades]);
 
   // Inverse of consensusDifficultyId: resolve the picked numeric difficulty
@@ -476,6 +484,7 @@ export function useQuickTickForm({
 
   return {
     climbUuid,
+    boardName,
     tickState,
     comment,
     climbedAt,

@@ -556,7 +556,7 @@ function NowOnTheWallPanelComponent(
 
   const renderHistoryItem = useCallback(
     ({ item }: { item: BoardPresenceClimb }) => {
-      const resolvedGrade = resolveGrade({ difficulty: item.grade ?? '' });
+      const resolvedGrade = resolveGrade({ difficulty: item.grade ?? '' }, boardConfig?.boardName);
       const formattedGrade = item.grade ? resolvedGrade.label : null;
       const gradeColor = resolvedGrade.color;
 
@@ -622,8 +622,9 @@ function NowOnTheWallPanelComponent(
     // Per-climb grades under the "Show Boardsesh grades" toggle. resolveGrade with
     // an empty difficulty yields the default colour + empty label, so these are
     // safe to compute even when there's no current climb / hardest send.
-    const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' });
-    const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' });
+    const wallBoardName = boardConfig?.boardName;
+    const heroGrade = resolveGrade({ difficulty: currentClimb?.grade ?? '' }, wallBoardName);
+    const hardestSendGrade = resolveGrade({ difficulty: stats?.hardestSend?.grade ?? '' }, wallBoardName);
     return (
       <View>
         {/* First in the header, above the hero: the disclosure opens directly
@@ -706,14 +707,14 @@ function NowOnTheWallPanelComponent(
                 valueColor={systemColors.label}
               />
               <StatTile
-                value={stats.hardestGrade ? (formatGrade(stats.hardestGrade) ?? '–') : '–'}
+                value={stats.hardestGrade ? (formatGrade(stats.hardestGrade, wallBoardName) ?? '–') : '–'}
                 label={t('mobile.boardPresence.statHardest')}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}
                 valueColor={systemColors.label}
               />
               <StatTile
-                value={stats.topGrade ? (formatGrade(stats.topGrade) ?? '–') : '–'}
+                value={stats.topGrade ? (formatGrade(stats.topGrade, wallBoardName) ?? '–') : '–'}
                 label={t('mobile.boardPresence.statTopGrade')}
                 surfaceColor={systemColors.secondaryBackground}
                 labelColor={systemColors.secondaryLabel}

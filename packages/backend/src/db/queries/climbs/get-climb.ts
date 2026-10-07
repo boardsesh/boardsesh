@@ -155,7 +155,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       // either angle — a genuine project.
       statsAngle: row.stats_angle ?? null,
       ascensionist_count: Number(row.ascensionist_count || 0),
-      difficulty: getGradeLabel(row.difficulty_id),
+      difficulty: getGradeLabel(row.difficulty_id, params.board_name),
       quality_average: row.quality_average?.toString() || '0',
       stars: getClimbStars(row.quality_average),
       difficulty_error: row.difficulty_error?.toString() || '0',

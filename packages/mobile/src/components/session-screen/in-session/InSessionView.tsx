@@ -56,6 +56,7 @@ import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
 import { SessionVisibilityControl } from './SessionVisibilityControl';
 import { sortHardestSends, type HardestSend } from './hardest-sends';
+import { getSoleBoardType } from '../../../lib/grade-label';
 
 type InSessionViewProps = {
   /** Render the floating glass chrome (large title + board pill + share). True
@@ -174,7 +175,10 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   ].filter((part): part is string => !!part);
   const subtitle = subtitleParts.join(' · ');
   const rawGradeLabel = tick.difficultyName ?? null;
-  const gradeLabel = formatGradeByDifficultyId(tick.difficulty) ?? formatGrade(rawGradeLabel) ?? rawGradeLabel;
+  const gradeLabel =
+    formatGradeByDifficultyId(tick.difficulty, tick.boardType) ??
+    formatGrade(rawGradeLabel, tick.boardType) ??
+    rawGradeLabel;
   const gradeColor = gradeLabel ? gradeBadgeColor(rawGradeLabel ?? gradeLabel) : undefined;
 
   const handlePress = () => {
@@ -338,6 +342,7 @@ export function InSessionView({
   const gradeDistribution = live?.gradeDistribution ?? detail?.gradeDistribution ?? [];
   const participants = live?.participants ?? detail?.participants ?? [];
   const hardestGrade = live?.hardestGrade ?? detail?.hardestGrade ?? null;
+  const sessionBoardType = getSoleBoardType(detail?.boardTypes);
 
   const isMultiUser = participants.length > 1;
 
@@ -350,6 +355,7 @@ export function InSessionView({
       if (!hardestGrade) return [];
       let bestName: string | null = null;
       let bestDifficultyId: number | null = null;
+      let bestBoardType: string | null = null;
       let bestDifficulty = -Infinity;
       for (const tick of sendTicks) {
         const difficulty = tick.difficulty ?? -Infinity;
@@ -357,9 +363,10 @@ export function InSessionView({
           bestDifficulty = difficulty;
           bestDifficultyId = tick.difficulty ?? null;
           bestName = tick.climbName ?? null;
+          bestBoardType = tick.boardType;
         }
       }
-      return [{ difficultyId: bestDifficultyId, grade: hardestGrade, climbName: bestName }];
+      return [{ difficultyId: bestDifficultyId, grade: hardestGrade, climbName: bestName, boardType: bestBoardType }];
     }
     const bestByUser = new Map<string, SessionDetailTick>();
     for (const tick of sendTicks) {
@@ -378,6 +385,7 @@ export function InSessionView({
           difficultyId: tick.difficulty ?? null,
           grade: tick.difficultyName ?? '',
           climbName: tick.climbName,
+          boardType: tick.boardType,
         };
       })
       .filter((entry) => entry.grade);
@@ -640,6 +648,7 @@ export function InSessionView({
         hardestSends={hardestSends}
         startedAt={startedAt}
         gradeDistribution={gradeDistribution}
+        boardName={sessionBoardType}
       />
 
       {/* Turn the rest timer on for the session you're in (#5378), and see it

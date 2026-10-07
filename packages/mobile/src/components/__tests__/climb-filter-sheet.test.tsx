@@ -865,7 +865,14 @@ describe('ClimbFilterSheet sub-pickers', () => {
         layoutId: '1',
         sizeId: '10',
         setIds: '1,2',
+        angle: '40',
         holdsFilter: JSON.stringify(currentBoardFilters.holdsFilter),
+        // The draft the heatmap on that screen counts over.
+        heatmapSearch: JSON.stringify({
+          filters: currentFilters,
+          boardFilters: currentBoardFilters,
+          searchText: '',
+        }),
       },
     });
     expect(managedSheetProps.latest?.open).toBe(false);

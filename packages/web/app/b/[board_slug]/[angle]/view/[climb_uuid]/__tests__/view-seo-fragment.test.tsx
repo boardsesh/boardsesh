@@ -178,7 +178,10 @@ function treeContainsElementOfType(node: React.ReactNode, type: React.ElementTyp
 }
 
 async function renderFrontDoor(params = PARAMS): Promise<string> {
-  const element = (await pageModule.default({ params: Promise.resolve(params) })) as React.ReactElement;
+  const element = (await pageModule.default({
+    searchParams: Promise.resolve({}),
+    params: Promise.resolve(params),
+  })) as React.ReactElement;
   return renderToString(<>{await resolveServerTree(element)}</>);
 }
 
@@ -217,7 +220,10 @@ function breadcrumbItems(html: string): BreadcrumbItem[] {
 
 describe('board slug climb view SEO fragment', () => {
   it('SSR-emits ClimbViewSeoFragment in the server output', async () => {
-    const element = (await pageModule.default({ params: Promise.resolve(PARAMS) })) as React.ReactElement;
+    const element = (await pageModule.default({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve(PARAMS),
+    })) as React.ReactElement;
     // Expand every async server component EXCEPT the fragment, so the assertion
     // stays an element-identity check rather than a string match on its output.
     const tree = await resolveServerTree(element, new Set([ClimbViewSeoFragment]));

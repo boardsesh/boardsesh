@@ -8,7 +8,7 @@ import { getStoredActiveBoard } from '../lib/active-board-store';
  *
  * `/climbs/holds`, `/climbs/zone` and `/climbs/setters` are pushed by
  * `ClimbFilterSheet`, which hands them the sheet's `boardConfig` as route params
- * (boardName / layoutId / sizeId / setIds, plus angle for setters). A capture
+ * (boardName / layoutId / sizeId / setIds, plus angle). A capture
  * can't reach them that way: Maestro's accessibility tree on this iOS build
  * doesn't expose the sheet's pressables, so every screen is opened by deep link
  * (see `.maestro/help.yaml`), and a bare `com.boardsesh.app://climbs/holds`

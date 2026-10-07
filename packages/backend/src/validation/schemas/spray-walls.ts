@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
-import { isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
+import { SPRAY_WALL_BACKGROUNDS, isSolvableAnchorQuad } from '@boardsesh/spray-wall-geometry';
 import { UUIDSchema } from './primitives';
 
 /**
@@ -273,6 +273,9 @@ export const CommitSprayWallVersionInputSchema = z
     kept: z.array(SprayWallKeptDecisionSchema).max(MAX_HOLDS_PER_WALL),
     removed: z.array(z.number().int().positive()).max(MAX_HOLDS_PER_WALL),
     added: z.array(SprayWallAddedDecisionSchema).max(MAX_HOLDS_PER_WALL),
+    // Optional so an app that predates full resets (#6024) commits exactly as
+    // before: a partial reset.
+    fullReset: z.boolean().nullish(),
   })
   .refine((input) => {
     const keptIds = input.kept.map((decision) => decision.holdId);
@@ -404,6 +407,13 @@ export const SprayWallRenderSettingsSchema = z
   .object({
     mode: z.enum(['classic', 'aura'], { error: "mode must be 'classic' or 'aura'" }),
     boardsesh: BoardseshRenderSettingsSchema,
+    // What the wall is drawn on. Optional, so every client that predates it
+    // keeps sending a valid look; missing means 'photo'. A generated background
+    // is also refused by the resolver when the wall's photo fails the quality
+    // gate, so an old or hand-rolled client cannot store one it cannot show.
+    background: z
+      .enum(SPRAY_WALL_BACKGROUNDS, { error: "background must be 'photo', 'wall-crop' or 'hold-cutouts'" })
+      .optional(),
   })
   .strict()
   .nullable();

@@ -9,7 +9,6 @@ import {
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { DEFAULT_FILTERS, filtersForBoard, type ClimbFilters } from '../../../lib/climb-filter-types';
 import type { LastSearch } from '../../../lib/last-search-store';
-import { isOfflineSearchSupported } from '../../../db/queries/search-climbs-local';
 
 /** The climb list's saved search, minus the bookkeeping the heatmap has no use for. */
 export type HeatmapSearch = Pick<LastSearch, 'filters' | 'boardFilters' | 'searchText'>;
@@ -62,22 +61,31 @@ export function heatmapSearchInput(board: BoardSearchConfig, search: HeatmapSear
 }
 
 /**
- * The search the phone can actually run. A hold-state pick ("this hold as a
- * start") needs a table the phone does not sync, so rather than refusing the
- * whole heatmap the picks are dropped and the rest of the filters still apply;
- * the chip says so.
+ * The saved search without its hold picks. The hold filter screen is where those
+ * picks are being edited, so heat from the old picks would only describe the
+ * climbs the climber is about to stop asking for.
  */
-export function localHeatmapInput(input: ClimbSearchInput): {
-  input: ClimbSearchInput;
-  holdPicksSkipped: boolean;
-  unsupported: boolean;
-} {
-  if (isOfflineSearchSupported(input)) return { input, holdPicksSkipped: false, unsupported: false };
-  if (input.holdsFilter != null) {
-    const { holdsFilter: _holdsFilter, ...withoutHoldPicks } = input;
-    if (isOfflineSearchSupported(withoutHoldPicks)) {
-      return { input: withoutHoldPicks, holdPicksSkipped: true, unsupported: false };
-    }
+export function withoutHoldPicks(search: HeatmapSearch): HeatmapSearch {
+  const { holdsFilter: _holdsFilter, ...boardFilters } = search.boardFilters;
+  return { ...search, boardFilters };
+}
+
+/**
+ * The filter sheet's draft, as `ClimbFilterSheet` serialises it into the hold
+ * filter route. Anything malformed (or a deep link with no draft) is null,
+ * which the heatmap reads as the whole board.
+ */
+export function parseHeatmapSearch(serialized: string | undefined): HeatmapSearch | null {
+  if (!serialized) return null;
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    const candidate = parsed as Record<string, unknown>;
+    const isRecord = (field: unknown) => typeof field === 'object' && field !== null && !Array.isArray(field);
+    if (!isRecord(candidate.filters) || !isRecord(candidate.boardFilters)) return null;
+    if (typeof candidate.searchText !== 'string') return null;
+    return candidate as unknown as HeatmapSearch;
+  } catch {
+    return null;
   }
-  return { input, holdPicksSkipped: false, unsupported: true };
 }

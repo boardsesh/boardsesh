@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 
 /**
  * Every writer of spray wall state takes the wall lock, and takes it FIRST.
@@ -31,6 +32,10 @@ const SPRAY_WALLS_SOURCE = readFileSync(
 );
 const SPRAY_AUTHORING_SOURCE = readFileSync(
   fileURLToPath(new URL('../graphql/resolvers/climbs/spray-authoring.ts', import.meta.url)),
+  'utf8',
+);
+const SPRAY_LOCK_SOURCE = readFileSync(
+  fileURLToPath(new URL('../services/spray-wall-lock.ts', import.meta.url)),
   'utf8',
 );
 
@@ -141,10 +146,13 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
     name: 'setSprayWallRenderSettings',
     source: SPRAY_WALLS_SOURCE,
     why: 'it writes spray_walls.render_settings',
-    // A blind single-column write that decides on no read of wall state, to a
-    // column no hold, version or publish path reads or writes. There is nothing
-    // to order it against; the last call wins, which is what a setting is.
-    exempt: 'it decides on no read and no other writer touches render_settings',
+    // A single-column write to a column no hold, version or publish path reads
+    // or writes. Its reads are a version's pins and frame (a generated
+    // background is refused when the photo fails the quality gate), which never
+    // change once written, and the stored background an older client's write
+    // keeps — the same column, where the last call wins. A publish racing it
+    // queues its own art. There is nothing to order it against.
+    exempt: 'it decides only on immutable version geometry and its own column, which no other writer touches',
   },
   { name: 'deleteSprayWall', source: SPRAY_WALLS_SOURCE, why: 'a publish must not land on a wall being deleted' },
   {
@@ -215,8 +223,9 @@ describe('every spray wall writer holds the wall lock', () => {
   it('locks on the wall id, not the version id', () => {
     // A per-version lock would not make an edit and a publish queue: they contend on
     // different rows (a version row and the wall's `current_version_id`).
-    const body = functionBody(SPRAY_WALLS_SOURCE, 'lockWallForWrite');
-    expect(body).toMatch(/pg_advisory_xact_lock\(\$\{SPRAY_WALL_LOCK_NAMESPACE\}, \$\{wallId\}\)/);
+    const body = functionBody(SPRAY_LOCK_SOURCE, 'lockWallForWrite');
+    expect(body).toMatch(/pg_advisory_xact_lock\(\$\{SPRAY_WALL_WRITE_LOCK_NAMESPACE\}, \$\{wallId\}\)/);
+    expect(SPRAY_WALL_WRITE_LOCK_NAMESPACE).toBe(0x53505259);
   });
 });
 

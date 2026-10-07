@@ -1701,13 +1701,15 @@ export function useCreateClimbScreen({
     // the caller is the owner or a gym member, `undefined` off a spray wall.
     const sprayWallUuid = sprayWallUuidFor(board.boardName, board.layoutId);
     // The grade string the server grades against — `board_difficulty_grades.boulder_name`
-    // for this board, which is the shared Boardsesh scale a wall copies.
+    // for this board: the shared Boardsesh scale a wall copies, or MoonBoard's own.
     // `|| undefined`, not just the null check: `getGradeLabel` answers `''` for an
     // id the bundled table does not name, and an empty string passes the server's
     // `userGrade != null` guard — so it would come back as `"" is not a grade on
     // the Boardsesh scale` instead of simply saying nothing about the grade.
     const userGrade =
-      setterGradeDifficultyId !== null ? getGradeLabel(setterGradeDifficultyId) || undefined : undefined;
+      setterGradeDifficultyId !== null
+        ? getGradeLabel(setterGradeDifficultyId, board.boardName) || undefined
+        : undefined;
     let nextSavedClimb: SavedClimbSnapshot | null = null;
     try {
       if (canUpdate && savedClimb) {

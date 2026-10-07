@@ -29,6 +29,7 @@ describe('family registry', () => {
       'moonboard-locations-sync',
       'climb-stats-self-heal',
       'user-data-export',
+      'spray-wall-art',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

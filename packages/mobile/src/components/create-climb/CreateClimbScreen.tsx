@@ -31,7 +31,7 @@ import { CreateDrawer } from './CreateDrawer';
 import { useCreateClimbScreen, type CreateClimbBoard } from './use-create-climb-screen';
 import { useHoldHeatmap } from '../../lib/graphql/hooks/use-hold-heatmap';
 import { useCatalogQuerySourceState } from '../../lib/offline/use-catalog-query-source';
-import { heatmapSearchInput } from '../play-drawer/heatmap/heatmap-search-input';
+import { heatmapSearchInput } from '../search/heatmap/heatmap-search-input';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { heatMetricForBrush, type CreateHeatmap } from './create-heatmap';
 

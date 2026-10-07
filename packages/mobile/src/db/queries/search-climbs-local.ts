@@ -437,9 +437,21 @@ export function buildJoinAndWhere(
   // reset says otherwise. So INTACT keeps NULLs and BROKEN drops them. Reversed,
   // one un-backfilled row would badge every Kilter climb on the device as broken.
   //
-  // ANY (and an absent filter) carries no predicate on either side.
+  // ANY (and an absent filter) carries no integrity predicate on either side.
   if (input.holdIntegrity === 'INTACT') push('COALESCE(c.missing_hold_count, 0) = 0');
   if (input.holdIntegrity === 'BROKEN') push('COALESCE(c.missing_hold_count, 0) > 0');
+
+  // Climbs retired by a full reset (#6024), mirroring `retiredByResetCondition`
+  // in packages/db/src/queries/climbs/create-climb-filters.ts: gone from a spray
+  // wall's DEFAULT list, back under an explicit ANY ("All"), under BROKEN ("Lost
+  // holds") and on a name search. A downloaded wall reads here even while
+  // online, so the two must agree or the list changes with the signal.
+  //
+  // COALESCE because NULL reads as not retired: every catalogue climb, and any
+  // row pulled before on-device migration v12 added the column.
+  if (boardType === 'spray' && input.holdIntegrity == null && !hasNameQuery(input)) {
+    push('COALESCE(c.retired_by_reset, 0) = 0');
+  }
 
   // Boulders / routes on frames_count (NULL is legacy single-frame → boulder).
   const wantsBoulders = !!input.boulders;
@@ -781,7 +793,8 @@ export function mapRowToClimb(
     angle,
     statsAngle: row.stats_angle ?? null,
     ascensionist_count: Number(row.ascensionist_count ?? 0),
-    difficulty: getGradeLabel(difficultyId),
+    // On the board's own scale, so it matches the server's `boulder_name` (MoonBoard's 16 is "6a/V2").
+    difficulty: getGradeLabel(difficultyId, boardType),
     quality_average: row.quality_average !== null ? String(roundTo(row.quality_average, 2)) : '0',
     stars: getClimbStars(row.quality_average),
     difficulty_error: difficultyError,
