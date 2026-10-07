@@ -23,6 +23,7 @@ import {
   assertAngleForType,
   assertSprayProposalAllowed,
   assertNotFrozen,
+  assertNotHidingOwnClimb,
   findOpenProposal,
   flipVoteToUpvote,
   insertProposalWithProposerVote,
@@ -58,6 +59,7 @@ export const socialProposalMutations = {
     }
 
     const target = await loadTargetClimb(climbUuid, boardType, proposerId);
+    assertNotHidingOwnClimb(type, target, proposerId);
     await assertNotFrozen(climbUuid, angle ?? null, boardType);
     await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 
@@ -203,6 +205,7 @@ export const socialProposalMutations = {
     const proposedValue = kind === 'hide' ? 'true' : proposedGrade!;
 
     const target = await loadTargetClimb(climbUuid, boardType, reporterId);
+    assertNotHidingOwnClimb(type, target, reporterId);
     await assertNotFrozen(climbUuid, angle, boardType);
     await assertSprayProposalAllowed({ climbUuid, boardType, type, proposedValue });
 

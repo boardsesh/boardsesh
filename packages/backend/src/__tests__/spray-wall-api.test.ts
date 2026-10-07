@@ -4515,6 +4515,27 @@ describe('a spray climb\u2019s grade is the climbers\u2019 vote (#5971)', () => 
     expect(Number((await statsFor(climbUuid)).display_difficulty)).toBe(10);
   });
 
+  it('refuses a hide the setter files on their own climb, through either door', async () => {
+    const climbUuid = await ungradedClimb(STRANGER);
+    await expect(
+      socialProposalMutations.reportClimb(
+        {},
+        { input: { climbUuid, boardType: 'spray', kind: 'hide', reason: 'Do not want this one up' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toThrow(/your own climb/i);
+    await expect(
+      socialProposalMutations.createProposal(
+        {},
+        { input: { climbUuid, boardType: 'spray', type: 'hide', proposedValue: 'true', reason: 'Do not want it' } },
+        ctxFor(STRANGER),
+      ),
+    ).rejects.toThrow(/your own climb/i);
+    // A grade proposal from the same setter is the point of the door.
+    await sendTick(climbUuid, STRANGER, 10);
+    await expect(reportGrade(climbUuid, STRANGER, '7a/V6')).resolves.toMatchObject({ status: 'created' });
+  });
+
   it('refuses the setter override on a spray climb, even for its setter', async () => {
     const climbUuid = await ungradedClimb(STRANGER);
     await expect(

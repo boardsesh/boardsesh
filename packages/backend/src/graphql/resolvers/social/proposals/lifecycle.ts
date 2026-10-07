@@ -202,6 +202,19 @@ export async function assertSprayProposalAllowed(
   }
 }
 
+/**
+ * Refuse a hide proposal filed by the climb's own setter (#5971).
+ *
+ * A spray wall lets a setter report their own climb, because a grade proposal is
+ * how its grade changes there. Hiding your own climb is not what that door is
+ * for: it would cast the setter's weighted vote against their own work.
+ */
+export function assertNotHidingOwnClimb(type: ProposalTypeName, target: TargetClimb, userId: string): void {
+  if (type === 'hide' && target.userId != null && target.userId === userId) {
+    throw new Error("You can't report your own climb to hide it");
+  }
+}
+
 /** Refuse new proposals on a climb an admin has frozen. */
 export async function assertNotFrozen(climbUuid: string, angle: number | null, boardType: string): Promise<void> {
   const frozenSetting = await resolveCommunitySetting('climb_frozen', climbUuid, angle, boardType);
