@@ -116,7 +116,7 @@ vi.mock('../brush-roles', () => ({
 }));
 
 import { clearSprayWallRegistry, registerSprayWall } from '../../../lib/spray/spray-wall-registry';
-import { useCreateClimbScreen } from '../use-create-climb-screen';
+import { useCreateClimbScreen, withoutStoredGrade } from '../use-create-climb-screen';
 
 const LAYOUT_ID = 9001;
 const SPRAY_BOARD = {
@@ -561,5 +561,19 @@ describe('the publish default never overrules a climb that already has an answer
 
     await waitFor(() => expect(result.current.name).toBe('On the server'));
     expect(result.current.isDraft).toBe(false);
+  });
+});
+
+describe('a draft saved with a setter grade by an older build (#5971)', () => {
+  it('drops the stored grade from its signature, so it does not read as edited', () => {
+    expect(withoutStoredGrade('holds\u0000frames\u0000Name\u00000\u0000grade:20')).toBe(
+      'holds\u0000frames\u0000Name\u00000',
+    );
+    expect(withoutStoredGrade('holds\u0000frames\u0000pace:400\u0000grade:20')).toBe('holds\u0000frames\u0000pace:400');
+  });
+
+  it('leaves a signature with no grade, or none at all, alone', () => {
+    expect(withoutStoredGrade('holds\u0000frames\u0000Name')).toBe('holds\u0000frames\u0000Name');
+    expect(withoutStoredGrade(undefined)).toBeUndefined();
   });
 });

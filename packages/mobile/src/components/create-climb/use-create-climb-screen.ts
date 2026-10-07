@@ -155,6 +155,17 @@ function createPayloadSignature(fields: PayloadSignatureFields): string {
 }
 
 /**
+ * A saved signature as this build writes it. Builds before #5971 appended the
+ * spray setter grade as a last `grade:N` part; the editor has no grade any more,
+ * so a stored draft carrying one would read as "edited since you saved" for good.
+ * Dropping the part keeps such a draft unedited.
+ */
+export function withoutStoredGrade(signature: string | undefined): string | undefined {
+  if (signature === undefined) return undefined;
+  return signature.replace(new RegExp(`${SIGNATURE_SEPARATOR}grade:\\d+$`), '');
+}
+
+/**
  * Decode the `forkCharacteristics` route param.
  *
  * Returns `null` for an absent or unusable param and the array (possibly empty)
@@ -709,7 +720,7 @@ export function useCreateClimbScreen({
           isDraft: storedDraft.isDraft,
         };
         setSavedClimb(restoredSavedClimb);
-        setSavedSignature(storedDraft.savedPayloadSignature ?? null);
+        setSavedSignature(withoutStoredGrade(storedDraft.savedPayloadSignature) ?? null);
         setSavedSignatureUnknown(storedDraft.savedPayloadSignature === undefined);
         editFailureRestoreStateRef.current = 'found';
         setEditFailureRestoreState('found');
@@ -868,7 +879,7 @@ export function useCreateClimbScreen({
         const restoredSavedClimb = parseSavedClimbSnapshot(draft.savedClimbJson);
         if (restoredSavedClimb) {
           setSavedClimb(restoredSavedClimb);
-          setSavedSignature(draft.savedPayloadSignature ?? null);
+          setSavedSignature(withoutStoredGrade(draft.savedPayloadSignature) ?? null);
           setSavedSignatureUnknown(draft.savedPayloadSignature === undefined);
         }
       } catch {
