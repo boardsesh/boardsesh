@@ -335,8 +335,8 @@ describe('closing the loop', () => {
   it('opts the Refine brush out, and leaves every outline tool on the default', () => {
     const source = readFileSync(new FileURL('../SprayHoldEditorScreen.tsx', import.meta.url), 'utf8');
     const refineSection = source.slice(
-      source.indexOf("if (tool === 'refine')"),
-      source.indexOf("if (tool === 'trace')"),
+      source.indexOf("if (tool === 'refine' && !modePicking)"),
+      source.indexOf("if (tool === 'trace' && !modePicking)"),
     );
     expect(refineSection).toContain('closeOnReturn={false}');
     expect(source.match(/closeOnReturn/g)).toHaveLength(1);
