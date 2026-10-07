@@ -268,6 +268,10 @@ Four entry points, all behind one flag.
 - **Report climb** — long-press a climb row, or the ⋮ button, or the play drawer's climb menu. The
   sheet asks hide-or-grade plus a reason (10–500 characters, the server's own bound) and calls
   `reportClimb`. The three `status` values come back as three different toasts; see the table above.
+  It is never offered on a draft, nor on your own climb, except on a spray wall, where a grade
+  proposal is how a setter changes their climb's grade (#5971). A grade proposal that comes back
+  already `approved` (a wall owner's) toasts "Grade changed" instead of "proposed", and refreshes
+  the climb lists.
 - **More → Moderation** — the feed (`app/moderation.tsx`, one root-stack modal), in its own
   "Community" More-tab section so it is reachable signed-out too (voting prompts a sign-in). It
   pages `browseProposals` twenty at a time, open
