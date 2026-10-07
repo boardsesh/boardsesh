@@ -17,6 +17,8 @@ const lostHoldsQuery = vi.hoisted(() => ({
 }));
 const registry = vi.hoisted(() => ({
   wall: null as null | { homography?: number[]; holds: { id: number; cx: number; cy: number; r: number }[] },
+  // The generated look the wall is drawn on, or null for its photo.
+  art: null as null | { scale: number; holds: unknown[] },
 }));
 
 vi.mock('../../../lib/graphql/hooks/use-climb-lost-holds', () => ({
@@ -28,9 +30,7 @@ vi.mock('../../../lib/graphql/hooks/use-climb-lost-holds', () => ({
 vi.mock('../../../lib/spray/spray-wall-registry', () => ({
   SPRAY_BOARD_NAME: 'spray',
   getSprayWall: () => registry.wall,
-  // No generated look in these cases: the wall is drawn on its photo.
-  activeSprayArt: () => null,
-  drawnSprayHolds: (wall: { holds: readonly unknown[] }) => wall.holds,
+  activeSprayArt: () => registry.art,
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => {} }));
 
@@ -67,6 +67,7 @@ describe('findLostHoldIds', () => {
 describe('useLostHoldGhosts', () => {
   beforeEach(() => {
     lostHoldsQuery.variables.length = 0;
+    registry.art = null;
     lostHoldsQuery.state = {
       status: 'ready',
       lostHolds: [
@@ -105,6 +106,15 @@ describe('useLostHoldGhosts', () => {
   it('draws nothing, so holds nothing back, when the positions cannot be read', () => {
     lostHoldsQuery.state = { status: 'unavailable' };
     expect(setup().result.current.ghosts).toEqual([]);
+  });
+
+  // On a generated look the rings are scaled into the art, the way the live
+  // holds are, and need no homography at all.
+  it('draws the ring on a generated look by its scale', () => {
+    registry.wall = { holds: [] };
+    registry.art = { scale: 0.5, holds: [] };
+    lostHoldsQuery.state = { status: 'ready', lostHolds: [{ id: 2, cx: 100, cy: 100, r: 10, outline: null }] };
+    expect(setup().result.current.ghosts).toEqual([expect.objectContaining({ id: 2, cx: 50, cy: 50, r: 5 })]);
   });
 
   it('draws nothing on a wall registered without a homography', () => {

@@ -408,22 +408,14 @@ const lookWrites = new Map<string, number>();
 let lookEpoch = 0;
 
 /**
- * A wall's stored look, sanitised, or null when it has none.
+ * A wall's stored look (sanitised, or null when it has none) and its
+ * background, from the one `GET_SPRAY_WALL_LOOK` read.
  *
- * Never rejects. The look is optional: a failed read (offline, or a backend that
- * predates the field) keeps the last look this session knew, or none, and the
- * wall draws in the viewer's own settings. Answers are kept for the registry's
- * revalidation window, so a backend without the field is asked once per window,
- * not once per row.
- */
-export function fetchSprayWallLook(wallUuid: string): Promise<SprayWallRenderSettingsValue | null> {
-  return fetchSprayWallLookState(wallUuid).then((state) => state.look);
-}
-
-/**
- * The look and the background together, from the one `GET_SPRAY_WALL_LOOK`
- * read. Same caching and failure rules as `fetchSprayWallLook`: a failed read
- * keeps what this session last knew, or the photo.
+ * Never rejects. Both are optional: a failed read (offline, or a backend that
+ * predates the fields) keeps what this session last knew, or no look and the
+ * photo, and the wall draws in the viewer's own settings. Answers are kept for
+ * the registry's revalidation window, so a backend without the fields is asked
+ * once per window, not once per row.
  */
 export function fetchSprayWallLookState(wallUuid: string): Promise<SprayWallLookState> {
   const known = looks.get(wallUuid);
