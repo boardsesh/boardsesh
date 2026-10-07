@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { isValidElement, type ReactElement } from 'react';
+import { createElement, isValidElement, type ReactElement } from 'react';
 
 const cfg = vi.hoisted(() => ({ navigation: { setOptions: vi.fn() } }));
 vi.mock('expo-router', () => ({ useNavigation: () => cfg.navigation }));
@@ -10,7 +10,7 @@ vi.mock('expo-router', () => ({ useNavigation: () => cfg.navigation }));
 // stand-ins keep this test off the native tree.
 vi.mock('../../components/HeaderActionButtons', () => ({
   HeaderLeadingButton: () => null,
-  HeaderTrailingButton: () => null,
+  HeaderTrailingGroup: () => null,
 }));
 
 import { useHeaderActions } from '../use-header-actions';
@@ -22,7 +22,16 @@ const optionCalls = (): Options[] => cfg.navigation.setOptions.mock.calls.map(([
 /** The onPress a rendered header element was handed; fails the test if there is no element. */
 function pressOf(element: ReactElement | undefined): () => void {
   if (!element) throw new Error('the header slot rendered nothing');
-  return (element.props as { onPress: () => void }).onPress;
+  const props = element.props as { onPress?: () => void; trailing?: { onPress: () => void } };
+  const onPress = props.onPress ?? props.trailing?.onPress;
+  if (!onPress) throw new Error('the header slot has no action');
+  return onPress;
+}
+
+/** The trailing action handed to headerRight's group. */
+function trailingOf(element: ReactElement | undefined): object | undefined {
+  if (!element) throw new Error('the header slot rendered nothing');
+  return (element.props as { trailing?: object }).trailing;
 }
 
 const lastWith = (key: keyof Options): Options | undefined =>
@@ -45,7 +54,8 @@ describe('useHeaderActions', () => {
     const right = lastWith('headerRight')?.headerRight?.({ tintColor: '#123' });
     expect(isValidElement(left)).toBe(true);
     expect(left?.props).toMatchObject({ kind: 'close', tintColor: '#123' });
-    expect(right?.props).toMatchObject({ label: 'Save', prominent: true, disabled: true, tintColor: '#123' });
+    expect(right?.props).toMatchObject({ tintColor: '#123' });
+    expect(trailingOf(right)).toMatchObject({ label: 'Save', prominent: true, disabled: true });
 
     // The forwarders call the latest handlers.
     pressOf(left)();
@@ -81,18 +91,29 @@ describe('useHeaderActions', () => {
       { initialProps: { loading: false } },
     );
     rerender({ loading: true });
-    expect(lastWith('headerRight')?.headerRight?.({}).props).toMatchObject({ loading: true });
+    expect(trailingOf(lastWith('headerRight')?.headerRight?.({}))).toMatchObject({ loading: true });
   });
 
-  it('clears the slots it set on unmount', () => {
-    const { unmount } = renderHook(() =>
-      useHeaderActions({
-        leading: { kind: 'back', onPress: vi.fn() },
-        trailing: { label: 'Next', onPress: vi.fn() },
-      }),
+  it('never clears a slot: not on unmount, not when the action is dropped or null', () => {
+    const { rerender, unmount } = renderHook(
+      ({ on }) =>
+        useHeaderActions(
+          on
+            ? { leading: { kind: 'back', onPress: vi.fn() }, trailing: { label: 'Next', onPress: vi.fn() } }
+            : { leading: null, trailing: undefined },
+        ),
+      { initialProps: { on: true } },
     );
     cfg.navigation.setOptions.mockClear();
+    rerender({ on: false });
     unmount();
-    expect(optionCalls()).toEqual(expect.arrayContaining([{ headerLeft: undefined }, { headerRight: undefined }]));
+    expect(cfg.navigation.setOptions).not.toHaveBeenCalled();
+  });
+
+  it('renders an accessory before the trailing action, and alone', () => {
+    const accessory = createElement('span', null, '?');
+    renderHook(() => useHeaderActions({ trailingAccessory: accessory }));
+    const right = lastWith('headerRight')?.headerRight?.({});
+    expect(right?.props).toMatchObject({ accessory, trailing: undefined });
   });
 });

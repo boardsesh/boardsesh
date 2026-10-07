@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+
+const ctrl = vi.hoisted(() => ({ fontScale: 1, variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
 type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
 
@@ -20,19 +22,29 @@ vi.mock('react-native', () => ({
     create: (sheet: Record<string, unknown>) => sheet,
     hairlineWidth: 1,
   },
+  useWindowDimensions: () => ({ width: 390, height: 844, scale: 3, fontScale: ctrl.fontScale }),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => `t:${key}` }) }));
 
 vi.mock('../../providers/theme-provider', async () => {
   const { makeThemeMock } = await import('../../test/theme-mock');
-  const theme = makeThemeMock();
-  return { useTheme: () => theme, useOptionalTheme: () => theme };
+  const themes = { liquidGlass: makeThemeMock(), material: makeThemeMock({ variant: 'material' }) };
+  return { useTheme: () => themes[ctrl.variant], useOptionalTheme: () => themes[ctrl.variant] };
 });
 
+type TextMockProps = { children?: ReactNode; style?: unknown; numberOfLines?: number; maxFontSizeMultiplier?: number };
 vi.mock('../Text', () => ({
-  Text: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('span', { 'data-style': JSON.stringify(flatten(style)) }, children),
+  Text: ({ children, style, numberOfLines, maxFontSizeMultiplier }: TextMockProps) =>
+    createElement(
+      'span',
+      {
+        'data-style': JSON.stringify(flatten(style)),
+        'data-lines': numberOfLines,
+        'data-max-scale': maxFontSizeMultiplier,
+      },
+      children,
+    ),
 }));
 
 vi.mock('../Icon', () => ({
@@ -62,7 +74,14 @@ vi.mock('../PressableSurface', () => ({
 
 import { SheetTopBar } from '../SheetTopBar';
 
+const styleOf = (element: Element | null) => JSON.parse(element?.getAttribute('data-style') ?? '{}');
+
 describe('SheetTopBar', () => {
+  beforeEach(() => {
+    ctrl.fontScale = 1;
+    ctrl.variant = 'liquidGlass';
+  });
+
   it('renders the title, a Cancel leading action and the trailing label', () => {
     const onCancel = vi.fn();
     const onSave = vi.fn();
@@ -133,8 +152,8 @@ describe('SheetTopBar', () => {
     };
     const { style: emptySlot } = slotStyle(null);
     const { style: filledSlot, shown } = slotStyle('That did not send.');
-    expect(emptySlot.minHeight).toBeGreaterThan(0);
-    expect(filledSlot.minHeight).toBe(emptySlot.minHeight);
+    expect(emptySlot.height).toBeGreaterThan(0);
+    expect(filledSlot.height).toBe(emptySlot.height);
     expect(shown).toBe(true);
   });
 
@@ -143,18 +162,73 @@ describe('SheetTopBar', () => {
     expect(queryByTestId('sheet-top-bar-error-slot')).toBeNull();
   });
 
-  it('gives each flank an equal share so the title stays centred', () => {
-    const { container } = render(
+  it('the title yields to the actions: a long title beside "Speichern" at 1.2x never truncates the action', () => {
+    ctrl.fontScale = 1.2;
+    const { getByText, getByTestId } = render(
       createElement(SheetTopBar, {
-        title: 'Edit',
+        title: 'Eine sehr lange Überschrift für dieses Blatt, die nicht passt',
         leading: { kind: 'cancel', onPress: vi.fn() },
-        trailing: { label: 'Save changes', onPress: vi.fn() },
+        trailing: { label: 'Speichern', onPress: vi.fn(), prominent: true },
       }),
     );
-    const flanks = [...container.querySelectorAll('div[data-style]')]
-      .map((node) => JSON.parse(node.getAttribute('data-style') ?? '{}'))
-      .filter((style) => style.flexBasis === 0);
-    expect(flanks).toHaveLength(2);
-    expect(flanks[0].flexGrow).toBe(flanks[1].flexGrow);
+    // The flanks hold their width; only the title column can shrink.
+    expect(styleOf(getByTestId('sheet-top-bar-trailing-flank'))).toMatchObject({ flexShrink: 0 });
+    expect(styleOf(getByTestId('sheet-top-bar-leading-flank'))).toMatchObject({ flexShrink: 0 });
+    const titleColumn = styleOf(getByTestId('sheet-top-bar-title'));
+    expect(titleColumn).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    expect(titleColumn.maxWidth).toBeUndefined();
+    // The action's label is whole, and capped so the 1.2x scale can't outgrow the bar.
+    const label = getByText('Speichern');
+    expect(label.textContent).toBe('Speichern');
+    expect(label.getAttribute('data-max-scale')).toBe('1.2');
+  });
+
+  it('a prominent confirm is a filled capsule on Liquid Glass and plain text on Material', () => {
+    const glass = render(
+      createElement(SheetTopBar, { title: 'Edit', trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }),
+    );
+    const glassFill = styleOf(glass.getByText('Save').parentElement).backgroundColor;
+    glass.unmount();
+    expect(glassFill).toBeTruthy();
+
+    ctrl.variant = 'material';
+    const material = render(
+      createElement(SheetTopBar, { title: 'Edit', trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }),
+    );
+    expect(styleOf(material.getByText('Save').parentElement).backgroundColor).toBeUndefined();
+    expect(styleOf(material.getByText('Save'))).toMatchObject({ fontWeight: '600' });
+  });
+
+  it('draws the trailing accessory before the action', () => {
+    const { getByTestId } = render(
+      createElement(SheetTopBar, {
+        title: 'Holds',
+        trailingAccessory: createElement('em', { 'data-testid': 'help' }, '?'),
+        trailing: { label: 'Next', onPress: vi.fn() },
+      }),
+    );
+    const flank = getByTestId('sheet-top-bar-trailing-flank');
+    expect(flank.firstElementChild?.getAttribute('data-testid')).toBe('help');
+  });
+
+  it('a long error at 2x font scale stays one line in a slot of fixed, capped height', () => {
+    ctrl.fontScale = 2;
+    const slotFor = (error: string | null) => {
+      const view = render(createElement(SheetTopBar, { title: 'Report', reserveErrorSlot: true, error }));
+      const style = styleOf(view.getByTestId('sheet-top-bar-error-slot'));
+      const text = error ? view.getByText(error) : null;
+      const lines = text?.getAttribute('data-lines');
+      const maxScale = text?.getAttribute('data-max-scale');
+      view.unmount();
+      return { style, lines, maxScale };
+    };
+    const empty = slotFor(null);
+    const long = slotFor('That did not send.'.repeat(10));
+    // footnote 18pt x the 1.2 cap (not 2), plus 4pt padding top and bottom.
+    expect(empty.style.height).toBe(Math.ceil(18 * 1.2) + 8);
+    expect(long.style.height).toBe(empty.style.height);
+    expect(long.style.overflow).toBe('hidden');
+    expect(long.lines).toBe('1');
+    expect(long.maxScale).toBe('1.2');
   });
 });

@@ -350,16 +350,26 @@ error text, so this removes the bottom-button yank (buttons jumping after a shee
 the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet footer appears.
 
 - **Sheets.** Pass `<SheetTopBar>` (`src/components/SheetTopBar.tsx`) through the `header` prop of
-  `ModalSheet` / `Sheet`. The header sits above the body and outside its scroll. Leading is
-  `cancel` (a form that throws edits away), `close` (nothing to lose) or `back` (step two onward).
-  Trailing is the confirm. Mark it `prominent` for the sheet's main action, `disabled` until the
-  form is valid, and `loading` while it saves. The spinner takes the label's place without
-  changing the width.
+  `ModalSheet` / `Sheet`. The header sits above the body and outside its scroll. Trailing is the
+  confirm. Mark it `prominent` for the sheet's main action, `disabled` until the form is valid,
+  and `loading` while it saves. The spinner takes the label's place without changing the width.
+  `trailingAccessory` (a "?" help button, say) sits before it. The title yields when room runs
+  short: it goes off-centre, then truncates. The actions never truncate.
+- **Leading: xmark or Cancel.** Use `close` (an xmark, as the iOS 26 system sheets do) when leaving
+  loses nothing: pickers, detail and filter sheets. Use `cancel` (the word) when leaving would
+  throw away an edit: forms and reports. Use `back` for step two onward of a multi-step sheet.
+- **How the confirm looks.** In a sheet, `prominent` is a filled brand capsule on Liquid Glass. On
+  Material it is brand-coloured semibold text with no fill, like the confirm in an M3 full-screen
+  dialog. In a native header it is the label colour in semibold on both, the look the spray
+  editor's header already uses. Native prominent bar items (`unstable_headerRightItems`) were
+  passed over: the API is unstable and iOS-only, and it has no loading state.
 - **Pushed or modal screens.** Call `useHeaderActions({ leading, trailing })`
   (`src/hooks/use-header-actions.ts`). It takes the same shape and sets the native stack's
   `headerLeft` / `headerRight`. On iOS 26 those render as Liquid Glass bar items, and on Material
-  as top app bar actions. Leave out `leading` to keep what the layout already sets, such as the
-  spray flow's leave-guarded X.
+  as top app bar actions. The hook only writes the slots you pass and never clears one, so leave
+  out `leading` (or pass `null`) to keep what the layout sets, such as the spray flow's
+  leave-guarded X. Don't pass `leading: back` on a pushed stack screen: the native back chevron
+  keeps its long-press history menu, and ours would not.
 - **Multi-step flows** (the spray wizard). Step 1 shows an X as leading. From step 2 on, show a
   back chevron. Trailing is the step's forward action: "Next", "Skip" while untouched, "Done".
 - **Secondary content actions** ("Reset", "Start the corners again", "Take a photo") sit inline
@@ -370,7 +380,7 @@ the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet 
 - **What stays at the bottom.** Composers (`CommentSheet`'s input and Send, Messages style), bottom
   tool palettes (`SprayEditorBottomBar`) and FABs. They are tools, not form actions. Buttons that
   belong to a form's body and are not pinned (auth screens, Delete account) stay inline.
-- **The one footer exception** is `LogAscentSheet`. Its `TickActionBar` (Attempt / Save) stays at
+- **The one form-footer exception** is `LogAscentSheet`. Its `TickActionBar` (Attempt / Save) stays at
   the bottom for thumb reach while logging an ascent.
 
 ## Pushing a route from INSIDE a modal route (the cross-navigator trap)

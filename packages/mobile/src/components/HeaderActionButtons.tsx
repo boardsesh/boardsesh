@@ -7,7 +7,7 @@
 // Glass capsule, and on Material the top app bar draws flat actions. Sized like
 // the spray editor's header actions (SprayEditorHeaderActions), which set the
 // precedent for a custom view in a native bar.
-import React, { useCallback } from 'react';
+import React, { useCallback, type ReactNode } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
@@ -83,17 +83,20 @@ export const HeaderTrailingButton = React.memo(function HeaderTrailingButton({
   accessibilityLabel,
   tintColor,
 }: SheetTopBarTrailing & TintProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const inert = disabled || loading;
   const handlePress = useCallback(() => {
     if (!inert) onPress();
   }, [inert, onPress]);
-  // The confirm reads as the brand accent in semibold; a plain trailing action
-  // takes the header's tint. Disabled greys either.
+  // One look for every header confirm, the SprayEditorHeaderActions one: the
+  // neutral label colour in semibold. A plain action takes the header's tint.
+  // Native prominent bar items (`unstable_headerRightItems`) were passed over:
+  // the API is unstable and iOS-only, and it has no loading state, so a save
+  // would swap a native item for a custom view mid-tap.
   const color = disabled
     ? systemColors.tertiaryLabel
     : prominent
-      ? brandColors.primary
+      ? systemColors.label
       : (tintColor ?? systemColors.label);
 
   return (
@@ -130,7 +133,30 @@ export const HeaderTrailingButton = React.memo(function HeaderTrailingButton({
   );
 });
 
+/** `headerRight` with an optional accessory (e.g. "?") drawn before the confirm. */
+export const HeaderTrailingGroup = React.memo(function HeaderTrailingGroup({
+  accessory,
+  trailing,
+  tintColor,
+}: {
+  accessory?: ReactNode;
+  trailing?: SheetTopBarTrailing;
+  tintColor?: ColorValue;
+}) {
+  return (
+    <View style={styles.trailingRow}>
+      {accessory}
+      {trailing ? <HeaderTrailingButton {...trailing} tintColor={tintColor} /> : null}
+    </View>
+  );
+});
+
 const styles = StyleSheet.create({
+  trailingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
   textTarget: {
     minHeight: glassSize.mini,
     minWidth: glassSize.capsule,

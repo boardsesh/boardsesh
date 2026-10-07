@@ -8,8 +8,14 @@ import { join, relative, sep } from 'node:path';
 // yank this rule removes. See docs/mobile-sheets-vs-routes.md, "Where actions go".
 //
 // This is a source scan, not a render test: it fails when a file passes
-// `footer=` to ModalSheet / Sheet, or imports TickActionBar, unless the file is
-// on the list below.
+// `footer=` to ModalSheet / Sheet, imports TickActionBar, or imports
+// useSheetColumnStyle (the hook a hand-rolled sheet needs to pin its own
+// footer), unless the file is on the list below.
+//
+// Known gaps, accepted for a cheap scan: a footer passed through a spread
+// (`<ModalSheet {...props}>`) is invisible to it, and the comment stripper
+// treats a `//` inside a string as a comment start (a URL after a colon is
+// handled; other strings are not).
 
 const MOBILE_ROOT = join(__dirname, '../../..');
 
@@ -39,6 +45,18 @@ const TICK_ACTION_BAR_ALLOWLIST = new Set([
   'src/components/LogAscentSheet.tsx',
   'src/components/you/LogbookEditSheet.tsx', // TODO(top-bar migration): remove
 ]);
+
+/** Hand-rolled sheets that pin their own footer. Shrink-only. */
+const SHEET_COLUMN_STYLE_ALLOWLIST = new Set([
+  'src/components/Sheet.tsx',
+  'src/components/ModalSheet.tsx',
+  'src/components/ClimbFilterSheet.tsx', // TODO(top-bar migration): remove
+  // LogAscentSheet would be listed too, but it is a ModalSheet now and gets the
+  // hook from the wrapper; it only mentions the hook in a comment.
+]);
+
+/** Where useSheetColumnStyle is defined. */
+const SHEET_COLUMN_STYLE_HOME = new Set(['src/components/use-sheet-column-style.ts']);
 
 /** Where TickActionBar is defined and re-exported: not a use of it. */
 const TICK_ACTION_BAR_HOME = new Set(['src/components/tick/TickActionBar.tsx', 'src/components/tick/index.ts']);
@@ -106,6 +124,10 @@ function importsTickActionBar(source: string): boolean {
   return /import\s[^;]*\bTickActionBar\b[^;]*\sfrom\s/.test(code) || /<TickActionBar\b/.test(code);
 }
 
+function importsSheetColumnStyle(source: string): boolean {
+  return /import\s[^;]*\buseSheetColumnStyle\b[^;]*\sfrom\s/.test(stripComments(source));
+}
+
 const SOURCE_FILES = [...listSourceFiles(join(MOBILE_ROOT, 'src')), ...listSourceFiles(join(MOBILE_ROOT, 'app'))];
 const SOURCES = new Map(SOURCE_FILES.map((filePath) => [toRelative(filePath), readFileSync(filePath, 'utf8')]));
 
@@ -132,6 +154,28 @@ describe('no pinned bottom footers on sheets', () => {
       .map(([path]) => path);
     expect(offenders).toEqual([]);
   });
+
+  it('no file outside the allowlist imports useSheetColumnStyle', () => {
+    const offenders = [...SOURCES]
+      .filter(
+        ([path, source]) =>
+          !SHEET_COLUMN_STYLE_ALLOWLIST.has(path) &&
+          !SHEET_COLUMN_STYLE_HOME.has(path) &&
+          importsSheetColumnStyle(source),
+      )
+      .map(([path]) => path);
+    // Use ModalSheet / Sheet with a SheetTopBar header instead of a hand-rolled sheet.
+    expect(offenders).toEqual([]);
+  });
+
+  it.each([...SHEET_COLUMN_STYLE_ALLOWLIST])(
+    '%s still imports useSheetColumnStyle (delete it from the list if not)',
+    (path) => {
+      const source = SOURCES.get(path);
+      expect(source, `${path} no longer exists`).toBeDefined();
+      expect(importsSheetColumnStyle(source ?? '')).toBe(true);
+    },
+  );
 
   // A file that has moved its actions to the top bar must leave the list, so
   // the list only ever shrinks and never hides a new footer.

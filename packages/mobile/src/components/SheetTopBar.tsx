@@ -6,19 +6,22 @@
 //
 // Generalised from TickSheetHeader, which keeps its own grade-bar design.
 //
-// Layout without measuring. The two flanks share what the title leaves over in
-// equal halves (`flexGrow: 1`, `flexBasis: 0`), so the title is centred on the
-// first frame with no onLayout round trip that could shift it. The title is
-// capped at half the row, so a long title truncates instead of squeezing the
-// actions off the bar.
-import React, { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+// The title yields, the actions never do (HIG). Both flanks keep their natural
+// width (`flexShrink: 0`) and the title takes what is left, truncating when it
+// runs out. To centre the title while there is room, a spacer on the narrower
+// flank's side makes up the difference between the two measured flank widths.
+// The spacer gives way first when room runs short, so a long title goes
+// off-centre before it truncates. Only the title can move when the flanks
+// measure; the actions sit at the edges from the first frame.
+import React, { useCallback, useState, type ReactNode } from 'react';
+import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { ActivityIndicator } from './ActivityIndicator';
 import { PressableSurface } from './PressableSurface';
 import { useTheme } from '../providers/theme-provider';
+import { selectByVariant } from '../theme/variants';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../theme/typography';
 import { glassSize } from '../theme/layout';
 
@@ -31,11 +34,18 @@ export const SHEET_TOP_BAR_HEIGHT = 56;
 /** The size of the leading glyphs. */
 const GLYPH_SIZE = 18;
 
+/**
+ * How the prominent confirm looks per design language. Liquid Glass: a filled
+ * brand capsule. Material: brand-coloured semibold text with no fill, the
+ * confirm of an M3 full-screen dialog's top app bar.
+ */
+const PROMINENT_FILLED = { liquidGlass: true, material: false } as const;
+
 export type SheetTopBarLeading = {
   /**
-   * `cancel` is the word "Cancel" (a form that throws edits away), `close` an X
-   * in a filled disc (a sheet with nothing to lose), `back` a chevron (step two
-   * onward of a multi-step sheet).
+   * `close` is an xmark in a filled disc: leaving loses nothing (the iOS 26
+   * system sheets use it). `cancel` is the word "Cancel": leaving throws away an
+   * edit. `back` is a chevron, for step two onward of a multi-step sheet.
    */
   kind: 'cancel' | 'close' | 'back';
   onPress: () => void;
@@ -50,7 +60,7 @@ export type SheetTopBarTrailing = {
   disabled?: boolean;
   /** A spinner stands in for the label, in the label's own space, and taps are swallowed. */
   loading?: boolean;
-  /** The sheet's confirm: a filled brand capsule instead of a plain label. */
+  /** The sheet's confirm. See PROMINENT_FILLED for how it looks. */
   prominent?: boolean;
   accessibilityLabel?: string;
 };
@@ -60,7 +70,9 @@ type SheetTopBarProps = {
   subtitle?: string;
   leading?: SheetTopBarLeading;
   trailing?: SheetTopBarTrailing;
-  /** Shown in a slot under the bar. */
+  /** Drawn before the trailing action, e.g. a "?" help button. */
+  trailingAccessory?: ReactNode;
+  /** Shown in a one-line slot under the bar. */
   error?: string | null;
   /**
    * Keep the error slot's height even while there is no error, so the body never
@@ -129,25 +141,21 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
   prominent = false,
   accessibilityLabel,
 }: SheetTopBarTrailing) {
-  const { systemColors, brandColors, radii, spacing } = useTheme();
+  const { systemColors, brandColors, radii, spacing, variant } = useTheme();
   const inert = disabled || loading;
   const handlePress = useCallback(() => {
     if (!inert) onPress();
   }, [inert, onPress]);
 
-  // `radii.button` is already resolved per UI variant (Liquid Glass vs Material),
-  // so the capsule follows the active design language without a branch here. It
-  // stays a solid brand fill on both: the same rule as Button's filled CTA, which
-  // never goes translucent.
-  const labelColor = prominent ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : brandColors.primary;
-  const surface = prominent
+  // `radii.button` is already resolved per UI variant. The capsule stays a
+  // solid brand fill, the same rule as Button's filled CTA, which never goes
+  // translucent.
+  const filled = prominent && selectByVariant(variant, PROMINENT_FILLED);
+  const labelColor = filled ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : brandColors.primary;
+  const surface = filled
     ? [
         styles.prominent,
-        {
-          backgroundColor: brandColors.primary,
-          borderRadius: radii.button,
-          paddingHorizontal: spacing[4],
-        },
+        { backgroundColor: brandColors.primary, borderRadius: radii.button, paddingHorizontal: spacing[4] },
         disabled ? styles.dimmed : null,
       ]
     : null;
@@ -171,13 +179,13 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
           color={labelColor}
           numberOfLines={1}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[styles.trailingLabel, loading ? styles.hidden : null]}
+          style={[prominent ? styles.prominentLabel : null, loading ? styles.hidden : null]}
         >
           {label}
         </Text>
         {loading ? (
           <View style={styles.spinner} testID="sheet-top-bar-spinner">
-            <ActivityIndicator size="small" color={prominent ? brandColors.onPrimary : undefined} />
+            <ActivityIndicator size="small" color={filled ? brandColors.onPrimary : undefined} />
           </View>
         ) : null}
       </View>
@@ -185,33 +193,46 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
   );
 });
 
+/** Width of a measured view, rounded up so sub-pixel noise doesn't re-render. */
+function useMeasuredWidth(): [number, (event: LayoutChangeEvent) => void] {
+  const [width, setWidth] = useState(0);
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    const measured = Math.ceil(event.nativeEvent.layout.width);
+    setWidth((previous) => (previous === measured ? previous : measured));
+  }, []);
+  return [width, onLayout];
+}
+
 export const SheetTopBar = React.memo(function SheetTopBar({
   title,
   subtitle,
   leading,
   trailing,
+  trailingAccessory,
   error,
   reserveErrorSlot = false,
   testID,
 }: SheetTopBarProps) {
   const { systemColors, brandColors, spacing, textStyles } = useTheme();
-  // One footnote line plus its padding: the slot is the same height with and
-  // without an error, so reserving it means nothing below ever moves.
-  const errorSlotHeight = (textStyles.footnote.lineHeight ?? 0) + spacing[1] * 2;
+  const { fontScale } = useWindowDimensions();
+  const [leadingWidth, onLeadingLayout] = useMeasuredWidth();
+  const [trailingWidth, onTrailingLayout] = useMeasuredWidth();
+
+  // One line of footnote at the capped font scale, plus padding. The error text
+  // is capped to the same scale and one line, so a long or scaled error can't
+  // make the slot taller than what was reserved.
+  const errorLineHeight = (textStyles.footnote.lineHeight ?? 0) * Math.min(fontScale, CHROME_LABEL_MAX_FONT_SCALE);
+  const errorSlotHeight = Math.ceil(errorLineHeight) + spacing[1] * 2;
   const showErrorSlot = reserveErrorSlot || Boolean(error);
 
   return (
     <View testID={testID}>
-      <View
-        style={[
-          styles.bar,
-          { paddingHorizontal: spacing[4], gap: spacing[2], borderBottomColor: systemColors.separator },
-        ]}
-      >
-        <View style={[styles.flank, styles.flankLeading]}>
+      <View style={[styles.bar, { paddingHorizontal: spacing[4], borderBottomColor: systemColors.separator }]}>
+        <View testID="sheet-top-bar-leading-flank" style={styles.flank} onLayout={onLeadingLayout}>
           {leading ? <SheetTopBarLeadingButton {...leading} /> : null}
         </View>
-        <View style={styles.titles}>
+        <View style={[styles.balance, { width: Math.max(0, trailingWidth - leadingWidth) }]} />
+        <View testID="sheet-top-bar-title" style={[styles.titles, { marginHorizontal: spacing[2] }]}>
           <Text variant="headline" numberOfLines={1} accessibilityRole="header" style={styles.centredText}>
             {title}
           </Text>
@@ -221,7 +242,13 @@ export const SheetTopBar = React.memo(function SheetTopBar({
             </Text>
           ) : null}
         </View>
-        <View style={[styles.flank, styles.flankTrailing]}>
+        <View style={[styles.balance, { width: Math.max(0, leadingWidth - trailingWidth) }]} />
+        <View
+          testID="sheet-top-bar-trailing-flank"
+          style={[styles.flank, styles.trailingRow, { gap: spacing[2] }]}
+          onLayout={onTrailingLayout}
+        >
+          {trailingAccessory}
           {trailing ? <SheetTopBarTrailingButton {...trailing} /> : null}
         </View>
       </View>
@@ -230,14 +257,15 @@ export const SheetTopBar = React.memo(function SheetTopBar({
           testID="sheet-top-bar-error-slot"
           style={[
             styles.errorSlot,
-            { minHeight: errorSlotHeight, paddingHorizontal: spacing[4], paddingVertical: spacing[1] },
+            { height: errorSlotHeight, paddingHorizontal: spacing[4], paddingVertical: spacing[1] },
           ]}
         >
           {error ? (
             <Text
               variant="footnote"
               color={brandColors.error}
-              numberOfLines={2}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
               accessibilityRole="alert"
               accessibilityLiveRegion="polite"
             >
@@ -257,23 +285,25 @@ const styles = StyleSheet.create({
     minHeight: SHEET_TOP_BAR_HEIGHT,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  // Equal halves of whatever the title leaves. Basis 0 makes the two grow from
-  // the same start, which is what centres the title without a measure pass.
+  // The actions never shrink: the title gives way instead.
   flank: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
+    flexShrink: 0,
     minWidth: SHEET_TOP_BAR_TARGET,
   },
-  flankLeading: {
-    alignItems: 'flex-start',
+  trailingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
-  flankTrailing: {
-    alignItems: 'flex-end',
+  // Centring spacer. Its huge shrink factor makes it give way before the title
+  // does (Yoga shrinks by factor x basis).
+  balance: {
+    flexShrink: 1000,
   },
   titles: {
+    flexGrow: 1,
     flexShrink: 1,
-    maxWidth: '50%',
+    minWidth: 0,
     alignItems: 'center',
   },
   centredText: {
@@ -296,7 +326,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  trailingLabel: {
+  prominentLabel: {
     fontWeight: '600',
   },
   hidden: {
@@ -316,5 +346,6 @@ const styles = StyleSheet.create({
   },
   errorSlot: {
     justifyContent: 'center',
+    overflow: 'hidden',
   },
 });
