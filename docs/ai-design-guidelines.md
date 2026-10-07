@@ -329,6 +329,13 @@ active-context bar instead (`MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT` 48, `TABBAR_SEA
 | Handle        | 36 × 5, radius 3        | 32 × 4, radius 2 |
 | Top corners   | soft (glass background) | 28dp             |
 
+**Where actions go.** Sheet and screen actions sit in a top bar: leading Cancel / close / back, a
+centred title, a trailing confirm. Sheets pass `SheetTopBar` through their `header` prop, and pushed or
+modal screens call `useHeaderActions` to fill the native header. Nothing pinned at the bottom of a sheet
+or form, because a bottom bar moves with the keyboard and the inset. The exceptions are `LogAscentSheet`
+(Attempt / Save stay in thumb reach), composers such as `CommentSheet`, and tool palettes and FABs. Full
+rules: `docs/mobile-sheets-vs-routes.md`, "Where actions go".
+
 **Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
 pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,
 borderless)` builds a Pressable `android_ripple` config at that state-layer opacity.
@@ -418,7 +425,9 @@ through to the full `BoardSheet`. Rules when adding layout-sensitive iPad compon
 - Exactly **one wall surface per layout**: the shell passes `showWallCell={!showWallColumn}` to the
   sidebar so the rail cell and the column never both show.
 - Inline columns/strips **own their safe-area insets** (`insets.top` for a top-of-shell column header,
-  `insets.bottom` for a full-height column footer); a gorhom sheet handles its own. When a strip is
+  `insets.bottom` for a full-height column footer). A native `@expo/ui` sheet does not handle its
+  own: the `Sheet` / `ModalSheet` wrappers add `useWindowBottomInset()` for it (see
+  `docs/mobile-sheets-vs-routes.md`, rule 5). When a strip is
   docked above the pane, the shell sets `PlayDrawer paneTopInset={false}` so the inset isn't doubled.
 - Status may **annotate** selection (the pane shows an "On the wall" chip when the selected climb is the
   lit one) — but never replace it.
