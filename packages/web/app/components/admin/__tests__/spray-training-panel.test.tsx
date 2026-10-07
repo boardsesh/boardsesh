@@ -246,3 +246,100 @@ describe('SprayTrainingPanel photo expiry', () => {
     }
   });
 });
+
+describe('SprayTrainingPanel races and shortcuts', () => {
+  it('does not bring back a wall decided while a refresh was in flight', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const expiring = [makeItem('v1', 1), makeItem('v2', 2)];
+      for (const entry of expiring) {
+        entry.photo = { ...entry.photo!, expiresAt: new Date(Date.now() + 90_000).toISOString() };
+      }
+      mockRequest.mockResolvedValueOnce(queueResponse(expiring));
+      render(<SprayTrainingPanel />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+      await screen.findByTestId('spray-hold-overlay');
+
+      // The refresh starts about 30 s in (60 s before expiry) and is held open.
+      let releaseRefresh: (value: unknown) => void = () => undefined;
+      mockRequest.mockImplementationOnce(() => new Promise((resolve) => (releaseRefresh = resolve)));
+      await vi.advanceTimersByTimeAsync(31_000);
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(2));
+
+      mockRequest.mockResolvedValueOnce({
+        setSprayTrainingReview: {
+          versionId: 'v1',
+          review: { status: 'APPROVED', reason: null, notes: null, reviewedAt: null },
+        },
+      });
+      fireEvent.keyDown(window, { key: 'a' });
+      await waitFor(() => expect(mockRequest).toHaveBeenCalledTimes(3));
+
+      // The stale read still lists v1.
+      releaseRefresh(queueResponse([makeItem('v1', 1), makeItem('v2', 2)]));
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Review wall version 1', hidden: true })).toBeNull(),
+      );
+      expect(screen.getByRole('button', { name: 'Review wall version 2', hidden: true })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a re-decided wall on its tab and updates it in place', async () => {
+    const rejected = makeItem('v1', 1);
+    rejected.review = { status: 'REJECTED', reason: 'BAD_HOLDS', notes: null, reviewedAt: null };
+    mockRequest.mockResolvedValueOnce({
+      sprayTrainingQueue: { hasMore: false, totals: { unreviewed: 0, approved: 0, rejected: 1 }, items: [] },
+    });
+    render(<SprayTrainingPanel />);
+    await screen.findByText('Nothing here');
+    mockRequest.mockResolvedValueOnce({
+      sprayTrainingQueue: { hasMore: false, totals: { unreviewed: 0, approved: 0, rejected: 1 }, items: [rejected] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rejected (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    mockRequest.mockResolvedValueOnce({
+      setSprayTrainingReview: {
+        versionId: 'v1',
+        review: { status: 'REJECTED', reason: 'BAD_HOLDS', notes: 'again', reviewedAt: null },
+      },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Notes (optional)'), { target: { value: 'again' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Reject (R)' }));
+
+    await waitFor(() => expect(mockRequest).toHaveBeenLastCalledWith('SET_SPRAY_TRAINING_REVIEW', expect.anything()));
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Wall version 1')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Rejected (1)', hidden: true })).toBeTruthy();
+  });
+
+  it('ignores shortcuts typed in the notes field and while the reason menu is open', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+    render(<SprayTrainingPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    fireEvent.keyDown(within(dialog).getByLabelText('Notes (optional)'), { key: 'a' });
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+
+    fireEvent.mouseDown(within(dialog).getByRole('combobox'));
+    await screen.findByRole('listbox');
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'a' });
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('still takes shortcuts after a legend switch has focus', async () => {
+    mockRequest.mockResolvedValueOnce(queueResponse([makeItem('v1', 1)]));
+    render(<SprayTrainingPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review wall version 1' }));
+    const overlay = await screen.findByTestId('spray-hold-overlay');
+    const dialog = screen.getByRole('dialog');
+
+    const legendSwitch = within(dialog).getAllByRole('switch')[0];
+    fireEvent.keyDown(legendSwitch, { key: 'h' });
+
+    await waitFor(() => expect(overlay.querySelectorAll('[data-kind]').length).toBe(0));
+  });
+});

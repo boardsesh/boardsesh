@@ -70,9 +70,18 @@ type SprayTrainingReviewDialogProps = {
   onDecide: (item: SprayTrainingQueueItemData, decision: SprayTrainingDecision) => void;
 };
 
-function isTypingTarget(target: EventTarget | null): boolean {
+const TEXT_INPUT_TYPES = new Set(['text', 'search', 'number', 'email', 'url', 'tel', 'password']);
+
+/**
+ * Keys typed into a text field, or inside an open picker, are not shortcuts.
+ * A checkbox (the MUI Switch input) is not text, so shortcuts keep working
+ * after the reviewer toggles a legend row.
+ */
+export function isShortcutBlockedTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+  if (target.isContentEditable || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return true;
+  if (target instanceof HTMLInputElement && TEXT_INPUT_TYPES.has(target.type)) return true;
+  return target.closest('[role=listbox],[role=combobox],[role=option]') !== null;
 }
 
 export default function SprayTrainingReviewDialog({
@@ -148,7 +157,7 @@ export default function SprayTrainingReviewDialog({
   useEffect(() => {
     if (!item) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+      if (reasonOpen || event.metaKey || event.ctrlKey || event.altKey || isShortcutBlockedTarget(event.target)) return;
       switch (event.key) {
         case 'a':
         case 'A':
@@ -175,7 +184,7 @@ export default function SprayTrainingReviewDialog({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [item, approve, reject, onPrevious, onNext]);
+  }, [item, reasonOpen, approve, reject, onPrevious, onNext]);
 
   const kindLabel = (kind: SprayOverlayKind): string => {
     switch (kind) {

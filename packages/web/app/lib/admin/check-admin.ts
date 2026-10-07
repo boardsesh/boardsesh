@@ -9,7 +9,7 @@ import { rolesGrantGlobalAdmin, rolesGrantScopedAdmin } from './admin-scope';
 
 export type AdminCheck =
   | { authenticated: false }
-  | { authenticated: true; userId: string; isAdmin: boolean; boardScopedOnly: boolean };
+  | { authenticated: true; userId: string; isAdmin: boolean; boardScopedOnly: boolean; hasGlobalAdmin: boolean };
 
 export type CheckAdminOptions = {
   /**
@@ -38,6 +38,7 @@ export async function checkAdmin(options: CheckAdminOptions = {}): Promise<Admin
     authenticated: true,
     userId,
     isAdmin,
+    hasGlobalAdmin: rolesGrantGlobalAdmin(adminRoles),
     boardScopedOnly: !isAdmin && rolesGrantScopedAdmin(adminRoles),
   };
 }

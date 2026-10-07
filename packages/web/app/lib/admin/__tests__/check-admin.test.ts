@@ -58,6 +58,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: false,
       boardScopedOnly: true,
+      hasGlobalAdmin: false,
     });
   });
 
@@ -69,6 +70,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: true,
       boardScopedOnly: false,
+      hasGlobalAdmin: true,
     });
   });
 
@@ -81,7 +83,13 @@ describe('checkAdmin', () => {
     ];
 
     const access = await checkAdmin();
-    expect(access).toEqual({ authenticated: true, userId: 'user-1', isAdmin: true, boardScopedOnly: false });
+    expect(access).toEqual({
+      authenticated: true,
+      userId: 'user-1',
+      isAdmin: true,
+      boardScopedOnly: false,
+      hasGlobalAdmin: true,
+    });
   });
 
   it('denies a signed-in user with no admin rows without the scoped copy', async () => {
@@ -92,6 +100,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: false,
       boardScopedOnly: false,
+      hasGlobalAdmin: false,
     });
   });
 
@@ -115,6 +124,7 @@ describe('checkAdmin', () => {
       userId: 'user-1',
       isAdmin: true,
       boardScopedOnly: false,
+      hasGlobalAdmin: false,
     });
     expect(await checkAdmin()).toMatchObject({ isAdmin: false, boardScopedOnly: true });
   });

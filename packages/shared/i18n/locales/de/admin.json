@@ -494,6 +494,7 @@
       "reset": "Wieder in der Warteschlange",
       "failed": "Die Prüfung ließ sich nicht speichern"
     },
-    "backToAdmin": "Zurück zum Admin"
+    "backToAdmin": "Zurück zum Admin",
+    "noAccess": "Dein Admin-Zugang gilt nicht für Spraywände. Diese Seite braucht Admin-Zugang für Spraywände oder die ganze Seite."
   }
 }

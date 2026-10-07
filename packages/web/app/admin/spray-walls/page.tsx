@@ -35,7 +35,7 @@ export default async function AdminSprayWallsPage() {
     return (
       <I18nProvider locale={locale} namespaces={['common', 'admin']}>
         <Container maxWidth="lg" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-          <Alert severity="error">{t(access.boardScopedOnly ? 'auth.boardScopedNoAccess' : 'auth.noAccess')}</Alert>
+          <Alert severity="error">{t(access.boardScopedOnly ? 'sprayTraining.noAccess' : 'auth.noAccess')}</Alert>
         </Container>
       </I18nProvider>
     );
@@ -47,11 +47,13 @@ export default async function AdminSprayWallsPage() {
         <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: themeTokens.neutral[800] }}>
           {t('sprayTraining.title')}
         </Typography>
-        <Box sx={{ mb: 3 }}>
-          <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: 'var(--color-primary)' }}>
-            {t('sprayTraining.backToAdmin')}
-          </MuiLink>
-        </Box>
+        {access.hasGlobalAdmin && (
+          <Box sx={{ mb: 3 }}>
+            <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+              {t('sprayTraining.backToAdmin')}
+            </MuiLink>
+          </Box>
+        )}
         <SprayTrainingPanel />
       </Container>
     </I18nProvider>

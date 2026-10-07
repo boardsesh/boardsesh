@@ -1041,8 +1041,8 @@
     },
     "sprayPhotos": {
       "title": "Photos de murs de spray",
-      "body1": "Quand vous ajoutez un mur de spray, nous gardons sa photo et les prises que vous marquez dans un stockage privé. Vous seul pouvez ouvrir la photo. Un membre de l'équipe Boardsesh peut la consulter, avec ses prises, pour vérifier qu'elles sont bonnes pour apprendre.",
-      "body2": "Nous les utilisons pour entraîner le détecteur de prises, la partie de l'app qui repère les prises sur la photo d'un nouveau mur. Nous ne les partageons ni ne les publions jamais. Cela inclut les murs privés.",
+      "body1": "Quand vous ajoutez un mur de spray, nous gardons sa photo et les prises que vous marquez. Qui peut voir la photo dépend de la visibilité du mur : privé, accessible par lien ou public. Un membre de l'équipe Boardsesh peut aussi consulter la photo et ses prises pour vérifier qu'elles sont bonnes pour apprendre.",
+      "body2": "Nous les utilisons pour entraîner le détecteur de prises, la partie de l'app qui repère les prises sur la photo d'un nouveau mur. Cela vaut quelle que soit la visibilité, murs privés compris. La copie utilisée pour l'entraînement est gardée dans un stockage privé et n'est jamais partagée ni publiée hors de Boardsesh.",
       "body3": "Chaque mur a un interrupteur « Aider à entraîner la détection des prises ». Il est activé par défaut. Vous pouvez le désactiver à tout moment dans les réglages du mur.",
       "body4": "Si vous le désactivez, supprimez le mur ou supprimez votre compte, le mur sort de nos données d'entraînement sous 24 heures. Les modèles déjà entraînés gardent ce qu'ils ont appris, mais n'ont aucune copie de votre photo."
     },

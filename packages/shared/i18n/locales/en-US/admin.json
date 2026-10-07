@@ -494,6 +494,7 @@
       "reset": "Back in the unreviewed queue",
       "failed": "Couldn't save the review"
     },
-    "backToAdmin": "Back to admin"
+    "backToAdmin": "Back to admin",
+    "noAccess": "Your admin role doesn't cover spray walls. This page needs spray or site-wide admin access."
   }
 }

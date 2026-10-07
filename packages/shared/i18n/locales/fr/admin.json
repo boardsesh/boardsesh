@@ -494,6 +494,7 @@
       "reset": "De retour dans la file à relire",
       "failed": "Impossible d'enregistrer la relecture"
     },
-    "backToAdmin": "Retour à l'admin"
+    "backToAdmin": "Retour à l'admin",
+    "noAccess": "Vos droits d'administration ne couvrent pas les murs de spray. Cette page demande un accès admin spray ou sur tout le site."
   }
 }
