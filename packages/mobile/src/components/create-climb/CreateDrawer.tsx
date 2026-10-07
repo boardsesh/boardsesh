@@ -522,10 +522,9 @@ export function CreateDrawer({
             />
           ) : null}
 
-          {controller.nameMissingHint ? <NameRequiredHint
-              announceKey={controller.nameMissingTick}
-              onFootprint={handleNameHintFootprint}
-            /> : null}
+          {controller.nameMissingHint ? (
+            <NameRequiredHint announceKey={controller.nameMissingTick} onFootprint={handleNameHintFootprint} />
+          ) : null}
 
           {controller.publishDuplicateError ? (
             <DuplicateBanner
