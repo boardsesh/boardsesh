@@ -2,10 +2,15 @@ import { createServer } from 'node:http';
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { PgBoss } from 'pg-boss';
 import { count, inArray, min, sql } from 'drizzle-orm';
+import { jobQueueTransactionAdapter } from '@boardsesh/db/background-jobs';
 import { sprayWallDetections } from '@boardsesh/db/schema';
 import { createDb, closePool } from '@boardsesh/db/client';
 import { claimSprayDetection, finishSprayDetection, retrySprayDetectionAttempt } from '@boardsesh/db/queries';
-import { SPRAY_DETECTION_QUEUE, type SprayDetectionJob } from '@boardsesh/shared-schema';
+import {
+  SPRAY_DETECTION_QUEUE,
+  SPRAY_DETECTION_COMPLETION_QUEUE,
+  type SprayDetectionJob,
+} from '@boardsesh/shared-schema';
 import { detectorConfig } from './config';
 import { InferenceRunner } from './inference';
 import { detectionProposal } from './result';
@@ -83,7 +88,24 @@ async function main(): Promise<void> {
           }
           const result = await inference.run(Buffer.concat(chunks));
           const proposal = detectionProposal(result, { width: claim.photoWidth, height: claim.photoHeight });
-          if (await finishSprayDetection(database, claim.id, claim.attemptToken, proposal)) completed++;
+          if (
+            await finishSprayDetection(database, claim.id, claim.attemptToken, proposal, async (transaction) => {
+              // The backend migrator creates this queue. A detector deployed ahead
+              // of it still commits the holds: the climber's progress row shows
+              // "ready", and device registration catches the notification up later.
+              if (!(await boss.getQueue(SPRAY_DETECTION_COMPLETION_QUEUE))) {
+                console.warn(JSON.stringify({ event: 'completion_queue_missing' }));
+                return;
+              }
+              const queued = await boss.send(
+                SPRAY_DETECTION_COMPLETION_QUEUE,
+                { detectionId: claim.id },
+                { db: jobQueueTransactionAdapter(transaction), retryLimit: 10, retryDelay: 30, retryBackoff: true },
+              );
+              if (!queued) throw new Error('COMPLETION_ENQUEUE_FAILED');
+            })
+          )
+            completed++;
           lastCompletedMs = Date.now() - started;
           console.info(
             JSON.stringify({
@@ -105,7 +127,10 @@ async function main(): Promise<void> {
   );
   const probe = async () => {
     try {
-      await boss.getQueue(SPRAY_DETECTION_QUEUE);
+      // Both queues must exist: a missing completion queue means the backend
+      // migrator has not run for this release yet.
+      if (!(await boss.getQueue(SPRAY_DETECTION_QUEUE)) || !(await boss.getQueue(SPRAY_DETECTION_COMPLETION_QUEUE)))
+        throw new Error('QUEUE_MISSING');
       const [backlog] = await database
         .select({ pending: count(), oldest: min(sprayWallDetections.createdAt) })
         .from(sprayWallDetections)

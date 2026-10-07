@@ -1,3 +1,5 @@
+import type { SprayWallImportProgress } from '../spray-detection';
+
 // Board entity types
 
 export type UserBoard = {
@@ -54,6 +56,7 @@ export type UserBoard = {
    * paths, and a snapshot written before this field existed will never carry it.
    */
   isPinnedByMe?: boolean;
+  sprayImport?: SprayWallImportProgress | null;
 };
 
 export type UserBoardConnection = {
@@ -154,6 +157,8 @@ export type BoardLeaderboardInput = {
 export type MyBoardsInput = {
   limit?: number;
   offset?: number;
+  /** Also list the viewer's own never-published spray walls (My Boards / Manage only). */
+  includeUnfinishedSprayWalls?: boolean;
 };
 
 export type FollowBoardInput = {

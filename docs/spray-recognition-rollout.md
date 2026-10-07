@@ -34,25 +34,75 @@ can choose manual placement while waiting. A reset has no empty-result fallback
 that can silently remove all existing holds: it retains the published wall and
 can be resumed from its stored photo after leaving the app.
 
+## Queue progress and completion delivery
+
+My Boards shows saved drafts, waiting imports with a queue position when known,
+running imports, ready-to-review results and failures. Owned unpublished walls
+temporarily lead the first page ahead of pinned/recent boards. First publication
+restores their usual order; published resets are never promoted. A published wall remains
+usable during a photo reset; its review action resumes the exact draft version.
+Progress details are editor-only. Queue rank is based on pg-boss's active work
+and eligible waiting jobs, in priority/FIFO order, with blocked/deferred jobs
+excluded. No rank is shown for processing, backoff or ambiguous ties. Foreground
+board screens poll a lightweight batch read every five seconds while work is
+active; detection screens poll every two seconds. Connection loss masks cached
+ranks without reporting a model failure.
+
+The detector's successful, attempt-fenced transaction persists its result and
+queues `spray-wall-detection-completed` together. A stale worker cannot generate
+a completion event. The backend consumer rechecks that the source draft and
+requester's edit access remain valid. The detection UUID deduplicates the feed
+notification. Only successful recognition sends a completion notification;
+results still require review/publication.
+
+Expo Push device registration is separate from Live Activity APNs registration.
+Devices register the account, installation, Expo token, platform and locale;
+logout deactivates that account's registration. Recognition requests may prompt
+for permission, but denial and registration errors leave imports and in-app
+notifications available. Browser users receive the in-app notification only.
+Backend delivery uses per-device records, retry jobs and receipt checks, and
+retires invalid tokens. Expo phone delivery is best effort; an accepted ticket
+is not proof the phone displayed an alert.
+
 ## Deploy order
 
 1. Provision a dedicated `boardsesh_detector` login on the primary. Store its
    password and a new private-bucket read-only R2 token in the Homelab 1Password
    item **Boardsesh hold detector**. Never put credentials in Git or PR bodies.
-2. Deploy database migrations using the existing migration-owner connection,
-   with `MIGRATION_DETECTOR_ROLE=boardsesh_detector`. The migrator initializes
+2. Apply migrations through `0252_cloudy_venus.sql` (including `0251_safe_moon_knight.sql`) using
+   the existing migration-owner connection with
+   `MIGRATION_DETECTOR_ROLE=boardsesh_detector`. The migrator initializes
    pg-boss 12.33.0 and queues under that owner, then grants DML to the runtime
    and worker roles. Backend and worker startup disable schema migration. Do
    not grant runtime CREATE privileges as a workaround for startup errors.
-3. Deploy the backend, then the attested `ghcr.io/boardsesh/hold-detector` image
+3. Deploy the backend with progress APIs, notification-device registration and
+   completion/delivery consumers before updating the detector. Then deploy the
+   attested `ghcr.io/boardsesh/hold-detector` image
    pinned by digest through the Ansible repo. VM 158 is proposed; provisioning
    must validate cluster/IP allocation. Use the role's private `/health` and
    `/metrics` endpoints and Boardsesh alerts. No public inference API exists.
-4. Ship mobile service integration. Separately merge native cleanup into
-   `release/next` and build new binaries without ONNX or the increased-memory
+4. Configure the EAS project's APNs and FCM push credentials, and verify the
+   app exposes its EAS project ID. If Expo push-security access-token protection
+   is enabled, set backend `EXPO_ACCESS_TOKEN`; otherwise it is optional. Ship
+   the app after the new backend APIs are available. Set `GOOGLE_SERVICES_JSON`
+   to the path of the Android package's `google-services.json` in the Android
+   native build (`android-apk-rn.yml`) AND in every OTA workflow
+   (`mobile-ota-production.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`,
+   `mobile-ota-backport.yml`): it changes the Android fingerprint, so setting it
+   on the build alone stops Android OTAs landing (`scripts/mobile-ci-env-parity.test.ts`
+   enforces this). Until a binary built with it ships, Android cannot get an Expo
+   push token. Upload the matching FCM V1 service account to EAS as described in
+   [Expo's FCM credential setup](https://docs.expo.dev/push-notifications/fcm-credentials/).
+   Android needs a new binary
+   with the `expo-notifications` config plugin before exposing phone alerts; an
+   OTA cannot supply its native configuration. Validate foreground/background
+   delivery and authenticated cold-launch taps on real iOS and Android devices.
+   Separately merge native cleanup into `release/next` and build new binaries without ONNX or the increased-memory
    entitlement. Retain camera permissions. Old binaries can use service jobs;
    the native dependency removal itself cannot be accomplished by OTA.
 5. Complete the service gates below and record evidence before worker promotion.
+   Include a busy queue, leaving/reopening a draft, a published reset, permission
+   denial and successful completion delivery in tester observations.
 
 ## Service release gates (not yet satisfied)
 

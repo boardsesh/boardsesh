@@ -62,6 +62,7 @@ describe('notificationCopy', () => {
     ['new_climb_global', 'items.newClimb'],
     ['new_climbs_synced', 'items.newClimbsSynced'],
     ['gym_claim_approved', 'items.gymClaimApprovedGeneric'],
+    ['spray_wall_detection_completed', 'items.sprayWallReadyGeneric'],
     // Bare = no proposalType and no climbName, so the setter row lands on the
     // climb-free key rather than a string with an empty {{climb}} hole in it.
     ['proposal_on_your_climb', 'items.proposalOnYourClimbGeneric'],
@@ -69,6 +70,20 @@ describe('notificationCopy', () => {
 
   it.each(bareCases)('maps %s to %s', (type, expectedKey) => {
     expect(notificationCopy(makeNotification({ type }), 'Alex').textI18nKey).toBe(expectedKey);
+  });
+
+  it('names the completed wall without referring to an actor', () => {
+    expect(
+      notificationCopy(
+        makeNotification({
+          type: 'spray_wall_detection_completed',
+          actorCount: 0,
+          actors: [],
+          sprayWallName: 'Garage wall',
+        }),
+        'Someone',
+      ),
+    ).toEqual({ textI18nKey: 'items.sprayWallReady', params: { wall: 'Garage wall' } });
   });
 
   it('covers every NotificationType the schema declares', () => {

@@ -2943,6 +2943,11 @@ export type GroupedNotification = {
   proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
+  /** The wall the imported reset clone replaces; null for a plain new wall. */
+  sprayResetOfWallUuid?: Maybe<Scalars['String']['output']>;
+  sprayVersionId?: Maybe<Scalars['ID']['output']>;
+  sprayWallName?: Maybe<Scalars['String']['output']>;
+  sprayWallUuid?: Maybe<Scalars['String']['output']>;
   /** ID of the entity named by threadEntityType. */
   threadEntityId?: Maybe<Scalars['String']['output']>;
   /**
@@ -4222,6 +4227,11 @@ export type Mutation = {
    */
   registerActivityPushToken: Scalars['Boolean']['output'];
   registerController: ControllerRegistration;
+  /**
+   * Register this installation's Expo push token for the signed-in account. The
+   * registration lasts until the credential expires (24 hours at most).
+   */
+  registerNotificationDevice: Scalars['Boolean']['output'];
   /** Remove a climb from a playlist. */
   removeClimbFromPlaylist: Scalars['Boolean']['output'];
   /**
@@ -4509,6 +4519,8 @@ export type Mutation = {
    * be used to clear another session's registration.
    */
   unregisterActivityPushToken: Scalars['Boolean']['output'];
+  /** Stop pushes to this installation for the signed-in account. */
+  unregisterNotificationDevice: Scalars['Boolean']['output'];
   /** Unsubscribe from new climbs for a board type and layout. */
   unsubscribeNewClimbs: Scalars['Boolean']['output'];
   /**
@@ -4946,6 +4958,11 @@ export type MutationRegisterControllerArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRegisterNotificationDeviceArgs = {
+  input: RegisterNotificationDeviceInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveClimbFromPlaylistArgs = {
   input: RemoveClimbFromPlaylistInput;
 };
@@ -5254,6 +5271,11 @@ export type MutationUnregisterActivityPushTokenArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUnregisterNotificationDeviceArgs = {
+  installationId: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUnsubscribeNewClimbsArgs = {
   input: NewClimbSubscriptionInput;
 };
@@ -5347,6 +5369,13 @@ export type MutationVoteOnProposalArgs = {
 
 /** Input for listing user's boards. */
 export type MyBoardsInput = {
+  /**
+   * Also list the viewer's OWN spray walls that have never been published, so
+   * My Boards and Manage can show their import progress. Off by default: board
+   * pickers must only offer walls that can be climbed on. Other people's
+   * unfinished walls and archived walls are never listed.
+   */
+  includeUnfinishedSprayWalls?: InputMaybe<Scalars['Boolean']['input']>;
   /** Max boards to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
@@ -5458,6 +5487,11 @@ export type Notification = {
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
   proposalValue?: Maybe<Scalars['String']['output']>;
+  /** The wall the imported reset clone replaces; null for a plain new wall. */
+  sprayResetOfWallUuid?: Maybe<Scalars['String']['output']>;
+  sprayVersionId?: Maybe<Scalars['ID']['output']>;
+  sprayWallName?: Maybe<Scalars['String']['output']>;
+  sprayWallUuid?: Maybe<Scalars['String']['output']>;
   /** Type of notification */
   type: NotificationType;
   /** Public unique identifier */
@@ -5517,6 +5551,7 @@ export type NotificationType =
   | 'proposal_on_your_climb'
   | 'proposal_rejected'
   | 'proposal_vote'
+  | 'spray_wall_detection_completed'
   | 'vote_on_comment'
   | 'vote_on_tick';
 
@@ -6668,6 +6703,7 @@ export type Query = {
    * wall's holds; refused on an archived wall. At most 500 holds per call.
    */
   sprayWallHoldUsage: Array<SprayWallHoldUsage>;
+  sprayWallImportProgress: Array<SprayWallImportProgress>;
   /**
    * Everything needed to render a wall at one version: the photo, the homography
    * and the holds alive at that version. Omit `version` for the published one.
@@ -7436,6 +7472,11 @@ export type QuerySprayWallHoldUsageArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QuerySprayWallImportProgressArgs = {
+  wallUuids: Array<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QuerySprayWallRenderDataArgs = {
   uuid: Scalars['ID']['input'];
   version?: InputMaybe<Scalars['Int']['input']>;
@@ -7811,6 +7852,13 @@ export type RegisterControllerInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   setIds: Scalars['String']['input'];
   sizeId: Scalars['Int']['input'];
+};
+
+export type RegisterNotificationDeviceInput = {
+  installationId: Scalars['String']['input'];
+  locale: Scalars['String']['input'];
+  platform: Scalars['String']['input'];
+  token: Scalars['String']['input'];
 };
 
 /** Input for removing a climb from a playlist. */
@@ -9321,7 +9369,9 @@ export type SprayWallDetection = {
   finishedAt?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   modelVersion: Scalars['String']['output'];
+  queuePosition?: Maybe<Scalars['Int']['output']>;
   result?: Maybe<SprayDetectionResult>;
+  retryAt?: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   versionId: Scalars['ID']['output'];
   wallUuid: Scalars['ID']['output'];
@@ -9409,6 +9459,18 @@ export type SprayWallHoldUsage = {
   holdId: Scalars['Int']['output'];
   /** Published climbs that use the hold. Removing it gives each of them a lost hold. */
   publishedClimbCount: Scalars['Int']['output'];
+};
+
+export type SprayWallImportProgress = {
+  __typename?: 'SprayWallImportProgress';
+  detectionId?: Maybe<Scalars['ID']['output']>;
+  queuePosition?: Maybe<Scalars['Int']['output']>;
+  /** The wall this unpublished reset clone replaces; null for a plain new wall. */
+  resetOfWallUuid?: Maybe<Scalars['String']['output']>;
+  retryAt?: Maybe<Scalars['String']['output']>;
+  stage: Scalars['String']['output'];
+  versionId?: Maybe<Scalars['ID']['output']>;
+  wallUuid: Scalars['ID']['output'];
 };
 
 /** Keep this hold, optionally refreshing its silhouette from the new photo. */
@@ -10447,6 +10509,7 @@ export type UserBoard = {
   sizeName?: Maybe<Scalars['String']['output']>;
   /** URL slug for this board */
   slug: Scalars['String']['output'];
+  sprayImport?: Maybe<SprayWallImportProgress>;
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: Maybe<Scalars['String']['output']>;
   /** Total ascents on this board */

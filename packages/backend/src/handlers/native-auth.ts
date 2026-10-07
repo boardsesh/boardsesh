@@ -4,6 +4,7 @@ import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { compare, hash } from 'bcryptjs';
 import { eq, and, isNull, lt, or, isNotNull, sql } from 'drizzle-orm';
 import { mobileRefreshTokens, users, userCredentials, accounts, userProfiles } from '@boardsesh/db/schema/auth';
+import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
@@ -1178,26 +1179,34 @@ export async function handleNativeAuthRevoke(req: IncomingMessage, res: ServerRe
   try {
     // Look up the token to find the user. Only non-revoked tokens are valid
     // for initiating a full sign-out.
-    const matchingRows = await db
-      .update(mobileRefreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(mobileRefreshTokens.tokenHash, tokenHash), isNull(mobileRefreshTokens.revokedAt)))
-      .returning({ userId: mobileRefreshTokens.userId });
+    const matchedToken = await db.transaction(async (transaction) => {
+      const matchingRows = await transaction
+        .update(mobileRefreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(mobileRefreshTokens.tokenHash, tokenHash), isNull(mobileRefreshTokens.revokedAt)))
+        .returning({ userId: mobileRefreshTokens.userId });
 
-    const matchedToken = matchingRows[0];
+      const matchingToken = matchingRows[0];
+      if (!matchingToken) return null;
+
+      // This endpoint signs out the whole account. The refresh secret remains
+      // usable when the JWT has expired, so retire push devices in the same
+      // transaction as token revocation rather than relying on bearer cleanup.
+      await transaction
+        .update(mobileRefreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(and(eq(mobileRefreshTokens.userId, matchingToken.userId), isNull(mobileRefreshTokens.revokedAt)));
+      await transaction
+        .update(notificationDevices)
+        .set({ active: false, updatedAt: new Date() })
+        .where(eq(notificationDevices.userId, matchingToken.userId));
+      return matchingToken;
+    });
 
     if (!matchedToken) {
       sendJson(res, 401, { error: 'Invalid refresh token' });
       return;
     }
-
-    // Revoke ALL remaining non-revoked tokens for this user (full sign-out).
-    // The token we just revoked above is already covered, but the WHERE clause
-    // filters on revokedAt IS NULL so it's a no-op for that row.
-    await db
-      .update(mobileRefreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(mobileRefreshTokens.userId, matchedToken.userId), isNull(mobileRefreshTokens.revokedAt)));
 
     logger.info(`[NativeAuth] All tokens revoked for user ${matchedToken.userId}`);
     sendJson(res, 200, { revoked: true });

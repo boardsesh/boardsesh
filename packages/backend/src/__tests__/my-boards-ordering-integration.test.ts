@@ -1,8 +1,21 @@
 import { describe, it, expect, beforeAll } from 'vite-plus/test';
-import { sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, eq, sql } from 'drizzle-orm';
+import {
+  communityRoles,
+  gyms,
+  gymMembers,
+  boardFollows,
+  sprayWalls,
+  sprayWallVersions,
+  userBoards,
+  userBoardActivity,
+} from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { socialBoardQueries } from '../graphql/resolvers/social/boards';
+import { requireBoardEditAccess, socialBoardQueries } from '../graphql/resolvers/social/boards';
+import { sprayWallMutations } from '../graphql/resolvers/board/spray-walls';
+import { sprayDetectionQueries } from '../graphql/resolvers/board/spray-detection';
 
 /**
  * Real-DB coverage for the "Your boards" ordering (issue #4884). The mutation
@@ -11,9 +24,11 @@ import { socialBoardQueries } from '../graphql/resolvers/social/boards';
  * observable through a mock chain.
  *
  * The order under test, most significant first:
- *   1. pinned boards, oldest pin leading
- *   2. then by last opened, most recent first
- *   3. then boards never opened, by when THIS user added them
+ *   1. owned unpublished spray walls, so imports remain on the first page
+ *      (listed only with `includeUnfinishedSprayWalls`)
+ *   2. pinned boards, oldest pin leading
+ *   3. then by last opened, most recent first
+ *   4. then boards never opened, by when THIS user added them
  *
  * All assertions are relative positions among the seeded uuids, so unrelated
  * seed rows in the dev database cannot perturb them.
@@ -190,4 +205,228 @@ describe('myBoards ordering (#4884)', () => {
     const combined = [...firstPage.boards, ...secondPage.boards].map((board) => board.uuid);
     expect(new Set(combined).size).toBe(combined.length);
   });
+});
+
+describe('myBoards unfinished spray import visibility', () => {
+  const WITH_IMPORTS = { input: { includeUnfinishedSprayWalls: true } };
+  type ImportPage = {
+    boards: Array<{ uuid: string; sprayImport?: unknown }>;
+    totalCount: number;
+    hasMore: boolean;
+  };
+  const contextFor = (userId: string) => ({ connectionId: userId, userId, isAuthenticated: true }) as ConnectionContext;
+
+  /** An owner with twenty-one opened/pinned boards (ten pinned) and one wall they have not published yet. */
+  async function seedImportingOwner() {
+    const importingOwner = randomUUID();
+    const otherViewer = randomUUID();
+    await Promise.all([insertUser(importingOwner), insertUser(otherViewer)]);
+    const ownerContext = contextFor(importingOwner);
+    const oldBoards = Array.from({ length: 21 }, (_, index) => ({
+      uuid: randomUUID(),
+      slug: `${importingOwner}-${index}`,
+      ownerId: importingOwner,
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 11,
+      setIds: '1',
+      name: `Opened wall ${index}`,
+      createdAt: new Date('2020-01-01T00:00:00Z'),
+    }));
+    await db.insert(userBoards).values(oldBoards);
+    await db.insert(userBoardActivity).values(
+      oldBoards.map((board, index) => ({
+        boardUuid: board.uuid,
+        userId: importingOwner,
+        lastUsedAt: new Date('2026-10-01T12:00:00Z'),
+        pinnedAt: index < 10 ? new Date(Date.UTC(2026, 8, 1 + index)) : null,
+      })),
+    );
+    const unfinished = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: 'Import in progress', angle: 40 } },
+      ownerContext,
+    )) as { uuid: string };
+    return { importingOwner, otherViewer, ownerContext, oldBoards, unfinished };
+  }
+
+  it('keeps an owned import on the first page ahead of twenty-one opened/pinned boards when asked, without leaking it to followers', async () => {
+    if (!dbReady) return;
+    const { otherViewer, ownerContext, oldBoards, unfinished } = await seedImportingOwner();
+    const firstPage = (await socialBoardQueries.myBoards({}, WITH_IMPORTS, ownerContext)) as ImportPage;
+    expect(firstPage.boards).toHaveLength(20);
+    expect(firstPage.boards[0]).toMatchObject({
+      uuid: unfinished.uuid,
+      sprayImport: { stage: 'draft', resetOfWallUuid: null },
+    });
+    expect(firstPage.boards[1].uuid).toBe(oldBoards[0].uuid);
+    expect(firstPage.totalCount).toBe(22);
+    expect(firstPage.hasMore).toBe(true);
+
+    // The count and the pages agree: the second page holds exactly the rest.
+    const secondPage = (await socialBoardQueries.myBoards(
+      {},
+      { input: { includeUnfinishedSprayWalls: true, offset: 20 } },
+      ownerContext,
+    )) as ImportPage;
+    expect(secondPage.boards).toHaveLength(2);
+    expect(secondPage.totalCount).toBe(22);
+    expect(secondPage.hasMore).toBe(false);
+    const seen = [...firstPage.boards, ...secondPage.boards].map((board) => board.uuid);
+    expect(new Set(seen).size).toBe(22);
+
+    // Another climber who follows the unfinished wall never sees it, even with the flag.
+    await db.insert(boardFollows).values({ userId: otherViewer, boardUuid: unfinished.uuid });
+    const otherPage = (await socialBoardQueries.myBoards({}, WITH_IMPORTS, contextFor(otherViewer))) as ImportPage;
+    expect(otherPage.boards).toEqual([]);
+    expect(otherPage.totalCount).toBe(0);
+    expect(otherPage.hasMore).toBe(false);
+
+    const [wall] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, unfinished.uuid));
+    const [published] = await db
+      .insert(sprayWallVersions)
+      .values({ wallId: wall.id, versionNumber: 1, status: 'published' })
+      .returning();
+    await db.update(sprayWalls).set({ currentVersionId: published.id }).where(eq(sprayWalls.id, wall.id));
+    await db.insert(sprayWallVersions).values({ wallId: wall.id, versionNumber: 2, status: 'draft' });
+    const afterPublication = (await socialBoardQueries.myBoards({}, WITH_IMPORTS, ownerContext)) as ImportPage;
+    expect(afterPublication.boards[0].uuid).toBe(oldBoards[0].uuid);
+    expect(afterPublication.boards.some((board) => board.uuid === unfinished.uuid)).toBe(false);
+    expect(afterPublication.totalCount).toBe(22);
+  });
+
+  it('keeps unfinished walls out of the default list, the board picker (#6040)', async () => {
+    if (!dbReady) return;
+    const { ownerContext, unfinished } = await seedImportingOwner();
+    for (const input of [undefined, {}, { includeUnfinishedSprayWalls: false }]) {
+      const pages = (await Promise.all([
+        socialBoardQueries.myBoards({}, { input }, ownerContext),
+        socialBoardQueries.myBoards({}, { input: { ...input, offset: 20 } }, ownerContext),
+      ])) as ImportPage[];
+      const uuids = pages.flatMap((page) => page.boards.map((board) => board.uuid));
+      expect(uuids).not.toContain(unfinished.uuid);
+      expect(uuids).toHaveLength(21);
+      expect(pages[0].totalCount).toBe(21);
+      expect(pages[0].hasMore).toBe(true);
+      expect(pages[1].hasMore).toBe(false);
+    }
+  });
+
+  it('never lists an archived wall, even its owner with the flag', async () => {
+    if (!dbReady) return;
+    const { ownerContext, unfinished } = await seedImportingOwner();
+    await db.update(sprayWalls).set({ archivedAt: new Date() }).where(eq(sprayWalls.boardUuid, unfinished.uuid));
+    const page = (await socialBoardQueries.myBoards(
+      {},
+      { input: { includeUnfinishedSprayWalls: true, limit: 50 } },
+      ownerContext,
+    )) as ImportPage;
+    expect(page.boards.map((board) => board.uuid)).not.toContain(unfinished.uuid);
+    expect(page.totalCount).toBe(21);
+  });
+});
+
+describe('transaction-scoped board edit authorization', () => {
+  it('reads community and gym edit grants from the supplied transaction', async () => {
+    if (!dbReady) return;
+    const editorId = randomUUID();
+    await insertUser(editorId);
+    const editorContext = { connectionId: editorId, userId: editorId, isAuthenticated: true } as ConnectionContext;
+    await db.transaction(async (transaction) => {
+      const publicBoardUuid = randomUUID();
+      const [publicBoard] = await transaction
+        .insert(userBoards)
+        .values({
+          uuid: publicBoardUuid,
+          slug: publicBoardUuid,
+          name: 'Transactional public board',
+          ownerId: USER,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 11,
+          setIds: '1',
+          isPublic: true,
+        })
+        .returning();
+      await transaction
+        .insert(communityRoles)
+        .values({ userId: editorId, role: 'community_leader', boardType: 'kilter' });
+      await expect(requireBoardEditAccess(editorContext, publicBoard, transaction)).resolves.toBeUndefined();
+
+      const gymUuid = randomUUID();
+      const [gym] = await transaction
+        .insert(gyms)
+        .values({ uuid: gymUuid, name: 'Transactional gym', ownerId: USER })
+        .returning();
+      await transaction.insert(gymMembers).values({ gymId: gym.id, userId: editorId, role: 'admin' });
+      const privateBoardUuid = randomUUID();
+      const [privateBoard] = await transaction
+        .insert(userBoards)
+        .values({
+          uuid: privateBoardUuid,
+          slug: privateBoardUuid,
+          name: 'Transactional private board',
+          ownerId: USER,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 11,
+          setIds: '1',
+          isPublic: false,
+          gymId: gym.id,
+        })
+        .returning();
+      await expect(requireBoardEditAccess(editorContext, privateBoard, transaction)).resolves.toBeUndefined();
+    });
+  });
+});
+
+describe('spray import progress permission revocation', () => {
+  it.each(['gym admin', 'scoped community leader'] as const)(
+    'omits import progress after revoking %s access in the same session',
+    async (grantKind) => {
+      if (!dbReady) return;
+      const editorId = randomUUID();
+      await insertUser(editorId);
+      const editorContext: ConnectionContext = {
+        connectionId: editorId,
+        userId: editorId,
+        isAuthenticated: true,
+      };
+      const wall = (await sprayWallMutations.createSprayWall(
+        {},
+        { input: { name: 'Revoked import wall', angle: 40 } },
+        ctx,
+      )) as { uuid: string };
+      let revokeGrant: () => Promise<unknown>;
+      if (grantKind === 'gym admin') {
+        const [gym] = await db
+          .insert(gyms)
+          .values({ uuid: randomUUID(), name: 'Revoked import gym', ownerId: USER })
+          .returning();
+        await db.insert(gymMembers).values({ gymId: gym.id, userId: editorId, role: 'admin' });
+        await db.update(userBoards).set({ gymId: gym.id, isPublic: false }).where(eq(userBoards.uuid, wall.uuid));
+        revokeGrant = () =>
+          db.delete(gymMembers).where(and(eq(gymMembers.gymId, gym.id), eq(gymMembers.userId, editorId)));
+      } else {
+        await db.update(userBoards).set({ isPublic: true }).where(eq(userBoards.uuid, wall.uuid));
+        await db.insert(communityRoles).values([
+          { userId: editorId, role: 'community_leader', boardType: 'spray' },
+          { userId: editorId, role: 'community_leader', boardType: 'kilter' },
+        ]);
+        revokeGrant = () =>
+          db
+            .delete(communityRoles)
+            .where(and(eq(communityRoles.userId, editorId), eq(communityRoles.boardType, 'spray')));
+      }
+      const input = { wallUuids: [wall.uuid] };
+      const beforeRevocation = await sprayDetectionQueries.sprayWallImportProgress(null, input, editorContext);
+      expect(beforeRevocation).toMatchObject([{ wallUuid: wall.uuid, stage: 'draft' }]);
+      await revokeGrant();
+      // Reuse the exact context object and connection, as a long-lived client does.
+      expect(await sprayDetectionQueries.sprayWallImportProgress(null, input, editorContext)).toEqual([]);
+      expect(await sprayDetectionQueries.sprayWallImportProgress(null, input, ctx)).toMatchObject([
+        { wallUuid: wall.uuid, stage: 'draft' },
+      ]);
+    },
+  );
 });

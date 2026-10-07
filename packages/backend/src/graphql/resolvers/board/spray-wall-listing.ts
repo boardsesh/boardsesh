@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, eq, exists, isNotNull, isNull, notExists, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 
@@ -92,6 +92,37 @@ export function listableSprayWallCondition(
       )
     )
   )`;
+}
+
+/**
+ * The viewer's OWN spray walls that have never been published: not deleted, not
+ * archived, no current version. `myBoards` ORs this onto the published-only
+ * picker rule when the caller opts in (`includeUnfinishedSprayWalls`), so My
+ * Boards and Manage can show a wall's import progress while every board picker
+ * keeps offering only walls that can be climbed on (#6040).
+ *
+ * Exactly the walls `readSprayWallImportProgress` reports, so every row this
+ * adds carries a `sprayImport` for its owner.
+ */
+export function ownedUnfinishedSprayWallCondition(viewerId: string): SQL {
+  return and(
+    eq(dbSchema.userBoards.ownerId, viewerId),
+    eq(dbSchema.userBoards.boardType, 'spray'),
+    exists(
+      db
+        .select({ id: dbSchema.sprayWalls.id })
+        .from(dbSchema.sprayWalls)
+        .where(
+          and(
+            eq(dbSchema.sprayWalls.boardUuid, dbSchema.userBoards.uuid),
+            isNull(dbSchema.sprayWalls.deletedAt),
+            isNull(dbSchema.sprayWalls.archivedAt),
+            isNull(dbSchema.sprayWalls.currentVersionId),
+          ),
+        ),
+    ),
+    boardIsNotArchivedSprayWall(),
+  )!;
 }
 
 /**

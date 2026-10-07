@@ -8,6 +8,7 @@ import { GroupedNotificationsInputSchema, NotificationActorsInputSchema } from '
 import { batchEnrichUserProfiles } from './helpers';
 import { pubsub } from '../../../pubsub/index';
 import { createAsyncIterator } from '../shared/async-iterators';
+import { enrichSprayNotificationTargets } from './spray-notification-targets';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 type NotificationRow = {
@@ -160,6 +161,7 @@ export const socialNotificationQueries = {
     );
 
     const notifications = rows.map(mapNotificationRow);
+    await enrichSprayNotificationTargets(notifications, userId);
     const totalCount = rows.length > 0 ? Number(rows[0].totalCount) : 0;
     const unreadCount = rows.length > 0 ? Number(rows[0].unreadCount) : 0;
 
@@ -216,7 +218,7 @@ export const socialNotificationQueries = {
           MAX(n."created_at") as "latestCreatedAt",
           BOOL_AND(n."read_at" IS NOT NULL) as "allRead",
           (array_agg(c."body" ORDER BY n."created_at" DESC))[1] as "commentBody",
-          (array_agg(DISTINCT n."actor_id"))[1:3] as "actorIds"
+          (array_agg(DISTINCT n."actor_id") FILTER (WHERE n."actor_id" IS NOT NULL))[1:3] as "actorIds"
         FROM "notifications" n
         LEFT JOIN "comments" c ON n."comment_id" = c."id"
         WHERE n."recipient_id" = ${userId}
@@ -499,6 +501,8 @@ export const socialNotificationQueries = {
         if (climb) applyClimbBoardFields(group, climb);
       }
     }
+
+    await enrichSprayNotificationTargets(groups, userId);
 
     // Unread count (individual notifications, not groups)
     const unreadCountResult = await db
