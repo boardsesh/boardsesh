@@ -16,23 +16,19 @@ function readPaddingBottom(style: unknown): number | undefined {
 }
 
 const sheet = vi.hoisted(() => ({ expand: vi.fn() }));
+// The keyboard height the sheet reads; 0 = keyboard down.
+const keyboard = vi.hoisted(() => ({ height: 0 }));
 
-type ViewMockProps = { children?: ReactNode };
-type KeyboardAvoidingViewMockProps = { children?: ReactNode; style?: unknown; keyboardVerticalOffset?: number };
+type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
 vi.mock('react-native', () => ({
-  View: ({ children }: ViewMockProps) => createElement('div', {}, children),
-  KeyboardAvoidingView: ({ children, style, keyboardVerticalOffset }: KeyboardAvoidingViewMockProps) =>
-    createElement(
-      'div',
-      {
-        'data-kav': 'true',
-        'data-pb': String(readPaddingBottom(style) ?? ''),
-        'data-offset': String(keyboardVerticalOffset ?? ''),
-      },
-      children,
-    ),
+  View: ({ children, style, testID }: ViewMockProps) =>
+    createElement('div', { 'data-testid': testID, 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
+  // Present so a regression back to a KeyboardAvoidingView shows up below.
+  KeyboardAvoidingView: ({ children }: ViewMockProps) => createElement('div', { 'data-kav': 'true' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
+
+vi.mock('../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => keyboard.height }));
 
 // SESSION_NOTES_MAX_LENGTH flows onto the input's maxLength; mock the shared
 // constant so this jsdom test doesn't pull the whole schema package.
@@ -259,15 +255,23 @@ describe('EndSessionSheet', () => {
   });
 
   it('pads the content past the window bottom inset (34) plus spacing[3] (12)', () => {
-    const { container } = render(<EndSessionSheet {...makeProps()} />);
-    const avoider = container.querySelector('[data-kav]') as HTMLElement;
-    expect(avoider.getAttribute('data-pb')).toBe('46');
+    keyboard.height = 0;
+    const { getByTestId } = render(<EndSessionSheet {...makeProps()} />);
+    expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
   });
 
-  it('takes the inset back off the keyboard offset, so no gap opens above the keyboard', () => {
-    const { container } = render(<EndSessionSheet {...makeProps()} />);
-    const avoider = container.querySelector('[data-kav]') as HTMLElement;
-    expect(avoider.getAttribute('data-offset')).toBe('-34');
+  it('pads by the keyboard height instead of the inset while the keyboard is up, never both', () => {
+    keyboard.height = 300;
+    try {
+      const { container, getByTestId } = render(<EndSessionSheet {...makeProps()} />);
+      // 300 + spacing[3]: the keyboard covers the inset, so it isn't added on top.
+      expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('312');
+      // RN 0.86's KeyboardAvoidingView measures a parent-relative frame and finds
+      // no overlap inside the sheet, so the sheet must not lean on one.
+      expect(container.querySelector('[data-kav]')).toBeNull();
+    } finally {
+      keyboard.height = 0;
+    }
   });
 
   it('puts End session in the top bar as the trailing action and the exit as leading', () => {

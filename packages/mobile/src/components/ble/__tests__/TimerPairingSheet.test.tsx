@@ -49,10 +49,15 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-type SheetMockProps = { children?: ReactNode; header?: ReactNode; visible?: boolean };
+type SheetMockProps = { children?: ReactNode; header?: ReactNode; visible?: boolean; presentHaptic?: boolean };
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, header, visible }: SheetMockProps) =>
-    createElement('div', { 'data-sheet': 'true', 'data-visible': String(visible) }, header, children),
+  ModalSheet: ({ children, header, visible, presentHaptic }: SheetMockProps) =>
+    createElement(
+      'div',
+      { 'data-sheet': 'true', 'data-visible': String(visible), 'data-present-haptic': String(presentHaptic) },
+      header,
+      children,
+    ),
 }));
 type TopBarMockProps = { title: string; leading?: { kind: string; onPress: () => void } };
 vi.mock('../../SheetTopBar', () => ({
@@ -91,6 +96,11 @@ describe('TimerPairingSheet', () => {
     const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
     expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('mobile.timerPair.scanning');
+  });
+
+  it('opens without a haptic: the pairing flow raises it, not a tap', () => {
+    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+    expect(container.querySelector('[data-present-haptic="false"]')).not.toBeNull();
   });
 
   it('stops the scan on unmount', () => {

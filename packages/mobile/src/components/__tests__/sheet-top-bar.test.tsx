@@ -33,13 +33,20 @@ vi.mock('../../providers/theme-provider', async () => {
   return { useTheme: () => themes[ctrl.variant], useOptionalTheme: () => themes[ctrl.variant] };
 });
 
-type TextMockProps = { children?: ReactNode; style?: unknown; numberOfLines?: number; maxFontSizeMultiplier?: number };
+type TextMockProps = {
+  children?: ReactNode;
+  style?: unknown;
+  color?: string;
+  numberOfLines?: number;
+  maxFontSizeMultiplier?: number;
+};
 vi.mock('../Text', () => ({
-  Text: ({ children, style, numberOfLines, maxFontSizeMultiplier }: TextMockProps) =>
+  Text: ({ children, style, color, numberOfLines, maxFontSizeMultiplier }: TextMockProps) =>
     createElement(
       'span',
       {
         'data-style': JSON.stringify(flatten(style)),
+        'data-color': color,
         'data-lines': numberOfLines,
         'data-max-scale': maxFontSizeMultiplier,
       },
@@ -73,6 +80,7 @@ vi.mock('../PressableSurface', () => ({
 }));
 
 import { SheetTopBar } from '../SheetTopBar';
+import { makeThemeMock } from '../../test/theme-mock';
 
 const styleOf = (element: Element | null) => JSON.parse(element?.getAttribute('data-style') ?? '{}');
 
@@ -216,6 +224,34 @@ describe('SheetTopBar', () => {
     );
     expect(styleOf(material.getByText('Save').parentElement).backgroundColor).toBeUndefined();
     expect(styleOf(material.getByText('Save'))).toMatchObject({ fontWeight: '600' });
+  });
+
+  it('a destructive confirm fills the capsule with the error colour, or colours the label', () => {
+    const { brandColors } = makeThemeMock();
+    const glass = render(
+      createElement(SheetTopBar, {
+        title: 'End',
+        trailing: { label: 'End session', onPress: vi.fn(), prominent: true, destructive: true },
+      }),
+    );
+    expect(styleOf(glass.getByText('End session').parentElement).backgroundColor).toBe(brandColors.error);
+    glass.unmount();
+
+    const plain = render(
+      createElement(SheetTopBar, { title: 'End', trailing: { label: 'Leave', onPress: vi.fn(), destructive: true } }),
+    );
+    expect(plain.getByText('Leave').getAttribute('data-color')).toBe(brandColors.error);
+    plain.unmount();
+
+    ctrl.variant = 'material';
+    const material = render(
+      createElement(SheetTopBar, {
+        title: 'End',
+        trailing: { label: 'End session', onPress: vi.fn(), prominent: true, destructive: true },
+      }),
+    );
+    expect(styleOf(material.getByText('End session').parentElement).backgroundColor).toBeUndefined();
+    expect(material.getByText('End session').getAttribute('data-color')).toBe(brandColors.error);
   });
 
   it('draws the trailing accessory before the action', () => {

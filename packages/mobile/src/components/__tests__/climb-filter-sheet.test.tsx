@@ -126,8 +126,15 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
     createElement('div', { 'data-style': resolveStyle(style) }, children),
-  KeyboardAvoidingView: ({ children, behavior }: { children?: ReactNode; behavior?: string }) =>
-    createElement('div', { 'data-kav': behavior }, children),
+  KeyboardAvoidingView: ({
+    children,
+    behavior,
+    style,
+  }: {
+    children?: ReactNode;
+    behavior?: string;
+    style?: StyleProp;
+  }) => createElement('div', { 'data-kav': behavior, 'data-style': resolveStyle(style) }, children),
   Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
@@ -385,6 +392,13 @@ vi.mock('../SwitchRow', () => ({
     ),
 }));
 vi.mock('../Icon', () => ({ Icon: () => null }));
+// The iOS detent bound (#3330), as a value no other style carries, so the test
+// below can see which view it lands on.
+const DETENT_COLUMN = vi.hoisted(() => ({ height: 701 }));
+vi.mock('../use-sheet-column-style', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../use-sheet-column-style')>()),
+  useSheetColumnStyle: () => DETENT_COLUMN,
+}));
 // The top bar's two actions as plain buttons labelled with their text, so the
 // cases below press Reset and Apply by label as they did in the old header and
 // footer. A disabled action swallows the tap, like the real bar.
@@ -480,6 +494,19 @@ describe('ClimbFilterSheet Apply waits for the native close', () => {
     expect(getByText('mobile.filter.reset').getAttribute('data-slot')).toBe('leading');
     expect(getByText('mobile.filter.showCount12').getAttribute('data-slot')).toBe('trailing');
     expect(container.querySelector('[data-kav="padding"]')).not.toBeNull();
+  });
+
+  it('hands the native sheet one in-flow child, the keyboard-avoiding column, carrying the detent bound (#3330)', () => {
+    const { container } = renderFilterSheet();
+    const column = container.querySelector('[data-kav="padding"]') as HTMLElement;
+    expect(JSON.parse(column.getAttribute('data-style') ?? 'null')).toEqual(DETENT_COLUMN);
+    // Anything else under the sheet is the dev-only #3922 probe, which is out of flow.
+    const inFlowSiblings = [...(column.parentElement?.children ?? [])].filter((element) => {
+      if (element === column) return false;
+      const style = JSON.parse(element.getAttribute('data-style') ?? '{}') ?? {};
+      return style.position !== 'absolute' && style.height !== 0;
+    });
+    expect(inFlowSiblings).toEqual([]);
   });
 
   it('separates the Following switch from the setter picker and applies its own filter', () => {

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, KeyboardAvoidingView, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import BottomSheet, {
   BottomSheetView,
   BottomSheetTextInput,
   type BottomSheetMethods,
 } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
+import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useTranslation } from 'react-i18next';
 import { SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -66,6 +67,7 @@ export function EndSessionSheet({
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const windowInsetBottom = useWindowBottomInset();
+  const keyboardHeight = useKeyboardHeight();
   const sheetRef = useRef<BottomSheetMethods>(null);
 
   // Resolved mode. A known non-creator can never reach `end`, whatever mode
@@ -132,6 +134,7 @@ export function EndSessionSheet({
                   loading: isEnding,
                   disabled: isLeaving,
                   prominent: true,
+                  destructive: true,
                 }
               : {
                   label: t('mobile.queue.leaveSessionAction'),
@@ -139,18 +142,21 @@ export function EndSessionSheet({
                   loading: isLeaving,
                   disabled: isEnding,
                   prominent: true,
+                  destructive: true,
                 }
           }
         />
-        {/* The Compose/UIKit sheet window does not resize for the keyboard, so a
-            JS-side KeyboardAvoidingView lifts the recap input above it on both
-            platforms (mirrors Sheet.tsx). The window inset pads the content
-            inside it, and the keyboard covers that inset when it is up, so the
-            offset takes the inset back off: no inset-sized gap above the keyboard. */}
-        <KeyboardAvoidingView
-          behavior="padding"
-          keyboardVerticalOffset={-windowInsetBottom}
-          style={[styles.content, { paddingBottom: windowInsetBottom + spacing[3] }]}
+        {/* The Compose/UIKit sheet window does not resize for the keyboard, so the
+            content pads itself above it on both platforms. The sheet sizes to its
+            content and its bottom edge is the window's, so the keyboard height is
+            exactly the overlap. The keyboard covers the window inset when it is
+            up, so the pad is the larger of the two, never their sum: no
+            inset-sized gap above the keyboard. Not a KeyboardAvoidingView: RN
+            0.86 measures overlap from its parent-relative onLayout frame, which
+            inside this sheet finds none. */}
+        <View
+          testID="end-session-content"
+          style={[styles.content, { paddingBottom: Math.max(windowInsetBottom, keyboardHeight) + spacing[3] }]}
         >
           <Icon name={isEndMode ? 'end.session' : 'leave.session'} size={40} color={systemColors.secondaryLabel} />
 
@@ -202,7 +208,7 @@ export function EndSessionSheet({
               disabled={busy}
             />
           ) : null}
-        </KeyboardAvoidingView>
+        </View>
       </BottomSheetView>
     </BottomSheet>
   );

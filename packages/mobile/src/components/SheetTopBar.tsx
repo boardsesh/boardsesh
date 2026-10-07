@@ -76,6 +76,12 @@ export type SheetTopBarTrailing = {
   loading?: boolean;
   /** The sheet's confirm. See PROMINENT_FILLED for how it looks. */
   prominent?: boolean;
+  /**
+   * The confirm ends or throws something away ("End session"). Drawn in the
+   * error colour: the capsule's fill when prominent on Liquid Glass, otherwise
+   * the label.
+   */
+  destructive?: boolean;
   accessibilityLabel?: string;
 };
 
@@ -155,6 +161,7 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
   disabled = false,
   loading = false,
   prominent = false,
+  destructive = false,
   accessibilityLabel,
 }: SheetTopBarTrailing) {
   const { systemColors, brandColors, radii, spacing, variant } = useTheme();
@@ -167,11 +174,12 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
   // solid brand fill, the same rule as Button's filled CTA, which never goes
   // translucent.
   const filled = prominent && selectByVariant(variant, PROMINENT_FILLED);
-  const labelColor = filled ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : brandColors.primary;
+  const accent = destructive ? brandColors.error : brandColors.primary;
+  const labelColor = filled ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : accent;
   const surface = filled
     ? [
         styles.prominent,
-        { backgroundColor: brandColors.primary, borderRadius: radii.button, paddingHorizontal: spacing[4] },
+        { backgroundColor: accent, borderRadius: radii.button, paddingHorizontal: spacing[4] },
         disabled ? styles.dimmed : null,
       ]
     : null;

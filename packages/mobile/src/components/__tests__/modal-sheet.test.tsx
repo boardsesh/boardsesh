@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 
 const captures = vi.hoisted(() => ({
@@ -9,7 +9,10 @@ const captures = vi.hoisted(() => ({
   snapPoints: undefined as unknown,
   enableDynamicSizing: undefined as unknown,
   scrollStyle: undefined as unknown,
+  onChange: undefined as ((index: number) => void) | undefined,
+  managedOptions: undefined as Record<string, unknown> | undefined,
 }));
+const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn() }));
 const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 type ViewMockProps = { children?: ReactNode };
@@ -21,9 +24,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
         children,
         snapPoints,
         enableDynamicSizing,
-      }: ViewMockProps & { snapPoints?: unknown; enableDynamicSizing?: unknown },
+        onChange,
+      }: ViewMockProps & { snapPoints?: unknown; enableDynamicSizing?: unknown; onChange?: (index: number) => void },
       ref: Ref<unknown>,
     ) => {
+      captures.onChange = onChange;
       captures.snapPoints = snapPoints;
       captures.enableDynamicSizing = enableDynamicSizing;
       return createElement('div', { 'data-sheet': 'true', ref }, children);
@@ -75,23 +80,26 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
 }));
 
-vi.mock('../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+vi.mock('../../lib/haptics', () => ({ hapticMedium: haptics.hapticMedium }));
 
 vi.mock('../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: () => ({
-    onChange: vi.fn(),
-    onFullyDismissed: vi.fn(),
-    handle: {
-      present: vi.fn(),
-      dismiss: vi.fn(),
-      close: vi.fn(),
-      forceClose: vi.fn(),
-      snapToIndex: vi.fn(),
-      snapToPosition: vi.fn(),
-      expand: vi.fn(),
-      collapse: vi.fn(),
-    },
-  }),
+  useManagedSheet: (options: Record<string, unknown>) => {
+    captures.managedOptions = options;
+    return {
+      onChange: vi.fn(),
+      onFullyDismissed: vi.fn(),
+      handle: {
+        present: vi.fn(),
+        dismiss: vi.fn(),
+        close: vi.fn(),
+        forceClose: vi.fn(),
+        snapToIndex: vi.fn(),
+        snapToPosition: vi.fn(),
+        expand: vi.fn(),
+        collapse: vi.fn(),
+      },
+    };
+  },
 }));
 
 vi.mock('../../theme/tokens', () => ({
@@ -113,6 +121,9 @@ beforeEach(() => {
   captures.snapPoints = undefined;
   captures.enableDynamicSizing = undefined;
   captures.scrollStyle = undefined;
+  captures.onChange = undefined;
+  captures.managedOptions = undefined;
+  haptics.hapticMedium.mockClear();
   platform.os = 'ios';
 });
 
@@ -178,6 +189,46 @@ describe('ModalSheet', () => {
       );
       expect(captures.snapPoints).toEqual(['65%', '92%']);
       expect(captures.enableDynamicSizing).toBe(false);
+    });
+  });
+
+  it('forwards onDisplaced to the coordinator, apart from onClose', () => {
+    const onClose = vi.fn();
+    const onDisplaced = vi.fn();
+    render(
+      <ModalSheet visible onClose={onClose} onDisplaced={onDisplaced}>
+        <div>body</div>
+      </ModalSheet>,
+    );
+    expect(captures.managedOptions?.onDisplaced).toBe(onDisplaced);
+    expect(captures.managedOptions?.onClose).toBe(onClose);
+  });
+
+  describe('presentHaptic', () => {
+    it('fires the haptic when the sheet opens by default', () => {
+      render(
+        <ModalSheet visible>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      act(() => captures.onChange?.(0));
+      expect(haptics.hapticMedium).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays quiet on open when false, but keeps the haptic for a drag between detents and the next open', () => {
+      render(
+        <ModalSheet visible presentHaptic={false} snapPoints={['50%', '90%']}>
+          <div>body</div>
+        </ModalSheet>,
+      );
+      act(() => captures.onChange?.(0));
+      expect(haptics.hapticMedium).not.toHaveBeenCalled();
+      act(() => captures.onChange?.(1));
+      expect(haptics.hapticMedium).toHaveBeenCalledTimes(1);
+      // Closed, then opened again: still no haptic for the open itself.
+      act(() => captures.onChange?.(-1));
+      act(() => captures.onChange?.(0));
+      expect(haptics.hapticMedium).toHaveBeenCalledTimes(1);
     });
   });
 });

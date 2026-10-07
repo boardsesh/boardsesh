@@ -117,6 +117,8 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
       visible
       snapPoints={SNAP_POINTS}
       onClose={onDismiss}
+      // Opens by itself (a connect or the pairing flow raises it), not from a tap.
+      presentHaptic={false}
       header={<SheetTopBar title={t('mobile.timerPair.title')} leading={{ kind: 'cancel', onPress: onDismiss }} />}
     >
       {/* A full sentence: too long for the bar's one-line subtitle. */}
