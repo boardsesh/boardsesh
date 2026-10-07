@@ -88,7 +88,7 @@ A concurrent build that fails leaves an `INVALID` index behind; it is not used b
 planner and must be dropped (`DROP INDEX CONCURRENTLY`) before retrying. Check with
 `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid`.
 
-#### `0260_mushy_retro_girl`: alias UUID lookup
+#### `0261_mushy_retro_girl`: alias UUID lookup
 
 `board_climb_aliases` has catalog-sync writers (including
 `packages/kilter-sync/src/sync/catalog-sync.ts`). Migration 0250 therefore records
