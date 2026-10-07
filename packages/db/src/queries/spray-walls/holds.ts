@@ -1,4 +1,4 @@
-import { and, asc, eq, getTableColumns, gt, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { alias } from 'drizzle-orm/pg-core';
 import { sprayWallHolds, sprayWallVersions, sprayWalls } from '../../schema/app/spray-walls';
@@ -63,6 +63,27 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
   const installedVersion = alias(sprayWallVersions, 'installed_version');
   const removedVersion = alias(sprayWallVersions, 'removed_version');
 
+  return db
+    .select(getTableColumns(sprayWallHolds))
+    .from(sprayWallHolds)
+    .innerJoin(installedVersion, eq(installedVersion.id, sprayWallHolds.installedVersionId))
+    .leftJoin(removedVersion, eq(removedVersion.id, sprayWallHolds.removedVersionId))
+    .where(and(eq(sprayWallHolds.wallId, wallId), aliveAtVersion(installedVersion, removedVersion, targetVersion)))
+    .orderBy(asc(sprayWallHolds.holdId));
+}
+
+type VersionAlias = ReturnType<typeof alias<typeof sprayWallVersions, string>>;
+
+/**
+ * The range rule {@link aliveHolds} documents, against a target version number
+ * that is either a literal or a column. One definition, shared by the
+ * single-version read and the batched one, so the two cannot drift.
+ */
+function aliveAtVersion(
+  installedVersion: VersionAlias,
+  removedVersion: VersionAlias,
+  targetVersion: number | VersionAlias['versionNumber'],
+): SQL {
   // A version's work counts when the version is no longer a draft, or when it is
   // the very version being asked about. Spelled out for both ends of the range,
   // because an abandoned draft's REMOVALS are as wrong as its additions.
@@ -71,27 +92,49 @@ export async function aliveHolds(db: DrizzleDb, wallId: number, versionNumber?: 
   // version being asked about.
   const removalNeverLanded = and(eq(removedVersion.status, 'draft'), ne(removedVersion.versionNumber, targetVersion));
 
-  return db
-    .select(getTableColumns(sprayWallHolds))
-    .from(sprayWallHolds)
-    .innerJoin(installedVersion, eq(installedVersion.id, sprayWallHolds.installedVersionId))
-    .leftJoin(removedVersion, eq(removedVersion.id, sprayWallHolds.removedVersionId))
-    .where(
-      and(
-        eq(sprayWallHolds.wallId, wallId),
-        lte(installedVersion.versionNumber, targetVersion),
-        installedLanded,
-        // Removed only by a generation that landed at or before the target. The
-        // three ways a hold survives: nothing removed it, the removal is in the
-        // future, or the removing version is a draft that never landed.
-        or(
-          isNull(sprayWallHolds.removedVersionId),
-          gt(removedVersion.versionNumber, targetVersion),
-          removalNeverLanded,
-        ),
-      ),
-    )
-    .orderBy(asc(sprayWallHolds.holdId));
+  return and(
+    lte(installedVersion.versionNumber, targetVersion),
+    installedLanded,
+    // Removed only by a generation that landed at or before the target. The
+    // three ways a hold survives: nothing removed it, the removal is in the
+    // future, or the removing version is a draft that never landed.
+    or(isNull(sprayWallHolds.removedVersionId), gt(removedVersion.versionNumber, targetVersion), removalNeverLanded),
+  )!;
+}
+
+/** Versions per {@link aliveHoldsAtVersions} statement, so one call never builds an unbounded IN list. */
+const ALIVE_HOLDS_BATCH = 200;
+
+/**
+ * {@link aliveHolds} for many versions at once, keyed by version id: one
+ * statement per 200 versions instead of one per version. Each version is read
+ * at its OWN number on its own wall, with exactly the rule `aliveHolds` applies.
+ * A version id that does not exist maps to nothing.
+ */
+export async function aliveHoldsAtVersions(
+  db: DrizzleDb,
+  versionIds: readonly number[],
+): Promise<Map<number, SprayWallHold[]>> {
+  const byVersion = new Map<number, SprayWallHold[]>();
+  const unique = [...new Set(versionIds)];
+  for (const versionId of unique) byVersion.set(versionId, []);
+
+  const targetVersion = alias(sprayWallVersions, 'target_version');
+  const installedVersion = alias(sprayWallVersions, 'installed_version');
+  const removedVersion = alias(sprayWallVersions, 'removed_version');
+  for (let start = 0; start < unique.length; start += ALIVE_HOLDS_BATCH) {
+    const chunk = unique.slice(start, start + ALIVE_HOLDS_BATCH);
+    const rows = await db
+      .select({ hold: sprayWallHolds, targetVersionId: targetVersion.id })
+      .from(sprayWallHolds)
+      .innerJoin(targetVersion, and(eq(targetVersion.wallId, sprayWallHolds.wallId), inArray(targetVersion.id, chunk)))
+      .innerJoin(installedVersion, eq(installedVersion.id, sprayWallHolds.installedVersionId))
+      .leftJoin(removedVersion, eq(removedVersion.id, sprayWallHolds.removedVersionId))
+      .where(aliveAtVersion(installedVersion, removedVersion, targetVersion.versionNumber))
+      .orderBy(asc(targetVersion.id), asc(sprayWallHolds.holdId));
+    for (const row of rows) byVersion.get(Number(row.targetVersionId))?.push(row.hold);
+  }
+  return byVersion;
 }
 
 /**

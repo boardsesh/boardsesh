@@ -1,12 +1,12 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import { GraphQLError } from 'graphql';
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SprayDetectionCandidate, SprayDetectionResult } from '@boardsesh/shared-schema';
 import { SPRAY_MAYBE_FLOOR } from '@boardsesh/shared-schema';
-import { aliveHolds } from '@boardsesh/db/queries';
+import { acquireOrRenewDaemonLease, aliveHoldsAtVersions, releaseDaemonLease } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
-import { rowsFromResult } from '@boardsesh/db/client';
 import { IDENTITY_HOMOGRAPHY, mapCanonicalHoldsToPhoto, type SprayPhotoHold } from '@boardsesh/spray-wall-geometry';
 import { db } from '../../../db/client';
 import { logger } from '../../../utils/logger';
@@ -231,12 +231,13 @@ function pickDetection(
 /**
  * What happened to each suggestion of `detection`, given the version's alive holds.
  *
- * NOT_SHOWN wins first: the editor never drew a candidate under the maybe floor,
- * so nothing the climber did says anything about it. Then a hold pointing back
- * at the candidate makes it KEPT, or EDITED when that hold was reshaped. With no
- * hold on the version pointing at this run at all (an app that predates
- * provenance saved them), kept and deleted cannot be told apart: UNKNOWN. Only
- * then is a shown candidate with no hold DELETED.
+ * In order: a hold pointing back at the candidate makes it KEPT, or EDITED when
+ * that hold was reshaped (a climber can switch on a candidate under the floor,
+ * so the hold is checked first). With no such hold, a candidate under the maybe
+ * floor is NOT_SHOWN: the editor never drew it, so nothing the climber did says
+ * anything about it. With no hold on the version pointing at this run at all (an
+ * app that predates provenance saved them), kept and deleted cannot be told
+ * apart: UNKNOWN. Only then is a shown candidate with no hold DELETED.
  */
 export function candidateFates(
   detection: SprayDetectionRow | null,
@@ -264,7 +265,13 @@ export function candidateFates(
   });
 }
 
-/** Alive holds of one version in its photo pixels, with what could not be projected. */
+/**
+ * Alive holds of one version in its photo pixels, with what could not be
+ * projected. A singular homography projects nothing, so every hold counts as
+ * unmappable; a hold past the projection's horizon or under a pixel is dropped
+ * on its own. Either way the version cannot be exported: an image with real
+ * holds missing from its labels teaches the model they are background.
+ */
 function projectHolds(version: SprayWallVersionRow, holds: readonly SprayWallHoldRow[]) {
   const homography = version.homography ?? [...IDENTITY_HOMOGRAPHY];
   const mapped =
@@ -288,18 +295,20 @@ function projectHolds(version: SprayWallVersionRow, holds: readonly SprayWallHol
   return { holds: projected, unmappableHoldCount: holds.length - projected.length };
 }
 
-/** Holds, candidates and fates for a batch of versions. */
+/** Holds, candidates and fates for a batch of versions, in a fixed number of queries. */
 async function loadVersionLabels(
   executor: Executor,
   versions: readonly SprayWallVersionRow[],
 ): Promise<Map<number, VersionLabels>> {
   const detectionsByPhoto = await loadDoneDetections(executor, versions);
+  // `aliveHolds`'s own range rule, batched: one statement per 200 versions.
+  const aliveByVersion = await aliveHoldsAtVersions(
+    executor,
+    versions.map((version) => Number(version.id)),
+  );
   const labels = new Map<number, VersionLabels>();
   for (const version of versions) {
-    // Per version on purpose: "alive at this version" is the range rule in
-    // `aliveHolds`, and a second copy of it here would be a second chance to get
-    // it wrong. A page is at most 25 versions.
-    const alive = await aliveHolds(executor, Number(version.wallId), version.versionNumber);
+    const alive = aliveByVersion.get(Number(version.id)) ?? [];
     const detection = pickDetection(detectionsByPhoto.get(`${version.wallId}:${version.photoKey}`) ?? [], alive);
     labels.set(Number(version.id), {
       ...projectHolds(version, alive),
@@ -527,19 +536,36 @@ export const SPRAY_TRAINING_EXPORT_PREFIX = 'spray-training/exports/';
 export const SPRAY_TRAINING_EXPORT_SCHEMA_VERSION = 1;
 /** How many complete exports are kept. The ML fetch reads the newest. */
 export const SPRAY_TRAINING_EXPORTS_KEPT = 2;
-/** `pg_try_advisory_xact_lock` key: 'sptx'. Two overlapping runs never both write. */
-const SPRAY_TRAINING_EXPORT_LOCK_KEY = 0x73707478;
+/** The `sync_daemon_leases` row that keeps two export runs apart. */
+export const SPRAY_TRAINING_EXPORT_LEASE = 'spray-training-export';
+/**
+ * A run stops writing after this long: three minutes inside the scheduler job's
+ * 15-minute timeout, so the job never kills a run mid-manifest.
+ */
+export const SPRAY_TRAINING_EXPORT_DEADLINE_MS = 12 * 60 * 1000;
+/**
+ * The lease outlives the deadline by eight minutes, so a run that crashed
+ * without releasing it frees the slot well before the next day's tick, and a
+ * live run can never lose it while it is still allowed to write.
+ */
+export const SPRAY_TRAINING_EXPORT_LEASE_TTL_MS = 20 * 60 * 1000;
 /** Points in the polygon a circle-only hold is exported as. */
 const CIRCLE_POLYGON_POINTS = 24;
 const EXPORT_CACHE_CONTROL = 'private, no-store';
 
 export type SprayTrainingSplit = 'train' | 'valid' | 'eval';
 
+/** Why a run wrote nothing. LOCKED is the one the scheduler treats as a failure. */
+export type SprayTrainingExportSkipReason = 'LOCKED' | 'UNCHANGED' | 'NOTHING_TO_EXPORT';
+
 export type SprayTrainingExportResult = {
   exportId: string | null;
   imagesWritten: number;
   exportsRetired: number;
   skipped: boolean;
+  skippedReason: SprayTrainingExportSkipReason | null;
+  /** Approved, eligible versions left out of this run's export (see the manifest's `skippedVersions`). */
+  versionsSkipped: number;
   durationMs: number;
 };
 
@@ -761,18 +787,41 @@ async function listStoredExports(): Promise<Array<{ exportId: string; keys: stri
 export type ExportSprayTrainingDatasetOptions = {
   /** Injected so a test can mint distinct, ordered export ids. */
   now?: Date;
+  /** How long the run may take before it stops writing. Injected by tests. */
+  deadlineMs?: number;
 };
+
+/** Thrown when a run passes its deadline; the half-written export has no manifest. */
+class ExportDeadlineError extends Error {}
 
 /**
  * Retire, compare, write. Separated from the resolver so a test can drive it.
  *
- * Runs inside one transaction holding `pg_try_advisory_xact_lock`: a second run
- * meeting a first answers `skipped` and touches nothing, which is what makes the
- * daily job safe to overlap. The transaction is read-only apart from the lock;
- * it is open for the length of the run so every read sees one snapshot.
+ * ## Overlap
+ *
+ * One run at a time through a lease row in `sync_daemon_leases`
+ * ({@link SPRAY_TRAINING_EXPORT_LEASE}), not an advisory lock held in a
+ * transaction: the run spends minutes on object storage, and a transaction open
+ * for that long would pin one of the backend's few pooled connections. The lease
+ * holds no connection. A second run meeting a live lease answers
+ * `skippedReason: LOCKED`, which the scheduler job reports as a failure, so a
+ * stuck run cannot quietly break the 24-hour removal promise.
+ *
+ * The lease has no fencing token (see `sync_daemon_leases`). What keeps two
+ * writers apart is that the run stops at {@link SPRAY_TRAINING_EXPORT_DEADLINE_MS},
+ * well inside the lease's TTL, and that a run cut short leaves no manifest, which
+ * every reader ignores and the next run deletes.
+ *
+ * ## Reads
+ *
+ * Short, separate queries, not one snapshot: the approved set is read once at
+ * the start and drives both the retirement and the write. A consent switched
+ * off while the run is writing is caught by the next day's run, which retires
+ * the export that included it; that is the promise (24 hours), not a gap in it.
  */
 export async function exportSprayTrainingDataset({
   now = new Date(),
+  deadlineMs = SPRAY_TRAINING_EXPORT_DEADLINE_MS,
 }: ExportSprayTrainingDatasetOptions = {}): Promise<SprayTrainingExportResult> {
   const startedAt = Date.now();
   // A backend with no private bucket throws rather than reporting an empty
@@ -781,217 +830,302 @@ export async function exportSprayTrainingDataset({
     throw new Error('the private bucket is not configured; nowhere to write a training export');
   }
 
-  const result = await db.transaction(async (tx) => {
-    const lockRows = rowsFromResult<{ locked: boolean }>(
-      await tx.execute(sql`SELECT pg_try_advisory_xact_lock(${SPRAY_TRAINING_EXPORT_LOCK_KEY}) AS locked`),
-    );
-    if (!lockRows[0]?.locked) {
-      logger.info('Spray training export skipped: another run holds the lock');
-      return { exportId: null, imagesWritten: 0, exportsRetired: 0, skipped: true };
-    }
-
-    const approved = await eligibleVersionsFrom(tx, eq(dbSchema.sprayWallTrainingReviews.status, 'approved')).orderBy(
-      asc(dbSchema.sprayWallVersions.id),
-    );
-    const approvedIds = new Set(approved.map((row) => Number(row.version.id)));
-
-    // 1. Retire. An export holding ANY version that is no longer eligible and
-    //    approved goes whole: a training run must never be able to fetch a photo
-    //    whose owner switched consent off.
-    let exportsRetired = 0;
-    const kept: Array<StoredManifest & { keys: string[] }> = [];
-    for (const stored of await listStoredExports()) {
-      const manifestKey = `${SPRAY_TRAINING_EXPORT_PREFIX}${stored.exportId}/manifest.json`;
-      const manifestBytes = stored.keys.includes(manifestKey) ? await readObjectBuffer(manifestKey) : null;
-      const manifest = manifestBytes ? parseManifest(manifestBytes.toString('utf8')) : null;
-      // No manifest is a run that died before its last write (the lock rules out
-      // one still in flight); its files are an incomplete export nothing reads.
-      if (!manifest || manifest.versionIds.some((versionId) => !approvedIds.has(versionId))) {
-        await deleteExport(stored.exportId, stored.keys);
-        exportsRetired += 1;
-        continue;
-      }
-      kept.push({ ...manifest, keys: stored.keys });
-    }
-
-    // 2. Skip when nothing changed since the newest export, or nothing is approved.
-    const fingerprint = exportFingerprint(approved);
-    if (approved.length === 0 || kept[0]?.fingerprint === fingerprint) {
-      return { exportId: null, imagesWritten: 0, exportsRetired, skipped: true };
-    }
-
-    // 3. Write.
-    const exportId = now.toISOString().replace(/[:.]/g, '-');
-    const prefix = `${SPRAY_TRAINING_EXPORT_PREFIX}${exportId}/`;
-    // `{ relative path: sha256 }`, every file but the manifest itself. The ML
-    // fetch (`ml/holds/data/user_walls.py`) verifies each one.
-    const files: Record<string, string> = {};
-    const writeFile = async (path: string, body: Buffer, contentType: string) => {
-      await uploadToS3('private', body, `${prefix}${path}`, contentType, { cacheControl: EXPORT_CACHE_CONTROL });
-      files[path] = sha256Hex(body);
+  const holderId = randomUUID();
+  const acquired = await acquireOrRenewDaemonLease(db, {
+    daemonName: SPRAY_TRAINING_EXPORT_LEASE,
+    holderId,
+    hostname: hostname(),
+    ttlMs: SPRAY_TRAINING_EXPORT_LEASE_TTL_MS,
+  });
+  if (!acquired) {
+    const locked: SprayTrainingExportResult = {
+      exportId: null,
+      imagesWritten: 0,
+      exportsRetired: 0,
+      skipped: true,
+      skippedReason: 'LOCKED',
+      versionsSkipped: 0,
+      durationMs: Date.now() - startedAt,
     };
+    logger.warn('Spray training export skipped: another run holds the lease', { ...locked });
+    return locked;
+  }
 
-    const roots = await rootWallUuids(
-      tx,
-      approved.map((row) => row.wallId),
-    );
-    const labels = await loadVersionLabels(
-      tx,
-      approved.map((row) => row.version),
-    );
-
-    // Every split always gets an annotations file, even an empty one: the ML
-    // fetch refuses an export missing any of the three. A root wall lands in
-    // exactly one split by construction (`trainingSplitForRoot`).
-    const coco = new Map<SprayTrainingSplit, { images: Array<Record<string, unknown>>; annotations: CocoAnnotation[] }>(
-      [
-        ['train', { images: [], annotations: [] }],
-        ['valid', { images: [], annotations: [] }],
-        ['eval', { images: [], annotations: [] }],
-      ],
-    );
-    const splitMembers: Record<SprayTrainingSplit, number[]> = { train: [], valid: [], eval: [] };
-    const fateCounts: Record<CandidateFate, number> = { KEPT: 0, EDITED: 0, DELETED: 0, NOT_SHOWN: 0, UNKNOWN: 0 };
-    const modelVersions = new Set<string>();
-    const manifestImages: Array<Record<string, unknown>> = [];
-    const candidateEntries: Array<Record<string, unknown>> = [];
-    const consentByWall = new Map<
-      number,
-      { wallRef: string; rootRef: string; consentAt: string; versionRefs: string[] }
-    >();
-
-    for (const row of approved) {
-      const versionId = Number(row.version.id);
-      const versionLabels = labels.get(versionId)!;
-      const rootUuid = roots.get(row.wallId) ?? row.wallUuid;
-      const split = trainingSplitForRoot(rootUuid);
-      const width = row.version.photoWidth ?? 0;
-      const height = row.version.photoHeight ?? 0;
-      const photo = width > 0 && height > 0 ? await readObjectBuffer(row.version.photoKey!) : null;
-      if (!photo) {
-        // A photo that is gone (or a row with no size) cannot be a training image.
-        // Left out of the manifest, so the export stays self-consistent.
-        logger.warn('Spray training export skipped a version with no readable photo', { versionId });
-        continue;
-      }
-
-      const imageFile = `${split}/v${versionId}.jpg`;
-      // Already EXIF-free: the upload handler re-encodes every photo through sharp
-      // (`handlers/spray-wall-photos.ts`), so these are the stored bytes as-is.
-      await writeFile(imageFile, photo, 'image/jpeg');
-
-      const splitCoco = coco.get(split) ?? { images: [], annotations: [] };
-      coco.set(split, splitCoco);
-      const imageId = splitCoco.images.length + 1;
-      const rootRef = trainingRef('root', rootUuid);
-      const versionRef = trainingRef('version', String(versionId));
-      splitCoco.images.push({
-        id: imageId,
-        file_name: `v${versionId}.jpg`,
-        width,
-        height,
-        boardsesh: { root_ref: rootRef, version_ref: versionRef },
-      });
-      for (const hold of versionLabels.holds) {
-        const annotation = cocoAnnotation(hold, splitCoco.annotations.length + 1, imageId, width, height);
-        if (annotation) splitCoco.annotations.push(annotation);
-      }
-
-      splitMembers[split].push(versionId);
-      for (const candidate of versionLabels.candidates) fateCounts[candidate.fate] += 1;
-      if (versionLabels.detection) modelVersions.add(versionLabels.detection.modelVersion);
-      candidateEntries.push({
-        versionId,
-        file: imageFile,
-        detectionModelVersion: versionLabels.detection?.modelVersion ?? null,
-        candidates: versionLabels.candidates.map((candidate) => ({
-          index: candidate.index,
-          cx: candidate.cx,
-          cy: candidate.cy,
-          r: candidate.r,
-          confidence: candidate.confidence,
-          outline: candidate.outline ?? null,
-          fate: candidate.fate,
-        })),
-      });
-      manifestImages.push({
-        versionId,
-        versionRef,
-        rootRef,
-        file: imageFile,
-        split,
-        reviewedAt: row.review?.reviewedAt?.toISOString() ?? null,
-        consentAt: row.trainingConsentAt?.toISOString() ?? null,
-        holds: versionLabels.holds.length,
-        unmappableHolds: versionLabels.unmappableHoldCount,
-      });
-      const consent = consentByWall.get(row.wallId) ?? {
-        wallRef: trainingRef('wall', row.wallUuid),
-        rootRef,
-        consentAt: row.trainingConsentAt?.toISOString() ?? '',
-        versionRefs: [],
-      };
-      consent.versionRefs.push(versionRef);
-      consentByWall.set(row.wallId, consent);
+  const deadline = startedAt + deadlineMs;
+  const checkDeadline = () => {
+    if (Date.now() > deadline) {
+      throw new ExportDeadlineError(`spray training export passed its ${deadlineMs} ms deadline; no manifest written`);
     }
+  };
 
-    if (manifestImages.length === 0) {
-      // Every approved photo was unreadable. Nothing worth a manifest; the files
-      // written so far (none) need no cleanup.
-      return { exportId: null, imagesWritten: 0, exportsRetired, skipped: true };
-    }
-
-    for (const [split, payload] of coco) {
-      await writeFile(
-        `${split}/_annotations.coco.json`,
-        Buffer.from(
-          JSON.stringify({
-            info: { description: 'Boardsesh spray walls, owner-consented and admin-approved (SW-20)', exportId },
-            licenses: [{ id: 1, name: 'Owner consent per wall; internal training only, never redistributed' }],
-            categories: [{ id: 1, name: 'hold', supercategory: 'hold' }],
-            images: payload.images,
-            annotations: payload.annotations,
-          }),
-        ),
-        'application/json',
-      );
-    }
-    await writeFile('candidates.json', Buffer.from(JSON.stringify({ images: candidateEntries })), 'application/json');
-
-    const annotationCounts = Object.fromEntries(
-      [...coco.entries()].map(([split, payload]) => [split, payload.annotations.length]),
-    );
-    const manifest = {
-      exportId,
-      schemaVersion: SPRAY_TRAINING_EXPORT_SCHEMA_VERSION,
-      createdAt: now.toISOString(),
-      fingerprint,
-      counts: {
-        images: Object.fromEntries(Object.entries(splitMembers).map(([split, ids]) => [split, ids.length])),
-        annotations: annotationCounts,
-        candidateFates: fateCounts,
-      },
-      modelVersions: [...modelVersions].sort(),
-      consentSnapshot: [...consentByWall.values()],
-      splits: splitMembers,
-      images: manifestImages,
-      files,
-    };
-    // LAST: an export is complete exactly when its manifest exists.
-    await uploadToS3('private', Buffer.from(JSON.stringify(manifest)), `${prefix}manifest.json`, 'application/json', {
-      cacheControl: EXPORT_CACHE_CONTROL,
+  try {
+    const result = await runExport(now, checkDeadline);
+    const finished: SprayTrainingExportResult = { ...result, durationMs: Date.now() - startedAt };
+    logger.info('Spray training export finished', { ...finished });
+    return finished;
+  } finally {
+    await releaseDaemonLease(db, { daemonName: SPRAY_TRAINING_EXPORT_LEASE, holderId }).catch((error: unknown) => {
+      // The TTL frees it anyway; a failed release only delays tomorrow's run if
+      // this one somehow ran past it.
+      logger.warn('Failed to release the spray training export lease', { holderId }, error);
     });
+  }
+}
 
-    // Keep the newest few: this one plus the newest still-valid older ones.
-    for (const old of kept.slice(SPRAY_TRAINING_EXPORTS_KEPT - 1)) {
-      await deleteExport(old.exportId, old.keys);
+async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<SprayTrainingExportResult, 'durationMs'>> {
+  const approved = await eligibleVersionsFrom(db, eq(dbSchema.sprayWallTrainingReviews.status, 'approved')).orderBy(
+    asc(dbSchema.sprayWallVersions.id),
+  );
+  const approvedIds = new Set(approved.map((row) => Number(row.version.id)));
+
+  // 1. Retire. An export holding ANY version that is no longer eligible and
+  //    approved goes whole: a training run must never be able to fetch a photo
+  //    whose owner switched consent off.
+  let exportsRetired = 0;
+  const kept: Array<StoredManifest & { keys: string[] }> = [];
+  for (const stored of await listStoredExports()) {
+    const manifestKey = `${SPRAY_TRAINING_EXPORT_PREFIX}${stored.exportId}/manifest.json`;
+    const manifestBytes = stored.keys.includes(manifestKey) ? await readObjectBuffer(manifestKey) : null;
+    const manifest = manifestBytes ? parseManifest(manifestBytes.toString('utf8')) : null;
+    // No manifest is a run that died before its last write (the lock rules out
+    // one still in flight); its files are an incomplete export nothing reads.
+    if (!manifest || manifest.versionIds.some((versionId) => !approvedIds.has(versionId))) {
+      await deleteExport(stored.exportId, stored.keys);
       exportsRetired += 1;
+      continue;
+    }
+    kept.push({ ...manifest, keys: stored.keys });
+  }
+
+  // 2. Skip when nothing changed since the newest export, or nothing is approved.
+  const fingerprint = exportFingerprint(approved);
+  if (approved.length === 0) {
+    return {
+      exportId: null,
+      imagesWritten: 0,
+      exportsRetired,
+      skipped: true,
+      skippedReason: 'NOTHING_TO_EXPORT',
+      versionsSkipped: 0,
+    };
+  }
+  if (kept[0]?.fingerprint === fingerprint) {
+    return {
+      exportId: null,
+      imagesWritten: 0,
+      exportsRetired,
+      skipped: true,
+      skippedReason: 'UNCHANGED',
+      versionsSkipped: 0,
+    };
+  }
+
+  // 3. Write.
+  const exportId = now.toISOString().replace(/[:.]/g, '-');
+  const prefix = `${SPRAY_TRAINING_EXPORT_PREFIX}${exportId}/`;
+  // `{ relative path: sha256 }`, every file but the manifest itself. The ML
+  // fetch (`ml/holds/data/user_walls.py`) verifies each one.
+  const files: Record<string, string> = {};
+  const writeFile = async (path: string, body: Buffer, contentType: string) => {
+    await uploadToS3('private', body, `${prefix}${path}`, contentType, { cacheControl: EXPORT_CACHE_CONTROL });
+    files[path] = sha256Hex(body);
+  };
+
+  const roots = await rootWallUuids(
+    db,
+    approved.map((row) => row.wallId),
+  );
+  const labels = await loadVersionLabels(
+    db,
+    approved.map((row) => row.version),
+  );
+
+  // Every split always gets an annotations file, even an empty one: the ML
+  // fetch refuses an export missing any of the three. A root wall lands in
+  // exactly one split by construction (`trainingSplitForRoot`).
+  const coco = new Map<SprayTrainingSplit, { images: Array<Record<string, unknown>>; annotations: CocoAnnotation[] }>([
+    ['train', { images: [], annotations: [] }],
+    ['valid', { images: [], annotations: [] }],
+    ['eval', { images: [], annotations: [] }],
+  ]);
+  const splitMembers: Record<SprayTrainingSplit, number[]> = { train: [], valid: [], eval: [] };
+  const fateCounts: Record<CandidateFate, number> = { KEPT: 0, EDITED: 0, DELETED: 0, NOT_SHOWN: 0, UNKNOWN: 0 };
+  const modelVersions = new Set<string>();
+  const manifestImages: Array<Record<string, unknown>> = [];
+  const candidateEntries: Array<Record<string, unknown>> = [];
+  const consentByWall = new Map<
+    number,
+    { wallRef: string; rootRef: string; consentAt: string; versionRefs: string[] }
+  >();
+
+  // Versions left out of this export, by why. Counted in the manifest so the
+  // ML side can see the set is smaller than the approved one.
+  const skippedVersions = { unmappableHolds: 0, noHolds: 0, unreadablePhoto: 0 };
+
+  for (const row of approved) {
+    checkDeadline();
+    const versionId = Number(row.version.id);
+    const versionLabels = labels.get(versionId)!;
+    // A version with a hold that does not land on the photo would be exported
+    // with that real hold unlabelled, teaching the model it is background; one
+    // with no holds at all labels the whole wall as background. Neither goes in.
+    // The queue shows the unmappable count, so a reviewer sees why.
+    if (versionLabels.unmappableHoldCount > 0) {
+      skippedVersions.unmappableHolds += 1;
+      logger.warn('Spray training export skipped a version with unmappable holds', {
+        versionId,
+        unmappableHoldCount: versionLabels.unmappableHoldCount,
+      });
+      continue;
+    }
+    if (versionLabels.holds.length === 0) {
+      skippedVersions.noHolds += 1;
+      continue;
+    }
+    const rootUuid = roots.get(row.wallId) ?? row.wallUuid;
+    const split = trainingSplitForRoot(rootUuid);
+    const width = row.version.photoWidth ?? 0;
+    const height = row.version.photoHeight ?? 0;
+    const photo = width > 0 && height > 0 ? await readObjectBuffer(row.version.photoKey!) : null;
+    if (!photo) {
+      // A photo that is gone (or a row with no size) cannot be a training image.
+      // Left out of the manifest, so the export stays self-consistent.
+      logger.warn('Spray training export skipped a version with no readable photo', { versionId });
+      skippedVersions.unreadablePhoto += 1;
+      continue;
     }
 
-    return { exportId, imagesWritten: manifestImages.length, exportsRetired, skipped: false };
+    const imageFile = `${split}/v${versionId}.jpg`;
+    // Already EXIF-free: the upload handler re-encodes every photo through sharp
+    // (`handlers/spray-wall-photos.ts`), so these are the stored bytes as-is.
+    await writeFile(imageFile, photo, 'image/jpeg');
+
+    const splitCoco = coco.get(split) ?? { images: [], annotations: [] };
+    coco.set(split, splitCoco);
+    const imageId = splitCoco.images.length + 1;
+    const rootRef = trainingRef('root', rootUuid);
+    const versionRef = trainingRef('version', String(versionId));
+    splitCoco.images.push({
+      id: imageId,
+      file_name: `v${versionId}.jpg`,
+      width,
+      height,
+      boardsesh: { root_ref: rootRef, version_ref: versionRef },
+    });
+    for (const hold of versionLabels.holds) {
+      const annotation = cocoAnnotation(hold, splitCoco.annotations.length + 1, imageId, width, height);
+      if (annotation) splitCoco.annotations.push(annotation);
+    }
+
+    splitMembers[split].push(versionId);
+    for (const candidate of versionLabels.candidates) fateCounts[candidate.fate] += 1;
+    if (versionLabels.detection) modelVersions.add(versionLabels.detection.modelVersion);
+    candidateEntries.push({
+      versionId,
+      file: imageFile,
+      detectionModelVersion: versionLabels.detection?.modelVersion ?? null,
+      candidates: versionLabels.candidates.map((candidate) => ({
+        index: candidate.index,
+        cx: candidate.cx,
+        cy: candidate.cy,
+        r: candidate.r,
+        confidence: candidate.confidence,
+        outline: candidate.outline ?? null,
+        fate: candidate.fate,
+      })),
+    });
+    manifestImages.push({
+      versionId,
+      versionRef,
+      rootRef,
+      file: imageFile,
+      split,
+      reviewedAt: row.review?.reviewedAt?.toISOString() ?? null,
+      consentAt: row.trainingConsentAt?.toISOString() ?? null,
+      holds: versionLabels.holds.length,
+      unmappableHolds: versionLabels.unmappableHoldCount,
+    });
+    const consent = consentByWall.get(row.wallId) ?? {
+      wallRef: trainingRef('wall', row.wallUuid),
+      rootRef,
+      consentAt: row.trainingConsentAt?.toISOString() ?? '',
+      versionRefs: [],
+    };
+    consent.versionRefs.push(versionRef);
+    consentByWall.set(row.wallId, consent);
+  }
+
+  const versionsSkipped = skippedVersions.unmappableHolds + skippedVersions.noHolds + skippedVersions.unreadablePhoto;
+  if (manifestImages.length === 0) {
+    // Nothing approved could be exported. No manifest; the files written so far
+    // (none: a version is only written once it passed every check) need no cleanup.
+    return {
+      exportId: null,
+      imagesWritten: 0,
+      exportsRetired,
+      skipped: true,
+      skippedReason: 'NOTHING_TO_EXPORT',
+      versionsSkipped,
+    };
+  }
+  checkDeadline();
+
+  for (const [split, payload] of coco) {
+    await writeFile(
+      `${split}/_annotations.coco.json`,
+      Buffer.from(
+        JSON.stringify({
+          info: { description: 'Boardsesh spray walls, owner-consented and admin-approved (SW-20)', exportId },
+          licenses: [{ id: 1, name: 'Owner consent per wall; internal training only, never redistributed' }],
+          categories: [{ id: 1, name: 'hold', supercategory: 'hold' }],
+          images: payload.images,
+          annotations: payload.annotations,
+        }),
+      ),
+      'application/json',
+    );
+  }
+  await writeFile('candidates.json', Buffer.from(JSON.stringify({ images: candidateEntries })), 'application/json');
+
+  const annotationCounts = Object.fromEntries(
+    [...coco.entries()].map(([split, payload]) => [split, payload.annotations.length]),
+  );
+  const manifest = {
+    exportId,
+    schemaVersion: SPRAY_TRAINING_EXPORT_SCHEMA_VERSION,
+    createdAt: now.toISOString(),
+    fingerprint,
+    counts: {
+      images: Object.fromEntries(Object.entries(splitMembers).map(([split, ids]) => [split, ids.length])),
+      annotations: annotationCounts,
+      candidateFates: fateCounts,
+      skippedVersions,
+    },
+    modelVersions: [...modelVersions].sort(),
+    consentSnapshot: [...consentByWall.values()],
+    splits: splitMembers,
+    images: manifestImages,
+    files,
+  };
+  // LAST, and only inside the deadline: an export is complete exactly when its
+  // manifest exists, and a run past its deadline may be racing a successor.
+  checkDeadline();
+  await uploadToS3('private', Buffer.from(JSON.stringify(manifest)), `${prefix}manifest.json`, 'application/json', {
+    cacheControl: EXPORT_CACHE_CONTROL,
   });
 
-  const finished: SprayTrainingExportResult = { ...result, durationMs: Date.now() - startedAt };
-  logger.info('Spray training export finished', { ...finished });
-  return finished;
+  // Keep the newest few: this one plus the newest still-valid older ones.
+  for (const old of kept.slice(SPRAY_TRAINING_EXPORTS_KEPT - 1)) {
+    await deleteExport(old.exportId, old.keys);
+    exportsRetired += 1;
+  }
+
+  return {
+    exportId,
+    imagesWritten: manifestImages.length,
+    exportsRetired,
+    skipped: false,
+    skippedReason: null,
+    versionsSkipped,
+  };
 }
