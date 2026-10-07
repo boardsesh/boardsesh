@@ -104,16 +104,12 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       }
 
       if (notification.type === 'spray_wall_detection_completed') {
-        if (
-          notification.sprayWallUuid &&
-          notification.sprayVersionId &&
-          typeof notification.isSprayReset === 'boolean'
-        ) {
+        if (notification.sprayWallUuid && notification.sprayVersionId) {
           router.push(
             sprayImportRoute({
               wallUuid: notification.sprayWallUuid,
               versionId: notification.sprayVersionId,
-              isReset: notification.isSprayReset,
+              resetOfWallUuid: notification.sprayResetOfWallUuid ?? null,
             }),
           );
         } else {

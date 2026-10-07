@@ -2938,7 +2938,6 @@ export type GroupedNotification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether all notifications in the group are read */
   isRead: Scalars['Boolean']['output'];
-  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
@@ -2947,6 +2946,8 @@ export type GroupedNotification = {
   proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
+  /** The wall the imported reset clone replaces; null for a plain new wall. */
+  sprayResetOfWallUuid?: Maybe<Scalars['String']['output']>;
   sprayVersionId?: Maybe<Scalars['ID']['output']>;
   sprayWallName?: Maybe<Scalars['String']['output']>;
   sprayWallUuid?: Maybe<Scalars['String']['output']>;
@@ -5366,6 +5367,13 @@ export type MutationVoteOnProposalArgs = {
 
 /** Input for listing user's boards. */
 export type MyBoardsInput = {
+  /**
+   * Also list the viewer's OWN spray walls that have never been published, so
+   * My Boards and Manage can show their import progress. Off by default: board
+   * pickers must only offer walls that can be climbed on. Other people's
+   * unfinished walls and archived walls are never listed.
+   */
+  includeUnfinishedSprayWalls?: InputMaybe<Scalars['Boolean']['input']>;
   /** Max boards to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
@@ -5471,13 +5479,14 @@ export type Notification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether the notification has been read */
   isRead: Scalars['Boolean']['output'];
-  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
   proposalValue?: Maybe<Scalars['String']['output']>;
+  /** The wall the imported reset clone replaces; null for a plain new wall. */
+  sprayResetOfWallUuid?: Maybe<Scalars['String']['output']>;
   sprayVersionId?: Maybe<Scalars['ID']['output']>;
   sprayWallName?: Maybe<Scalars['String']['output']>;
   sprayWallUuid?: Maybe<Scalars['String']['output']>;
@@ -9453,8 +9462,9 @@ export type SprayWallHoldUsage = {
 export type SprayWallImportProgress = {
   __typename?: 'SprayWallImportProgress';
   detectionId?: Maybe<Scalars['ID']['output']>;
-  isReset: Scalars['Boolean']['output'];
   queuePosition?: Maybe<Scalars['Int']['output']>;
+  /** The wall this unpublished reset clone replaces; null for a plain new wall. */
+  resetOfWallUuid?: Maybe<Scalars['String']['output']>;
   retryAt?: Maybe<Scalars['String']['output']>;
   stage: Scalars['String']['output'];
   versionId?: Maybe<Scalars['ID']['output']>;
@@ -13182,11 +13192,11 @@ export type GroupedNotificationResolvers<
   entityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
-  isSprayReset?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   proposalValue?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   setterUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sprayResetOfWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sprayVersionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   sprayWallName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sprayWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -14671,10 +14681,10 @@ export type NotificationResolvers<
   entityType?: Resolver<Maybe<ResolversTypes['SocialEntityType']>, ParentType, ContextType>;
   gymName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isRead?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
-  isSprayReset?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   proposalType?: Resolver<Maybe<ResolversTypes['ProposalType']>, ParentType, ContextType>;
   proposalUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   proposalValue?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sprayResetOfWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sprayVersionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   sprayWallName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sprayWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -16731,8 +16741,8 @@ export type SprayWallImportProgressResolvers<
   ParentType extends ResolversParentTypes['SprayWallImportProgress'] = ResolversParentTypes['SprayWallImportProgress'],
 > = ResolversObject<{
   detectionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
-  isReset?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   queuePosition?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  resetOfWallUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   retryAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   stage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   versionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;

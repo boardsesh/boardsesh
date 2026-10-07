@@ -21,7 +21,8 @@ function notification(payload: Record<string, unknown>, identifier = 'notificati
 function response(payload: Record<string, unknown>, identifier = 'notification-one'): NotificationResponse {
   return { notification: notification(payload, identifier) } as unknown as NotificationResponse;
 }
-const completed = { type: 'spray_wall_detection_completed', wallUuid, versionId: '42', isReset: false };
+const resetOfWallUuid = '11111111-2222-4333-8444-555555555555';
+const completed = { type: 'spray_wall_detection_completed', wallUuid, versionId: '42', resetOfWallUuid: null };
 
 describe('native import notification handlers', () => {
   beforeEach(() => {
@@ -32,15 +33,20 @@ describe('native import notification handlers', () => {
     mocks.lastResponse.mockReturnValue(null);
   });
 
-  it('resolves new and reset imports to the exact wall and draft version', async () => {
+  it('resolves a new import to its exact draft and a reset import to the wall it replaces', async () => {
     const { resolveNotificationRoute } = await import('../handlers');
     expect(resolveNotificationRoute(notification(completed))).toEqual({
       path: '/boards/spray/new',
       params: { wallUuid, versionId: '42' },
     });
-    expect(resolveNotificationRoute(notification({ ...completed, isReset: true }))).toEqual({
-      path: '/boards/spray/reset',
+    const withoutResetField = { type: completed.type, wallUuid, versionId: '42' };
+    expect(resolveNotificationRoute(notification(withoutResetField))).toEqual({
+      path: '/boards/spray/new',
       params: { wallUuid, versionId: '42' },
+    });
+    expect(resolveNotificationRoute(notification({ ...completed, resetOfWallUuid }))).toEqual({
+      path: '/boards/spray/new',
+      params: { resetOf: resetOfWallUuid },
     });
   });
 
@@ -48,7 +54,8 @@ describe('native import notification handlers', () => {
     const { resolveNotificationRoute } = await import('../handlers');
     expect(resolveNotificationRoute(notification({ ...completed, wallUuid: 'bad-wall' }))).toBeNull();
     expect(resolveNotificationRoute(notification({ ...completed, versionId: undefined }))).toBeNull();
-    expect(resolveNotificationRoute(notification({ ...completed, isReset: 'false' }))).toBeNull();
+    expect(resolveNotificationRoute(notification({ ...completed, resetOfWallUuid: 'bad-wall' }))).toBeNull();
+    expect(resolveNotificationRoute(notification({ ...completed, resetOfWallUuid: true }))).toBeNull();
   });
 
   it('preserves a cold-launch response until authenticated navigation is ready', async () => {

@@ -188,15 +188,28 @@ segmentation model, tiling, outlines, retries and native-runtime cleanup.
 #### Import progress and completion
 
 My Boards keeps unfinished walls visible after the creator leaves the wizard.
-Caller-owned unpublished walls temporarily sort ahead of pinned and previously
-opened boards, so they remain on the first page. After first publication they
-return to the usual pin/recency order; published resets keep that normal order.
+My Boards and Manage are the only callers that pass
+`myBoards(input: { includeUnfinishedSprayWalls: true })`; every board picker
+keeps the default, which lists published walls only (see "The climbing picker
+requires a published wall"). The flag adds the viewer's OWN walls that are not
+deleted, not archived and have no current version
+(`ownedUnfinishedSprayWallCondition`), in the same WHERE as the COUNT, so
+`totalCount` and `hasMore` agree with the pages. Nobody else's unfinished wall
+is listed, flag or not. On the phone the input is part of the React Query key
+(`MY_BOARDS_WITH_IMPORTS_INPUT`), so the flagged roster never answers the plain
+`myBoardsQueryKey()` that pickers and the imperative readers use, and nothing
+persists either roster to disk.
+With the flag, caller-owned unpublished walls temporarily sort ahead of pinned
+and previously opened boards, so they remain on the first page. After first publication they
+return to the usual pin/recency order. A reset is a new unpublished clone
+(`reset_from_wall_id`), so it is an import like any other new wall.
 `UserBoard.sprayImport` carries the wall UUID, exact draft version and detection
-IDs, stage, optional queue position/retry time, and whether the wall already has
-a published version. It is returned only to viewers with board edit access;
-public viewers and followers do not receive draft progress. An unpublished wall
-without a photo/version still appears as a draft. Published walls without an
-open draft have no import metadata.
+IDs, stage, optional queue position/retry time, and `resetOfWallUuid`: the wall
+a reset clone replaces, null for a plain new wall. It is returned only to
+viewers with board edit access; public viewers and followers do not receive
+draft progress. An unpublished wall without a photo/version still appears as a
+draft. A published wall never has import metadata, even with a draft left over
+from the retired in-place reset.
 
 | Saved stage | What My Boards shows | Resume action |
 | --- | --- | --- |
@@ -206,11 +219,15 @@ open draft have no import metadata.
 | `ready` | Ready to review | Review that version's proposed holds. |
 | `failed` | Couldn't import | Retry; new walls can also place holds manually. |
 
-New-wall cards resume `/boards/spray/new` with `wallUuid` and, when present,
-`versionId`. Published reset cards retain normal board activation and offer a
-separate `/boards/spray/reset` progress/review action targeting that exact draft.
-Neither detection completion nor a notification publishes a wall. Existing
-walls stay usable until the reset is reviewed and published; saved manual edits
+A press on an import row never activates the wall, downloads it or opens
+climb creation. New-wall cards resume `/boards/spray/new` with `wallUuid` and,
+when present, `versionId`. A wall the board list returned with an import keeps
+that road even after a live progress read clears its row
+(`unfinishedSprayWallRoute`): it opens `/boards/spray/new?wallUuid=`, which
+resumes an unfinished wall and binds one that was published meanwhile. A reset clone's card opens `/boards/spray/new?resetOf=<old wall>`,
+the wizard's reset path, where `resetSprayWall` hands back the unfinished clone.
+Neither detection completion nor a notification publishes a wall. The old wall
+stays usable until the clone is reviewed and published; saved manual edits
 remain the source when resuming review.
 
 `sprayWallImportProgress(wallUuids)` is a lightweight, editor-only batch read,
@@ -235,7 +252,11 @@ A successful fenced detection commit also inserts a
 attempts cannot enqueue completion. The backend rechecks the requesting user's
 edit access and the source draft, then creates one notification identified by
 the detection UUID. Replays reuse that feed entry. Its wall name and exact
-review target travel in both fetched and live notification payloads.
+review target travel in both fetched and live notification payloads, with
+`sprayResetOfWallUuid` (push: `resetOfWallUuid`) set for a reset clone so a tap
+rejoins the reset. The feed drops that link once the clone publishes, since
+the wall it replaced is archived by then. A detection that finishes on a draft
+left on a published wall sends nothing.
 
 Native devices can receive the same completion through Expo Push. Push copy
 uses localized templates from the backend's `@boardsesh/i18n` runtime dependency
@@ -3332,8 +3353,12 @@ create a wall public and photograph it afterwards, and in between the row is a
 public board with no photo, no holds and no climbs. So every listing that can
 return a spray wall carries one more rule — a wall whose
 `spray_walls.current_version_id` is NULL is unavailable to other climbers.
-The normal `myBoards` picker excludes it for the owner too: unfinished walls
-belong in `mySprayWalls`, where the add-wall flow can resume them.
+The default `myBoards` list, which the board pickers read, excludes it for the
+owner too (#6040): unfinished walls belong in `mySprayWalls`, where the add-wall
+flow can resume them. Only My Boards and Manage pass
+`includeUnfinishedSprayWalls: true` to list the owner's own unfinished walls as
+import rows (see "Import progress and completion"); archived walls stay out
+either way.
 
 `listableSprayWallCondition(viewerId)`
 (`resolvers/board/spray-wall-listing.ts`) is that rule as SQL, and it is applied

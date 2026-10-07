@@ -65,7 +65,7 @@ export const BOARD_FIELDS = `
     stage
     queuePosition
     retryAt
-    isReset
+    resetOfWallUuid
   }
   uuid
   slug

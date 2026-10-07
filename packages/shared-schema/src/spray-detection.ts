@@ -11,7 +11,8 @@ export interface SprayWallImportProgress {
   stage: 'draft' | 'queued' | 'running' | 'ready' | 'failed';
   queuePosition: number | null;
   retryAt: string | null;
-  isReset: boolean;
+  /** The wall this unpublished reset clone replaces; null for a plain new wall. */
+  resetOfWallUuid: string | null;
 }
 export const SPRAY_WALL_WRITE_LOCK_NAMESPACE = 0x53505259;
 export const SPRAY_DETECTION_DEAD_QUEUE = 'spray-wall-detection-failed';

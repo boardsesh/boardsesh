@@ -75,7 +75,7 @@ describe('durable spray recognition', () => {
         versionId: input.versionId,
         detectionId: requested.id,
         stage: 'queued',
-        isReset: false,
+        resetOfWallUuid: null,
       },
     ]);
     expect(
@@ -116,7 +116,7 @@ describe('durable spray recognition', () => {
         stage: 'draft',
         queuePosition: null,
         retryAt: null,
-        isReset: false,
+        resetOfWallUuid: null,
       },
     ]);
     expect(
@@ -124,29 +124,47 @@ describe('durable spray recognition', () => {
     ).toEqual([]);
   });
 
-  it('uses the published version to identify resets and clears progress when a reset publishes', async () => {
+  it('links a reset clone to the wall it replaces and ignores drafts left on a published wall', async () => {
     const { owner, input } = await draft();
-    const [wall] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, input.wallUuid));
+    const [published] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, input.wallUuid));
     const versionId = Number(input.versionId);
     await db.update(sprayWallVersions).set({ status: 'published' }).where(eq(sprayWallVersions.id, versionId));
-    await db.update(sprayWalls).set({ currentVersionId: versionId }).where(eq(sprayWalls.id, wall.id));
+    await db.update(sprayWalls).set({ currentVersionId: versionId }).where(eq(sprayWalls.id, published.id));
     expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner)).toEqual([]);
-    const [reset] = await db
+    // A retired in-place reset draft can never publish, so it is not an import.
+    await db.insert(sprayWallVersions).values({ wallId: published.id, versionNumber: 2, status: 'draft' });
+    expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner)).toEqual([]);
+
+    const clone = (await sprayWallMutations.createSprayWall(
+      {},
+      { input: { name: 'Detector wall reset', angle: 40 } },
+      owner,
+    )) as { uuid: string };
+    const [cloneWall] = await db
+      .update(sprayWalls)
+      .set({ resetFromWallId: published.id })
+      .where(eq(sprayWalls.boardUuid, clone.uuid))
+      .returning();
+    const [cloneDraft] = await db
       .insert(sprayWallVersions)
-      .values({ wallId: wall.id, versionNumber: 2, status: 'draft' })
+      .values({ wallId: cloneWall.id, versionNumber: 1, status: 'draft' })
       .returning();
     expect(
-      await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner),
-    ).toMatchObject([
+      await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid, clone.uuid] }, owner),
+    ).toEqual([
       {
-        versionId: String(reset.id),
-        isReset: true,
+        wallUuid: clone.uuid,
+        versionId: String(cloneDraft.id),
+        detectionId: null,
         stage: 'draft',
+        queuePosition: null,
+        retryAt: null,
+        resetOfWallUuid: input.wallUuid,
       },
     ]);
-    await db.update(sprayWallVersions).set({ status: 'published' }).where(eq(sprayWallVersions.id, reset.id));
-    await db.update(sprayWalls).set({ currentVersionId: reset.id }).where(eq(sprayWalls.id, wall.id));
-    expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [input.wallUuid] }, owner)).toEqual([]);
+    await db.update(sprayWallVersions).set({ status: 'published' }).where(eq(sprayWallVersions.id, cloneDraft.id));
+    await db.update(sprayWalls).set({ currentVersionId: cloneDraft.id }).where(eq(sprayWalls.id, cloneWall.id));
+    expect(await sprayDetectionQueries.sprayWallImportProgress({}, { wallUuids: [clone.uuid] }, owner)).toEqual([]);
   });
 
   it('deduplicates concurrent requests and prevents another owner reading results', async () => {

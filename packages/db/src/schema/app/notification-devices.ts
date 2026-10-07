@@ -14,7 +14,8 @@ export const notificationDevices = pgTable(
     platform: text('platform').notNull(),
     locale: text('locale').notNull(),
     active: boolean('active').default(true).notNull(),
-    // Existing registrations expire immediately until an authenticated refresh.
+    // The register mutation always sets this from the credential lease; a row
+    // written without one is born expired and never receives a push.
     expiresAt: timestamp('expires_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

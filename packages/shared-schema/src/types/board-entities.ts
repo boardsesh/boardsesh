@@ -157,6 +157,8 @@ export type BoardLeaderboardInput = {
 export type MyBoardsInput = {
   limit?: number;
   offset?: number;
+  /** Also list the viewer's own never-published spray walls (My Boards / Manage only). */
+  includeUnfinishedSprayWalls?: boolean;
 };
 
 export type FollowBoardInput = {

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { boolean, integer, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { alias, boolean, integer, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { SPRAY_DETECTION_QUEUE, type SprayWallImportProgress } from '@boardsesh/shared-schema';
 import type { DbInstance } from '../../client';
 import { sprayWallDetections, sprayWalls, sprayWallVersions } from '../../schema/app/spray-walls';
@@ -80,16 +80,24 @@ export async function readSprayDetectionQueuePositions(database: DbInstance): Pr
   return rankSprayDetectionQueue(jobs, jobs[0]?.snapshotAt ?? new Date());
 }
 
-/** Caller must pass only wall UUIDs the viewer may edit. */
+/**
+ * Caller must pass only wall UUIDs the viewer may edit. Only a wall with nothing
+ * published yet is an import: a reset makes a new unpublished clone
+ * (`reset_from_wall_id`), so a draft left on a published wall is never shown.
+ */
 export async function readSprayWallImportProgress(
   database: DbInstance,
   wallUuids: string[],
 ): Promise<SprayWallImportProgress[]> {
   if (wallUuids.length === 0) return [];
+  const resetSource = alias(sprayWalls, 'reset_source_spray_wall');
   const walls = await database
-    .select({ wallId: sprayWalls.id, wallUuid: sprayWalls.boardUuid, currentVersionId: sprayWalls.currentVersionId })
+    .select({ wallId: sprayWalls.id, wallUuid: sprayWalls.boardUuid, resetOfWallUuid: resetSource.boardUuid })
     .from(sprayWalls)
-    .where(and(inArray(sprayWalls.boardUuid, wallUuids), isNull(sprayWalls.deletedAt)));
+    .leftJoin(resetSource, and(eq(resetSource.id, sprayWalls.resetFromWallId), isNull(resetSource.deletedAt)))
+    .where(
+      and(inArray(sprayWalls.boardUuid, wallUuids), isNull(sprayWalls.deletedAt), isNull(sprayWalls.currentVersionId)),
+    );
   if (walls.length === 0) return [];
   const drafts = await database
     .selectDistinctOn([sprayWallVersions.wallId])
@@ -130,7 +138,6 @@ export async function readSprayWallImportProgress(
     : new Map<string, SprayQueuePosition>();
   return walls.flatMap((wall): SprayWallImportProgress[] => {
     const draft = draftByWall.get(wall.wallId);
-    if (!draft && wall.currentVersionId !== null) return [];
     const detection = draft ? detectionByVersion.get(draft.id) : undefined;
     const stage =
       !detection || detection.status === 'cancelled'
@@ -151,7 +158,7 @@ export async function readSprayWallImportProgress(
         stage,
         queuePosition: queue?.queuePosition ?? null,
         retryAt: queue?.retryAt ?? null,
-        isReset: wall.currentVersionId !== null,
+        resetOfWallUuid: wall.resetOfWallUuid ?? null,
       },
     ];
   });

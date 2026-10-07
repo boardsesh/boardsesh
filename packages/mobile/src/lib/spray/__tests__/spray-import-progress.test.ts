@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SprayWallImportProgress } from '@boardsesh/shared-schema';
-import { sprayImportCopy, sprayImportRoute } from '../spray-import-progress';
+import { sprayImportCopy, sprayImportRoute, unfinishedSprayWallRoute } from '../spray-import-progress';
 
 function progress(changes: Partial<SprayWallImportProgress> = {}): SprayWallImportProgress {
   return {
@@ -10,7 +10,7 @@ function progress(changes: Partial<SprayWallImportProgress> = {}): SprayWallImpo
     stage: 'queued',
     queuePosition: 3,
     retryAt: null,
-    isReset: false,
+    resetOfWallUuid: null,
     ...changes,
   };
 }
@@ -50,18 +50,40 @@ describe('spray import status and resume targets', () => {
     expect(sprayImportCopy(progress({ stage: 'failed' }), true).textI18nKey).toBe('sprayImport.failed');
   });
 
-  it('resumes the exact new-wall or reset version without losing its wall identity', () => {
+  it('resumes a new wall at its exact version and a reset clone through the wall it replaces', () => {
     expect(sprayImportRoute(progress())).toEqual({
       pathname: '/boards/spray/new',
       params: { wallUuid: 'wall-uuid', versionId: '42' },
     });
-    expect(sprayImportRoute(progress({ isReset: true }))).toEqual({
-      pathname: '/boards/spray/reset',
-      params: { wallUuid: 'wall-uuid', versionId: '42' },
+    expect(sprayImportRoute(progress({ resetOfWallUuid: 'old-wall-uuid' }))).toEqual({
+      pathname: '/boards/spray/new',
+      params: { resetOf: 'old-wall-uuid' },
     });
     expect(sprayImportRoute(progress({ versionId: null }))).toEqual({
       pathname: '/boards/spray/new',
       params: { wallUuid: 'wall-uuid' },
     });
+  });
+});
+
+describe('where a My Boards / Manage row press goes', () => {
+  const listedUnfinished = new Set(['wall-uuid']);
+
+  it('follows the live import when there is one', () => {
+    expect(unfinishedSprayWallRoute({ uuid: 'wall-uuid', sprayImport: progress() }, new Set())).toEqual({
+      pathname: '/boards/spray/new',
+      params: { wallUuid: 'wall-uuid', versionId: '42' },
+    });
+  });
+
+  it('opens the wizard by wall for a wall the list called unfinished whose progress is gone', () => {
+    expect(unfinishedSprayWallRoute({ uuid: 'wall-uuid', sprayImport: null }, listedUnfinished)).toEqual({
+      pathname: '/boards/spray/new',
+      params: { wallUuid: 'wall-uuid' },
+    });
+  });
+
+  it('leaves every other board to the normal climbing path', () => {
+    expect(unfinishedSprayWallRoute({ uuid: 'other', sprayImport: null }, listedUnfinished)).toBeNull();
   });
 });

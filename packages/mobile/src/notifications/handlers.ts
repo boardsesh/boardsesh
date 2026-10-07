@@ -9,23 +9,25 @@ export type NotificationHandlerOptions = {
 };
 // Keep process-lifetime tap IDs across auth/provider remounts so the OS response cannot navigate twice.
 const consumedResponses = new Set<string>();
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function resolveNotificationRoute(notification: Notifications.Notification): NotificationRoute | null {
   const payload = notification.request.content.data;
   switch (payload?.type) {
     case 'spray_wall_detection_completed': {
+      const resetOfWallUuid: unknown = payload.resetOfWallUuid ?? null;
       if (
         typeof payload.wallUuid !== 'string' ||
-        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(payload.wallUuid) ||
+        !UUID_PATTERN.test(payload.wallUuid) ||
         typeof payload.versionId !== 'string' ||
         !/^\d+$/.test(payload.versionId) ||
-        typeof payload.isReset !== 'boolean'
+        (resetOfWallUuid !== null && (typeof resetOfWallUuid !== 'string' || !UUID_PATTERN.test(resetOfWallUuid)))
       )
         return null;
       const route = sprayImportRoute({
         wallUuid: payload.wallUuid,
         versionId: payload.versionId,
-        isReset: payload.isReset,
+        resetOfWallUuid,
       });
       return { path: route.pathname, params: route.params };
     }

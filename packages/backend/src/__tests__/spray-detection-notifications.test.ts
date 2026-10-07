@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { SPRAY_DETECTION_COMPLETION_QUEUE } from '@boardsesh/shared-schema';
+import { SPRAY_DETECTION_COMPLETION_QUEUE, SPRAY_WALL_WRITE_LOCK_NAMESPACE } from '@boardsesh/shared-schema';
 import { initializeJobQueueSchema } from '@boardsesh/db/job-queue-schema';
 import {
   notificationDevices,
@@ -144,7 +144,7 @@ describe('spray import completion notifications', () => {
       sprayWallName: 'Waiting wall',
       sprayWallUuid: target.wallUuid,
       sprayVersionId: String(target.versionId),
-      isSprayReset: false,
+      sprayResetOfWallUuid: null,
     });
     const directFeed = await socialNotificationQueries.notifications({}, {}, target.ctx);
     expect(directFeed.notifications[0]).toMatchObject({ sprayWallUuid: target.wallUuid });
@@ -523,6 +523,47 @@ describe('spray import completion notifications', () => {
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
+  it('releases the wall lock before calling Expo, so wall edits never wait on a push', async () => {
+    const target = await completedWall();
+    await notificationDeviceMutations.registerNotificationDevice(
+      {},
+      {
+        input: {
+          installationId: randomUUID(),
+          token: `ExpoPushToken[${randomUUID()}]`,
+          platform: 'ios',
+          locale: 'en-US',
+        },
+      },
+      target.ctx,
+    );
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const boss = await startJobQueue();
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    const [delivery] = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.notificationUuid, target.detectionId));
+    const [wall] = await db.select().from(sprayWalls).where(eq(sprayWalls.boardUuid, target.wallUuid));
+    let wallLockFreeDuringPush: boolean | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        wallLockFreeDuringPush = await db.transaction(async (writer) => {
+          const rows = await writer.execute<{ locked: boolean }>(
+            sql`SELECT pg_try_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${wall.id}) AS locked`,
+          );
+          return rows[0]?.locked === true;
+        });
+        return new Response(JSON.stringify({ data: { status: 'ok', id: 'lock-free-ticket' } }), { status: 200 });
+      }),
+    );
+    await deliverSprayNotification(boss, delivery.id);
+    expect(wallLockFreeDuringPush).toBe(true);
+    const [sent] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
+    expect(sent).toMatchObject({ status: 'receipt', ticketId: 'lock-free-ticket' });
+  });
+
   it('persists tickets, checks receipts, and retires invalid tokens', async () => {
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
@@ -557,9 +598,15 @@ describe('spray import completion notifications', () => {
     expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1);
     expect(transport).toHaveBeenCalledTimes(1);
     const request = JSON.parse(transport.mock.calls[0][1].body as string) as {
-      data: { wallUuid: string; versionId: string };
+      data: { wallUuid: string; versionId: string; resetOfWallUuid: string | null };
     };
-    expect(request.data).toMatchObject({ wallUuid: target.wallUuid, versionId: String(target.versionId) });
+    expect(request.data).toEqual(
+      expect.objectContaining({
+        wallUuid: target.wallUuid,
+        versionId: String(target.versionId),
+        resetOfWallUuid: null,
+      }),
+    );
     await db
       .update(notificationDeliveries)
       .set({ updatedAt: new Date(Date.now() - 16 * 60_000) })

@@ -63,7 +63,7 @@ export function userBoardToItem(
     isActive: activeUuid != null && board.uuid === activeUuid,
     isViewerOwner: currentUserId === undefined ? undefined : boardIsOwnedBy(board, currentUserId),
     isPinned: isPinnedOverride ?? board.isPinnedByMe ?? false,
-    offlineState: board.sprayImport && !board.sprayImport.isReset ? undefined : offlineState,
+    offlineState: board.sprayImport ? undefined : offlineState,
     sprayImport: board.sprayImport,
   };
 }

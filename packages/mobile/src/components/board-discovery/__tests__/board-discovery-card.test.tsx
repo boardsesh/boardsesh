@@ -24,9 +24,6 @@ function styleAttribute(style: unknown): string {
   return JSON.stringify(style);
 }
 
-const importRouter = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock('expo-router', () => ({ useRouter: () => importRouter }));
-
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
   View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
@@ -208,7 +205,6 @@ function discShape(element: Element | null): Record<string, unknown> {
 
 function resetCapture() {
   cleanup();
-  importRouter.push.mockReset();
   boardImageProps.last = null;
   cardRootProps.last = null;
   cardRootProps.accessibilityActions = [];
@@ -808,7 +804,7 @@ const importProgress = {
   stage: 'queued' as const,
   queuePosition: 3,
   retryAt: null,
-  isReset: false,
+  resetOfWallUuid: null,
 };
 
 describe('BoardDiscoveryCard import status', () => {
@@ -832,14 +828,15 @@ describe('BoardDiscoveryCard import status', () => {
     expect(onPress).toHaveBeenCalledWith(importItem);
   });
 
-  it('offers neither Details nor import review while editing a published reset', () => {
+  it('opens a reset clone like any import, with no Details or nested review action', () => {
+    const onPress = vi.fn();
     const resetItem = {
       ...item,
       boardName: 'spray' as const,
-      sprayImport: { ...importProgress, isReset: true, stage: 'ready' as const },
+      sprayImport: { ...importProgress, resetOfWallUuid: 'old-wall', stage: 'ready' as const },
     };
-    const { queryByRole } = render(
-      createElement(BoardDiscoveryCard, { item: resetItem, onPress: vi.fn(), onDetails: vi.fn(), isEditing: true }),
+    const { getByTestId, queryByRole } = render(
+      createElement(BoardDiscoveryCard, { item: resetItem, onPress, onDetails: vi.fn() }),
     );
     expect(queryByRole('button', { name: 'mobile.boardDetail.detailsAria' })).toBeNull();
     expect(queryByRole('button', { name: 'sprayImport.review' })).toBeNull();
@@ -848,33 +845,7 @@ describe('BoardDiscoveryCard import status', () => {
     );
     expect(actionNames).not.toContain('details');
     expect(actionNames).not.toContain('import');
-  });
-
-  it('keeps a published reset selectable and opens its exact review target separately', () => {
-    const onPress = vi.fn();
-    const onDetails = vi.fn();
-    const resetItem = {
-      ...item,
-      boardName: 'spray' as const,
-      sprayImport: { ...importProgress, isReset: true, stage: 'ready' as const },
-    };
-    const { getByTestId, getByRole } = render(
-      createElement(BoardDiscoveryCard, { item: resetItem, onPress, onDetails }),
-    );
-    expect(
-      ((cardRootProps.last?.accessibilityActions ?? []) as Array<{ name: string }>).map((action) => action.name),
-    ).toEqual(expect.arrayContaining(['details', 'import']));
-    fireEvent.click(getByRole('button', { name: 'mobile.boardDetail.detailsAria' }));
-    expect(onDetails).toHaveBeenCalledWith(resetItem);
-    expect(onPress).not.toHaveBeenCalled();
     fireEvent.click(getByTestId('card-root'));
     expect(onPress).toHaveBeenCalledWith(resetItem);
-    onPress.mockClear();
-    fireEvent.click(getByRole('button', { name: 'sprayImport.review' }));
-    expect(importRouter.push).toHaveBeenCalledWith({
-      pathname: '/boards/spray/reset',
-      params: { wallUuid: 'spray-wall', versionId: '42' },
-    });
-    expect(onPress).not.toHaveBeenCalled();
   });
 });

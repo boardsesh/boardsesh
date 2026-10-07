@@ -60,7 +60,7 @@ export const GET_SPRAY_IMPORT_PROGRESS = gql`
       stage
       queuePosition
       retryAt
-      isReset
+      resetOfWallUuid
     }
   }
 `;

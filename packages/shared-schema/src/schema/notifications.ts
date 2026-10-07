@@ -66,7 +66,8 @@ export const notificationsTypeDefs = /* GraphQL */ `
     sprayWallName: String
     sprayWallUuid: String
     sprayVersionId: ID
-    isSprayReset: Boolean
+    "The wall the imported reset clone replaces; null for a plain new wall."
+    sprayResetOfWallUuid: String
     "Whether the notification has been read"
     isRead: Boolean!
     "When the notification was created (ISO 8601)"
@@ -167,7 +168,8 @@ export const notificationsTypeDefs = /* GraphQL */ `
     sprayWallName: String
     sprayWallUuid: String
     sprayVersionId: ID
-    isSprayReset: Boolean
+    "The wall the imported reset clone replaces; null for a plain new wall."
+    sprayResetOfWallUuid: String
     "Whether all notifications in the group are read"
     isRead: Boolean!
     "When the most recent notification was created"

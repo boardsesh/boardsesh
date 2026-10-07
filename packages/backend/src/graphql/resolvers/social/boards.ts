@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like, exists } from 'drizzle-orm';
+import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { normaliseSetIds } from '@boardsesh/board-config';
@@ -45,7 +45,7 @@ import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { getPopularConfigs } from '../../../services/popular-board-configs';
 import { lockAndAssertBoardSerialAvailable } from '../board-serial-write-lock';
-import { listableSprayWallCondition } from '../board/spray-wall-listing';
+import { listableSprayWallCondition, ownedUnfinishedSprayWallCondition } from '../board/spray-wall-listing';
 
 // ============================================
 // Helpers
@@ -1140,7 +1140,11 @@ export const socialBoardQueries = {
   /**
    * Get current user's boards (owned + followed)
    */
-  myBoards: async (_: unknown, { input }: { input?: { limit?: number; offset?: number } }, ctx: ConnectionContext) => {
+  myBoards: async (
+    _: unknown,
+    { input }: { input?: { limit?: number; offset?: number; includeUnfinishedSprayWalls?: boolean | null } },
+    ctx: ConnectionContext,
+  ) => {
     requireAuthenticated(ctx);
     const validatedInput = validateInput(MyBoardsInputSchema, input || {}, 'input');
     const userId = ctx.userId!;
@@ -1161,12 +1165,18 @@ export const socialBoardQueries = {
     const matchCondition = followedCondition ? or(ownerCondition, followedCondition)! : ownerCondition;
     // In the WHERE the COUNT and the paged read share, never a post-filter:
     // dropping rows from the page alone would leave the count promising results
-    // the last page does not have. Unfinished walls stay in mySprayWalls for
-    // resuming setup; this climbing picker requires a published generation.
+    // the last page does not have. Board pickers require a published generation
+    // (#6040); My Boards and Manage opt in to the viewer's own unfinished walls so
+    // they can show import progress. Nobody else's unfinished wall and no
+    // archived wall is ever listed, flag or not.
+    const ownedUnfinishedSprayWall = ownedUnfinishedSprayWallCondition(userId);
+    const publishedOrNotSpray = listableSprayWallCondition(userId, { requirePublished: true });
+
+    const includeUnfinished = validatedInput.includeUnfinishedSprayWalls === true;
     const whereClause = and(
       matchCondition,
       isNull(dbSchema.userBoards.deletedAt),
-      listableSprayWallCondition(userId, { requirePublished: true }),
+      includeUnfinished ? or(publishedOrNotSpray, ownedUnfinishedSprayWall)! : publishedOrNotSpray,
     );
 
     const [countResult] = await db.select({ count: count() }).from(dbSchema.userBoards).where(whereClause);
@@ -1175,23 +1185,9 @@ export const socialBoardQueries = {
 
     // Unpublished owned walls must stay on the first page while being imported,
     // even when the caller already has twenty pinned/recently opened boards.
+    // They are only listed with the opt-in, so only then is the lead key added.
     // Published resets retain the normal pin/recency order below.
-    const ownedUnpublishedSprayWall = and(
-      eq(dbSchema.userBoards.ownerId, userId),
-      eq(dbSchema.userBoards.boardType, 'spray'),
-      exists(
-        db
-          .select({ id: dbSchema.sprayWalls.id })
-          .from(dbSchema.sprayWalls)
-          .where(
-            and(
-              eq(dbSchema.sprayWalls.boardUuid, dbSchema.userBoards.uuid),
-              isNull(dbSchema.sprayWalls.deletedAt),
-              isNull(dbSchema.sprayWalls.currentVersionId),
-            ),
-          ),
-      ),
-    )!;
+    const importsFirst = includeUnfinished ? [desc(ownedUnfinishedSprayWall)] : [];
 
     // Ordering (issue #4884): pinned boards first, then the ones you actually
     // used, most recent first, and only then the ones you have never opened.
@@ -1224,7 +1220,7 @@ export const socialBoardQueries = {
       )
       .where(whereClause)
       .orderBy(
-        desc(ownedUnpublishedSprayWall),
+        ...importsFirst,
         // Pinned first. `pinned_at IS NULL` sorts false (pinned) before true.
         sql`${dbSchema.userBoardActivity.pinnedAt} IS NULL`,
         // Oldest pin leads, so pinning a second board never reshuffles the first.

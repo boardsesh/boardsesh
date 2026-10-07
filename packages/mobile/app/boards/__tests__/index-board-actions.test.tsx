@@ -22,6 +22,7 @@ type CarouselProps = {
   actionLabelFor?: (item: CarouselItem) => string;
   onAction?: (item: CarouselItem) => void;
   onTogglePin?: (item: CarouselItem) => void;
+  onDownload?: (item: CarouselItem) => void;
   pinLabelFor?: (item: CarouselItem) => string;
   isEditing?: boolean;
   pendingActionKey?: string | null;
@@ -42,6 +43,7 @@ const pinBoardOptions = vi.hoisted(() => ({
 }));
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 const forgetOfflineBoardMock = vi.hoisted(() => vi.fn());
+const confirmAndDownloadMock = vi.hoisted(() => vi.fn(async () => true));
 // The last props the carousel was handed, so ownership can be asserted on the
 // ITEMS (stamped once at list build) rather than inferred from what rendered.
 type DetailProps = {
@@ -70,6 +72,9 @@ const state = vi.hoisted(() => ({
   activeBoardGeneration: 0,
   deletePending: null as string | null,
   unfollowPending: null as string | null,
+  // A live progress read that no longer lists a wall the board list called an import.
+  liveImportCleared: false,
+  myBoardsInputs: [] as unknown[],
 }));
 
 const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): UserBoard =>
@@ -111,7 +116,11 @@ vi.mock('../../../src/providers/queue-provider', () => ({
 }));
 
 vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
-  useSprayImportProgress: (boards: unknown[]) => ({ boards, stale: false }),
+  useSprayImportProgress: (boards: Array<{ uuid: string; sprayImport?: unknown }>) => ({
+    boards: state.liveImportCleared ? boards.map((listed) => ({ ...listed, sprayImport: null })) : boards,
+    stale: false,
+    unfinishedWallUuids: new Set(boards.filter((listed) => listed.sprayImport).map((listed) => listed.uuid)),
+  }),
 }));
 
 vi.mock('expo-router', () => ({
@@ -169,13 +178,16 @@ vi.mock('@boardsesh/offline-sync', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
-  useMyBoards: () => ({
-    data: { boards: state.myBoards },
-    isLoading: false,
-    isError: false,
-    isRefetching: false,
-    refetch: vi.fn(),
-  }),
+  useMyBoards: (input: unknown) => {
+    state.myBoardsInputs.push(input);
+    return {
+      data: { boards: state.myBoards },
+      isLoading: false,
+      isError: false,
+      isRefetching: false,
+      refetch: vi.fn(),
+    };
+  },
   usePopularBoardConfigs: () => ({ data: { configs: [] } }),
   useNearbyBoards: () => ({
     data: state.nearbyBoards.length > 0 ? { boards: state.nearbyBoards } : undefined,
@@ -253,7 +265,7 @@ vi.mock('../../../src/settings', () => ({
 }));
 vi.mock('../../../src/components/offline/OfflineCatalogCta', () => ({ OfflineCatalogCta: () => null }));
 vi.mock('../../../src/offline/use-confirm-board-download', () => ({
-  useConfirmBoardDownload: () => ({ confirmAndDownload: vi.fn(async () => true), armWithoutConfirm: vi.fn() }),
+  useConfirmBoardDownload: () => ({ confirmAndDownload: confirmAndDownloadMock, armWithoutConfirm: vi.fn() }),
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useFeatureFlag: () => false,
@@ -345,6 +357,8 @@ beforeEach(() => {
   state.willFollow = false;
   state.deletePending = null;
   state.unfollowPending = null;
+  state.liveImportCleared = false;
+  state.myBoardsInputs = [];
 });
 
 describe('the pin toggle', () => {
@@ -863,7 +877,7 @@ describe('picking an importing spray wall', () => {
     stage: 'queued' as const,
     queuePosition: 3,
     retryAt: null,
-    isReset: false,
+    resetOfWallUuid: null,
   };
 
   it('opens the exact unfinished wall instead of activating an unpublished board', () => {
@@ -879,20 +893,59 @@ describe('picking an importing spray wall', () => {
     expect(setActiveBoardMock).not.toHaveBeenCalled();
   });
 
-  it('continues activating the published wall while a reset is importing', async () => {
+  it('rejoins an importing reset clone through the wall it replaces', () => {
     state.myBoards = [
       board({
         uuid: 'spray-wall',
-        name: 'Published garage',
+        name: 'Garage reset',
         boardType: 'spray',
         canEdit: true,
-        sprayImport: { ...progress, isReset: true },
+        sprayImport: { ...progress, resetOfWallUuid: 'old-spray-wall' },
       }),
     ];
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Published garage' }));
-    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
-    expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/spray/new' }));
-    expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/spray/reset' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Garage reset' }));
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/spray/new',
+      params: { resetOf: 'old-spray-wall' },
+    });
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
+  it("asks the board list for the viewer's unfinished spray walls", () => {
+    render(createElement(BoardSelection));
+    expect(state.myBoardsInputs.length).toBeGreaterThan(0);
+    for (const input of state.myBoardsInputs) expect(input).toEqual({ includeUnfinishedSprayWalls: true });
+  });
+
+  it('never activates or downloads a wall the list called unfinished once its live progress is gone', async () => {
+    const importing = board({
+      uuid: 'spray-wall',
+      name: 'Importing garage',
+      boardType: 'spray',
+      canEdit: true,
+      sprayImport: progress,
+    });
+    state.myBoards = [importing];
+    state.liveImportCleared = true;
+    render(createElement(BoardSelection));
+    const wizardByWall = { pathname: '/boards/spray/new', params: { wallUuid: 'spray-wall' } };
+
+    fireEvent.click(screen.getByRole('button', { name: 'Importing garage' }));
+    expect(routerMock.push).toHaveBeenLastCalledWith(wizardByWall);
+
+    // The detail sheet's "Set active" takes the same road.
+    expect(detailProps.last).not.toBeNull();
+    act(() => detailProps.last?.onSetActive({ ...importing, sprayImport: null }));
+    expect(routerMock.push).toHaveBeenLastCalledWith(wizardByWall);
+
+    // An unfinished wall has no catalogue to download.
+    expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['spray-wall']);
+    expect(carouselProps.last?.onDownload).toBeDefined();
+    carouselProps.last?.onDownload?.(carouselProps.last.items[0]);
+    expect(confirmAndDownloadMock).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
   });
 });

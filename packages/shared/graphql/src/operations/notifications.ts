@@ -34,7 +34,7 @@ export const GET_NOTIFICATIONS = gql`
         sprayWallName
         sprayWallUuid
         sprayVersionId
-        isSprayReset
+        sprayResetOfWallUuid
         isRead
         createdAt
       }
@@ -77,7 +77,7 @@ export const GET_GROUPED_NOTIFICATIONS = gql`
         sprayWallName
         sprayWallUuid
         sprayVersionId
-        isSprayReset
+        sprayResetOfWallUuid
         isRead
         createdAt
       }
@@ -165,7 +165,7 @@ export const NOTIFICATION_RECEIVED_SUBSCRIPTION = `
         sprayWallName
         sprayWallUuid
         sprayVersionId
-        isSprayReset
+        sprayResetOfWallUuid
         isRead
         createdAt
       }

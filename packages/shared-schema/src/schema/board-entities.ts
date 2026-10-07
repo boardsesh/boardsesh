@@ -344,6 +344,13 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     limit: Int
     "Offset for pagination"
     offset: Int
+    """
+    Also list the viewer's OWN spray walls that have never been published, so
+    My Boards and Manage can show their import progress. Off by default: board
+    pickers must only offer walls that can be climbed on. Other people's
+    unfinished walls and archived walls are never listed.
+    """
+    includeUnfinishedSprayWalls: Boolean = false
   }
 
   """

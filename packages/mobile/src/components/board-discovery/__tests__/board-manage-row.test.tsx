@@ -439,7 +439,7 @@ describe('BoardManageRow import actions', () => {
         stage: 'queued' as const,
         queuePosition: 3,
         retryAt: null,
-        isReset: false,
+        resetOfWallUuid: null,
       },
     };
     const onOpenImport = vi.fn();
@@ -452,7 +452,7 @@ describe('BoardManageRow import actions', () => {
     expect(onOpenImport).toHaveBeenCalledWith(importing);
   });
 
-  it('keeps published resets downloadable and opens their ready-to-review action', () => {
+  it('treats a reset clone as an unpublished import with a ready-to-review action', () => {
     const resetting = {
       ...board,
       boardType: 'spray',
@@ -463,14 +463,14 @@ describe('BoardManageRow import actions', () => {
         stage: 'ready' as const,
         queuePosition: null,
         retryAt: null,
-        isReset: true,
+        resetOfWallUuid: 'old-wall',
       },
     };
     const onOpenImport = vi.fn();
-    const { getByText, getByTestId } = render(
-      <BoardManageRow {...rowProps} board={resetting} onOpenImport={onOpenImport} downloadState="downloaded" />,
+    const { getByText, queryByTestId } = render(
+      <BoardManageRow {...rowProps} board={resetting} onOpenImport={onOpenImport} downloadState="off" />,
     );
-    expect(getByTestId('offline-toggle')).toBeTruthy();
+    expect(queryByTestId('offline-toggle')).toBeNull();
     fireEvent.click(getByText('sprayImport.review'));
     expect(onOpenImport).toHaveBeenCalledWith(resetting);
   });

@@ -798,7 +798,9 @@ describe('loadSprayWall', () => {
   it('never asks for the archive fields inside a query or mutation that loads, creates or draws a wall', () => {
     for (const [name, operation] of Object.entries(sprayOperations)) {
       if (name === 'GET_SPRAY_WALL_ARCHIVE' || name === 'GET_MY_SPRAY_WALL_LIFECYCLE') continue;
-      const text = JSON.stringify(operation) ?? '';
+      // `UserBoard.sprayImport.resetOfWallUuid` is the import-progress field of the
+      // same name, not the wall's archive link, and ships with `sprayImport`.
+      const text = (JSON.stringify(operation) ?? '').replace(/sprayImport \{[^}]*\}/g, '');
       for (const field of ['archivedAt', 'resetOfWallUuid', 'replacedByWallUuid']) {
         expect(text, `${name}.${field}`).not.toContain(field);
       }

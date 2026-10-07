@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 import type { PgBoss } from 'pg-boss';
 import {
@@ -13,6 +14,7 @@ import {
   notificationDevices,
   notificationDeliveries,
   notifications,
+  sprayWalls,
   sprayWallVersions,
   userBoards,
 } from '@boardsesh/db/schema';
@@ -20,7 +22,6 @@ import { db } from '../db/client';
 import { enqueueOn } from './job-queue';
 import { NOTIFICATION_DELIVERY_LOCK_SEED } from './notification-locks';
 import { requireBoardEditAccess } from '../graphql/resolvers/social/boards';
-import { sprayVersionIsReset } from '../graphql/resolvers/social/spray-notification-targets';
 import { pubsub } from '../pubsub';
 import english from '@boardsesh/i18n/locales/en-US/notifications.json';
 import spanish from '@boardsesh/i18n/locales/es/notifications.json';
@@ -53,7 +54,10 @@ export async function completionNotification(
     source.detection.status !== 'done' ||
     !source.detection.requestedBy ||
     !sprayDetectionSourceIsCurrent(source) ||
-    source.wall.hiddenAt
+    source.wall.hiddenAt ||
+    // A draft on a published wall is a retired in-place reset: it can never be
+    // published, so there is nothing to send the owner back to.
+    source.wall.currentVersionId !== null
   )
     return null;
   const [board] = await executor.select().from(userBoards).where(eq(userBoards.uuid, source.wall.boardUuid)).limit(1);
@@ -67,11 +71,15 @@ export async function completionNotification(
   } catch {
     return null;
   }
-  const [versionKind] = await executor
-    .select({ isReset: sprayVersionIsReset(executor, source.wall.id, source.version.versionNumber) })
+  const resetSource = alias(sprayWalls, 'reset_source_spray_wall');
+  // Re-reads the version so a draft deleted since the source read sends nothing.
+  const [versionNow] = await executor
+    .select({ resetSourceUuid: resetSource.boardUuid })
     .from(sprayWallVersions)
+    .innerJoin(sprayWalls, eq(sprayWalls.id, sprayWallVersions.wallId))
+    .leftJoin(resetSource, and(eq(resetSource.id, sprayWalls.resetFromWallId), isNull(resetSource.deletedAt)))
     .where(eq(sprayWallVersions.id, source.version.id));
-  if (!versionKind) return null;
+  if (!versionNow) return null;
   return {
     recipientId: source.detection.requestedBy,
     notification: {
@@ -82,7 +90,7 @@ export async function completionNotification(
       sprayWallName: board.name,
       sprayWallUuid: source.wall.boardUuid,
       sprayVersionId: String(source.version.id),
-      isSprayReset: versionKind.isReset,
+      sprayResetOfWallUuid: versionNow.resetSourceUuid,
       isRead: false,
       createdAt: (source.detection.finishedAt ?? new Date()).toISOString(),
     },
@@ -90,27 +98,24 @@ export async function completionNotification(
 }
 
 export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: string): Promise<void> {
-  const event = await completionNotification(detectionId);
-  if (!event) return;
-  let deliverable = false;
-  await db.transaction(async (transaction) => {
+  // Cheap pre-check outside any lock; the send decision uses the locked re-read.
+  if (!(await completionNotification(detectionId))) return;
+  // The source and permissions rechecked under the wall lock decide what is sent.
+  const event = await db.transaction(async (transaction) => {
     const source = await readSprayDetection(transaction, detectionId);
-    if (!source) return;
+    if (!source) return null;
     await transaction.execute(sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`);
     const current = await completionNotification(detectionId, transaction);
-    if (!current) return;
-    // Replace the optimistic read with the source and permissions rechecked under the wall lock.
-    Object.assign(event, current);
-    deliverable = true;
+    if (!current) return null;
     await transaction
       .insert(notifications)
       .values({
         uuid: detectionId,
-        recipientId: event.recipientId,
+        recipientId: current.recipientId,
         type: 'spray_wall_detection_completed',
         entityType: 'board',
-        entityId: event.notification.entityId,
-        createdAt: new Date(event.notification.createdAt),
+        entityId: current.notification.entityId,
+        createdAt: new Date(current.notification.createdAt),
       })
       .onConflictDoNothing();
     const devices = await transaction
@@ -118,7 +123,7 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
       .from(notificationDevices)
       .where(
         and(
-          eq(notificationDevices.userId, event.recipientId),
+          eq(notificationDevices.userId, current.recipientId),
           eq(notificationDevices.active, true),
           gt(notificationDevices.expiresAt, new Date()),
         ),
@@ -131,7 +136,7 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
           id: deliveryId,
           notificationUuid: detectionId,
           installationId: device.installationId,
-          recipientId: event.recipientId,
+          recipientId: current.recipientId,
           token: device.token,
           locale: device.locale,
         })
@@ -146,9 +151,10 @@ export async function notifySprayDetectionCompleted(boss: PgBoss, detectionId: s
       // Roll back the feed entry and every delivery together; the completion job retries the atomic enqueue.
       if (!jobId) throw new Error('PUSH_ENQUEUE_FAILED');
     }
+    return current;
   });
   // Replays may republish the same UUID; clients deduplicate by UUID.
-  if (deliverable) pubsub.publishNotificationEvent(event.recipientId, { notification: event.notification });
+  if (event) pubsub.publishNotificationEvent(event.recipientId, { notification: event.notification });
 }
 
 async function expoPost(path: 'send' | 'getReceipts', payload: unknown): Promise<unknown> {
@@ -177,32 +183,38 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       .where(eq(notificationDeliveries.id, deliveryId))
       .limit(1);
     if (!delivery || delivery.status === 'done' || delivery.status === 'skipped') return;
-    const source = await readSprayDetection(transaction, delivery.notificationUuid);
-    if (source)
-      await transaction.execute(
-        sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`,
-      );
-    const [device] = await transaction
-      .select()
-      .from(notificationDevices)
-      .where(
-        and(
-          eq(notificationDevices.installationId, delivery.installationId),
-          eq(notificationDevices.userId, delivery.recipientId),
-          eq(notificationDevices.token, delivery.token),
-          eq(notificationDevices.active, true),
-          gt(notificationDevices.expiresAt, new Date()),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const event = await completionNotification(delivery.notificationUuid, transaction);
+    // Recheck the target in its own short transaction. The wall lock orders this
+    // read after any wall write in flight (revoke, hide, discard) and is released
+    // before the Expo call below, so a slow push never stalls wall edits. Only
+    // this delivery's lock is held across the HTTP request.
+    const target = await db.transaction(async (validation) => {
+      const source = await readSprayDetection(validation, delivery.notificationUuid);
+      if (source)
+        await validation.execute(
+          sql`SELECT pg_advisory_xact_lock(${SPRAY_WALL_WRITE_LOCK_NAMESPACE}, ${source.wall.id})`,
+        );
+      const [device] = await validation
+        .select({ installationId: notificationDevices.installationId })
+        .from(notificationDevices)
+        .where(
+          and(
+            eq(notificationDevices.installationId, delivery.installationId),
+            eq(notificationDevices.userId, delivery.recipientId),
+            eq(notificationDevices.token, delivery.token),
+            eq(notificationDevices.active, true),
+            gt(notificationDevices.expiresAt, new Date()),
+          ),
+        )
+        .limit(1);
+      const current = await completionNotification(delivery.notificationUuid, validation);
+      return device && current?.recipientId === delivery.recipientId ? current : null;
+    });
     const setStatus = (status: typeof notificationDeliveries.$inferSelect.status, ticketId?: string | null) =>
       transaction
         .update(notificationDeliveries)
         .set({ status, ...(ticketId !== undefined ? { ticketId } : {}), updatedAt: new Date() })
         .where(eq(notificationDeliveries.id, delivery.id));
-    if (!device || !event || event.recipientId !== delivery.recipientId) {
+    if (!target) {
       await setStatus('skipped');
       return;
     }
@@ -213,13 +225,13 @@ export async function deliverSprayNotification(boss: PgBoss, deliveryId: string)
       : await expoPost('send', {
           to: delivery.token,
           sound: 'default',
-          ...sprayCompletionCopy(delivery.locale, event.notification.sprayWallName),
+          ...sprayCompletionCopy(delivery.locale, target.notification.sprayWallName),
           data: {
             type: 'spray_wall_detection_completed',
             notificationUuid: delivery.notificationUuid,
-            wallUuid: event.notification.sprayWallUuid,
-            versionId: event.notification.sprayVersionId,
-            isReset: event.notification.isSprayReset,
+            wallUuid: target.notification.sprayWallUuid,
+            versionId: target.notification.sprayVersionId,
+            resetOfWallUuid: target.notification.sprayResetOfWallUuid ?? null,
           },
           collapseId: delivery.notificationUuid,
           tag: delivery.notificationUuid,

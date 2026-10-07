@@ -93,7 +93,7 @@ describe('useGroupedNotifications', () => {
       sprayWallName: 'Garage wall',
       sprayWallUuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
       sprayVersionId: '42',
-      isSprayReset: true,
+      sprayResetOfWallUuid: '11111111-2222-4333-8444-555555555555',
     });
     requestMock.mockResolvedValue({
       groupedNotifications: { groups: [completed], totalCount: 1, unreadCount: 1, hasMore: false },
@@ -111,11 +111,11 @@ describe('useGroupedNotifications', () => {
       sprayImportRoute({
         wallUuid: fetched.sprayWallUuid!,
         versionId: fetched.sprayVersionId!,
-        isReset: fetched.isSprayReset!,
+        resetOfWallUuid: fetched.sprayResetOfWallUuid ?? null,
       }),
     ).toEqual({
-      pathname: '/boards/spray/reset',
-      params: { wallUuid: completed.sprayWallUuid, versionId: '42' },
+      pathname: '/boards/spray/new',
+      params: { resetOf: '11111111-2222-4333-8444-555555555555' },
     });
   });
 
@@ -177,7 +177,7 @@ describe('notification transport review targets', () => {
       },
     });
     expect(selectedFields).toEqual(
-      expect.arrayContaining(['sprayWallName', 'sprayWallUuid', 'sprayVersionId', 'isSprayReset']),
+      expect.arrayContaining(['sprayWallName', 'sprayWallUuid', 'sprayVersionId', 'sprayResetOfWallUuid']),
     );
   });
 });

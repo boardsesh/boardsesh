@@ -2935,7 +2935,6 @@ export type GroupedNotification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether all notifications in the group are read */
   isRead: Scalars['Boolean']['output'];
-  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for deep-linking to a specific proposal) */
@@ -2944,6 +2943,8 @@ export type GroupedNotification = {
   proposalValue?: Maybe<Scalars['String']['output']>;
   /** Setter username (for new_climbs_synced notifications) */
   setterUsername?: Maybe<Scalars['String']['output']>;
+  /** The wall the imported reset clone replaces; null for a plain new wall. */
+  sprayResetOfWallUuid?: Maybe<Scalars['String']['output']>;
   sprayVersionId?: Maybe<Scalars['ID']['output']>;
   sprayWallName?: Maybe<Scalars['String']['output']>;
   sprayWallUuid?: Maybe<Scalars['String']['output']>;
@@ -5363,6 +5364,13 @@ export type MutationVoteOnProposalArgs = {
 
 /** Input for listing user's boards. */
 export type MyBoardsInput = {
+  /**
+   * Also list the viewer's OWN spray walls that have never been published, so
+   * My Boards and Manage can show their import progress. Off by default: board
+   * pickers must only offer walls that can be climbed on. Other people's
+   * unfinished walls and archived walls are never listed.
+   */
+  includeUnfinishedSprayWalls?: InputMaybe<Scalars['Boolean']['input']>;
   /** Max boards to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
@@ -5468,13 +5476,14 @@ export type Notification = {
   gymName?: Maybe<Scalars['String']['output']>;
   /** Whether the notification has been read */
   isRead: Scalars['Boolean']['output'];
-  isSprayReset?: Maybe<Scalars['Boolean']['output']>;
   /** Type of the proposal this notification is about (grade, classic, benchmark, hide) */
   proposalType?: Maybe<ProposalType>;
   /** Proposal UUID (for proposal notifications, to deep-link to the specific proposal) */
   proposalUuid?: Maybe<Scalars['String']['output']>;
   /** The proposal's proposedValue, e.g. 'true'/'false' for hide */
   proposalValue?: Maybe<Scalars['String']['output']>;
+  /** The wall the imported reset clone replaces; null for a plain new wall. */
+  sprayResetOfWallUuid?: Maybe<Scalars['String']['output']>;
   sprayVersionId?: Maybe<Scalars['ID']['output']>;
   sprayWallName?: Maybe<Scalars['String']['output']>;
   sprayWallUuid?: Maybe<Scalars['String']['output']>;
@@ -9450,8 +9459,9 @@ export type SprayWallHoldUsage = {
 export type SprayWallImportProgress = {
   __typename?: 'SprayWallImportProgress';
   detectionId?: Maybe<Scalars['ID']['output']>;
-  isReset: Scalars['Boolean']['output'];
   queuePosition?: Maybe<Scalars['Int']['output']>;
+  /** The wall this unpublished reset clone replaces; null for a plain new wall. */
+  resetOfWallUuid?: Maybe<Scalars['String']['output']>;
   retryAt?: Maybe<Scalars['String']['output']>;
   stage: Scalars['String']['output'];
   versionId?: Maybe<Scalars['ID']['output']>;
@@ -12450,7 +12460,7 @@ export type GetNotificationsQuery = {
       sprayWallName?: string | null;
       sprayWallUuid?: string | null;
       sprayVersionId?: string | null;
-      isSprayReset?: boolean | null;
+      sprayResetOfWallUuid?: string | null;
       isRead: boolean;
       createdAt: string;
     }>;
@@ -12494,7 +12504,7 @@ export type GetGroupedNotificationsQuery = {
       sprayWallName?: string | null;
       sprayWallUuid?: string | null;
       sprayVersionId?: string | null;
-      isSprayReset?: boolean | null;
+      sprayResetOfWallUuid?: string | null;
       isRead: boolean;
       createdAt: string;
       actors: Array<{
@@ -14292,7 +14302,7 @@ export type SprayWallImportProgressQuery = {
     stage: string;
     queuePosition?: number | null;
     retryAt?: string | null;
-    isReset: boolean;
+    resetOfWallUuid?: string | null;
   }>;
 };
 
@@ -18860,7 +18870,7 @@ export const GetNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'isSprayReset' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayResetOfWallUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -18958,7 +18968,7 @@ export const GetGroupedNotificationsDocument = {
                       { kind: 'Field', name: { kind: 'Name', value: 'sprayWallName' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'sprayWallUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'sprayVersionId' } },
-                      { kind: 'Field', name: { kind: 'Name', value: 'isSprayReset' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'sprayResetOfWallUuid' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'isRead' } },
                       { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
                     ],
@@ -23277,7 +23287,7 @@ export const SprayWallImportProgressDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'stage' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'queuePosition' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'retryAt' } },
-                { kind: 'Field', name: { kind: 'Name', value: 'isReset' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resetOfWallUuid' } },
               ],
             },
           },

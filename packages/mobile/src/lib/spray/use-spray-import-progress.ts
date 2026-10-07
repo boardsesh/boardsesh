@@ -48,6 +48,12 @@ export function useSprayImportProgress(boards: UserBoard[]) {
     },
     refetchIntervalInBackground: false,
   });
+  // What the board list itself said, before any live read: a wall listed as an
+  // import stays off every climbing path even if a later read clears its row.
+  const unfinishedWallUuids = useMemo(
+    () => new Set(boards.flatMap((board) => (board.sprayImport ? [board.uuid] : []))),
+    [boards],
+  );
   const mergedBoards = useMemo(() => {
     if (!query.data) return boards;
     const imports = new Map(query.data.map((progress) => [progress.wallUuid, progress]));
@@ -58,5 +64,5 @@ export function useSprayImportProgress(boards: UserBoard[]) {
       return board.sprayImport === sprayImport ? board : { ...board, sprayImport };
     });
   }, [boards, query.data, wallUuids]);
-  return { boards: mergedBoards, stale: offline || query.isError };
+  return { boards: mergedBoards, stale: offline || query.isError, unfinishedWallUuids };
 }

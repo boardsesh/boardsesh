@@ -46,7 +46,7 @@ export type Notification = {
   sprayWallName?: string | null;
   sprayWallUuid?: string | null;
   sprayVersionId?: string | null;
-  isSprayReset?: boolean | null;
+  sprayResetOfWallUuid?: string | null;
   isRead: boolean;
   createdAt: string;
 };
@@ -100,7 +100,7 @@ export type GroupedNotification = {
   sprayWallName?: string | null;
   sprayWallUuid?: string | null;
   sprayVersionId?: string | null;
-  isSprayReset?: boolean | null;
+  sprayResetOfWallUuid?: string | null;
   isRead: boolean;
   createdAt: string;
 };

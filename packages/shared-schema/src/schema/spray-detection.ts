@@ -31,7 +31,8 @@ export const sprayDetectionTypeDefs = /* GraphQL */ `
     stage: String!
     queuePosition: Int
     retryAt: String
-    isReset: Boolean!
+    "The wall this unpublished reset clone replaces; null for a plain new wall."
+    resetOfWallUuid: String
   }
   input RequestSprayWallDetectionInput {
     wallUuid: ID!

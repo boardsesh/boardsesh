@@ -75,7 +75,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
-  useSprayImportProgress: (boards: unknown[]) => ({ boards, stale: false }),
+  useSprayImportProgress: (boards: unknown[]) => ({ boards, stale: false, unfinishedWallUuids: new Set<string>() }),
 }));
 
 vi.mock('expo-router', () => ({

@@ -264,7 +264,7 @@ function BoardManageRowComponent({
             </Text>
           </Pressable>
         ) : null}
-        {offlineStatus && (!board.sprayImport || board.sprayImport.isReset) ? (
+        {offlineStatus && !board.sprayImport ? (
           <Text
             variant="caption1"
             color={downloadState === 'downloaded' ? brandColors.primary : systemColors.tertiaryLabel}
@@ -283,7 +283,7 @@ function BoardManageRowComponent({
         {/* Rendered unconditionally when the row can download at all, so the
             first progress frame cannot change the row's height inside the
             FlashList and jump the scroll position. */}
-        {downloadState !== undefined && (!board.sprayImport || board.sprayImport.isReset) ? (
+        {downloadState !== undefined && !board.sprayImport ? (
           <OfflineDownloadProgressBar
             fraction={downloadProgress && downloadProgress.stage === 'download' ? downloadProgress.fraction : undefined}
           />
@@ -309,7 +309,7 @@ function BoardManageRowComponent({
         ) : null}
       </View>
 
-      {downloadState !== undefined && (!board.sprayImport || board.sprayImport.isReset) ? (
+      {downloadState !== undefined && !board.sprayImport ? (
         <BoardOfflineToggle
           state={downloadState}
           onPress={() => onToggleOffline(board)}

@@ -37,7 +37,7 @@ const queued: SprayWallImportProgress = {
   stage: 'queued',
   queuePosition: 3,
   retryAt: null,
-  isReset: false,
+  resetOfWallUuid: null,
 };
 function board(uuid: string, changes: Partial<UserBoard> = {}): UserBoard {
   return {
@@ -107,6 +107,14 @@ describe('visible spray import progress', () => {
     expect(result.current.boards[3]).toBe(kilter);
   });
 
+  it('keeps naming the walls the board list called unfinished after a live read clears their rows', async () => {
+    const published = board('published', { sprayImport: null });
+    const { result } = mount([board('wall-uuid'), board('finished'), published]);
+    await settle();
+    expect(result.current.boards[1].sprayImport).toBeNull();
+    expect(result.current.unfinishedWallUuids).toEqual(new Set(['wall-uuid', 'finished']));
+  });
+
   it('waits for focus and pauses polling when the screen loses focus', async () => {
     runtime.focused = false;
     const { rerender } = mount([board('wall-uuid')]);
@@ -154,7 +162,7 @@ describe('visible spray import progress', () => {
     const { result, rerender } = mount(boards);
     await settle();
     expect(runtime.request).not.toHaveBeenCalled();
-    expect(result.current).toEqual({ boards, stale: true });
+    expect(result.current).toEqual({ boards, stale: true, unfinishedWallUuids: new Set(['wall-uuid']) });
     runtime.offline = false;
     rerender();
     await settle();
