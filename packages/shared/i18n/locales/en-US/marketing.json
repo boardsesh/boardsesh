@@ -1014,7 +1014,7 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdatedProductAnalytics": "Last updated: October 9, 2026",
+    "lastUpdated": "Last updated: October 10, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
     "collect": {
@@ -1039,6 +1039,13 @@
       "body1": "Location access is optional. When granted, it is used for one purpose: making your Party Mode session discoverable to nearby climbers. Your location is shared with the server only while a Party Mode session is active. We do not store your location history, build a location profile, or share location data with anyone outside of the party session discovery feature.",
       "body2": "You can revoke location permission at any time in your device settings. The app works fully without it."
     },
+    "sprayPhotos": {
+      "title": "Spray wall photos",
+      "body1": "When you add a spray wall, we keep its photo and the holds you mark in private storage. Only you can open the photo. A Boardsesh team member may check the photo and its holds to make sure they are good to learn from.",
+      "body2": "We use them to train the hold finder, the part of the app that spots holds in a new wall photo. We never share or publish them. That includes private walls.",
+      "body3": "Every wall has a Help train hold finding switch. It is on by default. Switch it off any time in the wall's settings.",
+      "body4": "Switching it off, deleting the wall, or deleting your account takes the wall out of our training data within 24 hours. Models we already trained keep what they learned, but they hold no copy of your photo."
+    },
     "thirdParty": {
       "title": "Third-party services",
       "posthogLabel": "PostHog.",
@@ -1062,7 +1069,8 @@
     "sharing": {
       "title": "Data sharing",
       "body1ProductAnalytics": "We do not sell your data, run ads or share information with advertisers or data brokers. The providers described above process data for hosting, storage, service reliability and optional analytics. Aurora Climbing synchronization runs when you enable it.",
-      "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works."
+      "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works.",
+      "body3SprayPhotos": "Spray wall photos and the holds you mark stay with Boardsesh. We only use them to train our own hold finder."
     },
     "retention": {
       "title": "Data retention",

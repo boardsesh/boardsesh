@@ -25,7 +25,8 @@
     "gymClaims": "Hallen-Ansprüche",
     "feedback": "Bug-Reports",
     "gymDuplicates": "Doppelte Hallen",
-    "locationSync": "Standort-Sync-Sperren"
+    "locationSync": "Standort-Sync-Sperren",
+    "sprayWalls": "Spraywand-Training"
   },
   "feedback": {
     "title": "Bug-Reports & Feedback",
@@ -430,5 +431,69 @@
     "ownerReports": {
       "note": "Betreiber*innen können Duplikate jetzt auf ihrer Hallenseite melden. Diese Meldungen kommen vorerst als Team-E-Mail, behalte neben dieser Liste also auch das Postfach im Blick."
     }
+  },
+  "sprayTraining": {
+    "title": "Trainingsdaten der Spraywände",
+    "statusLabel": "Prüfstatus",
+    "status": {
+      "unreviewed": "Ungeprüft ({{total}})",
+      "approved": "Freigegeben ({{total}})",
+      "rejected": "Abgelehnt ({{total}})"
+    },
+    "empty": "Hier ist nichts",
+    "error": "Die Warteschlange ließ sich nicht laden. Versuch es nochmal.",
+    "retry": "Nochmal versuchen",
+    "loadMore": "Mehr laden",
+    "card": {
+      "open": "Spraywand-Version {{version}} prüfen",
+      "holds": "Griffe: {{total}}",
+      "edited": "Bearbeitet: {{percent}} %",
+      "accepted": "Ungeprüft übernommen: {{percent}} %",
+      "deleted": "Gelöschte Vorschläge: {{total}}"
+    },
+    "kind": {
+      "manual": "Von Hand markiert",
+      "auto": "Gefunden, ungeprüft",
+      "accepted": "Ungeprüft übernommen",
+      "confirmed": "Vielleicht bestätigt",
+      "edited": "Bearbeitet",
+      "deleted": "Gelöschter Vorschlag",
+      "notShown": "Nie angezeigt"
+    },
+    "reason": {
+      "BAD_HOLDS": "Griffe falsch eingezeichnet",
+      "MISSING_HOLDS": "Griffe fehlen",
+      "PHOTO_QUALITY": "Fotoqualität",
+      "NOT_A_WALL": "Keine Kletterwand",
+      "PEOPLE_OR_PERSONAL_INFO": "Personen oder persönliche Daten",
+      "DUPLICATE": "Duplikat",
+      "OTHER": "Anderer Grund"
+    },
+    "review": {
+      "title": "Spraywand, Version {{version}}",
+      "close": "Schließen",
+      "previous": "Vorherige Wand",
+      "next": "Nächste Wand",
+      "position": "{{current}} von {{total}}",
+      "photoAlt": "Foto einer Spraywand mit markierten Griffen",
+      "noPhoto": "Dieses Foto ist nicht mehr verfügbar.",
+      "unmappable": "Griffe, die wir nicht auf dem Foto platzieren konnten: {{total}}",
+      "model": "Detektor: {{version}}",
+      "showMarks": "Markierungen zeigen (H)",
+      "legend": "Legende",
+      "reason": "Ablehnungsgrund",
+      "notes": "Notizen (optional)",
+      "approve": "Freigeben (A)",
+      "reject": "Ablehnen (R)",
+      "backToUnreviewed": "Zurück zu ungeprüft",
+      "shortcuts": "A gibt frei, R lehnt ab, H blendet Markierungen aus, Pfeil links und rechts wechseln die Wand."
+    },
+    "snackbar": {
+      "approved": "Freigegeben",
+      "rejected": "Abgelehnt",
+      "reset": "Wieder in der Warteschlange",
+      "failed": "Die Prüfung ließ sich nicht speichern"
+    },
+    "backToAdmin": "Zurück zum Admin"
   }
 }

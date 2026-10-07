@@ -25,7 +25,8 @@
     "gymClaims": "Gym claims",
     "feedback": "Bug reports",
     "gymDuplicates": "Duplicate gyms",
-    "locationSync": "Location sync freezes"
+    "locationSync": "Location sync freezes",
+    "sprayWalls": "Spray wall training"
   },
   "feedback": {
     "title": "Bug reports & feedback",
@@ -430,5 +431,69 @@
     "ownerReports": {
       "note": "Owners can now flag duplicates from their gym page. Those reports arrive as team email for now, so keep an eye on the inbox alongside this queue."
     }
+  },
+  "sprayTraining": {
+    "title": "Spray wall training data",
+    "statusLabel": "Review status",
+    "status": {
+      "unreviewed": "Unreviewed ({{total}})",
+      "approved": "Approved ({{total}})",
+      "rejected": "Rejected ({{total}})"
+    },
+    "empty": "Nothing here",
+    "error": "Couldn't load the queue. Try again.",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "card": {
+      "open": "Review wall version {{version}}",
+      "holds": "Holds: {{total}}",
+      "edited": "Edited: {{percent}}%",
+      "accepted": "Accepted unchecked: {{percent}}%",
+      "deleted": "Deleted suggestions: {{total}}"
+    },
+    "kind": {
+      "manual": "Marked by hand",
+      "auto": "Found, no review",
+      "accepted": "Accepted unchecked",
+      "confirmed": "Confirmed maybe",
+      "edited": "Edited",
+      "deleted": "Deleted suggestion",
+      "notShown": "Never shown"
+    },
+    "reason": {
+      "BAD_HOLDS": "Holds drawn wrong",
+      "MISSING_HOLDS": "Holds missing",
+      "PHOTO_QUALITY": "Photo quality",
+      "NOT_A_WALL": "Not a climbing wall",
+      "PEOPLE_OR_PERSONAL_INFO": "People or personal info",
+      "DUPLICATE": "Duplicate",
+      "OTHER": "Other"
+    },
+    "review": {
+      "title": "Wall version {{version}}",
+      "close": "Close",
+      "previous": "Previous wall",
+      "next": "Next wall",
+      "position": "{{current}} of {{total}}",
+      "photoAlt": "Spray wall photo with marked holds",
+      "noPhoto": "This photo is no longer available.",
+      "unmappable": "Holds we couldn't place on the photo: {{total}}",
+      "model": "Detector: {{version}}",
+      "showMarks": "Show marks (H)",
+      "legend": "Legend",
+      "reason": "Reject reason",
+      "notes": "Notes (optional)",
+      "approve": "Approve (A)",
+      "reject": "Reject (R)",
+      "backToUnreviewed": "Back to unreviewed",
+      "shortcuts": "A approve, R reject, H hide marks, left and right arrows for previous and next."
+    },
+    "snackbar": {
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "reset": "Back in the unreviewed queue",
+      "failed": "Couldn't save the review"
+    },
+    "backToAdmin": "Back to admin"
   }
 }

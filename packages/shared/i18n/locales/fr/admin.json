@@ -25,7 +25,8 @@
     "gymClaims": "Revendications de salles",
     "feedback": "Rapports de bugs",
     "gymDuplicates": "Salles en double",
-    "locationSync": "Gels de synchronisation des lieux"
+    "locationSync": "Gels de synchronisation des lieux",
+    "sprayWalls": "Entraînement sur les murs de spray"
   },
   "feedback": {
     "title": "Bugs et retours",
@@ -430,5 +431,69 @@
     "ownerReports": {
       "note": "Les propriétaires peuvent désormais signaler des doublons depuis la page de leur salle. Pour l'instant ces signalements arrivent par e-mail à l'équipe, alors surveillez la boîte de réception en plus de cette file."
     }
+  },
+  "sprayTraining": {
+    "title": "Données d'entraînement des murs de spray",
+    "statusLabel": "Statut de relecture",
+    "status": {
+      "unreviewed": "À relire ({{total}})",
+      "approved": "Approuvés ({{total}})",
+      "rejected": "Refusés ({{total}})"
+    },
+    "empty": "Rien ici",
+    "error": "Impossible de charger la file. Réessayez.",
+    "retry": "Réessayer",
+    "loadMore": "Charger plus",
+    "card": {
+      "open": "Relire la version {{version}} du mur",
+      "holds": "Prises : {{total}}",
+      "edited": "Modifiées : {{percent}} %",
+      "accepted": "Acceptées sans vérif : {{percent}} %",
+      "deleted": "Suggestions supprimées : {{total}}"
+    },
+    "kind": {
+      "manual": "Posée à la main",
+      "auto": "Trouvée, sans relecture",
+      "accepted": "Acceptée sans vérif",
+      "confirmed": "Possible confirmée",
+      "edited": "Modifiée",
+      "deleted": "Suggestion supprimée",
+      "notShown": "Jamais montrée"
+    },
+    "reason": {
+      "BAD_HOLDS": "Prises mal tracées",
+      "MISSING_HOLDS": "Prises manquantes",
+      "PHOTO_QUALITY": "Qualité de la photo",
+      "NOT_A_WALL": "Pas un mur d'escalade",
+      "PEOPLE_OR_PERSONAL_INFO": "Personnes ou infos personnelles",
+      "DUPLICATE": "Doublon",
+      "OTHER": "Autre motif"
+    },
+    "review": {
+      "title": "Mur, version {{version}}",
+      "close": "Fermer",
+      "previous": "Mur précédent",
+      "next": "Mur suivant",
+      "position": "{{current}} sur {{total}}",
+      "photoAlt": "Photo d'un mur de spray avec les prises marquées",
+      "noPhoto": "Cette photo n'est plus disponible.",
+      "unmappable": "Prises qu'on n'a pas pu placer sur la photo : {{total}}",
+      "model": "Détecteur : {{version}}",
+      "showMarks": "Afficher les marques (H)",
+      "legend": "Légende",
+      "reason": "Motif du refus",
+      "notes": "Notes (facultatif)",
+      "approve": "Approuver (A)",
+      "reject": "Refuser (R)",
+      "backToUnreviewed": "Remettre à relire",
+      "shortcuts": "A approuve, R refuse, H masque les marques, les flèches gauche et droite changent de mur."
+    },
+    "snackbar": {
+      "approved": "Approuvé",
+      "rejected": "Refusé",
+      "reset": "De retour dans la file à relire",
+      "failed": "Impossible d'enregistrer la relecture"
+    },
+    "backToAdmin": "Retour à l'admin"
   }
 }

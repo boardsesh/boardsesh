@@ -4,13 +4,22 @@ import { eq, and } from 'drizzle-orm';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { getDb } from '@/app/lib/db/db';
 import { communityRoles } from '@/app/lib/db/schema';
+import { rolesGrantAdmin } from '@boardsesh/community-roles';
 import { rolesGrantGlobalAdmin, rolesGrantScopedAdmin } from './admin-scope';
 
 export type AdminCheck =
   | { authenticated: false }
   | { authenticated: true; userId: string; isAdmin: boolean; boardScopedOnly: boolean };
 
-export async function checkAdmin(): Promise<AdminCheck> {
+export type CheckAdminOptions = {
+  /**
+   * Also accept an admin scoped to this board type (`spray` for the spray wall
+   * training queue). Omitted, only a global admin passes, as /admin always did.
+   */
+  boardType?: string;
+};
+
+export async function checkAdmin(options: CheckAdminOptions = {}): Promise<AdminCheck> {
   const session = await getServerSession(authOptions);
   const userId = session?.user?.id;
   if (!userId) return { authenticated: false };
@@ -22,7 +31,8 @@ export async function checkAdmin(): Promise<AdminCheck> {
     .from(communityRoles)
     .where(and(eq(communityRoles.userId, userId), eq(communityRoles.role, 'admin')));
 
-  const isAdmin = rolesGrantGlobalAdmin(adminRoles);
+  const { boardType } = options;
+  const isAdmin = boardType ? rolesGrantAdmin(adminRoles, boardType) : rolesGrantGlobalAdmin(adminRoles);
 
   return {
     authenticated: true,
