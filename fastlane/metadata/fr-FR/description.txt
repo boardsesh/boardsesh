@@ -4,7 +4,7 @@ UNE SEULE APPLI POUR TOUTES LES BOARDS QUE TU GRIMPES
 Kilter, Tension et MoonBoard ont chacune leur appli pour leur propre board. Boardsesh marche avec toutes, plus Woods, Decoy, Touchstone, Grasshopper et So iLL, au même endroit. Tout ton historique d'escalade sur chaque board vit ici.
 
 TON SPRAY WALL AUSSI
-Un spray wall chez toi, ou un spray wall dans ta salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le spray wall par lien et ton crew peut y ouvrir des blocs aussi. Spray wall reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien spray wall est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
+Un spray wall chez toi ou dans ta salle ? Prends-le en photo et Boardsesh trouve les prises. Corrige ce qu'il a raté, puis ouvre des blocs, mets-les dans la file et enregistre tes croix dans le même carnet que tes autres boards. Pas de LED : les prises sont mises en évidence sur ta photo. Partage le spray wall par lien et ton crew peut y ouvrir des blocs aussi. Spray wall reconfiguré ? Réinitialise-le avec une nouvelle photo, et l'ancien spray wall est archivé avec ses blocs et ses croix. Change une seule prise et chaque bloc qui l'utilisait est signalé, prêt à être remixé.
 
 L'HISTORIQUE DE BOARD, TOUJOURS ACTIF
 Partage une board et tu perds vite le fil de la dernière voie, et quelqu'un finit toujours par l'effacer par accident.
@@ -28,6 +28,6 @@ Enregistre ta séance dans Apple Health, et importe ton ancien carnet Kilter et 
 TROUVE PLUS À GRIMPER
 Suis ta crew et les ouvreurs, cherche des grimpeurs, et épingle des playlists depuis Discover.
 
-Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL. Plus les spray walls : n'importe lequel que tu peux photographier.
+Boards prises en charge : Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Woods (12x12, 8x10), Decoy, Touchstone, Grasshopper et So iLL. Plus les spray walls : tous ceux que tu peux photographier.
 
 Boardsesh est un projet communautaire qui fonctionne avec ces boards et n'est ni affilié à, ni soutenu par aucun fabricant de boards.

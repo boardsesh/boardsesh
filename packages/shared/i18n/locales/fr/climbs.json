@@ -386,8 +386,8 @@
         "subtitle": "Essayez d'ajuster les paramètres de votre board"
       },
       "unsetWall": {
-        "title": "Personne n’a encore ouvert sur ce mur",
-        "subtitle": "Choisis tes prises, donne-lui un nom, et le mur a son premier bloc.",
+        "title": "Personne n’a encore ouvert sur ce spray wall",
+        "subtitle": "Choisis tes prises, donne-lui un nom, et le spray wall a son premier bloc.",
         "cta": "Ouvrir le premier bloc"
       },
       "noMatches": {

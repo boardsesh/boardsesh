@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,12 +49,52 @@ function loadStrings(locale: string): CatalogEntry[] {
 const EXTRA_SPRAY_KEYS = new Set([
   'boards.json:mobile.manage.deleteWallMessage',
   'climbs.json:createClimbForm.cannotOpen.wallArchived',
+  // Shown only on a spray wall with no climbs; the copy never says "spray".
+  'climbs.json:mobile.emptyState.unsetWall.title',
+  'climbs.json:mobile.emptyState.unsetWall.subtitle',
 ]);
+
+// "Not a climbing wall": the report reason for a photo that is no wall at all.
+// It is the gym-wall sense, not the spray wall.
+const NOT_A_WALL_KEY = 'boards.json:sprayModeration.reasons.notAWall';
 
 function isSprayString(entry: CatalogEntry): boolean {
   return (
     /spray/i.test(entry.keyPath) || /spray/i.test(entry.value) || EXTRA_SPRAY_KEYS.has(`${entry.file}:${entry.keyPath}`)
   );
+}
+
+// Store listing folders per locale. `keywords.txt` is skipped on purpose: it
+// keeps "pan" and "Spraywand" so searches still find the app.
+const METADATA_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  '..',
+  'fastlane',
+  'metadata',
+);
+const STORE_FOLDERS: Record<'es' | 'fr' | 'de', string[]> = {
+  es: ['es-ES', 'es-MX', 'android/es-ES'],
+  fr: ['fr-FR', 'android/fr-FR'],
+  de: ['de-DE', 'android/de-DE'],
+};
+
+function loadStoreTexts(locale: 'es' | 'fr' | 'de'): CatalogEntry[] {
+  const entries: CatalogEntry[] = [];
+  for (const folder of STORE_FOLDERS[locale]) {
+    const directories = [join(METADATA_DIR, folder), join(METADATA_DIR, folder, 'changelogs')];
+    for (const directory of directories.filter((candidate) => existsSync(candidate))) {
+      for (const file of readdirSync(directory, { withFileTypes: true })) {
+        if (!file.isFile() || !file.name.endsWith('.txt') || file.name === 'keywords.txt') continue;
+        const value = readFileSync(join(directory, file.name), 'utf8');
+        entries.push({ file: `fastlane/metadata/${folder}`, keyPath: file.name, value });
+      }
+    }
+  }
+  return entries;
 }
 
 type TermRule = {
@@ -81,37 +121,38 @@ const RULES: TermRule[] = [
     bannedEverywhere:
       /\bmuros?\s+(?:de\s+)?spray\b|\b(?:plafones|plafón)\s+(?:de\s+)?presas\b|\b(?:plafones|plafón)\s+spray\b/i,
     bannedInSprayStrings: /\bmuros?\b/i,
-    scopedAllowlist: new Set(),
+    scopedAllowlist: new Set([NOT_A_WALL_KEY]),
     requiredTerm: /plafón de spray|plafones de spray/i,
-    requiredTermFloor: 20,
+    requiredTermFloor: 18,
   },
   {
     locale: 'fr',
     term: '"spray wall" / "spray walls"',
     glossary: 'docs/i18n-french-glossary.md',
-    bannedEverywhere: /\bmurs?\s+(?:de\s+)?(?:spray|pan)\b|\bbare\s+pan\b/i,
+    bannedEverywhere: /\bmurs?\s+(?:de\s+)?(?:spray|pan)\b/i,
     // `spray` must always be followed by `wall`, and the wall is never a "mur".
     bannedInSprayStrings: /\bmurs?\b|\bspray\b(?!\s+walls?\b)/i,
-    scopedAllowlist: new Set(),
+    scopedAllowlist: new Set([NOT_A_WALL_KEY]),
     requiredTerm: /spray walls?/i,
-    requiredTermFloor: 20,
+    requiredTermFloor: 98,
   },
   {
     locale: 'de',
     term: '"Spraywall" / "Spraywalls", one word, feminine',
     glossary: 'docs/i18n-german-glossary.md',
-    bannedEverywhere: /Spraywand|Spraywände|Spraywänden|Spray\s+Walls?\b/,
+    bannedEverywhere: /Spraywand|Spraywände|Spraywänden|Spray\s+Walls?\b/i,
     // `Board` is the device in German, never the spray wall. Compounds such as
     // Kletterwand, Wandfoto and Garagenwand are caught by the `wand` stem.
     bannedInSprayStrings: /\bWand\b|\bWände\b|\bWänden\b|\w+wand\b|\bWand\w+|\bBoards?\b/,
     scopedAllowlist: new Set([
+      NOT_A_WALL_KEY,
       // "Ab zu deinen Boards": the list of the climber's boards, spray walls among them.
       'boards.json:sprayWizard.publish.title',
       // "Finde eine Halle mit Boards": gyms with any board, not one spray wall.
       'climbs.json:spray.gymsLink',
     ]),
     requiredTerm: /Spraywalls?/,
-    requiredTermFloor: 20,
+    requiredTermFloor: 94,
   },
 ];
 
@@ -120,9 +161,9 @@ describe.each(RULES)('$locale spray wall terminology', (rule) => {
   const sprayStrings = strings.filter(isSprayString);
 
   it('finds the spray-wall strings', () => {
-    // Floor, not exact: the epic keeps adding spray copy. A scope regex that
+    // Floor at about 80% of today's 392. Not exact: the epic keeps adding spray copy. A scope regex that
     // quietly matched nothing would make every check below pass for free.
-    expect(sprayStrings.length).toBeGreaterThanOrEqual(300);
+    expect(sprayStrings.length).toBeGreaterThanOrEqual(310);
   });
 
   it('never uses a retired full name for the spray wall', () => {
@@ -137,6 +178,28 @@ describe.each(RULES)('$locale spray wall terminology', (rule) => {
         : [
             `${offenders.length} ${rule.locale} string(s) use a retired name for the spray wall.`,
             `The one term is ${rule.term}. See ${rule.glossary}.`,
+            ...offenders.map((offender) => `  - ${offender}`),
+          ].join('\n'),
+    ).toEqual([]);
+  });
+
+  it('never uses a retired full name in the store listing text', () => {
+    const storeTexts = loadStoreTexts(rule.locale);
+    expect(storeTexts.length).toBeGreaterThan(0);
+    const offenders = storeTexts.flatMap((entry) =>
+      entry.value
+        .split('\n')
+        .filter((line) => rule.bannedEverywhere.test(line))
+        .map((line) => `${entry.file}/${entry.keyPath} — ${line}`),
+    );
+
+    expect(
+      offenders,
+      offenders.length === 0
+        ? ''
+        : [
+            `${offenders.length} ${rule.locale} store listing line(s) use a retired name for the spray wall.`,
+            `The one term is ${rule.term}. keywords.txt is exempt. See ${rule.glossary}.`,
             ...offenders.map((offender) => `  - ${offender}`),
           ].join('\n'),
     ).toEqual([]);

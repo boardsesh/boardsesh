@@ -1174,7 +1174,7 @@
     "empty": "Aucun spray wall en attente de vérification.",
     "reasons": {
       "inappropriate": "Photo ou nom inapproprié",
-      "notAWall": "Ce n’est pas un spray wall",
+      "notAWall": "Ce n’est pas un mur d’escalade",
       "personalInfo": "Informations personnelles sur la photo",
       "other": "Autre"
     },

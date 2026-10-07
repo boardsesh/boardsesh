@@ -68,7 +68,7 @@ Every string names the board device **« board »**, feminine: _la board, une bo
 
 One name for a user-built spray wall, in every string: **spray wall**, kept in English, masculine: _le spray wall, un spray wall, ce spray wall_, plural _les spray walls_. It patterns with _le mur_, so articles, adjectives and pronouns stay masculine (_Ce spray wall est archivé_, _Réinitialise-le_). Contractions work as usual: _du spray wall_, _au spray wall_.
 
-Never: _mur de spray_, _mur spray_, _murs de spray_, _murs spray_, _mur de pan_, _bare pan_. Never a bare _mur_ / _murs_ for the spray wall either (_Réinitialiser ce mur_ → _Réinitialiser ce spray wall_). Hold-detection copy keeps its own words (_prise_, _bloc_); only the name of the wall changes.
+Never: _mur de spray_, _mur spray_, _murs de spray_, _murs spray_, _mur de pan_. Never a bare _mur_ / _murs_ for the spray wall either (_Réinitialiser ce mur_ → _Réinitialiser ce spray wall_). Hold-detection copy keeps its own words (_prise_, _bloc_); only the name of the wall changes.
 
 - Store `keywords.txt` keeps « pan » so searches still find the app; everything else in `fastlane/metadata` follows this section.
 - `spray-term-consistency.test.ts` in `@boardsesh/i18n` bans the retired names in every French string, and the bare _mur_ in spray-wall strings.
