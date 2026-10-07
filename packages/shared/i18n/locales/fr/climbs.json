@@ -752,7 +752,8 @@
         "ariaLabel": "Créer une voie"
       },
       "header": {
-        "newClimb": "Nouvelle voie"
+        "newClimb": "Nouvelle voie",
+        "nameRequired": "Donnez-lui un nom pour enregistrer"
       },
       "save": {
         "idle": "Enregistrer",

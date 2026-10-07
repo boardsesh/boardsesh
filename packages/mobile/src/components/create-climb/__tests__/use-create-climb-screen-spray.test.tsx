@@ -242,6 +242,22 @@ describe('the setter grade gates a publish', () => {
     expect(result.current.focusNameSignal).toBe(0);
   });
 
+  it('says the name is missing on a Save tap with no name, and clears it once typing starts', async () => {
+    const { result } = renderHook(() => useCreateClimbScreen({ board: KILTER_BOARD }));
+    expect(result.current.nameMissingHint).toBe(false);
+
+    await act(async () => {
+      await result.current.handleSave();
+    });
+
+    expect(result.current.focusNameSignal).toBe(1);
+    expect(result.current.nameMissingHint).toBe(true);
+    expect(boardActions.saveClimb).not.toHaveBeenCalled();
+
+    act(() => result.current.setName('S'));
+    expect(result.current.nameMissingHint).toBe(false);
+  });
+
   it('still disables Save, and names the holds, while a start or finish is missing', () => {
     createClimb.canPublish = false;
     try {

@@ -752,7 +752,8 @@
         "ariaLabel": "Boulder bauen"
       },
       "header": {
-        "newClimb": "Neuer Boulder"
+        "newClimb": "Neuer Boulder",
+        "nameRequired": "Gib ihm einen Namen zum Speichern"
       },
       "save": {
         "idle": "Speichern",

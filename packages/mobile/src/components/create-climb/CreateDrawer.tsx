@@ -45,6 +45,7 @@ import { computeBoardMaxHeight } from './create-drawer-layout';
 import { OpenDraftsSection } from './OpenDraftsSection';
 import { DuplicateBanner } from './DuplicateBanner';
 import { InlineConfirmBanner } from './InlineConfirmBanner';
+import { NameRequiredHint } from './NameRequiredHint';
 import { LostHoldGhostLayer } from './LostHoldGhostLayer';
 import type { LostHoldGhostsState } from './use-lost-hold-ghosts';
 import { useTranslation } from 'react-i18next';
@@ -514,6 +515,8 @@ export function CreateDrawer({
               onFootprint={handleConfirmBannerFootprint}
             />
           ) : null}
+
+          {controller.nameMissingHint ? <NameRequiredHint /> : null}
 
           {controller.publishDuplicateError ? (
             <DuplicateBanner
