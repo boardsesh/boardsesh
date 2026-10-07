@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 import { StackedBarChart } from '../../you/YouCharts';
 import { buildSessionGradeBars } from '../../you/profile-chart-colors';
@@ -6,6 +6,8 @@ import { useGradeFormat } from '../../../hooks/use-grade-format';
 
 type SessionGradeChartProps = {
   distribution: SessionGradeDistributionItem[];
+  /** The session's only board, or null when it spans several. */
+  boardName?: string | null;
 };
 
 /**
@@ -15,8 +17,12 @@ type SessionGradeChartProps = {
  * chart reads as a colourful grade pyramid. Returns null when there's nothing
  * logged yet.
  */
-export function SessionGradeChart({ distribution }: SessionGradeChartProps) {
-  const { formatGrade } = useGradeFormat();
+export function SessionGradeChart({ distribution, boardName }: SessionGradeChartProps) {
+  const { formatGrade: formatAnyBoardGrade } = useGradeFormat();
+  const formatGrade = useCallback(
+    (difficulty: string | null | undefined) => formatAnyBoardGrade(difficulty, boardName),
+    [formatAnyBoardGrade, boardName],
+  );
   const bars = useMemo(() => buildSessionGradeBars(distribution, formatGrade), [distribution, formatGrade]);
 
   if (!bars) return null;

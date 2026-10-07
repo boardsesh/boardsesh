@@ -28,6 +28,8 @@ type WallIdentityBlockProps = {
   /** Extreme aspect ratio starved the chrome → show only grade + name (shed the
    *  lower-priority setter + driver lines) so the controls still fit. */
   compact?: boolean;
+  /** The kiosk's board, so the grade reads on its scale (the wall payload names no board). */
+  boardName?: string;
 };
 
 /**
@@ -48,6 +50,7 @@ function WallIdentityBlockComponent({
   nameLines = 2,
   driverSize = 32,
   compact = false,
+  boardName,
 }: WallIdentityBlockProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
@@ -59,7 +62,7 @@ function WallIdentityBlockComponent({
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
   // back to the legacy label + colour — the kiosk lights up the Boardsesh grade
   // once the backend stamps presence climbs.
-  const resolvedGrade = resolveGrade({ difficulty: climb.grade ?? '' });
+  const resolvedGrade = resolveGrade({ difficulty: climb.grade ?? '' }, boardName);
   const grade = climb.grade ? resolvedGrade.label : null;
   const gradeColor = resolvedGrade.color;
   const gradeTextColor = readableTextColor(gradeColor);

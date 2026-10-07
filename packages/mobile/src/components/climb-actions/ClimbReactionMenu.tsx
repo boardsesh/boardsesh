@@ -276,7 +276,7 @@ export function ClimbReactionMenu({
   const listActions = useMemo(() => actions.filter((action) => !PRIMARY_ACTION_IDS.includes(action.id)), [actions]);
 
   const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
-  const formattedGrade = formatGrade(climb.difficulty);
+  const formattedGrade = formatGrade(climb.difficulty, boardConfig.boardName);
 
   // Subtle byline under the name: sends · quality★ · setter · hidden (each dropped
   // when absent). Mirrors the climb-list row's primary subtitle, plus the

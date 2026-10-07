@@ -114,6 +114,8 @@ type GradeRangeRailProps = {
    */
   dismissible?: boolean;
   showTitle?: boolean;
+  /** The board the grades belong to, so labels follow its scale (MoonBoard's 6A is V2). */
+  boardName?: string | null;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -128,6 +130,7 @@ export function GradeRangeRail({
   dismissible = true,
   showTitle = false,
   accentColor,
+  boardName,
   style,
 }: GradeRangeRailProps) {
   const { t } = useTranslation('climbs');
@@ -349,7 +352,7 @@ export function GradeRangeRail({
           accessibilityState={{ selected: anySelected }}
         />
         {grades.map((grade) => {
-          const label = formatGrade(grade.name) ?? grade.name;
+          const label = formatGrade(grade.name, boardName) ?? grade.name;
           const gradeColor = getGradeColor(grade.name) ?? DEFAULT_GRADE_COLOR;
           const endpoint = isGradeEndpoint(bound, grade.difficultyId);
           const insideRange = !endpoint && isGradeInRange(bound, grade.difficultyId);
@@ -401,6 +404,8 @@ type GradeSingleSelectRailProps = {
   /** Right padding inside the rail's content — the trailing inset that keeps the
    *  last chip short of the screen edge so the rail reads as scrollable. */
   contentInsetRight?: number;
+  /** The board the grades belong to, so labels follow its scale (MoonBoard's 6A is V2). */
+  boardName?: string | null;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -413,6 +418,7 @@ export function GradeSingleSelectRail({
   colorway = 'grade',
   contentInsetLeft = spacing[4],
   contentInsetRight = spacing[4],
+  boardName,
   style,
 }: GradeSingleSelectRailProps) {
   const { t } = useTranslation('climbs');
@@ -537,7 +543,7 @@ export function GradeSingleSelectRail({
       }}
     >
       {grades.map((grade) => {
-        const label = formatGrade(grade.name) ?? grade.name;
+        const label = formatGrade(grade.name, boardName) ?? grade.name;
         const gradeColor = getGradeColor(grade.name) ?? DEFAULT_GRADE_COLOR;
         const selected = grade.difficultyId === selectedDifficultyId;
         const consensus = !selected && grade.difficultyId === consensusDifficultyId;

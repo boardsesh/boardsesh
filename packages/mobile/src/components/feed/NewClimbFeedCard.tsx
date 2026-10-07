@@ -235,7 +235,9 @@ const ClimbHero = memo(function ClimbHero({
     : null;
   // Fall back to the raw grade name when the climber's preferred system can't
   // express it, rather than dropping the grade — the session card's rule.
-  const grade = climb.difficultyName ? (formatGrade(climb.difficultyName) ?? climb.difficultyName) : null;
+  const grade = climb.difficultyName
+    ? (formatGrade(climb.difficultyName, climb.boardType) ?? climb.difficultyName)
+    : null;
   // Angle and board are separate elements, not a joined string: an ungraded
   // climb loses the grade slot instead of collapsing into a bare "30°".
   const angle = climb.angle == null ? null : `${climb.angle}°`;

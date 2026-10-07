@@ -23,6 +23,8 @@ type LogbookSessionProps = {
   maxEntries?: number;
   /** The version the climb is on now; see `LogbookEntryRow`. */
   climbCurrentRevision?: number | null;
+  /** The climb's board; see `LogbookEntryRow`. */
+  boardName?: string | null;
 };
 
 /** One day on the climb: the day as a bold line, then that day's logs as words. */
@@ -33,6 +35,7 @@ export const LogbookSession = memo(function LogbookSession({
   showDayTries,
   maxEntries,
   climbCurrentRevision,
+  boardName,
 }: LogbookSessionProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
@@ -59,6 +62,7 @@ export const LogbookSession = memo(function LogbookSession({
           entry={entry}
           showMirrorTag={showMirrorTag}
           climbCurrentRevision={climbCurrentRevision}
+          boardName={boardName}
         />
       ))}
       {hiddenCount > 0 ? (

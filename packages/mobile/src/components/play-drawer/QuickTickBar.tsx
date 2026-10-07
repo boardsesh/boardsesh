@@ -38,6 +38,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
 
   const {
     climbUuid,
+    boardName,
     tickState,
     comment,
     climbedAt,
@@ -97,6 +98,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
             grades={grades}
             selectedDifficultyId={tickState.difficulty}
             consensusDifficultyId={consensusDifficultyId}
+            boardName={boardName}
             onSelect={onGradeSelect}
             colorway="selection"
             contentInsetLeft={0}

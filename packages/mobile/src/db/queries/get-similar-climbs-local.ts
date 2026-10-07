@@ -188,7 +188,10 @@ export async function getSimilarClimbsLocal(
   ranked.sort(compareRanked);
 
   return ranked.slice(0, limit).map(({ candidate, row }) => {
-    const difficultyName = getGradeLabel(row.display_difficulty === null ? null : Math.round(row.display_difficulty));
+    const difficultyName = getGradeLabel(
+      row.display_difficulty === null ? null : Math.round(row.display_difficulty),
+      input.boardType,
+    );
     return {
       uuid: row.uuid,
       name: row.name,

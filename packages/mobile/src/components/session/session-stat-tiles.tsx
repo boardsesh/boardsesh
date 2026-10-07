@@ -34,13 +34,13 @@ export function StatTile({ value, label, icon }: { value: number; label: string;
 }
 
 /** Grade tile — the one saturated tile, tinted in the grade's own colour. */
-export function GradeTile({ grade }: { grade: string }) {
+export function GradeTile({ grade, boardName }: { grade: string; boardName?: string | null }) {
   const { t } = useTranslation('feed');
   const { formatGrade } = useGradeFormat();
   // A 15%-alpha grade tint (the participant-chip treatment) rather than a solid
   // slab, so the only saturated grade colour on screen is the chart.
   const gradeColor = gradeBadgeColor(grade);
-  const displayGrade = formatGrade(grade) ?? grade;
+  const displayGrade = formatGrade(grade, boardName) ?? grade;
   return (
     <View style={[styles.tile, { backgroundColor: withAlpha(gradeColor, 0.15) }]}>
       <Text variant="title2" color={gradeColor}>

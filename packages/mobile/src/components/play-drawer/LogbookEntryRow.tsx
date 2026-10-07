@@ -20,6 +20,8 @@ type LogbookEntryRowProps = {
    * "Earlier version" tag. A primitive, so the memo boundary holds.
    */
   climbCurrentRevision?: number | null;
+  /** The climb's board, so the grade reads on that board's scale (MoonBoard's 6A is V2). */
+  boardName?: string | null;
 };
 
 // Time of day only: the day line above the row already names the day.
@@ -59,6 +61,7 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({
   entry,
   showMirrorTag,
   climbCurrentRevision,
+  boardName,
 }: LogbookEntryRowProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
@@ -81,7 +84,7 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({
 
   const climbedAtLabel = useMemo(() => formatClimbedAt(entry.climbed_at), [entry.climbed_at]);
 
-  const grade = formatGradeByDifficultyId(entry.difficulty);
+  const grade = formatGradeByDifficultyId(entry.difficulty, boardName);
   // The effective quality, so a Kilter-pulled tick (no per-tick quality)
   // surfaces the climber's own synced star rating. Sends only: a try that did
   // not go carries no rating.

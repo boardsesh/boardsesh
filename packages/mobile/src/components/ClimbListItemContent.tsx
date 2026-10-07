@@ -386,10 +386,13 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   });
   // The canonical community difficulty may change, but the Boardsesh grade
   // fields remain authoritative when that preference is active.
-  const { label: crowdLabel, color: crowdColor } = resolveGrade({
-    ...climb,
-    difficulty: liveStats.difficulty,
-  });
+  const { label: crowdLabel, color: crowdColor } = resolveGrade(
+    {
+      ...climb,
+      difficulty: liveStats.difficulty,
+    },
+    boardName,
+  );
 
   // Your grade wins over the crowd's (#4796, #4828). Resolved ABOVE
   // `resolveGrade` rather than inside it: that resolver's contract is
@@ -400,7 +403,7 @@ const LiveClimbGrade = React.memo(function LiveClimbGrade({
   // by. It stands in until the logbook resolves this climb — which offline it
   // never does — so the label always agrees with the band the row sits in.
   const myGrade = useMyGrade(climb.uuid, angle, { rowDifficulty: climb.myDifficulty });
-  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat) : null;
+  const mine = myGrade.status === 'set' ? renderDifficulty(myGrade.difficultyId, gradeFormat, boardName) : null;
 
   // Explicit props win when a caller has authoritative data of its own (a
   // logbook or session row rendering one specific tick). Otherwise the row

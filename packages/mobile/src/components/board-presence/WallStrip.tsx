@@ -44,7 +44,7 @@ function WallStripComponent() {
   // `resolveGrade` falls back to the legacy label — the strip lights up the
   // Boardsesh grade once the backend stamps presence climbs. The colour stays the
   // warm live accent, so only the label matters here.
-  const grade = litClimb ? resolveGrade({ difficulty: litClimb.grade ?? '' }).label : null;
+  const grade = litClimb ? resolveGrade({ difficulty: litClimb.grade ?? '' }, boardConfig?.boardName).label : null;
 
   return (
     <Pressable

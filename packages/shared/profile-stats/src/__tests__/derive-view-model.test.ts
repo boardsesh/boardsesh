@@ -288,3 +288,24 @@ describe('deriveProfileViewModel aggregated-card `now` threading (screenshot-mod
     expect(vm.vPointsTimeline!.totalPoints).toBe(3 + 6); // V3 + V6
   });
 });
+
+describe('deriveProfileViewModel on MoonBoard', () => {
+  // MoonBoard converts 6A (id 16) to V2; the shared table says V3. The entries
+  // here carry no boardType, so the label must come from the board key.
+  const moonBoardTicks: Record<string, LogbookEntry[]> = {
+    moonboard: [
+      entry({ difficulty: 13, status: 'send', climbUuid: 'm1', layoutId: 3 }),
+      entry({ difficulty: 16, status: 'flash', climbUuid: 'm2', layoutId: 3 }),
+    ],
+  };
+
+  it('labels the hardest send on MoonBoard scale', () => {
+    const vm = deriveProfileViewModel({ ...base, allBoardsTicks: moonBoardTicks, selectedBoard: 'moonboard' });
+    expect(vm.hardestSend).toMatchObject({ label: 'V2', status: 'send' });
+  });
+
+  it('buckets MoonBoard 6A under V2 in the flash/redpoint chart', () => {
+    const vm = deriveProfileViewModel({ ...base, allBoardsTicks: moonBoardTicks, selectedBoard: 'moonboard' });
+    expect(vm.aggregatedFlashRedpointBars?.map((bar) => bar.label)).toEqual(['V1', 'V2']);
+  });
+});

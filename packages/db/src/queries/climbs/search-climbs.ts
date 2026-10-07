@@ -111,7 +111,7 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams, 
     // row whose `angle` moved would re-anchor and refetch on every render.
     statsAngle: result.stats_angle ?? null,
     ascensionist_count: Number(result.ascensionist_count || 0),
-    difficulty: getGradeLabel(toIntegerOrNull(result.difficulty_id)),
+    difficulty: getGradeLabel(toIntegerOrNull(result.difficulty_id), params.board_name),
     quality_average: result.quality_average?.toString() || '0',
     stars: getClimbStars(result.quality_average),
     difficulty_error: result.difficulty_error?.toString() || '0',
