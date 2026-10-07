@@ -1158,11 +1158,15 @@ export function SprayHoldEditorScreen({
       // picked, switched or added: the tap only puts the picked hold down.
       const onPhoto = isOnPhoto(boardX, boardY, photoWidth, photoHeight);
       // A hidden maybe is still a hold under the finger, so a tap there picks
-      // the maybe rather than finding nothing.
-      const hit = onPhoto
-        ? (holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) ??
-          holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius))
-        : null;
+      // the maybe rather than finding nothing. Not in a mode's pick step,
+      // which only takes ON holds: there a ring the climber can't see is bare
+      // wall, not a "switch it on first" warning.
+      const visibleHit = onPhoto ? holdAtPoint(visibleHoldsRef.current, boardX, boardY, fallbackRadius) : null;
+      const hit =
+        visibleHit ??
+        (onPhoto && !modePickingRef.current
+          ? holdAtPoint(hiddenMaybesRef.current, boardX, boardY, fallbackRadius)
+          : null);
 
       // The Pencil's own rule applies on the iPad layout only.
       const input = tabletRef.current && isStylus ? 'pencil' : 'finger';
