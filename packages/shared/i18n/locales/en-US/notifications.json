@@ -36,7 +36,9 @@
     "newClimbsSynced": "{{actor}} set new climbs",
     "gymClaimApproved": "You now manage {{gym}}",
     "gymClaimApprovedGeneric": "You're the owner now — your gym claim came through",
-    "default": "You have a new notification"
+    "default": "You have a new notification",
+    "sprayWallReady": "{{wall}} is ready to review.",
+    "sprayWallReadyGeneric": "Your wall photo is ready to review."
   },
   "errors": {
     "load": "Couldn't load your notifications"

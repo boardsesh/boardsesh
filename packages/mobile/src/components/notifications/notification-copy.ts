@@ -154,6 +154,10 @@ export function notificationCopy(notification: GroupedNotification, actor: strin
       return setterUsername
         ? { textI18nKey: 'items.newClimbsSyncedSetter', params: { setter: setterUsername } }
         : { textI18nKey: 'items.newClimbsSynced', params: { actor } };
+    case 'spray_wall_detection_completed':
+      return notification.sprayWallName
+        ? { textI18nKey: 'items.sprayWallReady', params: { wall: notification.sprayWallName } }
+        : { textI18nKey: 'items.sprayWallReadyGeneric', params: {} };
     case 'gym_claim_approved':
       return gymName
         ? { textI18nKey: 'items.gymClaimApproved', params: { gym: gymName } }
@@ -192,6 +196,8 @@ export function notificationIconName(type: NotificationType): IconName {
       return 'add';
     case 'gym_claim_approved':
       return 'gym';
+    case 'spray_wall_detection_completed':
+      return 'success';
     default:
       return 'notification';
   }

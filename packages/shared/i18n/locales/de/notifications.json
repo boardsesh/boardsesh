@@ -36,7 +36,9 @@
     "newClimbsSynced": "{{actor}} hat neue Boulder gesetzt",
     "gymClaimApproved": "Du verwaltest jetzt {{gym}}",
     "gymClaimApprovedGeneric": "Die Halle gehört jetzt dir — deine Anfrage ist durch",
-    "default": "Du hast eine neue Benachrichtigung"
+    "default": "Du hast eine neue Benachrichtigung",
+    "sprayWallReady": "{{wall}} ist bereit zur Prüfung.",
+    "sprayWallReadyGeneric": "Das Foto deines Boards ist bereit zur Prüfung."
   },
   "errors": {
     "load": "Deine Benachrichtigungen konnten nicht geladen werden"
