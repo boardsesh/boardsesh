@@ -485,6 +485,41 @@ describe('spray import completion notifications', () => {
     expect(retry).toMatchObject({ status: 'pending', ticketId: null });
   });
 
+  it('keeps a delivery retryable when push credentials are invalid', async () => {
+    const target = await completedWall();
+    await notificationDeviceMutations.registerNotificationDevice(
+      {},
+      {
+        input: {
+          installationId: randomUUID(),
+          token: `ExpoPushToken[${randomUUID()}]`,
+          platform: 'ios',
+          locale: 'en-US',
+        },
+      },
+      target.ctx,
+    );
+    await finishSprayDetection(db, target.detectionId, target.attemptToken, proposal);
+    const boss = await startJobQueue();
+    await notifySprayDetectionCompleted(boss, target.detectionId);
+    const [delivery] = await db
+      .select()
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.notificationUuid, target.detectionId));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: { status: 'error', details: { error: 'InvalidCredentials' } } }), {
+            status: 200,
+          }),
+      ),
+    );
+    await expect(deliverSprayNotification(boss, delivery.id)).rejects.toThrow('EXPO_PUSH_RETRY');
+    const [kept] = await db.select().from(notificationDeliveries).where(eq(notificationDeliveries.id, delivery.id));
+    expect(kept).toMatchObject({ status: 'pending', ticketId: null });
+  });
+
   it('keeps a failed HTTP delivery pending and persists the successful retry ticket', async () => {
     const target = await completedWall();
     await notificationDeviceMutations.registerNotificationDevice(
