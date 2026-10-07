@@ -1,7 +1,14 @@
 import { sql } from 'drizzle-orm';
 import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
+import {
+  STATE_TO_PRIMARY_CODE,
+  convertLitUpHoldsStringToMap,
+  isAuroraBoardName,
+  isSentinelHoldState,
+  minimumStoredHoldId,
+  projectAuroraFramesToStoredRows,
+} from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 import {
   CLIMB_CHARACTERISTICS,
@@ -25,11 +32,14 @@ export type DuplicateGateExecutor = {
   execute(query: SQLWrapper | string): PromiseLike<unknown>;
 };
 
-// The frames parser and its hold types live in `@boardsesh/db` so the nightly
-// neighbour job (`packages/db/scripts/refresh-climb-neighbors.ts`) reads a
-// climb's holds exactly as this module does. Re-exported for existing callers.
-export { parseFramesToHoldEntries, type NormalizedHold, type NormalizedHoldRow } from '@boardsesh/db/queries';
-import type { NormalizedHold } from '@boardsesh/db/queries';
+export type NormalizedHold = {
+  holdId: number;
+  holdState: string;
+};
+
+export type NormalizedHoldRow = NormalizedHold & {
+  frameNumber: number;
+};
 
 export type ExactDuplicateMatch = {
   uuid: string;
@@ -75,10 +85,52 @@ export type SimilarClimbResult = {
 const KNOWN_HOLD_STATES: ReadonlyArray<string> = Array.from(
   new Set(Object.values(STATE_TO_PRIMARY_CODE).flatMap((perBoard) => Object.keys(perBoard))),
 ).sort();
+const KNOWN_HOLD_STATE_SET = new Set(KNOWN_HOLD_STATES);
 const KNOWN_HOLD_STATES_SQL = sql`(${sql.join(
   KNOWN_HOLD_STATES.map((state) => sql`${state}`),
   sql`, `,
 )})`;
+
+export function isSupportedSimilarityHold(row: NormalizedHold, boardType: BoardName): boolean {
+  return (
+    Number.isSafeInteger(row.holdId) &&
+    row.holdId >= minimumStoredHoldId(boardType) &&
+    KNOWN_HOLD_STATE_SET.has(row.holdState)
+  );
+}
+
+function supportedHoldIdSql(boardType: BoardName, column: SQLWrapper): SQL {
+  return minimumStoredHoldId(boardType) === 0 ? sql`${column} >= 0` : sql`${column} > 0`;
+}
+
+/**
+ * Parse the Aurora-style frame string ("p<id>r<role>p<id>r<role>...,p<id>r<role>...")
+ * into the one-row-per-hold shape persisted by board_climb_holds. Aurora
+ * boards use the shared first-valid projector; MoonBoard keeps its existing
+ * decoded-map path.
+ *
+ * Returns only holds whose state code resolves to a named state (STARTING /
+ * HAND / FINISH / FOOT) — unknown codes (the synthetic "1=42" sentinel) are
+ * dropped so they can't poison signatures.
+ */
+export function parseFramesToHoldEntries(boardType: BoardName, frames: string | null | undefined): NormalizedHoldRow[] {
+  if (!frames) return [];
+  if (isAuroraBoardName(boardType)) {
+    return projectAuroraFramesToStoredRows(frames, boardType).rows;
+  }
+  const frameMap = convertLitUpHoldsStringToMap(frames, boardType);
+  const rows: NormalizedHoldRow[] = [];
+  for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
+    const frameNumber = Number(frameIndexKey);
+    for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
+      if (isSentinelHoldState(hold.state)) continue;
+      const holdId = Number(holdIdKey);
+      if (!Number.isSafeInteger(holdId) || holdId < minimumStoredHoldId(boardType)) continue;
+      rows.push({ frameNumber, holdId, holdState: hold.state });
+    }
+  }
+  return rows;
+}
 
 /**
  * Build the canonical signature used to detect exact-match duplicates. Sorts
@@ -240,8 +292,9 @@ export async function findExactDuplicateMatch({
         ${dbSchema.boardClimbs.angle} AS angle
       FROM ${dbSchema.boardClimbs}
       INNER JOIN ${dbSchema.boardClimbHolds}
-        ON ${dbSchema.boardClimbHolds.climbUuid} = ${dbSchema.boardClimbs.uuid}
+       ON ${dbSchema.boardClimbHolds.climbUuid} = ${dbSchema.boardClimbs.uuid}
        AND ${dbSchema.boardClimbHolds.boardType} = ${dbSchema.boardClimbs.boardType}
+       AND ${supportedHoldIdSql(boardType, dbSchema.boardClimbHolds.holdId)}
        AND ${dbSchema.boardClimbHolds.holdState} IN ${KNOWN_HOLD_STATES_SQL}
       LEFT JOIN ${dbSchema.boardClimbStats}
         ON ${dbSchema.boardClimbStats.boardType} = ${dbSchema.boardClimbs.boardType}
@@ -351,7 +404,13 @@ export async function findSimilarClimbs({
 }: FindSimilarClimbsArgs): Promise<SimilarClimbResult[]> {
   // Reduce to unique hold positions on the target. State is intentionally
   // dropped — see the docblock above.
-  const targetHoldIds = Array.from(new Set(holds.map(({ holdId }) => holdId)));
+  const targetHoldIds = Array.from(
+    new Set(
+      holds
+        .map(({ holdId }) => holdId)
+        .filter((holdId) => Number.isSafeInteger(holdId) && holdId >= minimumStoredHoldId(boardType)),
+    ),
+  );
   if (targetHoldIds.length === 0) return [];
 
   const targetSize = targetHoldIds.length;
@@ -407,6 +466,7 @@ export async function findSimilarClimbs({
           ON c.uuid = h.climb_uuid
          AND c.board_type = h.board_type
         WHERE h.board_type = ${boardType}
+          AND ${supportedHoldIdSql(boardType, sql`h.hold_id`)}
           AND h.hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND c.layout_id = ${layoutId}
           AND c.is_draft = FALSE
@@ -436,6 +496,7 @@ export async function findSimilarClimbs({
         SELECT climb_uuid AS uuid, COUNT(DISTINCT hold_id) AS n
         FROM ${dbSchema.boardClimbHolds}
         WHERE board_type = ${boardType}
+          AND ${supportedHoldIdSql(boardType, sql`hold_id`)}
           AND hold_state IN ${KNOWN_HOLD_STATES_SQL}
           AND climb_uuid IN (SELECT uuid FROM candidate_overlaps)
         GROUP BY climb_uuid
