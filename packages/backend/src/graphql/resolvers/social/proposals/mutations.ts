@@ -102,7 +102,7 @@ export const socialProposalMutations = {
       publishCommentAddedLive('proposal', proposal.uuid, comment);
     }
 
-    await runAutoApproval(proposal, proposerId);
+    await runAutoApproval(proposal, proposerId, { filedByActor: true });
     publishProposalCreated(proposal, proposerId);
 
     return enrichProposal(proposal, proposerId);
@@ -306,7 +306,9 @@ export const socialProposalMutations = {
     // sits at threshold with nobody left to carry it over. The tally is
     // idempotent and the status flip is guarded on `status = 'open'` under the
     // proposal lock, so a duplicate report can never approve twice.
-    await runAutoApproval(outcome.proposal, reporterId);
+    // A report is the reporter filing the change, so a spray wall owner's grade
+    // report applies at once (#5971) whether it opened the proposal or joined it.
+    await runAutoApproval(outcome.proposal, reporterId, { filedByActor: true });
 
     if (outcome.status === 'created') {
       publishProposalCreated(outcome.proposal, reporterId);

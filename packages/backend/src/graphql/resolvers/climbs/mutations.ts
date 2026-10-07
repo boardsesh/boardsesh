@@ -36,7 +36,6 @@ import {
   assertSprayAngleMatchesWall,
   assertSprayClimbIsSingleFrame,
   populateSprayClimbColumns,
-  assertSprayGradeOnPublish,
   assertSprayHoldsAreAlive,
   assertSprayTargetNotArchived,
   assertSprayWallAcceptsClimbsUnderLock,
@@ -183,10 +182,6 @@ export const climbMutations = {
       // An archived wall is read-only: nothing new is set on it. Early here for a
       // fast answer; the deciding check runs under the wall lock below.
       assertSprayTargetNotArchived(sprayTarget);
-      // Ahead of every write: a spray wall has no crowd grade to converge on
-      // (`crowdGrade: false`), so a published climb with no setter grade would
-      // stay ungraded forever.
-      assertSprayGradeOnPublish(validated.isDraft, validated.userGrade);
       // A wall's angle is fixed for its life — it is chosen once at creation and
       // `is_angle_adjustable` is false — so an angle that disagrees with the wall
       // is a client bug, and accepting it would scatter the wall's climbs and
@@ -438,11 +433,9 @@ export const climbMutations = {
       // before any other write occurs. Matches migration 0096 Step 1, which only
       // backfills rows where is_draft = FALSE, and updateClimb (below) which seeds
       // on draft → publish transition.
-      // Spray seeds the SETTER'S grade into the stats row, because there is no
-      // other place a spray climb's grade can live: the board has
-      // `crowdGrade: false`, so nothing will ever converge on a consensus
-      // difficulty, and `board_climb_stats` is the only table the grade-display
-      // path reads. Drafts get the row too when a grade is present — exactly the
+      // Spray: an older app still sends the setter's grade. It is seeded as a
+      // provisional grade, which the first graded send replaces (#5971,
+      // `climber-vote-grade.ts`). Drafts get the row too when a grade is present — exactly the
       // MoonBoard reasoning: `updateClimb`'s publish-time seed has no grade
       // source to reconstruct from, so skipping it here would lose the grade
       // through draft → publish. Search still filters drafts out by
@@ -833,14 +826,13 @@ export const climbMutations = {
       assertSprayAngleMatchesWall(sprayTarget, validated.angle);
     }
 
-    // Publishing a spray climb needs a grade, and it may come from EITHER side: the
-    // stats row `saveClimb` seeded when the draft carried a grade, or `userGrade`
-    // on this call for a draft that did not. Accepting only the stored row is what
-    // made an ungraded draft unpublishable forever — `saveClimb` lets a draft
-    // through without a grade on purpose, because the grade is the last thing a
-    // setter decides.
+    // A spray climb publishes without a grade: its first ascent grades it (#5971,
+    // `climber-vote-grade.ts`). An older app still sends the setter's grade on the
+    // publish; it is seeded as a provisional grade the first graded send replaces,
+    // unless the draft already carries one. A `userGrade` on any other edit is
+    // ignored: a published climb's grade changes through a proposal.
     let sprayGradeToSeed: number | null = null;
-    if (sprayTarget && transitioningToPublished) {
+    if (sprayTarget && transitioningToPublished && validated.userGrade) {
       const [gradedStats] = await db
         .select({ displayDifficulty: dbSchema.boardClimbStats.displayDifficulty })
         .from(dbSchema.boardClimbStats)
@@ -854,34 +846,12 @@ export const climbMutations = {
         .limit(1);
 
       if (gradedStats?.displayDifficulty == null) {
-        assertSprayGradeOnPublish(false, validated.userGrade);
         sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
         if (sprayGradeToSeed === null) {
           throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
             extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
           });
         }
-      }
-    }
-
-    // A grade EDIT, as opposed to the publish transition above.
-    //
-    // `saveClimb` seeds the setter's grade and the transition re-seeds it, but
-    // neither covers what the editor's picker actually offers most of the time:
-    // reopening a published climb and moving the grade. Without this the mutation
-    // returned success, the client showed a "published" toast and updated its
-    // saved baseline, and the stats row kept the old grade — the climb re-read as
-    // whatever it was graded the first time.
-    //
-    // No extra authorization: the gate above has already let through only the
-    // setter, within the window. The grade goes on the climb's stats row, and
-    // `fa_username` stays `existing.setterUsername`.
-    if (sprayTarget && sprayGradeToSeed === null && validated.userGrade != null) {
-      sprayGradeToSeed = await resolveDifficultyId(boardType, validated.userGrade);
-      if (sprayGradeToSeed === null) {
-        throw new GraphQLError(`"${validated.userGrade}" is not a grade on the Boardsesh scale`, {
-          extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
-        });
       }
     }
 
@@ -1236,12 +1206,10 @@ export const climbMutations = {
       // because search filters by exact angle, and removing it would race with concurrent ticks.
       // The combined check also re-narrows `resolvedAngle` to non-null for TS — we threw
       // above on (shouldSeedStats && null) so the second clause is the only path through.
-      // The grade this call supplied — either the one the publish needs, or a
-      // plain grade edit. `onConflictDoUpdate` rather than `DoNothing`: a draft
-      // created without a grade may already HAVE a barebones stats row (a previous
-      // angle edit seeds one), and leaving it ungraded would publish a spray climb
-      // with no grade after the check above said there was one. The same update is
-      // what lets a setter MOVE the grade of a climb that already has stats.
+      // The provisional grade an older app sent with the publish.
+      // `onConflictDoUpdate` rather than `DoNothing`: a draft created without a
+      // grade may already HAVE a barebones stats row (a previous angle edit seeds
+      // one), and the grade would otherwise be dropped.
       if (sprayGradeToSeed !== null && resolvedAngle !== null) {
         await tx
           .insert(dbSchema.boardClimbStats)

@@ -24,10 +24,9 @@ import {
  *     caller could publish climbs into a stranger's private wall. Note it is
  *     VIEW access, not edit: setting a climb on a gym's spray wall is what a gym
  *     member is there to do, and only the wall's holds are the owner's alone.
- *  2. **A setter grade is required to publish.** `getBoardCapabilities('spray')`
- *     answers `crowdGrade: false`: there is no consensus grade to converge on
- *     because a home wall has a handful of climbers, so a published climb with no
- *     grade would stay ungraded forever.
+ *  2. **No setter grade.** A climb publishes ungraded and its first ascent grades
+ *     it (#5971, `climber-vote-grade.ts` in `@boardsesh/db`). `gradeRequired` is
+ *     kept only for a grade label an older app sends that is not on the scale.
  *  3. **Every hold has to be alive on the current version.** A climb set on a
  *     hold that came off in an earlier reset is a climb nobody can do, and
  *     `missing_hold_count` exists to describe holds that came off AFTER the climb
@@ -183,21 +182,6 @@ async function findVisibleSprayWall(
  */
 export function assertSprayTargetNotArchived(target: Pick<SprayClimbTarget, 'archivedAt'>): void {
   if (target.archivedAt != null) throw sprayWallArchivedError();
-}
-
-/**
- * Refuse a publish with no setter grade.
- *
- * Drafts are exempt: a draft is a work in progress, and the grade is the last
- * thing a setter decides. `updateClimb`'s draft → publish transition runs the
- * same check, which is why it lives here rather than inline in either resolver.
- */
-export function assertSprayGradeOnPublish(isDraft: boolean, userGrade: string | null | undefined): void {
-  if (isDraft) return;
-  if (userGrade && userGrade.trim().length > 0) return;
-  throw new GraphQLError('A spray wall climb needs your grade before you can publish it', {
-    extensions: { code: SPRAY_CLIMB_CODES.gradeRequired },
-  });
 }
 
 /**

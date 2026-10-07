@@ -406,7 +406,56 @@ export async function flipVoteToUpvote(
  * counting reads through the `db` singleton, so a pending vote in an
  * uncommitted transaction would be invisible to it.
  */
-export async function runAutoApproval(proposal: ProposalRow, actorId: string): Promise<ProposalRow> {
+/**
+ * Is `userId` the owner of the spray wall this climb is on?
+ *
+ * Board climbs → `spray_walls` by the wall's layout → the wall's `user_boards`
+ * row. False for a climb on any other board, which has no wall.
+ */
+export async function isSprayWallOwnerOfClimb(
+  climbUuid: string,
+  userId: string,
+  executor: ProposalExecutor = db,
+): Promise<boolean> {
+  const [owned] = await executor
+    .select({ ownerId: dbSchema.userBoards.ownerId })
+    .from(dbSchema.boardClimbs)
+    .innerJoin(dbSchema.sprayWalls, eq(dbSchema.sprayWalls.layoutId, dbSchema.boardClimbs.layoutId))
+    .innerJoin(dbSchema.userBoards, eq(dbSchema.userBoards.uuid, dbSchema.sprayWalls.boardUuid))
+    .where(
+      and(
+        eq(dbSchema.boardClimbs.uuid, climbUuid),
+        eq(dbSchema.boardClimbs.boardType, 'spray'),
+        eq(dbSchema.userBoards.ownerId, userId),
+      ),
+    )
+    .limit(1);
+  return owned != null;
+}
+
+/**
+ * A grade proposal the wall OWNER files on a spray climb applies at once (#5971):
+ * a home wall has a handful of climbers, and the owner is the one who knows it.
+ * Everyone else, the climb's setter included, goes through the vote.
+ *
+ * Only for a proposal the actor is filing (`createProposal`, `reportClimb`), never
+ * for a vote on someone else's: `filedByActor` says which.
+ */
+async function ownerFiledSprayGrade(
+  proposal: ProposalRow,
+  actorId: string,
+  filedByActor: boolean,
+  executor: ProposalExecutor,
+): Promise<boolean> {
+  if (!filedByActor || proposal.type !== 'grade' || proposal.boardType !== 'spray') return false;
+  return isSprayWallOwnerOfClimb(proposal.climbUuid, actorId, executor);
+}
+
+export async function runAutoApproval(
+  proposal: ProposalRow,
+  actorId: string,
+  options: { filedByActor?: boolean } = {},
+): Promise<ProposalRow> {
   // The threshold is resolved BEFORE the lock is taken. `resolveCommunitySetting`
   // reads through the `db` singleton, so resolving it inside the locked
   // transaction would check out a second pool connection while holding one —
@@ -418,7 +467,9 @@ export async function runAutoApproval(proposal: ProposalRow, actorId: string): P
   // in one transaction: counted outside it, a voter toggling off between the
   // count and the flip could approve a proposal that is no longer at threshold.
   const approved = await withProposalLock(proposal.climbUuid, proposal.type, async (tx) => {
-    const shouldApprove = await checkAutoApproval(proposal.id, required, tx);
+    const shouldApprove =
+      (await ownerFiledSprayGrade(proposal, actorId, options.filedByActor === true, tx)) ||
+      (await checkAutoApproval(proposal.id, required, tx));
     if (!shouldApprove) return null;
 
     const [row] = await tx
