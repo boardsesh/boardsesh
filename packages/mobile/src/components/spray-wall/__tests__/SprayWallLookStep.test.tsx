@@ -17,6 +17,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 402, height: 874, fontScale: 1 }),
   Platform: { OS: 'ios', select: (choices: { ios: unknown }) => choices.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
   View: ({
     children,

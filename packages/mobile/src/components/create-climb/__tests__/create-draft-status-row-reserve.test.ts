@@ -6,6 +6,7 @@ vi.mock('react-native', () => ({
   View: 'View',
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   Platform: { OS: 'ios', select: (choices: Record<string, unknown>) => choices.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('../../Text', () => ({ Text: 'Text' }));

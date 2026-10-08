@@ -3,6 +3,7 @@ import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

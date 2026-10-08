@@ -15,6 +15,7 @@ function flatten(style: unknown): Record<string, unknown> {
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown }) => options.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children, style, testID }: ViewMockProps) =>
     createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style)) }, children),

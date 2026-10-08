@@ -125,6 +125,7 @@ vi.mock('react-native', () => ({
   // `Platform.OS` at module top level (outside any component body) — needed
   // even though nothing in this suite exercises a platform branch directly.
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
 }));
 

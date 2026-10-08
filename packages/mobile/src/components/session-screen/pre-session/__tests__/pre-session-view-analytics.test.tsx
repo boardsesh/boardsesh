@@ -86,6 +86,7 @@ vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
 // colors.ts if the shared module runner evaluates it under this mock.
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },

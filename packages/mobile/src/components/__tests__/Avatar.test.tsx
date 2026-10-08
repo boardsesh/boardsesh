@@ -4,6 +4,7 @@ vi.mock('react-native', () => ({
   Image: () => null,
   PixelRatio: { get: () => 3 },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: unknown) => styles },
   View: () => null,

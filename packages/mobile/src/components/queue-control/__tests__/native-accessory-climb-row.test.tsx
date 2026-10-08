@@ -38,6 +38,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({
     children,

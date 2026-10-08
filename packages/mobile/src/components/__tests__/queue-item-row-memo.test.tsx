@@ -69,6 +69,7 @@ vi.mock('react-native', () => {
       createElement(tag, null, children);
   return {
     Platform: platform,
+    DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (name: string) => name,
     View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
       if (testID === 'tick-button') {

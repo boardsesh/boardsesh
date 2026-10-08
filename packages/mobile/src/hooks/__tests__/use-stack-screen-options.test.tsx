@@ -15,6 +15,7 @@ vi.mock('react-native', () => ({
       return ctrl.os;
     },
   },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('../../providers/theme-provider', () => ({

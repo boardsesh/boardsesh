@@ -12,6 +12,7 @@ const donationLinks = vi.hoisted(() => ({ allowed: false }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (colorName: string) => colorName,
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('section', null, children),
   StyleSheet: { create: (styles: unknown) => styles },

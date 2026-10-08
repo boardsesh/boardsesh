@@ -152,7 +152,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
             accessibilityLabel={t('mobile.a11y.clearSearch')}
             style={styles.clearTarget}
           >
-            <Icon name="search.clear" size={18} color={systemColors.tertiaryLabel} />
+            <Icon name="search.clear" size={18} color={systemColors.secondaryLabel} />
           </Pressable>
         )}
       </View>

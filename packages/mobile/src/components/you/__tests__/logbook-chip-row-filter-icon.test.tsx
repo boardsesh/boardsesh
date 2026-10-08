@@ -58,6 +58,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T): T => styles },
   // src/theme/colors.ts reads Platform.OS / PlatformColor at module load.
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

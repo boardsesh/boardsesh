@@ -31,6 +31,7 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onPress, 'data-label': accessibilityLabel }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   Platform: { OS: 'ios', select: (choices: Record<string, unknown>) => choices.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

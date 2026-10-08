@@ -8,6 +8,7 @@ type A11yState = { disabled?: boolean; selected?: boolean };
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
   Platform: { OS: 'ios', select: (choices: { ios: unknown }) => choices.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
   View: ({
     children,

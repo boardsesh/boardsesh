@@ -64,6 +64,7 @@ vi.mock('react-native', () => ({
     Version: '26.1',
     select: (options: { ios?: unknown; android?: unknown }) => options.ios,
   },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children, style, testID }: ViewMockProps) => {
     if (testID === 'sheet-chrome-column') {
