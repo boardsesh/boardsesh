@@ -124,6 +124,169 @@ export interface PatchRule {
  * package that has neither a rule nor an allowlist entry.
  */
 export const RULES: readonly PatchRule[] = [
+  // Consent withdrawal must discard buffered Observe rows independently of
+  // retry backoff, then recheck permission at each native dispatch boundary.
+  {
+    package: 'expo-observe',
+    file: 'ios/Observability.swift',
+    sentinels: [
+      'internal static func discardPendingEvents() throws',
+      'consentGeneration &+= 1',
+      'AppMetrics.getMaxMetricId() { ObserveUserDefaults.lastDispatchedMetricId = highestId }',
+      'AppMetrics.getMaxLogId() { ObserveUserDefaults.lastDispatchedLogId = highestId }',
+      `send: { metrics in
+        guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }`,
+      `send: { logs in
+        guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }`,
+      'max(ObserveUserDefaults.lastDispatchedMetricId, $0)',
+      'max(ObserveUserDefaults.lastDispatchedLogId, $0)',
+    ],
+    patchedKey: 'expo-observe@57.0.24',
+  },
+  {
+    package: 'expo-observe',
+    file: 'ios/ObserveModule.swift',
+    sentinels: [
+      `AsyncFunction("discardPendingEvents") {
+      try await AppMetricsActor.isolated {
+        try ObservabilityManager.discardPendingEvents()`,
+    ],
+    patchedKey: 'expo-observe@57.0.24',
+  },
+  {
+    package: 'expo-observe',
+    file: 'android/src/main/java/expo/modules/observe/ObservabilityManager.kt',
+    sentinels: [
+      `suspend fun discardPendingEvents(): Unit = metricsDispatchMutex.withLock {
+    logsDispatchMutex.withLock {
+      ObservePreferences.setLastDispatchedMetricId(context, sessionManager.getMaxMetricId() ?: -1)
+      ObservePreferences.setLastDispatchedLogId(context, sessionManager.getMaxLogId() ?: -1)`,
+      `if (!shouldDispatch()) {
+        ObservePreferences.setLastDispatchedMetricId(context, sessionManager.getMaxMetricId() ?: -1)
+        return`,
+      `if (!shouldDispatch()) {
+        ObservePreferences.setLastDispatchedLogId(context, sessionManager.getMaxLogId() ?: -1)
+        return`,
+      'baseManager.discardPendingEvents()',
+    ],
+    patchedKey: 'expo-observe@57.0.24',
+  },
+  {
+    package: 'expo-observe',
+    file: 'android/src/main/java/expo/modules/observe/ObserveModule.kt',
+    sentinels: [
+      `AsyncFunction("discardPendingEvents") Coroutine { ->
+        observabilityManager.discardPendingEvents()`,
+    ],
+    patchedKey: 'expo-observe@57.0.24',
+  },
+  // Native crash/transaction uploads bypass JavaScript beforeSend hooks.
+  {
+    package: '@sentry/react-native',
+    file: 'ios/RNSentry.mm',
+    sentinels: [
+      `event.user = nil;
+        [self setEventOriginTag:event];`,
+      '[mutableOptions setValue:beforeSend forKey:@"beforeSend"];',
+      '[mutableOptions setValue:@NO forKey:@"sendDefaultPii"];',
+    ],
+    patchedKey: '@sentry/react-native@8.24.0',
+  },
+  {
+    package: '@sentry/react-native',
+    file: 'android/src/main/java/io/sentry/react/RNSentryStart.java',
+    sentinels: [
+      'options.setSendDefaultPii(false);',
+      `options.setBeforeSendTransaction((transaction, hint) -> {
+      transaction.setUser(null);`,
+      'transaction.getContexts().getDevice().setId(null);',
+      `event.setUser(null);
+          if (event.getContexts().getDevice() != null) event.getContexts().getDevice().setId(null);`,
+    ],
+    patchedKey: '@sentry/react-native@8.24.0',
+  },
+  // Pin the callable source and both distributed JS entrypoints: exporting a
+  // type alone cannot stop recording in a compiled native replay SDK.
+  ...(['src/index.tsx', 'lib/module/index.js', 'lib/commonjs/index.js'] as const).map((file) => ({
+    package: 'posthog-react-native-session-replay',
+    file,
+    sentinels: [
+      'return PosthogReactNativeSessionReplay.setOptOut(optedOut, projectToken);',
+      file === 'lib/commonjs/index.js' ? 'exports.setOptOut = setOptOut;' : 'export function setOptOut(',
+      file === 'lib/commonjs/index.js' ? 'exports.reset = identify;' : 'export const reset = identify;',
+    ],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  })),
+  {
+    package: 'posthog-react-native-session-replay',
+    file: 'ios/PosthogReactNativeSessionReplay.mm',
+    sentinels: ['RCT_EXTERN_METHOD(setOptOut:(BOOL)optedOut', 'withProjectToken:(NSString)projectToken'],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  },
+  {
+    package: 'posthog-react-native-session-replay',
+    file: 'ios/PosthogReactNativeSessionReplay.swift',
+    sentinels: [
+      'private var consentAllowed = false',
+      'self.storageToken = publicToken + "-boardsesh-replay-" + UUID().uuidString',
+      'let config = PostHogConfig(projectToken: nextTransport.storageToken, host: host)',
+      'configuration.urlSessionConfiguration = transport?.configuration()',
+      'configuration.protocolClasses = [ReplayConsentURLProtocol.self]',
+      'request.url?.scheme == "https" || request.url?.scheme == "http"',
+      `guard let identifier = request.value(forHTTPHeaderField: ReplayConsentTransport.header),
+              let transport = ReplayConsentTransport.find(identifier) else {`,
+      'if request.httpMethod == "POST" { throw URLError(.cannotDecodeContentData) }',
+      'if transport.add(pending, identifier: taskId) { pending.resume() }',
+      'guard !sealed else { return false }',
+      'sealed = true',
+      'pending.forEach { $0.cancel() }',
+      `transport?.retire()
+            PostHogSDK.shared.optOut()
+            PostHogSDK.shared.stopSessionRecording()
+            PostHogSDK.shared.close()
+            config = nil`,
+      'if manager.fileExists(atPath: project.path) { try manager.removeItem(at: project) }',
+      'folder.lastPathComponent.hasPrefix(token + "-boardsesh-replay-") { try manager.removeItem(at: folder) }',
+      'if manager.fileExists(atPath: location.path) { try manager.removeItem(at: location) }',
+      '"posthog.queueFolder", "posthog.queue.plist"',
+      'guard consentAllowed, !(sdkOptions["optOut"] as? Bool ?? true) else',
+      'guard consentAllowed, let storageManager = config?.storageManager else',
+      'guard consentAllowed, !publicProjectToken.isEmpty else',
+    ],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  },
+  {
+    package: 'posthog-react-native-session-replay',
+    file: 'android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt',
+    sentinels: [
+      '@Volatile private var consentAllowed = false',
+      'if (changed) consentGeneration.incrementAndGet()',
+      'retiredPermission?.set(false)',
+      'activeTransport?.dispatcher?.cancelAll()',
+      `UiThreadUtil.runOnUiThread(Runnable {
+      try {
+        synchronized(consentLock) {`,
+      `if (!permission.get() || !consentAllowed) throw IOException("Replay consent withdrawn")
+        chain.proceed(compressed)`,
+      '"boardsesh-consent-replay/${UUID.randomUUID()}"',
+      'config.storagePrefix = File(generationRoot, "events").absolutePath',
+      'config.replayStoragePrefix = File(generationRoot, "snapshots").absolutePath',
+      'config.addBeforeSend { event -> if (permission.get() && consentAllowed) event else null }',
+      'if (!consentAllowed || initializationGeneration != consentGeneration.get()) return@Runnable',
+      'if (!consentAllowed || recordingGeneration != consentGeneration.get()) return@Runnable',
+      'if (consentAllowed) setIdentify(savedConfig?.cachePreferences, distinctId, anonymousId)',
+      `if (!consentAllowed) return
+    cachePreferences?.let { preferences ->`,
+      'savedConfig = savedConfig?.let { copyReplayConfig(it) }',
+      'File(context.cacheDir, "boardsesh-consent-replay")',
+      'if (location.exists() && !location.deleteRecursively()) throw IOException("Replay cache purge failed")',
+      `PostHog.close()
+            nativeInitialized = false
+            purgeCache(if (apiKey.isEmpty()) savedConfig?.apiKey ?: "" else apiKey)`,
+      'context.getSharedPreferences("posthog-android-$apiKey", 0).edit().clear().commit()',
+    ],
+    patchedKey: 'posthog-react-native-session-replay@1.6.0',
+  },
   ...(['src/SQLiteDatabase.ts', 'build/SQLiteDatabase.js'] as const).map((file) => ({
     package: 'expo-sqlite',
     file,
@@ -752,7 +915,35 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 /** Real-filesystem env used when the script runs for real. */
 export function createNodeEnv(mobilePackageJson: string, patchedDependencies: Record<string, string>): PatchCheckEnv {
   const requireFromMobile = createRequire(mobilePackageJson);
-  const resolvePackageJson = (pkg: string) => requireFromMobile.resolve(`${pkg}/package.json`);
+  const packageManifests = new Map<string, string>();
+  const resolvePackageJson = (pkg: string): string => {
+    const cached = packageManifests.get(pkg);
+    if (cached) return cached;
+    let manifest: string;
+    try {
+      manifest = requireFromMobile.resolve(`${pkg}/package.json`);
+    } catch {
+      // Some native packages hide package.json through their exports map.
+      // Resolve the same entry mobile uses, then verify the containing package
+      // name rather than guessing a workspace/store node_modules path.
+      let directory = dirname(requireFromMobile.resolve(pkg));
+      while (true) {
+        const candidate = resolve(directory, 'package.json');
+        if (existsSync(candidate)) {
+          const candidateManifest = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string };
+          if (candidateManifest.name === pkg) {
+            manifest = candidate;
+            break;
+          }
+        }
+        const parent = dirname(directory);
+        if (parent === directory) throw new Error(`Cannot locate package.json for resolved package '${pkg}'`);
+        directory = parent;
+      }
+    }
+    packageManifests.set(pkg, manifest);
+    return manifest;
+  };
   return {
     patchedDependencies,
     readInstalledVersion(pkg) {

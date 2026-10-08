@@ -52,8 +52,18 @@ function PrivacyConsentScreen() {
           {t('mobileTitle')}
         </Text>
         <Text style={[styles.body, { color: colors.secondaryLabel }]}>{t('mobileBody')}</Text>
-        <Button title={t('allow')} onPress={() => choose('granted')} disabled={busy || !consent.loaded} />
-        <Button title={t('deny')} onPress={() => choose('denied')} disabled={busy || !consent.loaded} />
+        <Button
+          title={t('allow')}
+          onPress={() => choose('granted')}
+          disabled={busy || !consent.loaded}
+          style={styles.choiceButton}
+        />
+        <Button
+          title={t('deny')}
+          onPress={() => choose('denied')}
+          disabled={busy || !consent.loaded}
+          style={styles.choiceButton}
+        />
         <Text
           accessibilityRole="link"
           onPress={() => {
@@ -73,6 +83,7 @@ export default holdUntilLaunchReady(PrivacyConsentScreen);
 const styles = StyleSheet.create({
   backing: { flex: 1, justifyContent: 'center', padding: spacing[6] },
   content: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: spacing[4] },
+  choiceButton: { alignSelf: 'stretch' },
   title: { fontSize: 28, fontWeight: '700' },
   body: { fontSize: 17, lineHeight: 25 },
   link: { fontSize: 16, paddingVertical: spacing[3], textAlign: 'center' },

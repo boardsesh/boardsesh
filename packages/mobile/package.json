@@ -136,7 +136,9 @@
         "expo-dev-launcher",
         "expo-modules-core",
         "expo-app-metrics",
-        "expo-observe"
+        "expo-observe",
+        "@sentry/react-native",
+        "posthog-react-native-session-replay"
       ]
     },
     "install": {
