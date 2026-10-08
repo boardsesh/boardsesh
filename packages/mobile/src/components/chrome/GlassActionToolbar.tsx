@@ -38,9 +38,9 @@ export function GlassActionToolbar({ actionCount, children }: { actionCount: num
       ]}
     >
       <GlassSurface
-        // `clear` (lighter, content-forward) for the floating islands — more
-        // transparent than `regular`, the right variant for floating bars.
-        glassEffectStyle="clear"
+        // Regular glass keeps toolbar glyphs legible over ordinary app content.
+        // Clear glass is reserved for controls over visually rich media.
+        glassEffectStyle="regular"
         // Floating toolbar island = M3 surfaceContainer tone on Material.
         role="base"
         fallbackColor={systemColors.elevatedSurface}

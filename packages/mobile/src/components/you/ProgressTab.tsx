@@ -28,6 +28,7 @@ import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 import { ONBOARDING_TIP_RECORD_KEY } from '@boardsesh/key-value-storage';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useVariantValue } from '../../theme/variants';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 
 type YouData = ReturnType<typeof useYouProfileData>;
@@ -61,7 +62,6 @@ type ProgressItem =
 const keyForProgressItem = (item: ProgressItem) =>
   item.kind === 'board' ? `board-${item.layout.layoutKey}` : item.kind;
 const typeForProgressItem = (item: ProgressItem) => item.kind;
-const COLLAPSED_BOARDS = 3;
 
 export const ProgressTab = memo(function ProgressTab({
   data,
@@ -75,6 +75,7 @@ export const ProgressTab = memo(function ProgressTab({
   const { t: tYou } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, colorScheme, brandColors } = useTheme();
+  const collapsedBoardCount = useVariantValue({ liquidGlass: 1, material: 3 });
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[6];
   const listRef = useRef<FlashListRef<ProgressItem>>(null);
@@ -137,7 +138,7 @@ export const ProgressTab = memo(function ProgressTab({
   // a ScrollView. Charts are bounded, separate items with stable recycling keys.
   const items = useMemo<ProgressItem[]>(() => {
     const layouts = data.statisticsSummary.layoutPercentages;
-    const shown = boardsExpanded ? layouts : layouts.slice(0, COLLAPSED_BOARDS);
+    const shown = boardsExpanded ? layouts : layouts.slice(0, collapsedBoardCount);
     const result: ProgressItem[] = [{ kind: 'overview' }];
     shown.forEach((layout, index) =>
       result.push({
@@ -148,7 +149,7 @@ export const ProgressTab = memo(function ProgressTab({
         largestCount: layouts[0]?.count ?? 0,
       }),
     );
-    if (layouts.length > COLLAPSED_BOARDS) result.push({ kind: 'expand' });
+    if (layouts.length > collapsedBoardCount) result.push({ kind: 'expand' });
     if (!hasSends && !hasActivity) result.push({ kind: 'empty' });
     if (recordTipVisible) result.push({ kind: 'tip' });
     if (hasSends || hasActivity || data.hasActiveFilters) {
@@ -165,7 +166,7 @@ export const ProgressTab = memo(function ProgressTab({
     }
     if (userId) result.push({ kind: 'beta' });
     return result;
-  }, [data, boardsExpanded, hasActivity, hasSends, recordTipVisible, userId]);
+  }, [data, boardsExpanded, collapsedBoardCount, hasActivity, hasSends, recordTipVisible, userId]);
 
   const renderItem = useCallback(
     ({ item }: { item: ProgressItem }) => {

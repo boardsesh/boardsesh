@@ -6,6 +6,7 @@ import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
 import { opacity, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
+import { useVariantValue } from '../../theme/variants';
 
 // Shared building blocks for the Play Drawer and Create Drawer action bars: the
 // circular icon button, its size scale, and the two-row container/row styles.
@@ -62,6 +63,11 @@ export function ActionButton({
   accessibilityValueText,
 }: ActionButtonProps) {
   const { systemColors } = useTheme();
+  const neutralActionColor = useVariantValue({
+    liquidGlass: systemColors.label,
+    material: systemColors.secondaryLabel,
+  });
+  const defaultIconColor = busy ? systemColors.secondaryLabel : neutralActionColor;
   const { dim, icon } = SIZES[size];
   const buttonStyle: ViewStyle[] = [
     drawerActionBarStyles.actionButton,
@@ -73,7 +79,7 @@ export function ActionButton({
 
   const resolvedColor = disabled
     ? systemColors.tertiaryLabel
-    : (iconColor ?? (active && activeColor ? activeColor : systemColors.secondaryLabel));
+    : (iconColor ?? (active && activeColor ? activeColor : defaultIconColor));
 
   return (
     <PressableSurface

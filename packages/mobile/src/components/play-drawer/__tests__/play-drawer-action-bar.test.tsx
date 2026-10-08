@@ -12,9 +12,14 @@ vi.mock('../../PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+
+const themeState = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+afterEach(() => {
+  themeState.variant = 'liquidGlass';
+});
 
 // Minimal RN surface. Pressable exposes its a11y label + hitSlop so the angle
 // pill's restored 44pt touch target is inspectable.
@@ -128,8 +133,10 @@ vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', suc
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    variant: themeState.variant,
     brandColors: { primary: '#6D28D9', success: '#047857', error: 'brandError' },
     systemColors: {
+      label: 'label',
       fill: 'rgba(109, 40, 217, 0.14)',
       secondaryLabel: 'secondaryLabel',
       separator: 'separator',
@@ -196,16 +203,22 @@ describe('PlayDrawerActionBar', () => {
     expect(container.querySelector('[data-icon="tick.outline"][data-color="#FFFFFF"]')).toBeNull();
   });
 
-  it('reads share and the angle label in secondaryLabel, and a saved heart in the one favourite red', () => {
-    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, isFavorited: true }));
+  it.each(['liquidGlass', 'material'] as const)(
+    'keeps share, angle, and favourite colours appropriate to %s',
+    (variant) => {
+      themeState.variant = variant;
+      const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, isFavorited: true }));
 
-    expect(container.querySelector('[data-icon="share"]')?.getAttribute('data-color')).toBe('secondaryLabel');
-    const anglePill = container.querySelector('[data-label="mobile.angleSelector.title"]') as HTMLElement;
-    expect(anglePill.querySelector('span')?.getAttribute('data-color')).toBe('secondaryLabel');
-    expect(
-      container.querySelector(`[data-action="${ACTION_ICONS.favoriteFilled}"]`)?.getAttribute('data-icon-color'),
-    ).toBe('favoriteSelected');
-  });
+      expect(container.querySelector('[data-icon="share"]')?.getAttribute('data-color')).toBe(
+        variant === 'liquidGlass' ? 'label' : 'secondaryLabel',
+      );
+      const anglePill = container.querySelector('[data-label="mobile.angleSelector.title"]') as HTMLElement;
+      expect(anglePill.querySelector('span')?.getAttribute('data-color')).toBe('secondaryLabel');
+      expect(
+        container.querySelector(`[data-action="${ACTION_ICONS.favoriteFilled}"]`)?.getAttribute('data-icon-color'),
+      ).toBe('favoriteSelected');
+    },
+  );
 
   it('suppresses the lightbulb holder pip when the header pill owns the driver face', () => {
     // Default: the pip shows on the lightbulb.

@@ -12,7 +12,7 @@ import { useButtonSurface } from './Button.surface';
 type GlassSurfaceProps = {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** 'regular' = frosted, elevated chrome (tab bar, sheets); 'clear' = lighter, content-forward (floating bars). */
+  /** 'regular' = legible chrome; 'clear' = highly translucent controls over visually rich media. */
   glassEffectStyle?: GlassStyle;
   /**
    * Tint composited onto the glass / blur (e.g. a climb's grade hue). Keep it

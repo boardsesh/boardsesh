@@ -18,6 +18,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
+import { useVariantValue } from '../../theme/variants';
 import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
 
@@ -421,6 +422,7 @@ type ShareButtonProps = {
 function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
   const { dim, icon } = SIZES[size];
   const { systemColors } = useTheme();
+  const shareColor = useVariantValue({ liquidGlass: systemColors.label, material: systemColors.secondaryLabel });
   return (
     <PressableSurface
       onPress={onPress}
@@ -432,7 +434,7 @@ function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
         pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      <Icon maxFontSizeMultiplier={1} name="share" size={icon} color={systemColors.secondaryLabel} />
+      <Icon maxFontSizeMultiplier={1} name="share" size={icon} color={shareColor} />
     </PressableSurface>
   );
 }

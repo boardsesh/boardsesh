@@ -14,7 +14,12 @@ vi.mock('../../PressableSurface', async () => {
 });
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const themeState = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+afterEach(() => {
+  themeState.variant = 'liquidGlass';
+});
 
 vi.mock('react-native', () => ({
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
@@ -34,7 +39,12 @@ vi.mock('../../ActivityIndicator', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { secondaryLabel: 'theme-secondary-label', tertiaryLabel: 'theme-tertiary-label' },
+    variant: themeState.variant,
+    systemColors: {
+      label: 'theme-label',
+      secondaryLabel: 'theme-secondary-label',
+      tertiaryLabel: 'theme-tertiary-label',
+    },
   }),
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { separator: 'static-separator' } }));
@@ -60,8 +70,9 @@ function renderButton(props: { disabled?: boolean; active?: boolean; activeColor
 }
 
 describe('ActionButton glyph colour', () => {
-  it('draws an idle glyph in the scheme-aware secondary label', () => {
-    expect(renderButton({})).toBe('theme-secondary-label');
+  it.each(['liquidGlass', 'material'] as const)('draws enabled neutral glyphs in the %s foreground', (variant) => {
+    themeState.variant = variant;
+    expect(renderButton({})).toBe(variant === 'liquidGlass' ? 'theme-label' : 'theme-secondary-label');
   });
 
   it('dims a disabled glyph to the tertiary label', () => {
@@ -70,5 +81,19 @@ describe('ActionButton glyph colour', () => {
 
   it('keeps the caller accent while active', () => {
     expect(renderButton({ active: true, activeColor: '#FF00AA' })).toBe('#FF00AA');
+  });
+
+  it('preserves the busy indicator foreground', () => {
+    const { container } = render(
+      createElement(ActionButton, {
+        iconName: 'favorite',
+        size: 'sm',
+        onPress: vi.fn(),
+        accessibilityLabel: 'Like',
+        busy: true,
+      }),
+    );
+    expect(container.querySelector('progress')?.getAttribute('data-color')).toBe('theme-secondary-label');
+    expect(container.querySelector('i')).toBeNull();
   });
 });
