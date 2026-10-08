@@ -241,8 +241,12 @@ scale. System font only (San Francisco on iOS, Roboto on Android) — no custom 
 | `footnote`    | 13 / 400 / 18      | 12 / 400 / 16 |
 | `caption1`    | 12 / 400 / 16      | 11 / 500 / 16 |
 | `caption2`    | 11 / 400 / 13      | 11 / 500 / 16 |
+| `label`       | 17 / 400 / 22      | 14 / 500 / 20 |
 
 _(values are `fontSize / fontWeight / lineHeight`)_
+
+`label` is the type of every top-bar and header button (Cancel, Save, Next, Clear all): the size of a
+UIKit bar item on iOS, M3 `labelLarge` on Material. See "Top-bar buttons" below.
 
 The HIG scale intentionally sets `largeTitle`/`title1`/`title2` to bold (700) rather than HIG's
 default regular — a deliberate brand choice. The M3 scale drops those display weights to regular,
@@ -305,8 +309,8 @@ as one deliberately-sized system. Every interactive tier is at or above the 44pt
 
 | Tier            | px  | Use                                                          |
 | --------------- | --- | ------------------------------------------------------------ |
-| `hero`          | 56  | One defining action per surface (log-ascent, create)         |
-| `standard`      | 48  | Default floating FAB                                         |
+| `hero`          | 56  | One defining action per surface (create)                     |
+| `standard`      | 48  | Default floating FAB; the log-ascent Attempt / Flash bar     |
 | `capsule`       | 44  | Standalone floating capsule (4pt under sibling FABs)         |
 | `inlinePrimary` | 48  | Primary action inside a sheet                                |
 | `inline`        | 44  | Standard inline control                                      |
@@ -335,6 +339,40 @@ modal screens call `useHeaderActions` to fill the native header. Nothing pinned 
 or form, because a bottom bar moves with the keyboard and the inset. The exceptions are `LogAscentSheet`
 (Attempt / Save stay in thumb reach), composers such as `CommentSheet`, and tool palettes and FABs. Full
 rules: `docs/mobile-sheets-vs-routes.md`, "Where actions go".
+
+### Top-bar buttons
+
+One spec for every button in a sheet's `SheetTopBar`, a native stack header (`useHeaderActions` /
+`HeaderActionButtons`) and the hand-built sheet headers (tick, queue, logbook, session, play drawer).
+Source: `src/theme/top-bar.ts` (`topBarFor(variant)`), the `label` text variant, `ChromeIconButton`
+(glyph buttons) and `resolveTopBarActionLook` (text and confirm actions).
+
+| Role | iOS (Liquid Glass) | Material | Size | Colour |
+| --- | --- | --- | --- | --- |
+| Close / back / minimise | `xmark`, `chevron.left`, `chevron.down`, semibold | `close`, `arrow-left`, `chevron-down` | iOS 17pt glyph, 44pt target (a `systemColors.fill` circle in our chrome; bare in a native header, where UIKit draws the glass); M3 24dp in 48dp | iOS label; M3 onSurface |
+| More / edit / help (actions) | `ellipsis` and friends, semibold, same container as close | `more_vert` IconButton | as above | iOS label; M3 onSurfaceVariant |
+| Cancel / plain text action | the word | the word | `label` 17/22/400 (iOS), 14/20/500 (M3) | label colour |
+| `confirm`: saves or commits the climber's own edit (Save, Add, Create, a Done that commits an angle or a crop) | `checkmark` in a brand circle the size of the close; the word is the spoken label | brand text, no fill (an M3 full-screen dialog's Save) | iOS 44pt circle, 17pt semibold glyph; M3 `label` 14/20/500 | brand fill, onPrimary glyph; M3 brand text |
+| `send`: sends or reports to someone else (Submit, Send, Report, Claim) | prominent text: brand capsule in a sheet | brand text, no fill | `label`, 600 on iOS | brand |
+| `forward`: moves on, applies, or closes a confirmation (Next, Apply, "Show 12 climbs", Try again, Use look, the Done after a report went through) | text; prominent: brand capsule in a sheet | brand text if prominent | `label` | label colour; brand if prominent |
+| Destructive commit (End session) | red semibold text, never a red ✓, never a red fill | red text | `label` | `brandColors.error` |
+
+- **A Done with nothing to commit** (a filter sheet that applies live, a read-only summary) is no
+  trailing action at all: the leading X closes it.
+- **Native headers on iOS 26** (`useHeaderActions`, gated on `useGlassCapability()`): the trailing side
+  is native bar items. An idle confirm is the prominent (brand-tinted glass) item with the ✓ SF Symbol;
+  a send or prominent action the prominent item with its label; a plain or destructive one plain text.
+  While it saves, or beside an accessory, it is a custom item that hides UIKit's glass and draws the
+  same ✓ circle or brand capsule at `glassSize.capsule`, so idle and loading look alike. Inside UIKit's
+  shared glass (iOS before 26) or on Material, a header action is text and never a shape: no circle or
+  capsule inside a capsule.
+- **Disabled:** 40% opacity on iOS, keeping the colour. Material: onSurface at 38%.
+- **Loading:** a spinner takes the label's or glyph's place, in its colour, without changing the width.
+- **Dynamic Type:** bar labels hold at 1.0 on iOS (UIKit bar items don't scale) and 1.2 on Android.
+- **Kind:** callers pass `kind: 'confirm' | 'send' | 'forward'`. Unset, a `prominent` action is a
+  confirm and any other a forward. A confirm may pass `icon` (the create drawer's lock) for the ✓.
+- **Header tint** is the theme's label colour (`useStackScreenOptions`, and the root navigation theme's
+  `primary`), so no bar glyph falls back to React Navigation's iOS blue.
 
 **Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
 pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,

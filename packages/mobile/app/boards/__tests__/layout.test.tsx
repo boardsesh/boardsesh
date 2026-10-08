@@ -67,7 +67,19 @@ vi.mock('react-i18next', () => ({
     t: (key: string) => lookup(namespace === 'boards' ? boardsCatalog : commonCatalog, key),
   }),
 }));
-vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
+// The shared header X; its look is covered by header-action-buttons.test.
+vi.mock('../../../src/components/HeaderActionButtons', () => ({
+  HeaderLeadingButton: ({
+    kind,
+    onPress,
+    accessibilityLabel,
+  }: {
+    kind: string;
+    onPress: () => void;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'data-kind': kind }),
+}));
 vi.mock('../../../src/hooks/use-stack-screen-options', () => ({ useStackScreenOptions: () => ({}) }));
 vi.mock('../../../src/lib/onboarding/first-board-picker-analytics', () => ({
   noteFirstBoardCloseTapped: noteCloseTappedMock,

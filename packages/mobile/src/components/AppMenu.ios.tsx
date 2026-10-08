@@ -30,6 +30,7 @@ import { useMemo, type ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
+import { topBarByVariant } from '../theme/top-bar';
 import { isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
 import { iconMap } from './icon-map';
@@ -37,12 +38,16 @@ import { iconMap } from './icon-map';
 // Floor the Host height in RN's layout: the native iOS Host under-reports the glass
 // capsule's intrinsic height to React Native, so without a floor the anchor renders
 // shorter than the menu button and the pressed glass lens clips. Mirrors the
-// SwitchRow caveat; ~44pt ≈ the old pill's `glassSize.capsule`.
-const ANCHOR_MIN_HEIGHT = 44;
+// SwitchRow caveat. The same 44pt as every top-bar glyph button.
+const ANCHOR_MIN_HEIGHT = topBarByVariant.liquidGlass.iconTarget;
 
-// The glyph inside the 44pt circle, matching the 20–24pt SF Symbols the sibling
-// header buttons draw at that diameter.
-const ICON_ANCHOR_GLYPH_SIZE = 20;
+// The glyph inside the 44pt circle: the 17pt every top-bar glyph button draws
+// (ChromeIconButton), so the overflow "…" matches the close beside it.
+const ICON_ANCHOR_GLYPH_SIZE = topBarByVariant.liquidGlass.glyphSize;
+
+// Semibold, as iOS 26's own bar glyphs draw. A `font` modifier wins over `size`,
+// so it carries the size too.
+const ICON_ANCHOR_GLYPH_MODIFIERS = [font({ size: ICON_ANCHOR_GLYPH_SIZE, weight: 'semibold' })];
 
 export function AppMenu(props: AppMenuProps) {
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
@@ -89,7 +94,12 @@ export function AppMenu(props: AppMenuProps) {
         modifiers={menuModifiers}
         label={
           props.iconName != null ? (
-            <Image systemName={iconMap[props.iconName].ios} size={ICON_ANCHOR_GLYPH_SIZE} color={systemColors.label} />
+            <Image
+              systemName={iconMap[props.iconName].ios}
+              size={ICON_ANCHOR_GLYPH_SIZE}
+              color={systemColors.label}
+              modifiers={ICON_ANCHOR_GLYPH_MODIFIERS}
+            />
           ) : (
             <HStack spacing={spacing[1]} alignment="center">
               {/* Headline weight + label colour by default — reads like the old pill's

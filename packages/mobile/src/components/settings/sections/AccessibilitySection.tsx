@@ -521,7 +521,12 @@ function HoldColorPickerSheet({
     <SheetTopBar
       title={role ? labelForRole(t, role) : t('mobile.settings.accessibility.title')}
       leading={{ kind: 'cancel', onPress: onClose }}
-      trailing={{ label: t('mobile.settings.accessibility.save'), onPress: handleSave, prominent: true }}
+      trailing={{
+        kind: 'confirm',
+        label: t('mobile.settings.accessibility.save'),
+        onPress: handleSave,
+        prominent: true,
+      }}
     />
   );
 
@@ -624,7 +629,12 @@ function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushT
     <SheetTopBar
       title={t('mobile.settings.accessibility.brush.title')}
       leading={{ kind: 'cancel', onPress: onClose }}
-      trailing={{ label: t('mobile.settings.accessibility.brush.save'), onPress: handleSave, prominent: true }}
+      trailing={{
+        kind: 'confirm',
+        label: t('mobile.settings.accessibility.brush.save'),
+        onPress: handleSave,
+        prominent: true,
+      }}
     />
   );
 
@@ -687,7 +697,12 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
     <SheetTopBar
       title={t('mobile.settings.accessibility.size.title')}
       leading={{ kind: 'cancel', onPress: onClose }}
-      trailing={{ label: t('mobile.settings.accessibility.size.save'), onPress: handleSave, prominent: true }}
+      trailing={{
+        kind: 'confirm',
+        label: t('mobile.settings.accessibility.size.save'),
+        onPress: handleSave,
+        prominent: true,
+      }}
     />
   );
 

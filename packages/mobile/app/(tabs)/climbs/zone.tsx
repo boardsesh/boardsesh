@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import {
 import { getLayout } from '@boardsesh/board-constants';
 import type { BoardName, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 import { Text } from '../../../src/components/Text';
+import { HeaderTrailingButton } from '../../../src/components/HeaderActionButtons';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { Button } from '../../../src/components/Button';
 import { SegmentedControl } from '../../../src/components/SegmentedControl';
@@ -285,16 +286,10 @@ export default function ZoneFilterScreen() {
   useEffect(() => {
     navigation.setOptions({
       headerRight: zoneActive
-        ? () => (
-            <Pressable onPress={handleClear} hitSlop={8} accessibilityRole="button">
-              <Text variant="subheadline" color={brandColors.primary}>
-                {t('mobile.filter.clearAll')}
-              </Text>
-            </Pressable>
-          )
+        ? () => <HeaderTrailingButton label={t('mobile.filter.clearAll')} onPress={handleClear} />
         : undefined,
     });
-  }, [navigation, zoneActive, handleClear, brandColors.primary, t]);
+  }, [navigation, zoneActive, handleClear, t]);
 
   if (!boardHolds || !boardName || !dims) {
     return (

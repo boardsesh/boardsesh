@@ -132,6 +132,11 @@ vi.mock('../../../src/lib/boards/use-board-picker-analytics', () => ({
 vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
+vi.mock('../../../src/components/ChromeIconButton', () => ({
+  ChromeIconButton: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel: string }) =>
+    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
+  useChromeIconButtonSize: () => 44,
+}));
 vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
 vi.mock('../../../src/components/ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../src/components/gym-directory/GymMap', () => ({

@@ -37,12 +37,14 @@ const allVariantNames: TextVariant[] = [
 // ── Tests ───────────────────────────────────────────────────────────────
 
 describe('variantStyles', () => {
-  it('defines all 11 Apple HIG text variants', () => {
+  it('defines the 11 Apple HIG text variants plus the top-bar label', () => {
     const definedVariants = Object.keys(variantStyles);
-    expect(definedVariants).toHaveLength(11);
+    expect(definedVariants).toHaveLength(12);
     for (const variant of allVariantNames) {
       expect(variantStyles[variant]).toBeDefined();
     }
+    // Not part of the size ladder below: a bar label is body-sized on iOS.
+    expect(variantStyles.label).toEqual({ fontSize: 17, fontWeight: '400', lineHeight: 22 });
   });
 
   it.each(allVariantNames)('variant "%s" has fontSize, fontWeight, and lineHeight', (variant) => {

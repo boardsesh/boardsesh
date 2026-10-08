@@ -52,6 +52,15 @@ describe('useStackScreenOptions', () => {
     expect(opts.headerStyle).toBeUndefined();
   });
 
+  it('Liquid Glass tints the header in the label colour, not the default iOS blue', async () => {
+    // Without it every bar glyph (back chevron, X, a plain action) draws in React
+    // Navigation's rgb(0,122,255). The brand colour is for the prominent confirm.
+    const opts = await readOptions();
+    expect(opts.headerTintColor).toBe('#16111F'); // systemColors.label
+    ctrl.os = 'android';
+    expect((await readOptions()).headerTintColor).toBe('#16111F');
+  });
+
   it('Liquid Glass on Android → opaque (solid) header, not a transparent blur', async () => {
     ctrl.os = 'android';
     const opts = await readOptions();

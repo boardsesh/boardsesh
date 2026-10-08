@@ -6,6 +6,8 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 
 import {
+  cappedComposeLabelSize,
+  dynamicTypeSizeCap,
   buttonFillAxes,
   buttonMatchContents,
   isFullWidthStyle,
@@ -132,5 +134,27 @@ describe('buttonMatchContents', () => {
   it('leaves the height to Yoga when the caller pinned one', () => {
     expect(buttonMatchContents({ flex: 1, height: 56 })).toEqual({ horizontal: false, vertical: false });
     expect(buttonMatchContents({ height: 56 })).toEqual({ horizontal: true, vertical: false });
+  });
+});
+
+describe('dynamicTypeSizeCap', () => {
+  it('caps 1.3x at xxLarge (21pt body, 1.24x): xxxLarge is 23pt, 1.35x', () => {
+    expect(dynamicTypeSizeCap(1.3)).toBe('xxLarge');
+  });
+
+  it('never caps below the default size, and walks up the scale', () => {
+    expect(dynamicTypeSizeCap(1)).toBe('large');
+    expect(dynamicTypeSizeCap(0.5)).toBe('large');
+    expect(dynamicTypeSizeCap(1.2)).toBe('xLarge');
+    expect(dynamicTypeSizeCap(2)).toBe('accessibility2');
+  });
+});
+
+describe('cappedComposeLabelSize', () => {
+  it('leaves the label alone within the cap, and holds it at the cap beyond', () => {
+    expect(cappedComposeLabelSize(14, 1.2, 1.3)).toBeUndefined();
+    expect(cappedComposeLabelSize(14, 2, undefined)).toBeUndefined();
+    // 14sp x 2 scale would be 28; capped at 1.3 it renders 18.2.
+    expect((cappedComposeLabelSize(14, 2, 1.3) ?? 0) * 2).toBeCloseTo(14 * 1.3);
   });
 });

@@ -17,7 +17,12 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import type { IconName } from '../icon-map';
-import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, tickActionHeight } from './tick-sheet-metrics';
+import {
+  TICK_ACTION_HEIGHT,
+  TICK_ACTION_MAX_FONT_SCALE,
+  TICK_ERROR_SLOT_HEIGHT,
+  tickActionHeight,
+} from './tick-sheet-metrics';
 
 const ERROR_ICON_SIZE = 13;
 
@@ -80,6 +85,7 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
             disabled={secondary.disabled}
             variant="tonal"
             size="large"
+            maxFontSizeMultiplier={TICK_ACTION_MAX_FONT_SCALE}
             style={buttonStyles.secondary}
           />
         ) : null}
@@ -92,6 +98,7 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
           icon={primary.icon}
           variant="filled"
           size="large"
+          maxFontSizeMultiplier={TICK_ACTION_MAX_FONT_SCALE}
           style={secondary ? buttonStyles.primaryPaired : buttonStyles.primaryAlone}
         />
       </View>

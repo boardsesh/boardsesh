@@ -189,6 +189,7 @@ export function ReportClimbSheet({
       title={t('mobile.report.title')}
       leading={{ kind: 'cancel', onPress: onClose }}
       trailing={{
+        kind: 'send',
         label: t('mobile.report.submit'),
         onPress: handleSubmit,
         disabled: submitDisabled,

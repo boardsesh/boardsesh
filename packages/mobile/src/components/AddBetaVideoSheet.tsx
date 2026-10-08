@@ -135,6 +135,7 @@ export function AddBetaVideoSheet({
       title={t('mobile.betaVideos.shareTitle')}
       leading={{ kind: 'cancel', onPress: onClose }}
       trailing={{
+        kind: 'confirm',
         label: t('mobile.betaVideos.submitButton'),
         onPress: handleSubmit,
         disabled: submitDisabled,

@@ -104,6 +104,7 @@ vi.mock('expo-router', () => ({
 // is written whole whenever either is passed. A test with the real hook is
 // SprayWallWizardScreen.header.test.tsx.
 vi.mock('../../../hooks/use-header-actions', () => ({
+  ownHeaderRight: (headerRight: unknown) => ({ headerRight, unstable_headerRightItems: undefined }),
   useHeaderActions: (actions: { leading?: HeaderLeading; trailing?: HeaderTrailing; trailingAccessory?: unknown }) => {
     if (actions.leading) header.leading = actions.leading;
     if (actions.trailing || actions.trailingAccessory != null) {

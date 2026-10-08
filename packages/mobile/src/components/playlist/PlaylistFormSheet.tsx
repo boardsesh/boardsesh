@@ -145,6 +145,7 @@ export function PlaylistFormSheet({
       title={title}
       leading={{ kind: 'cancel', onPress: onClose }}
       trailing={{
+        kind: 'confirm',
         label: submitLabel,
         onPress: handleSubmit,
         loading: submitting,

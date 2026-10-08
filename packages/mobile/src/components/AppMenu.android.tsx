@@ -2,20 +2,23 @@
 // @expo/ui/jetpack-compose. Replaces the react-native-paper `Menu` (a JS M3
 // re-creation) with the real Compose dropdown — M3 ripple, elevation, open/close
 // motion for free. The anchor is a flat `Text` + caret trigger (the M3 app-bar
-// title-menu) or a bare glyph trigger in icon mode; the active row shows a leading ✓
+// title-menu) or, in icon mode, an M3 IconButton (a 24dp more_vert in a 48dp
+// target) for the overflow family and a bare glyph for the rest; the active row shows a leading ✓
 // (no SF Symbols on Android), destructive rows take the `m3.error` text colour and
 // disabled rows are `enabled={false}`. Controlled `expanded` state, closed on each
 // select.
 
 import { useMemo, useState } from 'react';
 import { Host } from '@expo/ui';
-import { DropdownMenu, DropdownMenuItem, Row, Text } from '@expo/ui/jetpack-compose';
+import { DropdownMenu, DropdownMenuItem, Icon, IconButton, Row, Text } from '@expo/ui/jetpack-compose';
 import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
-import { anchorGlyphForIcon, isMenuActionSelectable, resolveMenuActions } from './AppMenu.logic';
+import { topBarByVariant } from '../theme/top-bar';
+import { anchorGlyphForIcon, isMenuActionSelectable, isOverflowAnchor, resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
+import { MORE_VERT_ICON } from './AppMenu.icons.android';
 
 // Down-caret glyph: the Compose `Icon` needs a vector-drawable source and @expo/ui
 // bundles none for a chevron, so a muted glyph stands in (mirrors MoreForm's `›`).
@@ -68,25 +71,34 @@ export function AppMenu(props: AppMenuProps) {
     >
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
-          <Row
-            modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
-            verticalAlignment="center"
-          >
-            {props.iconName != null ? (
-              <Text style={{ typography: 'titleLarge' }} color={labelColor}>
-                {anchorGlyphForIcon(props.iconName)}
-              </Text>
-            ) : (
-              <Text style={{ typography: 'titleMedium' }} color={labelColor} maxLines={1} overflow="ellipsis">
-                {props.label}
-              </Text>
-            )}
-            {showCaret ? (
-              <Text style={{ typography: 'titleMedium' }} color={caretColor}>
-                {` ${CARET}`}
-              </Text>
-            ) : null}
-          </Row>
+          {props.iconName != null && isOverflowAnchor(props.iconName) ? (
+            // The M3 overflow button: an IconButton (a 48dp touch target) holding
+            // the 24dp more_vert icon in onSurfaceVariant, not a "⋯" set in
+            // titleLarge text. Its spoken name rides the Host's label above.
+            <IconButton onClick={() => setExpanded(true)}>
+              <Icon source={MORE_VERT_ICON} size={topBarByVariant.material.glyphSize} tint={caretColor} />
+            </IconButton>
+          ) : (
+            <Row
+              modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
+              verticalAlignment="center"
+            >
+              {props.iconName != null ? (
+                <Text style={{ typography: 'titleLarge' }} color={labelColor}>
+                  {anchorGlyphForIcon(props.iconName)}
+                </Text>
+              ) : (
+                <Text style={{ typography: 'titleMedium' }} color={labelColor} maxLines={1} overflow="ellipsis">
+                  {props.label}
+                </Text>
+              )}
+              {showCaret ? (
+                <Text style={{ typography: 'titleMedium' }} color={caretColor}>
+                  {` ${CARET}`}
+                </Text>
+              ) : null}
+            </Row>
+          )}
         </DropdownMenu.Trigger>
         <DropdownMenu.Items>
           {resolved.map((action, index) => {

@@ -58,9 +58,10 @@ export default function SessionSummaryScreen() {
   const { t } = useTranslation('session');
   const { systemColors, brandColors: brand } = useTheme();
   const router = useRouter();
-  // Done closes the modal from the header in every state, loading and error
-  // included, so the post-session screen never traps the climber.
-  useHeaderActions({ trailing: { label: t('summary.done'), onPress: () => router.back(), prominent: true } });
+  // The X closes the modal from the header in every state, loading and error
+  // included, so the post-session screen never traps the climber. A close, not
+  // a trailing Done: the summary is read-only, there is nothing to commit.
+  useHeaderActions({ leading: { kind: 'close', onPress: () => router.back() } });
   const promptedSessionIdRef = useRef<string | null>(null);
   const reviewCandidateParam = Array.isArray(reviewCandidate) ? reviewCandidate[0] : reviewCandidate;
 

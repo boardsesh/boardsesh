@@ -62,6 +62,10 @@ vi.mock('react-i18next', () => ({
 
 // Heavy native children → inert stand-ins; we drive the screen via the mode
 // control + buttons, not the actual board.
+vi.mock('../../../../src/components/HeaderActionButtons', () => ({
+  HeaderTrailingButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, label),
+}));
 vi.mock('../../../../src/components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));

@@ -34,6 +34,18 @@ vi.mock('../../../providers/theme-provider', () => ({
     brandColors: { primary: '#6D28D9', error: '#C81E1E' },
   }),
 }));
+vi.mock('../../ChromeIconButton', () => ({
+  ChromeIconButton: ({
+    icon,
+    onPress,
+    accessibilityLabel,
+  }: {
+    icon: string;
+    onPress: () => void;
+    accessibilityLabel: string;
+  }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel, 'data-chrome-icon': icon }),
+  useChromeIconButtonSize: () => 44,
+}));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 

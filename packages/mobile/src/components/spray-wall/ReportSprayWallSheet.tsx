@@ -56,8 +56,9 @@ export function ReportSprayWallSheet({
       leading={finished ? undefined : { kind: 'cancel', onPress: onClose }}
       trailing={
         finished
-          ? { label: tCommon('actions.done'), onPress: onClose, prominent: true }
+          ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: true }
           : {
+              kind: 'send',
               label: t('sprayModeration.submit'),
               onPress: submit,
               disabled: submitDisabled,

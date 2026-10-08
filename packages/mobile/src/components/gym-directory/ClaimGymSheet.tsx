@@ -141,9 +141,10 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
       leading={confirmation ? undefined : { kind: 'cancel', onPress: dismiss }}
       trailing={
         confirmation
-          ? { label: t('mobile.gymClaim.done'), onPress: dismiss, prominent: true }
+          ? { kind: 'forward', label: t('mobile.gymClaim.done'), onPress: dismiss, prominent: true }
           : inDomainForm
             ? {
+                kind: 'send',
                 label: t('mobile.gymClaim.domain.submitShort'),
                 accessibilityLabel: t('mobile.gymClaim.domain.submit'),
                 onPress: () => void submit({ claimEmail: trimmedEmail }),
@@ -152,6 +153,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
                 prominent: true,
               }
             : {
+                kind: 'send',
                 label: t('mobile.gymClaim.admin.submitShort'),
                 accessibilityLabel: t('mobile.gymClaim.admin.submit'),
                 onPress: () => void submit({ message: message.trim() || undefined }),

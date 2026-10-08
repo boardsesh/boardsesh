@@ -54,6 +54,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
         isActive
           ? undefined
           : {
+              kind: 'forward',
               label: t('mobile.boardDetail.setActiveShort'),
               accessibilityLabel: t('mobile.boardDetail.setActive'),
               onPress: () => onSetActive(board),

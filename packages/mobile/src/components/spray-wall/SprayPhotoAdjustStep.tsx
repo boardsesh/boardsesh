@@ -188,6 +188,7 @@ export function SprayPhotoAdjustStep({
   useHeaderActions({
     leading: { kind: 'cancel', onPress: cancel },
     trailing: {
+      kind: 'confirm',
       label: t('sprayWizard.adjust.done'),
       onPress: done,
       disabled: busy,

@@ -33,7 +33,19 @@ vi.mock('react-native', () => ({
   }: Children & { onPress: () => void; accessibilityLabel: string }) =>
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
 }));
-vi.mock('../../../src/components/Icon', () => ({ Icon: () => null }));
+// The shared header back; its look is covered by header-action-buttons.test.
+vi.mock('../../../src/components/HeaderActionButtons', () => ({
+  HeaderLeadingButton: ({
+    kind,
+    onPress,
+    accessibilityLabel,
+  }: {
+    kind: string;
+    onPress: () => void;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'data-kind': kind }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../src/hooks/use-stack-screen-options', () => ({ useStackScreenOptions: () => ({}) }));
 vi.mock('../../../src/hooks/use-pop-to-top-on-tab-blur', () => ({ usePopToTopOnTabBlur: () => undefined }));

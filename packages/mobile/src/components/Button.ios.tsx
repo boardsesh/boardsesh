@@ -30,6 +30,7 @@ import {
   buttonStyle,
   controlSize,
   disabled as disabledModifier,
+  dynamicTypeSize,
   font,
   foregroundStyle,
   frame,
@@ -40,7 +41,7 @@ import { useGlassCapability } from '../hooks/use-glass-capability';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { overlays } from '../theme/tokens';
-import { buttonFillAxes, buttonMatchContents, makeButtonPressHandler } from './Button.logic';
+import { buttonFillAxes, buttonMatchContents, dynamicTypeSizeCap, makeButtonPressHandler } from './Button.logic';
 import { useButtonSurface } from './Button.surface';
 import { iconMap } from './icon-map';
 import type { ButtonProps, ButtonSize } from './Button.types';
@@ -71,6 +72,7 @@ export function Button({
   minHeight = 44,
   over,
   role = 'default',
+  maxFontSizeMultiplier,
   testID,
   style,
 }: ButtonProps) {
@@ -134,6 +136,7 @@ export function Button({
     frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
+    ...(maxFontSizeMultiplier != null ? [dynamicTypeSize({ max: dynamicTypeSizeCap(maxFontSizeMultiplier) })] : []),
   ];
   if (!isDestructive) {
     if (fillTint) modifiers.push(tint(fillTint));

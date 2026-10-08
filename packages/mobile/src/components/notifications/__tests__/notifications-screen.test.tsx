@@ -140,6 +140,11 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
+// The shared header action; its own look is covered by header-action-buttons.test.
+vi.mock('../../HeaderActionButtons', () => ({
+  HeaderTrailingButton: ({ label, onPress, prominent }: { label: string; onPress: () => void; prominent?: boolean }) =>
+    createElement('button', { onClick: onPress, 'data-header-action': prominent ? 'prominent' : 'plain' }, label),
+}));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
 }));
@@ -273,7 +278,13 @@ describe('NotificationsScreen mark all as read', () => {
     state.unreadCount = 3;
     state.query = makeQuery({ data: { pages: [{ groups: [makeNotification()], hasMore: false, unreadCount: 3 }] } });
     render(<NotificationsScreen />);
-    expect(lastHeaderRight()).toBeTypeOf('function');
+    const headerRight = lastHeaderRight();
+    expect(headerRight).toBeTypeOf('function');
+    // The shared plain header action (label colour, label type), not ad-hoc text.
+    const action = render(<>{(headerRight as () => ReactNode)()}</>).getByText('markAllRead');
+    expect(action.getAttribute('data-header-action')).toBe('plain');
+    fireEvent.click(action);
+    expect(markAllMutate).toHaveBeenCalledTimes(1);
   });
 
   it('withholds the action while the count has resolved but the list has not', () => {

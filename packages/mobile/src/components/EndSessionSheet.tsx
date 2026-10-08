@@ -131,6 +131,8 @@ export function EndSessionSheet({
           trailing={
             isEndMode
               ? {
+                  // A destructive commit: red text, never a red ✓.
+                  kind: 'confirm',
                   label: t('mobile.queue.endSession'),
                   onPress: onConfirm,
                   loading: isEnding,
@@ -139,6 +141,8 @@ export function EndSessionSheet({
                   destructive: true,
                 }
               : {
+                  // Leaving commits nothing of the climber's: text, not the ✓.
+                  kind: 'forward',
                   label: t('mobile.queue.leaveSessionAction'),
                   onPress: onLeave,
                   loading: isLeaving,

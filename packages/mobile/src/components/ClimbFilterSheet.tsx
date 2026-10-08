@@ -935,7 +935,7 @@ export function ClimbFilterSheet({
         <SheetTopBar
           title={t('mobile.filter.title')}
           leading={{ kind: 'text', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
-          trailing={{ label: applyLabel, onPress: handleApply, prominent: true }}
+          trailing={{ kind: 'forward', label: applyLabel, onPress: handleApply, prominent: true }}
         />
 
         <BottomSheetScrollView

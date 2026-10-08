@@ -3,20 +3,46 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { createElement, isValidElement, type ReactElement } from 'react';
 
-const cfg = vi.hoisted(() => ({ navigation: { setOptions: vi.fn() } }));
+const cfg = vi.hoisted(() => ({
+  navigation: { setOptions: vi.fn() },
+  glass: false,
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+}));
 vi.mock('expo-router', () => ({ useNavigation: () => cfg.navigation }));
+vi.mock('../use-glass-capability', () => ({ useGlassCapability: () => cfg.glass }));
+vi.mock('../../providers/theme-provider', () => ({
+  useTheme: () => ({ variant: cfg.variant, brandColors: { primary: '#brand', error: '#error' } }),
+}));
 
 // The buttons themselves are SheetTopBar's twins and are not under test here;
 // stand-ins keep this test off the native tree.
 vi.mock('../../components/HeaderActionButtons', () => ({
   HeaderLeadingButton: () => null,
   HeaderTrailingGroup: () => null,
+  HeaderTrailingButton: () => null,
 }));
 
-import { useHeaderActions } from '../use-header-actions';
+import { ownHeaderRight, useHeaderActions } from '../use-header-actions';
 
 type SlotRenderer = (props: { tintColor?: string }) => ReactElement;
-type Options = { headerLeft?: SlotRenderer; headerRight?: SlotRenderer };
+type NativeItem = {
+  type: string;
+  element?: ReactElement;
+  hidesSharedBackground?: boolean;
+  icon?: { type: string; name: string };
+  label: string;
+  variant?: string;
+  tintColor?: string;
+  disabled?: boolean;
+  onPress: () => void;
+  labelStyle?: { fontWeight?: string };
+  accessibilityLabel?: string;
+};
+type Options = {
+  headerLeft?: SlotRenderer;
+  headerRight?: SlotRenderer;
+  unstable_headerRightItems?: (props: { tintColor?: string }) => NativeItem[];
+};
 
 const optionCalls = (): Options[] => cfg.navigation.setOptions.mock.calls.map(([options]) => options as Options);
 /** The onPress a rendered header element was handed; fails the test if there is no element. */
@@ -38,9 +64,13 @@ const lastWith = (key: keyof Options): Options | undefined =>
   [...optionCalls()].reverse().find((options) => key in options);
 
 describe('useHeaderActions', () => {
-  beforeEach(() => cfg.navigation.setOptions.mockClear());
+  beforeEach(() => {
+    cfg.navigation.setOptions.mockClear();
+    cfg.glass = false;
+    cfg.variant = 'liquidGlass';
+  });
 
-  it('sets headerLeft and headerRight that render the actions with the header tint', () => {
+  it('sets headerLeft and headerRight that render the actions', () => {
     const onClose = vi.fn();
     const onSave = vi.fn();
     renderHook(() =>
@@ -53,9 +83,13 @@ describe('useHeaderActions', () => {
     const left = lastWith('headerLeft')?.headerLeft?.({ tintColor: '#123' });
     const right = lastWith('headerRight')?.headerRight?.({ tintColor: '#123' });
     expect(isValidElement(left)).toBe(true);
-    expect(left?.props).toMatchObject({ kind: 'close', tintColor: '#123' });
-    expect(right?.props).toMatchObject({ tintColor: '#123' });
+    expect(left?.props).toMatchObject({ kind: 'close' });
+    // The buttons colour themselves from the spec, not from the header's tint.
+    expect(left?.props).not.toHaveProperty('tintColor');
+    expect(right?.props).not.toHaveProperty('tintColor');
     expect(trailingOf(right)).toMatchObject({ label: 'Save', prominent: true, disabled: true });
+    // Without iOS 26 glass there is no native item.
+    expect(lastWith('headerRight')?.unstable_headerRightItems).toBeUndefined();
 
     // The forwarders call the latest handlers.
     pressOf(left)();
@@ -143,7 +177,7 @@ describe('useHeaderActions', () => {
     cfg.navigation.setOptions.mockClear();
     unmount();
     // headerRight only: the layout's headerLeft (a back chevron, an X) stays.
-    expect(optionCalls()).toStrictEqual([{ headerRight: undefined }]);
+    expect(optionCalls()).toStrictEqual([{ headerRight: undefined, unstable_headerRightItems: undefined }]);
   });
 
   it('with clearOnUnmount, clears a leading action it wrote as well', () => {
@@ -156,7 +190,9 @@ describe('useHeaderActions', () => {
     );
     cfg.navigation.setOptions.mockClear();
     unmount();
-    expect(optionCalls()).toStrictEqual([{ headerLeft: undefined, headerRight: undefined }]);
+    expect(optionCalls()).toStrictEqual([
+      { headerLeft: undefined, headerRight: undefined, unstable_headerRightItems: undefined },
+    ]);
   });
 
   it('with clearOnUnmount but nothing written, leaves the header alone on unmount', () => {
@@ -170,5 +206,133 @@ describe('useHeaderActions', () => {
     renderHook(() => useHeaderActions({ trailingAccessory: accessory }));
     const right = lastWith('headerRight')?.headerRight?.({});
     expect(right?.props).toMatchObject({ accessory, trailing: undefined });
+  });
+});
+
+describe('useHeaderActions — native bar items (iOS 26 Liquid Glass)', () => {
+  beforeEach(() => {
+    cfg.navigation.setOptions.mockClear();
+    cfg.glass = true;
+    cfg.variant = 'liquidGlass';
+  });
+
+  const nativeItems = (): NativeItem[] | undefined => lastWith('headerRight')?.unstable_headerRightItems?.({});
+
+  it('hands a prominent confirm to a native prominent bar item in the brand tint', () => {
+    const onSave = vi.fn();
+    renderHook(() =>
+      useHeaderActions({
+        trailing: { label: 'Save', onPress: onSave, prominent: true, accessibilityLabel: 'Save wall' },
+      }),
+    );
+    const items = nativeItems();
+    expect(items).toHaveLength(1);
+    expect(items?.[0]).toMatchObject({
+      type: 'button',
+      label: 'Save',
+      variant: 'prominent',
+      tintColor: '#brand',
+      disabled: false,
+      labelStyle: { fontWeight: '600' },
+      // The confirm is the ✓; its label is the spoken name.
+      icon: { type: 'sfSymbol', name: 'checkmark' },
+      accessibilityLabel: 'Save wall',
+    });
+    items?.[0]?.onPress();
+    expect(onSave).toHaveBeenCalledTimes(1);
+    // headerRight stays set as the JS fallback.
+    expect(lastWith('headerRight')?.headerRight).toBeTypeOf('function');
+  });
+
+  it('a forward action is a native prominent item that shows its label, no ✓', () => {
+    renderHook(() =>
+      useHeaderActions({ trailing: { kind: 'forward', label: 'Next', onPress: vi.fn(), prominent: true } }),
+    );
+    const item = nativeItems()?.[0];
+    expect(item).toMatchObject({ label: 'Next', variant: 'prominent', accessibilityLabel: 'Next' });
+    expect(item?.icon).toBeUndefined();
+  });
+
+  it('a confirm with a lock glyph carries the lock symbol instead of the ✓', () => {
+    renderHook(() =>
+      useHeaderActions({ trailing: { kind: 'confirm', label: 'Save', onPress: vi.fn(), icon: 'lock' } }),
+    );
+    expect(nativeItems()?.[0]?.icon).toEqual({ type: 'sfSymbol', name: 'lock' });
+  });
+
+  it('passes disabled to the native item; a destructive confirm is red text, never a red ✓', () => {
+    renderHook(() =>
+      useHeaderActions({
+        trailing: { label: 'End', onPress: vi.fn(), prominent: true, destructive: true, disabled: true },
+      }),
+    );
+    const item = nativeItems()?.[0];
+    expect(item).toMatchObject({ disabled: true, tintColor: '#error', variant: 'plain' });
+    expect(item?.icon).toBeUndefined();
+  });
+
+  it('a send is a prominent item with its label, no ✓', () => {
+    renderHook(() => useHeaderActions({ trailing: { kind: 'send', label: 'Report', onPress: vi.fn() } }));
+    const item = nativeItems()?.[0];
+    expect(item).toMatchObject({ label: 'Report', variant: 'prominent', tintColor: '#brand' });
+    expect(item?.icon).toBeUndefined();
+  });
+
+  it('a plain action is a plain native item in the header tint', () => {
+    renderHook(() => useHeaderActions({ trailing: { label: 'Clear', onPress: vi.fn() } }));
+    const item = nativeItems()?.[0];
+    expect(item).toMatchObject({ type: 'button', label: 'Clear', variant: 'plain' });
+    expect(item?.tintColor).toBeUndefined();
+  });
+
+  it('while it saves, stays in the items as a custom item drawing its own ✓ circle, not the JS headerRight', () => {
+    const { rerender } = renderHook(
+      ({ loading }) => useHeaderActions({ trailing: { label: 'Save', onPress: vi.fn(), prominent: true, loading } }),
+      { initialProps: { loading: false } },
+    );
+    expect(nativeItems()?.[0]?.type).toBe('button');
+    rerender({ loading: true });
+    const saving = nativeItems()?.[0];
+    expect(saving).toMatchObject({ type: 'custom', hidesSharedBackground: true });
+    expect(saving?.element?.props).toMatchObject({ loading: true, standalone: true, label: 'Save' });
+    rerender({ loading: false });
+    expect(nativeItems()?.[0]?.type).toBe('button');
+  });
+
+  it('a plain action saving keeps UIKit glass around its text', () => {
+    renderHook(() => useHeaderActions({ trailing: { label: 'Clear', onPress: vi.fn(), loading: true } }));
+    expect(nativeItems()?.[0]).toMatchObject({ type: 'custom', hidesSharedBackground: false });
+  });
+
+  it('with an accessory, both go custom, the accessory first, so their order holds', () => {
+    const accessory = createElement('span', null, '?');
+    renderHook(() =>
+      useHeaderActions({
+        trailing: { label: 'Next', onPress: vi.fn(), prominent: true },
+        trailingAccessory: accessory,
+      }),
+    );
+    const items = nativeItems();
+    expect(items?.map((item) => item.type)).toEqual(['custom', 'custom']);
+    expect(items?.[0]?.element).toBe(accessory);
+    expect(items?.[1]?.element?.props).toMatchObject({ label: 'Next', standalone: true });
+  });
+
+  it('keeps the JS headerRight on Material, and before iOS 26 glass', () => {
+    cfg.variant = 'material';
+    renderHook(() => useHeaderActions({ trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }));
+    expect(nativeItems()).toBeUndefined();
+    cfg.navigation.setOptions.mockClear();
+
+    cfg.variant = 'liquidGlass';
+    cfg.glass = false;
+    renderHook(() => useHeaderActions({ trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }));
+    expect(nativeItems()).toBeUndefined();
+  });
+
+  it('ownHeaderRight clears the native item whenever a screen sets the right side itself', () => {
+    const render = () => createElement('span');
+    expect(ownHeaderRight(render)).toStrictEqual({ headerRight: render, unstable_headerRightItems: undefined });
+    expect(ownHeaderRight(undefined)).toStrictEqual({ headerRight: undefined, unstable_headerRightItems: undefined });
   });
 });
