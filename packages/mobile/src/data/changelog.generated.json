@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-10-07T22:26:57.936Z",
+  "generatedAt": "2026-10-08T05:51:14.108Z",
   "entries": [
+    {
+      "prNumber": 6220,
+      "category": "fixed",
+      "title": "Filter, angle and board pickers keep their buttons at the top and no longer leave a gap at the bottom",
+      "mergedAt": "2026-10-08T05:38:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6220"
+    },
+    {
+      "prNumber": 6222,
+      "category": "new",
+      "title": "Your own spray walls are always on your phone: photo, holds and climbs, so they work in the garage with no signal",
+      "mergedAt": "2026-10-08T05:38:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6222",
+      "body": "Zooming in on your holds is instant the second time"
+    },
     {
       "prNumber": 4586,
       "category": "fixed",

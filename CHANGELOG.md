@@ -4,6 +4,17 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-08
+
+### New
+
+- Your own spray walls are always on your phone: photo, holds and climbs, so they work in the garage with no signal ([#6222](https://github.com/boardsesh/boardsesh/pull/6222))
+  Zooming in on your holds is instant the second time
+
+### Fixed
+
+- Filter, angle and board pickers keep their buttons at the top and no longer leave a gap at the bottom ([#6220](https://github.com/boardsesh/boardsesh/pull/6220))
+
 ## 2026-10-07
 
 ### New
