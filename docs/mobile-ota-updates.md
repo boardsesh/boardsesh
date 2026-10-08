@@ -2335,7 +2335,8 @@ updates" everywhere a climber can read it, never "beta": in this app beta means 
 `docs/feature-flags.md` → "Mobile flags"). The deployment pipeline now promotes exact staged bytes
 to `pr-beta` after deployment/schema readiness, independently of the stable activation switch.
 Before enabling the product flag, finish the download/pin serialization work described below and
-complete the device checks from #6101 on iOS and Android store builds: everything below rests on
+complete the device checks from #6101 on iOS and Android store builds. The serialization follow-up is
+tracked in [#6269](https://github.com/boardsesh/boardsesh/issues/6269): everything below rests on
 native expo-updates behaviour that unit tests model but cannot prove.
 
 After that serialization fix, pilot QA does not require enabling the flag for everyone.
