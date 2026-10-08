@@ -11,8 +11,8 @@ name: Mobile E2E Gate
 #   - schedule: nightly on main, so the gate cannot rot unseen. It gates nothing;
 #     it reports, and says so in Discord when something is red.
 #
-# TODAY THIS GATES NOTHING. Every job is advisory (see GATE_JOBS below), so the
-# nightly reports without failing and `passed` is vacuously true.
+# Expo web and both native smokes block the daily candidate. Real OTA bytes are
+# checked separately by mobile-ota-boot-check.yml against the frozen receipt.
 #
 # A called workflow sees its CALLER's event name, so "this is a call" is read off
 # `inputs.called`, which only workflow_call defines and which defaults to true
@@ -73,16 +73,14 @@ env:
   # failure fails the verdict, and the job not running makes `passed` false.
   # "advisory": reported in the table and nothing else. Key order is table order.
   #
-  # All advisory to start with, so the nightly reports without failing. Flip
-  # expo-web, android-smoke and ios-smoke to "blocking" once each has been green
-  # five nights running (the release PR does this). boot-real-bytes becomes
-  # "blocking" in the PR that implements it.
+  # Three required smokes; the separate real-bytes workflow is also required by
+  # the stable controller. The reserved placeholder contributes no pass.
   GATE_JOBS: >-
     {
       "boot-real-bytes": "advisory",
-      "expo-web": "advisory",
-      "android-smoke": "advisory",
-      "ios-smoke": "advisory"
+      "expo-web": "blocking",
+      "android-smoke": "blocking",
+      "ios-smoke": "blocking"
     }
   # Words for a job's Notes column. Remove an entry when its job becomes real.
   GATE_NOTES: >-

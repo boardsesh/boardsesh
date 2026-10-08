@@ -45,6 +45,9 @@ export const EARLY_UPDATES_BRANCH = 'pr-beta';
 /** Where main's export is staged and verified before its bytes are promoted. */
 export const STAGING_BRANCH = 'pr-staging';
 
+/** Frozen bytes tested before a daily stable canary; ordinary deploys never write here. */
+export const STABLE_CANDIDATE_BRANCH = 'pr-stable-candidate';
+
 /**
  * The scratch branch of the rollout proof (scripts/ota-rollout-proof.ts). It
  * holds synthetic updates under runtime versions no binary has, so that the
@@ -124,6 +127,11 @@ export const desiredOtaState: OtaDesiredState = {
         'Main is staged here and promoted byte for byte (scripts/mobile-ota-promote.ts). It carries the `pr-` ' +
         'prefix, so only the PR-number guard keeps a preview cleanup away from it. Protection is the second lock.',
     },
+    {
+      name: STABLE_CANDIDATE_BRANCH,
+      protected: true,
+      reason: 'Frozen daily release candidates must survive preview cleanup while native QA runs.',
+    },
   ],
 };
 
@@ -175,9 +183,7 @@ export interface OtaReleasePolicy {
  * Declared here rather than in repository variables so a change to a threshold is
  * a reviewed PR with a diff.
  *
- * Only `health` is read today, by `mobile-ota-rollout.ts health`. The steps, the
- * step hours, the soak and the daily window are declared policy that nothing
- * acts on until the stable-release workflow lands.
+ * Read by the stable controller and the manual rollout health command.
  */
 export const otaReleasePolicy: OtaReleasePolicy = {
   // Ends at 50, not 100: the last step is a soak on half the fleet, and finishing

@@ -3,17 +3,17 @@
 `.github/workflows/mobile-e2e-gate.yml` answers one question for one commit:
 is this commit's mobile JS fit to become today's stable OTA candidate?
 
-The daily release job will call it and refuse to cut a canary unless it passes.
-**Today it gates nothing.** It runs nightly on `main` (19:17 UTC) and on
-dispatch, and reports. Every job is advisory until it has been green five
-nights running.
+The daily stable controller calls it for the frozen candidate SHA and refuses to start a canary
+unless all three smokes pass. It also runs nightly on `main` (19:17 UTC) and on dispatch. Production
+automation remains disabled until fresh green/red proofs on both platforms and physical store-device
+early-update QA pass. The previous five-night advisory warm-up is not required.
 
 ## What each job proves
 
 | Job | What it runs | What a pass proves |
 | --- | --- | --- |
 | `resolve` | Turns the ref into a full SHA | Every other job tests that one commit, even if the branch moves mid-run |
-| `boot-real-bytes` | Nothing yet (reserved slot) | Nothing. The verdict reports it as "not run" |
+| `boot-real-bytes` | Reserved advisory placeholder | Nothing. The controller separately requires `mobile-ota-boot-check.yml` for both platforms against the frozen branch and receipt. |
 | `expo-web` | The Expo-web Playwright smoke (`e2e-tests.yml`) at the SHA | The browser app boots against a real local backend and passes its smoke suite |
 | `android-smoke` | The `smoke` Maestro flow on a KVM emulator: dev-client APK + Metro at the SHA, recorded backend | On Android the app boots, signs in, and puts real content on home, profile, climbs and the play drawer |
 | `ios-smoke` | The same flow on one iPhone 16 Pro Max simulator | The same, on iOS |
@@ -78,7 +78,8 @@ buys determinism and costs coverage. A green gate says nothing about:
 - **Hermes bytecode and the OTA launch path.** The app is a Debug dev-client
   loading an unminified bundle from Metro. It never downloads, verifies or
   launches a published update, and it never runs the bytes the fleet will get.
-  That is the job reserved for `boot-real-bytes`.
+  The controller's separate `mobile-ota-boot-check.yml` checks that path against the frozen receipt;
+  the reserved `boot-real-bytes` row contributes no pass.
 - **The queue sheet.** The only recorded flow that opens it does so inside a
   joined party session, by text-matched taps, on Android only.
 - **Anything behind a tap.** Every step is a deep link.
@@ -155,9 +156,9 @@ of the workflow.
 GATE_JOBS: >-
   {
     "boot-real-bytes": "advisory",
-    "expo-web": "advisory",
-    "android-smoke": "advisory",
-    "ios-smoke": "advisory"
+    "expo-web": "blocking",
+    "android-smoke": "blocking",
+    "ios-smoke": "blocking"
   }
 ```
 
@@ -169,13 +170,16 @@ An advisory job that fails still fails: its row is red, and GitHub shows the
 whole run as failed. Only the `verdict` job and the `passed` output ignore it.
 Read those two, not the run's colour.
 
-`passed` is true only when every blocking job passed. With nothing blocking it
-is vacuously true, and the verdict line says so ("nothing is blocking yet").
+`passed` is true only when every blocking job passed. Expo web, Android and iOS are blocking;
+the reserved boot row remains advisory. The controller additionally requires successful smoke and
+native-boot workflow results, explicit `passed=true`, and matching frozen SHA/receipt/branch. A missing,
+skipped, cancelled or failed check prevents release.
 
-Flip `expo-web`, `android-smoke` and `ios-smoke` to `blocking` once each has
-been green five nights running. Flip `boot-real-bytes` in the PR that
-implements it. `scripts/__tests__/mobile-e2e-gate-workflow.test.ts` pins the
-current map, so the flip is a two-line change: the map and that test.
+The behavior introduced in PR #6130 and the green/red native-byte proof in PR #6131 are historical
+evidence, not qualification for a newly prepared candidate. Activation requires refreshed green and
+deliberately broken runs on both platforms. Physical store builds still need early-update opt-in/out,
+offline restart, preview precedence, native-upgrade and flag-disablement QA. The daily stable controller
+runbook and historical native proof are in [mobile-ota-updates.md](./mobile-ota-updates.md).
 
 ## The native-crash class
 

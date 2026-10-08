@@ -39,6 +39,9 @@ on:
         required: false
         default: ''
     outputs:
+      sha:
+        description: Full SHA proved by the explicit receipt.
+        value: ${{ jobs.resolve.outputs.commit }}
       passed:
         description: "'true' when both platforms booted the update."
         value: ${{ jobs.verdict.outputs.passed }}
