@@ -905,7 +905,8 @@ jobs cannot qualify a candidate. Historical proof runs below do not substitute f
 candidates on iOS and Android, including the required navigation smokes and real downloaded bytes.
 On physical store builds, verify early-update opt-in and opt-out, offline restart, preview precedence,
 native upgrade and flag disablement. Then enable `OTA_STABLE_RELEASE_ENABLED`; activate the separate
-`early-updates` product flag only after that device QA. The five-night advisory warm-up is not a prerequisite.
+`early-updates` product flag only after that device QA and the download/pin serialization work in
+the Early updates section. The five-night advisory warm-up is not a prerequisite.
 The [2026-10-08 reconstruction proof](ota-differential-proof-2026-10-08.md) verifies one real production
 patch on each current native runtime: 18.34% of the measured gzip transfer on iOS and 20.43% on Android.
 Issue [#6098](https://github.com/boardsesh/boardsesh/issues/6098) remains open for fleet download timing,
@@ -2331,11 +2332,17 @@ receives every merge to `main`; a phone with it off follows `production`. It is 
 updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
 
 **Status: shipped dark.** The row is behind the `early-updates` PostHog flag (see
-`docs/feature-flags.md` → "Mobile flags"), which does not exist yet, and nothing publishes to
-`pr-beta` yet. Until both happen no climber sees the row and no device sends the header. The flag
-must stay off until the device checks in the PR that added this (#6101) have been done on an iOS and
-an Android store build: everything below rests on native expo-updates behaviour that unit tests
-model but cannot prove.
+`docs/feature-flags.md` → "Mobile flags"). The deployment pipeline now promotes exact staged bytes
+to `pr-beta` after deployment/schema readiness, independently of the stable activation switch.
+Before enabling the product flag, finish the download/pin serialization work described below and
+complete the device checks from #6101 on iOS and Android store builds: everything below rests on
+native expo-updates behaviour that unit tests model but cannot prove.
+
+After that serialization fix, pilot QA does not require enabling the flag for everyone.
+On a tester's phone, leave any PR or staging
+preview, then set **More → Feature Flags → Early updates → On** and **Get updates early → On**.
+The tester-only per-phone override persists across restart and wins over PostHog. After testing,
+turn Get updates early off and wait for the leave to complete before resetting the override to Default.
 
 ### Known cost: the first launch after every store update (Android)
 
@@ -2539,8 +2546,12 @@ middle of a no-reload switch is made, and stamped, under an override the switch 
 back, and a download of theirs after a same-session switch is attributed to the launch-time pin.
 
 That is deliberate while the flag is off: with no switch in the fleet the queue would protect
-nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing both
-through the queue (with the timeout) is owed before the flag is turned on.**
+nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing these
+downloads, including automatic schema-downgrade recovery, through the queue is owed before the flag
+is turned on.** Bound the branch-list request through response-body reading too: the early-update
+sync currently calls it while holding the pin queue. Expired waiting work must not start later;
+timing out a caller must not release a lock while an uncancelled native download still runs.
+Keep restart confirmation and reload outside the network timeout and preserve crash-screen recovery.
 
 ### Telemetry
 

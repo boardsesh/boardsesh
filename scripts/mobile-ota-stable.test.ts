@@ -1,6 +1,8 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initialStableState } from './lib/ota-stable';
 import { tickStable, abortStable, parseStableArgs, saveState, readState } from './mobile-ota-stable';
@@ -305,6 +307,69 @@ describe('stable controller execution', () => {
   });
 });
 describe('checkpoint file and command safety', () => {
+  function invokeWithoutAdmin(
+    path: string,
+    root: string,
+    overrides: { ref?: string; attempt?: string; loadedProducer?: string; apply?: boolean } = {},
+  ) {
+    return spawnSync(
+      process.execPath,
+      [
+        '--experimental-strip-types',
+        fileURLToPath(new URL('./mobile-ota-stable.ts', import.meta.url)),
+        'tick',
+        ...(overrides.apply === false ? [] : ['--apply']),
+        '--state',
+        path,
+        '--stage',
+        root,
+        '--loaded-state-run-id',
+        overrides.loadedProducer ?? '201',
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 10_000,
+        env: {
+          ...process.env,
+          GITHUB_ACTIONS: 'true',
+          GITHUB_REF: overrides.ref ?? 'refs/heads/main',
+          GITHUB_RUN_ATTEMPT: overrides.attempt ?? '1',
+          GITHUB_RUN_ID: '202',
+          OTA_ADMIN_EMAIL: '',
+          OTA_ADMIN_PASSWORD: '',
+        },
+      },
+    );
+  }
+  it('retains validated ownership under the new run producer when admin initialization fails', () => {
+    const { root, options } = fixture();
+    options.state.candidate = candidateFixture();
+    options.state.candidate.receipt.commitHash = 'f'.repeat(40);
+    const path = join(root, 'state.json');
+    saveState(path, options.state, '201');
+    const execution = invokeWithoutAdmin(path, root);
+    expect(execution.status).toBe(1);
+    expect(execution.stderr).toContain('Set OTA_ADMIN_EMAIL and OTA_ADMIN_PASSWORD');
+    const retained = readState(path);
+    expect(retained.checkpointRunId).toBe('202');
+    expect(retained.active).toEqual(options.state.active);
+    expect(retained.candidate).toEqual(options.state.candidate);
+  });
+  it.each([
+    { overrides: { ref: 'refs/heads/other' }, error: 'Only trusted main can apply' },
+    { overrides: { loadedProducer: '199' }, error: 'Checkpoint producer differs' },
+    { overrides: { attempt: '2' }, error: 'Dispatch a new controller run' },
+    { overrides: { apply: false }, error: 'Set OTA_ADMIN_EMAIL and OTA_ADMIN_PASSWORD' },
+  ])('does not relabel a refused or read-only checkpoint: $error', ({ overrides, error }) => {
+    const { root, options } = fixture();
+    const path = join(root, 'state.json');
+    saveState(path, options.state, '201');
+    const original = readFileSync(path, 'utf8');
+    const execution = invokeWithoutAdmin(path, root, overrides);
+    expect(execution.status).toBe(1);
+    expect(execution.stderr).toContain(error);
+    expect(readFileSync(path, 'utf8')).toBe(original);
+  });
   it('requires explicit apply and rejects unknown/repeated flags', () => {
     expect(parseStableArgs(['tick', '--state', 'state.json', '--stage', 'stage']).apply).toBe(false);
     expect(() => parseStableArgs(['tick', '--state', 'state.json', '--stage', 'stage', '--force'])).toThrow();

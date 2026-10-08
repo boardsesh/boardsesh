@@ -506,23 +506,25 @@ async function main(): Promise<void> {
     if (!state.candidate.qaPassed) process.exitCode = 1;
     return;
   }
-  const client = await adminClientFromEnvironment({
-    appId: desiredOtaState.appId,
-    defaultBaseUrl: desiredOtaState.baseUrl,
-    environment: process.env,
-  });
-  const options: ControllerOptions = {
-    client,
-    state,
-    stagePath: flags['--stage'],
-    manifestUrl: process.env.EXPO_UPDATES_URL || `${desiredOtaState.baseUrl}/manifest`,
-    token: process.env.EOO_TOKEN ?? '',
-    apply,
-    now: new Date(),
-    save,
-    log: console.log,
-  };
   try {
+    // Login failure must still retain a checkpoint belonging to this run.
+    // Otherwise its uploaded copy has the previous producer ID and blocks recovery.
+    const client = await adminClientFromEnvironment({
+      appId: desiredOtaState.appId,
+      defaultBaseUrl: desiredOtaState.baseUrl,
+      environment: process.env,
+    });
+    const options: ControllerOptions = {
+      client,
+      state,
+      stagePath: flags['--stage'],
+      manifestUrl: process.env.EXPO_UPDATES_URL || `${desiredOtaState.baseUrl}/manifest`,
+      token: process.env.EOO_TOKEN ?? '',
+      apply,
+      now: new Date(),
+      save,
+      log: console.log,
+    };
     if (command === 'prepare') {
       const candidate = await prepareStable(options, flags['--source-run-id'], flags['--source-sha'], runId);
       if (process.env.GITHUB_OUTPUT)
