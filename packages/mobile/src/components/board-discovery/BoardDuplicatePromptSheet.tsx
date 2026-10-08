@@ -18,8 +18,9 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
 
-const SNAP_POINTS = ['45%'];
+const SNAP_POINTS = MEDIUM_SNAP_POINTS;
 
 type BoardDuplicatePromptSheetProps = {
   duplicate: DuplicateBoardError;

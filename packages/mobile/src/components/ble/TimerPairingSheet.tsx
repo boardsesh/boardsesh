@@ -20,8 +20,9 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
-const SNAP_POINTS = ['60%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 type TimerPairingSheetProps = {
   onSelect: (timerName: string) => void;

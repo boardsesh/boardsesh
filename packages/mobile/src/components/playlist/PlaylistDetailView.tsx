@@ -1,10 +1,11 @@
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import {
   type ColorValue,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
+  RefreshControl,
   View,
   StyleSheet,
 } from 'react-native';
@@ -17,7 +18,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { Appbar } from 'react-native-paper';
@@ -31,9 +32,9 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
-import { GlassIconButton } from '../GlassIconButton';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import { PlaylistAddToQueueRow } from './PlaylistAddToQueueRow';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
@@ -55,6 +56,7 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { usePullRefresh } from '../../hooks/use-pull-refresh';
 import { glassSize } from '../../theme/layout';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -66,8 +68,8 @@ const HERO_SCRIM_LOCATIONS = [0, 0.45, 1] as const;
 const GRADIENT_START = { x: 0, y: 0 } as const;
 const GRADIENT_END = { x: 1, y: 1 } as const;
 /** Nav-bar height (below the status-bar inset) for the collapsed header — tall
- *  enough to contain the floating FABs (which sit `spacing[1]` below the inset),
- *  so they're centered in the bar rather than poking out under it. */
+ *  enough to contain the header buttons, so they sit inside the bar rather than
+ *  poking out under it. */
 const NAV_BAR_HEIGHT = glassSize.standard + spacing[1] * 2;
 /** Rows of skeleton placeholder shown while the first page loads. */
 const SKELETON_ROW_COUNT = 8;
@@ -137,11 +139,16 @@ export type PlaylistDetailViewProps = {
   /** Optional CTA under the empty state (e.g. "Add climbs" on an owner's empty
    *  playlist). Rendered in BOTH variants; omit for a message-only empty state. */
   emptyAction?: PlaylistDetailEmptyAction;
-  /** Floating top-right controls (follow / pin / more) over the hero, given the
-   *  current collapse state so a control can swap to its compact icon form once
-   *  the colour header bar takes over. The back FAB on the left is always
-   *  rendered; absent here = a back-only top bar. */
+  /** Top-right controls (follow / pin / more), given the current collapse state
+   *  so a control can swap to its compact icon form once the colour header bar
+   *  takes over. On Liquid Glass they are the native header's trailing item, next
+   *  to its own back button; on Material they sit in the in-body app bar. Absent
+   *  here = a back-only bar. */
   actions?: (collapsed: boolean) => ReactNode;
+  /** Pull to refresh (HIG Refresh content controls). Refetch everything the
+   *  screen shows; the spinner stays until the returned promise settles. Omit to
+   *  turn pull-to-refresh off. */
+  onRefresh?: () => unknown;
   /** Owner edit mode: rows swap to the reorder/remove treatment, tap-to-activate
    *  is disabled, and pagination is paused (the host passes a frozen list). */
   editMode?: boolean;
@@ -165,6 +172,8 @@ export type PlaylistDetailViewProps = {
 };
 
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
+const noopRefresh = () => undefined;
+const renderNoHeaderTitle = () => null;
 const noopRemove = (_climbUuid: string) => {};
 
 type ResolvedPlaylistClimbRow =
@@ -214,6 +223,7 @@ export function PlaylistDetailView({
   headerSlot,
   onAddAllToQueue,
   isAddingAllToQueue = false,
+  onRefresh,
 }: PlaylistDetailViewProps) {
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
@@ -265,7 +275,49 @@ export function PlaylistDetailView({
       if (isCollapsed !== wasCollapsed) runOnJS(setCollapsed)(isCollapsed);
     },
   );
-  const actionNode = actions?.(collapsed);
+
+  // Liquid Glass shows the NATIVE header (HIG Navigation bars): its back button
+  // keeps the long-press history menu and the edge-swipe a hand-built chevron
+  // can't give. It is transparent over the full-bleed hero, draws no title of its
+  // own (the hero, then the collapsed colour bar below, carry the name; `title`
+  // still names this screen in the back menu), and hosts the actions as its
+  // trailing item. On iOS 26 that item already sits in the bar's Liquid Glass
+  // capsule, so the region is declared `glass` and the controls inside drop
+  // their own glass instead of stacking it (HIG Materials).
+  //
+  // Material keeps its in-body app bar, so the native header stays hidden
+  // ("header XOR in-body Appbar", theme/variants/README.md).
+  const navigation = useNavigation();
+  const headerTitle = hero.name;
+  useLayoutEffect(() => {
+    if (isMaterial) {
+      navigation.setOptions({ headerShown: false, headerRight: undefined });
+      return;
+    }
+    navigation.setOptions({
+      headerShown: true,
+      headerTransparent: true,
+      headerBlurEffect: 'none',
+      title: headerTitle,
+      headerTitle: renderNoHeaderTitle,
+      // Keyed on the memoised `actions` and `collapsed`, never on a rendered node:
+      // a fresh element each render would re-set the options on every render.
+      headerRight: actions
+        ? () => <ButtonSurfaceProvider surface="glass">{actions(collapsed)}</ButtonSurfaceProvider>
+        : undefined,
+    });
+  }, [navigation, isMaterial, headerTitle, actions, collapsed]);
+
+  const pullRefresh = usePullRefresh(onRefresh ?? noopRefresh);
+  const refreshControl = onRefresh ? (
+    <RefreshControl
+      refreshing={pullRefresh.refreshing}
+      onRefresh={pullRefresh.onRefresh}
+      tintColor={brandColors.primary}
+      // Android draws the spinner over the content; start it below the app bar.
+      progressViewOffset={headerBarHeight}
+    />
+  ) : undefined;
 
   const loadNextPage = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
@@ -502,6 +554,7 @@ export function PlaylistDetailView({
           onEndReachedThreshold={0.5}
           onScroll={handleScroll}
           scrollEventThrottle={16}
+          refreshControl={refreshControl}
           contentContainerStyle={{ paddingBottom: listPaddingBottom }}
           ListHeaderComponent={
             <>
@@ -612,7 +665,7 @@ export function PlaylistDetailView({
       {/* Full-bleed colour banner running up under the (transparent) header,
           replacing the small colour square. White text + a bottom scrim keep it
           legible across every palette colour and arbitrary user hex. */}
-      {/* Clear the floating back + action FABs that sit over the banner top. */}
+      {/* Clear the native header's back + action buttons over the banner top. */}
       <View
         onLayout={handleHeroLayout}
         style={[styles.heroBanner, { paddingTop: insets.top + spacing[12] + spacing[2], backgroundColor: baseColor }]}
@@ -704,6 +757,7 @@ export function PlaylistDetailView({
         // would briefly expose the screen background behind the island).
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
+        refreshControl={refreshControl}
         contentContainerStyle={{ paddingBottom: listPaddingBottom }}
         ListHeaderComponent={
           <>
@@ -719,7 +773,7 @@ export function PlaylistDetailView({
 
       {/* Collapsed header bar — a progressive blur (matching the tabs' chrome)
           carrying the centered name, fading in once the hero scrolls off. Sits
-          below the floating FABs. */}
+          under the transparent native header and its buttons. */}
       <Animated.View
         pointerEvents="none"
         style={[styles.headerBar, { height: headerBarHeight, paddingTop: insets.top }, headerBarStyle]}
@@ -731,23 +785,6 @@ export function PlaylistDetailView({
           </Text>
         </View>
       </Animated.View>
-
-      {/* Floating top bar over the gradient hero — replaces the native header.
-          Back chevron on the left, optional follow/pin/more on the right. */}
-      <View pointerEvents="box-none" style={[styles.topBar, { paddingTop: insets.top + spacing[1] }]}>
-        <GlassIconButton
-          iconName="back"
-          iconColor={systemColors.label}
-          onPress={() => router.back()}
-          accessibilityLabel={tCommon('ariaLabels.back')}
-          fallbackColor={systemColors.fill}
-        />
-        {actionNode ? (
-          <View pointerEvents="box-none" style={styles.topBarActions}>
-            {actionNode}
-          </View>
-        ) : null}
-      </View>
     </View>
   );
 }
@@ -925,27 +962,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    // Keep the centered name clear of the back / action FABs at the edges.
+    // Keep the centered name clear of the header's back / action buttons.
     paddingHorizontal: 64,
   },
   headerBarTitle: {
     fontWeight: '600',
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-  },
-  topBarActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
   },
   hero: {
     marginBottom: spacing[2],

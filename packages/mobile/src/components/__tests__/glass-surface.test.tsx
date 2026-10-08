@@ -88,6 +88,7 @@ vi.mock('../../theme/ios-colors', () => ({
 vi.mock('../../theme/tokens', () => ({ shadows: { sm: { elevation: 2 } } }));
 
 import { GlassSurface } from '../GlassSurface';
+import { ButtonSurfaceProvider } from '../Button.surface';
 
 beforeEach(() => {
   ctrl.os = 'ios';
@@ -275,5 +276,41 @@ describe('GlassSurface as a background (flat + non-interactive)', () => {
   it('forwards pointerEvents to the Material surface so a background takes no touches', () => {
     const { container } = render(<GlassSurface role="low" level="level0" pointerEvents="none" />);
     expect(container.querySelector('[data-elevation="0"]')?.getAttribute('data-pe')).toBe('none');
+  });
+});
+
+// HIG Materials: Liquid Glass is the controls layer, and glass never sits on
+// glass. A region that is already glass declares it, and the surfaces inside
+// it keep their layout but drop their own glass.
+describe('GlassSurface inside a glass region', () => {
+  it('drops its own Liquid Glass and keeps its children', () => {
+    const { queryByTestId, getByText } = render(
+      <ButtonSurfaceProvider surface="glass">
+        <GlassSurface>
+          <span>glyph</span>
+        </GlassSurface>
+      </ButtonSurfaceProvider>,
+    );
+    expect(queryByTestId('glass-view')).toBeNull();
+    expect(getByText('glyph')).not.toBeNull();
+  });
+
+  it('keeps its glass inside an ordinary surface region', () => {
+    const { queryByTestId } = render(
+      <ButtonSurfaceProvider surface="surface">
+        <GlassSurface />
+      </ButtonSurfaceProvider>,
+    );
+    expect(queryByTestId('glass-view')).not.toBeNull();
+  });
+
+  it('keeps the blur fallback on iOS < 26, where no native glass capsule replaces it', () => {
+    ctrl.glass = false;
+    const { queryByTestId } = render(
+      <ButtonSurfaceProvider surface="glass">
+        <GlassSurface />
+      </ButtonSurfaceProvider>,
+    );
+    expect(queryByTestId('blur-view')).not.toBeNull();
   });
 });

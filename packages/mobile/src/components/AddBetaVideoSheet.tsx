@@ -30,6 +30,7 @@ import { useToast } from '../providers/toast-provider';
 import { useTheme } from '../providers/theme-provider';
 import { spacing, borderRadius } from '../theme/tokens';
 import { textStyles } from '../theme/typography';
+import { LARGE_SNAP_POINTS } from './sheet-snap-points';
 
 type AddBetaVideoSheetProps = {
   visible: boolean;
@@ -125,7 +126,8 @@ export function AddBetaVideoSheet({
     );
   }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose]);
 
-  const snapPoints = useMemo(() => ['85%'], []);
+  // A form: large, so the field and its keyboard both fit (HIG Sheets).
+  const snapPoints = LARGE_SNAP_POINTS;
   const submitDisabled = !isValid || attach.isPending;
 
   const header = (

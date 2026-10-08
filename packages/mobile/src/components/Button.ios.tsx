@@ -11,8 +11,10 @@
 //                  `bordered` fallback on iOS < 26 (we branch on
 //                  `useGlassCapability()` rather than trusting @expo/ui's implicit
 //                  glass→`.automatic` degradation, which is a borderless/plain
-//                  button, not a solid); and a solid dark-scrim capsule when the
-//                  surrounding region declares `over="content"` (board art).
+//                  button, not a solid); a solid dark-scrim capsule when the
+//                  surrounding region declares `over="content"` (board art); and
+//                  the same `bordered` capsule when it declares `over="glass"`,
+//                  since glass never sits on glass (HIG Materials).
 //                  `tonal` aliases `outlined` on iOS (HIG has no tonal idiom).
 //   text         → borderless, accent-tinted label.
 //
@@ -108,7 +110,7 @@ export function Button({
       styleModifier = buttonStyle('borderedProminent');
       fillTint = overlays.scrim;
       contentColor = overlays.onScrim;
-    } else if (supportsGlass) {
+    } else if (supportsGlass && effectiveOver !== 'glass') {
       styleModifier = buttonStyle('glass');
       fillTint = undefined; // neutral glass; the brand reads via the label colour
       contentColor = accentColor;

@@ -39,3 +39,20 @@ export function androidSafeSnapPoints(snapPoints: (string | number)[]): (string 
   if (percent == null || percent >= ANDROID_NEAR_FULL_DETENT_PERCENT) return snapPoints;
   return [only, '100%'];
 }
+
+/**
+ * The app's two standard sheet heights (HIG Sheets: medium and large detents).
+ * Medium is half the screen; large is 90%, the app's long-standing "large",
+ * which leaves the presenting screen peeking above it as iOS does. These are
+ * also `Sheet` / `ModalSheet`'s defaults. A sheet picks one of these, or sizes
+ * to its content; a custom height needs a written reason next to it (see
+ * __tests__/standard-sheet-heights.test.ts).
+ */
+export const SHEET_DETENT_MEDIUM = '50%';
+export const SHEET_DETENT_LARGE = '90%';
+/** Medium only: a short prompt or chooser. */
+export const MEDIUM_SNAP_POINTS: string[] = [SHEET_DETENT_MEDIUM];
+/** Opens at medium, drags to large. */
+export const MEDIUM_LARGE_SNAP_POINTS: string[] = [SHEET_DETENT_MEDIUM, SHEET_DETENT_LARGE];
+/** Opens at large only: forms and long lists. */
+export const LARGE_SNAP_POINTS: string[] = [SHEET_DETENT_LARGE];

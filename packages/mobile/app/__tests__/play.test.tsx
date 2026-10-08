@@ -28,7 +28,6 @@ vi.mock('../../src/components/launch-update/hold-until-launch-ready', () => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'backing' }, children),
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
   useWindowDimensions: () => ({ height: 900, width: 400 }),
 }));
@@ -57,8 +56,8 @@ vi.mock('react-native-reanimated', async () => {
   };
 });
 vi.mock('expo-router', () => ({ useRouter: () => router, useNavigation: () => navigation }));
-vi.mock('../../src/components/GlassSurface', () => ({
-  GlassSurface: () => createElement('div', { 'data-testid': 'glass' }),
+vi.mock('../../src/components/ScreenBackground', () => ({
+  ScreenBackground: () => createElement('div', { 'data-testid': 'background' }),
 }));
 vi.mock('../../src/components/play-drawer', () => ({
   PlayDrawer: ({ swipeDismiss, onClose }: { swipeDismiss: SwipeDismissAnimation; onClose: () => void }) => {
@@ -122,11 +121,10 @@ afterEach(() => {
 });
 
 describe('player swipe dismissal', () => {
-  it('keeps backing, glass and player inside the same translated surface', () => {
+  it('keeps the background and player inside the same translated surface', () => {
     const { animation } = renderPlayer();
     const movingSurface = screen.getByTestId('moving-surface');
-    expect(movingSurface.contains(screen.getByTestId('backing'))).toBe(true);
-    expect(movingSurface.contains(screen.getByTestId('glass'))).toBe(true);
+    expect(movingSurface.contains(screen.getByTestId('background'))).toBe(true);
     expect(movingSurface.contains(screen.getByRole('button', { name: 'Close player' }))).toBe(true);
     act(() => {
       animation.translateY.value = 900;

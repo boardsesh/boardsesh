@@ -221,7 +221,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
       // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
       hidden ? null : createElement('section', { 'data-trigger': name, 'data-tab-role': role }, children),
     {
-      Icon: () => createElement('span', { 'data-icon': 'true' }),
+      Icon: ({ sf }: { sf?: unknown }) => createElement('span', { 'data-icon': 'true', 'data-sf': JSON.stringify(sf) }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
       Badge: ({ children, selectedBackgroundColor }: { children?: ReactNode; selectedBackgroundColor?: string }) =>
         createElement(
@@ -715,6 +715,24 @@ describe('TabLayout', () => {
     const recordTrigger = container.querySelector('[data-trigger="record"]') as HTMLElement;
 
     expect(recordTrigger.querySelector('[data-badge="true"]')).toBeNull();
+  });
+
+  it('fills the selected native tab icon and keeps the outline when unselected (HIG Tab bars)', () => {
+    const { container } = render(<TabLayout />);
+    const symbols = Object.fromEntries(
+      Array.from(container.querySelectorAll('[data-trigger]')).map((trigger) => [
+        trigger.getAttribute('data-trigger'),
+        JSON.parse(trigger.querySelector('[data-icon]')?.getAttribute('data-sf') ?? 'null') as unknown,
+      ]),
+    );
+
+    expect(symbols).toEqual({
+      home: { default: 'house', selected: 'house.fill' },
+      climbs: 'magnifyingglass',
+      record: { default: 'record.circle', selected: 'record.circle.fill' },
+      discover: { default: 'bookmark', selected: 'bookmark.fill' },
+      profile: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
+    });
   });
 
   it('keeps native tab minimization enabled globally', () => {

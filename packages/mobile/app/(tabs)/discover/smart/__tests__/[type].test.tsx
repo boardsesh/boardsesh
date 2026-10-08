@@ -48,7 +48,7 @@ type DetailViewProps = {
 };
 vi.mock('../../../../../src/components/playlist', () => ({
   SKELETON_PLACEHOLDERS: [],
-  PlaylistBackFab: () => null,
+  PlaylistStateHeader: () => null,
   PlaylistDetailView: ({ onActivateClimb, onAddAllToQueue, isAddingAllToQueue }: DetailViewProps) =>
     createElement(
       'div',

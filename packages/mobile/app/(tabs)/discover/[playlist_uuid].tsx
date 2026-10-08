@@ -31,7 +31,7 @@ import {
   PlaylistFollowButton,
   PlaylistEditDoneButton,
   PlaylistOwnerToolbar,
-  PlaylistBackFab,
+  PlaylistStateHeader,
   PlaylistDiscussionRow,
   type PlaylistFormValues,
 } from '../../../src/components/playlist';
@@ -214,7 +214,6 @@ export default function PlaylistDetail() {
   const [followerCount, setFollowerCount] = useState(0);
   const [followLoading, setFollowLoading] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
-  const [actionsVisible, setActionsVisible] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   // Update failures surface INLINE in the edit sheet, not via a root toast — a
   // toast fired while the native sheet is open renders behind it and is invisible.
@@ -475,46 +474,10 @@ export default function PlaylistDetail() {
     setEditVisible(true);
   }, []);
 
-  // Collapsed overflow menu (owner). Every row acts IMMEDIATELY and closes the
-  // sheet itself — never defer the work to `onClose`. Setting `visible` false
-  // goes through the sheet coordinator, which sets `selfDismissRef` and
-  // deliberately swallows `onClose` for a controlled close (see the
-  // 'a coordinator-driven dismiss does NOT fire onClose (selfDismissRef gate)'
-  // test in src/providers/__tests__/sheet-presentation-provider.test.tsx). A row
-  // that hands its work to `onClose` is a silent no-op — that was #3966.
-  const menuTogglePin = useCallback(() => {
-    setActionsVisible(false);
-    void handleTogglePin();
-  }, [handleTogglePin]);
-
-  const menuEnterEdit = useCallback(() => {
-    setActionsVisible(false);
-    enterEditMode();
-  }, [enterEditMode]);
-
-  // The coordinator serialises the dismiss-then-present handoff, so opening the
-  // edit-details sheet in the same tick is safe.
-  const menuEditDetails = useCallback(() => {
-    setActionsVisible(false);
-    openEditDetails();
-  }, [openEditDetails]);
-
   // There is no add-from-here flow yet — adding runs through a climb's own
   // action menu — so both the overflow row and the empty-state CTA just land the
   // user on the Climbs tab instead of leaving them at a dead end (#3966).
   const goToClimbs = useCallback(() => router.navigate('/(tabs)/climbs'), [router]);
-
-  const menuAddClimbs = useCallback(() => {
-    setActionsVisible(false);
-    goToClimbs();
-  }, [goToClimbs]);
-
-  const openDelete = useCallback(() => {
-    setActionsVisible(false);
-    handleDelete();
-  }, [handleDelete]);
-
-  const handleActionsClose = useCallback(() => setActionsVisible(false), []);
 
   // Owners only, and only while the playlist matches the active board — when it
   // does not, the switch-board banner owns that prompt.
@@ -524,10 +487,10 @@ export default function PlaylistDetail() {
     [canAddClimbs, goToClimbs, t],
   );
 
-  // Floating controls over the hero. Owners get a pin · edit · delete glass
-  // toolbar that collapses to a single overflow ⋯ on scroll (and always on
-  // Material, which asks for the collapsed form). Non-owners keep follow + pin.
-  // Edit mode replaces everything with Done.
+  // Header controls over the hero. Owners get a pin · edit · delete toolbar that
+  // collapses to a single overflow ⋯ menu on scroll (and always on Material,
+  // which asks for the collapsed form). Non-owners keep follow + pin. Edit mode
+  // replaces everything with Done.
   const renderActions = useCallback(
     (collapsed: boolean) => {
       if (!playlist) return null;
@@ -537,12 +500,13 @@ export default function PlaylistDetail() {
       if (isOwner) {
         if (collapsed) {
           return (
-            <GlassIconButton
-              iconName="more"
-              iconColor={systemColors.label}
-              onPress={() => setActionsVisible(true)}
-              accessibilityLabel={t('detail.actions')}
-              fallbackColor={systemColors.fill}
+            <PlaylistActionsMenu
+              isPinned={isPinned}
+              onTogglePin={handleTogglePin}
+              onAddClimbs={canAddClimbs ? goToClimbs : undefined}
+              onEditDetails={openEditDetails}
+              onEdit={enterEditMode}
+              onDelete={handleDelete}
             />
           );
         }
@@ -594,10 +558,22 @@ export default function PlaylistDetail() {
       isFollowing,
       handleToggleFollow,
       followLoading,
+      canAddClimbs,
+      goToClimbs,
+      openEditDetails,
       systemColors,
       brandColors,
       t,
     ],
+  );
+
+  // Pull to refresh (HIG Refresh content controls): the playlist's details, its
+  // climbs and the discussion count.
+  const { refetch: refetchClimbs } = query;
+  const { refetch: refetchDiscussion } = discussionQuery;
+  const handleRefresh = useCallback(
+    () => Promise.all([refetchMeta(), refetchClimbs(), discussionEntityId ? refetchDiscussion() : undefined]),
+    [refetchMeta, refetchClimbs, refetchDiscussion, discussionEntityId],
   );
 
   const hero = useMemo(
@@ -623,7 +599,7 @@ export default function PlaylistDetail() {
   if (metaError && !playlist) {
     return (
       <View style={styles.stateContainer}>
-        <PlaylistBackFab />
+        <PlaylistStateHeader />
         <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('detail.errors.loadTitle')}
@@ -652,7 +628,7 @@ export default function PlaylistDetail() {
   if (!metaLoading && playlist === null) {
     return (
       <View style={styles.stateContainer}>
-        <PlaylistBackFab />
+        <PlaylistStateHeader />
         <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('detail.errors.notFoundTitle')}
@@ -667,7 +643,7 @@ export default function PlaylistDetail() {
   if (metaLoading && allClimbs.length === 0) {
     return (
       <View style={styles.skeletonContainer}>
-        <PlaylistBackFab />
+        <PlaylistStateHeader />
         <View style={styles.skeletonList}>
           {SKELETON_PLACEHOLDERS.map((key) => (
             <ClimbListRowSkeleton key={key} />
@@ -699,22 +675,12 @@ export default function PlaylistDetail() {
         onEditDetails={openEditDetails}
         onAddAllToQueue={playlistActivation.addToQueue.append}
         isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
+        onRefresh={handleRefresh}
         headerSlot={
           discussionEntityId && !editMode ? (
             <PlaylistDiscussionRow commentCount={commentCount} onPress={openDiscussion} />
           ) : null
         }
-      />
-
-      <PlaylistActionsMenu
-        visible={actionsVisible}
-        isPinned={isPinned}
-        onTogglePin={menuTogglePin}
-        onAddClimbs={canAddClimbs ? menuAddClimbs : undefined}
-        onEditDetails={menuEditDetails}
-        onEdit={menuEnterEdit}
-        onDelete={openDelete}
-        onClose={handleActionsClose}
       />
 
       <PlaylistFormSheet

@@ -19,8 +19,14 @@ export type ButtonSize = 'small' | 'medium' | 'large';
  * middle/low-emphasis tiers drop their translucent Liquid Glass for a solid,
  * legible capsule. The filled CTA is solid on EVERY surface, so it never depends
  * on this.
+ *
+ * `glass` is a region that already IS Liquid Glass (a glass panel, island, or a
+ * native iOS 26 bar item, which wraps its content in a glass capsule). HIG
+ * Materials: never stack glass on glass, so the middle tier draws a `bordered`
+ * capsule instead, and every `GlassSurface` inside the region drops its own
+ * glass layer (see GlassSurface).
  */
-export type ButtonSurface = 'surface' | 'content';
+export type ButtonSurface = 'surface' | 'content' | 'glass';
 
 /**
  * Native semantic role. `destructive` paints the system red and adds the

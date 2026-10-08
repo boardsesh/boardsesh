@@ -1,15 +1,8 @@
-import { useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ModalSheet } from '../ModalSheet';
-import { ListRow } from '../ListRow';
-import { Icon } from '../Icon';
-import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing } from '../../theme/tokens';
+import { AppMenu, type AppMenuAction } from '../AppMenu';
 
 type PlaylistActionsMenuProps = {
-  visible: boolean;
   isPinned: boolean;
   onTogglePin: () => void;
   /** Head to the Climbs tab to pick something to add. Omit to hide the row (the
@@ -20,86 +13,55 @@ type PlaylistActionsMenuProps = {
   /** Enter the climbs edit mode (reorder + remove). */
   onEdit: () => void;
   onDelete: () => void;
-  onClose: () => void;
 };
 
+type MenuEntry = { action: AppMenuAction; run: () => void };
+
 /**
- * Owner overflow sheet — the collapsed form of the hero's pin · edit · delete
+ * Owner overflow menu — the collapsed form of the hero's pin · edit · delete
  * toolbar, shown once the hero scrolls away (and ALWAYS on Material, where it is
  * the only owner affordance). Rows: pin · add climbs · edit details · reorder &
  * remove climbs · delete.
  *
- * Every row's handler must do its work immediately. `onClose` only fires on a
- * user pan-down or backdrop tap — the sheet coordinator suppresses it for a
- * controlled `visible: true -> false` — so a handler that defers to `onClose`
- * silently does nothing (#3966).
+ * HIG Pull-down buttons: five or fewer plain actions with no rich content are a
+ * menu off the ⋯ button, not a sheet. `AppMenu` is a native UIMenu on iOS and a
+ * dropdown on Android; the delete row takes the destructive role.
  */
 export function PlaylistActionsMenu({
-  visible,
   isPinned,
   onTogglePin,
   onAddClimbs,
   onEditDetails,
   onEdit,
   onDelete,
-  onClose,
 }: PlaylistActionsMenuProps) {
   const { t } = useTranslation('playlists');
-  const { actionColors } = useTheme();
-  // Room for four rows, or five when the add-climbs row is shown, on short
-  // screens (e.g. iPhone SE landscape).
-  const snapPoints = useMemo(() => [onAddClimbs ? '56%' : '46%'], [onAddClimbs]);
-  // Monochrome on Liquid Glass, semantic on Material — resolved once as a token.
-  const { accent: accentActionIconColor, pin: pinActionIconColor } = actionColors;
+
+  const entries = useMemo<MenuEntry[]>(() => {
+    const list: MenuEntry[] = [
+      {
+        action: {
+          label: isPinned ? t('library.pin.unpin') : t('library.pin.pin'),
+          systemIcon: isPinned ? 'pin.slash' : 'pin',
+        },
+        run: onTogglePin,
+      },
+    ];
+    if (onAddClimbs) {
+      list.push({ action: { label: t('detail.menu.addClimbs'), systemIcon: 'plus' }, run: onAddClimbs });
+    }
+    list.push(
+      { action: { label: t('detail.menu.editDetails'), systemIcon: 'gearshape' }, run: onEditDetails },
+      { action: { label: t('detail.menu.editClimbs'), systemIcon: 'pencil' }, run: onEdit },
+      { action: { label: t('detail.menu.delete'), systemIcon: 'trash', destructive: true }, run: onDelete },
+    );
+    return list;
+  }, [isPinned, onTogglePin, onAddClimbs, onEditDetails, onEdit, onDelete, t]);
+
+  const actions = useMemo(() => entries.map((entry) => entry.action), [entries]);
+  const handleSelect = useCallback((index: number) => entries[index]?.run(), [entries]);
 
   return (
-    <ModalSheet visible={visible} snapPoints={snapPoints} onClose={onClose}>
-      <View style={styles.content}>
-        <ListRow
-          title={isPinned ? t('library.pin.unpin') : t('library.pin.pin')}
-          leading={
-            <Icon
-              name={isPinned ? 'pin.fill' : 'pin'}
-              size={22}
-              color={isPinned ? pinActionIconColor : accentActionIconColor}
-            />
-          }
-          onPress={onTogglePin}
-          showSeparator
-        />
-        {onAddClimbs ? (
-          <ListRow
-            title={t('detail.menu.addClimbs')}
-            leading={<Icon name="add" size={22} color={accentActionIconColor} />}
-            onPress={onAddClimbs}
-            showSeparator
-          />
-        ) : null}
-        <ListRow
-          title={t('detail.menu.editDetails')}
-          leading={<Icon name="settings" size={22} color={accentActionIconColor} />}
-          onPress={onEditDetails}
-          showSeparator
-        />
-        <ListRow
-          title={t('detail.menu.editClimbs')}
-          leading={<Icon name="edit" size={22} color={accentActionIconColor} />}
-          onPress={onEdit}
-          showSeparator
-        />
-        <ListRow
-          title={t('detail.menu.delete')}
-          leading={<Icon name="delete" size={22} color={iosSystemColors.systemRed} />}
-          onPress={onDelete}
-          showSeparator={false}
-        />
-      </View>
-    </ModalSheet>
+    <AppMenu iconName="more" accessibilityLabel={t('detail.actions')} actions={actions} onSelectIndex={handleSelect} />
   );
 }
-
-const styles = StyleSheet.create({
-  content: {
-    paddingTop: spacing[2],
-  },
-});

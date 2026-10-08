@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Pressable, RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
@@ -41,6 +41,7 @@ import { useAuthToken } from '../../../src/lib/graphql/use-auth-token';
 import { useProfile, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { iconMap } from '../../../src/components/icon-map';
 import { selectByVariant } from '../../../src/theme/variants';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
@@ -597,9 +598,42 @@ export default function DiscoverLibrary() {
     refetchFollowedSetters,
   ]);
 
+  // Pull to refresh (HIG Refresh content controls): every shelf on the hub. The
+  // playlist hooks report progress through their loading flags, the React Query
+  // sources through their promises; the spinner waits for both.
+  const handlePullRefresh = useCallback(() => {
+    refetchUser();
+    refetchCommunity();
+    // Typed `() => void`, but the pinned hook's refetch is its async fetch, so
+    // the spinner can wait on what it returns.
+    const pinnedRefresh: unknown = refetchPinned();
+    return Promise.all([
+      pinnedRefresh,
+      refetchSmartCounts(),
+      followedSettersEnabled ? refetchFollowedSetters() : undefined,
+    ]);
+  }, [
+    refetchUser,
+    refetchPinned,
+    refetchCommunity,
+    refetchSmartCounts,
+    followedSettersEnabled,
+    refetchFollowedSetters,
+  ]);
+  const pullRefresh = usePullRefresh(handlePullRefresh, userPlaylistsLoading || communityLoading);
+
   return (
     <View style={styles.flex}>
       <ScrollView
+        refreshControl={
+          <RefreshControl
+            refreshing={pullRefresh.refreshing}
+            onRefresh={pullRefresh.onRefresh}
+            tintColor={brandColors.primary}
+            // Android draws the spinner over the content; start it below the chrome.
+            progressViewOffset={chromeHeight}
+          />
+        }
         style={styles.flex}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{
