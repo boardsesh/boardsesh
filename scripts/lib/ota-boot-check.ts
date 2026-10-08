@@ -23,6 +23,48 @@ export type BootPlatform = (typeof BOOT_PLATFORMS)[number];
 export const APP_BUNDLE_ID = 'com.boardsesh.app';
 export const OTA_APP_ID = '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 
+/** adbd may close the requesting transport while switching to root. Only UID0 proves the reconnect succeeded. */
+export function ensureAndroidRoot(
+  adb: (args: readonly string[], timeoutMs: number) => string,
+  nowMs: () => number = Date.now,
+): void {
+  const deadline = nowMs() + 30_000;
+  const remainingMs = () => {
+    const remaining = deadline - nowMs();
+    if (remaining <= 0) throw new Error('adb root handshake exceeded 30 seconds.');
+    return remaining;
+  };
+  const transportRestart = (error: unknown) =>
+    error instanceof Error &&
+    /unable to connect for root: closed|device offline|device not found|connection reset|transport.*closed/i.test(
+      error.message,
+    );
+  let lastUid = 'unconfirmed';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let restarting = false;
+    try {
+      const output = adb(['root'], remainingMs());
+      if (/adbd cannot run as root|root access is disabled/i.test(output))
+        throw new Error('The emulator refuses adb root; private app evidence requires UID0.');
+      restarting = /restarting adbd as root/i.test(output);
+    } catch (error) {
+      if (!transportRestart(error)) throw error;
+      restarting = true;
+    }
+    try {
+      adb(['wait-for-device'], remainingMs());
+      lastUid = adb(['shell', 'id', '-u'], remainingMs()).trim();
+      if (lastUid === '0') return;
+      if (!restarting) throw new Error(`adb root is unverified (UID ${lastUid}); private app evidence requires UID0.`);
+    } catch (error) {
+      if (!transportRestart(error)) throw error;
+    }
+  }
+  throw new Error(
+    `adb root could not be verified after 3 attempts (UID ${lastUid}); private app evidence requires UID0.`,
+  );
+}
+
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const RUNTIME_VERSION = /^[0-9a-f]{40}$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;

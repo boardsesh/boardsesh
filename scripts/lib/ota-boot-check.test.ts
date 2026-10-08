@@ -2,13 +2,14 @@
 
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   androidEasClientPrefsXml,
   androidLaunchCommand,
   BOOT_CHECK_CLIENT_IDS,
   checkBinary,
   evidenceFromCapture,
+  ensureAndroidRoot,
   expectationFromReceipt,
   findFatalLogLines,
   formatVerdict,
@@ -23,6 +24,105 @@ import {
   updatesLogSince,
 } from './ota-boot-check';
 import type { BootCapture, BootPlatform, ServedHead } from './ota-boot-check';
+
+describe('Android root reconnect handshake', () => {
+  it('accepts a closed root transport only after reconnect and exact UID0 verification', () => {
+    const adb = vi
+      .fn<(args: readonly string[], timeoutMs: number) => string>()
+      .mockImplementationOnce(() => {
+        throw new Error('adb root exited 1: adb: unable to connect for root: closed');
+      })
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce('0\n');
+    ensureAndroidRoot(adb, () => 100);
+    expect(adb.mock.calls).toEqual([
+      [['root'], 30_000],
+      [['wait-for-device'], 30_000],
+      [['shell', 'id', '-u'], 30_000],
+    ]);
+  });
+
+  it('retries a reconnect that is still offline, then requires UID0', () => {
+    const adb = vi
+      .fn<(args: readonly string[], timeoutMs: number) => string>()
+      .mockReturnValueOnce('restarting adbd as root')
+      .mockImplementationOnce(() => {
+        throw new Error('adb: device offline');
+      })
+      .mockReturnValueOnce('adbd is already running as root')
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce('0');
+    ensureAndroidRoot(adb);
+    expect(adb.mock.calls.map(([args]) => args)).toEqual([
+      ['root'],
+      ['wait-for-device'],
+      ['root'],
+      ['wait-for-device'],
+      ['shell', 'id', '-u'],
+    ]);
+  });
+
+  it('fails closed after three unrooted reconnects even if every root command exits successfully', () => {
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>((args) =>
+      args[0] === 'shell' ? '2000\n' : args[0] === 'root' ? 'restarting adbd as root' : '',
+    );
+    expect(() => ensureAndroidRoot(adb)).toThrow('requires UID0');
+    expect(adb).toHaveBeenCalledTimes(9);
+  });
+
+  it('fails immediately on a root refusal rather than treating it as a reconnect', () => {
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>(() => {
+      throw new Error('adbd cannot run as root in production builds');
+    });
+    expect(() => ensureAndroidRoot(adb)).toThrow('cannot run as root');
+    expect(adb).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails immediately when a successful root command reports a production-image refusal', () => {
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>(
+      () => 'adbd cannot run as root in production builds',
+    );
+    expect(() => ensureAndroidRoot(adb)).toThrow('refuses adb root');
+    expect(adb).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry an unrooted UID without recognized transport restart evidence', () => {
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>((args) =>
+      args[0] === 'shell' ? '2000' : '',
+    );
+    expect(() => ensureAndroidRoot(adb)).toThrow('unverified');
+    expect(adb).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['0\n2000', 'not0', ''])('refuses malformed root UID %j', (uid) => {
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>((args) =>
+      args[0] === 'shell' ? uid : 'adbd is already running as root',
+    );
+    expect(() => ensureAndroidRoot(adb)).toThrow('unverified');
+    expect(adb).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails after three repeated closed transports without reaching app data', () => {
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>(() => {
+      throw new Error('adb: device offline');
+    });
+    expect(() => ensureAndroidRoot(adb)).toThrow('3 attempts');
+    expect(adb).toHaveBeenCalledTimes(6);
+  });
+
+  it('passes only the remaining total deadline to commands and refuses any command after it expires', () => {
+    let now = 0;
+    const adb = vi.fn<(args: readonly string[], timeoutMs: number) => string>(() => {
+      now += 20_000;
+      return '';
+    });
+    expect(() => ensureAndroidRoot(adb, () => now)).toThrow('exceeded 30 seconds');
+    expect(adb.mock.calls).toEqual([
+      [['root'], 30_000],
+      [['wait-for-device'], 10_000],
+    ]);
+  });
+});
 
 /**
  * Captures written by real runs of scripts/mobile-ota-boot-check.ts: the

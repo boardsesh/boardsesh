@@ -65,6 +65,7 @@ import {
   assertBranchName,
   checkBinary,
   evidenceFromCapture,
+  ensureAndroidRoot,
   expectationFromReceipt,
   findFatalLogLines,
   formatVerdict,
@@ -170,8 +171,16 @@ export function parseBootCheckArgs(argv: readonly string[], updatesUrl: string |
   };
 }
 
-function run(command: string, args: readonly string[], options: { allowFailure?: boolean } = {}): string {
-  const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+function run(
+  command: string,
+  args: readonly string[],
+  options: { allowFailure?: boolean; timeoutMs?: number } = {},
+): string {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+    timeout: options.timeoutMs,
+  });
   if (result.error) throw new Error(`${command} could not be run: ${result.error.message}`);
   if (result.status !== 0 && !options.allowFailure) {
     throw new Error(`${command} ${args.join(' ')} exited ${result.status}: ${result.stderr.trim().slice(0, 600)}`);
@@ -315,7 +324,7 @@ function iosDevice(device: string): BootDevice {
 }
 
 function androidDevice(device: string): BootDevice {
-  const adb = (args: readonly string[], options?: { allowFailure?: boolean }) =>
+  const adb = (args: readonly string[], options?: { allowFailure?: boolean; timeoutMs?: number }) =>
     run('adb', [...(device === '' ? [] : ['-s', device]), ...args], options);
   const shell = (command: string, options?: { allowFailure?: boolean }) => adb(['shell', command], options);
   const dataDir = `/data/data/${APP_BUNDLE_ID}`;
@@ -345,8 +354,7 @@ function androidDevice(device: string): BootDevice {
       adb(['install', '-r', preparedPath]);
       // Reading another app's private files needs root, which the `google_apis`
       // emulator images allow and the `google_play` ones do not.
-      adb(['root']);
-      adb(['wait-for-device']);
+      ensureAndroidRoot((args, timeoutMs) => adb(args, { timeoutMs }));
       const owner = shell(`stat -c %u ${dataDir}`).trim();
       if (!/^\d+$/.test(owner)) throw new Error(`Could not read the app's uid; adb root is required (${owner}).`);
       const seedDir = mkdtempSync(join(tmpdir(), 'boot-check-prefs-'));
