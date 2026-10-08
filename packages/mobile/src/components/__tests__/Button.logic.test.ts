@@ -9,6 +9,7 @@ import {
   DEFAULT_BUTTON_MAX_FONT_SCALE,
   buttonLabelStyle,
   buttonLabelWeight,
+  resolveIosButtonStyle,
   resolveButtonMaxFontScale,
   cappedComposeLabelSize,
   dynamicTypeSizeCap,
@@ -185,11 +186,35 @@ describe('resolveButtonMaxFontScale', () => {
 });
 
 describe('buttonLabelWeight', () => {
-  it('is semibold only on the filled tier', () => {
-    expect(buttonLabelWeight('filled')).toBe('semibold');
-    expect(buttonLabelWeight('outlined')).toBe('regular');
-    expect(buttonLabelWeight('tonal')).toBe('regular');
-    expect(buttonLabelWeight('text')).toBe('regular');
+  it('is semibold only on the prominent styles', () => {
+    expect(buttonLabelWeight('borderedProminent')).toBe('semibold');
+    expect(buttonLabelWeight('glassProminent')).toBe('semibold');
+    expect(buttonLabelWeight('glass')).toBe('regular');
+    expect(buttonLabelWeight('bordered')).toBe('regular');
+    expect(buttonLabelWeight('borderless')).toBe('regular');
+  });
+});
+
+describe('resolveIosButtonStyle', () => {
+  it('draws filled prominent and text borderless on any surface', () => {
+    for (const overContent of [true, false]) {
+      expect(resolveIosButtonStyle({ variant: 'filled', overContent, supportsGlass: true })).toBe('borderedProminent');
+      expect(resolveIosButtonStyle({ variant: 'text', overContent, supportsGlass: true })).toBe('borderless');
+    }
+  });
+
+  it('draws the middle tier as a prominent scrim pill over board art', () => {
+    expect(resolveIosButtonStyle({ variant: 'outlined', overContent: true, supportsGlass: true })).toBe(
+      'borderedProminent',
+    );
+    expect(resolveIosButtonStyle({ variant: 'tonal', overContent: true, supportsGlass: false })).toBe(
+      'borderedProminent',
+    );
+  });
+
+  it('draws the middle tier as glass on iOS 26 and bordered before it', () => {
+    expect(resolveIosButtonStyle({ variant: 'outlined', overContent: false, supportsGlass: true })).toBe('glass');
+    expect(resolveIosButtonStyle({ variant: 'tonal', overContent: false, supportsGlass: false })).toBe('bordered');
   });
 });
 
@@ -198,7 +223,7 @@ describe('buttonLabelStyle', () => {
     expect(buttonLabelStyle(undefined)).toEqual({ typography: 'labelLarge' });
   });
 
-  it('keeps labelLarge when the size is capped', () => {
-    expect(buttonLabelStyle(10.5)).toEqual({ typography: 'labelLarge', fontSize: 10.5 });
+  it('keeps labelLarge and scales the 20/14 line height when the size is capped', () => {
+    expect(buttonLabelStyle(10.5)).toEqual({ typography: 'labelLarge', fontSize: 10.5, lineHeight: 15 });
   });
 });

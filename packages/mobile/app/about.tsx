@@ -148,6 +148,10 @@ export default function AboutScreen() {
             onPress={handlePartnerEmail}
             style={styles.partnerButton}
           />
+          {/* The address itself, selectable, for anyone without a mail app. */}
+          <Text variant="footnote" color={systemColors.secondaryLabel} selectable style={styles.partnerAddress}>
+            {PARTNERSHIPS_EMAIL}
+          </Text>
         </View>
 
         <PressableSurface
@@ -255,6 +259,9 @@ const styles = StyleSheet.create({
   partnerButton: {
     marginTop: spacing[4],
     alignSelf: 'flex-start',
+  },
+  partnerAddress: {
+    marginTop: spacing[2],
   },
   linkRow: {
     flexDirection: 'row',

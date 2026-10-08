@@ -58,6 +58,7 @@ import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { glassSize } from '../../theme/layout';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { CLIMB_ROW_GUTTER } from '../climb-list-row-styles';
 
 /** Bottom scrim that keeps white title/meta legible across the palette (amber
  *  and green included) without per-colour luminance branching. */
@@ -1113,7 +1114,7 @@ const styles = StyleSheet.create({
   unrenderableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[2],
+    paddingHorizontal: CLIMB_ROW_GUTTER,
     paddingVertical: spacing[2],
     gap: spacing[2],
   },
@@ -1153,6 +1154,6 @@ const styles = StyleSheet.create({
   },
   unrenderableSeparator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + spacing[2] + spacing[3],
+    marginLeft: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
   },
 });

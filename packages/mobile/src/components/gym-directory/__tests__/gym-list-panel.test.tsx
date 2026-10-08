@@ -119,6 +119,8 @@ vi.mock('../../../providers/theme-provider', () => ({
     brandColors: { primary: '#6D28D9' },
     sheet: { handleStyle: {}, corners: null },
     sectionCaption: { uppercase: false, opacity: 1, letterSpacing: 0 },
+    variant: 'liquidGlass',
+    m3: { onSurfaceVariant: '#49454F' },
   }),
 }));
 

@@ -5,7 +5,7 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: () => undefined },
   PlatformColor: (name: string) => name,
 }));
-vi.mock('../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 48 }));
+vi.mock('../climb-list-thumbnail-metrics', () => ({ THUMBNAIL_WIDTH: 48 }));
 
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from '../climb-list-row-styles';
 

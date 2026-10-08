@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { THUMBNAIL_WIDTH } from './ClimbListThumbnail';
+import { THUMBNAIL_WIDTH } from './climb-list-thumbnail-metrics';
 import { spacing } from '../theme/tokens';
 
 /**

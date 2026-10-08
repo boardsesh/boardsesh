@@ -65,7 +65,8 @@ vi.mock('../../src/components/SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
 vi.mock('../../src/components/Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, selectable }: { children?: ReactNode; selectable?: boolean }) =>
+    createElement('span', { 'data-selectable': selectable ? 'true' : undefined }, children),
 }));
 vi.mock('../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 80 }),
@@ -121,10 +122,12 @@ describe('AboutScreen partnerships + acknowledgements', () => {
 
   // HIG Buttons: a button's label is a verb, and a screen of info cards has no
   // single prominent action, so none of its buttons is large.
-  it('labels the partnerships CTA with a verb, not the raw address', () => {
+  it('labels the partnerships CTA with a verb and shows the address as text below it', () => {
     render(<AboutScreen />);
 
     expect(screen.queryByRole('button', { name: 'partnerships@boardsesh.com' })).toBeNull();
+    const address = screen.getByText('partnerships@boardsesh.com');
+    expect(address.getAttribute('data-selectable')).toBe('true');
   });
 
   it('keeps the in-card buttons small and the Discord button medium', () => {

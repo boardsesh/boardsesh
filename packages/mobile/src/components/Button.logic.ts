@@ -22,15 +22,39 @@ export function resolveButtonMaxFontScale(maxFontSizeMultiplier: number | undefi
   return maxFontSizeMultiplier ?? DEFAULT_BUTTON_MAX_FONT_SCALE;
 }
 
+/** The SwiftUI button style the iOS Button actually draws. */
+export type IosButtonStyle = 'borderedProminent' | 'glassProminent' | 'glass' | 'bordered' | 'borderless';
+
 /**
- * The SwiftUI label weight per emphasis tier. Only the filled (prominent) tier is
- * semibold, like a system `.borderedProminent` call to action; outlined, tonal
- * and text buttons are regular weight, as system bordered and borderless buttons
- * are (HIG Buttons). Semibold on every tier made a row of secondary actions read
- * as louder than the one primary.
+ * Which native style a tier draws. Filled is always `borderedProminent`; text is
+ * `borderless`. The outlined/tonal middle tier depends on the surface: over
+ * board art (`over="content"`) it becomes a solid scrim `borderedProminent`,
+ * otherwise Liquid Glass on iOS 26 and `bordered` before it.
  */
-export function buttonLabelWeight(variant: ButtonVariant): 'semibold' | 'regular' {
-  return variant === 'filled' ? 'semibold' : 'regular';
+export function resolveIosButtonStyle({
+  variant,
+  overContent,
+  supportsGlass,
+}: {
+  variant: ButtonVariant;
+  overContent: boolean;
+  supportsGlass: boolean;
+}): IosButtonStyle {
+  if (variant === 'filled') return 'borderedProminent';
+  if (variant === 'text') return 'borderless';
+  if (overContent) return 'borderedProminent';
+  return supportsGlass ? 'glass' : 'bordered';
+}
+
+/**
+ * The SwiftUI label weight for the style actually drawn. Prominent styles are
+ * semibold, like a system `.borderedProminent` call to action; bordered, glass
+ * and borderless buttons are regular weight, as the system draws them (HIG
+ * Buttons). Keyed on the drawn style, not the tier, so an outlined button that
+ * turns into a solid scrim pill over board art gets the prominent weight.
+ */
+export function buttonLabelWeight(style: IosButtonStyle): 'semibold' | 'regular' {
+  return style === 'borderedProminent' || style === 'glassProminent' ? 'semibold' : 'regular';
 }
 
 /**
@@ -161,10 +185,21 @@ export function cappedComposeLabelSize(
   return (defaultSize * maxScale) / fontScale;
 }
 
+/** M3 labelLarge: 14sp text on a 20sp line. */
+const LABEL_LARGE_SIZE = 14;
+const LABEL_LARGE_LINE_HEIGHT = 20;
+
 /**
  * The Compose Button label's style: M3 labelLarge (14/20, weight 500) on every
- * tier, with the font size held at the cap when the OS scale passes it.
+ * tier. When the OS scale passes the cap, the font size is held at the cap and
+ * the line height scales with it, keeping labelLarge's 20/14 ratio; a capped
+ * size on labelLarge's fixed 20sp line would leave the label mis-spaced.
  */
 export function buttonLabelStyle(cappedSize: number | undefined): NonNullable<ComposeTextProps['style']> {
-  return cappedSize != null ? { typography: 'labelLarge', fontSize: cappedSize } : { typography: 'labelLarge' };
+  if (cappedSize == null) return { typography: 'labelLarge' };
+  return {
+    typography: 'labelLarge',
+    fontSize: cappedSize,
+    lineHeight: (cappedSize * LABEL_LARGE_LINE_HEIGHT) / LABEL_LARGE_SIZE,
+  };
 }

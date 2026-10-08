@@ -274,17 +274,22 @@ export function Text({ variant = 'body', color, style, ...props }: TextProps) {
 **Dynamic Type.** `Text` defaults `maxFontSizeMultiplier` to `1.5`. Fixed-height glass chrome (the
 queue capsule, the iOS 26 bottom accessory) caps labels at `CHROME_LABEL_MAX_FONT_SCALE` = `1.2` so
 single-line names don't clip against rigid heights. Surfaces that grow with their content keep `1.5`.
-Every `Button` is capped too: `1.5` by default (`xxxLarge` on iOS), or the caller's own cap (the
-tick bar's `1.3`). Count badges set the count in `caption2` (11pt, the HIG floor) in a min-size box
+Every `Button` is capped too: `1.5` by default, or the caller's own cap (the tick bar's `1.3`).
+On iOS the cap is a Dynamic Type step, so the default stops at `xxxLarge` (body 23pt, about
+1.35x; the next step is 1.65x) and `1.3` at `xxLarge` (1.24x). Android holds the exact multiple. Count badges set the count in `caption2` (11pt, the HIG floor) in a min-size box
 capped at `1.3` (`count-badge-style.ts`).
 
 **Tabular figures.** A number that changes in place (a slider readout, a stepper, a leaderboard or
 chart column) takes `<Text numeric>`, which sets `fontVariant: ['tabular-nums']` so digits don't
 jitter sideways.
 
-**Button sizes and weights.** `size="large"` is for the one primary action of a full screen (auth
-submit, onboarding continue) and the tick action bar. Everything else is `medium`, and `small`
-inside cards. On iOS only the filled tier is semibold; outlined, tonal and text are regular. On
+**Button sizes and weights.** `size="large"` is for the single filled call to action of a
+full-screen form, gate or dead end: auth submits, "Sign in to join", the retry on a full-screen
+error (Join, session unavailable, spray scan), send recovery. The tick action bar and the rest
+timer's transport row are large too. Everything else is `medium`: empty states and retries inside
+a tab, buttons in sheets, secondary actions, and a dismiss like Done on a dead end. Use `small`
+inside cards. On iOS the label is semibold when the drawn style is prominent (filled, or an
+outlined/tonal button drawn as a solid scrim pill over board art) and regular otherwise. On
 Android every tier is M3 labelLarge (14/500).
 
 **Section headers** are sentence case in both variants: footnote semibold in `secondaryLabel` on
