@@ -137,10 +137,10 @@
       "printAction": "Imprimer cette affiche",
       "backToGym": "Retour à la salle"
     },
-    "sprayWallsHeading": "Murs spray",
-    "sprayWallCount_one": "{{count}} mur",
-    "sprayWallCount_other": "{{count}} murs",
-    "sprayWallsIntro": "Les murs spray de cette salle, prise par prise. Ouvre-en un pour voir ce qui y a été ouvert.",
+    "sprayWallsHeading": "Spray walls",
+    "sprayWallCount_one": "{{count}} spray wall",
+    "sprayWallCount_other": "{{count}} spray walls",
+    "sprayWallsIntro": "Les spray walls de cette salle, prise par prise. Ouvre-en un pour voir ce qui y a été ouvert.",
     "sprayWallPhotoAlt": "Photo de {{wallName}}",
     "sprayWallMeta": "{{angle}}° · {{holds}} prises"
   },

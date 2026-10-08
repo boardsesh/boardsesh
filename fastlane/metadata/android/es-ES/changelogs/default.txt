@@ -1,5 +1,5 @@
 Novedades de 2.6:
-- Muros de spray: fotografía tu muro, la app halla las presas y montas, pones en cola y registras bloques. No hacen falta LED.
+- Spraywalls: fotografía el tuyo, la app halla las presas y montas bloques. No hacen falta LED.
 - Las sesiones de tu crew en Inicio y sus registros en cada bloque.
 - Temporizador de descanso que empieza al registrar un bloque y puede pasar la cola.
 - Poner a continuación: mantén pulsado un bloque para saltarte la cola.

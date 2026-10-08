@@ -5,7 +5,7 @@
     "weekly": "Nous préparons une copie par board chaque semaine UTC. Les téléchargements réutilisent cette copie jusqu’à la semaine suivante.",
     "expiry": "Les fichiers expirent 14 jours après leur création. Chaque téléchargement utilise un nouveau lien valable 5 minutes.",
     "boardType": "Type de board",
-    "sprayWalls": "Murs spray",
+    "sprayWalls": "Spray walls",
     "format": "Format du fichier",
     "boardseshFormat": "JSON Boardsesh",
     "auroraFormat": "JSON Aurora",

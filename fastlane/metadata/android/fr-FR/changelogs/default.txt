@@ -1,5 +1,5 @@
 Nouveautés de la version 2.6 :
-- Murs de spray : photographie ton mur, l'app trouve les prises, ouvre, mets en file et enregistre des blocs. Pas de LED.
+- Spray walls : photographie le tien, l'app trouve les prises, ouvre, mets en file et enregistre des blocs. Pas de LED.
 - Les séances de ton crew en direct sur Accueil, leurs croix sur chaque bloc.
 - Un minuteur de repos qui démarre à l'enregistrement d'un bloc et peut passer au suivant.
 - Mettre juste après : appui long pour passer devant dans la file.

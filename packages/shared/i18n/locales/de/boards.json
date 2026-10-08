@@ -4,7 +4,7 @@
     "running": "Griffe auf deinem Foto werden gesucht…",
     "connection": "Die Grifferkennung ist nicht erreichbar. Versuch es mit Verbindung erneut.",
     "failed": "Die Grifferkennung konnte nicht abgeschlossen werden. Dein Foto ist gespeichert.",
-    "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Wand bleibt unverändert.",
+    "resumeHint": "Du kannst später weitermachen. Deine veröffentlichte Spraywall bleibt unverändert.",
     "retry": "Erneut versuchen",
     "manual": "Griffe selbst markieren",
     "queuePosition": "Dein Foto ist auf Platz {{position}} in der Warteschlange für die Erkennung.",
@@ -20,7 +20,7 @@
       "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
       "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Boards nicht ändern.",
-      "configLockedHintSpray": "Das Layout eines Boards ist sein Foto. Fotografiere es neu, um die Griffe zu ändern.",
+      "configLockedHintSpray": "Das Layout einer Spraywall ist ihr Foto. Fotografiere sie neu, um die Griffe zu ändern.",
       "duplicate": {
         "title": "Dieses Setup hast du schon",
         "body": "Mit dieser Änderung ist das Board identisch mit „{{name}}“ — gleiches Layout, gleiche Größe, gleiche Hold-Sets.",
@@ -95,7 +95,7 @@
       "gymHint": "Wähl das Board deiner Halle",
       "own": "Mein eigenes Board",
       "ownHint": "Richte das Board ein, das du zu Hause hast",
-      "sprayWall": "Meine Spraywand hinzufügen",
+      "sprayWall": "Meine Spraywall hinzufügen",
       "scan": "Nach dem Board vor mir suchen",
       "scanFootnote": "MoonBoards und manche Kilter-Boxen tauchen hier noch nicht auf.",
       "searching": "Suche Boards in deiner Nähe…",
@@ -148,7 +148,7 @@
       "unpinAria": "{{name}} abpinnen",
       "pinnedBadgeAria": "Angepinnt",
       "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren",
-      "addWallTile": "Spraywand"
+      "addWallTile": "Spraywall"
     },
     "create": {
       "screenTitle": "Richte dein Board ein",
@@ -230,15 +230,15 @@
         "kind": "Spraywall",
         "editHolds": "Griffe bearbeiten",
         "editHoldsHint": "Füge Griffe hinzu, verschiebe oder lösche sie.",
-        "resetWall": "Wand zurücksetzen",
+        "resetWall": "Spraywall zurücksetzen",
         "resetWallHint": "Mach ein neues Foto und markier die Griffe neu.",
         "shareLink": "Link teilen",
-        "shareLinkPublicHint": "Jede*r kann dieses Board öffnen.",
+        "shareLinkPublicHint": "Jede*r kann diese Spraywall öffnen.",
         "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
       },
       "details": "Details",
       "detailsAria": "Details für {{name}} öffnen",
-      "activeSprayDetails": "{{name}} · Wanddetails"
+      "activeSprayDetails": "{{name}} · Spraywall-Details"
     },
     "disambiguation": {
       "title": "An welchem Board bist du?",
@@ -429,24 +429,24 @@
       "linkError": "Diese Halle ließ sich nicht verknüpfen. Vielleicht ist sie zu weit von deinem Board entfernt. Deine übrigen Änderungen wurden gespeichert."
     },
     "sprayShare": {
-      "title": "Teil dieses Board",
-      "publicBody": "Dieses Board ist öffentlich: Jede*r kann es öffnen, es steht auf der Seite der Halle und seine Boulder landen im Feed.",
-      "unlistedBody": "Nur wer diesen Link von dir bekommt, kann das Board öffnen. Gelistet ist es nirgends.",
+      "title": "Teil diese Spraywall",
+      "publicBody": "Diese Spraywall ist öffentlich: Jede*r kann sie öffnen, sie steht auf der Seite der Halle und ihre Boulder landen im Feed.",
+      "unlistedBody": "Nur wer diesen Link von dir bekommt, kann die Spraywall öffnen. Gelistet ist sie nirgends.",
       "copyLink": "Link kopieren",
       "share": "Teilen",
       "copied": "Link kopiert",
       "qrLabel": "QR-Code für {{name}}"
     },
     "sprayVisibility": {
-      "label": "Wer es sehen kann",
+      "label": "Wer sie sehen kann",
       "private": "Privat",
       "unlisted": "Nur mit Link",
       "public": "Öffentlich",
-      "privateHint": "Nur du. Das Foto von deinem Board bleibt in deinem Account.",
-      "unlistedHint": "Wer den Link hat, kommt rein. Das Board steht nicht auf der Seite der Halle und sein Foto bleibt aus dem offenen Web.",
-      "publicHint": "Jede*r kann das Board finden. Es steht auf der Seite der Halle, seine Boulder landen im Feed, und das Foto vom Board geht ins offene Web.",
-      "ownerOnlyError": "Nur wer dieses Board aufgebaut hat, kann ändern, wer es sieht. Deine anderen Änderungen sind gespeichert.",
-      "updateError": "Konnte nicht ändern, wer dieses Board sieht. Versuch es nochmal."
+      "privateHint": "Nur du. Das Foto von deiner Spraywall bleibt in deinem Account.",
+      "unlistedHint": "Wer den Link hat, kommt rein. Die Spraywall steht nicht auf der Seite der Halle und ihr Foto bleibt aus dem offenen Web.",
+      "publicHint": "Jede*r kann die Spraywall finden. Sie steht auf der Seite der Halle, ihre Boulder landen im Feed, und das Foto von der Spraywall geht ins offene Web.",
+      "ownerOnlyError": "Nur wer diese Spraywall aufgebaut hat, kann ändern, wer sie sieht. Deine anderen Änderungen sind gespeichert.",
+      "updateError": "Konnte nicht ändern, wer diese Spraywall sieht. Versuch es nochmal."
     }
   },
   "boardEntity": {
@@ -815,7 +815,7 @@
     },
     "startOver": {
       "title": "Neu anfangen?",
-      "body": "Alle Griffe werden auf den Stand vom Öffnen der Wand zurückgesetzt. Du kannst das rückgängig machen.",
+      "body": "Alle Griffe werden auf den Stand vom Öffnen der Spraywall zurückgesetzt. Du kannst das rückgängig machen.",
       "confirm": "Neu anfangen",
       "cancel": "Weiter bearbeiten"
     },
@@ -880,7 +880,7 @@
       "pencil": "Der Apple Pencil fügt Griffe hinzu und schaltet sie. Mit den Fingern bewegst du dich und wählst einen Griff aus."
     },
     "a11y": {
-      "wall": "Foto deiner Wand: {{summary}}",
+      "wall": "Foto deiner Spraywall: {{summary}}",
       "holdValue": "Griff {{position}} von {{total}}, {{role}}",
       "noHold": "Kein Griff ausgewählt",
       "hint": "Wisch nach oben oder unten, um durch die Griffe zu gehen. Tippe doppelt, um einen an- oder auszuschalten.",
@@ -899,7 +899,7 @@
       "revealed": "Gefundene Griffe: {{summary}}",
       "pickHint": "Wisch nach oben oder unten zu einem Griff und tippe dann doppelt, um ihn auszuwählen."
     },
-    "readOnly": "Du kannst diese Wand nicht bearbeiten.",
+    "readOnly": "Du kannst diese Spraywall nicht bearbeiten.",
     "errors": {
       "tooManyHolds": "Das ist das Limit von {{max}} Griffen. Schalte ein paar aus, um mehr hinzuzufügen.",
       "saveFailed": "Deine Griffe konnten nicht gespeichert werden. Versuch es noch mal.",
@@ -907,8 +907,8 @@
       "strokeTooBig": "Diese Schlaufe ist viel größer als ein Griff. Zoom hinein und fahre den Griff selbst nach.",
       "strokeTooDetailed": "Dieser Strich hat zu viele Details zum Speichern. Fahre die Kante in einem Zug nach.",
       "strokeTooShort": "Dieser Strich ist zu kurz. Zeichne eine ganze Schlaufe um den Griff.",
-      "someHoldsOffWall_one": "{{count}} Griff liegt außerhalb der Wand. Schieb ihn zurück aufs Foto oder schalte ihn aus.",
-      "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Wand. Schieb sie zurück aufs Foto oder schalte sie aus.",
+      "someHoldsOffWall_one": "{{count}} Griff liegt außerhalb der Spraywall. Schieb ihn zurück aufs Foto oder schalte ihn aus.",
+      "someHoldsOffWall_other": "{{count}} Griffe liegen außerhalb der Spraywall. Schieb sie zurück aufs Foto oder schalte sie aus.",
       "cornersCross": "Zwei Seiten kreuzen sich. Tippe die Ecken der Reihe nach um den Griff.",
       "cornersTooFew": "Diese Ecken liegen zu nah beieinander oder auf einer Linie. Tippe mindestens 3 um den Griff.",
       "cornersHollow": "Diese Form ist zu hohl. Tippe die Ecken am Außenrand des Griffs.",
@@ -918,17 +918,17 @@
       "needsOnHold": "Schalte den Griff zuerst ein"
     },
     "empty": {
-      "noPhoto": "Diese Wand hat noch kein Foto zum Bearbeiten."
+      "noPhoto": "Diese Spraywall hat noch kein Foto zum Bearbeiten."
     },
-    "loading": "Deine Wand wird geladen…",
-    "loadStalled": "Deine Wand konnte nicht geladen werden. Versuch es erneut.",
+    "loading": "Deine Spraywall wird geladen…",
+    "loadStalled": "Deine Spraywall konnte nicht geladen werden. Versuch es erneut.",
     "rail": {
       "label": "Bearbeitungswerkzeuge",
       "grip": "Werkzeuge auf die andere Seite verschieben",
       "mark": "Griffe auswählen und schalten",
       "pencilOnly": "Nur Pencil",
-      "pencilOnlyHint": "Mit den Fingern wählst du Griffe aus und bewegst dich. Nur der Apple Pencil ändert die Wand.",
-      "fit": "Wand an den Bildschirm anpassen",
+      "pencilOnlyHint": "Mit den Fingern wählst du Griffe aus und bewegst dich. Nur der Apple Pencil ändert die Spraywall.",
+      "fit": "Spraywall an den Bildschirm anpassen",
       "more": "Weitere Optionen"
     },
     "inspector": {
@@ -968,21 +968,21 @@
     }
   },
   "sprayWizard": {
-    "screenTitle": "Spraywand hinzufügen",
+    "screenTitle": "Spraywall hinzufügen",
     "stepCounter": "Schritt {{current}} von {{total}}",
     "back": "Zurück",
     "meta": {
-      "title": "Was ist das für eine Wand?",
+      "title": "Was ist das für eine Spraywall?",
       "body": "Gib ihr einen Namen, sag wie steil sie ist, und wähle, wer sie sehen darf.",
-      "namePlaceholder": "Garagenwand",
+      "namePlaceholder": "Garagen-Spraywall",
       "angle": "Winkel",
-      "angleHint": "Wie weit die Wand überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
+      "angleHint": "Wie weit die Spraywall überhängt, in 5°-Schritten. Nach dem Veröffentlichen fest.",
       "next": "Weiter",
-      "anglePreview": "Wand mit {{angle}} Grad"
+      "anglePreview": "Spraywall mit {{angle}} Grad"
     },
     "photo": {
-      "title": "Fotografiere die Wand",
-      "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Wand ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
+      "title": "Fotografiere die Spraywall",
+      "body": "Stell dich frontal hin, fotografiere bei 1x und hol die ganze Spraywall ins Bild. Jeder Griff, den du setzt, lebt auf diesen Pixeln.",
       "helpLink": "So gelingt das Foto",
       "helpLinkHint": "Öffnet die Foto-Anleitung in deinem Browser",
       "library": "Foto wählen",
@@ -990,13 +990,13 @@
       "pickAnother": "Anderes Foto wählen",
       "adjust": "Zuschneiden oder drehen",
       "next": "Weiter",
-      "cameraDenied": "Boardsesh braucht deine Kamera, um eine Wand zu fotografieren.",
+      "cameraDenied": "Boardsesh braucht deine Kamera, um eine Spraywall zu fotografieren.",
       "failed": "Dieses Foto lässt sich nicht öffnen. Nimm ein anderes.",
-      "tip": "Geh ein Stück zurück, stell dich frontal zur Wand und hol alle 4 Ecken ins Bild."
+      "tip": "Geh ein Stück zurück, stell dich frontal zur Spraywall und hol alle 4 Ecken ins Bild."
     },
     "adjust": {
       "title": "Zuschneiden und drehen",
-      "body": "Schneide bis an die Ränder der Wand zu. Dreh das Foto, falls es quer liegt.",
+      "body": "Schneide bis an die Ränder der Spraywall zu. Dreh das Foto, falls es quer liegt.",
       "hint": "Zieh an einer Kante oder Ecke. Zieh innerhalb des Rahmens, um ihn zu verschieben.",
       "small": "Dieses Foto ist klein. Griffe können beim Zoomen unscharf wirken.",
       "failed": "Das Foto ließ sich nicht zuschneiden. Versuch es noch mal oder brich ab, um es so zu lassen.",
@@ -1016,9 +1016,9 @@
     },
     "anchors": {
       "title": "Markiere die Ecken",
-      "body": "Zieh die vier Ringe auf die Ecken der Wand. Überspring das, wenn du frontal fotografiert hast.",
+      "body": "Zieh die vier Ringe auf die Ecken der Spraywall. Überspring das, wenn du frontal fotografiert hast.",
       "hint": "Oben links, oben rechts, unten rechts, unten links.",
-      "crossed": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Wand.",
+      "crossed": "Diese Ecken kreuzen sich. Setz sie der Reihe nach um die Spraywall.",
       "cornerTopLeft": "Ecke oben links",
       "cornerTopRight": "Ecke oben rechts",
       "cornerBottomRight": "Ecke unten rechts",
@@ -1027,7 +1027,7 @@
       "skip": "Überspringen",
       "clear": "Ecken neu setzen",
       "quality": {
-        "good": "Schön frontal. Die Wand lässt sich sauber entzerren.",
+        "good": "Schön frontal. Die Spraywall lässt sich sauber entzerren.",
         "soft": "Etwas schräg. Nimm es frontal neu auf, dann wird es schärfer.",
         "fail": "Zu schräg zum Entzerren. Dein Foto funktioniert trotzdem, oder nimm es frontal neu auf.",
         "small": "Dieses Foto ist zu klein zum Entzerren. Es funktioniert trotzdem so, wie es ist."
@@ -1050,102 +1050,102 @@
     "scan": {
       "queued": "In der Warteschlange…",
       "running": "Suche nach Griffen…",
-      "slow": "Wände mit vielen Griffen dauern etwas länger",
+      "slow": "Spraywalls mit vielen Griffen dauern etwas länger",
       "resumeHint": "Du kannst später weitermachen."
     },
     "review": {
       "next": "Look wählen",
-      "nothingFound": "Keine Griffe gefunden. Tippe auf die Wand, um sie hinzuzufügen.",
-      "detectionFailed": "Die Griffsuche hat diesmal nicht geklappt. Tippe auf die Wand, um Griffe hinzuzufügen.",
-      "manualOnly": "Tippe auf die Wand, um deine Griffe hinzuzufügen.",
+      "nothingFound": "Keine Griffe gefunden. Tippe auf die Spraywall, um sie hinzuzufügen.",
+      "detectionFailed": "Die Griffsuche hat diesmal nicht geklappt. Tippe auf die Spraywall, um Griffe hinzuzufügen.",
+      "manualOnly": "Tippe auf die Spraywall, um deine Griffe hinzuzufügen.",
       "retry": "Erneut versuchen"
     },
     "look": {
       "title": "Wie sollen deine Griffe leuchten?",
-      "body": "Alle sehen deine Wand so, außer wer für Spraywände den eigenen Look gewählt hat.",
-      "loading": "Deine Wand wird geladen…",
-      "unavailable": "Das Foto deiner Wand lässt sich hier nicht zeigen, aber du kannst trotzdem einen Look wählen.",
+      "body": "Alle sehen deine Spraywall so, außer wer für Spraywalls den eigenen Look gewählt hat.",
+      "loading": "Deine Spraywall wird geladen…",
+      "unavailable": "Das Foto deiner Spraywall lässt sich hier nicht zeigen, aber du kannst trotzdem einen Look wählen.",
       "saving": "Dein Look wird gespeichert…",
       "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal oder veröffentliche trotzdem.",
       "publishWithout": "Trotzdem veröffentlichen",
-      "dimTitle": "Rest der Wand abdunkeln",
+      "dimTitle": "Rest der Spraywall abdunkeln",
       "dimOff": "Aus"
     },
     "publish": {
       "title": "Ab zu deinen Boards",
-      "working": "Deine Wand wird veröffentlicht…",
-      "failed": "Die Wand konnte nicht veröffentlicht werden.",
-      "stalled": "Deine Wand ist gespeichert, aber das Einrichten hat zu lange gedauert. Versuch es noch mal.",
+      "working": "Deine Spraywall wird veröffentlicht…",
+      "failed": "Die Spraywall konnte nicht veröffentlicht werden.",
+      "stalled": "Deine Spraywall ist gespeichert, aber das Einrichten hat zu lange gedauert. Versuch es noch mal.",
       "retry": "Erneut versuchen"
     },
     "done": {
-      "body": "Deine Wand wird eingerichtet…",
+      "body": "Deine Spraywall wird eingerichtet…",
       "leave": "Zurück zum Klettern"
     },
     "leave": {
-      "title": "Diese Wand erstmal liegen lassen?",
-      "body": "Deine Wand und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
+      "title": "Diese Spraywall erstmal liegen lassen?",
+      "body": "Deine Spraywall und ihr Foto sind gespeichert. Mach weiter, wo du aufgehört hast.",
       "stay": "Weitermachen",
       "go": "Verlassen",
       "unsavedTitle": "Ohne Veröffentlichen verlassen?",
-      "unsavedBody": "Deine Änderungen an den Griffen gehen verloren. Die Wand und ihr Foto bleiben gespeichert.",
+      "unsavedBody": "Deine Änderungen an den Griffen gehen verloren. Die Spraywall und ihr Foto bleiben gespeichert.",
       "discard": "Trotzdem verlassen"
     },
     "resume": {
-      "checking": "Suche nach einer angefangenen Wand…",
-      "title": "Du hast eine Wand offen",
+      "checking": "Suche nach einer angefangenen Spraywall…",
+      "title": "Du hast eine Spraywall offen",
       "body": "„{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an.",
       "pickUp": "Weitermachen",
       "startOver": "Neu anfangen",
-      "checkFailed": "Diese Wand ließ sich nicht prüfen. Versuch es nochmal.",
+      "checkFailed": "Diese Spraywall ließ sich nicht prüfen. Versuch es nochmal.",
       "retry": "Nochmal versuchen"
     },
     "reset": {
-      "screenTitle": "Wand zurücksetzen",
-      "starting": "Deine neue Wand wird vorbereitet…",
+      "screenTitle": "Spraywall zurücksetzen",
+      "starting": "Deine neue Spraywall wird vorbereitet…",
       "startFailed": "Das Zurücksetzen ließ sich nicht starten. Versuch es nochmal.",
       "resumeTitle": "Ein Zurücksetzen ist noch offen",
-      "resumeBody": "Das neue Foto von „{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an. Die Wand bleibt live, bis die neue online ist.",
-      "photoTitle": "Fotografiere die Wand, wie sie jetzt ist",
-      "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Wand und markier dann jeden Griff.",
-      "archiveNotice": "Sobald diese Wand live ist, wird die alte archiviert. Die Boulder und Begehungen darauf bleiben."
+      "resumeBody": "Das neue Foto von „{{name}}“ ist nicht fertig. Mach weiter, wo du aufgehört hast, oder fang neu an. Die Spraywall bleibt live, bis die neue online ist.",
+      "photoTitle": "Fotografiere die Spraywall, wie sie jetzt ist",
+      "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Spraywall und markier dann jeden Griff.",
+      "archiveNotice": "Sobald diese Spraywall live ist, wird die alte archiviert. Die Boulder und Begehungen darauf bleiben."
     }
   },
   "sprayResetConfirm": {
-    "title": "Wand zurücksetzen?",
-    "body": "Mach ein neues Foto und markier die Griffe von vorn. Sobald die neue Wand live ist, wird diese archiviert. Die Boulder und Begehungen darauf bleiben in Routenbüchern und Playlists, und niemand kann mehr Boulder daran bauen.",
+    "title": "Spraywall zurücksetzen?",
+    "body": "Mach ein neues Foto und markier die Griffe von vorn. Sobald die neue Spraywall live ist, wird diese archiviert. Die Boulder und Begehungen darauf bleiben in Routenbüchern und Playlists, und niemand kann mehr Boulder daran bauen.",
     "start": "Zurücksetzen starten",
     "cancel": "Nicht jetzt"
   },
   "sprayArchive": {
     "banner": "Archiviert am {{date}}. Boulder und Begehungen bleiben, Neues wird hier nicht mehr gebaut.",
     "bannerUndated": "Archiviert. Boulder und Begehungen bleiben, Neues wird hier nicht mehr gebaut.",
-    "switchToNew": "Zur neuen Wand wechseln",
-    "openFailed": "Diese Wand ließ sich nicht öffnen. Versuch es nochmal.",
+    "switchToNew": "Zur neuen Spraywall wechseln",
+    "openFailed": "Diese Spraywall ließ sich nicht öffnen. Versuch es nochmal.",
     "manageHeader": "Archiviert",
     "manageRow": "Archiviert am {{date}}",
     "manageRowUndated": "Archiviert",
     "deleteMessage": "„{{name}}“ löschen? Das Foto wird gelöscht. Die Boulder und alle Begehungen darauf verschwinden aus Routenbüchern und Playlists. Das lässt sich nicht rückgängig machen."
   },
   "sprayWallErrors": {
-    "archived": "Diese Wand ist archiviert. Die Boulder und Begehungen darauf bleiben, aber du kannst nichts Neues mehr daran bauen.",
-    "resetRetired": "Wände änderst du jetzt, indem du sie zurücksetzt. Aktualisier die App und setz die Wand dann zurück.",
-    "resetOwnerOnly": "Nur wer die Wand angelegt hat, kann sie zurücksetzen.",
-    "resetSourceUnpublished": "Richte diese Wand fertig ein, bevor du sie zurücksetzt.",
-    "archiveLimitReached": "Du kannst {{max}} archivierte Wände behalten. Lösch eine im Bereich „Archiviert“, um diese Wand zurückzusetzen."
+    "archived": "Diese Spraywall ist archiviert. Die Boulder und Begehungen darauf bleiben, aber du kannst nichts Neues mehr daran bauen.",
+    "resetRetired": "Spraywalls änderst du jetzt, indem du sie zurücksetzt. Aktualisier die App und setz die Spraywall dann zurück.",
+    "resetOwnerOnly": "Nur wer die Spraywall angelegt hat, kann sie zurücksetzen.",
+    "resetSourceUnpublished": "Richte diese Spraywall fertig ein, bevor du sie zurücksetzt.",
+    "archiveLimitReached": "Du kannst {{max}} archivierte Spraywalls behalten. Lösch eine im Bereich „Archiviert“, um diese Spraywall zurückzusetzen."
   },
   "sprayMaintenance": {
     "screenTitle": "Griffe bearbeiten",
-    "preparing": "Deine Wand wird geöffnet…",
-    "unavailable": "Du kannst diese Wand nicht bearbeiten.",
-    "nothingPublished": "Richte diese Wand fertig ein, bevor du ihre Griffe bearbeitest.",
-    "draftUnavailable": "Dieser Entwurf hat sich geändert. Öffne die Wand erneut, um ihre Griffe zu bearbeiten.",
+    "preparing": "Deine Spraywall wird geöffnet…",
+    "unavailable": "Du kannst diese Spraywall nicht bearbeiten.",
+    "nothingPublished": "Richte diese Spraywall fertig ein, bevor du ihre Griffe bearbeitest.",
+    "draftUnavailable": "Dieser Entwurf hat sich geändert. Öffne die Spraywall erneut, um ihre Griffe zu bearbeiten.",
     "loadFailed": "Der Griffeditor konnte nicht geöffnet werden. Versuch es erneut.",
     "publish": "Griffe veröffentlichen",
     "publishing": "Deine Griffe werden veröffentlicht…",
     "publishFailed": "Deine Griffänderungen sind gespeichert. Versuch erneut, sie zu veröffentlichen.",
-    "refreshing": "Die aktualisierte Wand wird geladen…",
-    "refreshFailed": "Deine Griffe sind veröffentlicht. Versuch erneut, die Wand zu laden.",
+    "refreshing": "Die aktualisierte Spraywall wird geladen…",
+    "refreshFailed": "Deine Griffe sind veröffentlicht. Versuch erneut, die Spraywall zu laden.",
     "retry": "Nochmal versuchen",
     "temporarilyUnavailable": "Die Griffbearbeitung ist gerade nicht verfügbar. Versuch es später erneut.",
     "leave": {
@@ -1154,7 +1154,7 @@
       "stay": "Weiter bearbeiten",
       "discard": "Änderungen verwerfen"
     },
-    "leftoverPhoto": "An dieser Wand liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
+    "leftoverPhoto": "An dieser Spraywall liegt ein unfertiges neues Foto aus einer älteren App-Version. Verwirf es, um die Griffe zu bearbeiten.",
     "discardLeftover": "Unfertiges Foto verwerfen",
     "discardLeftoverFailed": "Das Foto ließ sich nicht verwerfen. Versuch es nochmal."
   },
@@ -1167,34 +1167,34 @@
     "keep": "Griffe behalten"
   },
   "sprayCaps": {
-    "holds": "Eine Wand trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
-    "versions": "Eine Wand behält bis zu {{max}} Versionen ihrer Griffe, eine pro veröffentlichter Änderung, und diese hat alle verbraucht. Setz die Wand zurück, um neu anzufangen.",
-    "walls": "Du kannst {{max}} Wände behalten. Lösch eine, um Platz zu schaffen.",
-    "wallsHint": "Du kannst bis zu {{max}} Wände behalten."
+    "holds": "Eine Spraywall trägt bis zu {{max}} Griffe. Verwirf ein paar und speichere erneut.",
+    "versions": "Eine Spraywall behält bis zu {{max}} Versionen ihrer Griffe, eine pro veröffentlichter Änderung, und diese hat alle verbraucht. Setz die Spraywall zurück, um neu anzufangen.",
+    "walls": "Du kannst {{max}} Spraywalls behalten. Lösch eine, um Platz zu schaffen.",
+    "wallsHint": "Du kannst bis zu {{max}} Spraywalls behalten."
   },
   "sprayHidden": {
     "body": "Jemand hat sie gemeldet und wir haben sie für alle anderen ausgeblendet. Für dich ist sie weiter da, und gelöscht wurde nichts.",
-    "title": "Diese Wand ist ausgeblendet"
+    "title": "Diese Spraywall ist ausgeblendet"
   },
   "sprayModeration": {
-    "reportTitle": "Wand melden",
-    "reportHint": "Diese Wand zur Prüfung durch Admins melden",
+    "reportTitle": "Spraywall melden",
+    "reportHint": "Diese Spraywall zur Prüfung durch Admins melden",
     "submit": "Meldung abschicken",
     "reported": "Danke. Deine Meldung wartet auf Prüfung.",
     "reportOffline": "Verbinde dich mit dem Internet, um die Meldung abzuschicken.",
     "reportError": "Deine Meldung wurde nicht abgeschickt. Versuch es erneut.",
     "queueTitle": "Spraywall-Meldungen",
-    "hide": "Wand ausblenden",
-    "unhide": "Wand einblenden",
+    "hide": "Spraywall ausblenden",
+    "unhide": "Spraywall einblenden",
     "keepVisible": "Sichtbar lassen",
     "hidden": "Ausgeblendet",
     "photoLabel": "Foto von {{wall}}",
     "noPhoto": "Kein Foto verfügbar",
-    "review": "Wand prüfen",
+    "review": "Spraywall prüfen",
     "reviewError": "Die Entscheidung wurde nicht gespeichert. Versuch es erneut.",
     "unavailable": "Die Spraywall-Moderation ist für dieses Konto gerade nicht verfügbar.",
     "loadError": "Die Meldungen konnten nicht geladen werden.",
-    "empty": "Keine Wände warten auf Prüfung.",
+    "empty": "Keine Spraywalls warten auf Prüfung.",
     "reasons": {
       "inappropriate": "Unangemessenes Foto oder unangemessener Name",
       "notAWall": "Keine Kletterwand",
@@ -1205,24 +1205,24 @@
     "reportCount_other": "{{count}} Meldungen"
   },
   "sprayBackground": {
-    "label": "Wandhintergrund",
+    "label": "Spraywall-Hintergrund",
     "photo": "Foto",
-    "wallCrop": "Nur Wand",
+    "wallCrop": "Nur Spraywall",
     "holdCutouts": "Nur Griffe",
-    "retake": "Wand mit neuem Foto zurücksetzen",
+    "retake": "Spraywall mit neuem Foto zurücksetzen",
     "previewLabel": "Vorschau: {{look}}",
     "saveFailed": "Der Hintergrund konnte nicht gespeichert werden. Versuch es noch mal.",
     "notAvailable": "Dieses Foto ist zu schräg für diesen Look. Nimm es frontal neu auf.",
     "note": {
       "lockedNoPins": "Setz die 4 Ecken, um das freizuschalten.",
-      "lockedRetake": "Setz die Wand mit einem frontalen Foto zurück, um das freizuschalten.",
+      "lockedRetake": "Setz die Spraywall mit einem frontalen Foto zurück, um das freizuschalten.",
       "generating": "Wird erstellt…",
       "failed": "Dieser Look ließ sich nicht erstellen. Speicher ihn noch mal, um es erneut zu versuchen.",
       "preview": "So wird deine Wand aussehen. Etwa eine Minute nach dem Veröffentlichen siehst du noch dein Foto.",
       "soft": "Nimm das Foto frontal neu auf, dann wird es schärfer.",
       "volumes": "Volumen werden noch nicht ausgeschnitten."
     },
-    "notAvailableNoPins": "Setz zuerst die 4 Ecken der Wand, um diesen Look zu nutzen.",
+    "notAvailableNoPins": "Setz zuerst die 4 Ecken der Spraywall, um diesen Look zu nutzen.",
     "notAvailableSmall": "Dieses Foto ist zu klein zum Entzerren. Nimm es mit der Hauptkamera bei 1x neu auf.",
     "usePhoto": "Foto nehmen"
   },

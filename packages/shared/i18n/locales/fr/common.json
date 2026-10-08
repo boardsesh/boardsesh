@@ -190,9 +190,9 @@
           "dismissAccessibility": "Ignorer cette suggestion"
         },
         "sprayWalls": {
-          "title": "Murs de spray",
-          "useOwnLook": "Utiliser mon rendu sur les murs de spray",
-          "footer": "Les murs de spray s'affichent avec le rendu choisi par leur créateur pour la photo. Active cette option pour y voir ton propre rendu."
+          "title": "Spray walls",
+          "useOwnLook": "Utiliser mon rendu sur les spray walls",
+          "footer": "Les spray walls s'affichent avec le rendu choisi par leur créateur pour la photo. Active cette option pour y voir ton propre rendu."
         }
       },
       "accessibility": {

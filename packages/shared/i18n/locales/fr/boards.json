@@ -4,7 +4,7 @@
     "running": "Recherche des prises sur ta photo…",
     "connection": "La reconnaissance est inaccessible. Réessaie une fois connecté·e.",
     "failed": "La recherche des prises n'a pas abouti. Ta photo est enregistrée.",
-    "resumeHint": "Tu peux quitter et reprendre plus tard. Ton mur publié reste inchangé.",
+    "resumeHint": "Tu peux quitter et reprendre plus tard. Ton spray wall publié reste inchangé.",
     "retry": "Réessayer",
     "manual": "Marquer les prises à la main",
     "queuePosition": "Ta photo est en position {{position}} dans la file de reconnaissance.",
@@ -20,7 +20,7 @@
       "noAccess": "Vous n'avez pas la permission de modifier cette board",
       "back": "Retour",
       "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board.",
-      "configLockedHintSpray": "La configuration d'un mur, c'est sa photo. Photographie-le à nouveau pour changer les prises.",
+      "configLockedHintSpray": "La configuration d'un spray wall, c'est sa photo. Photographie-le à nouveau pour changer les prises.",
       "duplicate": {
         "title": "Vous avez déjà cette configuration",
         "body": "Avec ce changement, la board devient identique à « {{name}} » : même layout, même taille et mêmes sets de prises.",
@@ -75,7 +75,7 @@
       "unfollowConfirm": "Se désabonner",
       "edit": "Modifier",
       "done": "Terminé",
-      "deleteWallTitle": "Supprimer le mur de spray ?",
+      "deleteWallTitle": "Supprimer le spray wall ?",
       "deleteWallMessage": "Supprimer « {{name}} » ? Ses photos et ses blocs ne seront plus accessibles. C’est définitif.",
       "deleteSuccess": "« {{name}} » supprimé"
     },
@@ -95,7 +95,7 @@
       "gymHint": "Choisis la board de ta salle",
       "own": "Ma propre board",
       "ownHint": "Configure la board que tu as chez toi",
-      "sprayWall": "Ajouter mon mur de spray",
+      "sprayWall": "Ajouter mon spray wall",
       "scan": "Chercher la board devant moi",
       "scanFootnote": "Les MoonBoard et certains boîtiers Kilter n'apparaissent pas encore ici.",
       "searching": "Recherche de boards près de toi…",
@@ -148,7 +148,7 @@
       "unpinAria": "Désépingler {{name}}",
       "pinnedBadgeAria": "Épinglée",
       "pinError": "Impossible de mettre à jour tes boards épinglées",
-      "addWallTile": "Mur spray"
+      "addWallTile": "Spray wall"
     },
     "create": {
       "screenTitle": "Configure ta board",
@@ -227,18 +227,18 @@
         "adjustable": "ajustable"
       },
       "spray": {
-        "kind": "Mur de pan",
+        "kind": "Spray wall",
         "editHolds": "Modifier les prises",
-        "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton mur.",
-        "resetWall": "Réinitialiser ce mur",
+        "editHoldsHint": "Ajoute, déplace ou supprime les prises de ton spray wall.",
+        "resetWall": "Réinitialiser ce spray wall",
         "resetWallHint": "Prends une nouvelle photo et marque à nouveau les prises.",
         "shareLink": "Partager le lien",
-        "shareLinkPublicHint": "N'importe qui peut ouvrir ce mur.",
+        "shareLinkPublicHint": "N'importe qui peut ouvrir ce spray wall.",
         "shareLinkUnlistedHint": "Seulement les grimpeurs à qui tu l’envoies."
       },
       "details": "Détails",
       "detailsAria": "Ouvrir les détails de {{name}}",
-      "activeSprayDetails": "{{name}} · détails du mur"
+      "activeSprayDetails": "{{name}} · détails du spray wall"
     },
     "disambiguation": {
       "title": "Sur quel mur es-tu ?",
@@ -429,9 +429,9 @@
       "linkError": "Impossible d'associer cette salle. Elle est peut-être trop loin de ta board. Tes autres modifications ont bien été enregistrées."
     },
     "sprayShare": {
-      "title": "Partage ce mur",
-      "publicBody": "Ce mur est public : n'importe qui peut l'ouvrir, il apparaît sur la page de la salle et ses blocs arrivent dans le feed.",
-      "unlistedBody": "Seuls les grimpeurs à qui tu envoies ce lien peuvent ouvrir le mur. Il n'est listé nulle part.",
+      "title": "Partage ce spray wall",
+      "publicBody": "Ce spray wall est public : n'importe qui peut l'ouvrir, il apparaît sur la page de la salle et ses blocs arrivent dans le feed.",
+      "unlistedBody": "Seuls les grimpeurs à qui tu envoies ce lien peuvent ouvrir le spray wall. Il n'est listé nulle part.",
       "copyLink": "Copier le lien",
       "share": "Partager",
       "copied": "Lien copié",
@@ -442,11 +442,11 @@
       "private": "Privé",
       "unlisted": "Lien seulement",
       "public": "Public",
-      "privateHint": "Toi seul. La photo de ton mur reste dans ton compte.",
-      "unlistedHint": "Toute personne qui a le lien entre. Le mur n'apparaît pas sur la page de la salle et sa photo reste hors du web ouvert.",
-      "publicHint": "N'importe qui peut trouver le mur. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du mur part sur le web ouvert.",
-      "ownerOnlyError": "Seul le grimpeur qui a monté ce mur peut changer qui le voit. Tes autres modifications sont enregistrées.",
-      "updateError": "Impossible de changer qui voit ce mur. Réessaie."
+      "privateHint": "Toi seul. La photo de ton spray wall reste dans ton compte.",
+      "unlistedHint": "Toute personne qui a le lien entre. Le spray wall n'apparaît pas sur la page de la salle et sa photo reste hors du web ouvert.",
+      "publicHint": "N'importe qui peut trouver le spray wall. Il apparaît sur la page de la salle, ses blocs arrivent dans le feed, et la photo du spray wall part sur le web ouvert.",
+      "ownerOnlyError": "Seul le grimpeur qui a monté ce spray wall peut changer qui le voit. Tes autres modifications sont enregistrées.",
+      "updateError": "Impossible de changer qui voit ce spray wall. Réessaie."
     }
   },
   "boardEntity": {
@@ -815,7 +815,7 @@
     },
     "startOver": {
       "title": "Tout recommencer ?",
-      "body": "Chaque prise redevient comme à l'ouverture du mur. Tu pourras annuler.",
+      "body": "Chaque prise redevient comme à l'ouverture du spray wall. Tu pourras annuler.",
       "confirm": "Recommencer",
       "cancel": "Continuer à modifier"
     },
@@ -880,7 +880,7 @@
       "pencil": "L'Apple Pencil ajoute et active les prises. Avec les doigts, tu te déplaces et choisis une prise."
     },
     "a11y": {
-      "wall": "Photo de ton mur : {{summary}}",
+      "wall": "Photo de ton spray wall : {{summary}}",
       "holdValue": "Prise {{position}} sur {{total}}, {{role}}",
       "noHold": "Aucune prise choisie",
       "hint": "Balaie vers le haut ou le bas pour parcourir les prises. Touche deux fois pour en activer ou désactiver une.",
@@ -899,7 +899,7 @@
       "revealed": "Prises trouvées : {{summary}}",
       "pickHint": "Balaie vers le haut ou le bas jusqu'à une prise, puis touche deux fois pour la choisir."
     },
-    "readOnly": "Ce mur n'est pas le tien, tu ne peux pas le modifier.",
+    "readOnly": "Ce spray wall n'est pas le tien, tu ne peux pas le modifier.",
     "errors": {
       "tooManyHolds": "Tu as atteint la limite de {{max}} prises. Désactive quelques prises pour en ajouter d'autres.",
       "saveFailed": "Impossible d'enregistrer tes prises. Réessaie.",
@@ -907,8 +907,8 @@
       "strokeTooBig": "Cette boucle est bien plus grande qu'une prise. Zoome et suis le contour de la prise elle-même.",
       "strokeTooDetailed": "Ce tracé a trop de détails pour être enregistré. Suis le contour d'un seul geste.",
       "strokeTooShort": "Ce tracé est trop court. Dessine une boucle complète autour de la prise.",
-      "someHoldsOffWall_one": "{{count}} prise tombe en dehors du mur. Remets-la sur la photo ou désactive-la.",
-      "someHoldsOffWall_other": "{{count}} prises tombent en dehors du mur. Remets-les sur la photo ou désactive-les.",
+      "someHoldsOffWall_one": "{{count}} prise tombe en dehors du spray wall. Remets-la sur la photo ou désactive-la.",
+      "someHoldsOffWall_other": "{{count}} prises tombent en dehors du spray wall. Remets-les sur la photo ou désactive-les.",
       "cornersCross": "Deux côtés se croisent. Touche les coins dans l'ordre autour de la prise.",
       "cornersTooFew": "Ces coins sont trop rapprochés ou alignés. Touche au moins 3 coins autour de la prise.",
       "cornersHollow": "Cette forme est trop creuse. Touche les coins le long du bord extérieur de la prise.",
@@ -918,17 +918,17 @@
       "needsOnHold": "Active d'abord la prise"
     },
     "empty": {
-      "noPhoto": "Ce mur n'a pas encore de photo à modifier."
+      "noPhoto": "Ce spray wall n'a pas encore de photo à modifier."
     },
-    "loading": "Chargement de ton mur…",
-    "loadStalled": "Impossible de charger ton mur. Réessaie.",
+    "loading": "Chargement de ton spray wall…",
+    "loadStalled": "Impossible de charger ton spray wall. Réessaie.",
     "rail": {
       "label": "Outils d'édition",
       "grip": "Déplacer les outils de l'autre côté",
       "mark": "Choisir et activer les prises",
       "pencilOnly": "Pencil uniquement",
-      "pencilOnlyHint": "Avec les doigts, tu choisis les prises et te déplaces. Seul l'Apple Pencil modifie le mur.",
-      "fit": "Ajuster le mur à l'écran",
+      "pencilOnlyHint": "Avec les doigts, tu choisis les prises et te déplaces. Seul l'Apple Pencil modifie le spray wall.",
+      "fit": "Ajuster le spray wall à l'écran",
       "more": "Plus d'options"
     },
     "inspector": {
@@ -968,21 +968,21 @@
     }
   },
   "sprayWizard": {
-    "screenTitle": "Ajouter un mur de spray",
+    "screenTitle": "Ajouter un spray wall",
     "stepCounter": "Étape {{current}} sur {{total}}",
     "back": "Retour",
     "meta": {
-      "title": "C'est quoi ce mur ?",
+      "title": "C'est quoi ce spray wall ?",
       "body": "Donne-lui un nom, dis son dévers et choisis qui peut le voir.",
-      "namePlaceholder": "Mur du garage",
+      "namePlaceholder": "Spray wall du garage",
       "angle": "Angle",
-      "angleHint": "Le dévers du mur, par pas de 5°. Figé une fois publié.",
+      "angleHint": "Le dévers du spray wall, par pas de 5°. Figé une fois publié.",
       "next": "Suivant",
-      "anglePreview": "Mur à {{angle}} degrés"
+      "anglePreview": "Spray wall à {{angle}} degrés"
     },
     "photo": {
-      "title": "Photographie le mur",
-      "body": "Place-toi bien en face, shoote en 1x et cadre tout le mur. Chaque prise que tu poses vit sur ces pixels.",
+      "title": "Photographie le spray wall",
+      "body": "Place-toi bien en face, shoote en 1x et cadre tout le spray wall. Chaque prise que tu poses vit sur ces pixels.",
       "helpLink": "Bien prendre la photo",
       "helpLinkHint": "Ouvre le guide photo dans ton navigateur",
       "library": "Choisir une photo",
@@ -990,13 +990,13 @@
       "pickAnother": "Choisir une autre photo",
       "adjust": "Recadrer ou pivoter",
       "next": "Suivant",
-      "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un mur.",
+      "cameraDenied": "Boardsesh a besoin de ton appareil photo pour photographier un spray wall.",
       "failed": "Cette photo ne s'ouvre pas. Essaie-en une autre.",
-      "tip": "Recule, place-toi bien en face du mur et cadre les 4 coins."
+      "tip": "Recule, place-toi bien en face du spray wall et cadre les 4 coins."
     },
     "adjust": {
       "title": "Recadre et pivote",
-      "body": "Recadre au ras des bords du mur. Pivote la photo si elle est dans le mauvais sens.",
+      "body": "Recadre au ras des bords du spray wall. Pivote la photo si elle est dans le mauvais sens.",
       "hint": "Fais glisser un bord ou un coin. Fais glisser l'intérieur du cadre pour le déplacer.",
       "small": "Cette photo est petite. Les prises risquent d'être floues quand tu zoomes.",
       "failed": "Impossible de recadrer cette photo. Réessaie, ou annule pour la garder telle quelle.",
@@ -1016,9 +1016,9 @@
     },
     "anchors": {
       "title": "Marque les coins",
-      "body": "Fais glisser les quatre cercles sur les coins du mur. Passe si tu as shooté bien en face.",
+      "body": "Fais glisser les quatre cercles sur les coins du spray wall. Passe si tu as shooté bien en face.",
       "hint": "En haut à gauche, en haut à droite, en bas à droite, en bas à gauche.",
-      "crossed": "Ces coins se croisent. Place-les autour du mur dans l'ordre.",
+      "crossed": "Ces coins se croisent. Place-les autour du spray wall dans l'ordre.",
       "cornerTopLeft": "Coin en haut à gauche",
       "cornerTopRight": "Coin en haut à droite",
       "cornerBottomRight": "Coin en bas à droite",
@@ -1027,7 +1027,7 @@
       "skip": "Passer",
       "clear": "Recommencer les coins",
       "quality": {
-        "good": "Bien en face. Le mur sera redressé proprement.",
+        "good": "Bien en face. Le spray wall sera redressé proprement.",
         "soft": "Un peu de biais. Reprends-la bien en face pour un rendu plus net.",
         "fail": "Trop de biais pour la redresser. Ta photo reste utilisable, ou reprends-la bien en face.",
         "small": "Cette photo est trop petite pour être redressée. Elle reste utilisable telle quelle."
@@ -1050,102 +1050,102 @@
     "scan": {
       "queued": "En file d'attente…",
       "running": "Recherche des prises…",
-      "slow": "Les murs très chargés prennent un peu plus de temps",
+      "slow": "Les spray walls très chargés prennent un peu plus de temps",
       "resumeHint": "Tu peux quitter et reprendre plus tard."
     },
     "review": {
       "next": "Choisir le rendu",
-      "nothingFound": "Aucune prise repérée. Touche le mur pour les ajouter.",
-      "detectionFailed": "Impossible de repérer les prises cette fois. Touche le mur pour les ajouter.",
-      "manualOnly": "Touche le mur pour ajouter tes prises.",
+      "nothingFound": "Aucune prise repérée. Touche le spray wall pour les ajouter.",
+      "detectionFailed": "Impossible de repérer les prises cette fois. Touche le spray wall pour les ajouter.",
+      "manualOnly": "Touche le spray wall pour ajouter tes prises.",
       "retry": "Réessayer"
     },
     "look": {
       "title": "Comment allumer tes prises ?",
-      "body": "Les grimpeurs verront ton mur comme ça, sauf ceux qui ont choisi d'utiliser leur propre rendu sur les murs de spray.",
-      "loading": "Chargement de ton mur…",
-      "unavailable": "Impossible d'afficher la photo de ton mur ici, mais tu peux quand même choisir un rendu.",
+      "body": "Les grimpeurs verront ton spray wall comme ça, sauf ceux qui ont choisi d'utiliser leur propre rendu sur les spray walls.",
+      "loading": "Chargement de ton spray wall…",
+      "unavailable": "Impossible d'afficher la photo de ton spray wall ici, mais tu peux quand même choisir un rendu.",
       "saving": "Enregistrement du rendu…",
       "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
       "publishWithout": "Publier quand même",
-      "dimTitle": "Assombrir le reste du mur",
+      "dimTitle": "Assombrir le reste du spray wall",
       "dimOff": "Désactivé"
     },
     "publish": {
       "title": "Ajoute-le à tes boards",
-      "working": "Publication de ton mur…",
-      "failed": "La publication du mur a échoué.",
-      "stalled": "Ton mur est enregistré, mais sa préparation a pris trop de temps. Réessaie.",
+      "working": "Publication de ton spray wall…",
+      "failed": "La publication du spray wall a échoué.",
+      "stalled": "Ton spray wall est enregistré, mais sa préparation a pris trop de temps. Réessaie.",
       "retry": "Réessayer"
     },
     "done": {
-      "body": "Préparation de ton mur…",
+      "body": "Préparation de ton spray wall…",
       "leave": "Retour à la grimpe"
     },
     "leave": {
-      "title": "Laisser ce mur pour l'instant ?",
-      "body": "Ton mur et sa photo sont enregistrés. Tu reprendras où tu t'es arrêté.",
+      "title": "Laisser ce spray wall pour l'instant ?",
+      "body": "Ton spray wall et sa photo sont enregistrés. Tu reprendras où tu t'es arrêté.",
       "stay": "Continuer",
       "go": "Quitter",
       "unsavedTitle": "Quitter sans publier ?",
-      "unsavedBody": "Tes modifications sur les prises seront perdues. Le mur et sa photo restent enregistrés.",
+      "unsavedBody": "Tes modifications sur les prises seront perdues. Le spray wall et sa photo restent enregistrés.",
       "discard": "Quitter quand même"
     },
     "resume": {
-      "checking": "Recherche d'un mur commencé…",
-      "title": "Tu as un mur en cours",
+      "checking": "Recherche d'un spray wall commencé…",
+      "title": "Tu as un spray wall en cours",
       "body": "« {{name}} » n'est pas fini. Reprends où tu t'es arrêté, ou recommence.",
       "pickUp": "Reprendre",
       "startOver": "Recommencer",
-      "checkFailed": "Impossible de vérifier ce mur. Réessaie.",
+      "checkFailed": "Impossible de vérifier ce spray wall. Réessaie.",
       "retry": "Réessayer"
     },
     "reset": {
-      "screenTitle": "Réinitialiser ce mur",
-      "starting": "Préparation de ton nouveau mur…",
+      "screenTitle": "Réinitialiser ce spray wall",
+      "starting": "Préparation de ton nouveau spray wall…",
       "startFailed": "Impossible de lancer la réinitialisation. Réessaie.",
       "resumeTitle": "Tu as une réinitialisation en cours",
-      "resumeBody": "La nouvelle photo de « {{name}} » n'est pas finie. Reprends où tu t'es arrêté, ou recommence. Le mur reste en ligne jusqu'à ce que le nouveau le remplace.",
-      "photoTitle": "Photographie le mur tel qu'il est maintenant",
-      "photoBody": "Même nom et même angle qu’avant. Prends tout le mur en photo, puis marque chaque prise.",
-      "archiveNotice": "Quand ce mur sera en ligne, l'ancien sera archivé. Ses blocs et ses croix restent."
+      "resumeBody": "La nouvelle photo de « {{name}} » n'est pas finie. Reprends où tu t'es arrêté, ou recommence. Le spray wall reste en ligne jusqu'à ce que le nouveau le remplace.",
+      "photoTitle": "Photographie le spray wall tel qu'il est maintenant",
+      "photoBody": "Même nom et même angle qu’avant. Prends tout le spray wall en photo, puis marque chaque prise.",
+      "archiveNotice": "Quand ce spray wall sera en ligne, l'ancien sera archivé. Ses blocs et ses croix restent."
     }
   },
   "sprayResetConfirm": {
-    "title": "Réinitialiser ce mur ?",
-    "body": "Prends une nouvelle photo et marque les prises depuis zéro. Quand le nouveau mur est en ligne, celui-ci est archivé. Ses blocs et ses croix restent dans les carnets et les playlists, et plus personne ne peut y ouvrir de bloc.",
+    "title": "Réinitialiser ce spray wall ?",
+    "body": "Prends une nouvelle photo et marque les prises depuis zéro. Quand le nouveau spray wall est en ligne, celui-ci est archivé. Ses blocs et ses croix restent dans les carnets et les playlists, et plus personne ne peut y ouvrir de bloc.",
     "start": "Lancer la réinitialisation",
     "cancel": "Pas maintenant"
   },
   "sprayArchive": {
     "banner": "Archivé le {{date}}. Les blocs et les croix restent, mais on n'ouvre plus rien ici.",
     "bannerUndated": "Archivé. Les blocs et les croix restent, mais on n'ouvre plus rien ici.",
-    "switchToNew": "Passer au nouveau mur",
-    "openFailed": "Impossible d'ouvrir ce mur. Réessaie.",
+    "switchToNew": "Passer au nouveau spray wall",
+    "openFailed": "Impossible d'ouvrir ce spray wall. Réessaie.",
     "manageHeader": "Archivés",
     "manageRow": "Archivé le {{date}}",
     "manageRowUndated": "Archivé",
     "deleteMessage": "Supprimer « {{name}} » ? Sa photo est supprimée. Ses blocs, et toutes les croix notées dessus, quittent les carnets et les playlists. C'est irréversible."
   },
   "sprayWallErrors": {
-    "archived": "Ce mur est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc.",
-    "resetRetired": "Désormais, on change un mur en le réinitialisant. Mets l'app à jour, puis réinitialise le mur.",
-    "resetOwnerOnly": "Seul le propriétaire du mur peut le réinitialiser.",
-    "resetSourceUnpublished": "Termine la configuration de ce mur avant de le réinitialiser.",
-    "archiveLimitReached": "Tu peux garder {{max}} murs archivés. Supprimes-en un dans la section Archivés pour réinitialiser ce mur."
+    "archived": "Ce spray wall est archivé. Ses blocs et ses croix restent, mais on ne peut plus y ouvrir de bloc.",
+    "resetRetired": "Désormais, on change un spray wall en le réinitialisant. Mets l'app à jour, puis réinitialise le spray wall.",
+    "resetOwnerOnly": "Seul le propriétaire du spray wall peut le réinitialiser.",
+    "resetSourceUnpublished": "Termine la configuration de ce spray wall avant de le réinitialiser.",
+    "archiveLimitReached": "Tu peux garder {{max}} spray walls archivés. Supprimes-en un dans la section Archivés pour réinitialiser ce spray wall."
   },
   "sprayMaintenance": {
     "screenTitle": "Modifier les prises",
-    "preparing": "Ouverture de ton mur…",
-    "unavailable": "Tu ne peux pas modifier ce mur.",
-    "nothingPublished": "Termine la configuration de ce mur avant de modifier ses prises.",
-    "draftUnavailable": "Ce brouillon a changé. Rouvre le mur pour modifier ses prises.",
+    "preparing": "Ouverture de ton spray wall…",
+    "unavailable": "Tu ne peux pas modifier ce spray wall.",
+    "nothingPublished": "Termine la configuration de ce spray wall avant de modifier ses prises.",
+    "draftUnavailable": "Ce brouillon a changé. Rouvre le spray wall pour modifier ses prises.",
     "loadFailed": "Impossible d'ouvrir l'éditeur de prises. Réessaie.",
     "publish": "Publier les prises",
     "publishing": "Publication de tes prises…",
     "publishFailed": "Tes modifications sont enregistrées. Réessaie de les publier.",
-    "refreshing": "Chargement du mur mis à jour…",
-    "refreshFailed": "Tes prises sont publiées. Réessaie de charger le mur.",
+    "refreshing": "Chargement du spray wall mis à jour…",
+    "refreshFailed": "Tes prises sont publiées. Réessaie de charger le spray wall.",
     "retry": "Réessayer",
     "temporarilyUnavailable": "La modification des prises est indisponible pour le moment. Réessaie plus tard.",
     "leave": {
@@ -1154,7 +1154,7 @@
       "stay": "Continuer à modifier",
       "discard": "Abandonner les modifications"
     },
-    "leftoverPhoto": "Ce mur a une nouvelle photo inachevée, laissée par une ancienne version de l'app. Abandonne-la pour modifier les prises.",
+    "leftoverPhoto": "Ce spray wall a une nouvelle photo inachevée, laissée par une ancienne version de l'app. Abandonne-la pour modifier les prises.",
     "discardLeftover": "Abandonner la photo inachevée",
     "discardLeftoverFailed": "Impossible d'abandonner cette photo. Réessaie."
   },
@@ -1167,34 +1167,34 @@
     "keep": "Garder les prises"
   },
   "sprayCaps": {
-    "holds": "Un mur porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
-    "versions": "Un mur garde jusqu’à {{max}} versions de ses prises, une par modification publiée, et celui-ci les a toutes utilisées. Réinitialise le mur pour repartir de zéro.",
-    "walls": "Tu peux garder {{max}} murs. Supprimes-en un pour faire de la place.",
-    "wallsHint": "Tu peux garder jusqu’à {{max}} murs."
+    "holds": "Un spray wall porte jusqu’à {{max}} prises. Écartes-en quelques-unes et enregistre à nouveau.",
+    "versions": "Un spray wall garde jusqu’à {{max}} versions de ses prises, une par modification publiée, et celui-ci les a toutes utilisées. Réinitialise le spray wall pour repartir de zéro.",
+    "walls": "Tu peux garder {{max}} spray walls. Supprimes-en un pour faire de la place.",
+    "wallsHint": "Tu peux garder jusqu’à {{max}} spray walls."
   },
   "sprayHidden": {
     "body": "Quelqu’un l’a signalé et on l’a retiré de la vue des autres. Pour toi il est toujours là, et rien n’a été supprimé.",
-    "title": "Ce mur est masqué"
+    "title": "Ce spray wall est masqué"
   },
   "sprayModeration": {
-    "reportTitle": "Signaler le mur",
-    "reportHint": "Signaler ce mur pour une vérification administrative",
+    "reportTitle": "Signaler le spray wall",
+    "reportHint": "Signaler ce spray wall pour une vérification administrative",
     "submit": "Envoyer le signalement",
     "reported": "Merci. Ton signalement est en attente de vérification.",
     "reportOffline": "Connecte-toi à internet pour envoyer ton signalement.",
     "reportError": "Ton signalement n’a pas été envoyé. Réessaie.",
-    "queueTitle": "Signalements de murs spray",
-    "hide": "Masquer le mur",
-    "unhide": "Afficher le mur",
+    "queueTitle": "Signalements de spray walls",
+    "hide": "Masquer le spray wall",
+    "unhide": "Afficher le spray wall",
     "keepVisible": "Garder visible",
     "hidden": "Masqué",
     "photoLabel": "Photo de {{wall}}",
     "noPhoto": "Aucune photo disponible",
-    "review": "Vérifier le mur",
+    "review": "Vérifier le spray wall",
     "reviewError": "La décision n’a pas été enregistrée. Réessaie.",
-    "unavailable": "La modération des murs spray est indisponible pour ce compte actuellement.",
+    "unavailable": "La modération des spray walls est indisponible pour ce compte actuellement.",
     "loadError": "Impossible de charger les signalements.",
-    "empty": "Aucun mur en attente de vérification.",
+    "empty": "Aucun spray wall en attente de vérification.",
     "reasons": {
       "inappropriate": "Photo ou nom inapproprié",
       "notAWall": "Ce n’est pas un mur d’escalade",
@@ -1205,24 +1205,24 @@
     "reportCount_other": "{{count}} signalements"
   },
   "sprayBackground": {
-    "label": "Fond du mur",
+    "label": "Fond du spray wall",
     "photo": "Photo",
-    "wallCrop": "Mur seul",
+    "wallCrop": "Spray wall seul",
     "holdCutouts": "Prises seules",
-    "retake": "Réinitialiser le mur avec une nouvelle photo",
+    "retake": "Réinitialiser le spray wall avec une nouvelle photo",
     "previewLabel": "Aperçu : {{look}}",
     "saveFailed": "Impossible d'enregistrer le fond. Réessaie.",
     "notAvailable": "Cette photo est trop de biais pour ce rendu. Reprends-la bien en face.",
     "note": {
       "lockedNoPins": "Place les 4 coins pour le débloquer.",
-      "lockedRetake": "Réinitialise le mur avec une photo bien en face pour le débloquer.",
+      "lockedRetake": "Réinitialise le spray wall avec une photo bien en face pour le débloquer.",
       "generating": "Génération…",
       "failed": "Ce rendu n'a pas pu être généré. Enregistre-le à nouveau pour réessayer.",
       "preview": "Voilà à quoi ressemblera ton mur. Ta photo s'affiche pendant environ une minute après la publication.",
       "soft": "Reprends la photo bien en face pour un rendu plus net.",
       "volumes": "Les volumes ne sont pas encore détourés."
     },
-    "notAvailableNoPins": "Place d'abord les 4 coins du mur pour utiliser ce rendu.",
+    "notAvailableNoPins": "Place d'abord les 4 coins du spray wall pour utiliser ce rendu.",
     "notAvailableSmall": "Cette photo est trop petite pour être redressée. Reprends-la avec l'appareil principal en 1x.",
     "usePhoto": "Utiliser la photo"
   },

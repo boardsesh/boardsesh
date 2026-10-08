@@ -137,10 +137,10 @@
       "printAction": "Poster drucken",
       "backToGym": "Zurück zur Halle"
     },
-    "sprayWallsHeading": "Spray Walls",
-    "sprayWallCount_one": "{{count}} Wand",
-    "sprayWallCount_other": "{{count}} Wände",
-    "sprayWallsIntro": "Die Spray Walls dieser Halle, Griff für Griff. Öffne eine und sieh, was dort geschraubt wurde.",
+    "sprayWallsHeading": "Spraywalls",
+    "sprayWallCount_one": "{{count}} Spraywall",
+    "sprayWallCount_other": "{{count}} Spraywalls",
+    "sprayWallsIntro": "Die Spraywalls dieser Halle, Griff für Griff. Öffne eine und sieh, was dort geschraubt wurde.",
     "sprayWallPhotoAlt": "Foto von {{wallName}}",
     "sprayWallMeta": "{{angle}}° · {{holds}} Griffe"
   },
