@@ -450,7 +450,7 @@ describe('fetchManifest', () => {
   it('excludes old public artifacts and accepts only privacy-safe manifest entries', async () => {
     const protectedEntry = { ...ENTRY, privacyVersion: 1 };
     const manifestBody = {
-      formatVersion: 1,
+      formatVersion: 2,
       generatedAt: '2026-06-01T00:00:00.000Z',
       entries: [ENTRY, protectedEntry],
     };
@@ -464,7 +464,7 @@ describe('fetchManifest', () => {
   });
 
   it('fetches the manifest URL with cache: no-store and returns the parsed JSON on 200', async () => {
-    const manifestBody = { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries: [] };
+    const manifestBody = { formatVersion: 2, generatedAt: '2026-06-01T00:00:00.000Z', entries: [] };
     const fetchMock = vi.fn(async () => jsonResponse(manifestBody));
     vi.stubGlobal('fetch', fetchMock);
 

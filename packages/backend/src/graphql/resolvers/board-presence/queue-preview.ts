@@ -6,7 +6,7 @@ import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireReadablePresenceBoard, isBoardAnonReadable } from './shared';
 import { sprayStreamGate } from '../climbs/spray-read-access';
-import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
+import { buildEmptyBoardQueuePreview, getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
 
 export const boardQueuePreviewQueries = {
   /**
@@ -54,10 +54,8 @@ export const boardQueuePreviewSubscriptions = {
    * channel subscribe before we compute the seed snapshot, so a producer
    * publish landing during setup queues in the iterator instead of being
    * dropped (pub/sub has no replay — the seed is the only initial state a
-   * kiosk gets). A publish that lands between the subscribe and the seed
-   * compute can deliver a snapshot slightly older than the seed right after
-   * it; accepted — snapshots are self-contained and the next mutation's
-   * publish converges (same accepted race as boardNowPlaying's backfill).
+   * kiosk gets). Buffered publishes only trigger a fresh authorized snapshot;
+   * their copied content cannot bypass a restriction applied after publication.
    */
   boardQueuePreview: {
     subscribe: withSubscriptionCleanup(async function* (
@@ -98,22 +96,26 @@ export const boardQueuePreviewSubscriptions = {
         }
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
-          // An already-open stream closes quietly when access is revoked.
+          // Withdraw the last snapshot before closing: older kiosks do not
+          // subscribe to privacyChanged and retain their last rendered queue.
           try {
             await requireReadablePresenceBoard(boardId, ctx.userId);
           } catch (error) {
-            if (error instanceof GraphQLError && ['NOT_FOUND', 'FORBIDDEN'].includes(String(error.extensions.code)))
+            if (error instanceof GraphQLError && ['NOT_FOUND', 'FORBIDDEN'].includes(String(error.extensions.code))) {
+              yield { boardQueuePreview: buildEmptyBoardQueuePreview(boardId) };
               return;
+            }
             throw error;
           }
-          if (!(await isBoardAnonReadable(boardId))) return;
-          if (gate && !(await gate())) return;
-          if (result.value === null) {
-            const refreshed = await getBoardQueuePreviewSnapshot(boardId);
-            if (refreshed) yield { boardQueuePreview: refreshed };
-            continue;
+          if (!(await isBoardAnonReadable(boardId)) || (gate && !(await gate()))) {
+            yield { boardQueuePreview: buildEmptyBoardQueuePreview(boardId) };
+            return;
           }
-          yield { boardQueuePreview: result.value };
+          // A buffered event may predate a restriction or board hand-off.
+          // Treat it as a wake-up, never as permission to deliver its copy.
+          // Empty snapshots also clear older clients when a session is withdrawn.
+          const refreshed = await getBoardQueuePreviewSnapshot(boardId);
+          yield { boardQueuePreview: refreshed ?? buildEmptyBoardQueuePreview(boardId) };
         }
       } finally {
         // The lifetime wrapper closes immediately on disconnect, even during

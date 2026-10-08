@@ -547,7 +547,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(climbMeta.watermark_updated_at).toBe(toIso(climbWatermarkRow.updated_at));
     expect(climbMeta.watermark_sync_seq).toBe(String(climbWatermarkRow.sync_seq));
     expect(climbMeta.schema_version).toBeGreaterThanOrEqual(1);
-    expect(climbMeta.format_version).toBe(1);
+    expect(climbMeta.format_version).toBe(2);
 
     const statsMeta = readArtifactMeta(filePath, 'board_climb_stats')!;
     expect(statsMeta.row_count).toBe(2);
@@ -655,7 +655,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
       row_count: 0,
       built_at: artifactBuiltAt,
       schema_version: expect.any(Number),
-      format_version: 1,
+      format_version: 2,
     });
   });
 

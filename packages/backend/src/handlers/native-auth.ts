@@ -725,7 +725,11 @@ export async function handleNativeAuthRegister(req: IncomingMessage, res: Server
       // Mirror the web createUser event: every user gets a profile row.
       await tx
         .insert(userProfiles)
-        .values({ userId: newUserId, isPrivate: true, defaultSessionAudience: 'followers' })
+        .values({
+          userId: newUserId,
+          isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
+          defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
+        })
         .onConflictDoNothing();
       const tokenPair = await generateTokenPair(newUserId, tx);
       return { userId: newUserId, tokenPair };
@@ -980,7 +984,11 @@ async function findOrCreateOAuthUser(
     // Mirror the web `createUser` event: every user gets a profile row.
     await tx
       .insert(userProfiles)
-      .values({ userId: newUserId, isPrivate: true, defaultSessionAudience: 'followers' })
+      .values({
+        userId: newUserId,
+        isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
+        defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
+      })
       .onConflictDoNothing();
     await tx.insert(accounts).values({ userId: newUserId, type: 'oauth', provider, providerAccountId: identity.sub });
     const tokenPair = await generateTokenPair(newUserId, tx);

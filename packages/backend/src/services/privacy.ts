@@ -27,6 +27,17 @@ export function requirePrivacyControls(): void {
   if (!privacyControlsEnabled())
     throw new GraphQLError('Privacy controls are not available yet', { extensions: { code: 'PRIVACY_UNAVAILABLE' } });
 }
+/** Old full-form booleans may narrow, but cannot replace a newer restricted audience. */
+export function legacyResourceAudience(
+  current: PrivacyResourceAudience | undefined,
+  requested: PrivacyResourceAudience,
+): PrivacyResourceAudience {
+  if (!current || current === 'public' || requested === 'only_me') return requested;
+  if (current === 'unlisted' && requested !== 'public') return requested;
+  if (current === 'followers' && requested === 'invite_only') return requested;
+  return current;
+}
+
 export async function getPrivacySettings(userId: string): Promise<PrivacySettings> {
   const [profile] = await db.select().from(schema.userProfiles).where(eq(schema.userProfiles.userId, userId)).limit(1);
   return {
@@ -258,7 +269,8 @@ export async function setContentPrivacy(
   audience: (typeof schema.contentPrivacy.$inferSelect)['audience'],
   privacyRevision: number,
 ): Promise<void> {
-  requirePrivacyControls();
+  // The flag hides controls; queued publications must still commit their exact
+  // audience during rollback. Authorization and stale-public consent stay active.
   await executor
     .select({ id: schema.users.id })
     .from(schema.users)

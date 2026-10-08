@@ -35,3 +35,21 @@ export function buildContentStateFromQueueState(queueState: QueueState): LiveAct
     mirrored: currentItem.climb.mirrored === true,
   };
 }
+
+/** Keep the ContentState shape understood by already-installed native apps. */
+export function emptyLiveActivityContentState(): LiveActivityContentState {
+  return {
+    climbName: '',
+    climbDifficulty: '',
+    climbUuid: '',
+    queueItemUuid: '',
+    angle: 0,
+    currentIndex: 0,
+    totalClimbs: 0,
+    hasNext: false,
+    hasPrevious: false,
+    mirrored: false,
+    boardConnection: 'disconnected',
+    holderDisplayName: '',
+  };
+}

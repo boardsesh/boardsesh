@@ -54,12 +54,11 @@ describe('privacy publication consent', () => {
       expect.objectContaining({ audience: 'only_me', publicConsentRevision: null }),
     );
   });
-  it('does not expose writable controls before enforcement rollout', async () => {
+  it('accepts an already queued publication while controls are disabled', async () => {
     vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
-    await expect(setContentPrivacy(executor, 'owner', 'tick', 'tick-id', 'public', 0)).rejects.toMatchObject({
-      extensions: { code: 'PRIVACY_UNAVAILABLE' },
-    });
-    expect(mocks.select).not.toHaveBeenCalled();
+    mocks.results.push([{ id: 'owner' }], [{ revision: 4 }]);
+    await setContentPrivacy(executor, 'owner', 'tick', 'tick-id', 'only_me', 4);
+    expect(mocks.values).toHaveBeenCalledWith(expect.objectContaining({ audience: 'only_me' }));
   });
   it('fails closed when content still references a deleted author', async () => {
     mocks.results.push([], []);

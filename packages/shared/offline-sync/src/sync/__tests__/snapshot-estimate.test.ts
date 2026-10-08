@@ -48,7 +48,7 @@ function entry(patch: Partial<SnapshotManifestEntry> = {}): SnapshotManifestEntr
 }
 
 function manifest(entries: SnapshotManifestEntry[] = [entry()]): SnapshotManifest {
-  return { formatVersion: 1, generatedAt: '2026-07-15T02:33:29.916Z', entries };
+  return { formatVersion: 2, generatedAt: '2026-07-15T02:33:29.916Z', entries };
 }
 
 const NOW = 1_800_000_000_000;

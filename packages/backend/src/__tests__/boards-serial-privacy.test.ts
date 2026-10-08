@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { canAccessResource } from '../services/privacy';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
 
 // Mock db + dependencies before importing resolver.
@@ -312,6 +313,19 @@ describe('boardsBySerialNumbers privacy', () => {
   });
 
   describe('authenticated callers', () => {
+    it('keeps controller and timer configuration for an authorized non-editor', async () => {
+      vi.mocked(canAccessResource).mockResolvedValueOnce(true);
+      setupDbSelectSequence([[makeDbBoard({ isPublic: true, timerName: 'Rogue Gym Timer' })]]);
+      const results = await socialBoardQueries.boardsBySerialNumbers(
+        null,
+        { serialNumbers: ['SERIAL001'] },
+        makeAuthCtx('gym-climber'),
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ canEdit: false, serialNumber: 'SERIAL001', timerName: 'Rogue Gym Timer' });
+      expect(results[0].ownerId).toBeNull();
+    });
+
     it('returns full board data including owner and stats to the owner', async () => {
       const board = makeDbBoard({
         isPublic: false,

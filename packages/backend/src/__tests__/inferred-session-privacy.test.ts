@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { intersectInferredPrivacy, type InferredPrivacy } from '../services/inferred-sessions/privacy';
+import {
+  intersectInferredPrivacy,
+  movedContentNeedsRestriction,
+  type InferredPrivacy,
+} from '../services/inferred-sessions/privacy';
 
 function policy(
   audience: InferredPrivacy['audience'],
@@ -10,6 +14,13 @@ function policy(
 }
 
 describe('inferred session privacy intersections', () => {
+  it('preserves a revoked viewer when public content moves to a wider parent', () => {
+    const source = policy('public', [['removed', 'revoked']]);
+    expect(movedContentNeedsRestriction(source, policy('public'))).toBe(true);
+    expect(movedContentNeedsRestriction(source, policy('public', [['removed', 'approved']]))).toBe(true);
+    expect(movedContentNeedsRestriction(source, policy('public', [['removed', 'revoked']]))).toBe(false);
+    expect(movedContentNeedsRestriction(source, intersectInferredPrivacy([source, policy('public')]))).toBe(false);
+  });
   it('clones a split source policy including its grants and follower inheritance', () => {
     const original = policy(
       'invite_only',

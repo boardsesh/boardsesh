@@ -51,8 +51,8 @@ beforeEach(async () => {
       CREATE TABLE snapshot_meta (table_name TEXT PRIMARY KEY, watermark_updated_at TEXT,
         watermark_sync_seq TEXT, row_count INTEGER, built_at TEXT, schema_version INTEGER, format_version INTEGER);
       INSERT INTO snapshot_meta VALUES
-        ('board_climbs', '2026-09-07T22:00:00.000Z', '10', 1, '2026-09-07T22:30:00.000Z', 5, 1),
-        ('board_climb_stats', '1970-01-01T00:00:00.000Z', '0', 0, '2026-09-07T22:30:00.000Z', 5, 1);
+        ('board_climbs', '2026-09-07T22:00:00.000Z', '10', 1, '2026-09-07T22:30:00.000Z', 5, 2),
+        ('board_climb_stats', '1970-01-01T00:00:00.000Z', '0', 0, '2026-09-07T22:30:00.000Z', 5, 2);
     `);
   } finally {
     artifact.close();

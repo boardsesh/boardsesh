@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
 import { db } from '../db/client';
+import * as privacy from '../services/privacy';
 
 // Mock dependencies
 vi.mock('../services/room-manager', () => ({
@@ -107,6 +108,31 @@ describe('createSession authentication', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  it.each(['public', 'followers', 'invite_only'] as const)(
+    'preserves account session audience %s for a legacy explicit Public input during rollback',
+    async (defaultSessionAudience) => {
+      vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
+      const settingsSpy = vi.spyOn(privacy, 'getPrivacySettings').mockResolvedValue({
+        isPrivate: defaultSessionAudience !== 'public',
+        defaultSessionAudience,
+        privacyRevision: 2,
+        privacyOnboardingVersion: 1,
+        enabled: false,
+      });
+      try {
+        const result = await sessionMutations.createSession(
+          undefined,
+          { input: { ...validDiscoverableInput, isPublic: true } },
+          makeAuthenticatedCtx(),
+        );
+        expect(result.isPublic).toBe(defaultSessionAudience === 'public');
+      } finally {
+        settingsSpy.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it('allows anonymous users to create non-discoverable sessions', async () => {
     const ctx = makeAnonymousCtx('192.168.1.1');

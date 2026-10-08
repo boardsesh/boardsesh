@@ -1,4 +1,10 @@
-import { intersectInferredPrivacy, loadInferredPrivacy, writeInferredPrivacy, type InferredPrivacy } from './privacy';
+import {
+  intersectInferredPrivacy,
+  loadInferredPrivacy,
+  movedContentNeedsRestriction,
+  writeInferredPrivacy,
+  type InferredPrivacy,
+} from './privacy';
 import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -255,7 +261,11 @@ export async function reconcileInferredSessions(
       // keep those moved ticks owner-only until their author republishes them.
       const restrictedTickIds = runResult.tickIds.filter((tickId) => {
         const previous = planned.originalAssignments.get(tickId);
-        return previous && previous !== sessionId && sourcePrivacy.get(previous)?.audience !== 'public';
+        return (
+          previous &&
+          previous !== sessionId &&
+          movedContentNeedsRestriction(sourcePrivacy.get(previous), sourcePrivacy.get(sessionId))
+        );
       });
       if (restrictedTickIds.length) {
         const ticks = await tx

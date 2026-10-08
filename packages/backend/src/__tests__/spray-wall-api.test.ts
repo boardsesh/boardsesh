@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   feedItems,
+  resourcePrivacy,
   syncDeletions,
   userBoards,
   sprayWallHolds,
@@ -107,7 +108,8 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 const { db } = await import('../db/client');
-const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
+const { sprayWallQueries, sprayWallMutations, updateSprayResourcePrivacy } =
+  await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallFullPhotoKey, sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
@@ -3653,6 +3655,115 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     return row?.public_photo_key ?? null;
   };
 
+  it.each(['followers', 'invite_only', 'only_me'] as const)(
+    'keeps %s privacy when an old app submits public or unlisted flags',
+    async (audience) => {
+      const { wall } = await createPublishedWall(OWNER);
+      await updateSprayResourcePrivacy(
+        wall.uuid,
+        { audience, locationAudience: 'members', inheritFollowers: false },
+        ctxFor(OWNER),
+      );
+      const { copyObjectBetweenBuckets } = await import('../storage/s3');
+      vi.mocked(copyObjectBetweenBuckets).mockClear();
+
+      for (const isUnlisted of [false, true]) {
+        const updated = (await sprayWallMutations.updateSprayWall(
+          {},
+          { input: { uuid: wall.uuid, name: 'Renamed from an old app', isPublic: true, isUnlisted } },
+          ctxFor(OWNER),
+        )) as { publicPhotoUrl: string | null };
+        expect(updated.publicPhotoUrl).toBeNull();
+      }
+
+      const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+      expect(policy).toMatchObject({ audience, locationAudience: 'members', inheritFollowers: false });
+      const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+      expect(board).toMatchObject({
+        name: 'Renamed from an old app',
+        isPublic: false,
+        isUnlisted: false,
+        hideLocation: true,
+      });
+      expect(copyObjectBetweenBuckets).not.toHaveBeenCalled();
+      expect(publicBucketObjects.size).toBe(0);
+      expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    },
+  );
+
+  it('keeps followers when an old app echoes unchanged private flags during a rename', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'followers', locationAudience: 'members', inheritFollowers: true },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Still shared with followers', isPublic: false, isUnlisted: false } },
+      ctxFor(OWNER),
+    );
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy).toMatchObject({ audience: 'followers', locationAudience: 'members', inheritFollowers: true });
+  });
+
+  it('allows an explicit privacy control to publish a protected wall and its photo', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'only_me', locationAudience: 'only_me', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'public', locationAudience: 'members', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy).toMatchObject({ audience: 'public', locationAudience: 'members' });
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
+    expect(publicBucketObjects.has(publicKey!)).toBe(true);
+  });
+
+  it('discards a staged public photo when privacy becomes restricted during the copy', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const { copyObjectBetweenBuckets } = await import('../storage/s3');
+    let stagedKey: string | null = null;
+    vi.mocked(copyObjectBetweenBuckets).mockImplementationOnce(
+      async (_source, sourceKey, _destination, destinationKey) => {
+        await updateSprayResourcePrivacy(
+          wall.uuid,
+          { audience: 'only_me', locationAudience: 'only_me', inheritFollowers: false },
+          ctxFor(OWNER),
+        );
+        publicBucketObjects.set(destinationKey, sourceKey);
+        stagedKey = destinationKey;
+        return { key: destinationKey };
+      },
+    );
+
+    const updated = (await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Rename survives the race', isPublic: true } },
+      ctxFor(OWNER),
+    )) as { publicPhotoUrl: string | null };
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy).toMatchObject({ audience: 'only_me', locationAudience: 'only_me' });
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board).toMatchObject({
+      name: 'Rename survives the race',
+      isPublic: false,
+      isUnlisted: false,
+      hideLocation: true,
+    });
+    expect(updated.publicPhotoUrl).toBeNull();
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    expect(stagedKey).not.toBeNull();
+    expect(deletedPublicKeys).toContain(stagedKey);
+    expect(publicBucketObjects.size).toBe(0);
+  });
+
   it('copies the photo into the public bucket on promotion and serves a stable URL', async () => {
     const { wall } = await createPublishedWall(OWNER);
 
@@ -3672,6 +3783,20 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(publicKey).toMatch(new RegExp(`^spray-walls/${wall.uuid}/[0-9a-f]{32}\\.jpg$`));
     expect(await publicPhotoKeyOf(wall.layoutId)).toBe(publicKey);
     expect(promoted.publicPhotoUrl).toBe(`https://media.example/${publicKey}`);
+  });
+
+  it('keeps legacy public/private/public switches working without a modern policy', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    for (const isPublic of [true, false, true]) {
+      const updated = (await sprayWallMutations.updateSprayWall(
+        {},
+        { input: { uuid: wall.uuid, isPublic } },
+        ctxFor(OWNER),
+      )) as { publicPhotoUrl: string | null };
+      expect(updated.publicPhotoUrl !== null).toBe(isPublic);
+      expect(publicBucketObjects.size).toBe(isPublic ? 1 : 0);
+    }
+    expect(await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid))).toEqual([]);
   });
 
   it('deletes the public copy — and retracts the feed — when the wall goes private again', async () => {

@@ -30,7 +30,7 @@ function validEntry(): SnapshotManifestEntry {
 }
 
 function validManifest(): SnapshotManifest {
-  return { formatVersion: 1, generatedAt: '2026-06-01T00:05:00.000Z', entries: [validEntry()] };
+  return { formatVersion: 2, generatedAt: '2026-06-01T00:05:00.000Z', entries: [validEntry()] };
 }
 
 function withEntry(patch: Partial<SnapshotManifestEntry>): unknown {
@@ -45,14 +45,14 @@ describe('parseSnapshotManifest', () => {
 
   it('accepts an empty entries array', () => {
     expect(
-      parseSnapshotManifest({ formatVersion: 1, generatedAt: '2026-06-01T00:05:00.000Z', entries: [] }),
+      parseSnapshotManifest({ formatVersion: 2, generatedAt: '2026-06-01T00:05:00.000Z', entries: [] }),
     ).not.toBeNull();
   });
 
   it('rejects non-ISO timestamps in generatedAt, builtAt, and watermarkUpdatedAt', () => {
     // A corrupted timestamp would otherwise be stored as the resume watermark
     // and pulled from later — reject the whole manifest instead.
-    expect(parseSnapshotManifest({ formatVersion: 1, generatedAt: 'now-ish', entries: [] })).toBeNull();
+    expect(parseSnapshotManifest({ formatVersion: 2, generatedAt: 'now-ish', entries: [] })).toBeNull();
     expect(parseSnapshotManifest(withEntry({ builtAt: 'yesterday' }))).toBeNull();
     expect(parseSnapshotManifest(withEntry({ builtAt: '2026-06-01T00:00:00' }))).toBeNull(); // no Z
     const validTables = validEntry().tables;
@@ -72,7 +72,7 @@ describe('parseSnapshotManifest', () => {
     expect(parseSnapshotManifest(null)).toBeNull();
     expect(parseSnapshotManifest('manifest')).toBeNull();
     expect(parseSnapshotManifest([])).toBeNull();
-    expect(parseSnapshotManifest({ ...validManifest(), formatVersion: 2 })).toBeNull();
+    expect(parseSnapshotManifest({ ...validManifest(), formatVersion: 1 })).toBeNull();
   });
 
   it('rejects fractional layoutId / bytes / schemaVersion / rowCount (integer-strict)', () => {
@@ -92,7 +92,7 @@ describe('parseSnapshotManifest', () => {
     const entry = validEntry();
     delete entry.uncompressedBytes;
     const parsed = parseSnapshotManifest({
-      formatVersion: 1,
+      formatVersion: 2,
       generatedAt: '2026-06-01T00:05:00.000Z',
       entries: [entry],
     });
@@ -144,9 +144,9 @@ describe('parseSnapshotManifest', () => {
 // Backward-compat gate for the additive `grades` block (issue #4310). The
 // validator below is a FROZEN COPY of the predicate that shipped before grades
 // existed, checked in rather than imported, so it keeps testing the old
-// behaviour even as the real one evolves. If a manifest carrying grades ever
-// stops parsing under it, every already-installed binary loses the snapshot
-// fast path the moment the export publishes.
+// behaviour even as the real one evolves. Privacy artifacts deliberately
+// fail this parser: the shipped paged-sync fallback fetches authorized authored
+// rows that an old snapshot importer would otherwise skip permanently.
 function parseWithShippedV1Validator(value: unknown): unknown | null {
   const isRecord = (candidate: unknown): candidate is Record<string, unknown> =>
     typeof candidate === 'object' && candidate !== null && !Array.isArray(candidate);
@@ -231,10 +231,11 @@ describe('parseSnapshotManifest — the optional grades artifact', () => {
     }
   });
 
-  it('parses under the FROZEN shipped v1 validator — no installed binary can choke on it', () => {
+  it('makes shipped v1 clients reject privacy artifacts and fall back to paged sync', () => {
     const manifest = JSON.parse(JSON.stringify(withEntry({ grades: validGradesArtifact() }))) as unknown;
 
-    expect(parseWithShippedV1Validator(manifest)).not.toBeNull();
+    expect(parseWithShippedV1Validator(manifest)).toBeNull();
+    expect(parseWithShippedV1Validator({ ...validManifest(), formatVersion: 1 })).not.toBeNull();
   });
 
   it('keeps the grades artifact OUT of `entries` — a sibling entry would be picked as the whole layout', () => {

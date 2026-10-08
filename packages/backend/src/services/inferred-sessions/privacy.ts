@@ -10,6 +10,20 @@ export type InferredPrivacy = {
   grants: Map<string, GrantStatus>;
 };
 
+/** Item audiences cannot encode resource grants or per-viewer revocations. */
+export function movedContentNeedsRestriction(
+  source: InferredPrivacy | undefined,
+  destination: InferredPrivacy | undefined,
+): boolean {
+  if (!source || source.audience !== 'public') return true;
+  // Public resources can still deny specific viewers. Preserve that denial
+  // unless the new parent already enforces it; never revoke unrelated access
+  // to an explicit destination just because it absorbed someone's old ticks.
+  return [...source.grants].some(
+    ([userId, status]) => status === 'revoked' && destination?.grants.get(userId) !== 'revoked',
+  );
+}
+
 /** Intersection is conservative: a follower exception never becomes a durable grant. */
 export function intersectInferredPrivacy(policies: readonly InferredPrivacy[]): InferredPrivacy {
   if (policies.length === 1) return policies[0];

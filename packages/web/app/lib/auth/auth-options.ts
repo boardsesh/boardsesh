@@ -433,8 +433,8 @@ export const authOptions: NextAuthOptions = {
           .insert(schema.userProfiles)
           .values({
             userId: user.id,
-            isPrivate: true,
-            defaultSessionAudience: 'followers',
+            isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
+            defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
           })
           .onConflictDoNothing();
       }

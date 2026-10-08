@@ -213,6 +213,23 @@ describe('handleNativeAuthRegister', () => {
     expect(userValues.emailVerified).toBeInstanceOf(Date);
   });
 
+  it.each(['0', '1'])('gates new account privacy defaults with controls enabled=%s', async (flag) => {
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
+    queueSelect([]);
+    const req = makeRequest({ method: 'POST', body: { email: 'rollout@example.com', password: 'longenough' } });
+    const res = makeResponse();
+    try {
+      await callHandler(req, res);
+      expect(res.statusCode).toBe(201);
+      expect(insertsFor(userProfiles)[0].values).toMatchObject({
+        isPrivate: flag === '1',
+        defaultSessionAudience: flag === '1' ? 'followers' : 'public',
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('stores a bcrypt hash, never the plaintext password', async () => {
     queueSelect([]);
 

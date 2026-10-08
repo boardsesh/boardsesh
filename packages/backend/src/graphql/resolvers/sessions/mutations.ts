@@ -1,6 +1,6 @@
 import { resolveSessionBoardId } from '../../../services/session-board-binding';
 import { canAccessResourceWithoutLink } from '../../../services/privacy';
-import { getPrivacySettings } from '../../../services/privacy';
+import { getPrivacySettings, legacyResourceAudience } from '../../../services/privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 import * as Sentry from '@sentry/node';
@@ -265,11 +265,13 @@ export const sessionMutations = {
       const sessionId = uuidv4();
       if (DEBUG) logger.info(`[createSession] Generated sessionId: ${sessionId}`);
 
-      // Absent or null means public — the pre-existing behaviour every client
-      // that predates the privacy switch relies on.
+      // Legacy callers keep the public default until an account selects a
+      // restrictive audience. An old isPublic:true is not new public consent.
       const defaults = ctx.userId ? await getPrivacySettings(ctx.userId) : null;
+      const defaultAudience = defaults?.defaultSessionAudience ?? 'public';
       const audience =
-        input.audience ?? (input.isPublic === false ? 'invite_only' : (defaults?.defaultSessionAudience ?? 'public'));
+        input.audience ??
+        (input.isPublic === false ? legacyResourceAudience(defaultAudience, 'invite_only') : defaultAudience);
       const isPublic = audience === 'public';
       if (!isPublic) requireAuthenticated(ctx);
       const boardId = await resolveSessionBoardId(input.boardPath, ctx.userId);
@@ -303,7 +305,9 @@ export const sessionMutations = {
         });
         if (attachedIds.length)
           await tx.insert(sessionBoards).values(attachedIds.map((boardId) => ({ sessionId, boardId })));
-        if (ctx.userId)
+        // Omitted modern controls leave legacy visibility switches reversible.
+        // Account-selected restrictions remain protected even on an old client.
+        if (ctx.userId && (input.audience != null || defaultAudience !== 'public'))
           await tx
             .insert(resourcePrivacy)
             .values({ kind: 'session', resourceId: sessionId, ownerId: ctx.userId, audience });
@@ -852,22 +856,11 @@ export const sessionMutations = {
     // connected external integration (Strava) that has auto-sync on. Never
     // blocks or fails the endSession response — failures are logged inside the
     // service and here as a backstop.
-    // No summary (no recorded activity) means there is nothing to export —
-    // skip the dispatch entirely so the catch below can never misattribute
-    // that case as a failure.
-    if (summary) {
-      // Generated again with NO viewer, because this copy is written into every
-      // participant's Strava activity: the ender's private-wall climb name is not
-      // theirs to receive. Only the response above is viewer-scoped.
-      const exportableSummary = await generateSessionSummary(sessionId, null);
-      if (exportableSummary) {
-        autoSyncSessionToIntegrations(sessionId, exportableSummary, sessionData.boardPath, normalizedTimezone).catch(
-          (error: unknown) => {
-            logger.error(`[Integrations] auto-sync dispatch failed for session ${sessionId}:`, error);
-          },
-        );
-      }
-    }
+    // Each recipient gets their own authorized summary. Neither the ender's
+    // permissions nor anonymous visibility determine another climber's opt-in.
+    autoSyncSessionToIntegrations(sessionId, sessionData.boardPath, normalizedTimezone).catch((error: unknown) => {
+      logger.error(`[Integrations] auto-sync dispatch failed for session ${sessionId}:`, error);
+    });
 
     return summary;
   },

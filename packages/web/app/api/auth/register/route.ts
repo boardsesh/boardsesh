@@ -89,8 +89,8 @@ export async function POST(request: NextRequest) {
 
         // Create empty profile (user can customize later)
         await tx.insert(schema.userProfiles).values({
-          isPrivate: true,
-          defaultSessionAudience: 'followers',
+          isPrivate: process.env.BOARDSESH_PRIVACY_ENABLED === '1',
+          defaultSessionAudience: process.env.BOARDSESH_PRIVACY_ENABLED === '1' ? 'followers' : 'public',
           userId,
         });
 

@@ -174,7 +174,7 @@ function buildArtifact(spec: ArtifactSpec): void {
         (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const formatVersion = spec.formatVersion ?? 1;
+    const formatVersion = spec.formatVersion ?? SNAPSHOT_MANIFEST_FORMAT_VERSION;
     const schemaVersion = spec.schemaVersion ?? LATEST_SCHEMA_VERSION;
     const builtAt = spec.builtAt ?? '2026-06-01T00:00:00.000Z';
     meta.run(
@@ -224,7 +224,7 @@ function makeEntry(overrides: Partial<SnapshotManifestEntry> = {}): SnapshotMani
 }
 
 function makeManifest(entries: SnapshotManifestEntry[]): SnapshotManifest {
-  return { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries };
+  return { formatVersion: 2, generatedAt: '2026-06-01T00:00:00.000Z', entries };
 }
 
 /** A recording fake of the injected snapshot I/O. */
@@ -1451,7 +1451,7 @@ describe('pullSync snapshot bootstrap', () => {
       statsWatermark: STATS_WATERMARK,
     });
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
-    source.fetchManifest.mockResolvedValueOnce({ formatVersion: 1, generatedAt: 'not-a-date', entries: [] });
+    source.fetchManifest.mockResolvedValueOnce({ formatVersion: 2, generatedAt: 'not-a-date', entries: [] });
     const firstRun = makeGraphqlFetch();
     const onBootstrapRetryDue = vi.fn();
 
@@ -4265,7 +4265,7 @@ function buildGradesArtifact(spec: {
         spec.rowCountOverride ?? spec.grades.length,
         '2026-06-01T00:00:00.000Z',
         spec.schemaVersion ?? LATEST_SCHEMA_VERSION,
-        1,
+        SNAPSHOT_MANIFEST_FORMAT_VERSION,
       );
   } finally {
     artifactDb.close();

@@ -27,7 +27,7 @@ import {
   isApnsConfigured,
   sendLiveActivityUpdate,
 } from './index';
-import { buildContentStateFromQueueState } from './content-state';
+import { buildContentStateFromQueueState, emptyLiveActivityContentState } from './content-state';
 import type { QueueState } from '../room-manager';
 import { logger } from '../../utils/logger';
 
@@ -125,6 +125,21 @@ async function runHeartbeatTick(roomManager: RoomManagerLike, instanceId: string
       incrementApnsMetric('heartbeatsSent');
     } catch (error) {
       logger.warn(`[APNs Heartbeat] Failed to build heartbeat state for session ${sessionId}:`, error);
+    }
+  });
+}
+
+/** Privacy changes must withdraw idle lock-screen copies without a queue event. */
+export async function refreshApnsPrivacy(roomManager: RoomManagerLike): Promise<void> {
+  if (!isApnsConfigured()) return;
+  const sessions = await getSessionsWithRegisteredTokens();
+  await processWithConcurrency(sessions, HEARTBEAT_CONCURRENCY, async (sessionId) => {
+    try {
+      const state = await buildHeartbeatStateFor(sessionId, roomManager);
+      sendLiveActivityUpdate(sessionId, state ?? emptyLiveActivityContentState(), { source: 'heartbeat' });
+    } catch (error) {
+      logger.warn(`[APNs Heartbeat] Privacy refresh failed for session ${sessionId}:`, error);
+      sendLiveActivityUpdate(sessionId, emptyLiveActivityContentState(), { source: 'heartbeat' });
     }
   });
 }

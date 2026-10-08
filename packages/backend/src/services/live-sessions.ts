@@ -14,6 +14,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { pubsub } from '../pubsub/index';
 import { roomManager } from './room-manager';
+import { canReadClimbContent } from './board-session-privacy';
 import { toBoardQueuePreviewItem } from './board-queue-preview';
 import { isRowAnonReadable } from '../graphql/resolvers/board-presence/shared';
 import { isSprayBoardType, sprayBoardRowIsReadable } from '../graphql/resolvers/climbs/spray-read-access';
@@ -719,13 +720,14 @@ async function loadTickStats(sessionIds: readonly string[]): Promise<Map<string,
 }
 
 /**
- * The climb on the wall, through the board queue preview's redaction
- * (`toBoardQueuePreviewItem`: catalog fields only, never who added it).
+ * The climb on the wall, authorized for this viewer before selecting display
+ * fields. Session access alone never authorizes a restricted authored climb.
  */
-async function loadCurrentClimb(sessionId: string): Promise<LiveSessionClimb | null> {
+async function loadCurrentClimb(sessionId: string, viewerId: string | null): Promise<LiveSessionClimb | null> {
   try {
     const queueState = await roomManager.getQueueState(sessionId);
     if (!queueState.currentClimbQueueItem) return null;
+    if (!(await canReadClimbContent(queueState.currentClimbQueueItem.climb.uuid, viewerId))) return null;
     const redacted = toBoardQueuePreviewItem(queueState.currentClimbQueueItem);
     return redacted.name ? { name: redacted.name, grade: redacted.grade ?? null } : null;
   } catch (error) {
@@ -931,7 +933,7 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         // not a spray wall: a spray wall's climbs stay private to the wall even
         // when the session is public, and an unknown type could be one.
         candidate.isPublic && boardType !== null && !isSprayBoardType(boardType)
-          ? loadCurrentClimb(candidate.id)
+          ? loadCurrentClimb(candidate.id, viewerId)
           : Promise.resolve(null),
       ]);
 

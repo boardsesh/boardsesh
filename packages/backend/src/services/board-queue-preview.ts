@@ -240,8 +240,10 @@ export async function publishBoardQueuePreviewForSession(sessionId: string): Pro
   if (!(await isBoardAnonReadable(Number(boardId)))) return;
   if (!(await isPublicActiveSession(sessionId))) return;
 
-  const queueState = await roomManager.getQueueState(sessionId);
-  pubsub.publishBoardQueuePreview(boardId, buildBoardQueuePreview(Number(boardId), queueState));
+  // Queue copies can outlive an item's audience. Use the same current climb
+  // authorization as the initial query instead of publishing copied metadata.
+  const snapshot = await getBoardQueuePreviewSnapshot(Number(boardId));
+  if (snapshot) pubsub.publishBoardQueuePreview(boardId, snapshot);
 }
 
 /**

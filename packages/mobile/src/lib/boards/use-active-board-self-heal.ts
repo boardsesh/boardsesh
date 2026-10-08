@@ -5,15 +5,15 @@
 // foreground. The backend follows merge tombstones and returns the canonical
 // board; a null result means an ordinary deletion.
 //
-// The snapshot is also refreshed in place when the same board comes back with a
-// different `hasLeds` — a gym admin flipping the light-kit flag has to reach
-// every climber already carrying that board, and their next foreground is the
-// only moment we look.
+// Refresh the authorized projection after privacy changes and on foreground,
+// including owner/location redaction and light-kit capability changes. The
+// local angle is preserved when the board reference still matches.
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { fetchBoardByUuid } from '../graphql/hooks';
+import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
 import {
   getActiveBoardWriteGeneration,
   useActiveBoard,
@@ -40,6 +40,11 @@ export function resetActiveBoardSelfHealForTests(): void {
 }
 
 export function useActiveBoardSelfHeal(): void {
+  const privacyGeneration = useSyncExternalStore(
+    subscribeToPrivacyRevocations,
+    getPrivacyRevocationGeneration,
+    getPrivacyRevocationGeneration,
+  );
   const { data: activeBoard } = useActiveBoard();
   const setActiveBoardIfCurrent = useSetActiveBoardIfCurrentGeneration();
   const clearActiveBoardIfCurrent = useClearActiveBoardIfCurrentGeneration();
@@ -93,6 +98,7 @@ export function useActiveBoardSelfHeal(): void {
       validationInFlightRef.current = true;
       const requestGeneration = selectionGenerationRef.current;
       const requestWriteGeneration = getActiveBoardWriteGeneration();
+      const requestPrivacyGeneration = getPrivacyRevocationGeneration();
 
       void (async () => {
         let definitive = false;
@@ -100,6 +106,7 @@ export function useActiveBoardSelfHeal(): void {
           const resolved = await fetchBoardByUuid(storedUuid);
           if (
             !mountedRef.current ||
+            requestPrivacyGeneration !== getPrivacyRevocationGeneration() ||
             selectionGenerationRef.current !== requestGeneration ||
             activeUuidRef.current !== storedUuid
           ) {
@@ -115,29 +122,26 @@ export function useActiveBoardSelfHeal(): void {
               // validation when the active-board cache re-renders this hook.
               markInitiallyValidatedActiveBoardUuid(resolved.uuid, hookValidationCacheEpoch);
             }
-          } else if (resolved.hasLeds !== activeBoardRef.current?.hasLeds) {
-            // Same board, different light-kit flag: a gym admin turned LEDs on or
-            // off since this phone stored its copy. Compared with `!==` on the
-            // optional values, so `undefined` on both sides (a query that omitted
-            // the field) is not a difference and writes nothing.
+          } else {
             const currentBoard = activeBoardRef.current;
             if (currentBoard?.uuid === storedUuid) {
               // The active angle is a local/session override, not the entity's
-              // saved default. Refresh only the capability on the same board.
-              definitive = await setActiveBoardIfCurrent(requestWriteGeneration, {
-                ...currentBoard,
-                hasLeds: resolved.hasLeds,
-              });
+              // saved default. Everything identifying comes from the authorized
+              // response, including newly absent location and owner fields.
+              const refreshed = { ...resolved, angle: currentBoard.angle ?? resolved.angle };
+              definitive =
+                JSON.stringify(refreshed) === JSON.stringify(currentBoard)
+                  ? true
+                  : await setActiveBoardIfCurrent(requestWriteGeneration, refreshed);
             }
-          } else {
-            definitive = true;
           }
         } catch {
           // Offline/auth races are transient. Leave the uuid unvalidated so a
           // later mount, selection effect, or foreground transition retries.
           if (__DEV__) console.warn('[ActiveBoardSelfHeal] validation failed; will retry');
         } finally {
-          if (definitive) markInitiallyValidatedActiveBoardUuid(storedUuid, hookValidationCacheEpoch);
+          if (definitive && requestPrivacyGeneration === getPrivacyRevocationGeneration())
+            markInitiallyValidatedActiveBoardUuid(storedUuid, hookValidationCacheEpoch);
           validationInFlightRef.current = false;
           const pendingReason = pendingReasonRef.current;
           pendingReasonRef.current = null;
@@ -152,7 +156,7 @@ export function useActiveBoardSelfHeal(): void {
   useEffect(() => {
     mountedRef.current = true;
     validate('initial');
-  }, [activeUuid, validate]);
+  }, [activeUuid, validate, privacyGeneration]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {

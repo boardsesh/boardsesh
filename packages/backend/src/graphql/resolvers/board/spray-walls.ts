@@ -1,4 +1,9 @@
-import { canAccessResource, canAccessResourceWithoutLink, getResourcePrivacy } from '../../../services/privacy';
+import {
+  canAccessResource,
+  canAccessResourceWithoutLink,
+  getResourcePrivacy,
+  legacyResourceAudience,
+} from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -3370,6 +3375,20 @@ export async function updateSprayResourcePrivacy(
   );
 }
 
+function legacySprayAudience(
+  audience: SprayResourcePrivacyUpdate['audience'],
+  board: { isPublic: boolean; isUnlisted: boolean },
+  input: { isPublic?: boolean; isUnlisted?: boolean },
+): SprayResourcePrivacyUpdate['audience'] {
+  const changed =
+    (input.isPublic !== undefined && input.isPublic !== board.isPublic) ||
+    (input.isUnlisted !== undefined && input.isUnlisted !== board.isUnlisted);
+  if (!changed) return audience;
+  const requested =
+    (input.isUnlisted ?? board.isUnlisted) ? 'unlisted' : (input.isPublic ?? board.isPublic) ? 'public' : 'invite_only';
+  return legacyResourceAudience(audience, requested);
+}
+
 async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privacyUpdate?: SprayResourcePrivacyUpdate) {
   requireAuthenticated(ctx);
   await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'updateSprayWall');
@@ -3396,6 +3415,20 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
     });
   }
+
+  const policyCondition = and(
+    eq(dbSchema.resourcePrivacy.kind, 'board'),
+    eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
+  );
+  const [initialPolicy] = privacyUpdate
+    ? []
+    : await db.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+  const initialAudience = initialPolicy ? legacySprayAudience(initialPolicy.audience, board, validated) : null;
+  // Clamp before staging any world-readable copy; stale full-form booleans
+  // are not consent to publish a wall protected by the new audience control.
+  const stagedVisibility = initialAudience
+    ? { isPublic: initialAudience === 'public', isUnlisted: initialAudience === 'unlisted' }
+    : validated;
 
   // The angle is the one field a published wall cannot change. `board_climb_stats`
   // is keyed by angle and every tick recorded so far sits at the old one, so
@@ -3433,8 +3466,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
   if (validated.name !== undefined) updates.name = validated.name;
   if (validated.description !== undefined) updates.description = validated.description;
-  if (validated.isPublic !== undefined) updates.isPublic = validated.isPublic;
-  if (validated.isUnlisted !== undefined) updates.isUnlisted = validated.isUnlisted;
+  if (stagedVisibility.isPublic !== undefined) updates.isPublic = stagedVisibility.isPublic;
+  if (stagedVisibility.isUnlisted !== undefined) updates.isUnlisted = stagedVisibility.isUnlisted;
   if (nextGymId !== undefined) updates.gymId = nextGymId;
   if (validated.angle !== undefined) updates.angle = validated.angle;
   if (privacyUpdate) updates.hideLocation = privacyUpdate.locationAudience !== 'public';
@@ -3448,7 +3481,6 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // announces itself (the announce decision is taken under the same lock), and a
   // `board.isPublic` captured before that would read false and skip the purge,
   // leaving the announcement in the feed for a wall that is now private.
-  const goingPrivate = validated.isPublic === false;
 
   // The copy into the public bucket happens BEFORE the transaction, on purpose:
   // it is a round-trip to object storage, and making it while holding the wall's
@@ -3470,8 +3502,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // its owner, so its photo has no business in the world-readable bucket even
   // when the owner flips the flag. Re-checked under the lock below, since a hide
   // can land while the copy is in flight.
-  const promoting = validated.isPublic === true && !board.isPublic;
-  const healing = board.isPublic && validated.isPublic !== false && wall.publicPhotoKey == null;
+  const promoting = stagedVisibility.isPublic === true && !board.isPublic;
+  const healing = board.isPublic && stagedVisibility.isPublic !== false && wall.publicPhotoKey == null;
   const promotedPhotoKey =
     wall.hiddenAt == null && (promoting || healing)
       ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
@@ -3509,13 +3541,13 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       const [boardNow] = await tx
         .select({
           isPublic: dbSchema.userBoards.isPublic,
+          isUnlisted: dbSchema.userBoards.isUnlisted,
           deletedAt: dbSchema.userBoards.deletedAt,
           ownerId: dbSchema.userBoards.ownerId,
         })
         .from(dbSchema.userBoards)
         .where(eq(dbSchema.userBoards.id, board.id))
         .limit(1);
-      const losingPublic = goingPrivate && boardNow?.isPublic === true;
 
       const [wallNow] = await tx
         .select({
@@ -3535,6 +3567,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
         throw notFoundError();
       }
+      let effectiveVisibility: { isPublic?: boolean; isUnlisted?: boolean } = validated;
       if (privacyUpdate) {
         const settings = {
           ownerId: boardNow.ownerId,
@@ -3550,16 +3583,23 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
             target: [dbSchema.resourcePrivacy.kind, dbSchema.resourcePrivacy.resourceId],
             set: { ...settings, revision: sql`${dbSchema.resourcePrivacy.revision} + 1` },
           });
-      } else if (validated.isPublic !== undefined || validated.isUnlisted !== undefined) {
-        // Old clients changing visibility must update an existing explicit
-        // policy too. Their private choice never becomes a public override.
-        const audience =
-          validated.isUnlisted === true ? 'unlisted' : validated.isPublic === true ? 'public' : 'invite_only';
-        await tx
-          .update(dbSchema.resourcePrivacy)
-          .set({ audience, revision: sql`${dbSchema.resourcePrivacy.revision} + 1`, updatedAt: new Date() })
-          .where(and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, board.uuid)));
+      } else {
+        // A new restriction may have committed while the photo was copying.
+        // Decide again under the wall lock before attaching that copy or flags.
+        const [policy] = await tx.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+        if (policy) {
+          const audience = legacySprayAudience(policy.audience, boardNow, validated);
+          effectiveVisibility = { isPublic: audience === 'public', isUnlisted: audience === 'unlisted' };
+          updates.isPublic = effectiveVisibility.isPublic;
+          updates.isUnlisted = effectiveVisibility.isUnlisted;
+          if (audience !== policy.audience)
+            await tx
+              .update(dbSchema.resourcePrivacy)
+              .set({ audience, revision: sql`${dbSchema.resourcePrivacy.revision} + 1`, updatedAt: new Date() })
+              .where(policyCondition);
+        }
       }
+      const losingPublic = effectiveVisibility.isPublic === false && boardNow.isPublic;
       if (Object.keys(updates).length > 0) {
         await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
       }
@@ -3621,8 +3661,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         wallUpdates.pendingIsUnlisted = null;
       } else if (hasPending && statesVisibility) {
         const merged = pendingVisibilityColumns({
-          isPublic: validated.isPublic ?? wallNow?.pendingIsPublic === true,
-          isUnlisted: validated.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
+          isPublic: effectiveVisibility.isPublic ?? wallNow?.pendingIsPublic === true,
+          isUnlisted: effectiveVisibility.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
         });
         wallUpdates.pendingIsPublic = merged.pendingIsPublic;
         wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
@@ -3631,7 +3671,7 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
       // it) has to find the board still public under the lock: a demotion that
       // committed after the read above would otherwise get a world-readable photo
       // key written onto a wall that is now private.
-      const stillPublic = validated.isPublic === true || boardNow?.isPublic === true;
+      const stillPublic = effectiveVisibility.isPublic ?? boardNow.isPublic;
       if (promotedPhotoKey && (wallNow?.hiddenAt != null || !stillPublic)) {
         // Hidden, or no longer public, while the copy was in flight: the copy is
         // attached to nothing and goes on the post-commit delete list with the

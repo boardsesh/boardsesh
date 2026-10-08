@@ -6,6 +6,7 @@ import { verifyWidgetSession } from './widget-session-guard';
 import { checkSessionUserRateLimit, ensureSessionUserRateLimitPruner } from './session-user-rate-limit';
 import { sendJson } from './http-utils';
 import { roomManager } from '../services/room-manager';
+import { canReadClimbContent } from '../services/board-session-privacy';
 import { resolveBoardBySlug } from '../graphql/resolvers/shared/board-lookup';
 import { logger } from '../utils/logger';
 
@@ -55,7 +56,9 @@ export async function handleSessionState(req: IncomingMessage, res: ServerRespon
 
   const guard = await verifyWidgetSession(sessionId, auth.userId);
   if (!guard.ok) {
-    sendJson(res, guard.status, { error: guard.error });
+    // The shipped watch clears retained content on 410; ordinary membership
+    // failures keep their existing 403 contract on this and widget endpoints.
+    sendJson(res, guard.reason === 'privacy-denied' ? 410 : guard.status, { error: guard.error });
     return;
   }
 
@@ -91,20 +94,25 @@ export async function handleSessionState(req: IncomingMessage, res: ServerRespon
     const currentItem = queueState.currentClimbQueueItem;
     const currentIndex = currentItem ? queueState.queue.findIndex((q) => q.uuid === currentItem.uuid) : -1;
 
-    const climb = currentItem
-      ? {
-          climbUuid: currentItem.climb.uuid,
-          name: currentItem.climb.name,
-          difficulty: currentItem.climb.difficulty,
-          angle: currentItem.climb.angle,
-          mirrored: currentItem.climb.mirrored === true,
-          isBenchmark: currentItem.climb.benchmark_difficulty != null && currentItem.climb.benchmark_difficulty !== '',
-        }
-      : null;
+    const climb =
+      currentItem && (await canReadClimbContent(currentItem.climb.uuid, auth.userId))
+        ? {
+            climbUuid: currentItem.climb.uuid,
+            name: currentItem.climb.name,
+            difficulty: currentItem.climb.difficulty,
+            angle: currentItem.climb.angle,
+            mirrored: currentItem.climb.mirrored === true,
+            isBenchmark:
+              currentItem.climb.benchmark_difficulty != null && currentItem.climb.benchmark_difficulty !== '',
+          }
+        : null;
 
     sendJson(res, 200, {
       sessionId,
-      sequence: queueState.sequence,
+      // Shipped Garmin clients redraw only when sequence changes. This REST
+      // projection version must also change when the same climb is withdrawn.
+      // It is equality-only, never a queue mutation cursor; keep 32-bit numbers.
+      sequence: climb ? queueState.sequence % 0x80000000 : -(queueState.sequence % 0x80000000) - 1,
       stateHash: queueState.stateHash,
       currentIndex,
       queueLength: queueState.queue.length,

@@ -206,6 +206,26 @@ describe('handleNativeAuthOAuth', () => {
     updateCalls.length = 0;
   });
 
+  it.each(['0', '1'])('gates OAuth account defaults with controls enabled=%s', async (flag) => {
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
+    jwtVerify.mockResolvedValueOnce({
+      payload: { sub: 'rollout-google', email: 'rollout@example.com', email_verified: true },
+    });
+    queueSelect([]);
+    queueSelect([]);
+    const res = makeResponse();
+    try {
+      await callHandler(makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'tok' } }), res);
+      expect(res.statusCode).toBe(200);
+      expect(insertsFor(userProfiles)[0].values).toMatchObject({
+        isPrivate: flag === '1',
+        defaultSessionAudience: flag === '1' ? 'followers' : 'public',
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('creates a new user (+ profile + account link) for an unknown Google identity', async () => {
     jwtVerify.mockResolvedValueOnce({
       payload: { sub: 'google-sub-1', email: 'new@example.com', email_verified: true, name: 'New Person' },

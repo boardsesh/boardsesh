@@ -31,8 +31,12 @@ vi.mock('bcryptjs', () => ({
 }));
 
 const mockSelectLimit = vi.fn();
+const mockProfileValues = vi.fn();
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-  const mockValues = vi.fn().mockResolvedValue(undefined);
+  const mockValues = vi.fn((record: Record<string, unknown>) => {
+    if ('isPrivate' in record) mockProfileValues(record);
+    return Promise.resolve(undefined);
+  });
   await fn({ insert: () => ({ values: mockValues }) });
 });
 
@@ -71,6 +75,22 @@ describe('POST /api/auth/register', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it.each(['0', '1'])('gates signup defaults with privacy controls enabled=%s', async (flag) => {
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
+    try {
+      const response = await POST(createRequest({ email: 'rollout@example.com', password: 'password123' }));
+      expect(response.status).toBe(201);
+      expect(mockProfileValues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isPrivate: flag === '1',
+          defaultSessionAudience: flag === '1' ? 'followers' : 'public',
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('uses BASE_URL env var for verification email link when set', async () => {

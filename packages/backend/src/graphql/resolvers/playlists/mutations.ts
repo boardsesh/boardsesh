@@ -271,8 +271,9 @@ export const playlistMutations = {
     if (validatedInput.privacy) updateData.isPublic = validatedInput.privacy.audience === 'public';
     const [updated] = await db.transaction(async (tx) => {
       const [currentOwner] = await tx
-        .select({ userId: dbSchema.playlistOwnership.userId })
+        .select({ userId: dbSchema.playlistOwnership.userId, isPublic: dbSchema.playlists.isPublic })
         .from(dbSchema.playlistOwnership)
+        .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
         .where(
           and(
             eq(dbSchema.playlistOwnership.playlistId, playlistId),
@@ -282,6 +283,21 @@ export const playlistMutations = {
         )
         .for('update');
       if (!currentOwner) throw new Error('Playlist not found or access denied');
+      if (!validatedInput.privacy && validatedInput.isPublic === false && currentOwner.isPublic) {
+        // An old client's Public -> Private switch withdraws explicit public
+        // consent too. Keep restrictive policies and legacy collaborator access;
+        // omitted/unchanged booleans must not reinterpret a newer audience.
+        await tx
+          .delete(dbSchema.contentPrivacy)
+          .where(
+            and(
+              eq(dbSchema.contentPrivacy.entityType, 'playlist'),
+              eq(dbSchema.contentPrivacy.entityId, validatedInput.playlistId),
+              eq(dbSchema.contentPrivacy.ownerId, userId),
+              eq(dbSchema.contentPrivacy.audience, 'public'),
+            ),
+          );
+      }
       if (validatedInput.privacy)
         await setContentPrivacy(
           tx,
@@ -294,7 +310,7 @@ export const playlistMutations = {
       return tx.update(dbSchema.playlists).set(updateData).where(eq(dbSchema.playlists.id, playlistId)).returning();
     });
 
-    if (validatedInput.privacy) pubsub.publishPrivacyChanged();
+    if (validatedInput.privacy || validatedInput.isPublic !== undefined) pubsub.publishPrivacyChanged();
 
     // Get climb count and follow stats
     const climbCount = await db

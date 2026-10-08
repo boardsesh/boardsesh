@@ -49,6 +49,8 @@ const playlistMocks = vi.hoisted(() => ({
     banner: null as TestBoardBanner | null,
   },
   appendToQueue: vi.fn(),
+  reorderClimb: vi.fn(),
+  removeClimb: vi.fn(),
 }));
 vi.mock('../../../../src/lib/graphql/client', () => ({
   getHttpClient: () => ({ request: requestMock }),
@@ -81,6 +83,9 @@ const detailViewProps = vi.hoisted(() => ({
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
     onRefresh?: () => unknown;
+    climbs: Climb[];
+    onReorderClimb: (uuid: string, index: number) => Promise<void>;
+    onRemoveClimb: (uuid: string) => void;
   } | null,
 }));
 const snapToIndex = vi.hoisted(() => vi.fn());
@@ -126,8 +131,8 @@ vi.mock('@boardsesh/playlists-react', () => ({
     unfollowPlaylist: vi.fn(),
   }),
   usePlaylistItemMutations: () => ({
-    reorderPlaylistClimb: vi.fn(),
-    removeClimbFromPlaylist: vi.fn(),
+    reorderPlaylistClimb: playlistMocks.reorderClimb,
+    removeClimbFromPlaylist: playlistMocks.removeClimb,
   }),
 }));
 
@@ -215,6 +220,9 @@ vi.mock('../../../../src/components/playlist', () => ({
     onAddAllToQueue,
     isAddingAllToQueue,
     onRefresh,
+    climbs,
+    onReorderClimb,
+    onRemoveClimb,
   }: {
     hero: { name: string };
     headerSlot?: ReactNode;
@@ -224,6 +232,9 @@ vi.mock('../../../../src/components/playlist', () => ({
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
     onRefresh?: () => unknown;
+    climbs: Climb[];
+    onReorderClimb: (uuid: string, index: number) => Promise<void>;
+    onRemoveClimb: (uuid: string) => void;
   }) => {
     detailViewProps.current = {
       editMode: !!editMode,
@@ -231,6 +242,9 @@ vi.mock('../../../../src/components/playlist', () => ({
       onAddAllToQueue,
       isAddingAllToQueue,
       onRefresh,
+      climbs,
+      onReorderClimb,
+      onRemoveClimb,
     };
     return createElement(
       'div',
@@ -321,6 +335,8 @@ vi.mock('../../../../src/components/playlist', () => ({
 }));
 
 import PlaylistDetail from '../[playlist_uuid]';
+import { Alert } from 'react-native';
+import { invalidatePrivacySnapshots } from '../../../../src/lib/privacy/privacy-cache';
 
 function renderDetail(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return {
@@ -339,6 +355,9 @@ beforeEach(() => {
   updatePlaylistMock.mockReset();
   toast.showToast.mockClear();
   playlistMocks.allClimbs = [];
+  playlistMocks.reorderClimb.mockReset();
+  playlistMocks.removeClimb.mockReset();
+  vi.mocked(Alert.alert).mockClear();
   playlistMocks.activationOptions = null;
   sessionMock.isShared = false;
   playlistMocks.renderBoardResult = { renderBoard: null, banner: null };
@@ -697,5 +716,73 @@ describe('PlaylistDetail pull to refresh', () => {
     expect(requestMock.mock.calls.length).toBeGreaterThan(callsBefore);
     // A public playlist has a discussion thread, so its count refreshes too.
     expect(commentsMock.refetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PlaylistDetail privacy withdrawal', () => {
+  async function editProtectedClimbs() {
+    playlistMocks.allClimbs = [makeClimb('private-climb', 'kilter', 1, 40), makeClimb('other-climb', 'kilter', 1, 40)];
+    requestMock.mockResolvedValue({ playlist: makePlaylist() });
+    const rendered = renderDetail();
+    await waitFor(() => expect(rendered.container.querySelector('[data-owner-edit="true"]')).not.toBeNull());
+    fireEvent.click(rendered.container.querySelector('[data-owner-edit="true"]') as HTMLButtonElement);
+    expect(detailViewProps.current?.editMode).toBe(true);
+    expect(detailViewProps.current?.climbs).toHaveLength(2);
+    return rendered;
+  }
+
+  it('withdraws the edit snapshot before stale query props change and accepts fresh authorized rows', async () => {
+    const { rerender, queryClient } = await editProtectedClimbs();
+    act(() => invalidatePrivacySnapshots());
+    expect(detailViewProps.current?.editMode).toBe(false);
+    expect(detailViewProps.current?.climbs).toEqual([]);
+    playlistMocks.allClimbs = [makeClimb('authorized-climb', 'kilter', 1, 40)];
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PlaylistDetail />
+      </QueryClientProvider>,
+    );
+    expect(detailViewProps.current?.climbs.map((climb) => climb.uuid)).toEqual(['authorized-climb']);
+  });
+
+  it('does not restore revoked rows from an in-flight reorder failure', async () => {
+    let rejectReorder: ((reason: Error) => void) | undefined;
+    playlistMocks.reorderClimb.mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectReorder = reject;
+        }),
+    );
+    await editProtectedClimbs();
+    let pending: Promise<void> | undefined;
+    act(() => {
+      pending = detailViewProps.current?.onReorderClimb('private-climb', 1);
+    });
+    expect(playlistMocks.reorderClimb).toHaveBeenCalledTimes(1);
+    act(() => invalidatePrivacySnapshots());
+    await act(async () => {
+      rejectReorder?.(new Error('Access revoked'));
+      await pending;
+    });
+    expect(detailViewProps.current?.climbs).toEqual([]);
+    expect(toast.showToast).not.toHaveBeenCalled();
+  });
+
+  it('retires an already open removal confirmation across credential changes', async () => {
+    await editProtectedClimbs();
+    act(() => {
+      detailViewProps.current?.onRemoveClimb('private-climb');
+    });
+    const confirmation = vi
+      .mocked(Alert.alert)
+      .mock.calls.at(-1)?.[2]
+      ?.find((button) => button.style === 'destructive');
+    expect(confirmation).toBeDefined();
+    act(() => invalidatePrivacySnapshots('credential'));
+    await act(async () => {
+      await Promise.resolve(confirmation?.onPress?.());
+    });
+    expect(playlistMocks.removeClimb).not.toHaveBeenCalled();
+    expect(detailViewProps.current?.climbs).toEqual([]);
   });
 });

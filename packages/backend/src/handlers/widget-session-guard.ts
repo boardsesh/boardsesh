@@ -10,7 +10,7 @@ import type { LiveSession } from '../services/room-manager/types';
 // second identical `getSessionById` round-trip. Widget callers ignore it.
 export type WidgetSessionGuardResult =
   | { ok: true; session: LiveSession }
-  | { ok: false; status: 410 | 403; error: string };
+  | { ok: false; status: 410 | 403; error: string; reason?: 'privacy-denied' };
 
 /**
  * Gate widget REST writes (`/api/widget/navigate`, `/api/widget/take-control`)
@@ -47,7 +47,7 @@ export async function verifyWidgetSession(sessionId: string, userId: string | nu
   }
 
   if (!(await canAccessResource('session', sessionId, userId))) {
-    return { ok: false, status: 403, error: 'Session access is no longer available' };
+    return { ok: false, status: 403, error: 'Session access is no longer available', reason: 'privacy-denied' };
   }
 
   if (userId) {

@@ -1,4 +1,6 @@
 import type { QueryClient } from '@tanstack/react-query';
+import type { UserBoard } from '@boardsesh/shared-schema';
+import { sanitizeActiveBoard } from '../active-board-snapshot';
 
 // These projections can contain copied names, avatars, notes or prior grants.
 // Cancel first, clear the snapshot, then refetch: invalidate alone leaves old
@@ -57,8 +59,21 @@ export async function invalidatePrivacyQueries(
   const filters = {
     predicate: (query: { queryKey: readonly unknown[] }) => !VIEWER_LOCAL_QUERY_ROOTS.has(String(query.queryKey[0])),
   };
+  // Keep the selected wall usable while catalogue withdrawal is in flight or
+  // offline. Its reference and local hardware settings are independent of the
+  // identifying projection; never replace the active board with a loading gap.
+  const withdrawActiveBoard = () => {
+    const query = queryClient.getQueryCache().find({ queryKey: ['activeBoard'], exact: true });
+    const board = query?.state.data as UserBoard | null | undefined;
+    if (query && board) query.setState({ data: sanitizeActiveBoard(board) });
+  };
+  withdrawActiveBoard();
   await queryClient.cancelQueries(filters);
+  // Cancellation can restore a request's previous cache state. Sanitize that
+  // state too before preserving it through the asynchronous catalogue purge.
+  withdrawActiveBoard();
   for (const query of queryClient.getQueryCache().findAll(filters)) {
+    if (query.queryKey.length === 1 && query.queryKey[0] === 'activeBoard') continue;
     // resetQueries may restore initialData, which can itself hold withdrawn
     // content. Clear explicitly before any fresh authorization response.
     query.setState({ data: undefined, dataUpdatedAt: 0, error: null, status: 'pending' });

@@ -82,7 +82,7 @@ function buildArtifact(filePath: string): void {
     const meta = artifact.prepare(
       `INSERT OR REPLACE INTO snapshot_meta
         (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
-       VALUES (?, ?, ?, 1, '2026-06-01T00:00:00.000Z', ?, 1)`,
+       VALUES (?, ?, ?, 1, '2026-06-01T00:00:00.000Z', ?, 2)`,
     );
     meta.run('board_climbs', WATERMARK.updatedAt, WATERMARK.syncSeq, LATEST_SCHEMA_VERSION);
     meta.run('board_climb_stats', WATERMARK.updatedAt, WATERMARK.syncSeq, LATEST_SCHEMA_VERSION);
@@ -109,7 +109,7 @@ function makeEntry(): SnapshotManifestEntry {
 }
 
 function makeManifest(): SnapshotManifest {
-  return { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries: [makeEntry()] };
+  return { formatVersion: 2, generatedAt: '2026-06-01T00:00:00.000Z', entries: [makeEntry()] };
 }
 
 /** The injected snapshot I/O, with a hook that runs while the transfer is "on the wire". */

@@ -1,6 +1,6 @@
 import { GraphQLError } from 'graphql';
 import { resolveSessionBoardId } from '../session-board-binding';
-import { getPrivacySettings, requireResourceAccess } from '../privacy';
+import { getPrivacySettings, legacyResourceAudience, requireResourceAccess } from '../privacy';
 import { resourcePrivacy } from '@boardsesh/db/schema';
 import { sessionParticipantId } from '../board-session-privacy';
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
@@ -1065,8 +1065,8 @@ export async function ensureSessionRecordExists(
 ): Promise<boolean> {
   const now = new Date();
   const boardId = await resolveSessionBoardId(boardPath, userId);
-  const audience =
-    isPublic === false ? 'invite_only' : userId ? (await getPrivacySettings(userId)).defaultSessionAudience : 'public';
+  const defaultAudience = userId ? (await getPrivacySettings(userId)).defaultSessionAudience : 'public';
+  const audience = isPublic === false ? legacyResourceAudience(defaultAudience, 'invite_only') : defaultAudience;
   return db.transaction(async (tx) => {
     const inserted = await tx
       .insert(sessions)
@@ -1086,7 +1086,7 @@ export async function ensureSessionRecordExists(
       })
       .onConflictDoNothing()
       .returning({ id: sessions.id });
-    if (inserted.length && userId) {
+    if (inserted.length && userId && defaultAudience !== 'public') {
       await tx
         .insert(resourcePrivacy)
         .values({ kind: 'session', resourceId: sessionId, ownerId: userId, audience })

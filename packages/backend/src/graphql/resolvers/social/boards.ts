@@ -1,6 +1,7 @@
 import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
 import {
   canAccessResource,
+  legacyResourceAudience,
   canAccessResourceWithoutLink,
   canViewActivityIdentity,
   canViewResourceLocation,
@@ -574,8 +575,8 @@ async function enrichBoard(
     gymUuid: showLocation ? (gymInfo?.uuid ?? null) : null,
     gymName: showLocation ? (gymInfo?.name ?? null) : null,
     distanceMeters: showLocation ? (distanceMeters ?? null) : null,
-    serialNumber: canEdit ? (board.serialNumber ?? null) : null,
-    timerName: canEdit ? (board.timerName ?? null) : null,
+    serialNumber: board.serialNumber ?? null,
+    timerName: board.timerName ?? null,
     canEdit,
     isPinnedByMe: pinResult.length > 0,
   };
@@ -823,8 +824,8 @@ export async function enrichBoards(
         gymUuid: showLocation ? (gym?.uuid ?? null) : null,
         gymName: showLocation ? (gym?.name ?? null) : null,
         distanceMeters: showLocation ? (distanceMeters ?? null) : null,
-        serialNumber: canEdit ? (board.serialNumber ?? null) : null,
-        timerName: canEdit ? (board.timerName ?? null) : null,
+        serialNumber: board.serialNumber ?? null,
+        timerName: board.timerName ?? null,
         canEdit,
         isPinnedByMe: pinnedSet.has(board.uuid),
       };
@@ -1990,6 +1991,9 @@ export const socialBoardMutations = {
     const locationAudience =
       validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me');
     const privacyValues = { kind: 'board' as const, resourceId: uuid, ownerId: userId, audience, locationAudience };
+    // A policy row records a choice made with the modern privacy controls.
+    // Legacy booleans keep their original roundtrip until the owner makes one.
+    const hasPrivacyInput = validatedInput.audience !== undefined || validatedInput.locationAudience !== undefined;
     const boardValues = {
       uuid,
       slug,
@@ -2003,7 +2007,7 @@ export const socialBoardMutations = {
       locationName: incomingLocation.locationName,
       latitude: incomingLocation.latitude,
       longitude: incomingLocation.longitude,
-      isPublic: audience === 'public' || audience === 'unlisted',
+      isPublic: audience === 'public' || (!hasPrivacyInput && audience === 'unlisted'),
       isUnlisted: audience === 'unlisted',
       hideLocation: locationAudience !== 'public',
       isOwned: validatedInput.isOwned ?? true,
@@ -2027,7 +2031,7 @@ export const socialBoardMutations = {
             .insert(dbSchema.userBoards)
             .values({ ...boardValues, gymId: linkedGymId })
             .returning();
-          await tx.insert(dbSchema.resourcePrivacy).values(privacyValues);
+          if (hasPrivacyInput) await tx.insert(dbSchema.resourcePrivacy).values(privacyValues);
           return insertedBoard;
         });
       } catch (error) {
@@ -2062,7 +2066,7 @@ export const socialBoardMutations = {
             .values({ ...boardValues, gymId: newGym.id })
             .returning();
 
-          await tx.insert(dbSchema.resourcePrivacy).values(privacyValues);
+          if (hasPrivacyInput) await tx.insert(dbSchema.resourcePrivacy).values(privacyValues);
           return { newGym, newBoard };
         });
         mintedGymId = result.newGym.id;
@@ -2356,6 +2360,9 @@ export const socialBoardMutations = {
           sizeId: number | string;
           setIds: string;
           deletedAt: Date | null;
+          isPublic: boolean;
+          isUnlisted: boolean;
+          hideLocation: boolean;
         }>(
           await tx.execute(sql`
             SELECT serial_number AS "serialNumber",
@@ -2364,7 +2371,10 @@ export const socialBoardMutations = {
                    layout_id AS "layoutId",
                    size_id AS "sizeId",
                    set_ids AS "setIds",
-                   deleted_at AS "deletedAt"
+                   deleted_at AS "deletedAt",
+                   is_public AS "isPublic",
+                   is_unlisted AS "isUnlisted",
+                   hide_location AS "hideLocation"
               FROM user_boards
              WHERE id = ${board.id}
              FOR UPDATE
@@ -2414,28 +2424,56 @@ export const socialBoardMutations = {
             board.id,
           );
         }
-        if (
-          changingVisibility ||
-          (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)
-        ) {
-          if (lockedBoard.ownerId !== userId)
-            throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
-          const privacyUpdates: Partial<typeof dbSchema.resourcePrivacy.$inferInsert> = { updatedAt: new Date() };
-          if (changingVisibility)
-            privacyUpdates.audience =
-              (validatedInput.isUnlisted ?? board.isUnlisted)
+        const hasVisibility = validatedInput.isPublic !== undefined || validatedInput.isUnlisted !== undefined;
+        if (hasVisibility || validatedInput.hideLocation !== undefined) {
+          const policyCondition = and(
+            eq(dbSchema.resourcePrivacy.kind, 'board'),
+            eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
+          );
+          const [policy] = await tx.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+          const privacyUpdates: Partial<typeof dbSchema.resourcePrivacy.$inferInsert> = {};
+          if (hasVisibility) {
+            const requested =
+              (validatedInput.isUnlisted ?? lockedBoard.isUnlisted)
                 ? 'unlisted'
-                : (validatedInput.isPublic ?? board.isPublic)
+                : (validatedInput.isPublic ?? lockedBoard.isPublic)
                   ? 'public'
                   : 'invite_only';
-          if (validatedInput.hideLocation !== undefined)
-            privacyUpdates.locationAudience = validatedInput.hideLocation ? 'only_me' : 'public';
-          await tx
-            .update(dbSchema.resourcePrivacy)
-            .set({ ...privacyUpdates, revision: sql`${dbSchema.resourcePrivacy.revision} + 1` })
-            .where(
-              and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, board.uuid)),
-            );
+            const changed =
+              (validatedInput.isPublic !== undefined && validatedInput.isPublic !== lockedBoard.isPublic) ||
+              (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== lockedBoard.isUnlisted);
+            const audience = policy && !changed ? policy.audience : legacyResourceAudience(policy?.audience, requested);
+            if (policy) {
+              // Old edit screens resend every boolean with a rename. Keep both
+              // the policy and its legacy projection consistent after revocation.
+              updateValues.isPublic = audience === 'public';
+              updateValues.isUnlisted = audience === 'unlisted';
+              if (audience !== policy.audience) privacyUpdates.audience = audience;
+            }
+          }
+          if (policy && validatedInput.hideLocation !== undefined) {
+            const locationAudience =
+              validatedInput.hideLocation && !lockedBoard.hideLocation ? 'only_me' : policy.locationAudience;
+            updateValues.hideLocation = locationAudience !== 'public';
+            if (locationAudience !== policy.locationAudience) privacyUpdates.locationAudience = locationAudience;
+          }
+          const changesPrivacy =
+            (updateValues.isPublic !== undefined && updateValues.isPublic !== lockedBoard.isPublic) ||
+            (updateValues.isUnlisted !== undefined && updateValues.isUnlisted !== lockedBoard.isUnlisted) ||
+            (updateValues.hideLocation !== undefined && updateValues.hideLocation !== lockedBoard.hideLocation) ||
+            Object.keys(privacyUpdates).length > 0;
+          if (changesPrivacy && lockedBoard.ownerId !== userId)
+            throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
+          if (Object.keys(privacyUpdates).length > 0) {
+            await tx
+              .update(dbSchema.resourcePrivacy)
+              .set({
+                ...privacyUpdates,
+                updatedAt: new Date(),
+                revision: sql`${dbSchema.resourcePrivacy.revision} + 1`,
+              })
+              .where(policyCondition);
+          }
         }
         return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
       });

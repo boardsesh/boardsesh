@@ -220,4 +220,102 @@ describe('useActiveBoard', () => {
 
     expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toBeUndefined();
   });
+
+  it('withdraws cached metadata synchronously before query cancellation and rejects old selection callbacks', async () => {
+    const { useActiveBoard, useSetActiveBoard } = await import('../use-active-board');
+    const { getStoredActiveBoard } = await import('../../active-board-store');
+    const { invalidatePrivacySnapshots } = await import('../../privacy/privacy-cache');
+    const sharedWrapper = wrapper();
+    const read = renderHook(() => useActiveBoard(), { wrapper: sharedWrapper });
+    const setter = renderHook(() => useSetActiveBoard(), { wrapper: sharedWrapper });
+    const protectedBoard = { ...storedBoard, name: 'Private home', ownerId: 'setter', locationName: 'Address' };
+    await act(async () => {
+      await setter.result.current(protectedBoard);
+    });
+    await waitFor(() => expect(read.result.current.data?.name).toBe('Private home'));
+    const staleSetter = setter.result.current;
+    act(() => invalidatePrivacySnapshots());
+    expect(read.result.current.data).toMatchObject({
+      uuid: storedBoard.uuid,
+      angle: storedBoard.angle,
+      name: '',
+      ownerId: null,
+    });
+    expect(read.result.current.data).not.toHaveProperty('locationName');
+    await act(async () => {
+      await staleSetter(protectedBoard);
+    });
+    expect(await getStoredActiveBoard()).toMatchObject({ name: '', ownerId: null });
+  });
+
+  it.each(['complete', 'fail'] as const)(
+    'keeps neutral offline configuration throughout a held privacy purge that will %s',
+    async (purgeOutcome) => {
+      const { useActiveBoard, useSetActiveBoard, ACTIVE_BOARD_QUERY_KEY } = await import('../use-active-board');
+      const { invalidatePrivacyQueries } = await import('../../privacy/privacy-cache');
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const sharedWrapper = wrapper(queryClient);
+      const observedBoards: Array<UserBoard | null | undefined> = [];
+      let observeWithdrawal = false;
+      const read = renderHook(
+        () => {
+          const activeBoard = useActiveBoard();
+          if (observeWithdrawal) observedBoards.push(activeBoard.data);
+          return activeBoard;
+        },
+        { wrapper: sharedWrapper },
+      );
+      const setter = renderHook(() => useSetActiveBoard(), { wrapper: sharedWrapper });
+      await waitFor(() => expect(read.result.current.isSuccess).toBe(true));
+      await act(async () => {
+        await setter.result.current({
+          ...storedBoard,
+          name: 'Private garage',
+          ownerId: 'private-owner',
+          locationName: 'Private address',
+          latitude: 52,
+          serialNumber: 'local-controller',
+          timerName: 'local-timer',
+        });
+      });
+      queryClient.setQueryData(['publicProfile', 'private-owner'], { displayName: 'Private owner' });
+      let completePurge!: () => void;
+      let failPurge!: (error: Error) => void;
+      const heldPurge = new Promise<void>((resolve, reject) => {
+        completePurge = resolve;
+        failPurge = reject;
+      });
+      let invalidation!: Promise<unknown>;
+      observeWithdrawal = true;
+      await act(async () => {
+        invalidation = invalidatePrivacyQueries(queryClient, () => heldPurge).catch((error: unknown) => error);
+      });
+
+      const expectedConfiguration = {
+        ...storedBoard,
+        name: '',
+        ownerId: null,
+        serialNumber: 'local-controller',
+        timerName: 'local-timer',
+      };
+      expect(read.result.current.isSuccess).toBe(true);
+      expect(read.result.current.data).toMatchObject(expectedConfiguration);
+      expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).toMatchObject(expectedConfiguration);
+      expect(queryClient.getQueryData(ACTIVE_BOARD_QUERY_KEY)).not.toHaveProperty('latitude');
+      expect(queryClient.getQueryData(['publicProfile', 'private-owner'])).toBeUndefined();
+
+      await act(async () => {
+        if (purgeOutcome === 'fail') failPurge(new Error('Catalogue unavailable'));
+        else completePurge();
+        await invalidation;
+      });
+      expect(read.result.current.data).toMatchObject(expectedConfiguration);
+      expect(observedBoards.length).toBeGreaterThan(0);
+      for (const observedBoard of observedBoards) {
+        expect(observedBoard).toMatchObject(expectedConfiguration);
+        expect(observedBoard).not.toHaveProperty('locationName');
+        expect(observedBoard).not.toHaveProperty('latitude');
+      }
+    },
+  );
 });

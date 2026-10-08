@@ -60,7 +60,7 @@ vi.mock('../redis/client', () => ({
   },
 }));
 
-const { __runHeartbeatTickForTests } = await import('../services/apns/heartbeat');
+const { __runHeartbeatTickForTests, refreshApnsPrivacy } = await import('../services/apns/heartbeat');
 
 const loggerWarnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
 const loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
@@ -118,6 +118,20 @@ describe('runHeartbeatTick', () => {
     distinctSessionsRows.mockReturnValue([]);
   });
 
+  it('refreshes idle and empty sessions on privacy changes even while the periodic lock is held', async () => {
+    distinctSessionsRows.mockReturnValue([{ sessionId: 'idle' }, { sessionId: 'empty' }]);
+    redisSetMock.mockResolvedValue(null);
+    hasPendingSendMock.mockReturnValue(true);
+    const roomManager = makeRoomManager({ idle: makeQueueState('idle'), empty: null });
+    await refreshApnsPrivacy(roomManager);
+    expect(sendLiveActivityUpdateMock).toHaveBeenCalledWith('idle', expect.objectContaining({ climbUuid: 'c-idle' }));
+    expect(sendLiveActivityUpdateMock).toHaveBeenCalledWith(
+      'empty',
+      expect.objectContaining({ climbUuid: '', climbName: '', hasNext: false }),
+    );
+    expect(redisSetMock).not.toHaveBeenCalled();
+  });
+
   it('skips entirely when APNs is not configured', async () => {
     isApnsConfiguredMock.mockReturnValue(false);
     distinctSessionsRows.mockReturnValue([{ sessionId: 'a' }]);
@@ -127,6 +141,15 @@ describe('runHeartbeatTick', () => {
 
     expect(roomManager.getQueueState).not.toHaveBeenCalled();
     expect(sendLiveActivityUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it('withdraws copied content even when a privacy refresh cannot read the queue', async () => {
+    distinctSessionsRows.mockReturnValue([{ sessionId: 'unavailable' }]);
+    await refreshApnsPrivacy(makeRoomManager({ unavailable: new Error('redis unavailable') }));
+    expect(sendLiveActivityUpdateMock).toHaveBeenCalledWith(
+      'unavailable',
+      expect.objectContaining({ climbUuid: '', climbName: '', hasNext: false, holderDisplayName: '' }),
+    );
   });
 
   it('skips the tick when another instance holds the lock', async () => {

@@ -291,6 +291,14 @@ describe('followedLiveSessions — social arm', () => {
     await addTick({ sessionId, userId: FRIEND, status: 'send', difficulty: 20 });
     await addTick({ sessionId, userId: FRIEND, status: 'attempt', difficulty: 26 });
     const current = makeQueueItem('Current Wall Climb');
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: current.climb.uuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      name: current.climb.name,
+      isDraft: false,
+      isListed: true,
+    });
     await roomManager.updateQueueStateImmediate(sessionId, [current], current);
 
     const [session, ...rest] = await followedLiveSessions(VIEWER);
@@ -316,6 +324,41 @@ describe('followedLiveSessions — social arm', () => {
     expect(session.currentClimb).toEqual({ name: 'Current Wall Climb', grade: '6c/V5' });
     // Redaction: the current climb never says who queued it.
     expect(JSON.stringify(session)).not.toContain(STRANGER);
+  });
+
+  it('reauthorizes the current climb for anonymous visitors, followers and its owner', async () => {
+    const board = await makeBoard();
+    const sessionId = await makeSession({ createdBy: FRIEND, boardId: board.id });
+    await goLive(sessionId, FRIEND);
+    const current = makeQueueItem('Private project name');
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: current.climb.uuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      userId: FRIEND,
+      name: current.climb.name,
+      isDraft: false,
+      isListed: true,
+    });
+    await roomManager.updateQueueStateImmediate(sessionId, [current], current);
+    const sessionsFor = (ctx: ConnectionContext) =>
+      liveSessionQueries.boardLiveSessions(undefined, { boardId: board.id }, ctx);
+
+    expect((await sessionsFor(anonCtx()))[0].currentClimb?.name).toBe('Private project name');
+    await db.update(dbSchema.userProfiles).set({ isPrivate: true }).where(eq(dbSchema.userProfiles.userId, FRIEND));
+    expect((await sessionsFor(anonCtx()))[0].currentClimb).toBeNull();
+    expect((await sessionsFor(authCtx(VIEWER)))[0].currentClimb).toBeNull();
+    expect((await sessionsFor(authCtx(FRIEND)))[0].currentClimb?.name).toBe('Private project name');
+    await follow(VIEWER, FRIEND);
+    expect((await sessionsFor(authCtx(VIEWER)))[0].currentClimb?.name).toBe('Private project name');
+    await db.insert(dbSchema.contentPrivacy).values({
+      entityType: 'climb',
+      entityId: current.climb.uuid,
+      ownerId: FRIEND,
+      audience: 'only_me',
+    });
+    expect((await sessionsFor(authCtx(VIEWER)))[0].currentClimb).toBeNull();
+    expect((await sessionsFor(authCtx(FRIEND)))[0].currentClimb?.name).toBe('Private project name');
   });
 
   it('lists a session a followed climber joined only while they are on the live roster', async () => {

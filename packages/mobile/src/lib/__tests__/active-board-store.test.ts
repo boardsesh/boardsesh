@@ -66,4 +66,86 @@ describe('active-board-store', () => {
     await setStoredActiveBoard(other);
     await expect(getStoredActiveBoard()).resolves.toEqual(other);
   });
+
+  it('withdraws protected metadata while preserving the offline wall configuration', async () => {
+    const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store');
+    const { invalidatePrivacySnapshots } = await import('../privacy/privacy-cache');
+    const protectedBoard = { ...board, ownerId: 'setter', name: 'Private wall', gymName: 'Home gym', latitude: 52 };
+    await setStoredActiveBoard(protectedBoard);
+    expect(await getStoredActiveBoard()).toEqual(protectedBoard);
+    invalidatePrivacySnapshots();
+    expect(await getStoredActiveBoard()).toMatchObject({
+      uuid: board.uuid,
+      boardType: board.boardType,
+      layoutId: board.layoutId,
+      sizeId: board.sizeId,
+      setIds: board.setIds,
+      angle: board.angle,
+      name: '',
+      ownerId: null,
+    });
+    expect(await getStoredActiveBoard()).not.toHaveProperty('gymName');
+    expect(await getStoredActiveBoard()).not.toHaveProperty('latitude');
+  });
+
+  it('writes only neutral configuration and cannot restore identity on cold restart', async () => {
+    const { setStoredActiveBoard } = await import('../active-board-store');
+    const { getPreference } = await import('../preference-store');
+    await setStoredActiveBoard({
+      ...board,
+      ownerId: 'setter',
+      name: 'Private wall',
+      longitude: 4,
+      serialNumber: 'led-kit',
+      timerName: 'rogue-timer',
+    });
+    const persisted = await getPreference<UserBoard>('boardsesh_active_board_v2');
+    expect(persisted).toMatchObject({ uuid: board.uuid, angle: board.angle, name: '', ownerId: null });
+    expect(persisted).not.toHaveProperty('longitude');
+    expect(persisted).toMatchObject({ serialNumber: 'led-kit', timerName: 'rogue-timer' });
+    vi.resetModules();
+    const { getStoredActiveBoard } = await import('../active-board-store');
+    expect(await getStoredActiveBoard()).toEqual(persisted);
+  });
+
+  it('sanitizes a legacy snapshot on an offline upgrade without losing selected angle', async () => {
+    const { setPreference } = await import('../preference-store');
+    await setPreference('boardsesh_active_board_v2', {
+      ...board,
+      name: 'Legacy private wall',
+      ownerId: 'setter',
+      gymUuid: 'gym',
+    });
+    const { getStoredActiveBoard } = await import('../active-board-store');
+    const restored = await getStoredActiveBoard();
+    expect(restored).toMatchObject({
+      uuid: board.uuid,
+      angle: 40,
+      layoutId: 1,
+      setIds: '3,4',
+      name: '',
+      ownerId: null,
+    });
+    expect(restored).not.toHaveProperty('gymUuid');
+  });
+
+  it('does not authorize a write completed after a privacy boundary', async () => {
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store');
+    const { invalidatePrivacySnapshots } = await import('../privacy/privacy-cache');
+    const writeStored = vi.spyOn(asyncStorage, 'setItem');
+    const originalWrite = writeStored.getMockImplementation();
+    let releaseWrite: (() => void) | undefined;
+    writeStored.mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => {
+        releaseWrite = resolve;
+      });
+      await originalWrite?.(...args);
+    });
+    const saving = setStoredActiveBoard({ ...board, name: 'Withdrawn wall' });
+    invalidatePrivacySnapshots();
+    releaseWrite?.();
+    await saving;
+    expect(await getStoredActiveBoard()).toMatchObject({ uuid: board.uuid, angle: board.angle, name: '' });
+  });
 });

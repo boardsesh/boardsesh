@@ -1,5 +1,7 @@
 import { PressableSurface } from '../../../src/components/PressableSurface';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { usePrivacyScopedState } from '../../../src/hooks/use-privacy-scoped-state';
+import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../../../src/lib/privacy/privacy-cache';
 import { View, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -56,8 +58,14 @@ import { useTheme } from '../../../src/providers/theme-provider';
 type DetailParams = {
   playlist_uuid: string;
 };
+const EMPTY_CLIMBS: Climb[] = [];
 
 export default function PlaylistDetail() {
+  const privacyGeneration = useSyncExternalStore(
+    subscribeToPrivacyRevocations,
+    getPrivacyRevocationGeneration,
+    getPrivacyRevocationGeneration,
+  );
   const { playlist_uuid: playlistUuid } = useLocalSearchParams<DetailParams>();
   const { t } = useTranslation('playlists');
   const navigation = useNavigation();
@@ -226,22 +234,47 @@ export default function PlaylistDetail() {
   // and revert snapshots. Pagination is paused while editing (v1 edits the loaded
   // window); on exit we invalidate so the canonical server order reloads.
   const [editMode, setEditMode] = useState(false);
-  const [editClimbs, setEditClimbs] = useState<Climb[]>([]);
+  const [editSnapshot, setEditClimbs] = usePrivacyScopedState<Climb[]>(null);
+  const editClimbs = editSnapshot ?? EMPTY_CLIMBS;
   const editClimbsRef = useRef<Climb[]>([]);
+  const climbGenerations = useRef(new WeakMap<Climb, number>());
+  const visibleAllClimbs = useMemo(
+    () =>
+      allClimbs.filter((climb) => {
+        if (!climbGenerations.current.has(climb)) climbGenerations.current.set(climb, privacyGeneration);
+        return climbGenerations.current.get(climb) === privacyGeneration;
+      }),
+    [allClimbs, privacyGeneration],
+  );
   // Always-current view of the loaded climbs so enterEditMode seeds from the
   // latest data, not the snapshot captured when the actions menu opened.
-  const allClimbsRef = useRef(allClimbs);
-  allClimbsRef.current = allClimbs;
+  const allClimbsRef = useRef(visibleAllClimbs);
+  allClimbsRef.current = visibleAllClimbs;
+  useEffect(
+    () =>
+      subscribeToPrivacyRevocations(() => {
+        // Retire imperative callbacks before React and query cancellation settle.
+        editClimbsRef.current = [];
+        allClimbsRef.current = [];
+        setEditMode(false);
+      }),
+    [],
+  );
 
-  const setEditList = useCallback((list: Climb[]) => {
-    editClimbsRef.current = list;
-    setEditClimbs(list);
-  }, []);
+  const setEditList = useCallback(
+    (list: Climb[]) => {
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
+      editClimbsRef.current = list;
+      setEditClimbs(list);
+    },
+    [privacyGeneration, setEditClimbs],
+  );
 
   const enterEditMode = useCallback(() => {
+    if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
     setEditList(allClimbsRef.current);
     setEditMode(true);
-  }, [setEditList]);
+  }, [setEditList, privacyGeneration]);
 
   const exitEditMode = useCallback(() => {
     setEditMode(false);
@@ -252,6 +285,7 @@ export default function PlaylistDetail() {
 
   const handleReorderClimb = useCallback(
     async (climbUuid: string, newIndex: number) => {
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
       const current = editClimbsRef.current;
       const oldIndex = current.findIndex((climb) => climb.uuid === climbUuid);
       if (oldIndex === -1) return;
@@ -265,6 +299,7 @@ export default function PlaylistDetail() {
       try {
         await reorderPlaylistClimb({ playlistId: playlistUuid, climbUuid, newIndex: target });
       } catch (err) {
+        if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
         console.error('Failed to reorder playlist climb:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'reorder-climb' } });
         // Only wholesale-restore the pre-move snapshot if no other edit landed in
@@ -278,11 +313,12 @@ export default function PlaylistDetail() {
         showToast(t('editClimbs.reorderFailed'), 'error');
       }
     },
-    [reorderPlaylistClimb, playlistUuid, setEditList, queryClient, showToast, t],
+    [reorderPlaylistClimb, playlistUuid, setEditList, queryClient, showToast, t, privacyGeneration],
   );
 
   const handleRemoveClimb = useCallback(
     (climbUuid: string) => {
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
       const target = editClimbsRef.current.find((climb) => climb.uuid === climbUuid);
       Alert.alert(
         t('editClimbs.removeConfirm.title'),
@@ -293,6 +329,7 @@ export default function PlaylistDetail() {
             text: t('editClimbs.removeConfirm.confirm'),
             style: 'destructive',
             onPress: async () => {
+              if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
               const current = editClimbsRef.current;
               const next = current.filter((climb) => climb.uuid !== climbUuid);
               if (next.length === current.length) return;
@@ -304,6 +341,7 @@ export default function PlaylistDetail() {
               try {
                 await removeClimbFromPlaylist({ playlistId: playlistUuid, climbUuid });
               } catch (err) {
+                if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
                 console.error('Failed to remove playlist climb:', err);
                 reportHandledError(err, { tags: { source: 'playlist', op: 'remove-climb' } });
                 // Restore only if no concurrent edit landed since; otherwise
@@ -324,7 +362,7 @@ export default function PlaylistDetail() {
         ],
       );
     },
-    [removeClimbFromPlaylist, playlistUuid, setEditList, queryClient, showToast, t],
+    [removeClimbFromPlaylist, playlistUuid, setEditList, queryClient, showToast, t, privacyGeneration],
   );
 
   // Re-seed interactive state whenever the cached playlist changes — including
@@ -657,7 +695,7 @@ export default function PlaylistDetail() {
     <>
       <PlaylistDetailView
         hero={hero}
-        climbs={editMode ? editClimbs : allClimbs}
+        climbs={editMode ? editClimbs : visibleAllClimbs}
         renderBoard={renderBoard}
         boardBanner={boardBanner}
         isLoading={query.isLoading}

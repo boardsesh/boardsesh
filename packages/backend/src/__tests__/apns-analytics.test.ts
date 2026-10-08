@@ -43,6 +43,12 @@ vi.mock('../db/client', () => {
 });
 
 vi.mock('../services/analytics/live-activity', () => analyticsMocks);
+// Transport/analytics tests keep authorization in the real-DB APNs suite.
+vi.mock('../services/privacy', () => ({
+  canAccessResource: async () => true,
+  canViewActivityIdentity: async () => true,
+}));
+vi.mock('../services/board-session-privacy', () => ({ canReadClimbContent: async () => true }));
 
 async function loadApnsModule(): Promise<typeof import('../services/apns')> {
   vi.resetModules();

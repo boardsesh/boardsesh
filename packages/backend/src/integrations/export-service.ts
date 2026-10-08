@@ -3,10 +3,12 @@
 // retry path (resolver-driven), and the fire-and-forget auto-sync fan-out
 // triggered when a session ends.
 
-import { and, eq, inArray, lt, or } from 'drizzle-orm';
+import { and, eq, exists, inArray, lt, or } from 'drizzle-orm';
+import { QueryBuilder } from 'drizzle-orm/pg-core';
 import type { SessionSummary, SessionParticipant, IntegrationExportResult } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
-import { integrationCredentials, integrationExports } from '@boardsesh/db/schema';
+import { boardseshTicks, integrationCredentials, integrationExports } from '@boardsesh/db/schema';
+import { generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';
 import { getProvider, providerDbToEnum, SUPPORTED_PROVIDERS, type ProviderName } from './registry';
 import { getFreshAccessToken, recordSyncSuccess, type IntegrationCredentialRow } from './credentials';
 import { IntegrationHttpError } from './strava';
@@ -374,19 +376,15 @@ export async function syncPartySessionForUser(
  */
 export async function autoSyncSessionToIntegrations(
   sessionId: string,
-  summary: SessionSummary | null,
   boardPath: string | null | undefined,
   timezone?: string | null,
 ): Promise<void> {
-  if (!summary) return;
-  if (!summary.participants || summary.participants.length === 0) return;
-  if (!summary.startedAt || !summary.endedAt) return;
-
-  const participantUserIds = summary.participants
-    .map((entry) => entry.userId)
-    .filter((userId): userId is string => userId !== null);
-  if (participantUserIds.length === 0) return;
-
+  // An anonymous summary omits private participants and private sessions.
+  // Their own connected integration is still authorized by their auto-sync opt-in.
+  const participantTicks = new QueryBuilder()
+    .select({ id: boardseshTicks.id })
+    .from(boardseshTicks)
+    .where(and(eq(boardseshTicks.sessionId, sessionId), eq(boardseshTicks.userId, integrationCredentials.userId)));
   const credentialRows = await db
     .select()
     .from(integrationCredentials)
@@ -395,13 +393,17 @@ export async function autoSyncSessionToIntegrations(
         inArray(integrationCredentials.provider, [...SUPPORTED_PROVIDERS]),
         eq(integrationCredentials.autoSyncEnabled, true),
         eq(integrationCredentials.status, 'active'),
-        inArray(integrationCredentials.userId, participantUserIds),
+        exists(participantTicks),
       ),
     );
 
   for (const credRow of credentialRows) {
     const provider = credRow.provider as ProviderName;
     try {
+      // Reauthorize for this recipient, so one participant's private climb
+      // details never become another participant's exported activity.
+      const summary = await generateSessionSummary(sessionId, credRow.userId);
+      if (!summary?.startedAt || !summary.endedAt) continue;
       await syncPartySessionForUser(provider, credRow.userId, sessionId, summary, boardPath, { timezone });
     } catch (error) {
       logger.error(

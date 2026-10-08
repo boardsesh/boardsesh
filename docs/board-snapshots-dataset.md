@@ -45,7 +45,8 @@ only care about one size.
 
 ## Manifest format
 
-`formatVersion: 1`. Each entry:
+`formatVersion: 2`. Older app versions use paged sync instead of importing this
+privacy-filtered dataset with incompatible cursor assumptions. Each entry:
 
 | Field                                                   | Meaning                                                                                         |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
