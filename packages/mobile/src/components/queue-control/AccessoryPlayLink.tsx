@@ -10,6 +10,8 @@ type AccessoryPlayLinkProps = {
   accessibilityLabel: string;
   onOpen: () => void;
   onPrepare: () => boolean;
+  /** Only native tab accessory hosts retain the source beneath /play. */
+  zoomSourceRetained?: boolean;
 };
 
 // Keep the pressed-style function inside the component: Router's Slot merges
@@ -27,9 +29,17 @@ function PlayPressable({ style, ...props }: Omit<PressableProps, 'style'> & { st
 }
 
 /** The source stays in the tab accessory so UIKit can zoom back to it. */
-export function AccessoryPlayLink({ children, style, accessibilityLabel, onOpen, onPrepare }: AccessoryPlayLinkProps) {
+export function AccessoryPlayLink({
+  children,
+  style,
+  accessibilityLabel,
+  onOpen,
+  onPrepare,
+  zoomSourceRetained = false,
+}: AccessoryPlayLinkProps) {
   const reduceMotion = useReduceMotion();
-  const supportsZoom = Platform.OS === 'ios' && !Platform.isPad && Number(Platform.Version) >= 18 && !reduceMotion;
+  const supportsZoom =
+    zoomSourceRetained && Platform.OS === 'ios' && !Platform.isPad && Number(Platform.Version) >= 18 && !reduceMotion;
   const content = (
     <PlayPressable
       accessibilityRole="button"

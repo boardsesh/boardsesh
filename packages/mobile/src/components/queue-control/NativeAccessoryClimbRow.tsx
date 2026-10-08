@@ -105,6 +105,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
         accessibilityLabel={climb.name}
         onOpen={openPlay}
         onPrepare={preparePlay}
+        zoomSourceRetained
       >
         {/* tapClip reserves the leading slot via paddingLeft (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}

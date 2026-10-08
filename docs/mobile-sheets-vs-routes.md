@@ -673,14 +673,14 @@ store builds, temporarily pausing OTA delivery to older binaries until users ins
 
 ## Player zoom from the tab accessory
 
-On iPhone with iOS 18 or newer, tapping the current climb uses Router's native
+On iPhone with the native tab accessory, tapping the current climb uses Router's native
 `Link.AppleZoom` source and `/play`'s `Link.AppleZoomTarget`. The tap stages the
 current queue head with `openPlayDrawer(climb, { navigate: false })` before Link
 navigates. This preserves the board override and existing play-target reset rules
 without a second navigation. Keep the source mounted in the tab accessory while
 the transparent player is open so closing it can zoom back to the same climb.
 
-Reduce Motion, older iOS, Android, web and iPad use the existing opener. iPad opens
+Reduce Motion, floating toolbar hosts, Android, web and iPad use the existing opener. iPad opens
 its persistent detail pane. The player's native interactive dismissal stays
 disabled; its existing vertical swipe owns dismissal, so two gestures cannot
 compete. Keep the lightbulb and tick controls outside the zoom source.

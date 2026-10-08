@@ -50,11 +50,16 @@ beforeEach(() => {
   settings.reduceMotion = false;
 });
 
-function renderLink() {
+function renderLink(zoomSourceRetained = true) {
   const onOpen = vi.fn();
   const onPrepare = vi.fn(() => true);
   render(
-    <AccessoryPlayLink accessibilityLabel="My project" onOpen={onOpen} onPrepare={onPrepare}>
+    <AccessoryPlayLink
+      zoomSourceRetained={zoomSourceRetained}
+      accessibilityLabel="My project"
+      onOpen={onOpen}
+      onPrepare={onPrepare}
+    >
       Project
     </AccessoryPlayLink>,
   );
@@ -62,6 +67,13 @@ function renderLink() {
 }
 
 describe('accessory player navigation', () => {
+  it('uses the opener for floating hosts that unmount under the player', () => {
+    const callbacks = renderLink(false);
+    fireEvent.click(screen.getByRole('button', { name: 'My project' }));
+    expect(callbacks.onOpen).toHaveBeenCalledOnce();
+    expect(callbacks.onPrepare).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('native-zoom-source')).toBeNull();
+  });
   it('prevents navigation when the retained accessory has no live queue head', () => {
     const callbacks = renderLink();
     callbacks.onPrepare.mockReturnValue(false);
