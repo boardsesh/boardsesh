@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 
 // Captured across renders so tests can assert what Sheet hands the native sheet:
 // the onChange handler, the snap points, whether a footer subtree rendered, the
-// scroll body's style (the iOS detent bound), and the footer KeyboardAvoidingView's
-// behavior (must be "padding" on BOTH platforms — the Android Compose dialog
-// window does not resize for the keyboard).
+// scroll body's style (the iOS detent bound), and the chrome column's and footer's
+// bottom padding as the keyboard comes and goes (padded on BOTH platforms — the
+// Android Compose dialog window does not resize for the keyboard).
 const captures = vi.hoisted(() => ({
   onChange: null as null | ((index: number) => void),
   snapPoints: undefined as unknown,
@@ -17,9 +17,20 @@ const captures = vi.hoisted(() => ({
   scrollStyle: undefined as unknown,
   scrollContentStyle: undefined as unknown,
   viewStyle: undefined as unknown,
-  kavBehavior: undefined as string | undefined,
+  viewStyles: [] as unknown[],
+  columnStyle: undefined as unknown,
 }));
 const platform = vi.hoisted(() => ({ os: 'ios' }));
+type KeyboardListener = (event: {
+  endCoordinates?: { height: number; screenY: number; width: number };
+  duration?: number;
+}) => void;
+const keyboard = vi.hoisted(() => ({ listeners: new Map<string, KeyboardListener>() }));
+const snapToIndex = vi.hoisted(() => vi.fn());
+// The column's window frame: bottom at the 844pt window's bottom edge.
+const columnMeasure = vi.hoisted(() =>
+  vi.fn((callback: (x: number, y: number, width: number, height: number) => void) => callback(0, 244, 390, 600)),
+);
 
 // Faithful recursive flatten (nested arrays merge left-to-right) so the tests read
 // the effective style the way React Native would, not just a one-level Object.assign.
@@ -70,14 +81,30 @@ vi.mock('react-native', () => ({
     Version: '26.1',
     select: (options: { ios?: unknown; android?: unknown }) => options.ios,
   },
-  View: ({ children, style }: ViewMockProps & { style?: unknown }) => {
+  View: ({
+    children,
+    style,
+    testID,
+    ref,
+  }: ViewMockProps & { style?: unknown; testID?: string; ref?: { current: unknown } }) => {
     captures.viewStyle = style;
+    captures.viewStyles.push(style);
+    if (testID === 'sheet-chrome-column') {
+      captures.columnStyle = style;
+      // React 19 hands a function component its ref as a prop.
+      if (ref) ref.current = { measureInWindow: columnMeasure };
+    }
     return createElement('div', null, children);
   },
-  KeyboardAvoidingView: ({ children, behavior }: ViewMockProps & { behavior?: string }) => {
-    captures.kavBehavior = behavior;
-    return createElement('div', { 'data-kav': 'true' }, children);
+  Keyboard: {
+    addListener: (eventName: string, listener: KeyboardListener) => {
+      keyboard.listeners.set(eventName, listener);
+      return { remove: () => keyboard.listeners.delete(eventName) };
+    },
+    isVisible: () => false,
+    metrics: () => undefined,
   },
+  LayoutAnimation: { configureNext: () => {} },
   // Consumed by useSheetColumnStyle to bound the sheet column to the detent on iOS.
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {
@@ -123,7 +150,7 @@ vi.mock('../../providers/sheet-presentation-provider', () => ({
       dismiss: vi.fn(),
       close: vi.fn(),
       forceClose: vi.fn(),
-      snapToIndex: vi.fn(),
+      snapToIndex,
       snapToPosition: vi.fn(),
       expand: vi.fn(),
       collapse: vi.fn(),
@@ -153,7 +180,11 @@ beforeEach(() => {
   captures.scrollStyle = undefined;
   captures.scrollContentStyle = undefined;
   captures.viewStyle = undefined;
-  captures.kavBehavior = undefined;
+  captures.viewStyles = [];
+  captures.columnStyle = undefined;
+  keyboard.listeners.clear();
+  snapToIndex.mockClear();
+  columnMeasure.mockClear();
   platform.os = 'ios';
   hapticMedium.mockClear();
 });
@@ -232,16 +263,142 @@ describe('Sheet', () => {
     expect(captures.snapPoints).toEqual(['50%', '90%']);
   });
 
-  it('lifts the footer above the keyboard with padding on both platforms', () => {
-    // The Android Compose dialog window does NOT resize for the keyboard
-    // (emulator-verified), so the KeyboardAvoidingView must pad unconditionally —
-    // a platform-gated `undefined` leaves the footer's input covered on Android.
-    render(
-      <Sheet footer={<div>save</div>}>
-        <div>body</div>
-      </Sheet>,
-    );
-    expect(captures.kavBehavior).toBe('padding');
+  describe('keyboard', () => {
+    // An 844pt-tall, 390pt-wide window (the react-native mock).
+    const IOS_KEYBOARD = { height: 336, screenY: 844 - 336, width: 390 };
+    // The footer bar is the one View with a hairline top border.
+    const footerPadding = () =>
+      captures.viewStyles
+        .map(flattenStyle)
+        .filter((style) => style.borderTopWidth !== undefined)
+        .at(-1)?.paddingBottom;
+    const columnPadding = () => flattenStyle(captures.columnStyle).paddingBottom;
+    // Opened the way the native sheet reports it: onChange with a detent index.
+    const renderOpenFooterSheet = (snapPoints?: string[], openAt = 1) => {
+      const utils = render(
+        <Sheet scrollable snapPoints={snapPoints} footer={<div>send</div>}>
+          <div>body</div>
+        </Sheet>,
+      );
+      act(() => captures.onChange?.(openAt));
+      return utils;
+    };
+
+    it('rests the footer on the window inset while the keyboard is down', () => {
+      renderOpenFooterSheet();
+      expect(columnPadding()).toBeUndefined();
+      expect(footerPadding()).toBe(34 + 12);
+    });
+
+    it('pads the column by the keyboard and swaps the inset out of the footer on iOS', () => {
+      renderOpenFooterSheet();
+      act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+      expect(columnPadding()).toBe(336);
+      expect(footerPadding()).toBe(12);
+      act(() =>
+        keyboard.listeners.get('keyboardWillHide')?.({
+          endCoordinates: { ...IOS_KEYBOARD, screenY: 844 },
+          duration: 250,
+        }),
+      );
+      expect(columnPadding()).toBeUndefined();
+      expect(footerPadding()).toBe(34 + 12);
+    });
+
+    it('does not listen while the sheet is closed, and lets go when it closes', () => {
+      render(
+        <Sheet scrollable footer={<div>send</div>}>
+          <div>body</div>
+        </Sheet>,
+      );
+      expect(keyboard.listeners.size).toBe(0);
+      act(() => captures.onChange?.(0));
+      expect(keyboard.listeners.size).toBeGreaterThan(0);
+      act(() => captures.onChange?.(-1));
+      expect(keyboard.listeners.size).toBe(0);
+    });
+
+    it('raises a short detent to the keyboard detent without the drag haptic', () => {
+      // FeedbackSheet's 44% detent: the keyboard would leave its body 0pt.
+      renderOpenFooterSheet(['44%', '90%'], 0);
+      hapticMedium.mockClear();
+      act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+      expect(snapToIndex).toHaveBeenCalledWith(1);
+      expect(hapticMedium).not.toHaveBeenCalled();
+      // The same keyboard reporting a new frame (QuickType bar) is not a new show.
+      act(() =>
+        keyboard.listeners.get('keyboardWillChangeFrame')?.({
+          endCoordinates: { ...IOS_KEYBOARD, height: 380, screenY: 844 - 380 },
+          duration: 250,
+        }),
+      );
+      expect(snapToIndex).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-measures the column once a detent change has settled with the keyboard up', () => {
+      vi.useFakeTimers();
+      try {
+        renderOpenFooterSheet(['44%', '90%'], 0);
+        act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+        // The raise lands as the native onChange; the sheet then animates.
+        act(() => captures.onChange?.(1));
+        columnMeasure.mockClear();
+        act(() => {
+          vi.advanceTimersByTime(299);
+        });
+        expect(columnMeasure).not.toHaveBeenCalled();
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(columnMeasure).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not re-measure after a detent change with the keyboard down', () => {
+      vi.useFakeTimers();
+      try {
+        renderOpenFooterSheet(['44%', '90%'], 0);
+        act(() => captures.onChange?.(1));
+        columnMeasure.mockClear();
+        act(() => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(columnMeasure).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('leaves a sheet already at its keyboard detent where it is', () => {
+      renderOpenFooterSheet(['44%', '90%'], 1);
+      act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+      expect(snapToIndex).not.toHaveBeenCalled();
+    });
+
+    it('leaves a chrome-less sheet off the keyboard listeners, on its resting inset', () => {
+      render(
+        <Sheet scrollable contentContainerStyle={{ paddingBottom: 8 }}>
+          <div>body</div>
+        </Sheet>,
+      );
+      act(() => captures.onChange?.(0));
+      expect(keyboard.listeners.size).toBe(0);
+      expect(flattenStyle(captures.scrollContentStyle).paddingBottom).toBe(8 + 34);
+    });
+
+    it('pads the column by keyboard + nav bar on Android, where the IME height excludes it', () => {
+      // The Android Compose dialog window does NOT resize for the keyboard
+      // (emulator-verified), so the column must pad on Android too.
+      platform.os = 'android';
+      renderOpenFooterSheet();
+      act(() =>
+        keyboard.listeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280, screenY: 530, width: 390 } }),
+      );
+      expect(columnPadding()).toBe(280 + 34);
+      expect(footerPadding()).toBe(12);
+    });
   });
 
   it('bounds a footerless scrollable body to the detent height on iOS (#3330)', () => {

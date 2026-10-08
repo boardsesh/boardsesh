@@ -118,19 +118,18 @@ const styles = StyleSheet.create({
     // ceiling, so a long note stays one glance rather than a blind scroll.
     //
     // iOS is the tighter of the two and the real bound on this number: its
-    // keyboard-up visible body is 162pt. Derived, not measured, on the
+    // keyboard-up visible body is 196pt. Derived, not measured, on the
     // reference device the detent test pins (`log-ascent-sheet.test.tsx`:
     // window 844 - top inset 44 - iOS-26 card gap 24 = base 776). The '92%'
-    // keyboard detent gives a 694pt column; KAV `behavior="padding"` takes 336
-    // for the keyboard, leaving 358; less the 56pt header and the 140pt
-    // footer = 162. The footer is 140 and NOT 106 because
-    // `useWindowBottomInset()` keeps returning the published 34pt window inset
-    // while the keyboard is up — nothing in the app zeroes it on keyboard show
-    // (`hooks/use-window-bottom-inset.ts`). An earlier draft assumed that inset
-    // collapsed, read the body as ~196pt, and set 180 — which overflows the
-    // real body by 18pt. A field taller than the visible body can never scroll
-    // fully into view, so anyone raising this ceiling has to re-check that
-    // inset first, not just the detent.
+    // keyboard detent gives a 694pt column; the sheet pads it by the 336pt
+    // keyboard (`sheet-keyboard-inset.ts`), leaving 358; less the 56pt header
+    // and the 106pt footer = 196. The footer is 106, not 140, because the sheet
+    // swaps the 34pt window inset out of the footer's bottom padding while the
+    // keyboard is up (the keyboard already covers the home indicator). The 160
+    // ceiling predates that swap: it was set against a 162pt body when the
+    // footer kept the inset, so it still fits with 36pt to spare. Anyone raising
+    // this ceiling has to re-derive the body, not just the detent: a field
+    // taller than the visible body can never scroll fully into view.
     //
     // Anything longer scrolls the sheet body, which at least moves visibly.
     // Detent VALUES are unchanged: the body is scrollable under a pinned

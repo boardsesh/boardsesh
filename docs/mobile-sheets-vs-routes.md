@@ -17,8 +17,8 @@ Most things are sheets. Routes are the exception, and each route variant earns i
 ### Bottom sheets (`@expo/ui/community/bottom-sheet`)
 
 Wrapped by two helpers so they don't drift (both supply the scrim, drag handle, and iOS 26 glass
-background natively, plus JS-side keyboard avoidance for the `footer` slot — the Android Compose
-dialog window does **not** resize for the keyboard, so the wrappers pad on both platforms):
+background natively, plus JS-side keyboard avoidance for the `header` / `footer` column — neither
+native sheet window resizes for the keyboard, so the wrappers pad on both platforms):
 
 | Wrapper                                            | Backing            | Opened by                                                                          | Use when                                                                                                                          |
 | -------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -161,13 +161,35 @@ the content-fitting path; iOS / web keep the exact detents and the `useSheetColu
 Two things make it safe for a scroll body — the case `androidSafeSnapPoints`'s old comment warned
 content-fitting would collapse:
 
-- The single flex child (the `KeyboardAvoidingView`) takes a **`maxHeight`** of
+- The single flex child (the chrome column) takes a **`maxHeight`** of
   `window − topInset − chrome`, not `flex: 1` — under a `matchContents` host a `flex: 1` child
   resolves to zero. At rest it measures to the form; a keyboard-up long note pushes it into the
   ceiling.
 - The scroll body takes **`flexShrink: 1`**, not `flex: 1` — content height at rest (this is what
   closes the void), and it shrinks-and-scrolls once the column hits its ceiling so the footer
   stays pinned above the keyboard instead of the note clipping.
+
+**Keyboard: pad the column, never a `KeyboardAvoidingView`.** RN 0.86's KAV computes its overlap
+from its own `onLayout` frame, which inside a native sheet is relative to the sheet's content
+view, not the window. It under-pads by the sheet's distance from the top of the screen, which left
+the log-ascent Attempt / Save bar half under the keyboard. The wrappers instead pad the chrome
+column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
+
+- iOS measures it: the column's bottom in window coordinates (`measureInWindow`, re-measured on
+  every keyboard event) minus the keyboard's top. On iPhone that is the keyboard height; an iPad
+  sheet UIKit lifts clear gets 0, and an undocked or split keyboard (narrower than the window) is
+  ignored. iPad reads only the did-event (at the will-event the sheet is not lifted yet, so the pad
+  would flash in and back out), and a detent change with the keyboard up re-measures once more
+  300 ms after the native `onChange`.
+- Android pads by keyboard + window inset (RN reports the IME without the nav bar).
+- While the keyboard covers the sheet the footer's resting window inset is swapped out, not added,
+  so the bar rests `spacing[3]` above the keyboard. On iOS the change rides the keyboard's animation.
+- When the keyboard comes up the sheet rises to its last (keyboard) detent without the drag
+  haptic: at a short detent such as FeedbackSheet's 44% the keyboard leaves the body no room.
+- It listens only while the sheet has a header or footer and is open, and seeds from
+  `Keyboard.metrics()` when a sheet opens over a keyboard that is already up.
+
+A raw-sheet surface with a text field (`ClimbFilterSheet`) uses the same hook.
 
 `skipPartiallyExpanded` still comes for free (the shim sets it whenever `fitToContents` or a
 single detent), so the ~50% partial trap of #4723 stays closed — the sheet can only rest at its

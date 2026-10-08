@@ -67,6 +67,8 @@ const bottomSheetScrollViewProps = vi.hoisted(() => ({
 
 // expo-router stand-ins: a push spy and a holder for the focus callback so a test
 // can simulate the climbs screen regaining focus after a sub-route pops.
+type KeyboardListener = (event: { endCoordinates?: { height: number; screenY: number; width: number } }) => void;
+const keyboardListeners = vi.hoisted(() => new Map<string, KeyboardListener>());
 const routerPush = vi.hoisted(() => vi.fn());
 const focusEffectHolder = vi.hoisted(() => ({ cb: null as null | (() => void) }));
 
@@ -124,17 +126,21 @@ type TextInputProps = {
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
-  View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
-    createElement('div', { 'data-style': resolveStyle(style) }, children),
-  KeyboardAvoidingView: ({
-    children,
-    behavior,
-    style,
-  }: {
-    children?: ReactNode;
-    behavior?: string;
-    style?: StyleProp;
-  }) => createElement('div', { 'data-kav': behavior, 'data-style': resolveStyle(style) }, children),
+  View: ({ children, style, testID }: { children?: ReactNode; style?: StyleProp; testID?: string }) =>
+    createElement(
+      'div',
+      { 'data-style': resolveStyle(style), 'data-column': testID === 'climb-filter-column' ? 'true' : undefined },
+      children,
+    ),
+  Keyboard: {
+    addListener: (eventName: string, listener: KeyboardListener) => {
+      keyboardListeners.set(eventName, listener);
+      return { remove: () => keyboardListeners.delete(eventName) };
+    },
+    isVisible: () => false,
+    metrics: () => undefined,
+  },
+  LayoutAnimation: { configureNext: () => {} },
   Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
@@ -488,17 +494,31 @@ beforeEach(() => {
 // same render as the dismiss, so the slide-down never played and the list swapped
 // under a vanishing sheet. Apply must commit only once the native close lands.
 describe('ClimbFilterSheet Apply waits for the native close', () => {
-  it('puts Reset leading and the live "Show N" Apply trailing in the top bar, over a keyboard-avoiding column', () => {
+  it('puts Reset leading and the live "Show N" Apply trailing in the top bar, over the sheet column', () => {
     const { container, getByText } = renderFilterSheet();
     expect(container.querySelector('[data-top-bar="mobile.filter.title"]')).not.toBeNull();
     expect(getByText('mobile.filter.reset').getAttribute('data-slot')).toBe('leading');
     expect(getByText('mobile.filter.showCount12').getAttribute('data-slot')).toBe('trailing');
-    expect(container.querySelector('[data-kav="padding"]')).not.toBeNull();
+    expect(container.querySelector('[data-column="true"]')).not.toBeNull();
   });
 
-  it('hands the native sheet one in-flow child, the keyboard-avoiding column, carrying the detent bound (#3330)', () => {
+  it('pads the column by the keyboard overlap so the name search stays above it', () => {
     const { container } = renderFilterSheet();
-    const column = container.querySelector('[data-kav="padding"]') as HTMLElement;
+    const columnStyle = () =>
+      JSON.parse(container.querySelector('[data-column="true"]')?.getAttribute('data-style') ?? 'null');
+    expect(columnStyle()).toEqual(DETENT_COLUMN);
+    // Android (this file's platform): the IME height plus the window inset, 0 here.
+    act(() =>
+      keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
+    expect(columnStyle()).toEqual([DETENT_COLUMN, { paddingBottom: 280 }]);
+    act(() => keyboardListeners.get('keyboardDidHide')?.({}));
+    expect(columnStyle()).toEqual(DETENT_COLUMN);
+  });
+
+  it('hands the native sheet one in-flow child, the sheet column, carrying the detent bound (#3330)', () => {
+    const { container } = renderFilterSheet();
+    const column = container.querySelector('[data-column="true"]') as HTMLElement;
     expect(JSON.parse(column.getAttribute('data-style') ?? 'null')).toEqual(DETENT_COLUMN);
     // Anything else under the sheet is the dev-only #3922 probe, which is out of flow.
     const inFlowSiblings = [...(column.parentElement?.children ?? [])].filter((element) => {

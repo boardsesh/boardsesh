@@ -16,19 +16,19 @@ import { render } from '@testing-library/react';
 import { createElement, forwardRef, type ComponentType, type ReactNode, type Ref } from 'react';
 
 // What the wrappers hand the native sheet: the background style (the `surface`
-// decision), the KeyboardAvoidingView's style (the #3330 detent bound), the
+// decision), the chrome column's style (the #3330 detent bound), the
 // scroll body's style, and every plain View style (the footer bar is found
 // among them by its hairline top border).
 const captures = vi.hoisted(() => ({
   backgroundStyle: undefined as unknown,
-  kavRendered: false,
-  kavStyle: undefined as unknown,
+  columnRendered: false,
+  columnStyle: undefined as unknown,
   scrollStyle: undefined as unknown,
   viewStyles: [] as unknown[],
 }));
 
 type SheetMockProps = { children?: ReactNode; backgroundStyle?: unknown };
-type ViewMockProps = { children?: ReactNode; style?: unknown };
+type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
 
 // Faithful recursive flatten (nested arrays merge left-to-right) so the tests
 // read the effective style the way React Native would.
@@ -65,15 +65,17 @@ vi.mock('react-native', () => ({
     select: (options: { ios?: unknown; android?: unknown }) => options.ios,
   },
   PlatformColor: (name: string) => name,
-  View: ({ children, style }: ViewMockProps) => {
+  View: ({ children, style, testID }: ViewMockProps) => {
+    if (testID === 'sheet-chrome-column') {
+      captures.columnRendered = true;
+      captures.columnStyle = style;
+    }
     captures.viewStyles.push(style);
     return createElement('div', null, children);
   },
-  KeyboardAvoidingView: ({ children, style }: ViewMockProps) => {
-    captures.kavRendered = true;
-    captures.kavStyle = style;
-    return createElement('div', { 'data-kav': 'true' }, children);
-  },
+  // The keyboard stays down here; sheet-keyboard-inset.test.tsx drives it.
+  Keyboard: { addListener: () => ({ remove: () => {} }), isVisible: () => false, metrics: () => undefined },
+  LayoutAnimation: { configureNext: () => {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,
@@ -159,8 +161,8 @@ function footerBarStyle(): Record<string, unknown> {
 
 beforeEach(() => {
   captures.backgroundStyle = undefined;
-  captures.kavRendered = false;
-  captures.kavStyle = undefined;
+  captures.columnRendered = false;
+  captures.columnStyle = undefined;
   captures.scrollStyle = undefined;
   captures.viewStyles = [];
 });
@@ -250,7 +252,7 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
       expect(header.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it('takes the KeyboardAvoidingView branch, so the #3330 column bound lands on one in-flow child', () => {
+    it('takes the chrome-column branch, so the #3330 column bound lands on one in-flow child', () => {
       // A header alone (no footer) must still wrap the body: the native sheet
       // takes exactly ONE in-flow child, and that child is what carries the iOS
       // detent bound. Default snap points ['50%','90%'] at index 0 on an 844pt
@@ -262,8 +264,8 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
         </SheetLike>,
       );
 
-      expect(captures.kavRendered).toBe(true);
-      expect(flattenStyle(captures.kavStyle)).toEqual({ height: 390 });
+      expect(captures.columnRendered).toBe(true);
+      expect(flattenStyle(captures.columnStyle)).toEqual({ height: 390 });
       expect(flattenStyle(captures.scrollStyle)).toEqual({ flex: 1 });
     });
 
@@ -276,7 +278,7 @@ describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {
         </SheetLike>,
       );
 
-      expect(captures.kavRendered).toBe(false);
+      expect(captures.columnRendered).toBe(false);
       expect(flattenStyle(captures.scrollStyle)).toEqual({ height: 390 });
     });
 
