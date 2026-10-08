@@ -530,9 +530,12 @@ climb changes reuse the carousel without restarting the opening placeholder.
   rule-1 trap above). The deep-link param is `proposalUuid`, plus `climbUuid` / `boardType` when the
   caller has them.
 - **New climb** (`/(tabs)/climbs/create`) — a focused modal task, like Mail's compose or a new
-  reminder (HIG "Modality"), so a **`modal`** route: on iOS a pageSheet that covers the screen
-  with the climbs list scaled behind it, on Android an M3 full-screen dialog that slides up
-  (`animation: 'slide_from_bottom'`, Android only, so iOS keeps its own). It used to be a
+  reminder (HIG "Modality"), so a **`modal`** route: on iPhone a pageSheet that covers the
+  screen with the climbs list scaled behind it, on Android an M3 full-screen dialog that slides
+  up (`animation: 'slide_from_bottom'`, Android only, so iOS keeps its own). On **iPad** it is a
+  `fullScreenModal` (`flowCoversScreen()`, the rule the spray flows use): a `modal` there is a
+  ~540pt page card that clips the board, and rule 2 does not apply without `NativeTabs`. The
+  editor then adds the status-bar inset that a pageSheet does not need. It used to be a
   `transparentModal` hosting a two-detent `@expo/ui` bottom sheet (`CreateDrawer`) with a
   collapse chevron, which read like a music player's mini-player; that sheet is gone, and
   `CreateDrawer` is now just the editor body. Four decisions carry it:
@@ -543,10 +546,15 @@ climb changes reuse the carousel without restarting the opening placeholder.
     loses nothing, because the autosave flushes the draft on unmount and the next open restores
     it. Its accessibility hint says so. Android's back does the same close (a focus-gated
     `BackHandler`), and both show the "draft kept" toast after the pop. Save is the trailing
-    confirm; the ⋯ menu sits before it.
+    confirm; the ⋯ menu sits before it. While the hold-role sheet is up, back closes that sheet
+    (it is a native dialog that takes back itself; the editor's handler also checks).
   - **The top bar is pinned above the scroll**, so the X and Save never move. The keyboard is
     handled by the scroll: `automaticallyAdjustKeyboardInsets` on iOS, and on Android padding by
-    the keyboard height, because a modal route there ignores `adjustResize`.
+    `useKeyboardHeight()`. On Android a `modal` route is an ordinary fragment in the activity
+    window (react-native-screens `ScreenStack.adapt`), not a dialog, but the app is edge-to-edge
+    (`decorFitsSystemWindows(false)`), so `adjustResize` resizes nothing on any route and the
+    keyboard draws over the scroll. RN reports the IME inset minus the nav bar, and the scroll's
+    pad already carries the window inset, so the two add up to the keyboard's full height.
   - **Loading a draft or starting a new climb calls `router.setParams`**, never
     `router.replace`: a replace drops the modal and presents a new one, so the sheet would slide
     away and back. The editor is keyed on those params, so it still remounts cleanly.

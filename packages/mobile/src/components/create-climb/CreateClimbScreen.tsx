@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
@@ -95,6 +95,9 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+  // Read by the back handler, so opening the sheet does not re-register it.
+  const holdRoleOpenRef = useRef(false);
+  holdRoleOpenRef.current = longPressHoldId !== null;
 
   // A remix of a climb that lost holds: a grey ring where each one was, and
   // Save waits until the climber has tapped them away. Never on an edit in place.
@@ -214,6 +217,13 @@ export function CreateClimbScreen({
   useEffect(() => {
     if (!isFocused) return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      // The hold-role sheet is a native dialog that takes back itself, so this
+      // should never run while it is up. If it does, back closes the sheet,
+      // never the editor under it.
+      if (holdRoleOpenRef.current) {
+        setLongPressHoldId(null);
+        return true;
+      }
       handleClose();
       return true;
     });

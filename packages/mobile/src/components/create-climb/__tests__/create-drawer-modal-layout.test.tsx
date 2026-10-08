@@ -9,7 +9,8 @@ import { createElement, type ReactNode } from 'react';
 // under it; and the editor pads for the status bar only where the modal draws
 // under it (Android), never inside an iOS pageSheet.
 
-const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', isPad: false }));
+const keyboard = vi.hoisted(() => ({ height: 0 }));
 type ViewMockProps = { children?: ReactNode; testID?: string; style?: unknown };
 const flatten = (style: unknown): Record<string, unknown> =>
   Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : ((style as Record<string, unknown>) ?? {});
@@ -26,18 +27,29 @@ vi.mock('react-native', () => ({
     get OS() {
       return platform.OS;
     },
+    get isPad() {
+      return platform.isPad;
+    },
   },
-  Keyboard: { addListener: () => ({ remove: () => undefined }) },
 }));
+vi.mock('../../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => keyboard.height }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
-type ScrollMockProps = { children?: ReactNode; automaticallyAdjustKeyboardInsets?: boolean };
+type ScrollMockProps = {
+  children?: ReactNode;
+  automaticallyAdjustKeyboardInsets?: boolean;
+  contentContainerStyle?: { paddingBottom?: number };
+};
 vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children, automaticallyAdjustKeyboardInsets }: ScrollMockProps) =>
+  ScrollView: ({ children, automaticallyAdjustKeyboardInsets, contentContainerStyle }: ScrollMockProps) =>
     createElement(
       'div',
-      { 'data-scroll': 'true', 'data-keyboard-insets': automaticallyAdjustKeyboardInsets ? 'true' : undefined },
+      {
+        'data-scroll': 'true',
+        'data-keyboard-insets': automaticallyAdjustKeyboardInsets ? 'true' : undefined,
+        'data-padding-bottom': contentContainerStyle?.paddingBottom,
+      },
       children,
     ),
 }));
@@ -190,6 +202,8 @@ describe('CreateDrawer as a full-height modal', () => {
   beforeEach(() => {
     translateCalls.length = 0;
     platform.OS = 'ios';
+    platform.isPad = false;
+    keyboard.height = 0;
   });
 
   it('pins the top bar above the scroll, and scrolls the board, tools, form and drafts under it', () => {
@@ -223,7 +237,25 @@ describe('CreateDrawer as a full-height modal', () => {
     expect(renderDrawer({}).scroll?.getAttribute('data-keyboard-insets')).toBe('true');
   });
 
-  it('adds no status-bar inset inside an iOS pageSheet, which already starts below it', () => {
+  it('clears the status bar on iPad, where New climb covers the screen', () => {
+    platform.isPad = true;
+    const { container } = renderDrawer({});
+    expect(container.firstElementChild?.getAttribute('data-padding-top')).toBe('24');
+  });
+
+  it('pads the scroll by the keyboard on Android, on top of the window inset', () => {
+    platform.OS = 'android';
+    keyboard.height = 300;
+    // 48 window inset + 16 + 300: RN's height already leaves out the nav bar.
+    expect(renderDrawer({}).scroll?.getAttribute('data-padding-bottom')).toBe('364');
+  });
+
+  it('leaves the keyboard to iOS, which lifts the scroll itself', () => {
+    keyboard.height = 300;
+    expect(renderDrawer({}).scroll?.getAttribute('data-padding-bottom')).toBe('64');
+  });
+
+  it('adds no status-bar inset inside an iPhone pageSheet, which already starts below it', () => {
     const { container } = renderDrawer({});
     expect(container.firstElementChild?.getAttribute('data-padding-top')).toBe('0');
   });
