@@ -23,15 +23,18 @@
 +    let dispatchGeneration = consentGeneration
      await DispatchLoop.drain(
        startCursor: cursor,
-       fetchBatch: { cursor, limit in
+-      fetchBatch: { cursor, limit in
++      fetchBatch: { (cursor: Int64, limit: Int) throws -> [MetricRow] in
 +        guard dispatchGeneration == consentGeneration else { return [] }
          let metrics = try AppMetrics.getMetrics(afterId: cursor, limit: limit)
          if metrics.isEmpty {
            observeLogger.debug("[EAS Observe] No new metrics to dispatch")
 @@ -93,6 +104,7 @@
        },
-       rowId: { $0.id },
-       send: { metrics in
+-      rowId: { $0.id },
+-      send: { metrics in
++      rowId: { (metric: MetricRow) -> Int64? in metric.id },
++      send: { (metrics: [MetricRow]) async throws -> DispatchResult? in
 +        guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }
          let events = try buildEvents(forMetrics: metrics)
          guard !events.isEmpty else {
@@ -52,15 +55,18 @@
 +    let dispatchGeneration = consentGeneration
      await DispatchLoop.drain(
        startCursor: cursor,
-       fetchBatch: { cursor, limit in
+-      fetchBatch: { cursor, limit in
++      fetchBatch: { (cursor: Int64, limit: Int) throws -> [LogRow] in
 +        guard dispatchGeneration == consentGeneration else { return [] }
          let logs = try AppMetrics.getLogs(afterId: cursor, limit: limit)
          if logs.isEmpty {
            observeLogger.debug("[EAS Observe] No new logs to dispatch")
 @@ -164,6 +178,7 @@
        },
-       rowId: { $0.id },
-       send: { logs in
+-      rowId: { $0.id },
+-      send: { logs in
++      rowId: { (log: LogRow) -> Int64? in log.id },
++      send: { (logs: [LogRow]) async throws -> DispatchResult? in
 +        guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }
          let events = try buildEvents(forLogs: logs)
          let resourceLogs = events.compactMap { event -> OTResourceLogs? in

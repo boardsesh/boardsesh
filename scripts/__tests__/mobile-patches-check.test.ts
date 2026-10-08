@@ -1457,6 +1457,12 @@ describe('the shipped native privacy patches', () => {
   it.each([
     ['expo-observe', 'ios/ObserveModule.swift', 'try await AppMetricsActor.isolated {'],
     ['expo-observe', 'ios/Observability.swift', 'consentGeneration &+= 1'],
+    ['expo-observe', 'ios/Observability.swift', 'fetchBatch: { (cursor: Int64, limit: Int) throws -> [MetricRow] in'],
+    ['expo-observe', 'ios/Observability.swift', 'rowId: { (metric: MetricRow) -> Int64? in metric.id }'],
+    ['expo-observe', 'ios/Observability.swift', 'send: { (metrics: [MetricRow]) async throws -> DispatchResult? in'],
+    ['expo-observe', 'ios/Observability.swift', 'fetchBatch: { (cursor: Int64, limit: Int) throws -> [LogRow] in'],
+    ['expo-observe', 'ios/Observability.swift', 'rowId: { (log: LogRow) -> Int64? in log.id }'],
+    ['expo-observe', 'ios/Observability.swift', 'send: { (logs: [LogRow]) async throws -> DispatchResult? in'],
     ['expo-observe', 'ios/Observability.swift', 'max(ObserveUserDefaults.lastDispatchedLogId, $0)'],
     [
       'expo-observe',

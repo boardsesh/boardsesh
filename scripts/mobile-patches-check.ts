@@ -136,9 +136,13 @@ export const RULES: readonly PatchRule[] = [
       'consentGeneration &+= 1',
       'AppMetrics.getMaxMetricId() { ObserveUserDefaults.lastDispatchedMetricId = highestId }',
       'AppMetrics.getMaxLogId() { ObserveUserDefaults.lastDispatchedLogId = highestId }',
-      `send: { metrics in
+      'fetchBatch: { (cursor: Int64, limit: Int) throws -> [MetricRow] in',
+      'rowId: { (metric: MetricRow) -> Int64? in metric.id }',
+      `send: { (metrics: [MetricRow]) async throws -> DispatchResult? in
         guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }`,
-      `send: { logs in
+      'fetchBatch: { (cursor: Int64, limit: Int) throws -> [LogRow] in',
+      'rowId: { (log: LogRow) -> Int64? in log.id }',
+      `send: { (logs: [LogRow]) async throws -> DispatchResult? in
         guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }`,
       'max(ObserveUserDefaults.lastDispatchedMetricId, $0)',
       'max(ObserveUserDefaults.lastDispatchedLogId, $0)',
