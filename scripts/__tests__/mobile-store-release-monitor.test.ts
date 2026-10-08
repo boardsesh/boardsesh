@@ -2,6 +2,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   collectAndroidVersions,
+  main,
   nextStoreSnapshot,
   publicAndroidVersions,
   publicIosVersions,
@@ -115,6 +116,23 @@ describe('public native store collection', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(collectAndroidVersions(tags)).rejects.toThrow('GOOGLE_PLAY_SERVICE_ACCOUNT_JSON');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('skips Android with a warning, and stays green, until the monitor credential exists', async () => {
+    vi.stubEnv('GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON', '');
+    vi.stubEnv('GITHUB_TOKEN', 'test-token');
+    vi.stubEnv('GITHUB_REPOSITORY', 'boardsesh/boardsesh');
+    vi.stubEnv('DRY_RUN', 'true');
+    const fetchMock = vi.fn(async (_url: string) => Response.json([]));
+    vi.stubGlobal('fetch', fetchMock);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const android = vi.fn(async () => ['2.7.0']);
+    expect(await main({ ios: async () => ['2.7.0'], android })).toBe(0);
+    expect(android).not.toHaveBeenCalled();
+    expect(log.mock.calls.flat().join('\n')).toContain('::warning::Play monitor credential not configured');
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining('environment=mobile-public-store-ios'),
+    ]);
+    log.mockRestore();
   });
   it('rejects a publishing account reused for monitoring before network access', async () => {
     const credential = JSON.stringify({ client_email: 'publisher@example.com', private_key: 'unused' });

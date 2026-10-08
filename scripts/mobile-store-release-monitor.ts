@@ -230,13 +230,21 @@ export async function publishPlatform(
     description: 'Public store metadata collected',
   });
 }
-export async function main(): Promise<number> {
+const STORE_COLLECTORS = { ios: collectIosVersions, android: collectAndroidVersions };
+export async function main(collectors = STORE_COLLECTORS): Promise<number> {
   const checkedAt = new Date().toISOString();
   const tags = execFileSync('git', ['tag', '--list', 'build-android-*'], { encoding: 'utf8' }).trim().split('\n');
   const outcomes = await Promise.allSettled(
     (['ios', 'android'] as const).map(async (platform) => {
+      // Until the monitor account is provisioned, keep the scheduled job green
+      // and leave the prior Android snapshot untouched. A set monitor credential
+      // still goes through the identity check in collectAndroidVersions.
+      if (platform === 'android' && !process.env.GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON?.trim()) {
+        console.log('::warning::Play monitor credential not configured; Android store snapshot skipped');
+        return;
+      }
       const versions =
-        platform === 'ios' ? await collectIosVersions(Date.parse(checkedAt)) : await collectAndroidVersions(tags);
+        platform === 'ios' ? await collectors.ios(Date.parse(checkedAt)) : await collectors.android(tags);
       await publishPlatform(platform, versions, checkedAt);
     }),
   );

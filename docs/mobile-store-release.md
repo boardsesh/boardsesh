@@ -448,15 +448,17 @@ and screenshot sessions do not show reminders.
    from the publishing account. Supply `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` for
    that identity comparison. The collector rejects missing or equal publishing
    identities before creating an edit; it never authenticates with that account.
+   Until the monitor credential is set, each run skips Android with a
+   `::warning::` annotation and stays green; iOS keeps publishing, and the
+   Android snapshot is left as it was (no snapshot means no Android reminders).
 2. Grant app-level read access to release lifecycle metadata and the permissions
    required to insert, read, and discard a production edit. Validate permissions
    with a dry run before activating; view-only accounts may not allow edit creation.
 3. Run the workflow manually with `dry_run=true` and confirm both snapshot logs
    reflect publicly downloadable builds. Dry runs read existing history and never
    publish snapshots. Google always deletes its temporary edit without committing.
-4. Merge the 2.6.0 release train back into `main` to activate scheduled tooling and
-   deploy the backend query. The workflow checks out `main`; merging only to
-   `release/next` does not activate collection. No live snapshots or credentials
+4. Collection and the backend query both run from `main`: the workflow checks
+   out `main`, and the backend deploys from it. No live snapshots or credentials
    are provisioned by this feature's implementation.
 5. Confirm both deployment environments receive successful snapshots every six
    hours. If collection stops for 24 hours, reminders suppress automatically;
