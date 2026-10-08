@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Badge as PaperBadge } from 'react-native-paper';
 import { Text } from './Text';
+import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { createVariantComponent } from '../theme/variants';
 
@@ -19,7 +20,9 @@ type BadgeProps = {
  */
 export const Badge = createVariantComponent('Badge', { liquidGlass: BadgeGlass, material: BadgeMaterial });
 
-function BadgeMaterial({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
+function BadgeMaterial({ count, visible = true, color, size = 'medium' }: BadgeProps) {
+  const { systemColors } = useTheme();
+  const badgeColor = color ?? systemColors.error;
   const isDot = count === undefined || count === 0;
   const displayCount = count && count > 99 ? '99+' : String(count ?? '');
 
@@ -28,15 +31,17 @@ function BadgeMaterial({ count, visible = true, color = iosSystemColors.systemRe
   const badgeSize = size === 'small' ? 8 : isDot ? 10 : 18;
 
   return (
-    <PaperBadge visible={visible} size={badgeSize} style={{ backgroundColor: color }}>
+    <PaperBadge visible={visible} size={badgeSize} style={{ backgroundColor: badgeColor }}>
       {isDot ? undefined : displayCount}
     </PaperBadge>
   );
 }
 
 // Liquid Glass badge — the original animated implementation, unchanged.
-function BadgeGlass({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
+function BadgeGlass({ count, visible = true, color, size = 'medium' }: BadgeProps) {
+  const { systemColors } = useTheme();
   if (!visible) return null;
+  const badgeColor = color ?? systemColors.error;
 
   const isDot = count === undefined || count === 0;
   const displayCount = count && count > 99 ? '99+' : String(count ?? '');
@@ -54,7 +59,7 @@ function BadgeGlass({ count, visible = true, color = iosSystemColors.systemRed, 
       style={[
         styles.badge,
         {
-          backgroundColor: color,
+          backgroundColor: badgeColor,
           height: badgeSize,
           minWidth,
           borderRadius: badgeSize / 2,

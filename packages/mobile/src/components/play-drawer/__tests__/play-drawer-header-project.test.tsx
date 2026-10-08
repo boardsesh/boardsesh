@@ -9,6 +9,7 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   // The header reads fontScale to decide whether the crowd's second grade line
   // fits (#4796); default Dynamic Type here.
@@ -39,6 +40,9 @@ vi.mock('@boardsesh/board-constants/grade-colors', () => ({
 vi.mock('../../../lib/format-climb-stats', () => ({
   formatSends: (count: number) => `${count} sends`,
   formatQuality: (value: string) => value,
+}));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children, variant }: { children?: ReactNode; variant?: string }) =>

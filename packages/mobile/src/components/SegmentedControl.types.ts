@@ -36,10 +36,10 @@ export type SegmentedControlProps<K extends string = string> = {
   /** Accessibility label naming the group (e.g. "Appearance"), so the platform announces what the segments control. */
   accessibilityLabel?: string;
   /**
-   * Selected-segment fill colour. Defaults to the brand accent (purple) so every
-   * existing call site is unchanged; the logbook passes `brandColors.accent` (amber)
-   * so its controls match the amber chip row. The selected-label colour is derived
-   * to stay readable on the given fill (dark text on amber).
+   * Selected-segment fill colour. Defaults to the brand tint. Interactive screens
+   * must keep the default (HIG Color: one tint); only a data-coded control, like
+   * the outline editor's boundary-kind switch, passes its data colour. The
+   * selected-label colour is derived to stay readable on the given fill.
    */
   tint?: string;
 };

@@ -461,7 +461,7 @@ export function DevServerSwitcherScreen() {
                 {selectedBundler.metadata?.qaNotes ?? 'No QA plan loaded for this Metro server.'}
               </Text>
               {selectedBundler.metadata?.qaNotesFilePath ? (
-                <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.filePath} selectable>
+                <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.filePath} selectable>
                   {selectedBundler.metadata.qaNotesFilePath}
                 </Text>
               ) : null}

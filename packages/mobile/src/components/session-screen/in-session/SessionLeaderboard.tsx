@@ -9,7 +9,6 @@ import { PressableAvatar } from '../../PressableAvatar';
 import { SectionHeader } from '../../SectionHeader';
 import { useTheme } from '../../../providers/theme-provider';
 import { withAlpha } from '../../../theme/colors';
-import { iosSystemColors } from '../../../theme/ios-colors';
 import { spacing, borderRadius } from '../../../theme/tokens';
 
 type SessionLeaderboardProps = {
@@ -24,7 +23,7 @@ type SessionLeaderboardProps = {
  */
 export function SessionLeaderboard({ participants, selfUserId }: SessionLeaderboardProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, chartColors } = useTheme();
 
   const ranked = useMemo(
     () => [...participants].sort((a, b) => b.sends - a.sends || b.flashes - a.flashes),
@@ -75,7 +74,7 @@ export function SessionLeaderboard({ participants, selfUserId }: SessionLeaderbo
                   <Chip icon="flash" label={`${participant.flashes}`} tint={brandColors.warning} />
                 ) : null}
                 {participant.attempts > 0 ? (
-                  <Chip icon="circle" label={`${participant.attempts}`} tint={iosSystemColors.systemGray} />
+                  <Chip icon="circle" label={`${participant.attempts}`} tint={chartColors.secondaryLabel} />
                 ) : null}
               </View>
             </View>

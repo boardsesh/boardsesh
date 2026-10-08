@@ -37,6 +37,7 @@ vi.mock('react-native', () => ({
     },
     select: (options: Record<string, unknown>) => options[mocks.platform],
   },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('react-i18next', () => ({

@@ -173,7 +173,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   };
 
   return (
-    <View style={drawerActionBarStyles.container}>
+    <View style={[drawerActionBarStyles.container, { borderTopColor: systemColors.separator }]}>
       <View style={styles.brushRow}>
         {roleChips.map(({ role, label, color }) => {
           const selected = selectedBrush === role;

@@ -10,9 +10,13 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
 }));
-vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../Avatar', () => ({ Avatar: () => createElement('span', { 'data-testid': 'avatar' }) }));
 vi.mock('../../ListRow', () => ({
   ListRow: ({ title, leading, trailing }: { title: string; leading?: ReactNode; trailing?: ReactNode }) =>
@@ -21,9 +25,13 @@ vi.mock('../../ListRow', () => ({
 vi.mock('../../SectionHeader', () => ({ SectionHeader: () => createElement('div', { 'data-testid': 'header' }) }));
 vi.mock('../../you/profile-chart-colors', () => ({ gradeBadgeColor: () => '#000' }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (c: string) => c }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#888', white: '#fff' } }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
+const SECONDARY_LABEL = '#5B5563';
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { success: '#0a0', warning: '#fa0', accent: '#f83' } }),
+  useTheme: () => ({
+    brandColors: { success: '#0a0', warning: '#fa0', accent: '#f83' },
+    chartColors: { secondaryLabel: SECONDARY_LABEL },
+  }),
 }));
 vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ formatGrade: (g: string) => g }) }));
 
@@ -101,5 +109,17 @@ describe('SessionLeaderboard', () => {
     expect(text).toContain('V6');
     expect(text).toContain('V4');
     expect(text).not.toContain('V17');
+  });
+
+  it('draws the attempts chip in the theme secondary label, not a fixed gray', () => {
+    const participants = [participant('a', 'Alex', 5, 2, 1), participant('b', 'Bea', 8, 1, 4)];
+    const { container } = render(createElement(SessionLeaderboard, { participants, ticks: [] }));
+
+    const attemptIcons = Array.from(container.querySelectorAll('[data-icon="circle"]'));
+    expect(attemptIcons).toHaveLength(2);
+    for (const icon of attemptIcons) {
+      expect(icon.getAttribute('data-color')).toBe(SECONDARY_LABEL);
+      expect(icon.nextElementSibling?.getAttribute('data-color')).toBe(SECONDARY_LABEL);
+    }
   });
 });

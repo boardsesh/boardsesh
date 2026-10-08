@@ -292,7 +292,7 @@ const GymRow = memo(function GymRow({
             {subtitle}
           </Text>
           {gym.boardTypes.length > 0 ? (
-            <Text variant="caption1" color={systemColors.tertiaryLabel}>
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
               {gym.boardTypes.map(formatBoardDisplayName).join(' · ')}
             </Text>
           ) : null}
@@ -307,7 +307,7 @@ const GymRow = memo(function GymRow({
             <BoardRow key={board.uuid} board={board} onActivateBoard={onActivateBoard} onEditBoard={onEditBoard} />
           ))
         ) : (
-          <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.noBoards}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.noBoards}>
             {noBoardsLabel}
           </Text>
         )
@@ -372,7 +372,7 @@ const BoardRow = memo(function BoardRow({
       <Icon name="boards" size={18} color={systemColors.secondaryLabel} />
       <View style={styles.rowText}>
         <Text variant="subheadline">{board.name}</Text>
-        <Text variant="caption1" color={systemColors.tertiaryLabel}>
+        <Text variant="caption1" color={systemColors.secondaryLabel}>
           {/* Inside an expanded gym the place is redundant — show what the board
               is instead, never the raw lowercase type. */}
           {boardConfigLabel(board) ?? boardTypeLabel(board.boardType)}

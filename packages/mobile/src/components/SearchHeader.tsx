@@ -6,7 +6,6 @@ import { GlassSurface } from './GlassSurface';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
 import { selectByVariant } from '../theme/variants';
-import { iosSystemColors } from '../theme/ios-colors';
 
 export type SearchHeaderHandle = {
   blur: () => void;
@@ -129,7 +128,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
         pointerEvents="none"
       />
       <View style={[styles.content, { height }]}>
-        <Icon name="search" size={18} color={iosSystemColors.systemGray} />
+        <Icon name="search" size={18} color={systemColors.secondaryLabel} />
         <TextInput
           ref={inputRef}
           value={text}
@@ -137,7 +136,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder={placeholder}
-          placeholderTextColor={iosSystemColors.systemGray}
+          placeholderTextColor={systemColors.tertiaryLabel}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
@@ -153,9 +152,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
             accessibilityLabel={t('mobile.a11y.clearSearch')}
             style={styles.clearTarget}
           >
-            <View style={styles.clearButton}>
-              <Icon name="close" size={12} color={iosSystemColors.white} />
-            </View>
+            <Icon name="search.clear" size={18} color={systemColors.secondaryLabel} />
           </Pressable>
         )}
       </View>
@@ -207,15 +204,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     marginRight: -13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clearButton: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: iosSystemColors.systemGray,
-    opacity: 0.6,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -11,6 +11,7 @@ import { buildAngleGradeBars } from './community-utils';
 import { useClimbStatsHistory } from '../../lib/graphql/hooks';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { formatQuality } from '../../lib/format-climb-stats';
+import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
@@ -36,6 +37,7 @@ export const CommunitySection = memo(function CommunitySection({
   isHidden = false,
 }: CommunitySectionProps) {
   const { t } = useTranslation('session');
+  const { systemColors } = useTheme();
   const { gradeFormat } = useGradeFormat();
   const { data: history } = useClimbStatsHistory(boardName, climbUuid);
   const liveStats = useEffectiveClimbStats(boardName as BoardName, layoutId, climbUuid, angle, {
@@ -57,10 +59,10 @@ export const CommunitySection = memo(function CommunitySection({
         key={starIndex}
         name={starIndex < fullStars ? 'star.fill' : 'star'}
         size={14}
-        color={starIndex < fullStars ? iosSystemColors.starGold : iosSystemColors.systemGray4}
+        color={starIndex < fullStars ? iosSystemColors.starGold : systemColors.tertiaryLabel}
       />
     ));
-  }, [qualityNum, hasQuality]);
+  }, [qualityNum, hasQuality, systemColors.tertiaryLabel]);
 
   const angleBars = useMemo(
     () => buildAngleGradeBars(history, gradeFormat, boardName),
@@ -79,8 +81,8 @@ export const CommunitySection = memo(function CommunitySection({
       <View style={styles.container}>
         {moderationStatus}
         <View style={styles.emptyContainer}>
-          <Icon name="people" size={20} color={iosSystemColors.systemGray} />
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+          <Icon name="people" size={20} color={systemColors.secondaryLabel} />
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('mobile.community.empty')}
           </Text>
         </View>
@@ -95,7 +97,7 @@ export const CommunitySection = memo(function CommunitySection({
       {hasQuality && (
         <View style={styles.statRow}>
           <View style={styles.starsRow}>{starIcons}</View>
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {formattedQuality} &middot; {t('mobile.community.avgQuality')}
           </Text>
         </View>
@@ -103,7 +105,7 @@ export const CommunitySection = memo(function CommunitySection({
 
       {hasAscensionists && (
         <View style={styles.statRow}>
-          <Icon name="people" size={18} color={iosSystemColors.systemGray} />
+          <Icon name="people" size={18} color={systemColors.secondaryLabel} />
           <Text variant="subheadline">
             {t('mobile.community.ascensionists', { count: liveStats.ascensionistCount })}
           </Text>
@@ -112,7 +114,7 @@ export const CommunitySection = memo(function CommunitySection({
 
       {angleBars.length > 0 && (
         <View style={styles.histogram}>
-          <Text variant="footnote" color={iosSystemColors.systemGray}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
             {t('mobile.community.ascentsByAngle')}
           </Text>
           <DifficultyByAngleChart

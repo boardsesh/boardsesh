@@ -170,7 +170,9 @@ which are the explicit hexes — iOS uses `PlatformColor` for the same roles):
 | `tertiaryLabel`       | `#8E8898`                | `#6E687C`                | Tertiary text                                                                       |
 | `separator`           | `rgba(60,55,75,0.18)`    | `rgba(180,168,205,0.2)`  | Hairlines, dividers                                                                 |
 | `fill`                | `rgba(109,40,217,0.1)`   | `rgba(199,184,232,0.12)` | Faint violet track (segmented controls, fills)                                      |
-| `accent`              | `#6D28D9`                | `#A78BFA`                | Interactive-accent foreground (links, active tab). iOS uses Apple's link blue here. |
+| `accent`              | `#6D28D9`                | `#A78BFA`                | Interactive foreground. iOS brand violet adapts to Increase Contrast. |
+| `error`               | iOS `systemRed` / M3 error | iOS `systemRed` / M3 error | Destructive foreground and selected favourite hearts. |
+| `tertiaryFill`        | iOS `tertiarySystemFill` | iOS `tertiarySystemFill` | Large grouped backgrounds; `fill` is reserved for small controls. |
 
 Material tonal surfaces (`materialSurfaces`) are the same shape with M3-specific values
 (`background` `#F3EFFA` light / `#15101E` dark, `secondaryBackground` `#FFFFFF` / `#221A33`, etc.).

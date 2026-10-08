@@ -1,11 +1,12 @@
 import { useCallback } from 'react';
-import { View, StyleSheet, Switch } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
 import { ListRow } from '../ListRow';
+import { Separator } from '../Separator';
+import { SwitchRow } from '../SwitchRow';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
 type BleControlSheetProps = {
@@ -71,73 +72,44 @@ function BleControlSheet({
   }, [onDisconnect, onClose]);
 
   return (
-    // Size to content rather than a fixed snap point: with the auto-disconnect
-    // row added, a fixed '32%' clips the bottom Disconnect action on smaller
-    // screens and at larger accessibility text sizes.
-    <ModalSheet visible={visible} enableDynamicSizing onClose={onClose} enablePanDownToClose>
+    // A bounded large detent lets the scroll view reach every native Toggle and
+    // the Disconnect action at accessibility text sizes on a small iPhone.
+    <ModalSheet visible={visible} snapPoints={['90%']} scrollable onClose={onClose} enablePanDownToClose>
       <View style={styles.content}>
-        <ListRow
-          title={tSettings('ble.autoDisconnect.toggleTitle')}
-          subtitle={tSettings('ble.autoDisconnect.toggleSubtitle', { timeout: autoDisconnectTimeoutLabel })}
-          leading={<Icon name="clock" size={22} color={systemColors.secondaryLabel} />}
-          trailing={
-            <Switch
-              value={autoDisconnectEnabled}
-              pointerEvents="none"
-              accessibilityLabel={tSettings('ble.autoDisconnect.toggleAccessibility')}
-            />
-          }
-          onPress={() => onToggleAutoDisconnect(!autoDisconnectEnabled)}
-          accessibilityLabel={tSettings('ble.autoDisconnect.toggleAccessibility')}
-          showSeparator
+        {/* The app's native SwitchRow (SwiftUI Toggle / Compose Switch) instead of
+            raw RN Switches, which render system green on iOS: HIG Color asks for
+            one tint across every control. */}
+        <SwitchRow
+          label={tSettings('ble.autoDisconnect.toggleTitle')}
+          description={tSettings('ble.autoDisconnect.toggleSubtitle', { timeout: autoDisconnectTimeoutLabel })}
+          wrapDescription
+          value={autoDisconnectEnabled}
+          onValueChange={onToggleAutoDisconnect}
         />
         {showLightAdjacentHolds && (
-          <ListRow
-            title={tCommon('lightControl.lightAdjacentHolds')}
-            subtitle={tCommon('lightControl.lightAdjacentHoldsHelp')}
-            leading={<Icon name="lightbulb" size={22} color={systemColors.secondaryLabel} />}
-            trailing={
-              <Switch
-                value={lightAdjacentHoldsEnabled}
-                pointerEvents="none"
-                accessibilityLabel={tCommon('lightControl.lightAdjacentHolds')}
-              />
-            }
-            onPress={() => onToggleLightAdjacentHolds(!lightAdjacentHoldsEnabled)}
-            accessibilityLabel={tCommon('lightControl.lightAdjacentHolds')}
-            showSeparator
+          <SwitchRow
+            label={tCommon('lightControl.lightAdjacentHolds')}
+            description={tCommon('lightControl.lightAdjacentHoldsHelp')}
+            wrapDescription
+            value={lightAdjacentHoldsEnabled}
+            onValueChange={onToggleLightAdjacentHolds}
           />
         )}
-        <ListRow
-          title={tSettings('ble.lighting.onSwipeLabel')}
-          subtitle={tSettings('ble.lighting.onSwipeDescription')}
-          leading={<Icon name="lightbulb.fill" size={22} color={systemColors.secondaryLabel} />}
-          trailing={
-            <Switch
-              value={lightOnSwipe}
-              pointerEvents="none"
-              accessibilityLabel={tSettings('ble.lighting.onSwipeLabel')}
-            />
-          }
-          onPress={() => onToggleLightOnSwipe(!lightOnSwipe)}
-          accessibilityLabel={tSettings('ble.lighting.onSwipeLabel')}
-          showSeparator
+        <SwitchRow
+          label={tSettings('ble.lighting.onSwipeLabel')}
+          description={tSettings('ble.lighting.onSwipeDescription')}
+          wrapDescription
+          value={lightOnSwipe}
+          onValueChange={onToggleLightOnSwipe}
         />
-        <ListRow
-          title={tSettings('ble.lighting.onTapLabel')}
-          subtitle={tSettings('ble.lighting.onTapDescription')}
-          leading={<Icon name="lightbulb.fill" size={22} color={systemColors.secondaryLabel} />}
-          trailing={
-            <Switch
-              value={lightOnClimbTap}
-              pointerEvents="none"
-              accessibilityLabel={tSettings('ble.lighting.onTapLabel')}
-            />
-          }
-          onPress={() => onToggleLightOnClimbTap(!lightOnClimbTap)}
-          accessibilityLabel={tSettings('ble.lighting.onTapLabel')}
-          showSeparator
+        <SwitchRow
+          label={tSettings('ble.lighting.onTapLabel')}
+          description={tSettings('ble.lighting.onTapDescription')}
+          wrapDescription
+          value={lightOnClimbTap}
+          onValueChange={onToggleLightOnClimbTap}
         />
+        <Separator />
         <ListRow
           title={tSettings('ble.relightBoard')}
           leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}
@@ -152,7 +124,7 @@ function BleControlSheet({
         />
         <ListRow
           title={tCommon('lightControl.disconnect')}
-          leading={<Icon name="bluetooth.off" size={22} color={iosSystemColors.systemRed} />}
+          leading={<Icon name="bluetooth.off" size={22} color={systemColors.error} />}
           onPress={handleDisconnect}
           showSeparator={false}
         />

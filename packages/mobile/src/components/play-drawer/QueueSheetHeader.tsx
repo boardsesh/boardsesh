@@ -57,7 +57,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           >
             <Text
               variant="label"
-              color={brandColors.error}
+              color={systemColors.error}
               numberOfLines={1}
               maxFontSizeMultiplier={spec.labelMaxFontScale}
             >

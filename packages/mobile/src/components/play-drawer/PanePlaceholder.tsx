@@ -9,7 +9,7 @@ import { spacing } from '../../theme/tokens';
  * The iPad detail-pane "nothing to show yet" placeholder, shared by `IpadPlayPane`
  * (no board resolved) and `PlayDrawer`'s pane branch (no climb selected) so the two
  * states can't drift. De-emphasis uses the theme label roles (secondaryLabel /
- * tertiaryLabel) rather than opacity, so it deepens correctly in dark mode and
+ * tertiaryLabel for the icon) rather than opacity, so it deepens correctly in dark mode and
  * matches adjacent text; the icon is an adaptive system colour, not a fixed gray.
  * Callers pass the resolved safe-area padding (a top-of-shell column owns its inset).
  */
@@ -31,7 +31,7 @@ export const PanePlaceholder = memo(function PanePlaceholder({
       <Text variant="headline" color={systemColors.secondaryLabel} style={styles.title}>
         {title}
       </Text>
-      <Text variant="subheadline" color={systemColors.tertiaryLabel} style={styles.subtitle}>
+      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.subtitle}>
         {subtitle}
       </Text>
     </View>

@@ -9,6 +9,7 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   // The header reads fontScale to decide whether the crowd's second grade line
   // fits (#4796); default Dynamic Type here.
@@ -40,9 +41,12 @@ vi.mock('../../../lib/format-climb-stats', () => ({
   formatSends: (count: number) => `${count} sends`,
   formatQuality: (value: string) => value,
 }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
 vi.mock('../../Text', () => ({
-  Text: ({ children, variant }: { children?: ReactNode; variant?: string }) =>
-    createElement('span', { 'data-variant': variant }, children),
+  Text: ({ children, variant, color }: { children?: ReactNode; variant?: string; color?: string }) =>
+    createElement('span', { 'data-variant': variant, 'data-color': color }, children),
 }));
 vi.mock('../../MarqueeText', () => ({
   MarqueeText: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -77,6 +81,12 @@ describe('PlayDrawerHeader set-angle marker', () => {
   it('shows "set at N°" under the grade when statsAngle differs from the browsed angle', () => {
     const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, statsAngle: 45, angle: 40 }));
     expect(marker(container)?.textContent).toBe('mobile.climbRow.setAngleMarker:45');
+  });
+
+  it('reads the set-angle marker and the subtitle in secondaryLabel', () => {
+    const { container } = render(createElement(PlayDrawerHeader, { ...baseProps, statsAngle: 45, angle: 40 }));
+    expect(marker(container)?.getAttribute('data-color')).toBe('secondaryLabel');
+    expect(container.querySelector('[data-variant="caption1"]')?.getAttribute('data-color')).toBe('secondaryLabel');
   });
 
   it('shows nothing when statsAngle matches the browsed angle', () => {

@@ -15,7 +15,6 @@ import { withSheetBottomInset } from '../sheet-content-inset';
 import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, SEPARATOR_INSET } from '../QueueItemRow';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { Text } from '../Text';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
@@ -403,7 +402,7 @@ function QueueListComponent({
   if (rows.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text variant="body" color={iosSystemColors.systemGray}>
+        <Text variant="body" color={systemColors.secondaryLabel}>
           {t('mobile.queueSheet.emptyQueue')}
         </Text>
       </View>

@@ -5,7 +5,6 @@ import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
 import { hapticLight } from '../lib/haptics';
 import { useTheme } from '../providers/theme-provider';
-import { iosSystemColors } from '../theme/ios-colors';
 
 type ListRowProps = {
   title: string;
@@ -66,7 +65,7 @@ export function ListRow({
         {trailing && <View style={styles.trailing}>{trailing}</View>}
         {showChevron && (
           <View style={styles.chevron}>
-            <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+            <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
           </View>
         )}
       </View>

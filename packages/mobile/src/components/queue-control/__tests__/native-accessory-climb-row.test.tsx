@@ -53,6 +53,7 @@ vi.mock('../AccessoryPlayLink', () => ({
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({
     children,

@@ -125,7 +125,7 @@ export function CommentSheet({
                 <Text variant="subheadline" style={styles.commentName}>
                   {comment.userDisplayName ?? t('mobile.unknownName')}
                 </Text>
-                <Text variant="caption2" color={systemColors.tertiaryLabel}>
+                <Text variant="caption2" color={systemColors.secondaryLabel}>
                   {formatRelativeTime(comment.createdAt)}
                 </Text>
               </View>

@@ -33,6 +33,7 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 402, height: 874, scale: 3, fontScale: 1 }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
   // The step swallows Android back (useBlockBack); here it only has to exist.
   BackHandler: { addEventListener: () => ({ remove: () => {} }) },

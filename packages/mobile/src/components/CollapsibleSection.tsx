@@ -5,7 +5,7 @@ import { Text } from './Text';
 import { Icon } from './Icon';
 import { hapticSelection } from '../lib/haptics';
 import { getSectionExpandedSync, setSectionExpanded, useSectionExpanded } from '../lib/section-expand-store';
-import { iosSystemColors } from '../theme/ios-colors';
+import { useTheme } from '../providers/theme-provider';
 import { spacing, borderRadius } from '../theme/tokens';
 import { timing } from '../theme/animations';
 
@@ -54,6 +54,7 @@ export function CollapsibleSection({
   persistKey,
   children,
 }: CollapsibleSectionProps) {
+  const { systemColors } = useTheme();
   const handleHeaderLayout = useCallback(
     (event: LayoutChangeEvent) => {
       onHeaderLayout?.(event.nativeEvent.layout.height);
@@ -63,7 +64,7 @@ export function CollapsibleSection({
 
   if (keepExpanded) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: systemColors.tertiaryFill }]}>
         <View style={styles.header} onLayout={onHeaderLayout ? handleHeaderLayout : undefined}>
           <Text variant="headline" style={styles.title}>
             {title}
@@ -118,6 +119,7 @@ function CollapsibleSectionInternal({
   persistKey?: string;
   children: ReactNode;
 }) {
+  const { systemColors } = useTheme();
   // Seed from the persisted store synchronously when warm (no flash on the next
   // climb); fall back to `defaultExpanded` for a cold store or no persistKey.
   const initialExpanded = persistKey ? (getSectionExpandedSync(persistKey) ?? defaultExpanded) : defaultExpanded;
@@ -174,7 +176,7 @@ function CollapsibleSectionInternal({
   }));
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: systemColors.tertiaryFill }]}>
       {/* `headerAction` sits BETWEEN two toggle targets rather than inside one.
           Nesting it in the header pressable would leave its taps arbitrated by
           the responder system; as a sibling it simply owns them, so the Beta
@@ -210,7 +212,7 @@ function CollapsibleSectionInternal({
           hitSlop={8}
         >
           <Animated.View style={chevronStyle}>
-            <Icon name="chevron.down" size={16} color={iosSystemColors.systemGray} />
+            <Icon name="chevron.down" size={16} color={systemColors.tertiaryLabel} />
           </Animated.View>
         </Pressable>
       </View>
@@ -225,7 +227,6 @@ function CollapsibleSectionInternal({
 const styles = StyleSheet.create({
   container: {
     borderRadius: borderRadius.lg,
-    backgroundColor: `${iosSystemColors.systemGray}14`,
     overflow: 'hidden',
   },
   header: {

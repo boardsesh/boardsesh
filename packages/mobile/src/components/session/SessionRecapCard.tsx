@@ -107,7 +107,7 @@ export function SessionRecapCard({ sessionId, notes, editable = false, onEditorF
           textAlignVertical="top"
           onFocus={onEditorFocus}
         />
-        <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.helper}>
+        <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.helper}>
           {t('summary.commentHelper', { count: draft.length, max: SESSION_NOTES_MAX_LENGTH })}
         </Text>
         {updateSession.isError ? (

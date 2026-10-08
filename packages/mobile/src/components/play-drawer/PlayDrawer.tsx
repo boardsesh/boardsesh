@@ -85,6 +85,7 @@ import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
 import { ChromeIconButton } from '../ChromeIconButton';
+import { useTheme } from '../../providers/theme-provider';
 import {
   usePlaylistSuggestionSource,
   useQueueData,
@@ -317,6 +318,7 @@ export function PlayDrawer({
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
   const { t } = useTranslation('session');
+  const { systemColors } = useTheme();
   // The copy/share affordance strings live in the `climbs` namespace alongside
   // the climb-actions sheet's "Link copied" toast.
   const { t: tClimbs } = useTranslation('climbs');

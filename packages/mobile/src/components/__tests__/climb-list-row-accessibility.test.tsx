@@ -41,6 +41,7 @@ vi.mock('react-native', () => {
   });
   return {
     Platform: platform,
+    DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (name: string) => name,
     View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
       if (testID === 'climb-row') a11y.row = capture(rest);

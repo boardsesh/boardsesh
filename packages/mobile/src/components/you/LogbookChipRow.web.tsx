@@ -5,7 +5,6 @@ import { Chip, Menu } from 'react-native-paper';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import { readableTextColor } from '../grade/grade-chip-colors';
 import { anyFilterActive, buildLogbookFacets } from './LogbookChipRow.logic';
 import type { LogbookChipRowProps } from './LogbookChipRow.types';
 
@@ -20,8 +19,8 @@ function FacetChip({ active, label, onPress }: FacetChipProps) {
   const activeTheme = active
     ? {
         colors: {
-          secondaryContainer: brandColors.accent,
-          onSecondaryContainer: readableTextColor(brandColors.accent),
+          secondaryContainer: brandColors.primaryFill,
+          onSecondaryContainer: brandColors.onPrimary,
         },
       }
     : undefined;

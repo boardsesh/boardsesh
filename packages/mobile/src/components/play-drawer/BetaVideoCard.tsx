@@ -11,6 +11,7 @@ import { Icon } from '../Icon';
 import { Avatar } from '../Avatar';
 import type { IconName } from '../icon-map';
 import { useToast } from '../../providers/toast-provider';
+import { useTheme } from '../../providers/theme-provider';
 import { track } from '../../lib/analytics';
 import { openValidatedUrl } from '../../lib/open-external-link';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -49,6 +50,7 @@ export const BetaVideoCard = memo(function BetaVideoCard({
 }: Props) {
   const { t } = useTranslation('session');
   const { showToast } = useToast();
+  const { systemColors } = useTheme();
   const [imageFailed, setImageFailed] = useState(false);
 
   const onPress = useCallback(async () => {
@@ -84,7 +86,16 @@ export const BetaVideoCard = memo(function BetaVideoCard({
       onPress={onPress}
       accessibilityRole="link"
       accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [styles.card, { width: cardWidth, height: cardHeight }, pressed && styles.cardPressed]}
+      style={({ pressed }) => [
+        styles.card,
+        {
+          width: cardWidth,
+          height: cardHeight,
+          backgroundColor: systemColors.fill,
+          borderColor: systemColors.separator,
+        },
+        pressed && styles.cardPressed,
+      ]}
     >
       {link.thumbnail && !imageFailed ? (
         <Image
@@ -101,7 +112,7 @@ export const BetaVideoCard = memo(function BetaVideoCard({
         />
       ) : (
         <View style={[styles.thumbnail, styles.thumbnailFallback]}>
-          <Icon name="video" size={fallbackIconSize} color={iosSystemColors.systemGray} />
+          <Icon name="video" size={fallbackIconSize} color={systemColors.tertiaryLabel} />
         </View>
       )}
 
@@ -140,9 +151,7 @@ const styles = StyleSheet.create({
     // width/height are applied inline from the `size` prop.
     borderRadius: borderRadius.md,
     overflow: 'hidden',
-    backgroundColor: `${iosSystemColors.systemGray}1F`,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
   },
   cardPressed: {
     opacity: 0.85,

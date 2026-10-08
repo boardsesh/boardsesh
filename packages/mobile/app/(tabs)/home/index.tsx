@@ -40,7 +40,6 @@ import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../
 import { openClimbInPlayDrawer } from '../../../src/lib/open-climb-in-play-drawer';
 import { hapticLight } from '../../../src/lib/haptics';
 import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigation';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { borderRadius, spacing } from '../../../src/theme/tokens';
 import { LiveSessionsRail } from '../../../src/components/live-sessions/LiveSessionsRail';
 import { InviteSheet } from '../../../src/components/session-screen/InviteSheet';
@@ -446,7 +445,7 @@ export default function HomeTab() {
               <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
             ) : feed.isError ? (
               <View style={styles.feedState}>
-                <Icon name="error" size={32} color={iosSystemColors.systemRed} />
+                <Icon name="error" size={32} color={systemColors.error} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('errors.loadActivity')}
                 </Text>

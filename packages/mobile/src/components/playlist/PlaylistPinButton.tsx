@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { hapticSelection } from '../../lib/haptics';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 
 type PlaylistPinButtonProps = {
   isPinned: boolean;
@@ -19,7 +18,7 @@ type PlaylistPinButtonProps = {
  */
 export function PlaylistPinButton({ isPinned, onToggle, size = 22, style }: PlaylistPinButtonProps) {
   const { t } = useTranslation('playlists');
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   return (
     <Pressable
       onPress={() => {
@@ -35,7 +34,7 @@ export function PlaylistPinButton({ isPinned, onToggle, size = 22, style }: Play
       <Icon
         name={isPinned ? 'pin.fill' : 'pin'}
         size={size}
-        color={isPinned ? brandColors.primary : iosSystemColors.systemGray}
+        color={isPinned ? brandColors.primary : systemColors.secondaryLabel}
       />
     </Pressable>
   );

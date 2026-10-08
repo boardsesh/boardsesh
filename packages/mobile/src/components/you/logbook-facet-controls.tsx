@@ -20,7 +20,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { springs } from '../../theme/animations';
 import { spacing } from '../../theme/tokens';
-import { readableTextColor } from '../grade';
 import { openAndroidDatePicker } from '../logbook/native-date-picker';
 
 // Angle filter granularity — mirrors the web slider (0–70°, step 5).
@@ -48,8 +47,7 @@ export function formatIsoDate(date: Date): string {
 }
 
 // Filled-pill chip for the logbook angle min/max selectors (a horizontal chip
-// rail). Logbook-scoped, so its selected fill is amber (brandColors.accent) to
-// match the logbook chip row — not the climbs purple.
+// rail). Selected fill is the brand tint, like every other selection control.
 // memo'd + value-based onPress so the ~30 angle chips (each carrying a Reanimated
 // shared value + worklet) don't all re-render when an unrelated filter changes.
 // The rails pass a stable handler, not a per-chip arrow.
@@ -67,10 +65,9 @@ const Chip = memo(function Chip({
   const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  // Logbook-only control: selected fill is amber (brandColors.accent) to match the
-  // chip row, and amber is fill-only so the label sits in dark text. Only the fill
-  // is dynamic; the static padding/radius live in styles.chip.
-  const chipFill: ViewStyle = { backgroundColor: selected ? brandColors.accent : systemColors.fill };
+  // Selected fill is the brand tint with its on-fill label (HIG Color: one tint).
+  // Only the fill is dynamic; the static padding/radius live in styles.chip.
+  const chipFill: ViewStyle = { backgroundColor: selected ? brandColors.primaryFill : systemColors.fill };
   return (
     <AnimatedPressable
       onPress={() => {
@@ -88,11 +85,7 @@ const Chip = memo(function Chip({
       accessibilityLabel={label}
       style={[animatedStyle, styles.chip, chipFill]}
     >
-      <Text
-        variant="footnote"
-        color={selected ? readableTextColor(brandColors.accent) : undefined}
-        style={styles.chipText}
-      >
+      <Text variant="footnote" color={selected ? brandColors.onPrimary : undefined} style={styles.chipText}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -223,9 +216,9 @@ export const DateRangeRow = memo(function DateRangeRow({
               mode="date"
               display="compact"
               maximumDate={maximumDate}
-              // Logbook-only: tint the selected day + nav chevrons amber to match the
-              // chip row (the native compact picker otherwise uses the iOS system blue).
-              accentColor={brandColors.accent}
+              // Tint the selected day + nav chevrons with the brand tint (the native
+              // compact picker otherwise uses the iOS system blue).
+              accentColor={brandColors.primary}
               accessibilityLabel={label}
               onChange={handleChange}
             />

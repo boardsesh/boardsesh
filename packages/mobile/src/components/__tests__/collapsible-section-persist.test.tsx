@@ -50,6 +50,7 @@ vi.mock('react-native', () => ({
     ),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('react-native-reanimated', () => ({
@@ -61,6 +62,9 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
 vi.mock('../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { fill: 'theme-fill', tertiaryLabel: 'theme-tertiary-label' } }),
+}));
 
 const BODY = 'SECTION_BODY';
 

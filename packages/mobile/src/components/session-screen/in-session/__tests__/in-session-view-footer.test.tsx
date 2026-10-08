@@ -142,6 +142,7 @@ vi.mock('../../../../providers/theme-provider', () => ({
       separator: '#222',
     },
     brandColors: { success: '#0f0', warning: '#ff0', primary: '#00f', error: '#f00' },
+    chartColors: { secondaryLabel: '#999' },
     features: { inBodyLargeTitle: false },
   }),
 }));

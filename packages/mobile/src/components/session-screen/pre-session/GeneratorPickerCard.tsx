@@ -213,9 +213,9 @@ function GroupedSteppers({ rows }: { rows: StepperRow[] }) {
   const { systemColors, variant, m3 } = useTheme();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   // Material: a filled tonal card (surfaceVariant) with outlineVariant dividers,
-  // instead of the iOS `${systemGray}14` inset-table look.
+  // instead of the iOS `systemColors.fill` inset-table look.
   return (
-    <View style={[styles.groupedCard, isMaterial && { backgroundColor: m3.surfaceVariant }]}>
+    <View style={[styles.groupedCard, { backgroundColor: isMaterial ? m3.surfaceVariant : systemColors.fill }]}>
       {rows.map((row, index) => (
         <View key={row.key}>
           {index > 0 ? (
@@ -598,7 +598,7 @@ export function GeneratorPickerCard({
         </View>
 
         {showTallClimbsFilter || showWideClimbsFilter ? (
-          <View style={[styles.groupedCard, isMaterial && { backgroundColor: m3.surfaceVariant }]}>
+          <View style={[styles.groupedCard, { backgroundColor: isMaterial ? m3.surfaceVariant : systemColors.fill }]}>
             {showTallClimbsFilter ? (
               <SwitchRow
                 label={t('mobile.session.preGeneratorTallClimbsLabel')}
@@ -708,7 +708,6 @@ const styles = StyleSheet.create({
   },
   groupedCard: {
     borderRadius: borderRadius.lg,
-    backgroundColor: `${iosSystemColors.systemGray}14`,
     overflow: 'hidden',
   },
   groupDivider: {

@@ -52,7 +52,6 @@ import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
 import { normalizeSearchName } from '../../lib/search-name';
 import { hapticSelection, hapticSuccess } from '../../lib/haptics';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
@@ -618,14 +617,14 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
                   accessibilityLabel={t('mobile.logbook.filter')}
                   style={({ pressed }) => [
                     styles.filterButton,
-                    { backgroundColor: brandColors.accent },
+                    { backgroundColor: brandColors.primaryFill },
                     pressed && styles.filterButtonPressed,
                   ]}
                 >
-                  <Icon name="filter" size={18} color={iosSystemColors.black} />
+                  <Icon name="filter" size={18} color={brandColors.onPrimary} />
                   {activeFilterCount > 0 ? (
-                    <View style={[styles.filterBadge, { backgroundColor: iosSystemColors.black }]}>
-                      <Text variant="caption2" color={brandColors.accent} style={styles.filterBadgeText}>
+                    <View style={[styles.filterBadge, { backgroundColor: brandColors.onPrimary }]}>
+                      <Text variant="caption2" color={brandColors.primaryFill} style={styles.filterBadgeText}>
                         {activeFilterCount}
                       </Text>
                     </View>

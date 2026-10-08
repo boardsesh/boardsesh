@@ -205,7 +205,7 @@ export const SessionFeedCard = memo(function SessionFeedCard({
               {/* One line, sends first: counts in a bolder secondary colour, the
                   time·duration·board tail quieter. Weight+colour carry the tiers
                   at one 12pt size, so there's no orphaned second line. */}
-              <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.metaLine}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.metaLine}>
                 {statLine ? (
                   <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.statEmphasis}>
                     {statLine}
@@ -351,7 +351,7 @@ const BetaHero = memo(function BetaHero({
           </Text>
         ) : null}
         {username ? (
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
             @{username}
           </Text>
         ) : null}

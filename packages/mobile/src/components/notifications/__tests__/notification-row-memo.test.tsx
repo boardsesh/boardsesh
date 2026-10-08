@@ -19,6 +19,7 @@ vi.mock('react-native', () => {
       createElement(tag, null, children);
   return {
     Platform: { OS: 'ios' },
+    DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (name: string) => name,
     View: passthrough('div'),
     StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },

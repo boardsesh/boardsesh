@@ -183,6 +183,7 @@ vi.mock('@boardsesh/board-config', async (importOriginal) => ({
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   // `src/theme/colors` resolves the iOS palette at import time.
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   Alert: { alert: (...args: unknown[]) => alertMock(...args) },
   View: ({ children }: Children) => createElement('div', null, children),

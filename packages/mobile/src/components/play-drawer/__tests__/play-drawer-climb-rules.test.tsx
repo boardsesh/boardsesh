@@ -16,6 +16,7 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
   // The header drops its second grade line above a 1.3 font scale rather than
@@ -40,6 +41,9 @@ vi.mock('../../../lib/format-climb-stats', () => ({
 // `numberOfLines` is forwarded as a data attribute so the "must not truncate"
 // case below is testing the real prop rather than an attribute jsdom would drop
 // on the floor either way.
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
 vi.mock('../../Text', () => ({
   Text: ({
     children,

@@ -17,7 +17,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
 
   return (
     <RadioButton.Group
-      value={value}
+      value={value ?? ''}
       onValueChange={(next) => {
         const option = options.find((candidate) => candidate.value === next);
         if (option) handleSelect(option);

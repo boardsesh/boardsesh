@@ -471,7 +471,6 @@
       "timeoutLabel": "Desconectar después de",
       "toggleTitle": "Desconexión automática",
       "toggleSubtitle": "Desconectar después de {{timeout}} de inactividad",
-      "toggleAccessibility": "Activar o desactivar la desconexión automática",
       "timeoutOptions": {
         "10": "10 segundos",
         "15": "15 segundos",

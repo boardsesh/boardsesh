@@ -140,7 +140,6 @@ import { filtersForBoard } from '../../../src/lib/climb-filter-types';
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { timing } from '../../../src/theme/animations';
 
@@ -1777,7 +1776,7 @@ function ClimbListInner() {
       <>
         <Stack.Screen options={stackOptions} />
         <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
             {t('mobile.emptyState.boardRestoreFailed.title')}
           </Text>
@@ -1802,7 +1801,7 @@ function ClimbListInner() {
       <>
         <Stack.Screen options={stackOptions} />
         <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
             {t('mobile.emptyState.noBoard.title')}
           </Text>
@@ -1947,7 +1946,7 @@ function ClimbListInner() {
                 <Icon
                   name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
                   size={48}
-                  color={iosSystemColors.systemGray4}
+                  color={systemColors.tertiaryLabel}
                 />
                 {/* "Needs a signal" is a lie when the phone has four bars and we
                 are the ones who are down, or when the climber chose Offline
@@ -1971,7 +1970,7 @@ function ClimbListInner() {
               </View>
             ) : offlineCatalogMissing ? (
               <View style={styles.emptyContainer}>
-                <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('mobile.emptyState.offlineNoCatalog.title')}
                 </Text>
@@ -1982,7 +1981,7 @@ function ClimbListInner() {
               </View>
             ) : offlineCatalogQueued ? (
               <View style={styles.emptyContainer}>
-                <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('mobile.emptyState.offlineCatalogQueued.title')}
                 </Text>
@@ -1992,7 +1991,7 @@ function ClimbListInner() {
               </View>
             ) : isUnsetWall ? (
               <View style={styles.emptyContainer}>
-                <Icon name="add" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="add" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('mobile.emptyState.unsetWall.title')}
                 </Text>
@@ -2010,7 +2009,7 @@ function ClimbListInner() {
               </View>
             ) : isEmpty ? (
               <View style={styles.emptyContainer}>
-                <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
                 </Text>

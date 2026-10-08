@@ -16,7 +16,6 @@ import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { isSprayBoard, shouldAwaitWall } from './spray-climb-rules';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { HoldRoleSheet } from './HoldRoleSheet';
 import { useLostHoldGhosts } from './use-lost-hold-ghosts';
 import { CreateDrawer } from './CreateDrawer';
@@ -285,7 +284,7 @@ export function CreateClimbScreen({
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: systemColors.background }]} edges={['bottom']}>
         <View style={styles.centered}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.centeredTitle}>
             {t('mobile.create.unavailable.title')}
           </Text>

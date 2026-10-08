@@ -1,8 +1,8 @@
-import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, type ColorValue, type ViewStyle } from 'react-native';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 
@@ -28,7 +28,7 @@ type ActionButtonProps = {
   disabled?: boolean;
   active?: boolean;
   activeColor?: string;
-  iconColor?: string;
+  iconColor?: ColorValue;
   accessibilityLabel: string;
   /**
    * Why the button is unavailable. A disabled icon-only button is ~1.1:1
@@ -60,6 +60,7 @@ export function ActionButton({
   checked,
   accessibilityValueText,
 }: ActionButtonProps) {
+  const { systemColors } = useTheme();
   const { dim, icon } = SIZES[size];
   const buttonStyle: ViewStyle[] = [
     drawerActionBarStyles.actionButton,
@@ -70,8 +71,8 @@ export function ActionButton({
   }
 
   const resolvedColor = disabled
-    ? iosSystemColors.systemGray4
-    : (iconColor ?? (active && activeColor ? activeColor : iosSystemColors.systemGray));
+    ? systemColors.tertiaryLabel
+    : (iconColor ?? (active && activeColor ? activeColor : systemColors.secondaryLabel));
 
   return (
     <Pressable
@@ -99,8 +100,8 @@ export function ActionButton({
 
 export const drawerActionBarStyles = StyleSheet.create({
   container: {
+    // Colour comes from the theme separator at the call site (adapts to dark mode).
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
   },
   rowPrimary: {
     flexDirection: 'row',

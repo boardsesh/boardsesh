@@ -32,7 +32,8 @@ vi.mock('../../Icon', () => ({
     createElement('span', { 'data-icon': name, 'data-color': color }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
 }));
 vi.mock('../../ble/BleLightbulbButton', () => ({
   BleLightbulbButton: ({
@@ -63,12 +64,14 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
   SIZES: { lg: { dim: 48, icon: 28 }, sm: { dim: 44, icon: 22 } },
   ActionButton: ({
     iconName,
+    iconColor,
     checked,
     accessibilityLabel,
     accessibilityValueText,
     onPress,
   }: {
     iconName?: string;
+    iconColor?: string;
     checked?: boolean;
     accessibilityLabel?: string;
     accessibilityValueText?: string;
@@ -77,6 +80,7 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     createElement('div', {
       onClick: onPress,
       'data-action': iconName,
+      'data-icon-color': iconColor,
       'data-checked': checked == null ? undefined : String(checked),
       'data-label': accessibilityLabel,
       'data-value': accessibilityValueText,
@@ -106,12 +110,17 @@ vi.mock('../FirstConnectPill', () => ({
 vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#6D28D9', success: '#047857' } }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    brandColors: { primary: '#6D28D9', success: '#047857' },
-    systemColors: { fill: 'rgba(109, 40, 217, 0.14)' },
+    brandColors: { primary: '#6D28D9', success: '#047857', error: 'brandError' },
+    systemColors: {
+      fill: 'rgba(109, 40, 217, 0.14)',
+      secondaryLabel: 'secondaryLabel',
+      separator: 'separator',
+    },
+    actionColors: { favoriteSelected: 'favoriteSelected' },
   }),
 }));
 vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: { white: '#FFFFFF', systemGray: '#8E8E93', systemRed: '#FF3B30', separator: '#ccc' },
+  iosSystemColors: { white: '#FFFFFF' },
 }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { mini: 32 } }));
 const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticSelection: vi.fn() }));
@@ -167,6 +176,17 @@ describe('PlayDrawerActionBar', () => {
     expect(tick.getAttribute('data-color')).toBe('#047857');
     // The old solid-white-on-green tick is gone — no white tick glyph remains.
     expect(container.querySelector('[data-icon="tick.outline"][data-color="#FFFFFF"]')).toBeNull();
+  });
+
+  it('reads share and the angle label in secondaryLabel, and a saved heart in the one favourite red', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, isFavorited: true }));
+
+    expect(container.querySelector('[data-icon="share"]')?.getAttribute('data-color')).toBe('secondaryLabel');
+    const anglePill = container.querySelector('[data-label="mobile.angleSelector.title"]') as HTMLElement;
+    expect(anglePill.querySelector('span')?.getAttribute('data-color')).toBe('secondaryLabel');
+    expect(
+      container.querySelector(`[data-action="${ACTION_ICONS.favoriteFilled}"]`)?.getAttribute('data-icon-color'),
+    ).toBe('favoriteSelected');
   });
 
   it('suppresses the lightbulb holder pip when the header pill owns the driver face', () => {

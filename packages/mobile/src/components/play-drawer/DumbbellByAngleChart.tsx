@@ -385,7 +385,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
           </View>
         ) : null}
       </View>
-      <Text variant="caption2" color={chartColors.tertiaryLabel} allowFontScaling={false}>
+      <Text variant="caption2" color={chartColors.secondaryLabel} allowFontScaling={false}>
         {t('boardseshGrade.dumbbell.legendSize')}
       </Text>
     </View>

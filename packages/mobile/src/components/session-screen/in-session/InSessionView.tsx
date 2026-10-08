@@ -39,7 +39,6 @@ import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { withAlpha } from '../../../theme/colors';
-import { iosSystemColors } from '../../../theme/ios-colors';
 import { springs } from '../../../theme/animations';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import { gradeBadgeColor } from '../../you/profile-chart-colors';
@@ -112,15 +111,19 @@ function statusIcon(status: SessionHistoryStatus): IconName {
 }
 
 // Resolve the status tint from the current theme. `flash`/`send` are brand
-// foregrounds (lifted in dark); `attempt` stays the neutral system gray.
-function statusTint(status: SessionHistoryStatus, brand: { warning: string; success: string }): string {
+// foregrounds (lifted in dark); `attempt` takes the theme's neutral secondary label.
+function statusTint(
+  status: SessionHistoryStatus,
+  brand: { warning: string; success: string },
+  neutral: string,
+): string {
   switch (status) {
     case 'flash':
       return brand.warning;
     case 'send':
       return brand.success;
     case 'attempt':
-      return iosSystemColors.systemGray;
+      return neutral;
   }
 }
 
@@ -148,11 +151,11 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   onPress,
 }: SessionHistoryRowProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const { openClimbActions } = useDrawerHost();
   const statusIconName = statusIcon(status);
-  const statusColor = statusTint(status, brandColors);
+  const statusColor = statusTint(status, brandColors, chartColors.secondaryLabel);
   let statusLabel: string;
   switch (status) {
     case 'flash':

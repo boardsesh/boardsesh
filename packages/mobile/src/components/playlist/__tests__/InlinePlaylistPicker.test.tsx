@@ -105,6 +105,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondaryLabel: '#555',
       tertiaryLabel: '#999',
       separator: '#ccc',
+      error: '#f00',
     },
   }),
 }));
@@ -120,6 +121,37 @@ vi.mock('../../../theme/tokens', () => ({
 
 vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
+}));
+
+// The native Button is a platform-split @expo/ui tree; render its contract
+// (variant, loading, disabled) so the create form's button choice is assertable.
+vi.mock('../../Button', () => ({
+  Button: ({
+    title,
+    onPress,
+    accessibilityLabel,
+    variant,
+    loading,
+    disabled,
+  }: {
+    title: string;
+    onPress: () => void;
+    accessibilityLabel?: string;
+    variant?: string;
+    loading?: boolean;
+    disabled?: boolean;
+  }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        'aria-label': accessibilityLabel ?? title,
+        'data-variant': variant ?? 'filled',
+        'data-loading': loading ? 'true' : 'false',
+        disabled,
+      },
+      title,
+    ),
 }));
 
 vi.mock('../../Text', () => ({
@@ -448,6 +480,26 @@ describe('InlinePlaylistPicker', () => {
       });
       expect(reportHandledError).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('submits through the native filled Button, which shows its own spinner while creating', async () => {
+    const pending = deferred<Playlist>();
+    playlistContext.createPlaylist.mockReturnValueOnce(pending.promise);
+    const { getByLabelText } = renderPicker();
+
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Projects' } });
+    const submit = getByLabelText('actions.playlist.create.submit');
+    // A filled native button, not a hand-rolled white-on-brand pill (2.7:1 in dark).
+    expect(submit.getAttribute('data-variant')).toBe('filled');
+    expect(submit.getAttribute('data-loading')).toBe('false');
+
+    fireEvent.click(submit);
+    await waitFor(() => {
+      expect(getByLabelText('actions.playlist.create.submit').getAttribute('data-loading')).toBe('true');
+    });
+    expect(getByLabelText('actions.cancel').hasAttribute('disabled')).toBe(true);
+    pending.resolve(makePlaylist('p-new', 'Projects'));
   });
 
   it('creates a playlist inline and adds the climb to it', async () => {

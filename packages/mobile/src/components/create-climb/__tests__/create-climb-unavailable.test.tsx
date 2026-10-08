@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({ loading: false, canGoBack: true, back: vi.fn()
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },

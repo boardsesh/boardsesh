@@ -245,7 +245,7 @@ export function BoardForm({
         {errorMessage ? (
           <Text
             variant="footnote"
-            color={iosSystemColors.systemRed}
+            color={systemColors.error}
             style={styles.errorMessage}
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
@@ -266,7 +266,7 @@ export function BoardForm({
           ) : (
             <View style={styles.previewPlaceholder}>
               <Icon name="boards" size={40} color={systemColors.tertiaryLabel} />
-              <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.previewHint}>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.previewHint}>
                 {t('mobile.create.previewHint')}
               </Text>
             </View>
@@ -428,7 +428,7 @@ export function BoardForm({
                   autoCapitalize="characters"
                   maxLength={100}
                 />
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.serialHint}>
                   {t('mobile.create.serialHint')}
                 </Text>
 
@@ -437,7 +437,7 @@ export function BoardForm({
                   <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
                   <Text
                     variant="body"
-                    color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
+                    color={builder.timerName ? systemColors.label : systemColors.secondaryLabel}
                     numberOfLines={1}
                     style={styles.timerName}
                   >
@@ -459,7 +459,7 @@ export function BoardForm({
                     />
                   ) : null}
                 </View>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.serialHint}>
                   {t('mobile.create.timerHint')}
                 </Text>
               </>

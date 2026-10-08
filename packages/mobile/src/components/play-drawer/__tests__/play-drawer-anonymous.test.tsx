@@ -268,6 +268,9 @@ vi.mock('../../ChromeIconButton', () => ({
   useChromeIconButtonSize: () => 44,
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
 
 // --- Hooks / providers -------------------------------------------------------
 vi.mock('../../../providers/queue-provider', () => ({
