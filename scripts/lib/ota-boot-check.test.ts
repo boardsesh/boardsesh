@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   androidEasClientPrefsXml,
+  androidLaunchCommand,
   BOOT_CHECK_CLIENT_IDS,
   checkBinary,
   evidenceFromCapture,
@@ -58,6 +59,30 @@ const servedHead: ServedHead = {
   launchAssetHash: sha256HexToBase64Url(BUNDLE_SHA256),
   assetCount: 388,
 };
+
+describe('Android launcher resolution', () => {
+  it('accepts relative and fully qualified activities and quotes nested class names', () => {
+    for (const activity of ['.MainActivity', 'com.boardsesh.app.MainActivity', '.MainActivity$Launcher']) {
+      expect(androidLaunchCommand(`priority=0\ncom.boardsesh.app/${activity}\n`)).toContain(
+        `-n 'com.boardsesh.app/${activity}'`,
+      );
+    }
+  });
+
+  it.each([
+    'com.other.app/.MainActivity',
+    'com.boardsesh.app/',
+    'com.boardsesh.app/.MainActivity; touch /tmp/injected',
+    'com.boardsesh.app/.MainActivity$(touch /tmp/injected)',
+    'com.boardsesh.app/.MainActivity`id`',
+    "com.boardsesh.app/.MainActivity'",
+    'com.boardsesh.app/.MainActivity --user 0',
+    'com.boardsesh.app/.MainActivity/extra',
+    'No activity found',
+  ])('refuses invalid or executable resolver output: %s', (resolved) => {
+    expect(() => androidLaunchCommand(resolved)).toThrow('No valid launcher activity');
+  });
+});
 
 describe('which update is under test', () => {
   it('reads a stage receipt and ties it to the commit', () => {

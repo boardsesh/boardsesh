@@ -61,6 +61,7 @@ import {
   TELEMETRY_HOSTS,
   UPDATES_QUERY,
   androidEasClientPrefsXml,
+  androidLaunchCommand,
   assertBranchName,
   checkBinary,
   evidenceFromCapture,
@@ -365,9 +366,7 @@ function androidDevice(device: string): BootDevice {
       const resolved = shell(
         `cmd package resolve-activity --brief -c android.intent.category.LAUNCHER ${APP_BUNDLE_ID}`,
       ).trim();
-      const activity = resolved.split('\n').at(-1)?.trim() ?? '';
-      if (!activity.startsWith(`${APP_BUNDLE_ID}/`)) throw new Error(`No launcher activity found: ${resolved}`);
-      shell(`am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n ${activity}`);
+      shell(androidLaunchCommand(resolved));
     },
     stop() {
       shell(`am force-stop ${APP_BUNDLE_ID}`, { allowFailure: true });
@@ -398,21 +397,37 @@ function androidDevice(device: string): BootDevice {
   };
 }
 
-async function servedManifest(options: BootCheckOptions, runtimeVersion: string): Promise<unknown> {
-  // No EAS-Client-ID: an anonymous question registers no device.
-  const response = await requestManifest({
-    manifestUrl: options.manifestUrl,
-    platform: options.platform,
-    runtimeVersion,
-    appId: OTA_APP_ID,
-    branch: options.branch,
-    fetchImpl: fetch,
-  });
-  await requireSuccess(response, `${options.platform} ${options.branch} manifest`);
-  const served = classifyServedManifest(await response.text());
-  if (served.kind === 'update') return served.manifest;
-  if (served.kind === 'noUpdateAvailable') return null;
-  throw new Error(`${options.branch} answered with ${served.kind}, not an update.`);
+export async function servedManifest(
+  options: Pick<BootCheckOptions, 'manifestUrl' | 'platform' | 'branch'>,
+  runtimeVersion: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<unknown> {
+  const controller = new AbortController();
+  const deadline = setTimeout(() => {
+    controller.abort(new Error(`${options.platform} ${options.branch} manifest timed out after 30 seconds.`));
+  }, 30_000);
+  try {
+    // No EAS-Client-ID: an anonymous question registers no device.
+    const response = await requestManifest({
+      manifestUrl: options.manifestUrl,
+      platform: options.platform,
+      runtimeVersion,
+      appId: OTA_APP_ID,
+      branch: options.branch,
+      fetchImpl,
+      signal: controller.signal,
+    });
+    await requireSuccess(response, `${options.platform} ${options.branch} manifest`);
+    const served = classifyServedManifest(await response.text());
+    if (served.kind === 'update') return served.manifest;
+    if (served.kind === 'noUpdateAvailable') return null;
+    throw new Error(`${options.branch} answered with ${served.kind}, not an update.`);
+  } catch (error) {
+    controller.signal.throwIfAborted();
+    throw error;
+  } finally {
+    clearTimeout(deadline);
+  }
 }
 
 /** Reads the table, tolerating the moment a copy catches the database mid-write. */

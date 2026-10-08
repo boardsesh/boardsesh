@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -28,6 +29,7 @@ interface Step {
   if?: string;
   uses?: string;
   run?: string;
+  env?: Record<string, string>;
   with?: Record<string, unknown>;
 }
 interface Job {
@@ -173,12 +175,39 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(stepNamed(android, 'Boot the update').with).toMatchObject({ target: 'google_apis', arch: 'x86_64' });
   });
 
-  it('fails the run unless both platforms passed', () => {
+  it('fails the run unless resolution and both platform jobs succeeded and passed', () => {
     const verdict = workflow.jobs.verdict;
     expect(verdict.needs).toEqual(['resolve', 'ios', 'android']);
-    expect(stepNamed(verdict, 'Require both platforms').run).toContain(
-      'if [ "$IOS_PASSED" = "true" ] && [ "$ANDROID_PASSED" = "true" ]',
-    );
+    const step = stepNamed(verdict, 'Require both platforms');
+    expect(step.env).toMatchObject({
+      RESOLVE_RESULT: '${{ needs.resolve.result }}',
+      IOS_RESULT: '${{ needs.ios.result }}',
+      ANDROID_RESULT: '${{ needs.android.result }}',
+      IOS_PASSED: '${{ needs.ios.outputs.passed }}',
+      ANDROID_PASSED: '${{ needs.android.outputs.passed }}',
+    });
+    const green = {
+      RESOLVE_RESULT: 'success',
+      IOS_RESULT: 'success',
+      ANDROID_RESULT: 'success',
+      IOS_PASSED: 'true',
+      ANDROID_PASSED: 'true',
+      GITHUB_OUTPUT: '/dev/null',
+    };
+    const runVerdict = (overrides: Record<string, string>) =>
+      spawnSync('bash', ['-c', step.run ?? ''], {
+        env: { ...process.env, ...green, ...overrides },
+        encoding: 'utf8',
+      });
+    expect(runVerdict({}).status).toBe(0);
+    for (const resultKey of ['RESOLVE_RESULT', 'IOS_RESULT', 'ANDROID_RESULT']) {
+      for (const result of ['failure', 'cancelled', 'skipped', '']) {
+        expect(runVerdict({ [resultKey]: result }).status, `${resultKey}=${result}`).toBe(1);
+      }
+    }
+    for (const passedKey of ['IOS_PASSED', 'ANDROID_PASSED']) {
+      for (const passed of ['false', '']) expect(runVerdict({ [passedKey]: passed }).status).toBe(1);
+    }
   });
 });
 

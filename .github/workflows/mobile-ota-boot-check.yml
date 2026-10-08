@@ -412,13 +412,16 @@ jobs:
       - name: Require both platforms
         id: verdict
         env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
           IOS_PASSED: ${{ needs.ios.outputs.passed }}
           ANDROID_PASSED: ${{ needs.android.outputs.passed }}
         run: |
-          if [ "$IOS_PASSED" = "true" ] && [ "$ANDROID_PASSED" = "true" ]; then
+          if [ "$RESOLVE_RESULT" = "success" ] && [ "$IOS_RESULT" = "success" ] && [ "$ANDROID_RESULT" = "success" ] && [ "$IOS_PASSED" = "true" ] && [ "$ANDROID_PASSED" = "true" ]; then
             echo "passed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "passed=false" >> "$GITHUB_OUTPUT"
-          echo "::error::Boot check failed. ios passed: '${IOS_PASSED:-not run}', android passed: '${ANDROID_PASSED:-not run}'."
+          echo "::error::Boot check failed. resolve: '$RESOLVE_RESULT', ios: '$IOS_RESULT' (passed: '${IOS_PASSED:-not run}'), android: '$ANDROID_RESULT' (passed: '${ANDROID_PASSED:-not run}')."
           exit 1

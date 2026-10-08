@@ -1633,7 +1633,8 @@ gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch
    SHA-256 of each bundle. The `resolve` job reads it with the repository's own token. An empty `ref`
    takes the newest staged commit.
 2. **Asks the server what the branch serves**, with the headers a phone pinned to that branch sends
-   and no device id. The manifest carries no commit hash, so the tie to the commit is the bundle: the
+   and no device id. The request, retries, and response-body read share a 30-second deadline. The
+   manifest carries no commit hash, so the tie to the commit is the bundle: the
    head's `launchAsset.hash` must be the staged bundle's SHA-256. If it is not, the run fails here.
    It also fails when the server answers from another branch, which is what it does when the branch
    has nothing for that runtime version.

@@ -73,6 +73,22 @@ export function assertBranchName(branch: string): string {
   return branch;
 }
 
+/** Treat adb output as a component name, never as executable shell text. */
+export function androidLaunchCommand(resolved: string): string {
+  const activity = resolved.trim().split('\n').at(-1)?.trim() ?? '';
+  const [packageName, className, extra] = activity.split('/');
+  if (
+    packageName !== APP_BUNDLE_ID ||
+    extra !== undefined ||
+    className === undefined ||
+    !/^\.?[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(className)
+  ) {
+    throw new Error(`No valid launcher activity found: ${resolved}`);
+  }
+  // A dollar sign is valid in nested Java class names: quote even validated names.
+  return `am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n '${activity}'`;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Which update is under test
 // ---------------------------------------------------------------------------
