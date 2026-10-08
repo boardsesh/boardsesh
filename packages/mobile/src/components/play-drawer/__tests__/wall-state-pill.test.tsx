@@ -19,7 +19,7 @@ vi.mock('../../PressableSurface', async () => {
 // actually reachable. Narration is the host's job now — see
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
@@ -137,6 +137,18 @@ vi.mock('../../../theme/layout', () => ({
   WALL_STATE_PILL_TOUCH_HEIGHT: 44,
 }));
 
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
+}));
+
 import { WallStatePill } from '../WallStatePill';
 
 type WallStatePillProps = ComponentProps<typeof WallStatePill>;
@@ -160,6 +172,21 @@ beforeEach(() => {
 });
 
 describe('WallStatePill', () => {
+  it.each(['live', 'browsing'] as const)(
+    'opens %s controls once through its viewer and leaves reserved chrome inert',
+    (state) => {
+      const onPress = vi.fn();
+      const { container, rerender } = render(createElement(WallStatePill, { state, onPress }));
+      const viewer = () => container.querySelector('[data-viewer-title]')!;
+      expect(viewer().getAttribute('data-viewer-title')).toBe(pill(container).getAttribute('data-label'));
+      fireEvent.contextMenu(viewer());
+      expect(onPress).toHaveBeenCalledOnce();
+      rerender(createElement(WallStatePill, { state, reserveOnly: true }));
+      fireEvent.contextMenu(viewer());
+      expect(onPress).toHaveBeenCalledOnce();
+    },
+  );
+
   it('says "Browsing" in words and in the accent fill', () => {
     const { container } = renderPill({ state: 'browsing' });
 

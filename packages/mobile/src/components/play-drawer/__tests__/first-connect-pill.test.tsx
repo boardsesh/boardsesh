@@ -97,6 +97,18 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useFirstConnectCtaEnabled: () => flagsCtrl.enabled,
 }));
 
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
+}));
+
 const { FirstConnectPill } = await import('../FirstConnectPill');
 const { useFirstConnectPill } = await import('../use-first-connect-pill');
 
@@ -126,6 +138,19 @@ describe('FirstConnectPill', () => {
     fireEvent.click(pill);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(hapticMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the same connect action once through the viewer and keeps pending activation inert', () => {
+    const onPress = vi.fn();
+    const { container, rerender } = render(<FirstConnectPill pending={false} onPress={onPress} />);
+    const viewer = () => container.querySelector('[data-viewer-title="Light it on the board"]')!;
+    fireEvent.contextMenu(viewer());
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(hapticMock).toHaveBeenCalledOnce();
+    rerender(<FirstConnectPill pending onPress={onPress} />);
+    fireEvent.contextMenu(viewer());
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(hapticMock).toHaveBeenCalledOnce();
   });
 
   it('caps the label’s font scale like the other chrome labels', () => {

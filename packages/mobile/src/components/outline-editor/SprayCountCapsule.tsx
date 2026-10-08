@@ -12,6 +12,7 @@ import { glassSize } from '../../theme/layout';
 import { springs } from '../../theme/animations';
 import type { SprayEditorCounts } from './spray-hold-editor-reducer';
 import { SprayCountCrossfade } from './SprayCountCrossfade';
+import { LargeContentViewer } from '../LargeContentViewer';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -102,7 +103,7 @@ export const SprayCountCapsule = React.memo(function SprayCountCapsule({
           <Icon name="checkmark.circle.fill" size={CHECK_SIZE} color={brandColors.primary} />
         </Animated.View>
       ) : (
-        <>
+        <LargeContentViewer title={countLabel} onActivate={locked ? undefined : onPress}>
           <SprayCountCrossfade
             text={holdsLabel}
             value={counts.on}
@@ -122,7 +123,7 @@ export const SprayCountCapsule = React.memo(function SprayCountCapsule({
               />
             </View>
           ) : null}
-        </>
+        </LargeContentViewer>
       )}
     </PressableSurface>
   );

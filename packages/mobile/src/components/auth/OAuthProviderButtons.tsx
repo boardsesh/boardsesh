@@ -12,6 +12,8 @@ import type { OAuthProviderAvailability, OAuthProviderButtonsProps } from './OAu
 
 export type { OAuthProvider } from './OAuthProviderButtons.types';
 
+const PROVIDER_BUTTON_MIN_HEIGHT = 50;
+
 export function useOAuthProviders(): OAuthProviderAvailability {
   return {
     apple: Platform.OS === 'ios',
@@ -73,15 +75,7 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           ]}
         >
           <GoogleLogo />
-          {/* Capped so large text stays on one line inside the 50pt button, next
-              to the Apple button, which does not scale with Dynamic Type. */}
-          <Text
-            style={[styles.googleLabel, { color: googleColors.label }]}
-            numberOfLines={1}
-            maxFontSizeMultiplier={1.4}
-          >
-            {t('login.providers.google')}
-          </Text>
+          <Text style={[styles.googleLabel, { color: googleColors.label }]}>{t('login.providers.google')}</Text>
         </PressableSurface>
       ) : null}
     </View>
@@ -92,17 +86,20 @@ const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
     buttons: { gap: 12 },
     // The Apple button is a native view and needs explicit dimensions or it
-    // renders nothing. Google matches it so the pair reads as one stack.
-    providerButton: { width: '100%', height: 50 },
+    // renders nothing. Google's minimum matches it, and grows for larger text.
+    providerButton: { width: '100%', height: PROVIDER_BUTTON_MIN_HEIGHT },
     googleButton: {
+      height: 'auto',
+      minHeight: PROVIDER_BUTTON_MIN_HEIGHT,
       borderWidth: 1,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 10,
       paddingHorizontal: 16,
+      paddingVertical: 12,
     },
-    googleLabel: { fontSize: textStyles.body.fontSize, fontWeight: '600' },
+    googleLabel: { fontSize: textStyles.body.fontSize, fontWeight: '600', flexShrink: 1, textAlign: 'center' },
     disabled: { opacity: opacity.disabled },
     pressed: { opacity: 0.8 },
   });

@@ -308,7 +308,6 @@ export function RestTimerHeroClock() {
       <Text
         variant="subheadline"
         color={systemColors.secondaryLabel}
-        maxFontSizeMultiplier={REST_CLOCK_MAX_FONT_SCALE}
         style={styles.heroCaption}
         testID="rest-timer-hero-caption"
       >
@@ -395,28 +394,35 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
         style={[styles.row, { height, borderRadius: height / 2 }, compact ? styles.rowCompact : null]}
       >
         <Icon maxFontSizeMultiplier={1} name="clock" size={glyphSize} color={systemColors.secondaryLabel} />
-        <Text
-          variant={compact ? 'subheadline' : 'headline'}
-          color={numberColor}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          numberOfLines={1}
-          style={styles.tabularDigits}
-          testID="rest-timer-pill-elapsed"
+        <LargeContentViewer
+          title={!compact && secondaryLabel ? `${accessibilityLabel}. ${secondaryLabel}` : accessibilityLabel}
+          onActivate={onPress}
+          style={styles.labelViewer}
+          testID="rest-timer-pill-viewer"
         >
-          {displayLabel}
-        </Text>
-        {!compact && secondaryLabel ? (
           <Text
-            variant="footnote"
-            color={systemColors.secondaryLabel}
+            variant={compact ? 'subheadline' : 'headline'}
+            color={numberColor}
             maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
             numberOfLines={1}
-            style={styles.secondary}
-            testID="rest-timer-pill-secondary"
+            style={styles.tabularDigits}
+            testID="rest-timer-pill-elapsed"
           >
-            {secondaryLabel}
+            {displayLabel}
           </Text>
-        ) : null}
+          {!compact && secondaryLabel ? (
+            <Text
+              variant="footnote"
+              color={systemColors.secondaryLabel}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              numberOfLines={1}
+              style={styles.secondary}
+              testID="rest-timer-pill-secondary"
+            >
+              {secondaryLabel}
+            </Text>
+          ) : null}
+        </LargeContentViewer>
       </PressableSurface>
     </AccessoryBarSurface>
   );
@@ -435,6 +441,12 @@ const styles = StyleSheet.create({
   },
   pillCompact: {
     maxWidth: TOOLBAR_CAPSULE_MAX_WIDTH,
+  },
+  labelViewer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    flexShrink: 1,
   },
   row: {
     flexDirection: 'row',

@@ -30,6 +30,7 @@ import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize, WALL_LIVE_DOT_SIZE, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Icon } from '../Icon';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useWallDriver } from './use-wall-driver';
@@ -170,28 +171,32 @@ function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePil
         ) : state === 'live' ? (
           <>
             <View style={[styles.liveDot, { backgroundColor: brandColors.live }]} />
-            <Text
-              variant="caption1"
-              color={labelColor}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              style={styles.liveLabel}
-            >
-              {t('playView.wallState.live')}
-            </Text>
+            <LargeContentViewer title={accessibilityLabel} onActivate={reserveOnly ? undefined : onPress}>
+              <Text
+                variant="caption1"
+                color={labelColor}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.liveLabel}
+              >
+                {t('playView.wallState.live')}
+              </Text>
+            </LargeContentViewer>
           </>
         ) : (
           <>
             <Icon name="visibility" size={BROWSING_GLYPH_SIZE} color={brandColors.onAccent} />
-            <Text
-              variant="caption1"
-              color={brandColors.onAccent}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              style={styles.browsingLabel}
-            >
-              {t('playView.wallState.browsing')}
-            </Text>
+            <LargeContentViewer title={accessibilityLabel} onActivate={reserveOnly ? undefined : onPress}>
+              <Text
+                variant="caption1"
+                color={brandColors.onAccent}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.browsingLabel}
+              >
+                {t('playView.wallState.browsing')}
+              </Text>
+            </LargeContentViewer>
           </>
         )}
       </Animated.View>

@@ -3,6 +3,7 @@ import { StyleSheet, View, type ColorValue } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, type SharedValue } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
 import { GlassSurface } from '../GlassSurface';
@@ -318,19 +319,21 @@ const SprayHoldChip = React.memo(function SprayHoldChip({
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
-      {iconName ? (
-        <Icon name={iconName} size={STEP_ICON_SIZE} color={color} />
-      ) : (
-        <Text
-          variant="subheadline"
-          color={color}
-          numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.chipLabel}
-        >
-          {label}
-        </Text>
-      )}
+      <LargeContentViewer title={label} onActivate={disabled ? undefined : onPress}>
+        {iconName ? (
+          <Icon name={iconName} size={STEP_ICON_SIZE} color={color} />
+        ) : (
+          <Text
+            variant="subheadline"
+            color={color}
+            numberOfLines={1}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.chipLabel}
+          >
+            {label}
+          </Text>
+        )}
+      </LargeContentViewer>
     </PressableSurface>
   );
 });

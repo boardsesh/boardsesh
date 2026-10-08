@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../../../src/components/ReadableColumn';
 import { AccessibleTextInput as TextInput } from '../../../src/components/AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../../src/hooks/use-typography-styles';
 import { PressableSurface } from '../../../src/components/PressableSurface';
@@ -100,16 +101,18 @@ export default function AllPlaylistsScreen() {
   // Signed-out (reachable only via deep link — the entry points are gated on auth).
   if (!isAuthenticated && !authLoading) {
     return (
-      <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="person" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
-          {t('library.signInBanner.title')}
-        </Text>
-        <PressableSurface onPress={() => router.push('/auth/login')} accessibilityRole="button" hitSlop={8}>
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
-            {t('library.signInBanner.cta')}
+      <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
+        <ReadableColumn style={[styles.readableViewport, styles.centered]}>
+          <Icon name="person" size={48} color={systemColors.tertiaryLabel} />
+          <Text variant="headline" style={styles.stateTitle}>
+            {t('library.signInBanner.title')}
           </Text>
-        </PressableSurface>
+          <PressableSurface onPress={() => router.push('/auth/login')} accessibilityRole="button" hitSlop={8}>
+            <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+              {t('library.signInBanner.cta')}
+            </Text>
+          </PressableSurface>
+        </ReadableColumn>
       </View>
     );
   }
@@ -119,24 +122,26 @@ export default function AllPlaylistsScreen() {
   // isLoading back on, so the spinner branch below takes over while it's inflight.
   if (hasError && !isLoading && playlists.length === 0) {
     return (
-      <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
-          {t('library.errors.loadTitle')}
-        </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
-          {t('library.errors.loadDescription')}
-        </Text>
-        <PressableSurface
-          onPress={refetch}
-          accessibilityRole="button"
-          accessibilityLabel={t('library.errors.tryAgain')}
-          hitSlop={8}
-        >
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
-            {t('library.errors.tryAgain')}
+      <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
+        <ReadableColumn style={[styles.readableViewport, styles.centered]}>
+          <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+          <Text variant="headline" style={styles.stateTitle}>
+            {t('library.errors.loadTitle')}
           </Text>
-        </PressableSurface>
+          <Text variant="subheadline" style={styles.stateSubtitle}>
+            {t('library.errors.loadDescription')}
+          </Text>
+          <PressableSurface
+            onPress={refetch}
+            accessibilityRole="button"
+            accessibilityLabel={t('library.errors.tryAgain')}
+            hitSlop={8}
+          >
+            <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+              {t('library.errors.tryAgain')}
+            </Text>
+          </PressableSurface>
+        </ReadableColumn>
       </View>
     );
   }
@@ -146,93 +151,95 @@ export default function AllPlaylistsScreen() {
 
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
-      <View style={styles.searchWrap}>
-        <View style={[styles.searchField, { backgroundColor: systemColors.fill }]}>
-          <Icon name="search" size={18} color={systemColors.secondaryLabel} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder={t('library.allPlaylists.searchPlaceholder')}
-            placeholderTextColor={systemColors.tertiaryLabel}
-            style={[styles.searchInput, { color: systemColors.label }]}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            accessibilityLabel={t('library.allPlaylists.searchPlaceholder')}
-          />
-          {query.length > 0 ? (
-            <PressableSurface
-              onPress={() => setQuery('')}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={t('library.allPlaylists.clearSearch')}
-            >
-              <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-            </PressableSurface>
-          ) : null}
-        </View>
-      </View>
-
-      {showInitialSpinner ? (
-        <View style={[styles.flex, styles.centered]}>
-          <ActivityIndicator size="large" />
-        </View>
-      ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={(item) => item.uuid}
-          renderItem={renderItem}
-          ItemSeparatorComponent={PlaylistListRowSeparator}
-          contentContainerStyle={{ paddingBottom: bottomChrome.scrollBottomPadding + spacing[6] }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          // Pull to refresh (HIG Refresh content controls). `refetch` reports
-          // progress through `isLoading`, so the spinner holds until it clears.
-          refreshControl={
-            <RefreshControl
-              refreshing={pullRefresh.refreshing}
-              onRefresh={pullRefresh.onRefresh}
-              tintColor={brandColors.primary}
+      <ReadableColumn style={styles.readableViewport}>
+        <View style={styles.searchWrap}>
+          <View style={[styles.searchField, { backgroundColor: systemColors.fill }]}>
+            <Icon name="search" size={18} color={systemColors.secondaryLabel} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t('library.allPlaylists.searchPlaceholder')}
+              placeholderTextColor={systemColors.tertiaryLabel}
+              style={[styles.searchInput, { color: systemColors.label }]}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel={t('library.allPlaylists.searchPlaceholder')}
             />
-          }
-          ListEmptyComponent={
-            <View style={[styles.centered, styles.emptyBlock]}>
-              <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.stateTitle}>
-                {playlists.length === 0
-                  ? t('library.empty.title')
-                  : t('library.allPlaylists.noResults', { query: query.trim() })}
-              </Text>
-              {playlists.length === 0 ? (
-                <Text variant="subheadline" style={styles.stateSubtitle}>
-                  {t('library.empty.description')}
-                </Text>
-              ) : null}
-            </View>
-          }
-          ListFooterComponent={
-            hasLoadMoreError ? (
+            {query.length > 0 ? (
               <PressableSurface
-                style={styles.footer}
-                onPress={retryLoadMore}
+                onPress={() => setQuery('')}
+                hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={`${t('library.allPlaylists.loadMoreError')} ${t('library.errors.tryAgain')}`}
+                accessibilityLabel={t('library.allPlaylists.clearSearch')}
               >
-                <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
-                  {t('library.allPlaylists.loadMoreError')}
-                </Text>
-                <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
-                  {t('library.errors.tryAgain')}
-                </Text>
+                <Icon name="close" size={16} color={systemColors.secondaryLabel} />
               </PressableSurface>
-            ) : showDrainingFooter ? (
-              <View style={styles.footer}>
-                <ActivityIndicator size="small" />
+            ) : null}
+          </View>
+        </View>
+
+        {showInitialSpinner ? (
+          <View style={[styles.flex, styles.centered]}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : (
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => item.uuid}
+            renderItem={renderItem}
+            ItemSeparatorComponent={PlaylistListRowSeparator}
+            contentContainerStyle={{ paddingBottom: bottomChrome.scrollBottomPadding + spacing[6] }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            // Pull to refresh (HIG Refresh content controls). `refetch` reports
+            // progress through `isLoading`, so the spinner holds until it clears.
+            refreshControl={
+              <RefreshControl
+                refreshing={pullRefresh.refreshing}
+                onRefresh={pullRefresh.onRefresh}
+                tintColor={brandColors.primary}
+              />
+            }
+            ListEmptyComponent={
+              <View style={[styles.centered, styles.emptyBlock]}>
+                <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.stateTitle}>
+                  {playlists.length === 0
+                    ? t('library.empty.title')
+                    : t('library.allPlaylists.noResults', { query: query.trim() })}
+                </Text>
+                {playlists.length === 0 ? (
+                  <Text variant="subheadline" style={styles.stateSubtitle}>
+                    {t('library.empty.description')}
+                  </Text>
+                ) : null}
               </View>
-            ) : null
-          }
-        />
-      )}
+            }
+            ListFooterComponent={
+              hasLoadMoreError ? (
+                <PressableSurface
+                  style={styles.footer}
+                  onPress={retryLoadMore}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t('library.allPlaylists.loadMoreError')} ${t('library.errors.tryAgain')}`}
+                >
+                  <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
+                    {t('library.allPlaylists.loadMoreError')}
+                  </Text>
+                  <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
+                    {t('library.errors.tryAgain')}
+                  </Text>
+                </PressableSurface>
+              ) : showDrainingFooter ? (
+                <View style={styles.footer}>
+                  <ActivityIndicator size="small" />
+                </View>
+              ) : null
+            }
+          />
+        )}
+      </ReadableColumn>
     </View>
   );
 }
@@ -243,6 +250,7 @@ const STATE_BLOCK_TOP_INSET = spacing[16] + spacing[4];
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
+    readableViewport: { flex: 1, minHeight: 0, minWidth: 0 },
     flex: {
       flex: 1,
     },

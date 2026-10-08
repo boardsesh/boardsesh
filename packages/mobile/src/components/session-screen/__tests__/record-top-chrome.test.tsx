@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, isValidElement, type ReactNode } from 'react';
 
 type ChromeProps = {
@@ -107,6 +107,17 @@ vi.mock('../../chrome', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
+}));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     children,
@@ -157,6 +168,24 @@ describe('RecordTopChrome', () => {
     appbar.contentPress = null;
     appbar.contentAria = null;
     appbar.contentHint = null;
+  });
+
+  it.each([
+    ['glass', 'end'],
+    ['glass', 'leave'],
+    ['material', 'end'],
+    ['material', 'leave'],
+  ] as const)('activates the %s %s exit once through its capped label viewer', (variant, exitVariant) => {
+    ctrl.variant = variant;
+    const onEndSession = vi.fn();
+    const { container } = render(<RecordTopChrome {...makeProps({ onEndSession, exitVariant })} />);
+    const title = exitVariant === 'leave' ? 'mobile.session.inLeave' : 'mobile.session.inStop';
+    const viewer = container.querySelector(`[data-viewer-title="${title}"]`);
+    expect(viewer).not.toBeNull();
+    expect(viewer?.closest('button')).not.toBeNull();
+    expect(viewer?.querySelector('[data-icon]')).toBeNull();
+    fireEvent.contextMenu(viewer!);
+    expect(onEndSession).toHaveBeenCalledOnce();
   });
 
   it('gates the create island off (canCreate=false)', () => {

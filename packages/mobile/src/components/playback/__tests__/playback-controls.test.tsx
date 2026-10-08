@@ -127,6 +127,23 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) =>
+    createElement(
+      'div',
+      { 'data-viewer-title': title, 'data-viewer-activates': String(Boolean(onActivate)) },
+      children,
+    ),
+}));
+
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -363,6 +380,9 @@ describe('PlaybackControls — creator frame strip', () => {
     expect(chips).toHaveLength(3);
     expect(editPair).toBeTruthy();
     expect(strip?.textContent).toContain('On the wall');
+    const viewer = strip?.querySelector('[data-viewer-title="On the wall"]');
+    expect(viewer?.textContent).toBe('On the wall');
+    expect(viewer?.getAttribute('data-viewer-activates')).toBe('false');
   });
 });
 

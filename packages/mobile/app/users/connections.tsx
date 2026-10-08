@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../../src/components/ReadableColumn';
 import { useCallback, useEffect, useMemo } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -132,53 +133,56 @@ export default function ConnectionsScreen() {
 
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
-      <FlashList
-        data={showSpinner || showError || showOffline ? EMPTY_PEOPLE : people}
-        renderItem={renderItem}
-        keyExtractor={(person) => person.id}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom }}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        ListEmptyComponent={
-          showOffline && offline.reason ? (
-            <OfflineState reason={offline.reason} onRetry={() => void activeQuery.refetch()} />
-          ) : showSpinner ? (
-            <View style={styles.stateBlock}>
-              <ActivityIndicator size="large" />
-            </View>
-          ) : showError ? (
-            <ClimberSearchErrorState onRetry={() => void activeQuery.refetch()} />
-          ) : (
-            <View style={styles.stateBlock}>
-              <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.stateTitle}>
-                {MODE_EMPTY_KEYS[mode](t)}
-              </Text>
-            </View>
-          )
-        }
-        ListFooterComponent={
-          activeQuery.isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : null
-        }
-        refreshControl={
-          <RefreshControl
-            refreshing={activeQuery.isRefetching}
-            onRefresh={() => void activeQuery.refetch()}
-            tintColor={brandColors.primary}
-          />
-        }
-      />
+      <ReadableColumn style={styles.readableViewport}>
+        <FlashList
+          data={showSpinner || showError || showOffline ? EMPTY_PEOPLE : people}
+          renderItem={renderItem}
+          keyExtractor={(person) => person.id}
+          contentInsetAdjustmentBehavior="automatic"
+          contentContainerStyle={{ paddingBottom }}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListEmptyComponent={
+            showOffline && offline.reason ? (
+              <OfflineState reason={offline.reason} onRetry={() => void activeQuery.refetch()} />
+            ) : showSpinner ? (
+              <View style={styles.stateBlock}>
+                <ActivityIndicator size="large" />
+              </View>
+            ) : showError ? (
+              <ClimberSearchErrorState onRetry={() => void activeQuery.refetch()} />
+            ) : (
+              <View style={styles.stateBlock}>
+                <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.stateTitle}>
+                  {MODE_EMPTY_KEYS[mode](t)}
+                </Text>
+              </View>
+            )
+          }
+          ListFooterComponent={
+            activeQuery.isFetchingNextPage ? (
+              <View style={styles.footer}>
+                <ActivityIndicator size="small" />
+              </View>
+            ) : null
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={activeQuery.isRefetching}
+              onRefresh={() => void activeQuery.refetch()}
+              tintColor={brandColors.primary}
+            />
+          }
+        />
+      </ReadableColumn>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  readableViewport: { flex: 1, minHeight: 0, minWidth: 0 },
   stateBlock: {
     alignItems: 'center',
     justifyContent: 'center',

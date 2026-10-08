@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Icon } from '../Icon';
 import { ChromeIconButton, useChromeIconButtonSize } from '../ChromeIconButton';
 import { useTheme } from '../../providers/theme-provider';
@@ -98,15 +99,17 @@ export function SessionScreenHeader({
               style={styles.shareButton}
             >
               {inviteHint ? (
-                <Text
-                  variant="subheadline"
-                  color={systemColors.label}
-                  numberOfLines={1}
-                  maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                  style={styles.shareLabel}
-                >
-                  {t('mobile.session.inviteAction')}
-                </Text>
+                <LargeContentViewer title={t('mobile.session.inviteAction')} onActivate={onShare}>
+                  <Text
+                    variant="subheadline"
+                    color={systemColors.label}
+                    numberOfLines={1}
+                    maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                    style={styles.shareLabel}
+                  >
+                    {t('mobile.session.inviteAction')}
+                  </Text>
+                </LargeContentViewer>
               ) : null}
               <Icon maxFontSizeMultiplier={1} name="share" size={22} color={systemColors.label} />
             </PressableSurface>
@@ -128,17 +131,19 @@ export function SessionScreenHeader({
                 size={22}
                 color={exitTint}
               />
-              <Text
-                variant="subheadline"
-                color={exitTint}
-                numberOfLines={1}
-                // The strip's controls are pinned to 40dp, so the label has to
-                // stop growing before it clips.
-                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.exitLabel}
-              >
-                {exitActionLabel}
-              </Text>
+              <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
+                <Text
+                  variant="subheadline"
+                  color={exitTint}
+                  numberOfLines={1}
+                  // The strip's controls are pinned to 40dp, so the label has to
+                  // stop growing before it clips.
+                  maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                  style={styles.exitLabel}
+                >
+                  {exitActionLabel}
+                </Text>
+              </LargeContentViewer>
             </PressableSurface>
           ) : null}
         </View>

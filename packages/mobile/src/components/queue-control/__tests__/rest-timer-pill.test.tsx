@@ -25,6 +25,7 @@ const harness = vi.hoisted(() => ({
   settings: {} as Record<string, unknown>,
   reduceMotion: false,
   pressable: null as PressableProps | null,
+  viewer: null as { title: string; onActivate?: () => void } | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -70,6 +71,23 @@ vi.mock('../../../theme/typography', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children, color, testID }: { children?: ReactNode; color?: string; testID?: string }) =>
     createElement('span', { 'data-text': 'true', 'data-color': color ?? '', 'data-testid': testID }, children),
+}));
+
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    testID,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    testID?: string;
+    children?: ReactNode;
+  }) => {
+    harness.viewer = { title, onActivate };
+    return createElement('div', { 'data-viewer-title': title, 'data-testid': testID }, children);
+  },
 }));
 
 vi.mock('../../Icon', () => ({
@@ -143,6 +161,7 @@ describe('RestTimerPill', () => {
     harness.nowMs = START_MS;
     harness.reduceMotion = false;
     harness.pressable = null;
+    harness.viewer = null;
     harness.settings = { restTimerTargetSeconds: 60, restTimerMode: 'afterTick', restTimerAutoAdvance: false };
   });
 
@@ -166,6 +185,8 @@ describe('RestTimerPill', () => {
       'mobile.restTimer.waitingForTick',
     );
     expect(elapsedColor(container)).toBe('#AAAAAA');
+    expect(harness.viewer?.title).toBe('mobile.restTimer.noTickAria:1m. mobile.restTimer.waitingForTick');
+
     expect(container.querySelector('[data-testid="rest-timer-pill"]')?.getAttribute('data-label')).toBe(
       'mobile.restTimer.noTickAria:1m',
     );
@@ -238,6 +259,25 @@ describe('RestTimerPill', () => {
       'mobile.restTimer.pausedAria:0:40',
     );
   });
+
+  it.each([false, true])(
+    'enlarges only timer labels and opens the sheet while preserving icon long-press (compact=%s)',
+    (compact) => {
+      armWithTick();
+      const onPress = vi.fn();
+      const { getByTestId } = render(<RestTimerPill onPress={onPress} compact={compact} />);
+      advanceSeconds(30);
+      const viewer = getByTestId('rest-timer-pill-viewer');
+      expect(viewer.getAttribute('data-viewer-title')).toBe('mobile.restTimer.countdownAria:0:30');
+      expect(viewer.querySelector('[data-icon="clock"]')).toBeNull();
+      expect(getByTestId('rest-timer-pill').querySelector('[data-icon="clock"]')).toBeTruthy();
+      act(() => harness.viewer?.onActivate?.());
+      expect(onPress).toHaveBeenCalledTimes(1);
+      act(() => harness.pressable?.onLongPress?.());
+      expect(getRestTimerState().isRunning).toBe(false);
+      expect(onPress).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('opens the sheet on tap', () => {
     const onPress = vi.fn();

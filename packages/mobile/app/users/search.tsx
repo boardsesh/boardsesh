@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../../src/components/ReadableColumn';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -107,51 +108,54 @@ export default function ClimberSearchScreen() {
         }}
       />
 
-      <View style={styles.searchRow}>
-        <SearchField
-          ref={inputRef}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder={t('mobile.social.searchPlaceholder')}
-          clearAccessibilityLabel={t('mobile.social.clearSearch')}
-          autoFocus
-        />
-      </View>
+      <ReadableColumn style={styles.readableViewport}>
+        <View style={styles.searchRow}>
+          <SearchField
+            ref={inputRef}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('mobile.social.searchPlaceholder')}
+            clearAccessibilityLabel={t('mobile.social.clearSearch')}
+            autoFocus
+          />
+        </View>
 
-      <FlashList
-        data={visiblePeople}
-        renderItem={renderItem}
-        keyExtractor={(person) => person.id}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        contentContainerStyle={{ paddingBottom }}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        ListEmptyComponent={
-          showOffline && offline.reason ? (
-            <OfflineState reason={offline.reason} onRetry={() => void search.refetch()} />
-          ) : showInitialSpinner ? (
-            <ClimberSearchLoadingState />
-          ) : showError ? (
-            <ClimberSearchErrorState onRetry={() => void search.refetch()} />
-          ) : (
-            <ClimberSearchEmptyState query={trimmedSearchQuery} />
-          )
-        }
-        ListFooterComponent={
-          search.isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : null
-        }
-      />
+        <FlashList
+          data={visiblePeople}
+          renderItem={renderItem}
+          keyExtractor={(person) => person.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ paddingBottom }}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListEmptyComponent={
+            showOffline && offline.reason ? (
+              <OfflineState reason={offline.reason} onRetry={() => void search.refetch()} />
+            ) : showInitialSpinner ? (
+              <ClimberSearchLoadingState />
+            ) : showError ? (
+              <ClimberSearchErrorState onRetry={() => void search.refetch()} />
+            ) : (
+              <ClimberSearchEmptyState query={trimmedSearchQuery} />
+            )
+          }
+          ListFooterComponent={
+            search.isFetchingNextPage ? (
+              <View style={styles.footer}>
+                <ActivityIndicator size="small" />
+              </View>
+            ) : null
+          }
+        />
+      </ReadableColumn>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  readableViewport: { flex: 1, minHeight: 0, minWidth: 0 },
   searchRow: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],

@@ -6,6 +6,7 @@ import { Appbar } from 'react-native-paper';
 import { CollapsingTopChrome, GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { PressableSurface } from '../PressableSurface';
 import { iconMap } from '../icon-map';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
@@ -171,15 +172,17 @@ export function RecordTopChrome({
               style={[styles.materialExitAction, { borderRadius: radii.button }]}
             >
               <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
-              <Text
-                variant="subheadline"
-                color={exitTint}
-                numberOfLines={1}
-                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.exitLabel}
-              >
-                {exitActionLabel}
-              </Text>
+              <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
+                <Text
+                  variant="subheadline"
+                  color={exitTint}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                  style={styles.exitLabel}
+                >
+                  {exitActionLabel}
+                </Text>
+              </LargeContentViewer>
             </PressableSurface>
           ) : null}
         </Appbar.Header>
@@ -212,17 +215,19 @@ export function RecordTopChrome({
       style={styles.glassExitAction}
     >
       <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
-      <Text
-        variant="subheadline"
-        color={exitTint}
-        numberOfLines={1}
-        // The pill's height is pinned to the glass slot ladder, so the label has
-        // to stop growing before it clips.
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.exitLabel}
-      >
-        {exitActionLabel}
-      </Text>
+      <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
+        <Text
+          variant="subheadline"
+          color={exitTint}
+          numberOfLines={1}
+          // The pill's height is pinned to the glass slot ladder, so the label has
+          // to stop growing before it clips.
+          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          style={styles.exitLabel}
+        >
+          {exitActionLabel}
+        </Text>
+      </LargeContentViewer>
     </PressableSurface>
   ) : undefined;
 

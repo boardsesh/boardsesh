@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Icon } from '../Icon';
 import { GlassCluster } from '../GlassCluster';
 import { ValuePill } from '../ValuePill';
@@ -300,19 +301,21 @@ function FrameStrip({
       </View>
 
       {wallStateLabel ? (
-        <Text
-          variant="caption1"
-          color={systemColors.secondaryLabel}
-          numberOfLines={1}
-          // Capped below the 1.5 default: this row is a fixed 32dp inside a card
-          // that clips, and caption1's 16dp line box at 1.5 plus 8dp of padding
-          // is exactly 32 with nothing spare. The reader's copy of this chip, in
-          // the transport row, keeps the full range.
-          maxFontSizeMultiplier={1.2}
-          style={[styles.wallStateChip, { backgroundColor: systemColors.fill }]}
-        >
-          {wallStateLabel}
-        </Text>
+        <LargeContentViewer title={wallStateLabel}>
+          <Text
+            variant="caption1"
+            color={systemColors.secondaryLabel}
+            numberOfLines={1}
+            // Capped below the 1.5 default: this row is a fixed 32dp inside a card
+            // that clips, and caption1's 16dp line box at 1.5 plus 8dp of padding
+            // is exactly 32 with nothing spare. The reader's copy of this chip, in
+            // the transport row, keeps the full range.
+            maxFontSizeMultiplier={1.2}
+            style={[styles.wallStateChip, { backgroundColor: systemColors.fill }]}
+          >
+            {wallStateLabel}
+          </Text>
+        </LargeContentViewer>
       ) : null}
     </View>
   );

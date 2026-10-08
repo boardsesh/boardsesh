@@ -412,16 +412,18 @@ export const SheetTopBar = React.memo(function SheetTopBar({
           ]}
         >
           {error ? (
-            <Text
-              variant="footnote"
-              color={brandColors.error}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              accessibilityRole="alert"
-              accessibilityLiveRegion="polite"
-            >
-              {error}
-            </Text>
+            <LargeContentViewer title={error}>
+              <Text
+                variant="footnote"
+                color={brandColors.error}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                {error}
+              </Text>
+            </LargeContentViewer>
           ) : null}
         </View>
       ) : null}

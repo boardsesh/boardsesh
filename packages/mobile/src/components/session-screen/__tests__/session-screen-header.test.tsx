@@ -13,7 +13,7 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 vi.mock('react-native', () => ({
@@ -39,6 +39,17 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../Text', () => ({
   Text: ({ children, color }: { children?: ReactNode; color?: unknown }) =>
     createElement('span', { 'data-text-color': typeof color === 'string' ? color : '' }, children),
+}));
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: unknown }) =>
@@ -79,6 +90,37 @@ const MINIMIZE = '[data-label="mobile.session.minimize"]';
 describe('SessionScreenHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it.each(['end', 'leave'] as const)(
+    'keeps the %s viewer on the label and activates the existing exit once',
+    (exitVariant) => {
+      const onEndSession = vi.fn();
+      const { container } = render(
+        <SessionScreenHeader sessionActive onEndSession={onEndSession} exitVariant={exitVariant} />,
+      );
+      const title = exitVariant === 'leave' ? 'mobile.session.inLeave' : 'mobile.session.inStop';
+      const viewer = container.querySelector(`[data-viewer-title="${title}"]`);
+      expect(viewer?.closest('button')).not.toBeNull();
+      expect(viewer?.querySelector('[data-icon]')).toBeNull();
+      fireEvent.contextMenu(viewer!);
+      expect(onEndSession).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('activates Invite once through its label and preserves the icon-only control without a hint', () => {
+    const onShare = vi.fn();
+    const { container, rerender } = render(<SessionScreenHeader sessionActive onShare={onShare} inviteHint />);
+    const viewer = container.querySelector('[data-viewer-title="mobile.session.inviteAction"]');
+    expect(viewer?.querySelector('[data-icon]')).toBeNull();
+    fireEvent.contextMenu(viewer!);
+    expect(onShare).toHaveBeenCalledOnce();
+    rerender(<SessionScreenHeader sessionActive onShare={onShare} />);
+    expect(container.querySelector('[data-viewer-title]')).toBeNull();
+    const share = container.querySelector(SHARE);
+    expect(share?.querySelector('[data-icon="share"]')).not.toBeNull();
+    fireEvent.click(share!);
+    expect(onShare).toHaveBeenCalledTimes(2);
   });
 
   it('docks an End control (calling onEndSession) when onEndSession is provided', () => {
