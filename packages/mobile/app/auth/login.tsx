@@ -329,17 +329,25 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
+    // A long translation ("Noch kein Konto? Registrieren") drops the link onto
+    // its own line instead of running off the screen (HIG Localization: leave
+    // room for text that grows).
+    flexWrap: 'wrap',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 24,
   },
   troubleRow: {
     flexDirection: 'row',
+    // A long translation ("Noch kein Konto? Registrieren") drops the link onto
+    // its own line instead of running off the screen (HIG Localization: leave
+    // room for text that grows).
+    flexWrap: 'wrap',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
   },
-  footerText: { fontSize: 15 },
+  footerText: { fontSize: 15, textAlign: 'center' },
   footerLink: { fontSize: 15, fontWeight: '600' },
   // Keeps the tappable area at the 44pt/48dp minimum.
   footerLinkHit: { minHeight: 44, justifyContent: 'center' },

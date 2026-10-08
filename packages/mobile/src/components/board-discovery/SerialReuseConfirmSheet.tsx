@@ -106,7 +106,6 @@ export function SerialReuseConfirmSheet({
               title={t('boardForm.serialReuse.useExisting')}
               onPress={onUseExisting}
               variant="filled"
-              size="large"
               style={styles.primaryAction}
             />
           ) : null}

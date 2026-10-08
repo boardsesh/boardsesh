@@ -3,8 +3,59 @@
 // "what happens on tap", and it can be unit-tested without mounting a native
 // @expo/ui tree. Mirrors SwitchRow.logic.ts.
 
+import type { TextProps as ComposeTextProps } from '@expo/ui/jetpack-compose';
 import type { ViewStyle } from 'react-native';
 import { hapticLight } from '../lib/haptics';
+import type { ButtonVariant } from './Button.types';
+
+/**
+ * How far any Button label may grow with the OS text size when the caller sets
+ * no cap: 1.5x, the same ceiling every `Text` has (`maxFontSizeMultiplier={1.5}`
+ * in Text.tsx). On iOS that resolves to the `xxxLarge` Dynamic Type size (body
+ * 23pt, 1.35x), so a button label never outgrows the copy around it. A caller's
+ * own cap (the tick bar's 1.3) still wins.
+ */
+export const DEFAULT_BUTTON_MAX_FONT_SCALE = 1.5;
+
+/** The cap a Button applies: the caller's, else {@link DEFAULT_BUTTON_MAX_FONT_SCALE}. */
+export function resolveButtonMaxFontScale(maxFontSizeMultiplier: number | undefined): number {
+  return maxFontSizeMultiplier ?? DEFAULT_BUTTON_MAX_FONT_SCALE;
+}
+
+/** The SwiftUI button style the iOS Button actually draws. */
+export type IosButtonStyle = 'borderedProminent' | 'glassProminent' | 'glass' | 'bordered' | 'borderless';
+
+/**
+ * Which native style a tier draws. Filled is always `borderedProminent`; text is
+ * `borderless`. The outlined/tonal middle tier depends on the surface: over
+ * board art (`over="content"`) it becomes a solid scrim `borderedProminent`,
+ * otherwise Liquid Glass on iOS 26 and `bordered` before it.
+ */
+export function resolveIosButtonStyle({
+  variant,
+  overContent,
+  supportsGlass,
+}: {
+  variant: ButtonVariant;
+  overContent: boolean;
+  supportsGlass: boolean;
+}): IosButtonStyle {
+  if (variant === 'filled') return 'borderedProminent';
+  if (variant === 'text') return 'borderless';
+  if (overContent) return 'borderedProminent';
+  return supportsGlass ? 'glass' : 'bordered';
+}
+
+/**
+ * The SwiftUI label weight for the style actually drawn. Prominent styles are
+ * semibold, like a system `.borderedProminent` call to action; bordered, glass
+ * and borderless buttons are regular weight, as the system draws them (HIG
+ * Buttons). Keyed on the drawn style, not the tier, so an outlined button that
+ * turns into a solid scrim pill over board art gets the prominent weight.
+ */
+export function buttonLabelWeight(style: IosButtonStyle): 'semibold' | 'regular' {
+  return style === 'borderedProminent' || style === 'glassProminent' ? 'semibold' : 'regular';
+}
 
 /**
  * Whether a Button's `style` asks it to fill its row's width. Only a POSITIVE
@@ -132,4 +183,23 @@ export function cappedComposeLabelSize(
 ): number | undefined {
   if (maxScale == null || fontScale <= maxScale) return undefined;
   return (defaultSize * maxScale) / fontScale;
+}
+
+/** M3 labelLarge: 14sp text on a 20sp line. */
+const LABEL_LARGE_SIZE = 14;
+const LABEL_LARGE_LINE_HEIGHT = 20;
+
+/**
+ * The Compose Button label's style: M3 labelLarge (14/20, weight 500) on every
+ * tier. When the OS scale passes the cap, the font size is held at the cap and
+ * the line height scales with it, keeping labelLarge's 20/14 ratio; a capped
+ * size on labelLarge's fixed 20sp line would leave the label mis-spaced.
+ */
+export function buttonLabelStyle(cappedSize: number | undefined): NonNullable<ComposeTextProps['style']> {
+  if (cappedSize == null) return { typography: 'labelLarge' };
+  return {
+    typography: 'labelLarge',
+    fontSize: cappedSize,
+    lineHeight: (cappedSize * LABEL_LARGE_LINE_HEIGHT) / LABEL_LARGE_SIZE,
+  };
 }

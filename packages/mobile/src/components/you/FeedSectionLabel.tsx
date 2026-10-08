@@ -6,16 +6,16 @@ import { spacing } from '../../theme/tokens';
 
 /**
  * Sticky-style section label for the grouped sessions feed (Today / This week /
- * Earlier). Mirrors `SectionHeader`'s variant-keyed caption treatment (Liquid
- * Glass uppercases + dims + tracks; Material keeps sentence case) but with the
- * card-aligned horizontal inset the feed uses.
+ * Earlier). Mirrors `SectionHeader`'s sentence-case footnote semibold in
+ * secondaryLabel (HIG Lists and tables), with the card-aligned horizontal inset
+ * the feed uses.
  */
 export function FeedSectionLabel({ label }: { label: string }) {
-  const { sectionCaption } = useTheme();
+  const { sectionCaption, systemColors } = useTheme();
   const caption = applySectionCaption(label, sectionCaption);
   return (
     <View style={styles.container}>
-      <Text variant="footnote" style={[styles.text, caption.style]}>
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.text, caption.style]}>
         {caption.text}
       </Text>
     </View>

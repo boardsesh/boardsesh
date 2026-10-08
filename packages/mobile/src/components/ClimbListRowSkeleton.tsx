@@ -2,6 +2,7 @@ import { View, StyleSheet } from 'react-native';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from './ClimbListThumbnail';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
+import { CLIMB_ROW_GUTTER } from './climb-list-row-styles';
 
 export function ClimbListRowSkeleton() {
   const { systemColors } = useTheme();
@@ -26,7 +27,7 @@ const styles = StyleSheet.create({
   contentRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[2],
+    paddingHorizontal: CLIMB_ROW_GUTTER,
     paddingVertical: spacing[2],
     gap: spacing[3],
   },
@@ -62,6 +63,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + spacing[2] + spacing[3],
+    marginLeft: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
   },
 });

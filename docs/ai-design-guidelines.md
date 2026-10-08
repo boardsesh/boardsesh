@@ -268,6 +268,27 @@ export function Text({ variant = 'body', color, style, ...props }: TextProps) {
 **Dynamic Type.** `Text` defaults `maxFontSizeMultiplier` to `1.5`. Fixed-height glass chrome (the
 queue capsule, the iOS 26 bottom accessory) caps labels at `CHROME_LABEL_MAX_FONT_SCALE` = `1.2` so
 single-line names don't clip against rigid heights. Surfaces that grow with their content keep `1.5`.
+Every `Button` is capped too: `1.5` by default, or the caller's own cap (the tick bar's `1.3`).
+On iOS the cap is a Dynamic Type step, so the default stops at `xxxLarge` (body 23pt, about
+1.35x; the next step is 1.65x) and `1.3` at `xxLarge` (1.24x). Android holds the exact multiple. Count badges set the count in `caption2` (11pt, the HIG floor) in a min-size box
+capped at `1.3` (`count-badge-style.ts`).
+
+**Tabular figures.** A number that changes in place (a slider readout, a stepper, a leaderboard or
+chart column) takes `<Text numeric>`, which sets `fontVariant: ['tabular-nums']` so digits don't
+jitter sideways.
+
+**Button sizes and weights.** `size="large"` is for the single filled call to action of a
+full-screen form, gate or dead end: auth submits, "Sign in to join", the retry on a full-screen
+error (Join, session unavailable, spray scan), send recovery. The tick action bar and the rest
+timer's transport row are large too. Everything else is `medium`: empty states and retries inside
+a tab, buttons in sheets, secondary actions, and a dismiss like Done on a dead end. Use `small`
+inside cards. On iOS the label is semibold when the drawn style is prominent (filled, or an
+outlined/tonal button drawn as a solid scrim pill over board art) and regular otherwise. On
+Android every tier is M3 labelLarge (14/500).
+
+**Section headers** are sentence case in both variants: footnote semibold in `secondaryLabel` on
+Liquid Glass (the native SwiftUI Form header), titleSmall in `onSurfaceVariant` on Material. Never
+uppercase a UI string with a locale-blind `toUpperCase()`.
 
 ---
 
@@ -289,7 +310,10 @@ Source: `packages/mobile/src/theme/tokens.ts`. Read via `theme.spacing`, `theme.
 
 **Border radius**: `none` 0 · `sm` 4 · `md` 8 · `lg` 12 · `xl` 16 · `full` 9999.
 
-Cards stay `lg` (12) and pills/capsules stay `full` in **both** variants — the variants differ in
+Cards stay `lg` (12) and pills/capsules stay `full` in **both** variants. Spread `cardCorners`
+(12pt plus `borderCurve: 'continuous'`, the iOS squircle) into every card-shaped container, so no
+screen mixes 12 and 16pt cards; never put a continuous curve on a circle or capsule. Climb list
+rows use a 16pt side margin (`CLIMB_ROW_GUTTER`). The variants differ in
 surface/elevation, not those silhouettes. The one corner that varies by variant is the **button**,
 resolved via `theme.radii.button`: **10dp on Liquid Glass, 20dp on Material** (`radiiByVariant`).
 

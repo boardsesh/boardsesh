@@ -4,7 +4,7 @@ import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
 import { SectionDisclosureChevron } from './SectionDisclosureChevron';
 import { useTheme } from '../providers/theme-provider';
-import { selectByVariant } from '../theme/variants';
+import { sectionHeaderText } from './section-header-text';
 import { applySectionCaption } from '../theme/variants/variant-tokens';
 import { spacing } from '../theme/tokens';
 
@@ -30,21 +30,26 @@ type SectionHeaderProps = {
 };
 
 export function SectionHeader({ title, actionLabel, onActionPress, disclosure }: SectionHeaderProps) {
-  const { brandColors, variant, m3, sectionCaption } = useTheme();
-  // M3 list/section headers are sentence-case titleSmall in onSurfaceVariant — not
-  // the iOS group caption (uppercased, dimmed, tracked-out footnote). The uppercase
-  // + 0.6 opacity + letter-spacing come from `sectionCaption` (keyed on variant, not
-  // Platform.OS — a Liquid-Glass user on Android must still get the HIG caption); the
-  // Text scale, colour, and weight stay per-variant here.
+  const { brandColors, systemColors, variant, m3, sectionCaption } = useTheme();
+  // Both variants are sentence case. Liquid Glass is footnote semibold in
+  // secondaryLabel, matching the native SwiftUI Form headers in Settings (HIG
+  // Lists and tables); Material is titleSmall in onSurfaceVariant (M3 lists).
+  // Case, opacity and tracking come from `sectionCaption`; the Text scale,
+  // colour and weight from `sectionHeaderText`.
   const caption = applySectionCaption(title, sectionCaption);
-  const textVariant = selectByVariant(variant, { liquidGlass: 'footnote', material: 'subheadline' } as const);
-  const textColor = selectByVariant(variant, { liquidGlass: undefined, material: m3.onSurfaceVariant });
-  const weightStyle = selectByVariant(variant, { liquidGlass: undefined, material: styles.materialText });
+  const headerText = sectionHeaderText(variant, {
+    secondaryLabel: systemColors.secondaryLabel,
+    onSurfaceVariant: m3.onSurfaceVariant,
+  });
   const showAction = !!actionLabel && !!onActionPress;
   const collapsible = disclosure !== undefined;
 
   const titleText = (
-    <Text variant={textVariant} color={textColor} style={[caption.style, weightStyle]}>
+    <Text
+      variant={headerText.textVariant}
+      color={headerText.color}
+      style={[caption.style, { fontWeight: headerText.fontWeight }]}
+    >
       {caption.text}
     </Text>
   );
@@ -101,12 +106,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  // M3 titleSmall weight (the `subheadline` material scale is 14/400; titleSmall
-  // is 14/500). Opacity / letter-spacing come from `caption.style` per variant;
-  // onSurfaceVariant carries the hierarchy on Material.
-  materialText: {
-    fontWeight: '500',
   },
   disclosure: {
     flexDirection: 'row',

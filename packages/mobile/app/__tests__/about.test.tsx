@@ -33,14 +33,19 @@ vi.mock('react-i18next', () => ({
         'mobile.about.acknowledgementsLink': 'Acknowledgements',
         'mobile.about.changelogLink': "What's New",
         'mobile.about.viewOnGithub': 'View on GitHub',
+        'mobile.about.emailPartners': 'Email us',
       })[key] ?? key,
   }),
 }));
 
 vi.mock('../../src/components/BoardseshLogo', () => ({ BoardseshLogo: () => null }));
 vi.mock('../../src/components/Button', () => ({
-  Button: ({ icon, onPress, title }: { icon?: string; onPress: () => void; title: string }) =>
-    createElement('button', { 'data-icon': icon, onClick: onPress, type: 'button' }, title),
+  Button: ({ icon, onPress, title, size }: { icon?: string; onPress: () => void; title: string; size?: string }) =>
+    createElement(
+      'button',
+      { 'data-icon': icon, 'data-size': size ?? 'medium', onClick: onPress, type: 'button' },
+      title,
+    ),
 }));
 vi.mock('../../src/components/Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
@@ -60,7 +65,8 @@ vi.mock('../../src/components/SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
 vi.mock('../../src/components/Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, selectable }: { children?: ReactNode; selectable?: boolean }) =>
+    createElement('span', { 'data-selectable': selectable ? 'true' : undefined }, children),
 }));
 vi.mock('../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 80 }),
@@ -109,9 +115,27 @@ describe('AboutScreen partnerships + acknowledgements', () => {
   it('opens the partnerships mail composer from the CTA', () => {
     render(<AboutScreen />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'partnerships@boardsesh.com' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Email us' }));
 
     expect(partnerships.openPartnershipsEmail).toHaveBeenCalledTimes(1);
+  });
+
+  // HIG Buttons: a button's label is a verb, and a screen of info cards has no
+  // single prominent action, so none of its buttons is large.
+  it('labels the partnerships CTA with a verb and shows the address as text below it', () => {
+    render(<AboutScreen />);
+
+    expect(screen.queryByRole('button', { name: 'partnerships@boardsesh.com' })).toBeNull();
+    const address = screen.getByText('partnerships@boardsesh.com');
+    expect(address.getAttribute('data-selectable')).toBe('true');
+  });
+
+  it('keeps the in-card buttons small and the Discord button medium', () => {
+    render(<AboutScreen />);
+
+    expect(screen.getByRole('button', { name: 'View on GitHub' }).getAttribute('data-size')).toBe('small');
+    expect(screen.getByRole('button', { name: 'Email us' }).getAttribute('data-size')).toBe('small');
+    expect(screen.getByRole('button', { name: 'Join Discord' }).getAttribute('data-size')).toBe('medium');
   });
 
   it('navigates to the Acknowledgements screen', () => {

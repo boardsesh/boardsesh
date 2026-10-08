@@ -41,7 +41,15 @@ import { useGlassCapability } from '../hooks/use-glass-capability';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { overlays } from '../theme/tokens';
-import { buttonFillAxes, buttonMatchContents, dynamicTypeSizeCap, makeButtonPressHandler } from './Button.logic';
+import {
+  buttonFillAxes,
+  buttonLabelWeight,
+  buttonMatchContents,
+  dynamicTypeSizeCap,
+  makeButtonPressHandler,
+  resolveButtonMaxFontScale,
+  resolveIosButtonStyle,
+} from './Button.logic';
 import { useButtonSurface } from './Button.surface';
 import { iconMap } from './icon-map';
 import type { ButtonProps, ButtonSize } from './Button.types';
@@ -91,32 +99,32 @@ export function Button({
   // content (label/icon/spinner) colour. Destructive lets SwiftUI's `role` paint
   // the system red, so we skip the explicit tint/foregroundStyle there — an
   // explicit colour would defeat the red.
-  let styleModifier: ModifierConfig;
+  const nativeStyle = resolveIosButtonStyle({
+    variant,
+    overContent: effectiveOver === 'content',
+    supportsGlass,
+  });
+  // One source for the drawn style, so the label weight below can't disagree
+  // with what SwiftUI paints.
+  const styleModifier: ModifierConfig = buttonStyle(nativeStyle);
   let fillTint: string | undefined;
   let contentColor: string;
   if (variant === 'filled') {
-    styleModifier = buttonStyle('borderedProminent');
     fillTint = fillColor;
     contentColor = brandColors.onPrimary;
   } else if (variant === 'text') {
-    styleModifier = buttonStyle('borderless');
     fillTint = undefined;
     contentColor = effectiveOver === 'content' ? overlays.onScrim : accentColor;
+  } else if (effectiveOver === 'content') {
+    // outlined / tonal over board art: a solid scrim capsule.
+    fillTint = overlays.scrim;
+    contentColor = overlays.onScrim;
+  } else if (supportsGlass) {
+    fillTint = undefined; // neutral glass; the brand reads via the label colour
+    contentColor = accentColor;
   } else {
-    // outlined / tonal — the middle tier.
-    if (effectiveOver === 'content') {
-      styleModifier = buttonStyle('borderedProminent');
-      fillTint = overlays.scrim;
-      contentColor = overlays.onScrim;
-    } else if (supportsGlass) {
-      styleModifier = buttonStyle('glass');
-      fillTint = undefined; // neutral glass; the brand reads via the label colour
-      contentColor = accentColor;
-    } else {
-      styleModifier = buttonStyle('bordered');
-      fillTint = accentColor;
-      contentColor = accentColor;
-    }
+    fillTint = accentColor;
+    contentColor = accentColor;
   }
 
   // Which axes the caller sized for us: a positive `flex`/`width: '100%'` across,
@@ -132,11 +140,13 @@ export function Button({
     styleModifier,
     buttonBorderShape('roundedRectangle', radii.button),
     controlSize(CONTROL_SIZE[size]),
-    font({ textStyle: TEXT_STYLE[size], weight: 'semibold' }),
+    font({ textStyle: TEXT_STYLE[size], weight: buttonLabelWeight(nativeStyle) }),
     frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
-    ...(maxFontSizeMultiplier != null ? [dynamicTypeSize({ max: dynamicTypeSizeCap(maxFontSizeMultiplier) })] : []),
+    // Always capped: an uncapped native label outgrew the 1.5x-capped Text
+    // around it at the accessibility sizes.
+    dynamicTypeSize({ max: dynamicTypeSizeCap(resolveButtonMaxFontScale(maxFontSizeMultiplier)) }),
   ];
   if (!isDestructive) {
     if (fillTint) modifiers.push(tint(fillTint));

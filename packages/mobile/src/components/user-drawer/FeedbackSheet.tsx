@@ -254,7 +254,6 @@ export const FeedbackSheet = memo(function FeedbackSheet({
               void openDiscordInvite('login');
             }}
             variant="text"
-            size="large"
             icon="open.external"
             tintColor={brandColors.primary}
           />

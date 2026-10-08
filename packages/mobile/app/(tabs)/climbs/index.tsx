@@ -1790,7 +1790,6 @@ function ClimbListInner() {
             loading={isBoardFetching}
             disabled={isBoardFetching}
             variant="filled"
-            size="large"
             style={styles.emptyCta}
           />
         </View>
@@ -1823,7 +1822,6 @@ function ClimbListInner() {
             // it must not fire the activation event or arm the reveal banner.
             onPress={() => router.push(NO_BOARD_PICKER_HREF)}
             variant="filled"
-            size="large"
             style={styles.emptyCta}
           />
         </View>

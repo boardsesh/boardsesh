@@ -32,6 +32,20 @@ export const borderRadius = {
   full: 9999,
 } as const;
 
+/**
+ * The one card corner: 12pt, drawn as a continuous (squircle) curve on iOS, the
+ * way UIKit and SwiftUI draw every rounded rect since iOS 13 and what iOS 26's
+ * concentric shapes assume (HIG Layout). `borderCurve` is iOS-only; Android
+ * ignores it and keeps the M3 medium-shape 12dp circular corner. Spread it into
+ * every card-shaped container so a screen never mixes 12 and 16pt cards.
+ * Never use it on a circle or capsule: a continuous curve at half the height
+ * squares the ends off.
+ */
+export const cardCorners = {
+  borderRadius: borderRadius.lg,
+  borderCurve: 'continuous',
+} as const;
+
 export const shadowColor = '#000' as const;
 
 export const shadows = {

@@ -53,7 +53,7 @@ export function SessionLeaderboard({ participants, selfUserId }: SessionLeaderbo
                 isSelf ? { backgroundColor: withAlpha(brandColors.primary, 0.1) } : null,
               ]}
             >
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.rank}>
+              <Text variant="subheadline" color={systemColors.secondaryLabel} numeric style={styles.rank}>
                 {index + 1}
               </Text>
               <PressableAvatar
@@ -90,7 +90,7 @@ function Chip({ icon, label, tint }: { icon: IconName; label: string; tint: stri
   return (
     <View style={[styles.chip, { backgroundColor: withAlpha(tint, 0.15) }]}>
       <Icon name={icon} size={12} color={tint} />
-      <Text variant="caption1" color={tint} style={styles.chipLabel}>
+      <Text variant="caption1" color={tint} numeric style={styles.chipLabel}>
         {label}
       </Text>
     </View>

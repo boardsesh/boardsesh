@@ -263,12 +263,7 @@ export default function RegisterScreen() {
                   ) : null}
                 </>
               ) : null}
-              <Button
-                title={t('login.submit.signIn')}
-                onPress={() => router.replace(signInHref)}
-                variant="text"
-                size="large"
-              />
+              <Button title={t('login.submit.signIn')} onPress={() => router.replace(signInHref)} variant="text" />
             </View>
           ) : (
             <>
@@ -426,6 +421,10 @@ const styles = StyleSheet.create({
   successText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
   footer: {
     flexDirection: 'row',
+    // A long translation ("Noch kein Konto? Registrieren") drops the link onto
+    // its own line instead of running off the screen (HIG Localization: leave
+    // room for text that grows).
+    flexWrap: 'wrap',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 24,

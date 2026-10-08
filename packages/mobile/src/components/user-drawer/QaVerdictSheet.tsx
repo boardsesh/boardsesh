@@ -268,7 +268,6 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
         title={t('qa.verdict.leaveLabel')}
         onPress={handleLeaveWithoutFeedback}
         variant="text"
-        size="large"
         disabled={!surfingAvailable}
       />
     </ModalSheet>

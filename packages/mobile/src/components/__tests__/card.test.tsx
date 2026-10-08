@@ -8,7 +8,14 @@ const ctrl = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlas
 
 // Minimal RN surface: View → div, StyleSheet + Platform.select stubs.
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-view': 'true' }, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
+    const flat = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : (style ?? {});
+    return createElement(
+      'div',
+      { 'data-view': 'true', 'data-radius': flat.borderRadius, 'data-border-curve': flat.borderCurve },
+      children,
+    );
+  },
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
   Platform: { select: (spec: Record<string, unknown>) => spec.ios },
 }));
@@ -95,5 +102,21 @@ describe('Card (Liquid Glass variant)', () => {
     expect(container.querySelector('[data-paper-card]')).toBeNull();
     fireEvent.click(pressable as Element);
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+});
+
+// HIG (iOS 26): rounded rects use the continuous corner curve, and one screen
+// never mixes card radii. Card takes the shared `cardCorners` token.
+describe('Card (Liquid Glass) corners', () => {
+  it('draws a 12pt continuous corner', () => {
+    ctrl.variant = 'liquidGlass';
+    const { container } = render(
+      <Card>
+        <span>Body</span>
+      </Card>,
+    );
+    const card = container.querySelector('[data-view]');
+    expect(card?.getAttribute('data-radius')).toBe('12');
+    expect(card?.getAttribute('data-border-curve')).toBe('continuous');
   });
 });

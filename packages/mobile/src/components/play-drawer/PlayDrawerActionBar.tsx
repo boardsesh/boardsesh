@@ -18,6 +18,7 @@ import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
 import { hapticMedium } from '../../lib/haptics';
+import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
 
 type PlayDrawerActionBarProps = {
   canSwipePrevious: boolean;
@@ -487,7 +488,13 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
       <Icon name="tick.outline" size={icon} color={theme.brandColors.success} />
       {ascentCount > 0 && (
         <View style={styles.countBadge}>
-          <Text variant="caption2" color={iosSystemColors.white} style={styles.countText}>
+          <Text
+            variant="caption2"
+            color={iosSystemColors.white}
+            numeric
+            maxFontSizeMultiplier={COUNT_BADGE_MAX_FONT_SCALE}
+            style={styles.countText}
+          >
             {ascentCount > 99 ? '99' : String(ascentCount)}
           </Text>
         </View>
@@ -517,22 +524,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: iosSystemColors.systemGray,
   },
+  // caption2 (11pt) in a box that grows with the text (count-badge-style.ts).
   countBadge: {
+    ...countBadgeBox,
     position: 'absolute',
     top: -3,
     right: -3,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
     // FILL with white count text → static brand (see import note).
     backgroundColor: staticBrandColors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
   },
-  countText: {
-    fontSize: 10,
-    fontWeight: '600',
-    lineHeight: 12,
-  },
+  countText: countBadgeText,
 });
