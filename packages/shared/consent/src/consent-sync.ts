@@ -67,6 +67,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
   let revision = 0;
   let serverRecord: ConsentRecord | null = null;
   let pending: PendingConsentDecision | null = null;
+  let explicitPendingGrant: PendingConsentDecision | null = null;
   let pendingLoaded = false;
   let running: Promise<void> | null = null;
   let snapshot: ConsentSyncSnapshot = {
@@ -104,9 +105,19 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         const stored = parsePendingConsentDecision(await options.loadPendingDecision?.(identity));
         if (!isCurrent()) return;
         if (loadRevision === revision && !pending && stored) {
-          pending = stored;
-          publish({ record: stored.record, pending: true });
-          persistRecord(stored.record);
+          const local = snapshot.record;
+          // Browser cookies round to seconds. A denial in the same second is
+          // indistinguishable from a newer withdrawal, so restoration fails closed.
+          const localDenialWins =
+            stored.record.analytics === 'granted' &&
+            isCurrentConsentRecord(local) &&
+            local.analytics === 'denied' &&
+            (local.version > stored.record.version ||
+              !Number.isFinite(Date.parse(local.decidedAt)) ||
+              Math.floor(Date.parse(local.decidedAt) / 1000) >= Math.floor(Date.parse(stored.record.decidedAt) / 1000));
+          pending = localDenialWins ? { record: local, basedOnDecidedAt: null } : stored;
+          publish({ record: pending.record, pending: true });
+          persistRecord(pending.record);
         }
         pendingLoaded = true;
       }
@@ -116,6 +127,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         if (decision) {
           await persistPending(identity, decision);
           if (!isCurrent()) return;
+          if (pending !== decision) continue;
           const result = await options.writeAccountConsent(identity, {
             analytics: decision.record.analytics,
             version: decision.record.version,
@@ -124,9 +136,25 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
           });
           if (!isCurrent()) return;
           serverRecord = result;
-          if (pending !== decision) continue;
+          if (pending !== decision) {
+            // A newer explicit Allow follows our own in-flight withdrawal.
+            // Rebase only that grant onto the denial we just wrote, never onto
+            // a denial returned by a rejected grant or a later account read.
+            if (
+              decision.record.analytics === 'denied' &&
+              result.analytics === 'denied' &&
+              pending !== null &&
+              pending === explicitPendingGrant
+            ) {
+              pending = { ...pending, basedOnDecidedAt: result.decidedAt };
+              explicitPendingGrant = pending;
+              await persistPending(identity, pending);
+            }
+            continue;
+          }
           // Do not clear a newer decision that was made while the request was in flight.
           pending = null;
+          explicitPendingGrant = null;
           publish({ record: result, pending: false, accountResolved: true });
           persistRecord(result);
           await persistPending(identity, null);
@@ -185,6 +213,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
       revision += 1;
       running = null;
       pending = null;
+      explicitPendingGrant = null;
       pendingLoaded = false;
       serverRecord = null;
       publish({ syncing: false, pending: false, accountResolved: identity === null });
@@ -199,6 +228,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
         decidedAt: new Date().toISOString(),
       };
       pending = accountId ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null } : null;
+      explicitPendingGrant = analytics === 'granted' ? pending : null;
       publish({ record, pending: pending !== null });
       persistRecord(record);
       if (!accountId) return;
@@ -219,6 +249,7 @@ export function createConsentSyncCoordinator(options: ConsentSyncOptions) {
           return;
         revision += 1;
         pending = accountId ? { record, basedOnDecidedAt: serverRecord?.decidedAt ?? null } : null;
+        explicitPendingGrant = null;
         publish({ record, pending: pending !== null });
         if (accountId) {
           void persistPending(accountId, pending).catch(report);
