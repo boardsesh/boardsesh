@@ -10,6 +10,9 @@
       "viewProfile": "Voir le profil de {{name}}",
       "thisClimber": "ce grimpeur"
     },
+    "a11y": {
+      "clearSearch": "Effacer la recherche"
+    },
     "settings": {
       "title": "Paramètres",
       "library": "Bibliothèque",

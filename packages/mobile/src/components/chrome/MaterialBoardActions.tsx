@@ -10,7 +10,12 @@
 // (`FilterChipRow.android`), not here — the app bar keeps only the create action.
 // `MaterialAngleAction` remains for Discover's `CollapsingTopChrome`.
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import {
+  LONG_PRESS_ACTION_NAME,
+  namedAccessibilityActions,
+  onNamedAccessibilityAction,
+} from '../../lib/named-accessibility-action';
 import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
@@ -72,6 +77,19 @@ export function MaterialLightbulbAction() {
     onPress();
   }, [onPress]);
 
+  // Offered only where the long press itself is wired (connected, handler present).
+  const canOpenControls = localConnected && !!onLongPress;
+  const longPressActions = useMemo(
+    () =>
+      canOpenControls ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, tSettings('ble.boardControls')) : undefined,
+    [canOpenControls, tSettings],
+  );
+  const onLongPressAction = useMemo(
+    () =>
+      canOpenControls && onLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, onLongPress) : undefined,
+    [canOpenControls, onLongPress],
+  );
+
   if (!bluetooth) return null;
 
   const iconName = lit ? iconMap['lightbulb.fill'].android : iconMap.lightbulb.android;
@@ -101,6 +119,8 @@ export function MaterialLightbulbAction() {
       // Short press connects/disconnects; long press (connected) opens the
       // controls sheet — same as the drawer + accessory-bar lightbulbs.
       onLongPress={localConnected ? onLongPress : undefined}
+      accessibilityActions={longPressActions}
+      onAccessibilityAction={onLongPressAction}
       // The label reflects what tapping ACTUALLY does, not the fill — the bulb
       // can read lit because a session peer holds the wall. While a peer drives
       // the board there is no connect to promise, and this surface has no

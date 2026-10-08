@@ -3,6 +3,7 @@ import { View, TextInput, Pressable, StyleSheet } from 'react-native';
 import { Searchbar } from 'react-native-paper';
 import { Icon } from './Icon';
 import { GlassSurface } from './GlassSurface';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
 import { selectByVariant } from '../theme/variants';
 import { iosSystemColors } from '../theme/ios-colors';
@@ -47,6 +48,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
 ) {
   const inputRef = useRef<TextInput>(null);
   const { systemColors, variant: uiVariant } = useTheme();
+  const { t } = useTranslation('common');
   const [text, setText] = useState(initialValue);
   const radius = height / 2;
 
@@ -145,7 +147,12 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
           accessibilityLabel={placeholder}
         />
         {text.length > 0 && (
-          <Pressable onPress={handleClear} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+          <Pressable
+            onPress={handleClear}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.a11y.clearSearch')}
+            style={styles.clearTarget}
+          >
             <View style={styles.clearButton}>
               <Icon name="close" size={12} color={iosSystemColors.white} />
             </View>
@@ -194,6 +201,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 17,
     paddingVertical: 0,
+  },
+  // 44 x 44 pt target (HIG Accessibility: touch targets; Material: 48dp) around the 18pt glyph.
+  clearTarget: {
+    width: 44,
+    height: 44,
+    marginRight: -13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   clearButton: {
     width: 18,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
 
@@ -24,8 +24,32 @@ vi.mock('../../PressableAvatar', () => ({
   PressableAvatar: () => createElement('span', { 'data-testid': 'avatar' }),
 }));
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-    createElement('div', { onClick: onPress }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    onLongPress,
+    accessibilityActions,
+    onAccessibilityAction,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    onLongPress?: () => void;
+    accessibilityActions?: { name: string; label: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }) =>
+    createElement(
+      'div',
+      {
+        onClick: onPress,
+        'data-testid': 'tick-press',
+        'data-action-label': accessibilityActions?.map((action) => action.label).join('|'),
+        // jsdom has no long press: contextmenu is the gesture, doubleclick the screen-reader action.
+        onContextMenu: onLongPress,
+        onDoubleClick: () =>
+          onAccessibilityAction?.({ nativeEvent: { actionName: accessibilityActions?.[0]?.name ?? '' } }),
+      },
+      children,
+    ),
 }));
 // PressableSurface statically imports `react-native-reanimated` and
 // `../theme/animations`. Rolldown traverses mocked modules' import graphs, so
@@ -112,8 +136,9 @@ vi.mock('../../../lib/session-tick-mapping', () => ({
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => {}, hapticMedium: () => {} }));
-vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openClimbActions: () => {} }) }));
-vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: () => null }));
+const openClimbActions = vi.hoisted(() => vi.fn());
+vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openClimbActions }) }));
+vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: () => ({ uuid: 'climb-1' }) }));
 
 import { SessionTickRow } from '../SessionTickRow';
 
@@ -150,6 +175,7 @@ function participant(displayName: string): SessionFeedParticipant {
 }
 
 beforeEach(() => {
+  openClimbActions.mockClear();
   mockClimbListItemContent.mockClear();
 });
 
@@ -199,5 +225,22 @@ describe('SessionTickRow — primarySubtitleOverride', () => {
       }),
     );
     expect(mockClimbListItemContent).toHaveBeenCalledWith(expect.objectContaining({ primarySubtitleOverride: null }));
+  });
+});
+
+describe('SessionTickRow — screen-reader route to the long-press menu', () => {
+  it('publishes a Climb actions custom action that opens the same menu as a long press', () => {
+    const { getByTestId } = render(
+      createElement(SessionTickRow, { tick: tick(), isMultiUser: false, onPress: () => {} }),
+    );
+    const row = getByTestId('tick-press');
+    expect(row.getAttribute('data-action-label')).toBe('playView.actionBar.climbActionsAria');
+
+    fireEvent.contextMenu(row);
+    expect(openClimbActions).toHaveBeenCalledTimes(1);
+    openClimbActions.mockClear();
+
+    fireEvent.doubleClick(row);
+    expect(openClimbActions).toHaveBeenCalledTimes(1);
   });
 });

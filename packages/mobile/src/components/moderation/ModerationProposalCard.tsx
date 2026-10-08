@@ -7,7 +7,12 @@
 // every other card mid-sweep) and keeps the screen's `renderItem` deps down to
 // values that never change identity.
 
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
+import {
+  LONG_PRESS_ACTION_NAME,
+  namedAccessibilityActions,
+  onNamedAccessibilityAction,
+} from '../../lib/named-accessibility-action';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Proposal } from '@boardsesh/shared-schema';
@@ -94,10 +99,18 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
     onOpenClimb(proposal);
   }, [onOpenClimb, proposal]);
 
+  const longPressActions = useMemo(
+    () => namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('mobile.climbRow.moreActions')),
+    [t],
+  );
   const handleLongPressClimb = useCallback(() => {
     hapticMedium();
     onLongPressClimb(proposal);
   }, [onLongPressClimb, proposal]);
+  const onLongPressAction = useMemo(
+    () => onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPressClimb),
+    [handleLongPressClimb],
+  );
 
   const handleToggleReasons = useCallback(() => {
     hapticLight();
@@ -169,6 +182,8 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         <PressableSurface
           onPress={handleOpenClimb}
           onLongPress={handleLongPressClimb}
+          accessibilityActions={longPressActions}
+          onAccessibilityAction={onLongPressAction}
           feedback="opacity"
           accessibilityRole="button"
           accessibilityLabel={t('mobile.moderation.openClimb', {

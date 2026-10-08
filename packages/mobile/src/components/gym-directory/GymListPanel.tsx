@@ -11,6 +11,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { PressableSurface } from '../PressableSurface';
+import { namedAccessibilityActions, onNamedAccessibilityAction } from '../../lib/named-accessibility-action';
 import { boardTypeLabel } from '../board-discovery/board-builder-labels';
 import { useTheme } from '../../providers/theme-provider';
 import { applySectionCaption } from '../../theme/variants/variant-tokens';
@@ -267,6 +268,10 @@ const GymRow = memo(function GymRow({
         onPress={handlePress}
         rippleColor={brandColors.primary}
         accessibilityState={{ expanded }}
+        accessibilityActions={
+          gym.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editGym')) : undefined
+        }
+        onAccessibilityAction={gym.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
         style={styles.gymRow}
       >
         <Icon name="pin" size={20} color={selected ? brandColors.primary : systemColors.label} />
@@ -347,6 +352,10 @@ const BoardRow = memo(function BoardRow({
     <PressableSurface
       onPress={handlePress}
       rippleColor={brandColors.primary}
+      accessibilityActions={
+        board.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editBoard')) : undefined
+      }
+      onAccessibilityAction={board.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
       style={[styles.boardRow, { borderTopColor: systemColors.separator }]}
     >
       <Icon name="boards" size={18} color={systemColors.secondaryLabel} />
@@ -383,7 +392,15 @@ const StandaloneRow = memo(function StandaloneRow({
   return (
     <View style={[styles.gymBlock, { borderColor: selected ? brandColors.primary : systemColors.separator }]}>
       {selected ? <View style={[styles.selectedAccent, { backgroundColor: brandColors.primary }]} /> : null}
-      <PressableSurface onPress={handlePress} rippleColor={brandColors.primary} style={styles.standaloneRow}>
+      <PressableSurface
+        onPress={handlePress}
+        rippleColor={brandColors.primary}
+        accessibilityActions={
+          board.canEdit ? namedAccessibilityActions(EDIT_ACTION_NAME, t('mobile.gyms.editBoard')) : undefined
+        }
+        onAccessibilityAction={board.canEdit ? onNamedAccessibilityAction(EDIT_ACTION_NAME, handleEdit) : undefined}
+        style={styles.standaloneRow}
+      >
         <Icon name="boards" size={20} color={selected ? brandColors.primary : systemColors.label} />
         <View style={styles.rowText}>
           <Text variant="headline">{board.name}</Text>
@@ -397,6 +414,8 @@ const StandaloneRow = memo(function StandaloneRow({
     </View>
   );
 });
+
+const EDIT_ACTION_NAME = 'edit';
 
 /**
  * The pencil affordance shown on a row the viewer can edit. Reads its own colour

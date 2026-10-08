@@ -493,6 +493,7 @@
     },
     "turnOff": "Board ausschalten",
     "holdForControls": "Halten für die Board-Steuerung",
+    "boardControls": "Board-Steuerung",
     "sendFailedTitle": "Board ließ sich nicht beleuchten",
     "connectionFailedTitle": "Verbindung fehlgeschlagen",
     "permissionRequired": "Bluetooth-Berechtigung nötig",

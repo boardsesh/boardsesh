@@ -30,6 +30,7 @@ vi.mock('../use-gym-panel-gesture', () => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
+  Pressable: ({ children, onPress }: PressProps) => createElement('span', { onClick: onPress }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -72,8 +73,27 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
 vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({ children, onPress }: PressProps) =>
-    createElement('button', { onClick: onPress, type: 'button' }, children),
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityActions,
+    onAccessibilityAction,
+  }: PressProps & {
+    accessibilityActions?: { name: string; label: string }[];
+    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        type: 'button',
+        // Screen-reader custom actions, surfaced as a clickable marker the test can drive.
+        'data-a11y-actions': accessibilityActions?.map((action) => action.label).join('|'),
+        onDoubleClick: () =>
+          onAccessibilityAction?.({ nativeEvent: { actionName: accessibilityActions?.[0]?.name ?? '' } }),
+      },
+      children,
+    ),
 }));
 
 vi.mock('../../../theme/variants/variant-tokens', () => ({
@@ -300,5 +320,53 @@ describe('GymListPanel board rows', () => {
     const { getByText, queryByText } = renderExpanded({ ...gymBoard, layoutId: 99999, sizeId: 99999 } as UserBoard);
     expect(getByText('Kilter')).toBeTruthy();
     expect(queryByText('kilter')).toBeNull();
+  });
+
+  it('publishes Edit as a custom action on an editable gym row and runs the same handler', () => {
+    const onEditGym = vi.fn();
+    const editableGym = { ...gym, canEdit: true } as unknown as Gym;
+    const data: GymListRow[] = [
+      {
+        kind: 'gym',
+        key: 'gym:g1',
+        gym: editableGym,
+        subtitle: '1 Crag St',
+        expanded: false,
+        selected: false,
+        boards: [],
+      },
+    ];
+    const { container } = render(
+      <GymListPanel
+        data={data}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={onEditGym}
+        onEditBoard={vi.fn()}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+    const row = container.querySelector('[data-a11y-actions="mobile.gyms.editGym"]') as HTMLElement;
+    expect(row).not.toBeNull();
+    fireEvent.doubleClick(row);
+    expect(onEditGym).toHaveBeenCalledWith(editableGym);
+  });
+
+  it('adds no custom action to a gym the viewer cannot edit', () => {
+    const { container } = render(
+      <GymListPanel
+        data={makeData()}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+    expect(container.querySelector('[data-a11y-actions]')).toBeNull();
   });
 });

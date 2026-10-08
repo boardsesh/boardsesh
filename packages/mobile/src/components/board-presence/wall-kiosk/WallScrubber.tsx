@@ -144,6 +144,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     </View>
   ) : (
     <Pressable
+      accessibilityRole="button"
       onPress={withHaptic(() => step('older'))}
       disabled={!canStepOlder}
       accessibilityLabel={t('mobile.boardPresence.kiosk.scrubOlderAria')}
@@ -175,6 +176,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       </Text>
       <View style={styles.overrideActions}>
         <Pressable
+          accessibilityRole="button"
           onPress={withHaptic(cancelOverride)}
           style={[styles.secondaryBtn, { borderColor: systemColors.separator }]}
         >
@@ -183,6 +185,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
           </Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
           onPress={withHaptic(confirmOverride)}
           style={[styles.primaryBtn, { backgroundColor: brandColors.primaryFill }]}
         >
@@ -194,6 +197,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     </View>
   ) : lightBlockedReason === 'not-driver' ? (
     <Pressable
+      accessibilityRole="button"
       onPress={withHaptic(handleConnect)}
       disabled={!bluetooth}
       style={({ pressed }) => [
@@ -220,6 +224,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     // put a climb up is to take the wall. Session-local — nothing is written to
     // the board record here.
     <Pressable
+      accessibilityRole="button"
       onPress={handleTakeWall}
       disabled={!takeVirtualWall}
       style={({ pressed }) => [
@@ -249,6 +254,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
     </View>
   ) : (
     <Pressable
+      accessibilityRole="button"
       onPress={withHaptic(lightThis)}
       disabled={!canLight}
       style={({ pressed }) => [
@@ -281,7 +287,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       {navRow}
       {confirmSlot}
       {isPreviewing ? (
-        <Pressable onPress={withHaptic(backToLive)} style={styles.backToLive}>
+        <Pressable accessibilityRole="button" onPress={withHaptic(backToLive)} style={styles.backToLive}>
           <Icon name="skip.next" size={16} color={brandColors.live} />
           <Text variant="footnote" color={brandColors.live} style={styles.bold}>
             {t('mobile.boardPresence.kiosk.backToLive')}

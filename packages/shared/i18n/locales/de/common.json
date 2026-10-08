@@ -10,6 +10,9 @@
       "viewProfile": "Profil von {{name}} ansehen",
       "thisClimber": "dieser Person"
     },
+    "a11y": {
+      "clearSearch": "Suche löschen"
+    },
     "settings": {
       "title": "Einstellungen",
       "library": "Bibliothek",

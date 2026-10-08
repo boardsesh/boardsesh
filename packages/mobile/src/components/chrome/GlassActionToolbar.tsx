@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import type { AccessibilityActionEvent, AccessibilityActionInfo } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import { useNativeGlass } from '../../hooks/use-native-glass';
@@ -52,12 +53,17 @@ export function GlassToolbarAction({
   onLongPress,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityActions,
+  onAccessibilityAction,
   children,
 }: {
   onPress: () => void;
   onLongPress?: () => void;
   accessibilityLabel: string;
   accessibilityHint?: string;
+  /** Screen-reader route to what `onLongPress` does (HIG Gestures: a simple alternative). */
+  accessibilityActions?: ReadonlyArray<AccessibilityActionInfo>;
+  onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
   children: ReactNode;
 }) {
   return (
@@ -69,6 +75,8 @@ export function GlassToolbarAction({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
       style={styles.action}
     >
       {children}

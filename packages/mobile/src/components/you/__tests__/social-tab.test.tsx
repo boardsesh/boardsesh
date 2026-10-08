@@ -84,11 +84,22 @@ vi.mock('react-native', () => ({
     children,
     onPress,
     accessibilityLabel,
+    accessibilityState,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+    accessibilityState?: { selected?: boolean };
+  }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        'aria-label': accessibilityLabel,
+        'data-selected': accessibilityState?.selected === undefined ? undefined : String(accessibilityState.selected),
+      },
+      children,
+    ),
   TextInput: ({
     value,
     onChangeText,
@@ -283,6 +294,23 @@ describe('SocialTab', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('marks only the active filter card as selected and gives it a checkmark', () => {
+    const { container, getAllByRole } = render(<SocialTab userId="me" />);
+    const selected = () => Array.from(container.querySelectorAll('[data-selected="true"]'));
+
+    expect(selected()).toHaveLength(1);
+    expect(selected()[0].querySelector('[data-icon="check.small"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-icon="check.small"]')).toHaveLength(1);
+
+    // Switch to the other card: selection and checkmark move with it.
+    const unselectedCard = container.querySelector('[data-selected="false"]') as HTMLElement;
+    fireEvent.click(unselectedCard);
+    expect(selected()).toHaveLength(1);
+    expect(selected()[0]).toBe(unselectedCard);
+    expect(unselectedCard.querySelector('[data-icon="check.small"]')).not.toBeNull();
+    expect(getAllByRole('button').length).toBeGreaterThan(1);
   });
 
   it('shows follower rows by default', () => {

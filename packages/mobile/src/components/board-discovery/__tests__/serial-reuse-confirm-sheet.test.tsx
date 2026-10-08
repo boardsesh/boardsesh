@@ -21,10 +21,40 @@ function readPaddingBottom(style: unknown): number | undefined {
 vi.mock('react-native', () => ({
   Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
     visible ? createElement('div', { 'data-testid': 'modal' }, children) : null,
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Pressable: ({ children, onPress, style }: { children?: ReactNode; onPress?: () => void; style?: unknown }) =>
-    createElement('div', { onClick: onPress, 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  View: ({
+    children,
+    style,
+    accessibilityViewIsModal,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    accessibilityViewIsModal?: boolean;
+  }) =>
+    createElement(
+      'div',
+      { 'data-pb': String(readPaddingBottom(style) ?? ''), 'data-modal': String(!!accessibilityViewIsModal) },
+      children,
+    ),
+  Pressable: ({
+    children,
+    onPress,
+    accessible,
+    importantForAccessibility,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessible?: boolean;
+    importantForAccessibility?: string;
+  }) =>
+    createElement(
+      'div',
+      {
+        onClick: onPress,
+        'data-backdrop': accessible === false && importantForAccessibility === 'no' ? 'true' : undefined,
+      },
+      children,
+    ),
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFill: {} },
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,
 }));
@@ -151,5 +181,27 @@ describe('SerialReuseConfirmSheet', () => {
     );
     // 34 for the home indicator plus spacing[4].
     expect(container.querySelector('[data-pb="50"]')).not.toBeNull();
+  });
+
+  it('keeps the backdrop a hidden sibling of a modal card so VoiceOver reaches the buttons', () => {
+    const onCancel = vi.fn();
+    const { container } = render(
+      <SerialReuseConfirmSheet
+        visible
+        board={existingBoard}
+        serialNumber="ABC123"
+        onUseExisting={() => {}}
+        onCreateAnyway={() => {}}
+        onCancel={onCancel}
+      />,
+    );
+    const backdrop = container.querySelector('[data-backdrop="true"]') as HTMLElement;
+    const card = container.querySelector('[data-modal="true"]') as HTMLElement;
+    expect(backdrop).not.toBeNull();
+    expect(card).not.toBeNull();
+    // The card is not inside the tappable backdrop, so its buttons stay reachable.
+    expect(backdrop.contains(card)).toBe(false);
+    fireEvent.click(backdrop);
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

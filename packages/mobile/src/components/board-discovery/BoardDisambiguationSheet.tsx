@@ -35,10 +35,18 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel}>
+      <View style={styles.backdrop}>
+        {/* Sibling, not parent: a tappable ancestor hides the card's buttons from VoiceOver. */}
         <Pressable
-          // Stop backdrop taps from closing when tapping the card itself.
-          onPress={(event) => event.stopPropagation()}
+          testID="disambiguation-backdrop"
+          accessible={false}
+          importantForAccessibility="no"
+          style={StyleSheet.absoluteFill}
+          onPress={onCancel}
+        />
+        <View
+          testID="disambiguation-card"
+          accessibilityViewIsModal
           style={[
             styles.card,
             { backgroundColor: systemColors.secondaryBackground, paddingBottom: windowInsetBottom + spacing[4] },
@@ -57,6 +65,7 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
               return (
                 <Pressable
                   key={candidate.boardId}
+                  accessibilityRole="button"
                   onPress={() => onPick(candidate.boardId)}
                   style={[styles.row, { borderColor: systemColors.separator }]}
                 >
@@ -80,13 +89,13 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
             })}
           </ScrollView>
 
-          <Pressable onPress={onCancel} style={styles.cancel}>
+          <Pressable accessibilityRole="button" onPress={onCancel} style={styles.cancel}>
             <Text variant="headline" color={systemColors.secondaryLabel}>
               {t('mobile.disambiguation.cancel')}
             </Text>
           </Pressable>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

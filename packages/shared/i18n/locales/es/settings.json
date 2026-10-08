@@ -493,6 +493,7 @@
     },
     "turnOff": "Apagar el plafón",
     "holdForControls": "Mantén pulsado para los controles",
+    "boardControls": "Controles del plafón",
     "sendFailedTitle": "No se pudo iluminar el plafón",
     "connectionFailedTitle": "No se pudo conectar",
     "permissionRequired": "Permiso de Bluetooth necesario",
