@@ -897,6 +897,9 @@ export default defineConfig({
       'typecheck:community-roles': {
         command: 'pnpm --filter @boardsesh/community-roles run typecheck',
       },
+      'typecheck:consent': {
+        command: 'pnpm --filter @boardsesh/consent run typecheck',
+      },
       'typecheck:kiosk': {
         command: 'pnpm --filter @boardsesh/kiosk run typecheck',
       },
@@ -1013,6 +1016,7 @@ export default defineConfig({
           'typecheck:climb-filters',
           'typecheck:gym-filters',
           'typecheck:community-roles',
+          'typecheck:consent',
           'typecheck:kiosk',
           'typecheck:i18n',
           'typecheck:email',
