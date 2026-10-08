@@ -87,7 +87,10 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
           contentContainerStyle={styles.scroller}
         >
           {Array.from({ length: SKELETON_COUNT }, (_, index) => (
-            <View key={index} style={[styles.card, styles.skeletonCard, { backgroundColor: systemColors.fill }]} />
+            <View
+              key={index}
+              style={[styles.card, styles.skeletonCard, { backgroundColor: systemColors.tertiaryFill }]}
+            />
           ))}
         </ScrollView>
         {/* The first read of a downloaded board builds its holds index, which

@@ -26,7 +26,13 @@ describe('selectByVariant', () => {
 });
 
 describe('resolveActionColors', () => {
-  const inputs = { label: '#LABEL', accent: '#ACCENT', brandSuccess: '#SUCCESS', brandPrimary: '#PRIMARY' };
+  const inputs = {
+    label: '#LABEL',
+    accent: '#ACCENT',
+    brandSuccess: '#SUCCESS',
+    brandPrimary: '#PRIMARY',
+    error: '#ERROR',
+  };
 
   it('renders every role monochrome (label) on Liquid Glass', () => {
     const colors = resolveActionColors('liquidGlass', inputs);
@@ -45,7 +51,12 @@ describe('resolveActionColors', () => {
     expect(colors.success).toBe('#SUCCESS');
     expect(colors.accent).toBe('#ACCENT');
     expect(colors.pin).toBe('#PRIMARY');
-    expect(colors.favorite).toBe('#FF3B30'); // static iOS systemRed
+    expect(colors.favorite).toBe('#ERROR');
+  });
+
+  it('uses the one adaptive error red for a favourited heart on both variants', () => {
+    expect(resolveActionColors('liquidGlass', inputs).favoriteSelected).toBe('#ERROR');
+    expect(resolveActionColors('material', inputs).favoriteSelected).toBe('#ERROR');
   });
 });
 

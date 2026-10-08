@@ -78,7 +78,7 @@ export const DeferredBoard = memo(function DeferredBoard({
   if (!open || !layoutReady || !ready) {
     return (
       <View
-        style={[styles.placeholder, { backgroundColor: systemColors.fill }]}
+        style={[styles.placeholder, { backgroundColor: systemColors.tertiaryFill }]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         testID="deferred-board-placeholder"

@@ -1654,7 +1654,7 @@ function ProgressBlock({ label, progress }: { label: string; progress: number | 
               styles.progressFill,
               {
                 width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`,
-                backgroundColor: iosSystemColors.systemBlue,
+                backgroundColor: systemColors.accent,
               },
             ]}
           />

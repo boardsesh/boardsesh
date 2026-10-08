@@ -52,6 +52,8 @@ export const iconMap = {
   'chevron.down': { ios: 'chevron.down', android: 'chevron-down' },
   'chevron.up': { ios: 'chevron.up', android: 'chevron-up' },
   close: { ios: 'xmark', android: 'close' },
+  // A search field's clear control: the system's filled circle glyph (no hand-drawn disc).
+  'search.clear': { ios: 'xmark.circle.fill', android: 'close-circle' },
   back: { ios: 'chevron.left', android: 'arrow-left' },
 
   // Actions

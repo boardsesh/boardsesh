@@ -34,8 +34,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
 import { borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
-import { useTheme } from '../../providers/theme-provider';
+import { brandColorsDark } from '../../theme/colors';
 import {
   CORNER_HANDLE_SIZE,
   cornerLayerLayout,
@@ -126,7 +125,6 @@ function FittedCornerMarker({
   renderScale: number;
 }) {
   const { t } = useTranslation('boards');
-  const { brandColors } = useTheme();
 
   const seed = useMemo(() => value ?? defaultQuad(photo.width, photo.height), [value, photo.width, photo.height]);
   const renderSeed = quadToRender(seed, renderScale);
@@ -240,7 +238,7 @@ function FittedCornerMarker({
     };
   });
 
-  const guideColor = invalid ? brandColors.error : iosSystemColors.systemBlue;
+  const guideColor = invalid ? SPRAY_GUIDE_COLORS.invalid : SPRAY_GUIDE_COLORS.valid;
 
   // Written out rather than looked up by index: the i18n linter only accepts
   // literal keys, and four corners is four lines.
@@ -268,6 +266,14 @@ function FittedCornerMarker({
         />
       </View>
       <Svg pointerEvents="none" style={[styles.outline, layout.frame]} width={renderWidth} height={renderHeight}>
+        {/* Dark halo under the light guide, so the outline reads on a bright photo too. */}
+        <AnimatedPath
+          animatedProps={outlineProps}
+          fill="none"
+          stroke={SPRAY_GUIDE_COLORS.halo}
+          strokeWidth={4}
+          strokeLinejoin="round"
+        />
         <AnimatedPath
           animatedProps={outlineProps}
           fill={guideColor}
@@ -295,6 +301,17 @@ function FittedCornerMarker({
     </View>
   );
 }
+
+/**
+ * The guides sit on a PHOTO, which does not change with the app's colour scheme,
+ * so they must not either. The light (dark-scheme) brand tint and error red read
+ * on a dark photo; a dark halo under each keeps them visible on a bright one.
+ */
+export const SPRAY_GUIDE_COLORS = {
+  valid: brandColorsDark.tint,
+  invalid: brandColorsDark.error,
+  halo: 'rgba(0, 0, 0, 0.55)',
+} as const;
 
 function CornerHandle({
   x,
@@ -370,7 +387,9 @@ function CornerHandle({
         accessibilityRole="adjustable"
         accessibilityLabel={label}
       >
-        <View style={[styles.ring, { borderColor: color }]} />
+        <View style={styles.ringHalo}>
+          <View style={[styles.ring, { borderColor: color }]} />
+        </View>
       </Animated.View>
     </GestureDetector>
   );
@@ -391,6 +410,15 @@ const styles = StyleSheet.create({
     top: 0,
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringHalo: {
+    width: RING_SIZE + 4,
+    height: RING_SIZE + 4,
+    borderRadius: (RING_SIZE + 4) / 2,
+    borderWidth: 2,
+    borderColor: SPRAY_GUIDE_COLORS.halo,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -6,7 +6,6 @@ import { GlassSurface } from './GlassSurface';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../providers/theme-provider';
 import { selectByVariant } from '../theme/variants';
-import { iosSystemColors } from '../theme/ios-colors';
 
 export type SearchHeaderHandle = {
   blur: () => void;
@@ -153,9 +152,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
             accessibilityLabel={t('mobile.a11y.clearSearch')}
             style={styles.clearTarget}
           >
-            <View style={[styles.clearButton, { backgroundColor: systemColors.tertiaryLabel }]}>
-              <Icon name="close" size={12} color={iosSystemColors.white} />
-            </View>
+            <Icon name="search.clear" size={18} color={systemColors.tertiaryLabel} />
           </Pressable>
         )}
       </View>
@@ -207,13 +204,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     marginRight: -13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clearButton: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
   },

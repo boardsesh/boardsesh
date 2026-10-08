@@ -260,7 +260,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               size="lg"
               iconName={isFavorited ? 'favorite.fill' : 'favorite'}
               onPress={handleFavorite}
-              iconColor={isFavorited ? theme.brandColors.error : undefined}
+              iconColor={isFavorited ? theme.actionColors.favoriteSelected : undefined}
               accessibilityLabel={
                 isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
               }
@@ -378,7 +378,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 size="sm"
                 iconName={isFavorited ? 'favorite.fill' : 'favorite'}
                 onPress={handleFavorite}
-                iconColor={isFavorited ? theme.brandColors.error : undefined}
+                iconColor={isFavorited ? theme.actionColors.favoriteSelected : undefined}
                 accessibilityLabel={
                   isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
                 }
