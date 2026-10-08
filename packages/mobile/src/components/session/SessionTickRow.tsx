@@ -243,7 +243,7 @@ export const SessionTickRow = memo(function SessionTickRow({
       trailing={
         gradeLabel && gradeColor ? (
           <View style={[styles.gradePill, { backgroundColor: gradeColor }]}>
-            <Text variant="caption1" color={getGradeTextColor(gradeColor)} style={styles.gradeText}>
+            <Text variant="caption1" color={getGradeTextColor(gradeColor)} numeric style={styles.gradeText}>
               {gradeLabel}
             </Text>
           </View>

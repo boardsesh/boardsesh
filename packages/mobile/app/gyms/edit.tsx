@@ -190,7 +190,6 @@ function EditGymForm({ gym }: { gym: Gym }) {
             title={t('mobile.gymClaim.claimAction')}
             onPress={presentClaim}
             variant="tonal"
-            size="large"
             icon="person.badge.plus"
           />
         </View>

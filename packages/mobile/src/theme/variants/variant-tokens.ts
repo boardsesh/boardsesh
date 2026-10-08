@@ -108,11 +108,13 @@ export function resolveHeatRamp(colorScheme: 'light' | 'dark'): HeatRamp {
 }
 
 /**
- * Section-caption treatment. Liquid Glass uses the HIG group caption (uppercased,
- * dimmed, tracked-out); Material uses sentence case (the M3 app bar / onSurfaceVariant
- * carries the hierarchy instead). Keyed on VARIANT, not `Platform.OS` — fixing the
- * `SectionHeader` / `FeedSectionLabel` bug where a Liquid-Glass user on Android lost
- * the uppercasing and a Material user on iOS wrongly gained it.
+ * Section-caption treatment. Both variants are sentence case with no tracking:
+ * on iOS 26 a grouped list's section header is sentence-case footnote semibold in
+ * secondaryLabel (HIG Lists and tables; it is what the native SwiftUI Forms in
+ * Settings draw, so our own headers now match them), and M3 list subheaders are
+ * sentence-case titleSmall in onSurfaceVariant. The hierarchy comes from the
+ * secondary colour, not from dimming, so opacity stays 1. Keyed on VARIANT, not
+ * `Platform.OS`, so a Liquid-Glass user on Android gets the same header as on iOS.
  */
 export type SectionCaption = {
   uppercase: boolean;
@@ -121,16 +123,16 @@ export type SectionCaption = {
 };
 
 export const sectionCaptionByVariant = {
-  liquidGlass: { uppercase: true, opacity: 0.6, letterSpacing: 0.5 },
+  liquidGlass: { uppercase: false, opacity: 1, letterSpacing: 0 },
   material: { uppercase: false, opacity: 1, letterSpacing: 0 },
 } as const satisfies Record<UiVariant, SectionCaption>;
 
 /**
  * Apply a section-caption treatment to a label: returns the (possibly uppercased)
  * text plus the style fragment, so `SectionHeader` and `FeedSectionLabel` stay
- * branch-free and identical. JS `.toUpperCase()` (not RN `textTransform`) matches
- * the existing behaviour; captions are non-user-generated UI strings, so the
- * locale-sensitivity of `.toUpperCase()` is not a concern here.
+ * branch-free and identical. No variant uppercases today. If one ever does,
+ * use `toLocaleUpperCase(locale)`: a plain `.toUpperCase()` is locale-blind (it
+ * turns Turkish `i` into `I`, and German `ß` into `SS`).
  */
 export function applySectionCaption(
   text: string,

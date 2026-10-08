@@ -128,7 +128,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
             accessibilityLabel={t('mobile.angleSelector.diagramAria', { angle: selectedAngle })}
           />
 
-          <Text variant="largeTitle" style={[styles.angleValue, { color: systemColors.label }]}>
+          <Text variant="largeTitle" numeric style={[styles.angleValue, { color: systemColors.label }]}>
             {selectedAngle}°
           </Text>
 

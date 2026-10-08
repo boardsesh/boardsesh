@@ -23,7 +23,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Icon } from './Icon';
 import { track } from '../lib/analytics';
 import { ClimbListItemContent } from './ClimbListItemContent';
-import { climbListRowStyles } from './climb-list-row-styles';
+import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
@@ -31,6 +31,9 @@ import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
+
+// (44pt target - 20pt glyph) / 2 = 12pt of empty target past the glyph's edge.
+const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
 
 // Swipe tuning. Each side reveals a panel up to ACTION_REVEAL wide; dragging
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
@@ -627,6 +630,10 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+    // Pull the 44pt target into the row's trailing gutter so the 20pt glyph's
+    // edge sits on the 16pt margin, like the thumbnail on the leading side,
+    // instead of 28pt in. Only the empty half of the target overlaps padding.
+    marginRight: MORE_BUTTON_GUTTER_PULL,
   },
   moreIconRotate: {
     transform: [{ rotate: '90deg' }],

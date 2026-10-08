@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewStyle } from 'react-native';
 
 const hostCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+const buttonCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
@@ -23,7 +24,11 @@ vi.mock('@expo/ui', () => ({
 }));
 vi.mock('@expo/ui/swift-ui', () => {
   const passthrough = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
-  return { Button: passthrough, HStack: passthrough, Image: () => null, ProgressView: () => null, Text: passthrough };
+  const SwiftUIButton = (props: Record<string, unknown> & { children?: ReactNode }) => {
+    buttonCalls.props.push(props);
+    return createElement('div', null, props.children);
+  };
+  return { Button: SwiftUIButton, HStack: passthrough, Image: () => null, ProgressView: () => null, Text: passthrough };
 });
 vi.mock('@expo/ui/swift-ui/modifiers', () => {
   const modifier =
@@ -35,6 +40,7 @@ vi.mock('@expo/ui/swift-ui/modifiers', () => {
     buttonStyle: modifier('buttonStyle'),
     controlSize: modifier('controlSize'),
     disabled: modifier('disabled'),
+    dynamicTypeSize: modifier('dynamicTypeSize'),
     font: modifier('font'),
     foregroundStyle: modifier('foregroundStyle'),
     frame: modifier('frame'),
@@ -59,8 +65,52 @@ function lastHostProps(): Record<string, unknown> {
   return props;
 }
 
+type Modifier = { kind: string; args: unknown[] };
+
+function lastModifiers(): Modifier[] {
+  const props = buttonCalls.props.at(-1);
+  if (!props) throw new Error('SwiftUI Button was never rendered');
+  return props.modifiers as Modifier[];
+}
+
+function modifierArg(kind: string): unknown {
+  return lastModifiers().find((entry) => entry.kind === kind)?.args[0];
+}
+
 beforeEach(() => {
   hostCalls.props = [];
+  buttonCalls.props = [];
+});
+
+// HIG Buttons: only the prominent (filled) call to action is semibold; bordered
+// and borderless system buttons are regular weight.
+describe('iOS Button label weight', () => {
+  it.each<[ButtonVariant, string]>([
+    ['filled', 'semibold'],
+    ['outlined', 'regular'],
+    ['tonal', 'regular'],
+    ['text', 'regular'],
+  ])('%s is %s', (variant, weight) => {
+    render(<Button title="Save" onPress={vi.fn()} variant={variant} />);
+
+    expect(modifierArg('font')).toEqual({ textStyle: 'callout', weight });
+  });
+});
+
+// Every native label is capped, so a button never outgrows the 1.5x-capped Text
+// around it. A caller's own cap (the tick bar's 1.3) still wins.
+describe('iOS Button Dynamic Type cap', () => {
+  it('caps at xxxLarge (1.5x, like Text) when the caller sets nothing', () => {
+    render(<Button title="Save" onPress={vi.fn()} />);
+
+    expect(modifierArg('dynamicTypeSize')).toEqual({ max: 'xxxLarge' });
+  });
+
+  it("keeps the caller's tighter cap", () => {
+    render(<Button title="Send" onPress={vi.fn()} maxFontSizeMultiplier={1.3} />);
+
+    expect(modifierArg('dynamicTypeSize')).toEqual({ max: 'xxLarge' });
+  });
 });
 
 describe('iOS Button host', () => {

@@ -35,10 +35,12 @@ import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import {
   buttonFillAxes,
+  buttonLabelStyle,
   buttonMatchContents,
   cappedComposeLabelSize,
   makeButtonPressHandler,
   pinnedButtonHeight,
+  resolveButtonMaxFontScale,
 } from './Button.logic';
 import { materialTextStyles } from '../theme/typography';
 import { sizeConfig, type ButtonProps } from './Button.types';
@@ -86,8 +88,16 @@ export function Button({
 }: ButtonProps) {
   const { brandColors, colorScheme } = useTheme();
   const { fontScale } = useWindowDimensions();
-  // A Compose button sets its label in M3 labelLarge whatever the size step.
-  const cappedLabelSize = cappedComposeLabelSize(materialTextStyles.label.fontSize, fontScale, maxFontSizeMultiplier);
+  // Every tier and size step sets its label in M3 labelLarge (14/20, weight 500),
+  // the M3 Buttons spec. The @expo/ui Text has to be TOLD: it builds its own
+  // TextStyle instead of inheriting the button's LocalTextStyle, so without
+  // `typography` it drew 14sp at weight 400.
+  const cappedLabelSize = cappedComposeLabelSize(
+    materialTextStyles.label.fontSize,
+    fontScale,
+    resolveButtonMaxFontScale(maxFontSizeMultiplier),
+  );
+  const labelStyle = buttonLabelStyle(cappedLabelSize);
   const handlePress = makeButtonPressHandler({ onPress, disabled, loading, haptic });
 
   // A Compose Button takes its accessible name from its Text content (the title),
@@ -197,7 +207,7 @@ export function Button({
           ) : iconSource ? (
             <Icon source={iconSource} size={config.iconSize} modifiers={[padding(0, 0, 8, 0)]} />
           ) : null}
-          <Text style={cappedLabelSize != null ? { fontSize: cappedLabelSize } : undefined}>{title}</Text>
+          <Text style={labelStyle}>{title}</Text>
         </Row>
       </Comp>
     </Host>

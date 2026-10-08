@@ -192,7 +192,8 @@ describe('GlassIconButton (Liquid Glass variant)', () => {
     const { container } = render(<GlassIconButton {...base} iconName="filter" badgeCount={150} />);
     const badgeText = container.querySelector('[data-text]');
     expect(badgeText?.textContent).toBe('99+');
-    expect(badgeText?.getAttribute('data-max-font-size-multiplier')).toBe('1');
+    // 11pt badge text may grow to 1.3x with Dynamic Type; its box grows with it.
+    expect(badgeText?.getAttribute('data-max-font-size-multiplier')).toBe('1.3');
   });
 
   it('forwards accessibilityLabel and accessibilityHint', () => {

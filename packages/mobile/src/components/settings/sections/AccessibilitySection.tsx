@@ -54,7 +54,7 @@ import {
   type HoldColorOverrides,
   type HoldMarkerShape,
 } from '../../../lib/hold-color-overrides';
-import { borderRadius, spacing } from '../../../theme/tokens';
+import { borderRadius, cardCorners, spacing } from '../../../theme/tokens';
 
 type ColorMode = 'default' | 'user';
 
@@ -750,7 +750,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
   },
   card: {
-    borderRadius: borderRadius.lg,
+    ...cardCorners,
     overflow: 'hidden',
     marginHorizontal: spacing[4],
   },

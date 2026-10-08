@@ -1,0 +1,23 @@
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('react-native', () => ({
+  StyleSheet: { create: <T>(styles: T): T => styles, hairlineWidth: 0.5 },
+  Platform: { OS: 'ios', select: () => undefined },
+  PlatformColor: (name: string) => name,
+}));
+vi.mock('../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 48 }));
+
+import { CLIMB_ROW_GUTTER, climbListRowStyles } from '../climb-list-row-styles';
+
+// HIG Layout: 16pt side margins on iPhone; M3 Lists: 16dp item padding. The row
+// used 8pt, so the thumbnails sat closer to the edge than every header above.
+describe('climb list row margins', () => {
+  it('pads the row 16pt on both sides', () => {
+    expect(CLIMB_ROW_GUTTER).toBe(16);
+    expect(climbListRowStyles.contentRow.paddingHorizontal).toBe(16);
+  });
+
+  it('starts the separator at the text column, after the gutter, thumbnail and gap', () => {
+    expect(climbListRowStyles.separator.marginLeft).toBe(16 + 48 + 12);
+  });
+});

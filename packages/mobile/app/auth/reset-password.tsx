@@ -91,12 +91,7 @@ export default function ResetPasswordScreen() {
               <Text style={[styles.invalidLinkText, { color: theme.systemColors.label }]}>
                 {t('resetPassword.invalidLink')}
               </Text>
-              <Button
-                title={t('resetPassword.back')}
-                onPress={() => router.replace('/auth/login')}
-                variant="text"
-                size="large"
-              />
+              <Button title={t('resetPassword.back')} onPress={() => router.replace('/auth/login')} variant="text" />
             </View>
           ) : (
             <>
@@ -171,7 +166,6 @@ export default function ResetPasswordScreen() {
                   title={t('resetPassword.back')}
                   onPress={() => router.replace('/auth/login')}
                   variant="text"
-                  size="large"
                   disabled={submitting}
                 />
               </View>

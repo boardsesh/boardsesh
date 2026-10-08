@@ -763,7 +763,7 @@ export default function DiscoverLibrary() {
               {t('library.empty.description')}
             </Text>
             <View style={styles.emptyCta}>
-              <Button title={t('library.empty.createCta')} icon="plus" size="large" onPress={handleCreatePress} />
+              <Button title={t('library.empty.createCta')} icon="plus" onPress={handleCreatePress} />
             </View>
           </View>
         ) : null}

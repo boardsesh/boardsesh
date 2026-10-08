@@ -222,7 +222,6 @@ function ShareBetaScreen() {
           <Button
             title={t('mobile.betaVideos.shareSignInButton')}
             variant="filled"
-            size="large"
             onPress={() => router.replace('/auth/login')}
           />
         </View>

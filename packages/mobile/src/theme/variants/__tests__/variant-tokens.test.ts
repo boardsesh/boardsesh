@@ -59,17 +59,21 @@ describe('resolveChartColors', () => {
 });
 
 describe('sectionCaptionByVariant / applySectionCaption', () => {
-  it('uppercases on Liquid Glass and leaves sentence case on Material', () => {
-    expect(applySectionCaption('Today', sectionCaptionByVariant.liquidGlass).text).toBe('TODAY');
+  it('keeps sentence case on both variants (HIG Lists and tables; M3 lists)', () => {
+    expect(applySectionCaption('Today', sectionCaptionByVariant.liquidGlass).text).toBe('Today');
     expect(applySectionCaption('Today', sectionCaptionByVariant.material).text).toBe('Today');
   });
 
-  it('carries the dim/tracked treatment on Liquid Glass only', () => {
+  it('neither dims nor tracks: secondaryLabel carries the hierarchy', () => {
     expect(applySectionCaption('x', sectionCaptionByVariant.liquidGlass).style).toEqual({
-      opacity: 0.6,
-      letterSpacing: 0.5,
+      opacity: 1,
+      letterSpacing: 0,
     });
     expect(applySectionCaption('x', sectionCaptionByVariant.material).style).toEqual({ opacity: 1, letterSpacing: 0 });
+  });
+
+  it('still uppercases when a caption asks for it', () => {
+    expect(applySectionCaption('Today', { uppercase: true, opacity: 1, letterSpacing: 0 }).text).toBe('TODAY');
   });
 
   it('declares every variant (exhaustive map)', () => {

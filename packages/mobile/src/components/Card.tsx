@@ -12,7 +12,7 @@ import {
 import { Card as PaperCard } from 'react-native-paper';
 import { PressableSurface } from './PressableSurface';
 import { hapticLight } from '../lib/haptics';
-import { borderRadius } from '../theme/tokens';
+import { cardCorners } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent } from '../theme/variants';
 
@@ -120,7 +120,7 @@ function CardGlass({
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: borderRadius.lg,
+    ...cardCorners,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 16,
     ...Platform.select({

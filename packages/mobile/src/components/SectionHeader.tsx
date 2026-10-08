@@ -1,4 +1,4 @@
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type TextStyle } from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
@@ -30,16 +30,22 @@ type SectionHeaderProps = {
 };
 
 export function SectionHeader({ title, actionLabel, onActionPress, disclosure }: SectionHeaderProps) {
-  const { brandColors, variant, m3, sectionCaption } = useTheme();
-  // M3 list/section headers are sentence-case titleSmall in onSurfaceVariant — not
-  // the iOS group caption (uppercased, dimmed, tracked-out footnote). The uppercase
-  // + 0.6 opacity + letter-spacing come from `sectionCaption` (keyed on variant, not
-  // Platform.OS — a Liquid-Glass user on Android must still get the HIG caption); the
-  // Text scale, colour, and weight stay per-variant here.
+  const { brandColors, systemColors, variant, m3, sectionCaption } = useTheme();
+  // Both variants are sentence case. Liquid Glass is footnote semibold in
+  // secondaryLabel, matching the native SwiftUI Form headers in Settings (HIG
+  // Lists and tables); Material is titleSmall in onSurfaceVariant (M3 lists).
+  // Case, opacity and tracking come from `sectionCaption`; the Text scale,
+  // colour, and weight stay per-variant here.
   const caption = applySectionCaption(title, sectionCaption);
   const textVariant = selectByVariant(variant, { liquidGlass: 'footnote', material: 'subheadline' } as const);
-  const textColor = selectByVariant(variant, { liquidGlass: undefined, material: m3.onSurfaceVariant });
-  const weightStyle = selectByVariant(variant, { liquidGlass: undefined, material: styles.materialText });
+  const textColor = selectByVariant(variant, {
+    liquidGlass: systemColors.secondaryLabel,
+    material: m3.onSurfaceVariant,
+  });
+  const weightStyle: TextStyle = selectByVariant<TextStyle>(variant, {
+    liquidGlass: styles.glassText,
+    material: styles.materialText,
+  });
   const showAction = !!actionLabel && !!onActionPress;
   const collapsible = disclosure !== undefined;
 
@@ -107,6 +113,10 @@ const styles = StyleSheet.create({
   // onSurfaceVariant carries the hierarchy on Material.
   materialText: {
     fontWeight: '500',
+  },
+  // HIG grouped-list section header: footnote semibold.
+  glassText: {
+    fontWeight: '600',
   },
   disclosure: {
     flexDirection: 'row',
