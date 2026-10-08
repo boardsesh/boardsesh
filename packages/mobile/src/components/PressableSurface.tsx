@@ -43,10 +43,13 @@ export function PressableSurface({
   const callerTransform = Array.isArray(flatStyle?.transform) ? flatStyle.transform : [];
   const callerOpacity = typeof flatStyle?.opacity === 'number' ? flatStyle.opacity : 1;
   const animatedStyle = useAnimatedStyle(() => {
-    if (resolvedFeedback === 'scale')
-      return { transform: [...callerTransform, { scale: 1 - (1 - scaleTo) * pressed.value }] };
-    if (resolvedFeedback === 'opacity') return { opacity: callerOpacity * (1 - (1 - opacityTo) * pressed.value) };
-    return {};
+    // Reanimated values outrank static styles regardless of array order. Keep
+    // disabled dimming in this worklet, and reset both animated properties when
+    // the feedback mode changes so a previous scale/opacity cannot remain stuck.
+    const scale = !disabled && resolvedFeedback === 'scale' ? 1 - (1 - scaleTo) * pressed.value : 1;
+    const feedbackOpacity = resolvedFeedback === 'opacity' ? 1 - (1 - opacityTo) * pressed.value : 1;
+    const alpha = disabled ? opacity.disabled : feedbackOpacity;
+    return { transform: [...callerTransform, { scale }], opacity: callerOpacity * alpha };
   });
   const handlePressIn = (event: GestureResponderEvent) => {
     if (typeof style === 'function') setCallbackPressed(true);

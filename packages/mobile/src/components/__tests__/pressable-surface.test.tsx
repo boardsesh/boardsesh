@@ -4,6 +4,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // Controls the rendering branch under test.
+const animatedStyles = vi.hoisted(() => new WeakSet<object>());
 const ctrl = vi.hoisted(() => ({ os: 'ios' as string, reduceMotion: false, pressed: { value: 0 }, spring: vi.fn() }));
 
 // Minimal RN surface: Pressable becomes a <button> that exposes whether it
@@ -42,7 +43,13 @@ vi.mock('react-native', () => ({
         onMouseDown: onPressIn,
         onMouseUp: onPressOut,
         disabled,
-        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        'data-style': JSON.stringify(
+          Object.assign(
+            {},
+            ...[style].flat(10).filter(Boolean),
+            ...[style].flat(10).filter((entry) => entry && typeof entry === 'object' && animatedStyles.has(entry)),
+          ),
+        ),
         'data-has-ripple': android_ripple ? 'true' : 'false',
         'data-ripple-color': android_ripple?.color,
         'data-role': accessibilityRole,
@@ -53,7 +60,11 @@ vi.mock('react-native', () => ({
 
 vi.mock('react-native-reanimated', () => ({
   default: { createAnimatedComponent: (component: unknown) => component },
-  useAnimatedStyle: (callback: () => unknown) => callback(),
+  useAnimatedStyle: (callback: () => object) => {
+    const result = callback();
+    animatedStyles.add(result);
+    return result;
+  },
   useSharedValue: () => ctrl.pressed,
   withSpring: (value: number) => {
     ctrl.spring(value);
@@ -102,7 +113,7 @@ describe('PressableSurface', () => {
       transform?: unknown;
     };
     expect(style.opacity).toBeCloseTo(0.56);
-    expect(style.transform).toBeUndefined();
+    expect(style.transform).toEqual([{ scale: 1 }]);
     fireEvent.mouseDown(getByRole('button'));
     fireEvent.mouseUp(getByRole('button'));
     expect(ctrl.spring).not.toHaveBeenCalled();
@@ -154,4 +165,44 @@ describe('PressableSurface', () => {
     fireEvent.click(getByRole('button'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+});
+
+it('retains disabled dimming with Reanimated precedence, and resets feedback properties', () => {
+  ctrl.os = 'ios';
+  ctrl.reduceMotion = true;
+  ctrl.pressed.value = 1;
+  const screen = render(
+    <PressableSurface disabled style={{ opacity: 0.8, transform: [{ rotate: '10deg' }] }}>
+      x
+    </PressableSurface>,
+  );
+  const read = () =>
+    JSON.parse(screen.getByRole('button').getAttribute('data-style') ?? '{}') as {
+      opacity: number;
+      transform: unknown;
+    };
+  expect(read().opacity).toBeCloseTo(0.4);
+  expect(read().transform).toEqual([{ rotate: '10deg' }, { scale: 1 }]);
+  ctrl.reduceMotion = false;
+  screen.rerender(
+    <PressableSurface feedback="none" style={{ opacity: 0.8, transform: [{ rotate: '10deg' }] }}>
+      x
+    </PressableSurface>,
+  );
+  expect(read().opacity).toBe(0.8);
+  expect(read().transform).toEqual([{ rotate: '10deg' }, { scale: 1 }]);
+  screen.rerender(
+    <PressableSurface feedback="scale" style={{ opacity: 0.8 }}>
+      x
+    </PressableSurface>,
+  );
+  expect(read().opacity).toBe(0.8);
+  expect(read().transform).toEqual([{ scale: 0.96 }]);
+  screen.rerender(
+    <PressableSurface feedback="opacity" style={{ opacity: 0.8 }}>
+      x
+    </PressableSurface>,
+  );
+  expect(read().opacity).toBeCloseTo(0.56);
+  expect(read().transform).toEqual([{ scale: 1 }]);
 });
