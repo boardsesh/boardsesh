@@ -1,6 +1,34 @@
 {
-  "generatedAt": "2026-10-08T11:14:09.422Z",
+  "generatedAt": "2026-10-08T19:51:04.607Z",
   "entries": [
+    {
+      "prNumber": 6260,
+      "category": "new",
+      "title": "See when each climb in the wall's history was lit, including climbs displayed via Kilter",
+      "mergedAt": "2026-10-08T19:41:08Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6260"
+    },
+    {
+      "prNumber": 6255,
+      "category": "fixed",
+      "title": "Keep your full warm-up even at your board's easiest grades.",
+      "mergedAt": "2026-10-08T19:39:15Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6255"
+    },
+    {
+      "prNumber": 6253,
+      "category": "new",
+      "title": "Read comments and controls at your preferred text size, keep your place while browsing, and undo queue or logbook changes. Create climbs in a focused editor, reach board holds with VoiceOver, and use anchored pickers on iPad. Attempt and Send stay tappable while writing an ascent comment. Keep the familiar climb reaction menu.",
+      "mergedAt": "2026-10-08T19:36:46Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6253"
+    },
+    {
+      "prNumber": 6259,
+      "category": "fixed",
+      "title": "Cleaner Spanish wording in climb search",
+      "mergedAt": "2026-10-08T19:35:41Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6259"
+    },
     {
       "prNumber": 6247,
       "category": "fixed",

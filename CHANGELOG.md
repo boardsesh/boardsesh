@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- See when each climb in the wall's history was lit, including climbs displayed via Kilter ([#6260](https://github.com/boardsesh/boardsesh/pull/6260))
+- Read comments and controls at your preferred text size, keep your place while browsing, and undo queue or logbook changes. Create climbs in a focused editor, reach board holds with VoiceOver, and use anchored pickers on iPad. Attempt and Send stay tappable while writing an ascent comment. Keep the familiar climb reaction menu. ([#6253](https://github.com/boardsesh/boardsesh/pull/6253))
 - iPhones on iOS 18 get the standard iOS tab bar ([#6249](https://github.com/boardsesh/boardsesh/pull/6249))
   Unvisited tabs wait to load their feeds until you open them
 - Save for a new climb now sits top right, out of the tool row ([#6240](https://github.com/boardsesh/boardsesh/pull/6240))
@@ -22,6 +24,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Keep your full warm-up even at your board's easiest grades. ([#6255](https://github.com/boardsesh/boardsesh/pull/6255))
+- Cleaner Spanish wording in climb search ([#6259](https://github.com/boardsesh/boardsesh/pull/6259))
 - Buttons are sized like the rest of iOS and Android, with labels that no longer look oversized ([#6247](https://github.com/boardsesh/boardsesh/pull/6247))
   Numbers like angles and grades no longer jitter while they change
 - Cleared the queue by mistake? Tap Undo to bring it back ([#6246](https://github.com/boardsesh/boardsesh/pull/6246))
