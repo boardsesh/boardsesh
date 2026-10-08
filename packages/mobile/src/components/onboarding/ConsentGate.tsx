@@ -37,7 +37,7 @@ export function ConsentGate(): null {
     const updateFlags = () => setPosthogFlagIdentity(isAuthenticated ? authenticatedUserId : null);
     updateFlags();
     return subscribePosthogInitialized(updateFlags);
-  }, [isAuthenticated, authenticatedUserId, consent.record?.analytics, killed]);
+  }, [isAuthenticated, authenticatedUserId, consent.authSettled, consent.accountId, consent.record?.analytics, killed]);
 
   useEffect(() => {
     if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;

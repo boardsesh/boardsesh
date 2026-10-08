@@ -113,6 +113,25 @@ async function flushEffects() {
 }
 
 describe('ConsentGate', () => {
+  it('reloads guest flags once auth settles even when the selected identity stays null', async () => {
+    auth.isLoading = true;
+    const view = render(<ConsentGate />);
+    await flushEffects();
+    expect(getConsentSnapshot().authSettled).toBe(false);
+    expect(posthog.setFlagIdentity).toHaveBeenCalledWith(null);
+    posthog.setFlagIdentity.mockClear();
+
+    auth.isLoading = false;
+    view.rerender(<ConsentGate />);
+    await flushEffects();
+    expect(getConsentSnapshot().authSettled).toBe(true);
+    expect(posthog.setFlagIdentity).toHaveBeenCalledExactlyOnceWith(null);
+
+    view.rerender(<ConsentGate />);
+    await flushEffects();
+    expect(posthog.setFlagIdentity).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the privacy choice for a fresh signed-out launch', async () => {
     render(<ConsentGate />);
     await flushEffects();

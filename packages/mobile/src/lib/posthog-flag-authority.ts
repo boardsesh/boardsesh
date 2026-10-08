@@ -1,7 +1,13 @@
 import { getConsentSnapshot, subscribeConsent } from './consent-state';
 import { PostHogPersistedProperty, type PostHog } from 'posthog-react-native';
 
-type FlagAuthority = { accountId: string | null; authEpoch: number; generation: number };
+type FlagAuthority = {
+  accountId: string | null;
+  consentAccountId: string | null;
+  authSettled: boolean;
+  authEpoch: number;
+  generation: number;
+};
 let selectedAccountId: string | null = null;
 let generation = 0;
 let freshResponse: { authority: FlagAuthority; requestId: string } | null = null;
@@ -11,6 +17,8 @@ export function getPosthogFlagAuthority(): FlagAuthority {
   const consent = getConsentSnapshot();
   return {
     accountId: consent.authSettled && consent.accountId === selectedAccountId ? selectedAccountId : null,
+    consentAccountId: consent.accountId,
+    authSettled: consent.authSettled,
     authEpoch: consent.authEpoch,
     generation,
   };
@@ -41,7 +49,12 @@ export function rememberPosthogFlagResponse(authority: FlagAuthority, response: 
 
 /** A cached SDK request id alone cannot prove which account received the answer. */
 export function isPosthogFlagResponseCurrent(requestId: string): boolean {
-  return freshResponse?.requestId === requestId && isPosthogFlagAuthorityCurrent(freshResponse.authority);
+  return (
+    freshResponse?.requestId === requestId &&
+    freshResponse.authority.authSettled &&
+    freshResponse.authority.accountId === freshResponse.authority.consentAccountId &&
+    isPosthogFlagAuthorityCurrent(freshResponse.authority)
+  );
 }
 
 /** Cache ownership and live-response freshness are separate: offline flags are still useful. */

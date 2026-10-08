@@ -5,9 +5,18 @@ const posthogClientMocks = vi.hoisted(() => ({ getPostHogClient: vi.fn() }));
 vi.mock('../posthog-client', () => ({ getPostHogClient: posthogClientMocks.getPostHogClient }));
 
 import { readPosthogFeatureFlags, readPosthogFeatureFlagsRequestId, registerRenderSuperProperties } from '../analytics';
-import { getPosthogFlagAuthority, rememberPosthogFlagResponse } from '../posthog-flag-authority';
+import {
+  getPosthogFlagAuthority,
+  rememberPosthogFlagResponse,
+  setPosthogFlagAuthority,
+} from '../posthog-flag-authority';
 import { grantAnalyticsForTest } from '../../../test/consent-fixture';
 import { updateConsentState } from '../consent-state';
+
+beforeEach(() => {
+  grantAnalyticsForTest();
+  setPosthogFlagAuthority(null);
+});
 
 // readPosthogFeatureFlags is the only exported surface over
 // coerceFeatureFlagValue, so these tests exercise the coercion through it:

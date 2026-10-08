@@ -112,16 +112,16 @@ describe('mobile consent privacy boundaries', () => {
     const textResponse = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
     expect(await textResponse.text()).toBe(JSON.stringify({ requestId: 'current-response', flags: {} }));
   });
-  it('rejects an anonymous response once flags target the signed-in account', async () => {
+  it('rejects an anonymous response when auth resolves before the flag identity setter runs', async () => {
     const payload = { requestId: 'anonymous-response', flags: { 'early-updates': false } };
     vi.spyOn(PostHog.prototype, 'fetch').mockResolvedValue(new Response(JSON.stringify(payload)));
     const client = new ConsentPostHog('phc_test');
     const response = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
     updateConsentState({ accountId: 'account-a', authSettled: true });
-    setPosthogFlagIdentity('account-a');
     await expect(response.json()).rejects.toThrow('superseded account');
     const { isPosthogFlagResponseCurrent } = await import('../posthog-flag-authority');
     expect(isPosthogFlagResponseCurrent('anonymous-response')).toBe(false);
+    setPosthogFlagIdentity('account-a');
   });
   it('rejects an old account response without replacing the new account freshness', async () => {
     const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');

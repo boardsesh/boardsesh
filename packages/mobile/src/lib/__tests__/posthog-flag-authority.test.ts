@@ -4,10 +4,12 @@ import { getConsentSnapshot, invalidateConsentAccount, updateConsentState } from
 import {
   getPosthogFlagAuthority,
   isPosthogFlagBagCurrent,
+  isPosthogFlagAuthorityCurrent,
   isPosthogFlagResponseCurrent,
   ownedPosthogFlagDetails,
   rememberPosthogFlagResponse,
   setPosthogFlagAuthority,
+  subscribePosthogFlagAuthority,
 } from '../posthog-flag-authority';
 
 beforeEach(() => {
@@ -21,6 +23,55 @@ function cachedClient(contents: Record<string, unknown>) {
 }
 
 describe('functional flag cache ownership', () => {
+  it('revokes anonymous freshness and notifies before the flag identity setter follows the account', () => {
+    const anonymousAuthority = getPosthogFlagAuthority();
+    rememberPosthogFlagResponse(anonymousAuthority, { requestId: 'anonymous-response' });
+    expect(isPosthogFlagResponseCurrent('anonymous-response')).toBe(true);
+    const observedFreshness: boolean[] = [];
+    const unsubscribe = subscribePosthogFlagAuthority(() => {
+      observedFreshness.push(isPosthogFlagResponseCurrent('anonymous-response'));
+    });
+    try {
+      updateConsentState({ accountId: 'account-a' });
+      expect(observedFreshness).toEqual([false]);
+      expect(isPosthogFlagAuthorityCurrent(anonymousAuthority)).toBe(false);
+      const pendingIdentityAuthority = getPosthogFlagAuthority();
+      rememberPosthogFlagResponse(pendingIdentityAuthority, { requestId: 'pending-identity-response' });
+      expect(isPosthogFlagResponseCurrent('pending-identity-response')).toBe(false);
+      expect(ownedPosthogFlagDetails({ requestId: 'pending-identity-response', flags: {} }, undefined)).toBeUndefined();
+      setPosthogFlagAuthority('account-a');
+      rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'account-a-response' });
+      expect(isPosthogFlagResponseCurrent('account-a-response')).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('never makes an unsettled cached-profile response fresh', () => {
+    const anonymousAuthority = getPosthogFlagAuthority();
+    rememberPosthogFlagResponse(anonymousAuthority, { requestId: 'settled-anonymous' });
+    const observedFreshness: boolean[] = [];
+    const unsubscribe = subscribePosthogFlagAuthority(() => {
+      observedFreshness.push(isPosthogFlagResponseCurrent('settled-anonymous'));
+    });
+    try {
+      updateConsentState({ authSettled: false });
+      expect(observedFreshness).toEqual([false]);
+      expect(isPosthogFlagAuthorityCurrent(anonymousAuthority)).toBe(false);
+      updateConsentState({ accountId: 'cached-account-a' });
+      setPosthogFlagAuthority('cached-account-a');
+      rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'unsettled-profile-response' });
+      expect(isPosthogFlagResponseCurrent('unsettled-profile-response')).toBe(false);
+      expect(isPosthogFlagBagCurrent(cachedClient({ boardseshFlagAccountId: 'cached-account-a' }))).toBe(false);
+      updateConsentState({ authSettled: true });
+      expect(isPosthogFlagResponseCurrent('unsettled-profile-response')).toBe(false);
+      rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'resolved-account-response' });
+      expect(isPosthogFlagResponseCurrent('resolved-account-response')).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it('retains this account cache offline without treating it as a fresh off decision', () => {
     updateConsentState({ authSettled: true, accountId: 'account-a' });
     setPosthogFlagAuthority('account-a');
