@@ -30,14 +30,14 @@ workflow at ~2,000 runs a week, almost all of them a six-second gate.
 1. **Org → GitHub Team.** $4 a seat, three seats, $12 a month, and the Linux
    concurrency limit goes from 20 to 60. macOS stays at 5 on every plan below
    Enterprise. Nothing in the repo changes.
-2. **ci.yml: eleven guard jobs → one `guards` job.** `large-files`,
+2. **ci.yml: guard jobs → one `guards` job.** `large-files`,
    `codegen-drift`, `board-render-version`, `i18n`, `deploy-config`,
-   `listing-guards`, `pg18-artifacts`, `rest-surface`, `commit-lint`,
+   `listing-guards`, `pg18-artifacts`, `rest-surface`,
    `release-notes` and `changelog-owned` are steps of one job now: one
    checkout, one `vp install`, each guard keeps its old `if:` at step level,
-   every guard still runs when an earlier one fails, and a final summary step
-   fails the job naming the guards that failed. That saves up to ten slot
-   allocations per ci.yml run (one per guard that would have run). `ci-status` is still the only required check.
+   every remaining guard still runs when an earlier one fails, and a final summary step
+   fails the job naming the guards that failed. That saved up to ten slot
+   allocations per ci.yml run when the eleven guards were consolidated. `ci-status` is still the only required check.
 3. **`ci-image.yml` no longer runs daily.** It built the retired bs-ci fleet's
    runner image every night (3–11 hosted minutes a run, for an image nothing
    pulls).
@@ -103,3 +103,30 @@ and `refresh-content-model` (a Python/torch step) stay on Actions.
   runs, the `max-parallel` caps on the test matrices, path filters on heavy
   jobs. The caps exist to keep one push from taking the whole pool; revisit
   them once the Team upgrade has a week of numbers behind it.
+
+## External contributions
+
+PR titles are free-form. Conventional commit subjects remain advisory in CI;
+local commit hooks still validate them. Changelog entries use the conventional
+PR-title type when present and otherwise appear under **Improved**.
+
+Expo web exports print per-file and total raw/Brotli JavaScript sizes for review,
+but size does not fail CI or production deployment. Missing eager scripts,
+dangling asynchronous chunks, missing WASM assets, and stale renderer copies
+still fail their integrity checks. The former GitHub bundle-budget variable is
+no longer read.
+
+`ci.yml` runs with read-only repository permissions and uploads `test-results-*`
+JUnit artifacts even when tests fail. `publish-test-reports.yml` listens for
+completed **CI** runs and publishes the combined check and PR comment using the
+base repository's write token. It checks out the trusted workflow commit and
+reads XML from a separate temporary directory; it never builds PR code or
+executes artifacts. The PR is resolved from its commit association, including
+forks whose workflow payload has no PR list, and its repository, branch, and
+current head are verified before publishing. Closed or superseded PRs, canceled
+runs, and runs without test results are skipped.
+
+Report publishing remains outside the required `ci-status` aggregate. Actual
+test jobs still contribute to that required check, so failed tests block merging.
+Changes to the follow-up workflow take effect once they reach the default branch;
+verify the next eligible fork CI run after merging.

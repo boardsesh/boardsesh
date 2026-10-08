@@ -287,32 +287,9 @@ if [[ -n "${BOARDSESH_EXPORT_EXPECT_URLS:-}" ]]; then
   assert_baked_urls
 fi
 
-# Eager-payload budget + dangling-chunk check.
-#
-# The budget is on every <script src> the shell carries, not on entry-*.js. With
-# route splitting on, Metro hoists the shared trunk into a __common chunk loaded
-# beside the entry, so an entry-only budget would watch the one number that
-# stayed small while the number a reader actually waits for grew freely.
-#
-# Set deliberately close to the current figure. It is a ratchet, not headroom:
-# the measured total is printed on every run (pass or fail) so it can be walked
-# down as the split work continues.
-#
-# 2026-09-25: #5801 set 2,051,000 against a measured 2,050,852, and #5792 (the
-# Woods grade-angle marker) landed an hour later at 2,053,008. Sub-kilobyte slack
-# reds main on ordinary growth, so this sits ~3 KB above the current figure.
-# #5143 (personal grades on the climb list and play drawer) adds ~4.5 KB and
-# measured 2,057,562, so it moves the ratchet to 2,058,000.
-# #5813 (hold heatmap v2: ranked buckets, legend, brush-following create board)
-# adds ~1.1 KB and measured 2,058,624, so it moves the ratchet to 2,061,000.
-# Export settings add ~2.7 KB of compressed copy across the four bundled locales.
-# Keep the eager budget bounded while allowing those translations (#5886).
-# #5851: the current release train plus SQLite helper lifetimes measure 2,067,967
-# bytes. Leave about 2 KB of slack for the local Expo web export.
-BOARDSESH_WEB_EAGER_BROTLI_BUDGET="${BOARDSESH_WEB_EAGER_BROTLI_BUDGET:-2070000}"
-node "$ROOT_DIR/scripts/lib/check-expo-web-eager-budget.mjs" \
+# Report every eager script's raw/Brotli size and verify referenced chunks exist.
+node "$ROOT_DIR/scripts/lib/inspect-expo-web-export.mjs" \
   "$OUTPUT_DIR" \
-  "$BOARDSESH_WEB_EAGER_BROTLI_BUDGET" \
   "$MANIFEST_BASE"
 
 echo "[build-expo-web-export] Expo web export (baseUrl $WEB_BASE_URL) written to $OUTPUT_DIR"

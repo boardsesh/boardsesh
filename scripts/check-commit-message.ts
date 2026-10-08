@@ -8,12 +8,11 @@
  *               Validates the first line of the file git wrote. Exit 1 on failure.
  *   CI range:   tsx scripts/check-commit-message.ts --range <BASE>..<HEAD>
  *               Validates every subject in the range, aggregating errors.
- *   PR title:   tsx scripts/check-commit-message.ts --pr-title "<title>"
- *               Validates a single subject (so PR-title category derivation is
- *               trustworthy).
+ *   Manual title: tsx scripts/check-commit-message.ts --pr-title "<title>"
+ *                 Optional single-subject check; CI accepts free-form PR titles.
  *
- * The local hook is best-effort (this repo's git worktrees make hooks
- * unreliable); the CI range check is the authoritative gate.
+ * The local hook validates new commit subjects. CI range checks are advisory
+ * and do not block merging.
  */
 
 import { execFileSync } from 'node:child_process';

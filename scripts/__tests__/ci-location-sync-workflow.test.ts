@@ -44,7 +44,6 @@ function mappingLine(source: string, key: string, indentation: number): string {
 describe('location-sync CI integration contract', () => {
   const changesJob = mappingEntry(workflowSource, 'changes', 2);
   const integrationJob = mappingEntry(workflowSource, 'test-location-sync-integration', 2);
-  const testReportJob = mappingEntry(workflowSource, 'test-report', 2);
   const ciStatusJob = mappingEntry(workflowSource, 'ci-status', 2);
 
   it('selects the location-sync dependency closure and includes it in runAny', () => {
@@ -86,11 +85,10 @@ describe('location-sync CI integration contract', () => {
     expect(integrationJob).not.toContain('--changed');
   });
 
-  it('publishes JUnit and makes both report and aggregate status depend on the job', () => {
+  it('uploads JUnit for the report publisher and contributes to aggregate status', () => {
     expect(integrationJob).toContain('--reporter=junit');
     expect(integrationJob).toContain('name: test-results-location-sync');
     expect(integrationJob).toContain('path: packages/location-sync/test-results/junit-location-sync.xml');
-    expect(testReportJob).toContain('test-location-sync-integration');
     expect(ciStatusJob).toContain('- test-location-sync-integration');
   });
 });

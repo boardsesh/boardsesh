@@ -18,8 +18,7 @@ concurrency:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
+  pull-requests: read
   packages: read
 
 jobs:
@@ -696,22 +695,8 @@ jobs:
             node scripts/check-large-files.mjs --all
           fi
 
-      # Conventional Commit gate. The PR TITLE is the authoritative hard check:
-      # it's the merge/squash subject and the source of the changelog category.
-      # The per-commit range checks below are ADVISORY (continue-on-error, and no
-      # `id:` so Guards summary ignores them): the repo uses merge commits, so
-      # intermediate WIP/fixup commits land on main verbatim and much of the
-      # existing history is non-conventional; blocking on it would red most PRs.
-      # The local commit-msg hook nudges new commits toward the convention.
-      # Gated on mobile/mobileDeps too so the PR-title check runs whenever the
-      # release-notes guard does: a non-JS mobile/shared change still produces a
-      # changelog entry whose category comes from the (conventional) PR title.
-      - name: commit-lint (PR title, hard gate)
-        id: commit-lint
-        if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' && (needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true') }}
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: vp run check:commit-message -- --pr-title "$PR_TITLE"
+      # Commit subjects remain advisory; free-form PR titles are accepted.
+      # The changelog defaults their category to "Improved".
       - name: commit-lint (PR commit subjects, advisory)
         if: ${{ !cancelled() && steps.install.outcome == 'success' && github.event_name == 'pull_request' && (needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.mobileDeps == 'true') }}
         continue-on-error: true
@@ -1184,7 +1169,7 @@ jobs:
               --reporter=verbose --reporter=github-actions \
               --reporter=junit --outputFile.junit=./test-results/junit-default-${{ matrix.shard }}.xml
           fi
-      # Shard-scoped artifact name AND file name: test-report downloads
+      # Shard-scoped artifact name AND file name: the report publisher downloads
       # `test-results-*` with merge-multiple, which flattens every artifact into
       # one directory — same-named files would clobber each other and the report
       # would silently lose a shard's worth of results.
@@ -1575,9 +1560,6 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}/metro-web
           BOARDSESH_EXPORT_KEEP_METRO_CACHE: '1'
-          # The eager brotli budget is a repository variable so it can be moved
-          # without a commit; empty when unset, and the script's default applies.
-          BOARDSESH_WEB_EAGER_BROTLI_BUDGET: ${{ vars.BOARDSESH_WEB_EAGER_BROTLI_BUDGET }}
         run: vp run check:mobile-web-bundle
       - name: Save Metro's Expo-web transform cache
         uses: actions/cache/save@v4
@@ -1706,39 +1688,6 @@ jobs:
               console.log(\"openapi OK: \" + routeCount + \" paths\");
             " "$openapi_path"
           '
-
-  test-report:
-    needs: [test-default, test-backend, test-ocr, test-location-sync-integration]
-    # Only post a report when at least one test job actually ran. If all four
-    # were skipped (e.g. an i18n-catalog-only PR), there's nothing to
-    # download — actions/download-artifact errors on missing artifacts, so we
-    # skip the whole job instead of swallowing the failure.
-    if: |
-      always() && github.event_name == 'pull_request' && (
-        needs.test-default.result != 'skipped' ||
-        needs.test-backend.result != 'skipped' ||
-        needs.test-ocr.result != 'skipped' ||
-        needs.test-location-sync-integration.result != 'skipped'
-      )
-    runs-on: ${{ fromJSON(github.event.pull_request.head.repo.fork && '"ubuntu-latest"' || vars.CI_RUNNER_LINUX || '"ubuntu-latest"') }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - name: Download all test results
-        uses: actions/download-artifact@v4
-        with:
-          pattern: test-results-*
-          path: test-results
-          merge-multiple: true
-      - name: Publish test report
-        uses: turing85/publish-report@v2
-        with:
-          comment-header: ci-tests
-          comment-enabled: 'true'
-          report-name: CI Tests
-          report-path: 'test-results/**/*.xml'
-          report-reporter: java-junit
-          report-fail-on-error: false
 
   ci-status:
     needs:

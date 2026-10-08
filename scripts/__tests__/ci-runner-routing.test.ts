@@ -86,7 +86,6 @@ const ROUTED_JOBS: ReadonlyArray<readonly [workflow: string, job: string]> = [
   ['ci.yml', 'mobile-bundle'],
   ['ci.yml', 'test-default'],
   ['ci.yml', 'test-ocr'],
-  ['ci.yml', 'test-report'],
 ];
 
 /**
@@ -122,7 +121,6 @@ const MEMORY_BOUND_JOBS = ['lint', 'typecheck'] as const;
  */
 const GUARD_STEPS = [
   'large-files',
-  'commit-lint',
   'release-notes',
   'changelog-owned',
   'board-render-version',
@@ -216,7 +214,7 @@ describe('ci.yml `guards` job', () => {
     return guards.slice(start, end);
   }
 
-  it('exists and replaces the eleven jobs it folded', () => {
+  it('exists and replaces the jobs it folded', () => {
     expect(guards.length).toBeGreaterThan(0);
     for (const jobName of GUARD_STEPS) {
       expect(blocks.has(jobName), `ci.yml still has a standalone \`${jobName}\` job`).toBe(false);
