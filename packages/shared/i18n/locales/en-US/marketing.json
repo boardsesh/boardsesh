@@ -913,7 +913,7 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdatedProductAnalytics": "Last updated: May 2026",
+    "lastUpdatedProductAnalytics": "Last updated: October 8, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
     "collect": {
@@ -925,7 +925,9 @@
       "locationLabel": "Location.",
       "locationBody": "If you grant location permission, we use your approximate location to help you discover nearby Party Mode sessions. We do not track your location in the background or store location history.",
       "productAnalyticsLabel": "Product analytics.",
-      "productAnalyticsBody": "We use PostHog and Vercel Analytics to understand feature usage, page views, performance, and where the app is slow. Some signed-in product events are linked to your Boardsesh account so we can understand which features are useful. We do not use this data for ads."
+      "productAnalyticsBody": "We use PostHog only after you allow analytics, for feature usage, page views, performance and optional session replay in the app. Signed-in analytics can be linked to your Boardsesh account. With your permission, Android install attribution may include the Play Store install referrer and campaign information. We do not use these data for ads.",
+      "serviceStatsLabel": "First-party service statistics.",
+      "serviceStatsBody": "We record a signed-in account’s active day and platform in our own database, regardless of analytics consent, under legitimate interest to understand service use. These rows are kept for 13 months. Only aggregate daily, weekly and monthly counts are sent to PostHog. Signed-out visitors who decline are not counted as unique users."
     },
     "bluetooth": {
       "title": "Bluetooth",
@@ -938,20 +940,27 @@
     },
     "thirdParty": {
       "title": "Third-party services",
-      "vercelLabel": "Vercel.",
-      "vercelBody": "We use Vercel for hosting and analytics. Vercel processes requests to serve the app and collects anonymous usage metrics. See ",
-      "vercelLink": "Vercel's privacy policy",
       "posthogLabel": "PostHog.",
-      "posthogBody": "We use PostHog for product analytics, including server-side events for native app features like iOS Live Activities. See ",
+      "posthogBody": "PostHog processes optional product analytics and app session replay in the United States. We also send minimal operational events without account identifiers for service stability, kiosk displays and update health, plus aggregate active-user counts. See ",
       "posthogLink": "PostHog's privacy policy",
       "auroraLabel": "Aurora Climbing API.",
       "auroraBody": "If you link your Aurora Climbing account (used by Kilter and Tension boards), we sync your climb data with Aurora's servers so your logbook stays consistent across apps. This sync only happens when you initiate it. See ",
       "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " for their data practices."
+      "auroraBodyEnd": " for their data practices.",
+      "hostingLabel": "Railway and Cloudflare.",
+      "hostingLink": "Railway’s privacy policy",
+      "cloudflareLink": "Cloudflare’s privacy policy",
+      "sentryLabel": "Sentry.",
+      "sentryLink": "Sentry’s privacy policy",
+      "expoLabel": "Expo EAS Observe.",
+      "expoLink": "Expo’s privacy policy",
+      "hostingBody": "We use Railway for application and database hosting, and Cloudflare for content delivery, browser-app hosting and media storage. These providers process requests needed to deliver Boardsesh. See ",
+      "sentryBody": "We use Sentry for error monitoring under legitimate interest to keep Boardsesh working. Default personal-information collection is disabled; error reports are limited and sensitive fields are removed. This service remains on when analytics is declined. See ",
+      "expoBody": "If you allow analytics, EAS Observe can send app performance diagnostics, including the Expo client installation identifier (expo.eas_client.id), when diagnostics are enabled. See "
     },
     "sharing": {
       "title": "Data sharing",
-      "body1ProductAnalytics": "We do not sell your data. We do not run ads. We do not share your information with third-party marketers or data brokers. The only data shared externally is what is described above (Vercel hosting/analytics, PostHog product analytics, Aurora Climbing sync when you opt in).",
+      "body1ProductAnalytics": "We do not sell your data, run ads or share information with advertisers or data brokers. The providers described above process data for hosting, storage, service reliability and optional analytics. Aurora Climbing synchronization runs when you enable it.",
       "body2": "Other Boardsesh users can see your username, profile, and logged climbs if you participate in social features like Party Mode. This is visible in the app and is part of how the product works."
     },
     "retention": {
@@ -985,6 +994,11 @@
       "body2Start": "Boardsesh is open source. You can see exactly what data the app collects and how it is processed by reading the source code on ",
       "body2Link": "GitHub",
       "body2End": "."
+    },
+    "choices": {
+      "title": "Cookies and privacy choices",
+      "storageBody": "Required storage includes NextAuth login and sign-in-flow cookies, your language preference (boardsesh-locale), device preferences and the boardsesh-consent cookie. The consent cookie lasts one year and is shared between boardsesh.com and app.boardsesh.com. Allowing analytics enables PostHog identifier and event storage (ph_* on the website and SDK storage in the app). Declining or withdrawing clears analytics identifiers and stops optional analytics, replay, EAS Observe and install-attribution events. Feature flags still use an in-memory client; signed-in flags can use your account ID.",
+      "changeBody": "Use Privacy choices in the website footer or Analytics in Settings to change your answer. We save your decision on the device and, when signed in, on your account. An account denial overrides device grants; an account grant fills devices that have not answered. We retain decision history as evidence of consent until account deletion. Anonymous, short-lived update-health and kiosk events remain enabled for service reliability."
     }
   },
   "preview": {

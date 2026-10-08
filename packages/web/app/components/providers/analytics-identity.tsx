@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useConsent } from '../consent/consent-provider';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';
 import { getAnalyticsAnonymousId, getAnalyticsDistinctId, identify, reset } from '@/app/lib/analytics';
-import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl } from '@/app/lib/analytics-paths';
+import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from '@/app/lib/analytics-paths';
 
 // A throw here would take down the root layout (see the try/catch below), so
 // the failure is swallowed — but swallowing it silently would hide a broken
@@ -24,12 +25,10 @@ let hasReportedIdentityFailure = false;
  * anonymous → authenticated funnel — at which point it silently resolves to
  * nothing while every dashboard looks healthy.
  *
- * Mounted directly under `SessionProviderWrapper` in `app/layout.tsx`: it needs
- * `useSession()` and nothing else, it must run on every route (a person can be
- * created on any page, not just the ones under `SiteChrome`), and it renders
- * nothing. `AnalyticsClient` — the other analytics side-effect component — sits
- * OUTSIDE the session provider and would throw if it called `useSession()`,
- * which is why this is a separate component rather than a few more lines there.
+ * Mounted under ConsentProvider, alongside AnalyticsClient, on every route.
+ * It waits for settled authentication and account consent before identifying.
+ * Keeping identity reconciliation separate from pageviews leaves the account
+ * switch/reset rules in one place.
  *
  * ## Why this is not `reconcileAnalyticsIdentity`
  *
@@ -61,6 +60,7 @@ let hasReportedIdentityFailure = false;
 export default function AnalyticsIdentity() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
+  const { granted } = useConsent();
 
   const authUserId = session?.user?.id ?? null;
   const authEmail = session?.user?.email ?? null;
@@ -68,13 +68,14 @@ export default function AnalyticsIdentity() {
   useEffect(() => {
     // Reconciling against a half-resolved session would identify the wrong
     // person; `status === 'loading'` is every page load's first render.
-    if (status === 'loading') return;
+    if (status === 'loading' || !granted) return;
     // Admin pages are excluded from analytics wholesale, and /embed/** must
     // capture nothing at all — those are iframe widgets on gym websites whose
     // visitors never saw a consent surface (see analytics-paths.ts). Identity
     // events are as much of a capture as a pageview. `pathname` is in the deps,
     // so navigating off either surface reconciles then.
-    if (pathname && (isAdminAnalyticsUrl(pathname) || isEmbedAnalyticsUrl(pathname))) return;
+    if (pathname && (isAdminAnalyticsUrl(pathname) || isEmbedAnalyticsUrl(pathname) || isKioskAnalyticsUrl(pathname)))
+      return;
 
     try {
       // `null` means no PostHog client (server render, dev, preview, missing
@@ -120,7 +121,7 @@ export default function AnalyticsIdentity() {
         Sentry.captureException(error);
       }
     }
-  }, [status, authUserId, authEmail, pathname]);
+  }, [status, authUserId, authEmail, pathname, granted]);
 
   return null;
 }

@@ -1,3 +1,4 @@
+import { CLIENT_PLATFORM_HEADER } from '@boardsesh/shared-schema';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl as _getGraphQLHttpUrl } from '@/app/lib/backend-url';
 
@@ -20,6 +21,7 @@ export function createGraphQLHttpClient(authToken?: string | null): GraphQLClien
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    [CLIENT_PLATFORM_HEADER]: 'web',
   };
 
   if (authToken) {

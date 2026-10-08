@@ -31,6 +31,7 @@ export const LOCALE_LABELS: Record<Locale, string> = {
  */
 export const ALL_NAMESPACES = [
   'common',
+  'consent',
   'marketing',
   'auth',
   'settings',
@@ -55,6 +56,7 @@ export type Namespace = (typeof ALL_NAMESPACES)[number];
  */
 export const MOBILE_NAMESPACES = [
   'common',
+  'consent',
   'auth',
   'climbs',
   'session',

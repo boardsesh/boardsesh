@@ -4,6 +4,13 @@ const mocks = vi.hoisted(() => ({
   PostHog: vi.fn(),
   posthog: {
     capture: vi.fn(),
+    fetch: vi.fn(async () => ({ status: 200, text: async () => '', json: async () => ({}) })),
+    optIn: vi.fn(async () => {}),
+    optOut: vi.fn(async () => {}),
+    onFeatureFlags: vi.fn(() => () => {}),
+    reloadFeatureFlags: vi.fn(),
+    setPersistedProperty: vi.fn(),
+    shutdown: vi.fn(async () => {}),
     flush: vi.fn(async () => {}),
     identify: vi.fn(),
     register: vi.fn().mockResolvedValue(undefined),
@@ -555,3 +562,14 @@ describe('analytics wrapper', () => {
     expect(mocks.posthog.capture).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('../consent', () => ({
+  getWebConsentRecord: () => ({
+    analytics: 'granted',
+    version: 1,
+    source: 'web',
+    decidedAt: '2026-10-08T00:00:00.000Z',
+  }),
+  hasAnalyticsConsent: () => true,
+  subscribeWebConsent: () => () => {},
+}));

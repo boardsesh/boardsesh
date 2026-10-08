@@ -1,7 +1,10 @@
 import * as Sentry from '@sentry/nextjs';
 import { PostHog } from 'posthog-js-lite';
 import { createAnalytics } from '@boardsesh/analytics';
-import { isAdminAnalyticsUrl } from './analytics-paths';
+import { isAdminAnalyticsUrl, isEmbedAnalyticsUrl, isKioskAnalyticsUrl } from './analytics-paths';
+import { getWebConsentRecord, hasAnalyticsConsent, subscribeWebConsent } from './consent';
+import { isAnalyticsGranted } from '@boardsesh/consent';
+
 import { getBackendHttpUrl } from './backend-url';
 import { getSessionInboundCampaign, type InboundCampaign } from './inbound-campaign';
 import { isAutomatedCrawlerUserAgent } from './is-crawler';
@@ -17,10 +20,93 @@ type EventProperties = Record<string, AllowedPropertyValues>;
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 let posthogClient: PostHog | null = null;
 let posthogInitAttempted = false;
+let posthogPersisted = false;
+let flagAccountId: string | null = null;
+const featureFlagListeners = new Set<() => void>();
+let unsubscribeSdkFlags: (() => void) | null = null;
+const retiredClients = new WeakSet<PostHog>();
+const activeRequests = new WeakMap<PostHog, Set<AbortController>>();
+type PersistedKey = Parameters<PostHog['setPersistedProperty']>[0];
+const QUEUE_KEYS = ['queue', 'ai_queue', 'ai_capture_queue', 'logs_queue'] as const;
+
+function clearPosthogStorage(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    // oxlint-disable-next-line no-restricted-globals -- remove legacy third-party analytics identifiers on withdrawal
+    const storage = localStorage;
+    for (const key of Object.keys(storage)) if (key.startsWith('ph_')) storage.removeItem(key);
+  } catch {
+    /* Storage can be unavailable; the SDK still switches to memory. */
+  }
+}
+function retirePosthog(client: PostHog): void {
+  retiredClients.add(client);
+  activeRequests.get(client)?.forEach((controller) => controller.abort());
+  void client.optOut().catch(() => {});
+  // reset([]) preserves all four SDK queues, and shutdown flushes even after optOut.
+  for (const key of QUEUE_KEYS) client.setPersistedProperty(key as PersistedKey, null);
+  client.reset([]);
+  void client.optOut().catch(() => {});
+  for (const key of QUEUE_KEYS) client.setPersistedProperty(key as PersistedKey, null);
+  // An old in-flight flush can otherwise recreate its localStorage blob after cleanup.
+  client.setPersistedProperty = () => {};
+  void client.shutdown(100).catch(() => {});
+}
+function installConsentTransport(client: PostHog): void {
+  const sdkFetch = client.fetch.bind(client);
+  const requests = new Set<AbortController>();
+  activeRequests.set(client, requests);
+  client.fetch = async (url, options) => {
+    const flagsRequest = /\/(flags|decide)\/?(?:\?|$)/.test(url);
+    if (retiredClients.has(client) || (!flagsRequest && !hasAnalyticsConsent())) {
+      throw new Error('Analytics consent does not permit this request');
+    }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) controller.abort();
+    requests.add(controller);
+    try {
+      return await sdkFetch(url, { ...options, signal: controller.signal });
+    } finally {
+      requests.delete(controller);
+      options.signal?.removeEventListener('abort', abort);
+    }
+  };
+}
+function bindFeatureFlags(client: PostHog): void {
+  unsubscribeSdkFlags?.();
+  unsubscribeSdkFlags = client.onFeatureFlags(() => featureFlagListeners.forEach((listener) => listener()));
+  featureFlagListeners.forEach((listener) => listener());
+}
+function refreshAnalyticsConsent(): void {
+  if (!isAnalyticsGranted(getWebConsentRecord())) clearPosthogStorage();
+  if (!posthogClient) return;
+  if (posthogPersisted !== hasAnalyticsConsent()) {
+    const oldClient = posthogClient;
+    posthogClient = null;
+    retirePosthog(oldClient);
+    if (!isAnalyticsGranted(getWebConsentRecord())) clearPosthogStorage();
+    posthogInitAttempted = false;
+    getPosthog();
+  }
+}
+subscribeWebConsent(refreshAnalyticsConsent);
+export function setAnalyticsFlagAccountId(accountId: string | null): void {
+  if (flagAccountId === accountId) return;
+  flagAccountId = accountId;
+  if (!posthogClient || posthogPersisted) return;
+  const oldClient = posthogClient;
+  posthogClient = null;
+  retirePosthog(oldClient);
+  posthogInitAttempted = false;
+  getPosthog();
+}
 const shouldDebugAnalytics = process.env.NEXT_PUBLIC_ANALYTICS_DEBUG === '1';
 
 function getPosthog(): PostHog | null {
   if (typeof window === 'undefined') return null;
+  if (isEmbedAnalyticsUrl(window.location.pathname) || isKioskAnalyticsUrl(window.location.pathname)) return null;
   if (posthogClient) return posthogClient;
   if (posthogInitAttempted) return null;
   posthogInitAttempted = true;
@@ -65,32 +151,27 @@ function getPosthog(): PostHog | null {
     Sentry.captureMessage(message, 'warning');
   }
 
+  if (!isAnalyticsGranted(getWebConsentRecord())) clearPosthogStorage();
   posthogClient = new PostHog(apiKey, {
     host,
     autocapture: false,
     captureHistoryEvents: false,
-    // Persist distinct_id in localStorage so anonymous → authed merges and
-    // cross-session retention cohorts work. This blob holds BOTH the distinct id
-    // and the anonymous id, and `AnalyticsIdentity`
-    // (components/providers/analytics-identity.tsx) reads the pair back to
-    // decide whether this browser is anonymous or already pinned to a person.
-    // Keeping that decision inside the SDK's own storage is deliberate: a
-    // second store of ours would start empty on every existing browser and
-    // disagree with this one.
-    //
-    // CLAUDE.md mandates IndexedDB for client persistence (the no-restricted-globals
-    // lint rule enforces it on bare globals, which is why this config string
-    // doesn't trigger it). posthog-js-lite only exposes
-    // 'localStorage' | 'sessionStorage' | 'cookie' | 'memory' — there is no
-    // IDB option in the lite SDK. 'memory' (the prior setting) regenerated a
-    // fresh anon id on every reload, which broke retention math. Until/unless
-    // we migrate to the full posthog-js SDK or self-host IDB-backed persistence,
-    // this is the documented exception. Do not copy this pattern for other
-    // persistence needs — use idb-helper.ts as usual.
-    persistence: 'localStorage',
+    // Persistence is constructor-fixed in lite. Consent transitions replace the instance.
+    persistence: hasAnalyticsConsent() ? 'localStorage' : 'memory',
+    defaultOptIn: false,
+    sendFeatureFlagEvent: false,
+    preloadFeatureFlags: false,
+    bootstrap:
+      !hasAnalyticsConsent() && flagAccountId ? { distinctId: flagAccountId, isIdentifiedId: true } : undefined,
   });
 
+  posthogPersisted = hasAnalyticsConsent();
+  installConsentTransport(posthogClient);
+  if (posthogPersisted) void posthogClient.optIn().catch(() => {});
+  else void posthogClient.optOut().catch(() => {});
   registerWebSuperProperties(posthogClient);
+  bindFeatureFlags(posthogClient);
+  posthogClient.reloadFeatureFlags();
 
   return posthogClient;
 }
@@ -132,8 +213,7 @@ function webSuperProperties(userAgent: string): Record<string, string> {
 // resolveAppEnvironment().
 //
 // register() IS in posthog-js-lite's public typings (inherited from
-// @posthog/core's PostHogCoreStateless) — no structural cast needed here,
-// unlike registerSessionSuperProperties() below.
+// @posthog/core's PostHogCoreStateless) — no structural cast needed here.
 //
 // Best-effort, exactly like mobile's registerAppEnvironment: a failure here
 // must never block analytics init, so a rejection AND a synchronous throw are
@@ -163,8 +243,6 @@ type FeatureFlagReadOptions = { sendEvent?: boolean };
 type PosthogFeatureFlagClient = {
   getFeatureFlag?: (key: string, options?: FeatureFlagReadOptions) => unknown;
   isFeatureEnabled?: (key: string, options?: FeatureFlagReadOptions) => unknown;
-  reloadFeatureFlags?: () => unknown;
-  onFeatureFlags?: (callback: () => void) => unknown;
 };
 
 function isCurrentAdminAnalyticsPage(): boolean {
@@ -175,10 +253,18 @@ function isCurrentAdminAnalyticsPage(): boolean {
 // boolean "did it send" contract) lives in @boardsesh/analytics and is shared
 // with mobile. Web keeps the platform-specific bits in this file: the production
 // hostname gate inside getPosthog(), the admin-page skip, and URL pageviews.
-const core = createAnalytics(getPosthog, { shouldSkip: isCurrentAdminAnalyticsPage });
+function shouldSkipProductAnalytics(): boolean {
+  return (
+    !hasAnalyticsConsent() ||
+    isCurrentAdminAnalyticsPage() ||
+    (typeof window !== 'undefined' &&
+      (isEmbedAnalyticsUrl(window.location.pathname) || isKioskAnalyticsUrl(window.location.pathname)))
+  );
+}
+const core = createAnalytics(getPosthog, { shouldSkip: shouldSkipProductAnalytics });
 
 export function track(name: string, properties?: EventProperties): void {
-  if (isCurrentAdminAnalyticsPage()) return;
+  if (shouldSkipProductAnalytics()) return;
 
   if (process.env.NODE_ENV !== 'production' && shouldDebugAnalytics) {
     console.info('[analytics] track', name, properties);
@@ -247,6 +333,7 @@ const NAVIGATION_FLUSH_BUDGET_MS = 250;
  * unaffected.
  */
 export async function trackBeforeNavigation(name: string, properties?: EventProperties): Promise<void> {
+  if (shouldSkipProductAnalytics()) return;
   track(name, properties);
 
   const posthog = getPosthog();
@@ -330,42 +417,17 @@ export function reset(): boolean {
   const didReset = core.reset();
   if (didReset) {
     const posthog = getPosthog();
-    if (posthog) registerWebSuperProperties(posthog);
+    if (posthog) {
+      if (hasAnalyticsConsent()) void posthog.optIn().catch(() => {});
+      else void posthog.optOut().catch(() => {});
+      registerWebSuperProperties(posthog);
+    }
   }
   return didReset;
 }
 
-type PosthogSuperPropertyClient = {
-  registerForSession?: (properties: PosthogProperties) => unknown;
-};
-
-/**
- * Register SESSION-scoped PostHog super properties — attached to every event
- * for the current PostHog session only, never persisted to storage. Used by
- * the kiosk routes to stamp `kiosk: true` so 24/7 TV traffic is
- * distinguishable from real climbers in product analytics.
- *
- * Deliberately session-scoped (`registerForSession`, memory-backed in
- * @posthog/core) rather than the persistent `register`: the persistent
- * variant writes to localStorage, so a gym owner who previews their kiosk in
- * a normal browser would be stamped `kiosk: true` on every future event. The
- * TV re-registers on every page load anyway (and kiosks reload daily), so
- * persistence buys nothing. posthog-js-lite exposes `registerForSession` at
- * runtime but not in its public typings, hence the narrow structural cast
- * (same pattern as the feature-flag client above). Returns whether the
- * property was registered.
- */
-export function registerSessionSuperProperties(properties: PosthogProperties): boolean {
-  const posthog = getPosthog();
-  if (!posthog) return false;
-  const superPropertyClient = posthog as unknown as PosthogSuperPropertyClient;
-  if (typeof superPropertyClient.registerForSession !== 'function') return false;
-  void superPropertyClient.registerForSession(properties);
-  return true;
-}
-
 export function pageview(url: string): void {
-  if (isAdminAnalyticsUrl(url)) return;
+  if (shouldSkipProductAnalytics() || isAdminAnalyticsUrl(url)) return;
 
   const posthog = getPosthog();
   if (!posthog) return;
@@ -384,12 +446,6 @@ function coerceFeatureFlagBoolean(value: unknown): boolean | undefined {
 
 function asFeatureFlagClient(posthog: PostHog): PosthogFeatureFlagClient {
   return posthog as unknown as PosthogFeatureFlagClient;
-}
-
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  if (typeof value !== 'object' || value === null) return false;
-  const thenValue = (value as { then?: unknown }).then;
-  return typeof thenValue === 'function';
 }
 
 // This provider re-reads the WHOLE flag catalog on every flags-changed tick, so
@@ -423,27 +479,12 @@ export function readPosthogFeatureFlags(keys: readonly string[]): Record<string,
 }
 
 export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
-  const posthog = getPosthog();
-  if (!posthog) return () => {};
-  const featureFlagClient = asFeatureFlagClient(posthog);
-
-  const reloadResult =
-    typeof featureFlagClient.reloadFeatureFlags === 'function' ? featureFlagClient.reloadFeatureFlags() : undefined;
-  if (isPromiseLike(reloadResult)) {
-    void Promise.resolve(reloadResult)
-      .then(onChange)
-      .catch(() => {});
-  }
-
-  if (typeof featureFlagClient.onFeatureFlags !== 'function') {
-    return () => {};
-  }
-
-  const unsubscribe = featureFlagClient.onFeatureFlags(onChange);
-  if (typeof unsubscribe === 'function') {
-    return unsubscribe as () => void;
-  }
-  return () => {};
+  featureFlagListeners.add(onChange);
+  const client = getPosthog();
+  client?.reloadFeatureFlags();
+  return () => {
+    featureFlagListeners.delete(onChange);
+  };
 }
 
 export type { AllowedPropertyValues };

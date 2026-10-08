@@ -5,14 +5,19 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { act, render } from '@testing-library/react';
 import type { Session } from 'next-auth';
 import AnalyticsIdentity from '../analytics-identity';
+import AnalyticsClient from '../../analytics-client';
 
 const analytics = vi.hoisted(() => ({
   identify: vi.fn((_distinctId: string, _properties?: Record<string, unknown>) => true),
   reset: vi.fn(() => true),
   getAnalyticsDistinctId: vi.fn((): string | null => 'anon-1'),
   getAnalyticsAnonymousId: vi.fn((): string | null => 'anon-1'),
+  pageview: vi.fn((_path: string) => {}),
+  capturePosthog: vi.fn(),
 }));
 vi.mock('@/app/lib/analytics', () => analytics);
+vi.mock('@/app/lib/consent', () => ({ hasAnalyticsConsent: () => true }));
+vi.mock('web-vitals', () => ({ onCLS: vi.fn(), onFCP: vi.fn(), onINP: vi.fn(), onLCP: vi.fn() }));
 
 const sentry = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock('@sentry/nextjs', () => sentry);
@@ -240,6 +245,34 @@ describe('AnalyticsIdentity', () => {
     expect(analytics.identify).not.toHaveBeenCalled();
   });
 
+  it('reconciles a shared browser before its first pageview', async () => {
+    posthogStorage({ anonymousId: 'anonymous-old', distinctId: 'account-old' });
+    signedInAs(makeSession('account-current', 'climber@example.com'));
+    analytics.reset.mockImplementation(() => {
+      posthogStorage({ anonymousId: 'anonymous-fresh' });
+      return true;
+    });
+    analytics.identify.mockImplementation((accountId) => {
+      posthogStorage({ anonymousId: 'anonymous-fresh', distinctId: accountId });
+      return true;
+    });
+    const capturedIdentities: Array<string | null> = [];
+    analytics.pageview.mockImplementation(() => {
+      capturedIdentities.push(analytics.getAnalyticsDistinctId());
+    });
+    // Matches the root layout sibling order; React runs sibling passive effects in order.
+    render(
+      <>
+        <AnalyticsIdentity />
+        <AnalyticsClient />
+      </>,
+    );
+    await act(async () => {});
+    expect(capturedIdentities).toEqual(['account-current']);
+    expect(analytics.reset.mock.invocationCallOrder[0]).toBeLessThan(analytics.identify.mock.invocationCallOrder[0]);
+    expect(analytics.identify.mock.invocationCallOrder[0]).toBeLessThan(analytics.pageview.mock.invocationCallOrder[0]);
+  });
+
   it('sends nothing when an anonymous visitor merely navigates', async () => {
     const view = await renderIdentity();
     navigation.usePathname.mockReturnValue('/gyms/amsterdam');
@@ -259,3 +292,7 @@ describe('AnalyticsIdentity', () => {
     expect(analytics.identify).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: true, openChoices: vi.fn() }),
+}));
