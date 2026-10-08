@@ -179,7 +179,7 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
   useReachableBoardKeys: () => new Set<string>(),
 }));
 
-import { QueueProvider, usePlaylistSuggestionSource, useQueue } from '../queue-provider';
+import { QueueProvider, usePlaylistSuggestionSource, useQueue, useQueueSessionId } from '../queue-provider';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -190,6 +190,9 @@ type Snapshot = {
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
   appendQueueItems: ReturnType<typeof useQueue>['appendQueueItems'];
   clearQueue: ReturnType<typeof useQueue>['clearQueue'];
+  removeQueueItems: ReturnType<typeof useQueue>['removeQueueItems'];
+  restoreQueueItems: ReturnType<typeof useQueue>['restoreQueueItems'];
+  undoScope: string;
   setQueue: ReturnType<typeof useQueue>['setQueue'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
   startSession: ReturnType<typeof useQueue>['startSession'];
@@ -198,6 +201,7 @@ type Snapshot = {
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
   const queue = useQueue();
+  const { undoScope } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   useEffect(() => {
     onSnapshot({
@@ -209,6 +213,9 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       setCurrentClimb: queue.setCurrentClimb,
       appendQueueItems: queue.appendQueueItems,
       clearQueue: queue.clearQueue,
+      removeQueueItems: queue.removeQueueItems,
+      restoreQueueItems: queue.restoreQueueItems,
+      undoScope,
       setQueue: queue.setQueue,
       removeFromQueue: queue.removeFromQueue,
       startSession: queue.startSession,
@@ -223,6 +230,9 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.setCurrentClimb,
     queue.appendQueueItems,
     queue.clearQueue,
+    queue.removeQueueItems,
+    queue.restoreQueueItems,
+    undoScope,
     queue.setQueue,
     queue.removeFromQueue,
     queue.startSession,
@@ -928,6 +938,98 @@ describe('QueueProvider local solo queue', () => {
     ]);
     expect(queueMutations.wasUuidExplicitlyRemoved).toHaveBeenCalledWith('snapshot-second');
   });
+
+  it.each(['clear', 'bulk', 'coalesced bulk', 'first profile resolution bulk'] as const)(
+    'ignores a delayed pre-Undo snapshot after partially failed %s removal',
+    async (removal) => {
+      const snapshots: Snapshot[] = [];
+      if (removal === 'first profile resolution bulk')
+        partyProfileState.current = { ...partyProfileState.current, isAuthenticated: true };
+      const rendered = await renderRestoredSession(snapshots);
+      const first = makeQueueItem('first');
+      const second = makeQueueItem('second');
+      const kept = makeQueueItem('kept');
+      const peer = makeQueueItem('peer-added');
+      const removedProbe = makeQueueItem('earlier-failed-removal');
+      act(() =>
+        snapshots.at(-1)?.dispatch({
+          type: 'INITIAL_QUEUE_DATA',
+          payload: {
+            queue:
+              removal !== 'clear' && removal !== 'bulk' ? [removedProbe, first, second, kept] : [first, second, kept],
+            currentClimbQueueItem: null,
+          },
+        }),
+      );
+      const before = { queue: [first, second, kept], currentClimbQueueItem: null };
+      const heldSnapshot = deferred<unknown>();
+      http.request.mockImplementation((operation: string) =>
+        operation.includes('GetSessionQueueState')
+          ? heldSnapshot.promise
+          : Promise.resolve({ sessionStatus: 'active' }),
+      );
+      queueMutations.removeQueueItem.mockImplementation(async (uuid) => {
+        if (uuid === second.uuid || uuid === removedProbe.uuid) throw new Error('partial removal failed');
+      });
+      if (removal !== 'clear' && removal !== 'bulk') {
+        act(() => snapshots.at(-1)?.removeFromQueue(removedProbe.uuid));
+        await waitFor(() =>
+          expect(
+            http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState')),
+          ).toBe(true),
+        );
+      }
+      if (removal === 'first profile resolution bulk') {
+        partyProfileState.current = { ...partyProfileState.current, authenticatedUserId: 'account-a' };
+        rendered.rerender(
+          createElement(
+            QueueProvider,
+            null,
+            createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) }),
+          ),
+        );
+      }
+      act(() => {
+        const current = snapshots.at(-1)!;
+        if (removal === 'clear') current.clearQueue();
+        else current.removeQueueItems([first.uuid, second.uuid]);
+      });
+      await waitFor(() =>
+        expect(http.request.mock.calls.some(([operation]) => String(operation).includes('GetSessionQueueState'))).toBe(
+          true,
+        ),
+      );
+      act(() => snapshots.at(-1)?.dispatch({ type: 'DELTA_ADD_QUEUE_ITEM', payload: { item: peer } }));
+      const removedUuids = new Set(
+        removal === 'clear' ? [first.uuid, second.uuid, kept.uuid] : [first.uuid, second.uuid],
+      );
+      act(() => {
+        const current = snapshots.at(-1)!;
+        current.restoreQueueItems(before, removedUuids, current.undoScope);
+      });
+      await waitFor(() => expect(queueMutations.setQueue).toHaveBeenCalledOnce());
+      expect(queueMutations.setQueue.mock.calls[0][0].map((item) => item.uuid)).toEqual([
+        'first',
+        'second',
+        'kept',
+        'peer-added',
+      ]);
+      // This HTTP snapshot was captured before Undo; it must not overwrite the
+      // restored queue or the crew's added climb when it arrives afterwards.
+      await act(async () =>
+        heldSnapshot.resolve(
+          queueStateResponse(removal === 'clear' ? [second] : [second, kept], 101, 'pre-undo-partial-removal'),
+        ),
+      );
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['first', 'second', 'kept', 'peer-added']);
+      expect(queueMutations.setQueue).toHaveBeenCalledOnce();
+      expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+      // Coalesced failures must not restart a trailing stale read after Undo.
+      expect(
+        http.request.mock.calls.filter(([operation]) => String(operation).includes('GetSessionQueueState')),
+      ).toHaveLength(removal === 'first profile resolution bulk' ? 2 : 1);
+    },
+  );
 
   it('serializes clear behind the active send and cancels the unsent tail', async () => {
     const snapshots: Snapshot[] = [];

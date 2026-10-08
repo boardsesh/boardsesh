@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';

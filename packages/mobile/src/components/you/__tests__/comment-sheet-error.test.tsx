@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
 vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');

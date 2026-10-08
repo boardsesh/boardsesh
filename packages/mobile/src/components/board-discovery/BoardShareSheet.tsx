@@ -1,24 +1,17 @@
-import { useSheetColumnStyle } from '../use-sheet-column-style';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
-import BottomSheet, {
-  BottomSheetView,
-  BottomSheetScrollView,
-  type BottomSheetMethods,
-} from '@expo/ui/community/bottom-sheet';
+import { ModalSheet } from '../ModalSheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
-import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
-import { androidSafeSnapPoints, MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
-import { spacing, borderRadius, sheetStyles } from '../../theme/tokens';
+import { spacing, borderRadius } from '../../theme/tokens';
 import type { SprayWallVisibility } from '../../lib/spray/spray-share';
 
 type BoardShareSheetProps = {
@@ -45,7 +38,7 @@ const QR_TILE_BACKGROUND = '#FFFFFF';
  * Hand a wall's link to the crew — QR to scan at the wall, copy and share for
  * everywhere else.
  *
- * Modelled on `InviteSheet`: same sheet primitives and the same coordinator, so
+ * Modelled on `InviteSheet`: both use the shared modal coordinator, so
  * the two never fight over a native transition. The one line of copy under the
  * title is the important part — an unlisted link is a capability and a public
  * wall is on the open web, and those are different promises.
@@ -61,15 +54,6 @@ export function BoardShareSheet({
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
-  const windowInsetBottom = useWindowBottomInset();
-  const sheetRef = useRef<BottomSheetMethods>(null);
-
-  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss, onFullyDismissed });
-
-  const [activeIndex, setActiveIndex] = useState(0);
-  // Standard medium/large keeps the QR code scrollable on small phones.
-  const snapPoints = useMemo(() => androidSafeSnapPoints(MEDIUM_LARGE_SNAP_POINTS), []);
-  const columnStyle = useSheetColumnStyle(snapPoints, { activeIndex });
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
@@ -84,70 +68,58 @@ export function BoardShareSheet({
   }, [shareUrl]);
 
   return (
-    <BottomSheet
-      ref={sheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onChange={(index) => {
-        managed.onChange(index);
-        setActiveIndex(Math.max(0, index));
-      }}
-      onFullyDismissed={managed.onFullyDismissed}
-      backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
-      handleIndicatorStyle={sheetStyles.indicator}
+    <ModalSheet
+      visible={visible}
+      onClose={onDismiss}
+      onFullyDismissed={onFullyDismissed}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
+      scrollable
+      contentContainerStyle={styles.content}
+      header={<SheetTopBar title={t('mobile.sprayShare.title')} leading={{ kind: 'close', onPress: onDismiss }} />}
     >
-      {/* The sheet's single child: the top bar and the body share it. */}
-      <BottomSheetView style={[styles.column, columnStyle, { paddingBottom: windowInsetBottom + spacing[4] }]}>
-        <SheetTopBar title={t('mobile.sprayShare.title')} leading={{ kind: 'close', onPress: onDismiss }} />
-        <BottomSheetScrollView contentContainerStyle={styles.content}>
-          <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
-            {wallName}
-          </Text>
-          {/* Full label colour, not secondary: on the glass sheet the grey body
-              and URL were hard to read (#5960). */}
-          <Text variant="footnote" color={systemColors.label} style={styles.subtitle}>
-            {visibility === 'public' ? t('mobile.sprayShare.publicBody') : t('mobile.sprayShare.unlistedBody')}
-          </Text>
+      <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
+        {wallName}
+      </Text>
+      {/* Full label colour, not secondary: on the glass sheet the grey body
+          and URL were hard to read (#5960). */}
+      <Text variant="footnote" color={systemColors.label} style={styles.subtitle}>
+        {visibility === 'public' ? t('mobile.sprayShare.publicBody') : t('mobile.sprayShare.unlistedBody')}
+      </Text>
 
-          <View
-            style={styles.qrTile}
-            accessibilityRole="image"
-            accessibilityLabel={t('mobile.sprayShare.qrLabel', { name: wallName })}
-          >
-            <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
-          </View>
+      <View
+        style={styles.qrTile}
+        accessibilityRole="image"
+        accessibilityLabel={t('mobile.sprayShare.qrLabel', { name: wallName })}
+      >
+        <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
+      </View>
 
-          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
-            {shareUrl}
-          </Text>
+      <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
+        {shareUrl}
+      </Text>
 
-          {/* Content actions, not a form confirm: they stay in the body, one
-              full-width row (stacked they would overflow the medium detent). */}
-          <View style={styles.actions}>
-            <Button
-              title={t('mobile.sprayShare.copyLink')}
-              icon="copy"
-              variant="outlined"
-              onPress={handleCopyLink}
-              style={styles.button}
-            />
-            <Button title={t('mobile.sprayShare.share')} icon="share" onPress={handleShare} style={styles.button} />
-          </View>
-        </BottomSheetScrollView>
-      </BottomSheetView>
-    </BottomSheet>
+      {/* Content actions, not a form confirm: they stay in the body, one
+          full-width row (stacked they would overflow the medium detent). */}
+      <View style={styles.actions}>
+        <Button
+          title={t('mobile.sprayShare.copyLink')}
+          icon="copy"
+          variant="outlined"
+          onPress={handleCopyLink}
+          style={styles.button}
+        />
+        <Button title={t('mobile.sprayShare.share')} icon="share" onPress={handleShare} style={styles.button} />
+      </View>
+    </ModalSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  column: {
-    flex: 1,
-  },
   content: {
     alignItems: 'center',
     paddingHorizontal: spacing[6],
     paddingTop: spacing[4],
+    paddingBottom: spacing[4],
     gap: spacing[2],
   },
   wallName: {

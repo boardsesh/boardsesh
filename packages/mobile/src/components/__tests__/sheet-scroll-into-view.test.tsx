@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
 //
 // #5665: with the keyboard up, the logbook edit sheet's Note field sat under the
 // keyboard. Nothing scrolled the sheet body to the focused field, and nothing

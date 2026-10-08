@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
 //
 // The guard on the shape that shipped #4642: an Android tick note rendered as a
 // ~5pt sliver of glyph bottoms. Nothing in JS can observe the native padding

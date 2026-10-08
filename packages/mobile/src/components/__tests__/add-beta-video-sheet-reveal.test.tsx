@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
 vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
