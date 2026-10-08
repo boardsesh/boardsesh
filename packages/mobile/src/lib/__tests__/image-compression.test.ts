@@ -8,6 +8,9 @@ type FakeImageRef = {
 };
 type FakeContext = { source: string | FakeImageRef; resizes: Array<{ width?: number; height?: number }> };
 
+const platform = vi.hoisted(() => ({ OS: 'android' as 'android' | 'ios' }));
+vi.mock('react-native', () => ({ Platform: platform }));
+
 const manipulator = vi.hoisted(() => ({
   contexts: [] as FakeContext[],
   refs: [] as FakeImageRef[],
@@ -54,6 +57,7 @@ vi.mock('expo-image-manipulator', () => {
 const { compressPickedImageWithSize } = await import('../image-compression');
 
 beforeEach(() => {
+  platform.OS = 'android';
   manipulator.contexts.length = 0;
   manipulator.refs.length = 0;
 });
@@ -103,5 +107,18 @@ describe('compressPickedImageWithSize', () => {
     manipulator.decodedSize = { width: 0, height: 0 };
     await compressPickedImageWithSize('file:///in.jpg', 3024, 8064, { maxDimension: 5712, quality: 0.92 });
     expect(manipulator.contexts[1].resizes).toEqual([{ height: 5712 }]);
+  });
+
+  it('keeps iOS to one pass sized by the picker, which reports the upright size there', async () => {
+    // A second iOS pass would redraw the full upright bitmap (ImageFixOrientationTransformer).
+    platform.OS = 'ios';
+    manipulator.decodedSize = { width: 6048, height: 8064 };
+    const result = await compressPickedImageWithSize('file:///in.jpg', 6048, 8064, {
+      maxDimension: 5712,
+      quality: 0.92,
+    });
+    expect(manipulator.contexts).toHaveLength(1);
+    expect(manipulator.contexts[0].resizes).toEqual([{ height: 5712 }]);
+    expect(result).toMatchObject({ width: 4284, height: 5712 });
   });
 });

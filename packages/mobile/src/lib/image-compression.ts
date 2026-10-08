@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
 export type ImageCompressionOptions = {
@@ -42,16 +43,27 @@ export async function compressPickedImageWithSize(
   options: ImageCompressionOptions,
 ): Promise<CompressedImage> {
   // The long side does not depend on orientation, so the picker's numbers are
-  // enough to know WHETHER to resize. They are not enough to know which side to
-  // resize: some Android pickers report a portrait photo with the sensor's
+  // enough to know WHETHER to resize. On Android they are not enough to know
+  // which side to resize: some Android pickers report a portrait photo with the sensor's
   // landscape numbers, and the resize runs on the already-upright bitmap. Sized
   // by the picker, an 8064x6048 report of a portrait photo would come out
   // 5712x7616, 43.5 MP, past the pixel cap the caller asked for.
-  if (Math.max(width, height) <= options.maxDimension) {
+  const longestSide = Math.max(width, height);
+  if (longestSide <= options.maxDimension) {
     return renderAndSave(ImageManipulator.manipulate(uri), options.quality);
   }
-  // So decode it upright first and pick the side from what was decoded. The
-  // full bitmap is decoded either way; this only keeps it one step longer.
+  // iOS reports the upright size, so one pass sized by the picker is right
+  // there. It must stay one pass: every iOS `manipulate` redraws its source
+  // through `ImageFixOrientationTransformer`, so a second pass over an upright
+  // 48 MP bitmap would hold another ~195 MB.
+  if (Platform.OS !== 'android') {
+    const context = ImageManipulator.manipulate(uri);
+    context.resize(width >= height ? { width: options.maxDimension } : { height: options.maxDimension });
+    return renderAndSave(context, options.quality);
+  }
+  // Android: decode it upright first and pick the side from what was decoded.
+  // `manipulate` over a bitmap ref wraps it without a copy, and the full bitmap
+  // is decoded either way; this only keeps it one step longer.
   const upright = await ImageManipulator.manipulate(uri).renderAsync();
   try {
     const context = ImageManipulator.manipulate(upright);
