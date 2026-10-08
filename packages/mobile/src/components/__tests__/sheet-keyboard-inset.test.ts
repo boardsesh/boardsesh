@@ -6,6 +6,7 @@ type KeyboardEnd = { height: number; screenY: number; width: number };
 type KeyboardListener = (event: { endCoordinates?: KeyboardEnd; duration?: number }) => void;
 const native = vi.hoisted(() => ({
   os: 'ios' as 'ios' | 'android',
+  isPad: false,
   listeners: new Map<string, KeyboardListener>(),
   visible: false,
   metrics: undefined as KeyboardEnd | undefined,
@@ -15,6 +16,9 @@ vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return native.os;
+    },
+    get isPad() {
+      return native.isPad;
     },
   },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
@@ -118,6 +122,7 @@ describe('sheetKeyboardInset', () => {
 describe('useSheetKeyboardInset', () => {
   beforeEach(() => {
     native.os = 'ios';
+    native.isPad = false;
     native.listeners.clear();
     native.visible = false;
     native.metrics = undefined;
@@ -189,5 +194,63 @@ describe('useSheetKeyboardInset', () => {
     expect(result.current.keyboardOverlap).toBe(280 + 34);
     act(() => native.listeners.get('keyboardDidHide')?.({}));
     expect(result.current.keyboardOverlap).toBe(0);
+  });
+
+  it('waits for the did-event on iPad, so a sheet UIKit lifts never flashes the full pad', () => {
+    native.isPad = true;
+    let columnBottom = 1366;
+    const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
+      callback(0, columnBottom - 600, 700, 600),
+    );
+    const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+    Object.assign(result.current.columnRef, { current: { measureInWindow } });
+    act(() => result.current.onColumnLayout());
+    // Before the lift the sheet still reaches the window bottom: a will-event
+    // here would pad by the whole keyboard.
+    const keyboard = { height: 300, screenY: 844 - 300, width: 390 };
+    act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: keyboard, duration: 250 }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    columnBottom = 520;
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: keyboard }));
+    expect(result.current.keyboardOverlap).toBe(0);
+    // A sheet the keyboard does reach is padded from the did-event.
+    columnBottom = 844;
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: keyboard }));
+    expect(result.current.keyboardOverlap).toBe(300);
+    act(() => native.listeners.get('keyboardDidChangeFrame')?.({ endCoordinates: { ...keyboard, screenY: 844 } }));
+    expect(result.current.keyboardOverlap).toBe(0);
+  });
+
+  it('re-measures once, 300ms after a detent change, only while the keyboard is up', () => {
+    vi.useFakeTimers();
+    try {
+      let columnBottom = 844;
+      const measureInWindow = vi.fn((callback: (x: number, y: number, width: number, height: number) => void) =>
+        callback(0, columnBottom - 600, 390, 600),
+      );
+      const { result } = renderHook(() => useSheetKeyboardInset({ enabled: true }));
+      Object.assign(result.current.columnRef, { current: { measureInWindow } });
+      act(() => result.current.measureAfterDetentChange());
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(measureInWindow).not.toHaveBeenCalled();
+
+      act(() => native.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: DOCKED, duration: 250 }));
+      measureInWindow.mockClear();
+      columnBottom = 820;
+      act(() => result.current.measureAfterDetentChange());
+      act(() => {
+        vi.advanceTimersByTime(299);
+      });
+      expect(measureInWindow).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(measureInWindow).toHaveBeenCalledTimes(1);
+      expect(result.current.keyboardOverlap).toBe(820 - DOCKED.screenY);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

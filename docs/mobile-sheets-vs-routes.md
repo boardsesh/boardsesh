@@ -178,7 +178,9 @@ column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
 - iOS measures it: the column's bottom in window coordinates (`measureInWindow`, re-measured on
   every keyboard event) minus the keyboard's top. On iPhone that is the keyboard height; an iPad
   sheet UIKit lifts clear gets 0, and an undocked or split keyboard (narrower than the window) is
-  ignored.
+  ignored. iPad reads only the did-event (at the will-event the sheet is not lifted yet, so the pad
+  would flash in and back out), and a detent change with the keyboard up re-measures once more
+  300 ms after the native `onChange`.
 - Android pads by keyboard + window inset (RN reports the IME without the nav bar).
 - While the keyboard covers the sheet the footer's resting window inset is swapped out, not added,
   so the bar rests `spacing[3]` above the keyboard. On iOS the change rides the keyboard's animation.

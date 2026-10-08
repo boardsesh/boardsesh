@@ -27,6 +27,10 @@ type KeyboardListener = (event: {
 }) => void;
 const keyboard = vi.hoisted(() => ({ listeners: new Map<string, KeyboardListener>() }));
 const snapToIndex = vi.hoisted(() => vi.fn());
+// The column's window frame: bottom at the 844pt window's bottom edge.
+const columnMeasure = vi.hoisted(() =>
+  vi.fn((callback: (x: number, y: number, width: number, height: number) => void) => callback(0, 244, 390, 600)),
+);
 
 // Faithful recursive flatten (nested arrays merge left-to-right) so the tests read
 // the effective style the way React Native would, not just a one-level Object.assign.
@@ -77,10 +81,19 @@ vi.mock('react-native', () => ({
     Version: '26.1',
     select: (options: { ios?: unknown; android?: unknown }) => options.ios,
   },
-  View: ({ children, style, testID }: ViewMockProps & { style?: unknown; testID?: string }) => {
+  View: ({
+    children,
+    style,
+    testID,
+    ref,
+  }: ViewMockProps & { style?: unknown; testID?: string; ref?: { current: unknown } }) => {
     captures.viewStyle = style;
     captures.viewStyles.push(style);
-    if (testID === 'sheet-chrome-column') captures.columnStyle = style;
+    if (testID === 'sheet-chrome-column') {
+      captures.columnStyle = style;
+      // React 19 hands a function component its ref as a prop.
+      if (ref) ref.current = { measureInWindow: columnMeasure };
+    }
     return createElement('div', null, children);
   },
   Keyboard: {
@@ -171,6 +184,7 @@ beforeEach(() => {
   captures.columnStyle = undefined;
   keyboard.listeners.clear();
   snapToIndex.mockClear();
+  columnMeasure.mockClear();
   platform.os = 'ios';
   hapticMedium.mockClear();
 });
@@ -319,6 +333,42 @@ describe('Sheet', () => {
         }),
       );
       expect(snapToIndex).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-measures the column once a detent change has settled with the keyboard up', () => {
+      vi.useFakeTimers();
+      try {
+        renderOpenFooterSheet(['44%', '90%'], 0);
+        act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
+        // The raise lands as the native onChange; the sheet then animates.
+        act(() => captures.onChange?.(1));
+        columnMeasure.mockClear();
+        act(() => {
+          vi.advanceTimersByTime(299);
+        });
+        expect(columnMeasure).not.toHaveBeenCalled();
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(columnMeasure).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not re-measure after a detent change with the keyboard down', () => {
+      vi.useFakeTimers();
+      try {
+        renderOpenFooterSheet(['44%', '90%'], 0);
+        act(() => captures.onChange?.(1));
+        columnMeasure.mockClear();
+        act(() => {
+          vi.advanceTimersByTime(1000);
+        });
+        expect(columnMeasure).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('leaves a sheet already at its keyboard detent where it is', () => {

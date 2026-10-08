@@ -10,7 +10,16 @@
 // serializes native sheet transitions so two never overlap on the same presenter
 // (the iOS UIKit deadlock / app freeze — see sheet-presentation-provider.tsx).
 
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
@@ -210,10 +219,16 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     bottomInset,
     columnRef,
     onColumnLayout: measureColumnForKeyboard,
+    measureAfterDetentChange,
   } = useSheetKeyboardInset({
     enabled: hasChrome && (isOpen || visible === true),
     onKeyboardShow: raiseToKeyboardDetent,
   });
+  // A detent change while the keyboard is up (the raise above included) moves
+  // the column without a layout event once the native animation ends.
+  useEffect(() => {
+    if (isOpen) measureAfterDetentChange();
+  }, [activeIndex, isOpen, measureAfterDetentChange]);
   const handleColumnLayout = useCallback(
     (event: LayoutChangeEvent) => {
       onColumnLayout?.(event);

@@ -1,4 +1,13 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 // Migrated off @gorhom/bottom-sheet to Expo's native bottom sheet (#3167).
 // The native sheet draws its own scrim, drag handle and (on iOS 26) glass
@@ -195,10 +204,16 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     bottomInset,
     columnRef,
     onColumnLayout: measureColumnForKeyboard,
+    measureAfterDetentChange,
   } = useSheetKeyboardInset({
     enabled: hasChrome && (isOpen || visible === true),
     onKeyboardShow: raiseToKeyboardDetent,
   });
+  // A detent change while the keyboard is up (the raise above included) moves
+  // the column without a layout event once the native animation ends.
+  useEffect(() => {
+    if (isOpen) measureAfterDetentChange();
+  }, [activeIndex, isOpen, measureAfterDetentChange]);
   const handleColumnLayout = useCallback(
     (event: LayoutChangeEvent) => {
       onColumnLayout?.(event);

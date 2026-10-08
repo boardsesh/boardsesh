@@ -96,6 +96,9 @@ function shownFrame(end: KeyboardMetrics | undefined, windowHeight: number): She
   return { screenY: end.screenY, height: end.height, width: end.width };
 }
 
+/** How long a native detent change takes to settle before re-measuring. */
+export const SHEET_SETTLE_MS = 300;
+
 type SheetKeyboardInsetOptions = {
   /** Listen only while there is a column to pad AND the sheet is open: a
    * closed sheet never re-renders for the keyboard. */
@@ -135,13 +138,35 @@ export function useSheetKeyboardInset({ enabled, onKeyboardShow }: SheetKeyboard
     });
   }, []);
 
+  // A detent change (the keyboard raise included) animates the sheet AFTER the
+  // keyboard's did-event, and nothing lays the column out again once that move
+  // ends, so take one more measurement once it has settled.
+  const keyboardUpRef = useRef(false);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const measureAfterDetentChange = useCallback(() => {
+    if (!keyboardUpRef.current) return;
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = setTimeout(() => {
+      settleTimerRef.current = null;
+      measureColumn();
+    }, SHEET_SETTLE_MS);
+  }, [measureColumn]);
+  useEffect(
+    () => () => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!enabled) {
+      keyboardUpRef.current = false;
       setKeyboard(null);
       return undefined;
     }
     // Opened with the keyboard already up: start from where it is.
     let current = Keyboard.isVisible() ? shownFrame(Keyboard.metrics(), windowHeightRef.current) : null;
+    keyboardUpRef.current = current != null;
     setKeyboard(current);
     measureColumn();
 
@@ -156,13 +181,22 @@ export function useSheetKeyboardInset({ enabled, onKeyboardShow }: SheetKeyboard
       measureColumn();
       if (next && !current) onKeyboardShowRef.current?.();
       current = next;
+      keyboardUpRef.current = next != null;
     };
 
-    const subscriptions =
-      Platform.OS === 'ios'
+    const isPad = Platform.OS === 'ios' && Platform.isPad;
+    const subscriptions = isPad
+      ? [
+          // iPad: did-events only. At the will-event UIKit has not yet lifted a
+          // centred sheet, so the full keyboard height would animate in and
+          // then snap back to 0 at the did-event. The did-event also reports a
+          // hide (the frame below the window).
+          Keyboard.addListener('keyboardDidChangeFrame', (event) => apply(event, false, false)),
+        ]
+      : Platform.OS === 'ios'
         ? [
-            // will-events animate with the keyboard; did-events re-measure once
-            // UIKit has finished moving a lifted iPad sheet.
+            // iPhone: will-events animate with the keyboard; the did-event
+            // re-measures once the keyboard has landed.
             Keyboard.addListener('keyboardWillChangeFrame', (event) => apply(event, false, true)),
             Keyboard.addListener('keyboardWillHide', (event) => apply(event, true, true)),
             Keyboard.addListener('keyboardDidChangeFrame', (event) => apply(event, false, false)),
@@ -184,5 +218,5 @@ export function useSheetKeyboardInset({ enabled, onKeyboardShow }: SheetKeyboard
     windowHeight,
     columnBottomInWindow,
   });
-  return { ...inset, columnRef, onColumnLayout: measureColumn };
+  return { ...inset, columnRef, onColumnLayout: measureColumn, measureAfterDetentChange };
 }
