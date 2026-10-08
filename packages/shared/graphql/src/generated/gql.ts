@@ -23,6 +23,9 @@ type Documents = {
   '\n  query GetCrewFeed($input: CrewFeedInput) {\n    crewFeed(input: $input) {\n      items {\n        __typename\n        ... on CrewSessionItem {\n          id\n          occurredAt\n          session {\n            ...SessionFeedItemFields\n          }\n        }\n        ... on CrewClimbItem {\n          id\n          occurredAt\n          climb {\n            ...CrewClimbFields\n          }\n        }\n        ... on CrewClimbGroupItem {\n          id\n          occurredAt\n          totalCount\n          climbs {\n            ...CrewClimbFields\n          }\n        }\n      }\n      cursor\n      hasMore\n    }\n  }\n  \n  \n': typeof types.GetCrewFeedDocument;
   '\n  query GetSessionDetail($sessionId: ID!) {\n    sessionDetail(sessionId: $sessionId) {\n      sessionId\n      sessionType\n      sessionName\n      ownerUserId\n      participants {\n        userId\n        displayName\n        avatarUrl\n        sends\n        flashes\n        attempts\n      }\n      totalSends\n      totalFlashes\n      totalAttempts\n      tickCount\n      gradeDistribution {\n        grade\n        flash\n        send\n        attempt\n      }\n      boardTypes\n      hardestGrade\n      firstTickAt\n      lastTickAt\n      durationMinutes\n      goal\n      notes\n      upvotes\n      downvotes\n      voteScore\n      commentCount\n      healthKitWorkoutId\n      ticks {\n        uuid\n        userId\n        climbUuid\n        climbName\n        boardType\n        layoutId\n        renderBoard {\n          layoutId\n          sizeId\n          setIds\n        }\n        angle\n        status\n        attemptCount\n        difficulty\n        difficultyName\n        boardseshDifficulty\n        boardseshConfidence\n        quality\n        isMirror\n        isBenchmark\n        isNoMatch\n        comment\n        frames\n        setterUsername\n        climbedAt\n        upvotes\n        totalAttempts\n        betaLinks {\n          climbUuid\n          link\n          foreignUsername\n          angle\n          thumbnail\n          isListed\n          createdAt\n          tickUuid\n          # boardId is kept for BetaLinksGqlRow type parity and flows through\n          # dedupeBetaLinks — it is not displayed by the session-detail carousel.\n          boardId\n        }\n      }\n    }\n  }\n': typeof types.GetSessionDetailDocument;
   '\n  mutation SetSessionHealthKitWorkoutId($sessionId: ID!, $workoutId: String!) {\n    setSessionHealthKitWorkoutId(sessionId: $sessionId, workoutId: $workoutId)\n  }\n': typeof types.SetSessionHealthKitWorkoutIdDocument;
+  '\n  fragment AnalyticsConsentFields on AnalyticsConsent {\n    analytics\n    version\n    source\n    decidedAt\n  }\n': typeof types.AnalyticsConsentFieldsFragmentDoc;
+  '\n  query GetMyAnalyticsConsent {\n    myAnalyticsConsent {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n': typeof types.GetMyAnalyticsConsentDocument;
+  '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n': typeof types.SetAnalyticsConsentDocument;
   '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      tickUuid\n      boardId\n    }\n  }\n': typeof types.GetBetaLinksDocument;
   '\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n': typeof types.AttachBetaLinkDocument;
   '\n  query GetRecentBetaLinks($limit: Int, $boardType: String, $layoutId: Int) {\n    recentBetaLinks(limit: $limit, boardType: $boardType, layoutId: $layoutId) {\n      climbName\n      boardType\n      layoutId\n      betaLink {\n        climbUuid\n        link\n        foreignUsername\n        angle\n        thumbnail\n        isListed\n        createdAt\n        tickUuid\n        boardId\n      }\n    }\n  }\n': typeof types.GetRecentBetaLinksDocument;
@@ -207,6 +210,12 @@ const documents: Documents = {
     types.GetSessionDetailDocument,
   '\n  mutation SetSessionHealthKitWorkoutId($sessionId: ID!, $workoutId: String!) {\n    setSessionHealthKitWorkoutId(sessionId: $sessionId, workoutId: $workoutId)\n  }\n':
     types.SetSessionHealthKitWorkoutIdDocument,
+  '\n  fragment AnalyticsConsentFields on AnalyticsConsent {\n    analytics\n    version\n    source\n    decidedAt\n  }\n':
+    types.AnalyticsConsentFieldsFragmentDoc,
+  '\n  query GetMyAnalyticsConsent {\n    myAnalyticsConsent {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n':
+    types.GetMyAnalyticsConsentDocument,
+  '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n':
+    types.SetAnalyticsConsentDocument,
   '\n  query GetBetaLinks($boardType: String!, $climbUuid: String!) {\n    betaLinks(boardType: $boardType, climbUuid: $climbUuid) {\n      climbUuid\n      link\n      foreignUsername\n      angle\n      thumbnail\n      isListed\n      createdAt\n      tickUuid\n      boardId\n    }\n  }\n':
     types.GetBetaLinksDocument,
   '\n  mutation AttachBetaLink($input: AttachBetaLinkInput!) {\n    attachBetaLink(input: $input)\n  }\n':
@@ -600,6 +609,24 @@ export function graphql(
 export function graphql(
   source: '\n  mutation SetSessionHealthKitWorkoutId($sessionId: ID!, $workoutId: String!) {\n    setSessionHealthKitWorkoutId(sessionId: $sessionId, workoutId: $workoutId)\n  }\n',
 ): (typeof documents)['\n  mutation SetSessionHealthKitWorkoutId($sessionId: ID!, $workoutId: String!) {\n    setSessionHealthKitWorkoutId(sessionId: $sessionId, workoutId: $workoutId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  fragment AnalyticsConsentFields on AnalyticsConsent {\n    analytics\n    version\n    source\n    decidedAt\n  }\n',
+): (typeof documents)['\n  fragment AnalyticsConsentFields on AnalyticsConsent {\n    analytics\n    version\n    source\n    decidedAt\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetMyAnalyticsConsent {\n    myAnalyticsConsent {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  query GetMyAnalyticsConsent {\n    myAnalyticsConsent {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n',
+): (typeof documents)['\n  mutation SetAnalyticsConsent($input: SetAnalyticsConsentInput!) {\n    setAnalyticsConsent(input: $input) {\n      ...AnalyticsConsentFields\n    }\n  }\n  \n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

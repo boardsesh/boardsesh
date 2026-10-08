@@ -21,6 +21,30 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown };
 };
 
+/** Daily first-party active-user counts for one platform. */
+export type ActiveUsersPlatformCount = {
+  __typename?: 'ActiveUsersPlatformCount';
+  dailyActiveUsers: Scalars['Int']['output'];
+  monthlyActiveUsers: Scalars['Int']['output'];
+  /** web, ios, android or unknown. */
+  platform: Scalars['String']['output'];
+  weeklyActiveUsers: Scalars['Int']['output'];
+};
+
+/** What one cron-authenticated active-users snapshot counted and sent. */
+export type ActiveUsersSnapshotResult = {
+  __typename?: 'ActiveUsersSnapshotResult';
+  /** False when PostHog is not configured for this runtime, so nothing was sent. */
+  captured: Scalars['Boolean']['output'];
+  dailyActiveUsers: Scalars['Int']['output'];
+  /** The UTC day the daily count covers (YYYY-MM-DD): the day before the run. */
+  day: Scalars['String']['output'];
+  durationMs: Scalars['Int']['output'];
+  monthlyActiveUsers: Scalars['Int']['output'];
+  platforms: Array<ActiveUsersPlatformCount>;
+  weeklyActiveUsers: Scalars['Int']['output'];
+};
+
 /** Input for activity feed queries. */
 export type ActivityFeedInput = {
   /** Filter by board UUID */
@@ -197,6 +221,19 @@ export type AllUserPlaylistsResult = {
   playlists: Array<Playlist>;
   /** Total count across all pages */
   totalCount: Scalars['Int']['output'];
+};
+
+/** The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics-consent.md. */
+export type AnalyticsConsent = {
+  __typename?: 'AnalyticsConsent';
+  /** granted or denied. */
+  analytics: Scalars['String']['output'];
+  /** ISO 8601, stamped by the server's clock. */
+  decidedAt: Scalars['String']['output'];
+  /** web, ios or android: where the answer was given. */
+  source: Scalars['String']['output'];
+  /** The CONSENT_VERSION the answer was given under. */
+  version: Scalars['Int']['output'];
 };
 
 /** A supported board angle. */
@@ -4212,6 +4249,8 @@ export type Mutation = {
    * behind, because other people's ticks point at them.
    */
   purgeDeletedSprayWallPhotos: SprayWallPhotoPurgeResult;
+  /** HTTP cron credentials only. Deletes user_activity_days rows older than 13 months. */
+  purgeExpiredUserActivity: UserActivityPurgeResult;
   /**
    * Move a gym's ownership to another account (global admin only) — a sold gym,
    * a departed committee member, a claim approved to the wrong person. The
@@ -4418,6 +4457,8 @@ export type Mutation = {
   /** Save a new tick (climb attempt record). */
   saveTick: Tick;
   sendDeviceLogs: SendDeviceLogsResponse;
+  /** Record the signed-in climber's analytics consent answer and return the account's current answer. */
+  setAnalyticsConsent: AnalyticsConsent;
   setClimbFromLedPositions: ClimbMatchResult;
   /** Set a community setting (admin/leader only). */
   setCommunitySettings: CommunitySetting;
@@ -4490,6 +4531,8 @@ export type Mutation = {
   setSprayWallRenderSettings: SprayWall;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
+  /** HTTP cron credentials only. Counts yesterday's DAU and the trailing WAU and MAU, and sends one aggregate PostHog event. */
+  snapshotActiveUsers: ActiveUsersSnapshotResult;
   /**
    * Submit in-app rating + optional comment. Public — unauthenticated testers
    * can still rate. If the request has a valid auth token, the feedback row is
@@ -5211,6 +5254,11 @@ export type MutationSaveTickArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSendDeviceLogsArgs = {
   input: SendDeviceLogsInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetAnalyticsConsentArgs = {
+  input: SetAnalyticsConsentInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6604,6 +6652,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** The signed-in climber's current analytics consent, or null when they have never answered. */
+  myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
    * Recorded board configurations for the current user keyed by controller serial.
    * Used as a fallback when boardsBySerialNumbers returns nothing for a serial,
@@ -8971,6 +9021,21 @@ export type SessionUser = {
   username: Scalars['String']['output'];
 };
 
+export type SetAnalyticsConsentInput = {
+  /** granted or denied. */
+  analytics: Scalars['String']['input'];
+  /**
+   * The decidedAt of the account answer this client last saw, or null when it saw
+   * none. A grant based on an older answer than the account holds is not written;
+   * the newer answer is returned instead. A denial is always written.
+   */
+  basedOnDecidedAt?: InputMaybe<Scalars['String']['input']>;
+  /** web, ios or android. */
+  source: Scalars['String']['input'];
+  /** The CONSENT_VERSION the client asked under. A positive integer. */
+  version: Scalars['Int']['input'];
+};
+
 export type SetCommunitySettingInput = {
   key: Scalars['String']['input'];
   scope: Scalars['String']['input'];
@@ -10652,6 +10717,15 @@ export type UpsertSprayWallHoldsInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+/** What one cron-authenticated user-activity retention run deleted. */
+export type UserActivityPurgeResult = {
+  __typename?: 'UserActivityPurgeResult';
+  /** Rows dated before this UTC day (YYYY-MM-DD) were deleted. */
+  cutoffDay: Scalars['String']['output'];
+  durationMs: Scalars['Int']['output'];
+  rowsDeleted: Scalars['Int']['output'];
+};
+
 /** A named physical board installation (board type + layout + size + hold sets). */
 export type UserBoard = {
   __typename?: 'UserBoard';
@@ -11072,6 +11146,8 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
 
 /** Mapping between all available schema types and the resolvers types */
 export type ResolversTypes = ResolversObject<{
+  ActiveUsersPlatformCount: ResolverTypeWrapper<ActiveUsersPlatformCount>;
+  ActiveUsersSnapshotResult: ResolverTypeWrapper<ActiveUsersSnapshotResult>;
   ActivityFeedInput: ActivityFeedInput;
   ActivityFeedItem: ResolverTypeWrapper<ActivityFeedItem>;
   ActivityFeedItemType: ActivityFeedItemType;
@@ -11083,6 +11159,7 @@ export type ResolversTypes = ResolversObject<{
   AdminAppFeedbackInput: AdminAppFeedbackInput;
   AdminAppFeedbackResult: ResolverTypeWrapper<AdminAppFeedbackResult>;
   AllUserPlaylistsResult: ResolverTypeWrapper<AllUserPlaylistsResult>;
+  AnalyticsConsent: ResolverTypeWrapper<AnalyticsConsent>;
   Angle: ResolverTypeWrapper<Angle>;
   AppFeedbackContext: ResolverTypeWrapper<AppFeedbackContext>;
   AppFeedbackReport: ResolverTypeWrapper<AppFeedbackReport>;
@@ -11461,6 +11538,7 @@ export type ResolversTypes = ResolversObject<{
   SessionStatus: SessionStatus;
   SessionSummary: ResolverTypeWrapper<SessionSummary>;
   SessionUser: ResolverTypeWrapper<SessionUser>;
+  SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
@@ -11552,6 +11630,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateTickInput: UpdateTickInput;
   UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
   UpsertSprayWallHoldsInput: UpsertSprayWallHoldsInput;
+  UserActivityPurgeResult: ResolverTypeWrapper<UserActivityPurgeResult>;
   UserBoard: ResolverTypeWrapper<UserBoard>;
   UserBoardConnection: ResolverTypeWrapper<UserBoardConnection>;
   UserClimbPercentile: ResolverTypeWrapper<UserClimbPercentile>;
@@ -11578,6 +11657,8 @@ export type ResolversTypes = ResolversObject<{
 
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = ResolversObject<{
+  ActiveUsersPlatformCount: ActiveUsersPlatformCount;
+  ActiveUsersSnapshotResult: ActiveUsersSnapshotResult;
   ActivityFeedInput: ActivityFeedInput;
   ActivityFeedItem: ActivityFeedItem;
   ActivityFeedResult: ActivityFeedResult;
@@ -11588,6 +11669,7 @@ export type ResolversParentTypes = ResolversObject<{
   AdminAppFeedbackInput: AdminAppFeedbackInput;
   AdminAppFeedbackResult: AdminAppFeedbackResult;
   AllUserPlaylistsResult: AllUserPlaylistsResult;
+  AnalyticsConsent: AnalyticsConsent;
   Angle: Angle;
   AppFeedbackContext: AppFeedbackContext;
   AppFeedbackReport: AppFeedbackReport;
@@ -11927,6 +12009,7 @@ export type ResolversParentTypes = ResolversObject<{
   SessionStatsUpdated: SessionStatsUpdated;
   SessionSummary: SessionSummary;
   SessionUser: SessionUser;
+  SetAnalyticsConsentInput: SetAnalyticsConsentInput;
   SetCommunitySettingInput: SetCommunitySettingInput;
   SetContentAudienceInput: SetContentAudienceInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
@@ -12005,6 +12088,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateTickInput: UpdateTickInput;
   UpsertHoldOutlineOverrideInput: UpsertHoldOutlineOverrideInput;
   UpsertSprayWallHoldsInput: UpsertSprayWallHoldsInput;
+  UserActivityPurgeResult: UserActivityPurgeResult;
   UserBoard: UserBoard;
   UserBoardConnection: UserBoardConnection;
   UserClimbPercentile: UserClimbPercentile;
@@ -12024,6 +12108,33 @@ export type ResolversParentTypes = ResolversObject<{
   WallConfirmedClimb: WallConfirmedClimb;
   WallDisconnected: WallDisconnected;
   ZoneBoxInput: ZoneBoxInput;
+}>;
+
+export type ActiveUsersPlatformCountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ActiveUsersPlatformCount'] =
+    ResolversParentTypes['ActiveUsersPlatformCount'],
+> = ResolversObject<{
+  dailyActiveUsers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  monthlyActiveUsers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  platform?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  weeklyActiveUsers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type ActiveUsersSnapshotResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ActiveUsersSnapshotResult'] =
+    ResolversParentTypes['ActiveUsersSnapshotResult'],
+> = ResolversObject<{
+  captured?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  dailyActiveUsers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  day?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  durationMs?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  monthlyActiveUsers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  platforms?: Resolver<Array<ResolversTypes['ActiveUsersPlatformCount']>, ParentType, ContextType>;
+  weeklyActiveUsers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
 export type ActivityFeedItemResolvers<
@@ -12095,6 +12206,17 @@ export type AllUserPlaylistsResultResolvers<
   hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   playlists?: Resolver<Array<ResolversTypes['Playlist']>, ParentType, ContextType>;
   totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AnalyticsConsentResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AnalyticsConsent'] = ResolversParentTypes['AnalyticsConsent'],
+> = ResolversObject<{
+  analytics?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  decidedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  version?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -14401,6 +14523,7 @@ export type MutationResolvers<
     ContextType,
     Partial<MutationPurgeDeletedSprayWallPhotosArgs>
   >;
+  purgeExpiredUserActivity?: Resolver<ResolversTypes['UserActivityPurgeResult'], ParentType, ContextType>;
   reassignGymOwner?: Resolver<
     ResolversTypes['ReassignGymOwnerResult'],
     ParentType,
@@ -14658,6 +14781,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSendDeviceLogsArgs, 'input'>
   >;
+  setAnalyticsConsent?: Resolver<
+    ResolversTypes['AnalyticsConsent'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetAnalyticsConsentArgs, 'input'>
+  >;
   setClimbFromLedPositions?: Resolver<
     ResolversTypes['ClimbMatchResult'],
     ParentType,
@@ -14730,6 +14859,7 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationSetterOverrideCommunityStatusArgs, 'input'>
   >;
+  snapshotActiveUsers?: Resolver<ResolversTypes['ActiveUsersSnapshotResult'], ParentType, ContextType>;
   submitAppFeedback?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -15804,6 +15934,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryIsFollowingArgs, 'userId'>
   >;
+  myAnalyticsConsent?: Resolver<Maybe<ResolversTypes['AnalyticsConsent']>, ParentType, ContextType>;
   myBoardSerialConfigs?: Resolver<
     Array<ResolversTypes['BoardSerialConfig']>,
     ParentType,
@@ -17538,6 +17669,16 @@ export type UpdateSessionResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type UserActivityPurgeResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UserActivityPurgeResult'] = ResolversParentTypes['UserActivityPurgeResult'],
+> = ResolversObject<{
+  cutoffDay?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  durationMs?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  rowsDeleted?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type UserBoardResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UserBoard'] = ResolversParentTypes['UserBoard'],
@@ -17738,10 +17879,13 @@ export type WallDisconnectedResolvers<
 }>;
 
 export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
+  ActiveUsersPlatformCount?: ActiveUsersPlatformCountResolvers<ContextType>;
+  ActiveUsersSnapshotResult?: ActiveUsersSnapshotResultResolvers<ContextType>;
   ActivityFeedItem?: ActivityFeedItemResolvers<ContextType>;
   ActivityFeedResult?: ActivityFeedResultResolvers<ContextType>;
   AdminAppFeedbackResult?: AdminAppFeedbackResultResolvers<ContextType>;
   AllUserPlaylistsResult?: AllUserPlaylistsResultResolvers<ContextType>;
+  AnalyticsConsent?: AnalyticsConsentResolvers<ContextType>;
   Angle?: AngleResolvers<ContextType>;
   AppFeedbackContext?: AppFeedbackContextResolvers<ContextType>;
   AppFeedbackReport?: AppFeedbackReportResolvers<ContextType>;
@@ -18007,6 +18151,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   UnifiedSearchResult?: UnifiedSearchResultResolvers<ContextType>;
   UpdateClimbResult?: UpdateClimbResultResolvers<ContextType>;
   UpdateSessionResult?: UpdateSessionResultResolvers<ContextType>;
+  UserActivityPurgeResult?: UserActivityPurgeResultResolvers<ContextType>;
   UserBoard?: UserBoardResolvers<ContextType>;
   UserBoardConnection?: UserBoardConnectionResolvers<ContextType>;
   UserClimbPercentile?: UserClimbPercentileResolvers<ContextType>;
