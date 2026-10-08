@@ -6,10 +6,6 @@ import type { Proposal } from '@boardsesh/shared-schema';
 
 type Children = { children?: ReactNode };
 
-vi.mock('../../climb-actions/ClimbContextMenu', () => ({
-  ClimbContextMenu: ({ children }: { children: ReactNode }) => children,
-  NATIVE_CLIMB_MENU: false,
-}));
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },

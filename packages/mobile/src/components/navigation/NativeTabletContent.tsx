@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useFocusEffect, useSegments } from 'expo-router';
 import { useTheme } from '../../providers/theme-provider';
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { publishNativeTabletContentWidth, useTabletPaneWidth } from '../../hooks/native-tablet-pane-width';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
@@ -18,8 +19,8 @@ import { IpadWallColumn } from '../board-presence/IpadWallColumn';
 
 /** Keep content panes inside UIKit's sidebar, where their actual width is known. */
 export function NativeTabletContent({ children }: { children: ReactNode }) {
-  const { variant } = useTheme();
-  if (!(Platform.OS === 'ios' && Platform.isPad === true && variant === 'liquidGlass')) return children;
+  const nativeRootHeader = useNativeRootHeader();
+  if (!(nativeRootHeader && Platform.OS === 'ios' && Platform.isPad === true)) return children;
   return <NativeTabletContentHost>{children}</NativeTabletContentHost>;
 }
 
