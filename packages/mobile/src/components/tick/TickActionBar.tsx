@@ -14,7 +14,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Button } from '../Button';
+import { TickActionButton as Button } from './TickActionButton';
 import { useTheme } from '../../providers/theme-provider';
 import type { IconName } from '../icon-map';
 import {
