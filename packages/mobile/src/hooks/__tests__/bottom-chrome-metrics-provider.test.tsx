@@ -32,8 +32,11 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ variant: cfg.variant }) }));
 vi.mock('../use-bottom-accessory', () => ({
-  isBottomAccessoryAvailable: () => cfg.accessoryAvailable,
-  useNativeTabBar: () => cfg.nativeTabBar,
+  useTabChrome: () => ({
+    nativeTabBar: cfg.nativeTabBar,
+    liquidGlassTabBar: cfg.nativeTabBar,
+    nativeAccessory: cfg.nativeTabBar && cfg.accessoryAvailable,
+  }),
 }));
 vi.mock('../use-device-layout', () => ({ useDeviceLayout: () => ({ widthClass: cfg.widthClass }) }));
 // Mock the sticky presence wrapper to a plain flag — its internal grace-timer

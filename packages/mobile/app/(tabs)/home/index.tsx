@@ -48,6 +48,7 @@ import { InviteSheet } from '../../../src/components/session-screen/InviteSheet'
 import { HomeStartupCommit } from '../../../src/lib/profiling/HomeStartupCommit';
 import { STARTUP_PROFILING_ENABLED } from '../../../src/lib/profiling/startup-profile';
 import { homeEmptyStartupOutcome } from '../../../src/lib/profiling/startup-collector';
+import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
 
 const INITIAL_FEED_SKELETON_KEYS = ['home-feed-skeleton-1', 'home-feed-skeleton-2', 'home-feed-skeleton-3'];
 const NEXT_PAGE_FEED_SKELETON_KEYS = ['home-feed-footer-skeleton-1', 'home-feed-footer-skeleton-2'];
@@ -111,7 +112,10 @@ export default function HomeTab() {
   // Hold both queries until home-board inference settles, so a cold start never
   // fires the unscoped global feed first (initial state is gym + no board) and
   // then refetches the scoped/crew query — that double-fetch flickered the feed.
-  const scopeReady = !isResolvingHomeBoard;
+  // NativeTabs mounts every tab at launch, so the feeds also wait for Home's
+  // first focus (see useHasBeenFocused); a launch on Climbs no longer pays them.
+  const hasBeenFocused = useHasBeenFocused();
+  const scopeReady = !isResolvingHomeBoard && hasBeenFocused;
   const sessionFeed = useSessionGroupedFeed(feedInput, isAuthenticated && scopeReady && mode === 'gym');
   const crewFeed = useCrewFeed(isAuthenticated && scopeReady && mode === 'crew');
   const feed = mode === 'crew' ? crewFeed : sessionFeed;

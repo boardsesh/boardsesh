@@ -73,11 +73,17 @@ real iOS 26 glass _chrome_ is used or a fallback stands in. Keep the two apart �
 older iPhone is the variant with the chrome degraded, not Material.
 
 - `useGlassCapability()` → iOS 26 only (the native `GlassView` / `GlassContainer` API is present).
-- `useNativeTabBar()` (= `liquidGlass && useGlassCapability()`) gates the native `NativeTabs` glass
-  tab bar + `BottomAccessory`. When it's false — Material, **or** Liquid Glass on a non-capable
-  device — the JS `Tabs` + `MaterialTabBar` carry navigation and the floating `PersistentQueueBar`
-  carries the current climb. This is the canonical predicate; `useBottomChromeMetrics` keys tab-bar
-  geometry on it so the layout math matches the bar actually on screen.
+- `useTabChrome()` (pure core: `resolveTabChrome` in `src/hooks/tab-chrome.ts`) is the canonical
+  answer for the tab chrome, and `useBottomChromeMetrics` keys tab-bar geometry on it so the layout
+  math matches the bar actually on screen:
+  - `nativeTabBar` (`useNativeTabBar()`): Liquid Glass on any iPhone, iOS 18 included, gets the
+    system UIKit tab bar through `NativeTabs` (HIG, Tab bars). Material, Android and the tablet
+    shell keep the JS `Tabs` + `MaterialTabBar` / sidebar.
+  - `liquidGlassTabBar`: the iOS 26 extras on that bar, also gated on `useGlassCapability()` —
+    Climbs as the separated `role="search"` tab and minimize-on-scroll.
+  - `nativeAccessory`: the `BottomAccessory` platter carries the current climb (iOS 26 only).
+    Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
+    carries the current climb, positioned above whichever bar is on screen.
 - Surfaces degrade in `GlassSurface` via `useEffectiveSurfaceMode()`: `glass` (iOS 26) → `blur`
   (iOS < 26 frosted) → `material`/`solid` (Android, Reduce Transparency). Buttons stay JS
   (`PressableSurface`) on every path, so any phone on Liquid Glass falls back to JS buttons safely.

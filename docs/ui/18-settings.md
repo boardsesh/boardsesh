@@ -64,7 +64,7 @@ The mobile Settings screen contains appearance and UI-style controls that have n
 - `SegmentedControl` with three options: Auto, Liquid Glass, Material.
 - Persisted as `UiVariantPreference` via `useTheme().setUiVariant`.
 - **Auto**: resolves to Liquid Glass on every iPhone (including iOS < 26, via the blur surface fallback) and Material on Android. `resolveUiVariant` keys this on `Platform.OS === 'ios'`, not glass capability.
-- **Liquid Glass**: the glass aesthetic. On a glass-capable device (iOS 26) it uses the native `NativeTabs` tab bar + `GlassView` surfaces; on iOS < 26 it falls back to the JS `MaterialTabBar` + frosted `BlurView` surfaces; on Android it falls back to the JS `MaterialTabBar` + solid surfaces. Whether the native tab bar mounts is gated by `useNativeTabBar()` (`liquidGlass && useGlassCapability()`).
+- **Liquid Glass**: the glass aesthetic. On every iPhone it uses the native `NativeTabs` tab bar; on a glass-capable device (iOS 26) that bar adds the bottom accessory and `GlassView` surfaces, and on iOS < 26 surfaces fall back to frosted `BlurView` while the current climb rides the floating JS queue bar. On Android it falls back to the JS `MaterialTabBar` + solid surfaces. The tab chrome is resolved by `useTabChrome()` (`resolveTabChrome`).
 - **Material**: JS `MaterialTabBar` + opaque M3 surfaces.
 - All three options are always **selectable** on every platform — any phone can opt into Liquid Glass, falling back to JS buttons where the native iOS 26 chrome can't render. An explanatory footnote switches between `mobile.settings.uiStyle.description` (glass-capable), `mobile.settings.uiStyle.glassFallback` (iOS < 26), and `mobile.settings.uiStyle.glassFallbackAndroid` (Android) based on capability and platform.
 

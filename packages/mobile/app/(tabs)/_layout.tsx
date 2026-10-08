@@ -12,7 +12,7 @@ import { MaterialTabBar } from '../../src/components/navigation/MaterialTabBar';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../src/components/navigation/tab-badge';
 import { useTheme } from '../../src/providers/theme-provider';
 import { selectByVariant } from '../../src/theme/variants/select-by-variant';
-import { useNativeAccessoryActive, useNativeTabBar } from '../../src/hooks/use-bottom-accessory';
+import { useTabChrome } from '../../src/hooks/use-bottom-accessory';
 import { useAccessoryHostRoute } from '../../src/hooks/use-accessory-host-route';
 import { useDeviceLayout } from '../../src/hooks/use-device-layout';
 import { TabletSidebar } from '../../src/components/navigation/TabletSidebar';
@@ -64,7 +64,7 @@ const TAB_SF_SYMBOLS = {
 const renderHiddenTabBar = () => null;
 
 // freezeOnBlur only takes effect where inactive screens stay detach-managed
-// (iOS < 26 iPhone). It's inert where detachInactiveScreens={false} below, because
+// (iPhone on the Material variant). It's inert where detachInactiveScreens={false} below, because
 // react-native-screens' Screen.js gates DelayedFreeze behind `enabled` (the detach
 // flag): enabled=false renders a plain display:none View, skipping freeze
 // (react-native-screens Screen.js:63,123).
@@ -75,26 +75,29 @@ const ACCESSORY_SHOWN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: false } } a
 const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } as const;
 
 /**
- * Bottom tabs. The system Liquid Glass tab bar (`expo-router/unstable-native-tabs`)
- * — with a native `BottomAccessory` platter for the current climb + tick — is used
- * only on the Liquid Glass variant AND a glass-capable device (iOS 26). Everywhere
- * else (Material, plus Liquid Glass on iOS < 26 / Android) falls back to a JS `Tabs`
- * navigator with the Material 3 `MaterialTabBar`; its climb/tick chrome rides the
- * floating `PersistentQueueBar` (the native accessory is iOS-26-only).
+ * Bottom tabs. Every iPhone on the Liquid Glass variant gets the system UIKit tab
+ * bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab bars: use
+ * the system bar so it carries the platform's own materials, Dynamic Type and
+ * accessibility). iOS 26 adds the Liquid Glass extras on top: a native
+ * `BottomAccessory` platter for the current climb + tick, the separated search
+ * tab and minimize-on-scroll. On iOS 18 the bar has none of those, so Climbs is
+ * an ordinary labelled tab and the current climb rides the floating JS
+ * `PersistentQueueBar` just above the native bar. Material, Android and the
+ * tablet shell use a JS `Tabs` navigator with the Material 3 `MaterialTabBar`.
+ * `useTabChrome()` is the one answer for all of it.
  */
 export default function TabLayout() {
   const { t } = useTranslation('common');
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSession } = useTranslation('session');
   const { systemColors, variant, m3, brandColors } = useTheme();
-  const nativeTabBar = useNativeTabBar();
+  const { nativeTabBar, liquidGlassTabBar, nativeAccessory: nativeAccessoryActive } = useTabChrome();
   // Shell column separators: an M3 faint divider (outlineVariant) on Material, the
   // system hairline on Liquid Glass — so the panes read as M3 depth on Android.
   const shellDividerColor = selectByVariant(variant, {
     liquidGlass: systemColors.separator,
     material: m3.outlineVariant,
   });
-  const nativeAccessoryActive = useNativeAccessoryActive();
 
   // Record-tab status cue: a badge when a board is connected over Bluetooth or a
   // session is live.
@@ -127,9 +130,10 @@ export default function TabLayout() {
   const showRecordBadge = isBluetoothConnected || hasLiveSession;
   const eagerMountRecord = Platform.OS === 'android';
   // Keep blurred tabs' native (Fabric) trees resident on Android so a tab switch is a
-  // re-attach, not a createNode/completeRoot rebuild (#3153). Android-only: on iOS < 26
-  // iPhones keeping every tab resident would add to the 4GB-device board-art OOM risk
-  // (#3479, docs/react-native-performance.md §7), so those stay on the default + freeze.
+  // re-attach, not a createNode/completeRoot rebuild (#3153). Android-only: an iPhone
+  // on the Material variant keeping every tab resident would add to the 4GB-device
+  // board-art OOM risk (#3479, docs/react-native-performance.md §7), so it stays on the
+  // default + freeze. (NativeTabs keeps visited tabs resident on every iPhone anyway.)
   const keepInactiveTabsResident = Platform.OS === 'android';
   // A regular-width tablet-sized surface opts into the sidebar shell; compact
   // width (every phone and a narrow tablet/browser window) keeps the native /
@@ -148,9 +152,10 @@ export default function TabLayout() {
   // screen, right where the accessory platter draws. Hide the platter there through
   // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);
   // see `isAccessoryHiddenRoute`.
-  const accessoryNativeProps = isAccessoryHiddenRoute(segments)
-    ? ACCESSORY_HIDDEN_NATIVE_PROPS
-    : ACCESSORY_SHOWN_NATIVE_PROPS;
+  const accessoryNativeProps =
+    nativeAccessoryActive && isAccessoryHiddenRoute(segments)
+      ? ACCESSORY_HIDDEN_NATIVE_PROPS
+      : ACCESSORY_SHOWN_NATIVE_PROPS;
   // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
   // focused destination (iPad-only — /wall is unreachable elsewhere). Released
   // on navigate-away and unmount so other tabs don't hold the lock.
@@ -276,9 +281,16 @@ export default function TabLayout() {
   // remounting the navigator. Web follows this path with Material chrome. The
   // navigator still owns routing; at regular width
   // its bar is hidden and the sidebar drives it through the global router. iPad
-  // never uses NativeTabs (that would swap navigator *types* on the boundary cross
-  // and remount); NativeTabs stays the iPhone-only glass path below. The `content`
-  // View carries a stable key so the navigator survives the chrome swap.
+  // never uses NativeTabs: swapping navigator *types* on the boundary cross would
+  // remount, and a single NativeTabs across both widths cannot work either. Its
+  // navigator remounts whenever a trigger's `hidden` flag changes, a hidden tab
+  // cannot be navigated to, and the iPad-only "On the Wall" tab would have to
+  // be visible beside the sidebar yet hidden in a narrow split, where a sixth
+  // native tab spills into UIKit's More list. The native `sidebarAdaptable`
+  // sidebar has the same tab set, cannot host the live wall cell, and does not
+  // report its width or collapsed state to JS, which the pane budgets below need.
+  // NativeTabs stays the iPhone path below. The `content` View carries a stable
+  // key so the navigator survives the chrome swap.
   if (deviceLayout.isTablet) {
     const isRegular = deviceLayout.widthClass === 'regular';
     const tabsNavigator = (
@@ -345,9 +357,11 @@ export default function TabLayout() {
     // FlashList's nested scroll view, which it can't by default — that fallback
     // lives in patches/react-native-screens@4.26.2.patch, alongside the
     // bottom-accessory relayout fix. `vp run check:mobile-patches` (CI) fails the
-    // build if either hunk ever stops applying after a dep bump.
+    // build if either hunk ever stops applying after a dep bump. Minimizing is an
+    // iOS 26 UIKit feature (react-native-screens logs a warning for any other
+    // value below 26), so the iOS 18 bar keeps the system default.
     <NativeTabs
-      minimizeBehavior="onScrollDown"
+      minimizeBehavior={liquidGlassTabBar ? 'onScrollDown' : undefined}
       unstable_nativeProps={accessoryNativeProps}
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
       labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}
@@ -381,7 +395,8 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Label>{t('mobile.nav.home')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="climbs" role="search">
+      {/* Only the iOS 26 bar has a separated search slot. */}
+      <NativeTabs.Trigger name="climbs" role={liquidGlassTabBar ? 'search' : undefined}>
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>

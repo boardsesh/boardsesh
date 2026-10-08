@@ -8,12 +8,14 @@ const accessoryMounts = vi.hoisted(() => ({ count: 0 }));
 const cfg = vi.hoisted(() => ({
   bluetoothConnected: false,
   sessionId: null as string | null,
+  // Whether this build/OS has the native BottomAccessory export (iOS 26). The layout
+  // mounts the accessory only when the real resolver also sees the Liquid Glass bar.
   nativeAccessoryActive: true,
   hasCurrentClimb: false,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   // Whether the device can render real iOS 26 glass chrome. The native tab bar
-  // mounts only for the Liquid Glass variant on a capable device; everything else
-  // (Material, plus Liquid Glass on iOS < 26 / Android) takes the JS tab bar.
+  // mounts for the Liquid Glass variant on every iPhone; glass capability only adds
+  // the iOS 26 extras (accessory, search role, minimize). false models iOS 18.
   glassCapable: true,
   platformOS: 'ios' as 'ios' | 'android' | 'web',
   // 'regular' takes the tablet sidebar shell; 'compact' keeps the phone tab bars.
@@ -139,10 +141,23 @@ vi.mock('../../../src/providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../../../src/hooks/use-bottom-accessory', () => ({
-  useNativeAccessoryActive: () => cfg.nativeAccessoryActive,
-  useNativeTabBar: () => cfg.variant === 'liquidGlass' && cfg.glassCapable,
-}));
+// The real pure resolver, fed from cfg, so these tests pin the layout against the
+// same arbitration the bottom-chrome metrics and toasts read.
+vi.mock('../../../src/hooks/use-bottom-accessory', async () => {
+  const { resolveTabChrome } = await vi.importActual<typeof import('../../../src/hooks/tab-chrome')>(
+    '../../../src/hooks/tab-chrome',
+  );
+  return {
+    useTabChrome: () =>
+      resolveTabChrome({
+        platformOS: cfg.platformOS,
+        variant: cfg.variant,
+        glassCapable: cfg.glassCapable,
+        isTablet: cfg.widthClass === 'regular' || cfg.isTablet,
+        accessoryAvailable: cfg.nativeAccessoryActive,
+      }),
+  };
+});
 
 // Stub the Material-variant path so it doesn't pull in native modules.
 vi.mock('expo-router', () => {
@@ -319,9 +334,44 @@ describe('TabLayout', () => {
     ]);
   });
 
-  it('falls back to the JS Material tab bar for Liquid Glass on a non-capable device', () => {
-    // Older iPhone / Android on the Liquid Glass variant: the native iOS 26 tab bar
-    // can't render, so the JS Tabs + MaterialTabBar carry the navigation instead.
+  it('gives an iOS 18 iPhone on Liquid Glass the native tab bar, not the JS Material bar', () => {
+    // HIG Tab bars: the system bar on every iPhone. iOS 18 renders no real glass,
+    // but it still gets UIKit's UITabBar through NativeTabs.
+    cfg.variant = 'liquidGlass';
+    cfg.glassCapable = false;
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-tabs-material="true"]')).toBeNull();
+    expect(container.querySelector('[data-material-tab-bar="true"]')).toBeNull();
+    const triggerNames = Array.from(container.querySelectorAll('[data-trigger]')).map((trigger) =>
+      trigger.getAttribute('data-trigger'),
+    );
+    expect(triggerNames).toEqual(['home', 'climbs', 'record', 'discover', 'profile']);
+  });
+
+  it('leaves the iOS 26-only extras off the iOS 18 native bar', () => {
+    // No minimize behavior (react-native-screens warns below iOS 26), no search role
+    // (Climbs stays a labelled tab with its own search field), and no accessory even
+    // with a climb current: the floating JS queue bar carries it instead.
+    cfg.variant = 'liquidGlass';
+    cfg.glassCapable = false;
+    cfg.hasCurrentClimb = true;
+
+    const { container } = render(<TabLayout />);
+    const tabs = container.querySelector('[data-tabs="true"]');
+
+    expect(tabs?.getAttribute('data-minimize-behavior')).toBe('');
+    expect(container.querySelector('[data-tab-role="search"]')).toBeNull();
+    expect(container.querySelector('[data-trigger="climbs"]')).not.toBeNull();
+    expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
+    expect(accessoryMounts.count).toBe(0);
+  });
+
+  it('keeps the JS Material tab bar for Liquid Glass off iOS', () => {
+    // Android forced to the Liquid Glass variant has no UIKit tab bar to use.
+    cfg.platformOS = 'android';
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = false;
 
@@ -854,9 +904,8 @@ describe('TabLayout', () => {
     expect(materialNav?.getAttribute('data-freeze-on-blur')).toBe('true');
   });
 
-  it('leaves iOS < 26 iPhones on default detach with freeze active (#3153)', () => {
-    cfg.variant = 'liquidGlass';
-    cfg.glassCapable = false;
+  it('leaves Material-variant iPhones on default detach with freeze active (#3153)', () => {
+    cfg.variant = 'material';
     cfg.platformOS = 'ios';
 
     const { container } = render(<TabLayout />);
