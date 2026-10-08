@@ -12,14 +12,14 @@ const repositoryRoot = join(currentDirectory, '..', '..');
 const sourceGuardScript = join(repositoryRoot, 'scripts', 'mobile-web-bundle-check.sh');
 const sourceExportScript = join(repositoryRoot, 'scripts', 'build-expo-web-export.sh');
 const sourcePatchScript = join(repositoryRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs');
-const sourceBudgetScript = join(repositoryRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs');
+const sourceInspectorScript = join(repositoryRoot, 'scripts', 'lib', 'inspect-expo-web-export.mjs');
 
 const GLUE_PATH = 'board_renderer_wasm.js';
 const WASM_PATH = 'board_renderer_wasm_bg.wasm';
 const WORKER_PATH = 'board-render.worker.js';
 
 // The export script's PWA-manifest step (W-24, #4438) reads the rendered shell
-// and manifest.json back out of the export, and its eager-payload budget step
+// and manifest.json back out of the export, and its export inspection step
 // reads the shell's <script src> list and the files behind it — so the stub has
 // to emit real ones. A `touch`ed empty index.html, or a shell with no script
 // tag, would fail every case here for the wrong reason.
@@ -74,10 +74,10 @@ describe('mobile-web-bundle-check.sh', () => {
     // …and the PWA-manifest patcher the export script shells out to.
     mkdirSync(join(fixtureRoot, 'scripts', 'lib'), { recursive: true });
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
-    // The export script's eager-payload budget step runs on every export, so the
+    // The export script's export inspection step runs on every export, so the
     // fixture needs it too or every case dies on MODULE_NOT_FOUND before it
     // reaches the assertion it is actually about.
-    copyFileSync(sourceBudgetScript, join(fixtureRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'));
+    copyFileSync(sourceInspectorScript, join(fixtureRoot, 'scripts', 'lib', 'inspect-expo-web-export.mjs'));
     // Pre-seed the isolated web-runtime install so the export script skips its
     // nested pnpm install step (no network in the test).
     mkdirSync(join(fixtureRoot, 'packages', 'mobile', 'web-runtime', 'node_modules', 'react-native-web'), {

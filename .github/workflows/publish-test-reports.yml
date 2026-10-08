@@ -1,58 +1,128 @@
 name: Publish Test Reports
 
-# Runs after the CI workflows complete — including PRs from forks.
-# The workflow_run trigger executes in the base repo context, so
-# GITHUB_TOKEN has checks:write permission even for forked PRs.
+# CI uploads JUnit using a read-only token. This trusted follow-up can write
+# checks and comments for fork PRs without executing their code.
 on:
   workflow_run:
-    workflows: ['Web Tests', 'Backend Integration Tests']
-    types:
-      - completed
+    workflows: ['CI']
+    types: [completed]
 
 permissions:
+  actions: read
+  contents: read
   checks: write
   pull-requests: write
-  contents: read
+
+concurrency:
+  group: ci-test-report-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}-${{ github.event.workflow_run.head_sha }}
+  # An older completion must not cancel the publisher for a newer PR head.
+  cancel-in-progress: false
 
 jobs:
-  publish-web-tests:
-    if: github.event.workflow.name == 'Web Tests'
+  publish:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Publish Web Unit Tests report
-        uses: turing85/publish-report@v2
+      - name: Find the current PR and test artifacts
+        id: inspect
+        uses: actions/github-script@v7
         with:
-          checkout: 'true'
-          download-artifact-name: web-test-results
-          download-artifact-run-id: ${{ github.event.workflow_run.id }}
-          comment-header: web-test-report
-          comment-enabled: 'true'
-          report-name: Web Unit Tests
-          report-path: '**/*.xml'
-          report-reporter: java-junit
-          report-fail-on-error: false
+          script: |
+            const run = context.payload.workflow_run;
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            if (run.repository.full_name !== repository || run.head_commit?.id !== run.head_sha) {
+              core.notice('Run repository or report commit does not match; skipping.');
+              return;
+            }
 
-  publish-backend-tests:
-    if: github.event.workflow.name == 'Backend Integration Tests'
-    runs-on: ubuntu-latest
-    steps:
+            // workflow_run.pull_requests can be empty for forks. Resolve through
+            // GitHub instead of trusting a PR number supplied in an artifact.
+            const associated = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+              ...context.repo, commit_sha: run.head_sha, per_page: 100,
+            });
+            const matching = associated.filter((pullRequest) =>
+              pullRequest.state === 'open' &&
+              pullRequest.base.repo.full_name === repository &&
+              pullRequest.head.repo?.full_name === run.head_repository?.full_name &&
+              pullRequest.head.ref === run.head_branch &&
+              pullRequest.head.sha === run.head_sha,
+            );
+            if (matching.length !== 1) {
+              core.notice('No unique open PR at this run head; skipping a closed or superseded run.');
+              return;
+            }
+
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              ...context.repo, run_id: run.id, per_page: 100,
+            });
+            if (!artifacts.some((artifact) => !artifact.expired && artifact.name.startsWith('test-results-'))) {
+              core.notice('No test results were uploaded; nothing to publish.');
+              return;
+            }
+            core.setOutput('pr-number', matching[0].number);
+
+      # The reporter lists tracked files for annotations. Check out the trusted
+      # workflow commit, never the PR head; artifacts cannot overwrite this tree.
       - uses: actions/checkout@v6
+        if: steps.inspect.outputs.pr-number != ''
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Download all shard results
+      - name: Download all test results from CI
+        if: steps.inspect.outputs.pr-number != ''
         uses: actions/download-artifact@v4
         with:
-          pattern: backend-test-results-*
-          path: test-results
+          pattern: test-results-*
+          path: ${{ runner.temp }}/ci-test-results
           merge-multiple: true
           run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
 
-      - name: Publish Backend Integration Tests report
+      - name: Recheck the PR head before publishing
+        if: steps.inspect.outputs.pr-number != ''
+        id: current
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.inspect.outputs.pr-number }}
+        with:
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              ...context.repo, pull_number: Number(process.env.PR_NUMBER),
+            });
+            const run = context.payload.workflow_run;
+            const current = pullRequest.state === 'open' &&
+              pullRequest.head.sha === run.head_sha &&
+              pullRequest.head.ref === run.head_branch &&
+              pullRequest.head.repo?.full_name === run.head_repository?.full_name;
+            core.setOutput('publish', current);
+            if (!current) core.notice('PR closed or advanced while downloading reports; skipping.');
+
+      - name: Reset the test-results comment
+        if: steps.current.outputs.publish == 'true'
         uses: turing85/publish-report@v2
         with:
-          comment-header: backend-test-report
+          override-comment: 'true'
+          comment-header: ci-tests
+          comment-message-pr-number: ${{ steps.inspect.outputs.pr-number }}
+          comment-message-override: |
+            CI test results for [run #${{ github.event.workflow_run.run_number }}](${{ github.event.workflow_run.html_url }}).
+
+      - name: Publish CI test results
+        if: steps.current.outputs.publish == 'true'
+        uses: turing85/publish-report@v2
+        with:
+          comment-header: ci-tests
           comment-enabled: 'true'
-          report-name: Backend Integration Tests
-          report-path: 'test-results/**/*.xml'
+          comment-message-pr-number: ${{ steps.inspect.outputs.pr-number }}
+          report-name: CI Tests
+          report-path: '${{ runner.temp }}/ci-test-results/**/*.xml'
           report-reporter: java-junit
           report-fail-on-error: false
+          # fail-on-error:false keeps this publisher advisory. The generated
+          # check still records failures; the comment must show truthful counts.
+          comment-message-success: |
+            {1} passed, {2} failed, {3} skipped. [Full test report]({4}).
+          comment-message-failure: |
+            Test report publication failed. [Inspect the report]({4}).

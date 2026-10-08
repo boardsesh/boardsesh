@@ -70,12 +70,12 @@ cat > "$output_dir/manifest.json" <<'MANIFEST_EOF'
 ${PUBLIC_MANIFEST}MANIFEST_EOF
 touch "$output_dir/wasm/board_renderer_wasm.js"
 touch "$output_dir/wasm/board_renderer_wasm_bg.wasm"
-# The export script's eager-payload budget reads every <script src> in the shell
+# The export script's export inspection reads every <script src> in the shell
 # and the bytes behind it, so the stub has to emit a real chunk.
 printf 'globalThis.__stub=1;\\n' > "$output_dir/_expo/static/js/web/entry-stub.js"
 # Real Expo roots the script src at the export's baseUrl, so the stub must too —
 # otherwise the --subdomain case ships a shell pointing at /app/_expo/... and the
-# budget check correctly reports a reference with no file behind it.
+# export inspector correctly reports a reference with no file behind it.
 stub_base="\${BOARDSESH_WEB_BASE_URL:-/app}"
 [[ "$stub_base" == "/" ]] && stub_base=""
 stub_base="\${stub_base%/}"
@@ -112,8 +112,8 @@ describe('build-expo-web-export.sh PWA manifest patching', () => {
     copyFileSync(sourceExportScript, fixtureExportScript);
     copyFileSync(sourcePatchScript, join(fixtureRoot, 'scripts', 'lib', 'patch-expo-web-pwa-manifest.mjs'));
     copyFileSync(
-      join(repositoryRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'),
-      join(fixtureRoot, 'scripts', 'lib', 'check-expo-web-eager-budget.mjs'),
+      join(repositoryRoot, 'scripts', 'lib', 'inspect-expo-web-export.mjs'),
+      join(fixtureRoot, 'scripts', 'lib', 'inspect-expo-web-export.mjs'),
     );
     writeFileSync(
       join(fixtureRoot, 'packages', 'shared', 'static-assets', 'src', 'generated', 'catalog.json'),
