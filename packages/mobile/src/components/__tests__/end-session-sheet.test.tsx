@@ -16,13 +16,25 @@ function readPaddingBottom(style: unknown): number | undefined {
 }
 
 const sheet = vi.hoisted(() => ({ expand: vi.fn() }));
+// The keyboard height the sheet reads; 0 = keyboard down.
+const keyboard = vi.hoisted(() => ({ height: 0 }));
+const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android' }));
 
-type ViewMockProps = { children?: ReactNode };
+type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
 vi.mock('react-native', () => ({
-  View: ({ children }: ViewMockProps) => createElement('div', {}, children),
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+  },
+  View: ({ children, style, testID }: ViewMockProps) =>
+    createElement('div', { 'data-testid': testID, 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
+  // Present so a regression back to a KeyboardAvoidingView shows up below.
   KeyboardAvoidingView: ({ children }: ViewMockProps) => createElement('div', { 'data-kav': 'true' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
+
+vi.mock('../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => keyboard.height }));
 
 // SESSION_NOTES_MAX_LENGTH flows onto the input's maxLength; mock the shared
 // constant so this jsdom test doesn't pull the whole schema package.
@@ -36,7 +48,7 @@ type SheetMockProps = {
   snapPoints?: (string | number)[];
   index?: number;
 };
-type SheetViewMockProps = { children?: ReactNode; style?: unknown };
+type SheetViewMockProps = { children?: ReactNode };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   default: forwardRef(({ children, enableDynamicSizing, snapPoints, index }: SheetMockProps, ref: Ref<unknown>) => {
     useImperativeHandle(ref, () => ({ expand: sheet.expand }));
@@ -51,8 +63,7 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
       children,
     );
   }),
-  BottomSheetView: ({ children, style }: SheetViewMockProps) =>
-    createElement('div', { 'data-sheet-view': 'true', 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
+  BottomSheetView: ({ children }: SheetViewMockProps) => createElement('div', { 'data-sheet-view': 'true' }, children),
   BottomSheetTextInput: ({ placeholder, value, onChangeText, accessibilityLabel, maxLength }: TextInputMockProps) =>
     createElement('input', {
       'data-textinput': 'true',
@@ -145,6 +156,46 @@ vi.mock('../Button', () => ({
     }),
 }));
 
+// The top bar's actions render as buttons keyed by their label, so the cases
+// below press them the way they pressed the old row of buttons.
+type TopBarActionMock = {
+  label?: string;
+  kind?: string;
+  accessibilityLabel?: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  destructive?: boolean;
+};
+vi.mock('../SheetTopBar', () => ({
+  SheetTopBar: ({
+    title,
+    leading,
+    trailing,
+  }: {
+    title: string;
+    leading?: TopBarActionMock;
+    trailing?: TopBarActionMock;
+  }) =>
+    createElement(
+      'div',
+      { 'data-top-bar': title },
+      [leading, trailing].map((action, index) =>
+        action
+          ? createElement('button', {
+              key: index,
+              onClick: action.onPress,
+              'data-button': action.label ?? action.accessibilityLabel ?? action.kind,
+              'data-slot': index === 0 ? 'leading' : 'trailing',
+              'data-loading': action.loading ? 'true' : 'false',
+              'data-disabled': action.disabled ? 'true' : 'false',
+              'data-destructive': action.destructive ? 'true' : 'false',
+            })
+          : null,
+      ),
+    ),
+}));
+
 vi.mock('../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));
@@ -211,10 +262,67 @@ describe('EndSessionSheet', () => {
     expect(sheetEl.getAttribute('data-snappoints')).toBe('');
   });
 
-  it('pads the content past the safe-area bottom inset (34) plus spacing[3] (12)', () => {
+  it('pads the content past the window bottom inset (34) plus spacing[3] (12)', () => {
+    keyboard.height = 0;
+    const { getByTestId } = render(<EndSessionSheet {...makeProps()} />);
+    expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
+  });
+
+  it('on Android pads the inset alone at rest, and keyboard plus inset when it is up', () => {
+    platform.os = 'android';
+    try {
+      keyboard.height = 0;
+      const atRest = render(<EndSessionSheet {...makeProps()} />);
+      expect(atRest.getByTestId('end-session-content').getAttribute('data-pb')).toBe('46');
+      atRest.unmount();
+
+      // RN's Android height leaves out the system bars, which this edge-to-edge
+      // sheet still sits over: 300 + 34 + spacing[3].
+      keyboard.height = 300;
+      const typing = render(<EndSessionSheet {...makeProps()} />);
+      expect(typing.getByTestId('end-session-content').getAttribute('data-pb')).toBe('346');
+    } finally {
+      keyboard.height = 0;
+      platform.os = 'ios';
+    }
+  });
+
+  it('on iOS pads by the keyboard height instead of the inset while the keyboard is up, never both', () => {
+    keyboard.height = 300;
+    try {
+      const { container, getByTestId } = render(<EndSessionSheet {...makeProps()} />);
+      // 300 + spacing[3]: the keyboard covers the inset, so it isn't added on top.
+      expect(getByTestId('end-session-content').getAttribute('data-pb')).toBe('312');
+      // RN 0.86's KeyboardAvoidingView measures a parent-relative frame and finds
+      // no overlap inside the sheet, so the sheet must not lean on one.
+      expect(container.querySelector('[data-kav]')).toBeNull();
+    } finally {
+      keyboard.height = 0;
+    }
+  });
+
+  it('puts End session in the top bar as the trailing action and the exit as leading', () => {
     const { container } = render(<EndSessionSheet {...makeProps()} />);
-    const view = container.querySelector('[data-sheet-view]') as HTMLElement;
-    expect(view.getAttribute('data-pb')).toBe('46');
+    expect(container.querySelector('[data-top-bar="mobile.queue.endSession"]')).not.toBeNull();
+    expect(button(container, 'mobile.queue.endSession')?.getAttribute('data-slot')).toBe('trailing');
+    expect(button(container, 'mobile.queue.endSessionCancel')?.getAttribute('data-slot')).toBe('leading');
+  });
+
+  it('draws End session as destructive but not Leave, which ends nothing for anyone else', () => {
+    const endSheet = render(<EndSessionSheet {...makeProps()} />);
+    expect(button(endSheet.container, 'mobile.queue.endSession')?.getAttribute('data-destructive')).toBe('true');
+    endSheet.unmount();
+    const leaveSheet = render(<EndSessionSheet {...makeProps({ defaultMode: 'leave' })} />);
+    expect(button(leaveSheet.container, 'mobile.queue.leaveSessionAction')?.getAttribute('data-destructive')).toBe(
+      'false',
+    );
+  });
+
+  it('keeps the sheet up while an exit is in flight', () => {
+    const onDismiss = vi.fn();
+    const { container } = render(<EndSessionSheet {...makeProps({ onDismiss, isEnding: true })} />);
+    fireEvent.click(button(container, 'mobile.queue.endSessionCancel')!);
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it('fires onConfirm when End session is pressed', () => {
@@ -224,7 +332,7 @@ describe('EndSessionSheet', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('fires onDismiss when Done is pressed', () => {
+  it('fires onDismiss when the top bar close is pressed', () => {
     const onDismiss = vi.fn();
     const { container } = render(<EndSessionSheet {...makeProps({ onDismiss })} />);
     fireEvent.click(button(container, 'mobile.queue.endSessionCancel')!);

@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, KeyboardAvoidingView, StyleSheet } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Platform, StyleSheet } from 'react-native';
 import BottomSheet, {
   BottomSheetView,
   BottomSheetTextInput,
   type BottomSheetMethods,
 } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
+import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useTranslation } from 'react-i18next';
 import { SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { Text } from './Text';
 import { Button } from './Button';
 import { Icon } from './Icon';
+import { SheetTopBar } from './SheetTopBar';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { spacing, borderRadius, sheetStyles } from '../theme/tokens';
@@ -65,6 +67,9 @@ export function EndSessionSheet({
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const windowInsetBottom = useWindowBottomInset();
+  const keyboardHeight = useKeyboardHeight();
+  const bottomClearance =
+    Platform.OS === 'android' ? keyboardHeight + windowInsetBottom : Math.max(windowInsetBottom, keyboardHeight);
   const sheetRef = useRef<BottomSheetMethods>(null);
 
   // Resolved mode. A known non-creator can never reach `end`, whatever mode
@@ -93,6 +98,12 @@ export function EndSessionSheet({
   // on a user pan-down / backdrop.
   const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss });
 
+  // The bar's actions have no disabled state of their own, so they go inert
+  // while either exit is in flight, as the old buttons did.
+  const handleKeepClimbing = useCallback(() => {
+    if (!busy) onDismiss();
+  }, [busy, onDismiss]);
+
   return (
     <BottomSheet
       ref={sheetRef}
@@ -107,17 +118,47 @@ export function EndSessionSheet({
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
-      <BottomSheetView style={[styles.content, { paddingBottom: windowInsetBottom + spacing[3] }]}>
-        {/* The Compose/UIKit sheet window does not resize for the keyboard, so a
-            JS-side KeyboardAvoidingView lifts the recap input + buttons above it
-            on both platforms (mirrors Sheet.tsx). BottomSheetView stays the
-            sheet's single child. */}
-        <KeyboardAvoidingView behavior="padding" style={styles.avoider}>
+      {/* The sheet's single child: the top bar and the body share it. */}
+      <BottomSheetView>
+        <SheetTopBar
+          title={isEndMode ? t('mobile.queue.endSession') : t('mobile.queue.leaveSession')}
+          // Leaving loses nothing: the recap stays with the parent.
+          leading={{
+            kind: 'close',
+            onPress: handleKeepClimbing,
+            accessibilityLabel: t('mobile.queue.endSessionCancel'),
+          }}
+          trailing={
+            isEndMode
+              ? {
+                  label: t('mobile.queue.endSession'),
+                  onPress: onConfirm,
+                  loading: isEnding,
+                  disabled: isLeaving,
+                  prominent: true,
+                  destructive: true,
+                }
+              : {
+                  label: t('mobile.queue.leaveSessionAction'),
+                  onPress: onLeave,
+                  loading: isLeaving,
+                  disabled: isEnding,
+                  prominent: true,
+                }
+          }
+        />
+        {/* The Compose/UIKit sheet window does not resize for the keyboard, so the
+            content pads itself above it on both platforms. The sheet sizes to its
+            content and its bottom edge is the window's, so the keyboard height is
+            exactly the overlap. On iOS the keyboard height includes the home
+            indicator, so the pad is the larger of the two, never their sum. On
+            Android RN reports the IME inset minus the system bars, and this
+            edge-to-edge sheet sits over the navigation bar, so the overlap is
+            keyboard + inset. Not a KeyboardAvoidingView: RN
+            0.86 measures overlap from its parent-relative onLayout frame, which
+            inside this sheet finds none. */}
+        <View testID="end-session-content" style={[styles.content, { paddingBottom: bottomClearance + spacing[3] }]}>
           <Icon name={isEndMode ? 'end.session' : 'leave.session'} size={40} color={systemColors.secondaryLabel} />
-
-          <Text variant="title2" style={styles.title}>
-            {isEndMode ? t('mobile.queue.endSession') : t('mobile.queue.leaveSession')}
-          </Text>
 
           <Text variant="body" color={systemColors.secondaryLabel} style={styles.subtitle}>
             {isEndMode ? t('mobile.queue.endSessionConfirm') : t('mobile.queue.leaveSessionConfirm')}
@@ -146,34 +187,8 @@ export function EndSessionSheet({
             />
           ) : null}
 
-          <View style={styles.buttonRow}>
-            <Button
-              title={t('mobile.queue.endSessionCancel')}
-              variant="outlined"
-              onPress={onDismiss}
-              disabled={busy}
-              style={styles.button}
-            />
-            {isEndMode ? (
-              <Button
-                title={t('mobile.queue.endSession')}
-                onPress={onConfirm}
-                loading={isEnding}
-                role="destructive"
-                style={styles.button}
-              />
-            ) : (
-              <Button
-                title={t('mobile.queue.leaveSessionAction')}
-                onPress={onLeave}
-                loading={isLeaving}
-                style={styles.button}
-              />
-            )}
-          </View>
-
           {/* The other exit, always one tap away when it's legal. Low emphasis:
-              this is the deliberate second step, not a second primary CTA. */}
+              a row in the body, not a second confirm in the bar. */}
           {isEndMode ? (
             <Button
               title={t('mobile.queue.leaveInsteadAction')}
@@ -193,7 +208,7 @@ export function EndSessionSheet({
               disabled={busy}
             />
           ) : null}
-        </KeyboardAvoidingView>
+        </View>
       </BottomSheetView>
     </BottomSheet>
   );
@@ -204,14 +219,8 @@ const styles = StyleSheet.create({
     // No flex:1 — enableDynamicSizing measures the content's intrinsic height.
     paddingHorizontal: spacing[6],
     paddingTop: spacing[4],
-  },
-  avoider: {
     alignItems: 'center',
     gap: spacing[3],
-  },
-  title: {
-    fontWeight: '600',
-    textAlign: 'center',
   },
   subtitle: {
     textAlign: 'center',
@@ -232,14 +241,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     // Multiline text should start at the top on Android (matches iOS default).
     textAlignVertical: 'top',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: spacing[3],
-    marginTop: spacing[4],
-    width: '100%',
-  },
-  button: {
-    flex: 1,
   },
 });

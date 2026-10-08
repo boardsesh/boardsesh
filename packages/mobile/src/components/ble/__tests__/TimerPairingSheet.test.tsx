@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
+import { createElement, type ReactNode } from 'react';
 import type { DiscoveredDevice } from '../../../lib/ble/types';
 
 // Capture the scan callbacks + expose a stop spy so tests can drive discovered
@@ -40,10 +40,6 @@ vi.mock('react-native', () => ({
 
 type FlatListProps = { data?: DiscoveredDevice[]; renderItem?: (info: { item: DiscoveredDevice }) => ReactNode };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetModal: forwardRef(({ children }: ChildrenProps, _ref: Ref<unknown>) =>
-    createElement('div', { 'data-sheet': 'true' }, children),
-  ),
-  BottomSheetView: ({ children }: ChildrenProps) => createElement('div', {}, children),
   BottomSheetFlatList: ({ data, renderItem }: FlatListProps) =>
     createElement(
       'div',
@@ -52,12 +48,26 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     ),
 }));
 
-vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ bottom: 34 }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: () => ({ onChange: () => {}, onFullyDismissed: () => {} }),
+type SheetMockProps = { children?: ReactNode; header?: ReactNode; visible?: boolean; presentHaptic?: boolean };
+vi.mock('../../ModalSheet', () => ({
+  ModalSheet: ({ children, header, visible, presentHaptic }: SheetMockProps) =>
+    createElement(
+      'div',
+      { 'data-sheet': 'true', 'data-visible': String(visible), 'data-present-haptic': String(presentHaptic) },
+      header,
+      children,
+    ),
 }));
-vi.mock('../../sheet-snap-points', () => ({ androidSafeSnapPoints: (points: string[]) => points }));
+type TopBarMockProps = { title: string; leading?: { kind: string; onPress: () => void } };
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({ title, leading }: TopBarMockProps) =>
+    createElement(
+      'div',
+      { 'data-top-bar': title },
+      leading ? createElement('button', { 'data-leading': leading.kind, onClick: leading.onPress }) : null,
+    ),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: { primary: '#000' } }),
 }));
@@ -68,10 +78,6 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: {} }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ChildrenProps) => createElement('span', {}, children) }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
-    createElement('button', { 'data-button': title, onClick: onPress }),
-}));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
 import { TimerPairingSheet } from '../TimerPairingSheet';
@@ -90,6 +96,11 @@ describe('TimerPairingSheet', () => {
     const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
     expect(scan.scanForTimers).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('mobile.timerPair.scanning');
+  });
+
+  it('opens without a haptic: the pairing flow raises it, not a tap', () => {
+    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+    expect(container.querySelector('[data-present-haptic="false"]')).not.toBeNull();
   });
 
   it('stops the scan on unmount', () => {
@@ -121,10 +132,11 @@ describe('TimerPairingSheet', () => {
     expect(container.textContent).toContain('mobile.timerPair.empty');
   });
 
-  it('dismisses via the cancel button', () => {
+  it('dismisses via the top bar Cancel', () => {
     const onDismiss = vi.fn();
     const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={onDismiss} />);
-    const cancel = container.querySelector('[data-button="mobile.timerPair.cancel"]') as HTMLButtonElement;
+    expect(container.querySelector('[data-top-bar="mobile.timerPair.title"]')).not.toBeNull();
+    const cancel = container.querySelector('[data-leading="cancel"]') as HTMLButtonElement;
     act(() => cancel.click());
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });

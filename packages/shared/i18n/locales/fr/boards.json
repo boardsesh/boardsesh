@@ -289,8 +289,7 @@
       "title": "Associer un minuteur",
       "subtitle": "Choisis le minuteur Rogue ou Echo situé à côté de cette board.",
       "scanning": "Recherche de minuteurs à proximité…",
-      "empty": "Aucun minuteur trouvé. Vérifie qu'il est allumé et à portée.",
-      "cancel": "Annuler"
+      "empty": "Aucun minuteur trouvé. Vérifie qu'il est allumé et à portée."
     },
     "gymGrant": {
       "sectionTitle": "Accès en écriture",

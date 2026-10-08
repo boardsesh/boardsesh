@@ -53,6 +53,20 @@ export type SheetTopBarLeading = {
   accessibilityLabel?: string;
 };
 
+/**
+ * A secondary text action in the leading slot that is not a way out, e.g. a
+ * filter sheet's "Reset" across from its Apply. Drawn like `cancel`, with its
+ * own label. Sheets only: a screen's leading slot is its way back.
+ */
+export type SheetTopBarTextLeading = {
+  kind: 'text';
+  label: string;
+  onPress: () => void;
+  /** Greys the label and swallows taps, e.g. Reset with nothing to reset. */
+  disabled?: boolean;
+  accessibilityLabel?: string;
+};
+
 export type SheetTopBarTrailing = {
   label: string;
   onPress: () => void;
@@ -62,13 +76,19 @@ export type SheetTopBarTrailing = {
   loading?: boolean;
   /** The sheet's confirm. See PROMINENT_FILLED for how it looks. */
   prominent?: boolean;
+  /**
+   * The confirm ends or throws something away ("End session"). Drawn in the
+   * error colour: the capsule's fill when prominent on Liquid Glass, otherwise
+   * the label.
+   */
+  destructive?: boolean;
   accessibilityLabel?: string;
 };
 
 type SheetTopBarProps = {
   title: string;
   subtitle?: string;
-  leading?: SheetTopBarLeading;
+  leading?: SheetTopBarLeading | SheetTopBarTextLeading;
   trailing?: SheetTopBarTrailing;
   /** Drawn before the trailing action, e.g. a "?" help button. */
   trailingAccessory?: ReactNode;
@@ -82,28 +102,30 @@ type SheetTopBarProps = {
   testID?: string;
 };
 
-const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton({
-  kind,
-  onPress,
-  accessibilityLabel,
-}: SheetTopBarLeading) {
+const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
+  leading: SheetTopBarLeading | SheetTopBarTextLeading,
+) {
+  const { kind, onPress, accessibilityLabel } = leading;
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
 
-  if (kind === 'cancel') {
-    const label = t('actions.cancel');
+  if (leading.kind === 'cancel' || leading.kind === 'text') {
+    const label = leading.kind === 'text' ? leading.label : t('actions.cancel');
+    const disabled = leading.kind === 'text' && leading.disabled === true;
     return (
       <PressableSurface
         testID="sheet-top-bar-leading"
         onPress={onPress}
+        disabled={disabled}
         feedback="opacity"
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityState={{ disabled }}
         style={styles.textTarget}
       >
         <Text
           variant="body"
-          color={brandColors.primary}
+          color={disabled ? systemColors.tertiaryLabel : brandColors.primary}
           numberOfLines={1}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
         >
@@ -139,6 +161,7 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
   disabled = false,
   loading = false,
   prominent = false,
+  destructive = false,
   accessibilityLabel,
 }: SheetTopBarTrailing) {
   const { systemColors, brandColors, radii, spacing, variant } = useTheme();
@@ -151,11 +174,12 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
   // solid brand fill, the same rule as Button's filled CTA, which never goes
   // translucent.
   const filled = prominent && selectByVariant(variant, PROMINENT_FILLED);
-  const labelColor = filled ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : brandColors.primary;
+  const accent = destructive ? brandColors.error : brandColors.primary;
+  const labelColor = filled ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : accent;
   const surface = filled
     ? [
         styles.prominent,
-        { backgroundColor: brandColors.primary, borderRadius: radii.button, paddingHorizontal: spacing[4] },
+        { backgroundColor: accent, borderRadius: radii.button, paddingHorizontal: spacing[4] },
         disabled ? styles.dimmed : null,
       ]
     : null;

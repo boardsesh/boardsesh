@@ -1,11 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { MOONBOARD_ANGLES } from '@boardsesh/board-config';
 import { Text } from '../Text';
+import { SheetTopBar } from '../SheetTopBar';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import { useClimbStatsHistory } from '../../lib/graphql/hooks';
@@ -41,12 +42,13 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
-  const insets = useSafeAreaInsets();
+  // The window's inset, not the mount point's: a sheet covers the tab bar (#3776).
+  const windowInsetBottom = useWindowBottomInset();
   const { gradeFormat } = useGradeFormat();
   const sheetRef = useRef<BottomSheetModal>(null);
 
   // Single large snap point so the sheet always opens at full "big" size with
-  // room for the diagram, stats, slider and Done button above the home indicator.
+  // room for the diagram, stats and slider above the home indicator.
   // (androidSafeSnapPoints leaves a >= 75% detent as-is, so Android keeps this big.)
   const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
 
@@ -112,94 +114,90 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={sheetStyles.indicator}
     >
-      <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing[4] }]}>
-        <Text variant="headline" style={styles.title}>
-          {t('mobile.angleSelector.title')}
-        </Text>
-
-        <AngleBoardDiagram
-          angle={selectedAngle}
-          size={150}
-          accessibilityLabel={t('mobile.angleSelector.diagramAria', { angle: selectedAngle })}
+      {/* The sheet's single child: the top bar and the body share it. */}
+      <BottomSheetView style={{ paddingBottom: windowInsetBottom + spacing[4] }}>
+        <SheetTopBar
+          title={t('mobile.angleSelector.title')}
+          leading={{ kind: 'close', onPress: onClose }}
+          trailing={{ label: tCommon('actions.done'), onPress: handleDone, prominent: true }}
         />
+        <View style={styles.container}>
+          <AngleBoardDiagram
+            angle={selectedAngle}
+            size={150}
+            accessibilityLabel={t('mobile.angleSelector.diagramAria', { angle: selectedAngle })}
+          />
 
-        <Text variant="largeTitle" style={[styles.angleValue, { color: systemColors.label }]}>
-          {selectedAngle}°
-        </Text>
-
-        {stats?.gradeName ? (
-          <Text variant="headline" style={[styles.grade, { color: stats.color }]}>
-            {stats.gradeName}
+          <Text variant="largeTitle" style={[styles.angleValue, { color: systemColors.label }]}>
+            {selectedAngle}°
           </Text>
-        ) : null}
 
-        {quality > 0 ? (
-          <View style={styles.stars} accessibilityLabel={`★ ${quality.toFixed(1)}`}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Text
-                key={n}
-                variant="body"
-                style={[styles.star, { color: quality >= n ? iosSystemColors.starGold : systemColors.secondaryLabel }]}
-              >
-                {quality >= n ? '★' : '☆'}
-              </Text>
-            ))}
-          </View>
-        ) : null}
+          {stats?.gradeName ? (
+            <Text variant="headline" style={[styles.grade, { color: stats.color }]}>
+              {stats.gradeName}
+            </Text>
+          ) : null}
 
-        {stats && stats.sends > 0 ? (
-          <Text variant="caption1" style={[styles.ascents, { color: systemColors.secondaryLabel }]}>
-            {t('mobile.community.ascensionists', { count: stats.sends })}
-          </Text>
-        ) : null}
-
-        <Text variant="caption2" style={[styles.hint, { color: systemColors.tertiaryLabel }]}>
-          {t('mobile.angleSelector.fromVerticalHint')}
-        </Text>
-
-        {snapAngles.length > 0 ? (
-          <View style={styles.snapRow}>
-            {snapAngles.map((angle) => {
-              const isSelected = angle === selectedAngle;
-              return (
-                <Pressable
-                  key={angle}
-                  onPress={() => setSelectedAngle(angle)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                  accessibilityLabel={t('mobile.angleSelector.snapToAngle', { angle })}
-                  style={({ pressed }) => [
-                    styles.snapButton,
-                    { backgroundColor: isSelected ? brandColors.primary : systemColors.fill },
-                    pressed && styles.snapButtonPressed,
+          {quality > 0 ? (
+            <View style={styles.stars} accessibilityLabel={`★ ${quality.toFixed(1)}`}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <Text
+                  key={n}
+                  variant="body"
+                  style={[
+                    styles.star,
+                    { color: quality >= n ? iosSystemColors.starGold : systemColors.secondaryLabel },
                   ]}
                 >
-                  <Text
-                    variant="headline"
-                    style={[styles.snapText, { color: isSelected ? iosSystemColors.white : systemColors.label }]}
-                  >
-                    {angle}°
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ) : null}
+                  {quality >= n ? '★' : '☆'}
+                </Text>
+              ))}
+            </View>
+          ) : null}
 
-        <View style={styles.sliderWrap}>
-          <AngleSlider angles={angles} value={selectedAngle} onChange={setSelectedAngle} />
-        </View>
+          {stats && stats.sends > 0 ? (
+            <Text variant="caption1" style={[styles.ascents, { color: systemColors.secondaryLabel }]}>
+              {t('mobile.community.ascensionists', { count: stats.sends })}
+            </Text>
+          ) : null}
 
-        <Pressable
-          onPress={handleDone}
-          accessibilityRole="button"
-          accessibilityLabel={tCommon('actions.done')}
-          style={({ pressed }) => [styles.doneButton, pressed && styles.doneButtonPressed]}
-        >
-          <Text variant="headline" style={styles.doneText}>
-            {tCommon('actions.done')}
+          <Text variant="caption2" style={[styles.hint, { color: systemColors.tertiaryLabel }]}>
+            {t('mobile.angleSelector.fromVerticalHint')}
           </Text>
-        </Pressable>
+
+          {snapAngles.length > 0 ? (
+            <View style={styles.snapRow}>
+              {snapAngles.map((angle) => {
+                const isSelected = angle === selectedAngle;
+                return (
+                  <Pressable
+                    key={angle}
+                    onPress={() => setSelectedAngle(angle)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={t('mobile.angleSelector.snapToAngle', { angle })}
+                    style={({ pressed }) => [
+                      styles.snapButton,
+                      { backgroundColor: isSelected ? brandColors.primary : systemColors.fill },
+                      pressed && styles.snapButtonPressed,
+                    ]}
+                  >
+                    <Text
+                      variant="headline"
+                      style={[styles.snapText, { color: isSelected ? iosSystemColors.white : systemColors.label }]}
+                    >
+                      {angle}°
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          <View style={styles.sliderWrap}>
+            <AngleSlider angles={angles} value={selectedAngle} onChange={setSelectedAngle} />
+          </View>
+        </View>
       </BottomSheetView>
     </BottomSheetModal>
   );
@@ -208,12 +206,8 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: spacing[5],
-    paddingTop: spacing[2],
+    paddingTop: spacing[4],
     alignItems: 'center',
-  },
-  title: {
-    alignSelf: 'flex-start',
-    marginBottom: spacing[2],
   },
   angleValue: {
     fontWeight: '700',
@@ -258,21 +252,5 @@ const styles = StyleSheet.create({
   sliderWrap: {
     width: '100%',
     marginTop: spacing[4],
-    marginBottom: spacing[4],
-  },
-  doneButton: {
-    width: '100%',
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: brandColors.primary,
-  },
-  doneButtonPressed: {
-    opacity: 0.85,
-  },
-  doneText: {
-    color: iosSystemColors.white,
-    fontWeight: '600',
   },
 });

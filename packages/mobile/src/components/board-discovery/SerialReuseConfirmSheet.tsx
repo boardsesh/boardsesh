@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -33,6 +34,11 @@ type SerialReuseConfirmSheetProps = {
  * stats on one wall — with a de-emphasised "create a duplicate anyway" escape
  * hatch. A plain RN `Modal`, mirroring `BoardDisambiguationSheet`, so it works
  * from the create screen without a bottom-sheet host.
+ *
+ * Its buttons stay in the card rather than moving to a top bar: a two-choice
+ * confirmation is an alert / action sheet in HIG terms, and the card has no
+ * scroll body or keyboard for them to jump with. The card clears the window's
+ * bottom inset (home indicator / Android navigation bar) itself.
  */
 export function SerialReuseConfirmSheet({
   visible,
@@ -44,6 +50,7 @@ export function SerialReuseConfirmSheet({
 }: SerialReuseConfirmSheetProps) {
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
+  const windowInsetBottom = useWindowBottomInset();
 
   const boardName = board?.name ?? '';
   const location = board?.gymName ?? board?.locationName ?? null;
@@ -53,7 +60,10 @@ export function SerialReuseConfirmSheet({
       <Pressable style={styles.backdrop} onPress={onCancel}>
         <Pressable
           onPress={(event) => event.stopPropagation()}
-          style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}
+          style={[
+            styles.card,
+            { backgroundColor: systemColors.secondaryBackground, paddingBottom: windowInsetBottom + spacing[4] },
+          ]}
         >
           <View style={styles.headingRow}>
             <Icon name="info" size={22} color={iosSystemColors.systemOrange} />
@@ -93,7 +103,12 @@ export function SerialReuseConfirmSheet({
               style={styles.primaryAction}
             />
           ) : null}
-          <Button title={t('boardForm.serialReuse.createAnyway')} onPress={onCreateAnyway} variant="text" />
+          <Button
+            title={t('boardForm.serialReuse.createAnyway')}
+            onPress={onCreateAnyway}
+            variant="text"
+            style={styles.fullWidth}
+          />
         </Pressable>
       </Pressable>
     </Modal>
@@ -110,7 +125,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: borderRadius.lg,
     borderTopRightRadius: borderRadius.lg,
     padding: spacing[4],
-    paddingBottom: spacing[8],
     maxHeight: '80%',
   },
   headingRow: {
@@ -133,6 +147,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing[4],
   },
   primaryAction: {
+    alignSelf: 'stretch',
     marginBottom: spacing[2],
+  },
+  fullWidth: {
+    alignSelf: 'stretch',
   },
 });

@@ -289,8 +289,7 @@
       "title": "Workout-Timer koppeln",
       "subtitle": "Wähl den Rogue- oder Echo-Timer neben diesem Board.",
       "scanning": "Suche nach Timern in der Nähe…",
-      "empty": "Keine Timer gefunden. Prüf, ob der Timer an und in Reichweite ist.",
-      "cancel": "Abbrechen"
+      "empty": "Keine Timer gefunden. Prüf, ob der Timer an und in Reichweite ist."
     },
     "gymGrant": {
       "sectionTitle": "Schreibrechte",

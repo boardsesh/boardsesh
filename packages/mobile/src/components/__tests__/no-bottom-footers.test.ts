@@ -46,11 +46,15 @@ const TICK_ACTION_BAR_ALLOWLIST = new Set([
   'src/components/you/LogbookEditSheet.tsx', // TODO(top-bar migration): remove
 ]);
 
-/** Hand-rolled sheets that pin their own footer. Shrink-only. */
+/** Hand-rolled sheets that bound their own column. Shrink-only. */
 const SHEET_COLUMN_STYLE_ALLOWLIST = new Set([
   'src/components/Sheet.tsx',
   'src/components/ModalSheet.tsx',
-  'src/components/ClimbFilterSheet.tsx', // TODO(top-bar migration): remove
+  // No footer any more, but still a raw native sheet with a scroll body, which
+  // needs the iOS column bound to scroll at all (#3330). It can't move onto
+  // ModalSheet: Apply commits from the native close and the sub-picker round
+  // trip restores the scroll offset through its own scroll ref.
+  'src/components/ClimbFilterSheet.tsx',
   // LogAscentSheet would be listed too, but it is a ModalSheet now and gets the
   // hook from the wrapper; it only mentions the hook in a comment.
 ]);

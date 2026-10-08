@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
-import { createElement, forwardRef, useState, type ReactNode, type Ref } from 'react';
+import { createElement, forwardRef, useImperativeHandle, useState, type ReactNode, type Ref } from 'react';
 import type { DiscoveredDevice } from '../../../lib/ble/types';
 
 // Controllable return for the shared "no listed board matches the selected
@@ -47,20 +47,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
-type SheetMockProps = { children?: ReactNode };
-type SheetViewMockProps = { children?: ReactNode };
 type FlatListMockProps = { data?: unknown[] };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetModal: forwardRef(({ children }: SheetMockProps, _ref: Ref<unknown>) =>
-    createElement('div', { 'data-sheet': 'true' }, children),
-  ),
-  BottomSheetView: ({ children }: SheetViewMockProps) => createElement('div', {}, children),
   BottomSheetFlatList: ({ data }: FlatListMockProps) =>
     createElement('div', { 'data-list': 'true', 'data-count': String(data?.length ?? 0) }),
-}));
-
-vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -81,27 +71,48 @@ vi.mock('@boardsesh/board-config', () => ({
   formatBoardDisplayName: (boardName: string) => boardName,
 }));
 
-// The coordinator bridge, recording what the sheet asks of it. `dismissAndWait`
-// hands back a promise the test settles, standing in for the native dismissal.
+// The ModalSheet wrapper, recording what the sheet asks of the coordinator
+// through it. `dismissAndWait` hands back a promise the test settles, standing in
+// for the native dismissal.
 type ManagedSheetOptionsSeen = { open?: boolean; onClose?: () => void; onDisplaced?: () => void };
 const managedSheet = vi.hoisted(() => ({
   lastOptions: null as ManagedSheetOptionsSeen | null,
+  presentHaptic: undefined as boolean | undefined,
   settleDismiss: () => {},
   dismissAndWait: vi.fn(),
 }));
-vi.mock('../../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: (options: ManagedSheetOptionsSeen) => {
-    managedSheet.lastOptions = options;
-    return {
-      onChange: () => {},
-      onFullyDismissed: () => {},
-      handle: { dismissAndWait: managedSheet.dismissAndWait },
-    };
-  },
+type ModalSheetMockProps = {
+  children?: ReactNode;
+  header?: ReactNode;
+  visible?: boolean;
+  onClose?: () => void;
+  onDisplaced?: () => void;
+  presentHaptic?: boolean;
+};
+vi.mock('../../ModalSheet', () => ({
+  ModalSheet: forwardRef(function ModalSheetMock(
+    { children, header, visible, onClose, onDisplaced, presentHaptic }: ModalSheetMockProps,
+    ref: Ref<unknown>,
+  ) {
+    managedSheet.lastOptions = { open: visible, onClose, onDisplaced };
+    managedSheet.presentHaptic = presentHaptic;
+    useImperativeHandle(ref, () => ({ dismissAndWait: managedSheet.dismissAndWait }), []);
+    return createElement('div', { 'data-sheet': 'true' }, header, children);
+  }),
 }));
-
-vi.mock('../../sheet-snap-points', () => ({
-  androidSafeSnapPoints: (points: string[]) => points,
+vi.mock('../../../providers/sheet-presentation-provider', () => ({
+  dismissManagedSheetAndWait: (handle: { dismissAndWait: () => Promise<unknown> } | null) =>
+    handle ? handle.dismissAndWait() : Promise.resolve({ status: 'dismissed' }),
+}));
+type TopBarMockProps = { title: string; subtitle?: string; leading?: { kind: string; onPress: () => void } };
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({ title, subtitle, leading }: TopBarMockProps) =>
+    createElement(
+      'div',
+      { 'data-top-bar': title },
+      subtitle,
+      leading ? createElement('button', { 'data-leading': leading.kind, onClick: leading.onPress }) : null,
+    ),
 }));
 
 vi.mock('../../../lib/ble/picker-resolution-stats', () => ({
@@ -146,10 +157,6 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 10: 40 },
-}));
-
-vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: { separator: '#ccc' },
 }));
 
 import { DevicePickerSheet } from '../DevicePickerSheet';
@@ -322,6 +329,19 @@ describe('DevicePickerSheet', () => {
 
     expect(hasText(container, 'ble.locationHintTitle')).toBe(true);
     expect(hasText(container, 'ble.locationServicesHintTitle')).toBe(false);
+  });
+
+  it('opens without a haptic: a connect raises it, not a tap', () => {
+    render(<DevicePickerSheet {...makeProps()} />);
+    expect(managedSheet.presentHaptic).toBe(false);
+  });
+
+  it('cancels from the top bar and counts the boards found in its subtitle', () => {
+    const onDismiss = vi.fn();
+    const { container } = render(<DevicePickerSheet {...makeProps({ devices: [device('a')], onDismiss })} />);
+    expect(container.querySelector('[data-top-bar="ble.selectBoard"]')?.textContent).toContain('ble.devicesFound:1');
+    act(() => (container.querySelector('[data-leading="cancel"]') as HTMLButtonElement).click());
+    expect(onDismiss).toHaveBeenCalledOnce();
   });
 
   describe('the "this wall has no lights" offer', () => {

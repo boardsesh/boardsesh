@@ -7,6 +7,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
@@ -87,40 +88,43 @@ export function BoardShareSheet({
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
-      <BottomSheetView style={[styles.content, { paddingBottom: windowInsetBottom + spacing[4] }]}>
-        <Text variant="title2" style={styles.title}>
-          {t('mobile.sprayShare.title')}
-        </Text>
-        <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
-          {wallName}
-        </Text>
-        {/* Full label colour, not secondary: on the glass sheet the grey body
-            and URL were hard to read (#5960). */}
-        <Text variant="footnote" color={systemColors.label} style={styles.subtitle}>
-          {visibility === 'public' ? t('mobile.sprayShare.publicBody') : t('mobile.sprayShare.unlistedBody')}
-        </Text>
+      {/* The sheet's single child: the top bar and the body share it. */}
+      <BottomSheetView style={[styles.column, { paddingBottom: windowInsetBottom + spacing[4] }]}>
+        <SheetTopBar title={t('mobile.sprayShare.title')} leading={{ kind: 'close', onPress: onDismiss }} />
+        <View style={styles.content}>
+          <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
+            {wallName}
+          </Text>
+          {/* Full label colour, not secondary: on the glass sheet the grey body
+              and URL were hard to read (#5960). */}
+          <Text variant="footnote" color={systemColors.label} style={styles.subtitle}>
+            {visibility === 'public' ? t('mobile.sprayShare.publicBody') : t('mobile.sprayShare.unlistedBody')}
+          </Text>
 
-        <View
-          style={styles.qrTile}
-          accessibilityRole="image"
-          accessibilityLabel={t('mobile.sprayShare.qrLabel', { name: wallName })}
-        >
-          <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
-        </View>
+          <View
+            style={styles.qrTile}
+            accessibilityRole="image"
+            accessibilityLabel={t('mobile.sprayShare.qrLabel', { name: wallName })}
+          >
+            <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
+          </View>
 
-        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
-          {shareUrl}
-        </Text>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={2} style={styles.url}>
+            {shareUrl}
+          </Text>
 
-        <View style={styles.buttonRow}>
-          <Button
-            title={t('mobile.sprayShare.copyLink')}
-            icon="copy"
-            variant="outlined"
-            onPress={handleCopyLink}
-            style={styles.button}
-          />
-          <Button title={t('mobile.sprayShare.share')} icon="share" onPress={handleShare} style={styles.button} />
+          {/* Content actions, not a form confirm: they stay in the body, one
+              full-width row (stacked they would overflow the 60% detent). */}
+          <View style={styles.actions}>
+            <Button
+              title={t('mobile.sprayShare.copyLink')}
+              icon="copy"
+              variant="outlined"
+              onPress={handleCopyLink}
+              style={styles.button}
+            />
+            <Button title={t('mobile.sprayShare.share')} icon="share" onPress={handleShare} style={styles.button} />
+          </View>
         </View>
       </BottomSheetView>
     </BottomSheet>
@@ -128,16 +132,14 @@ export function BoardShareSheet({
 }
 
 const styles = StyleSheet.create({
-  content: {
+  column: {
     flex: 1,
+  },
+  content: {
     alignItems: 'center',
     paddingHorizontal: spacing[6],
     paddingTop: spacing[4],
     gap: spacing[2],
-  },
-  title: {
-    fontWeight: '600',
-    textAlign: 'center',
   },
   wallName: {
     textAlign: 'center',
@@ -158,10 +160,10 @@ const styles = StyleSheet.create({
     // Breathing room above the buttons; the URL sat right against them.
     marginBottom: spacing[3],
   },
-  buttonRow: {
+  actions: {
     flexDirection: 'row',
     gap: spacing[3],
-    width: '100%',
+    alignSelf: 'stretch',
     marginTop: spacing[2],
   },
   button: {

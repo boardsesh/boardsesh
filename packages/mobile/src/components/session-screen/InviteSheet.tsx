@@ -10,6 +10,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import { Text } from '../Text';
 import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
@@ -74,27 +75,30 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
-      <BottomSheetView style={[styles.content, { paddingBottom: windowInsetBottom + spacing[4] }]}>
-        <Text variant="title2" style={styles.title}>
-          {t('mobile.session.inviteTitle')}
-        </Text>
-        <Text variant="body" color={systemColors.secondaryLabel} style={styles.subtitle}>
-          {t('mobile.session.inviteSubtitle')}
-        </Text>
+      {/* The sheet's single child: the top bar and the body share it. */}
+      <BottomSheetView style={[styles.column, { paddingBottom: windowInsetBottom + spacing[4] }]}>
+        <SheetTopBar title={t('mobile.session.inviteTitle')} leading={{ kind: 'close', onPress: onDismiss }} />
+        <View style={styles.content}>
+          <Text variant="body" color={systemColors.secondaryLabel} style={styles.subtitle}>
+            {t('mobile.session.inviteSubtitle')}
+          </Text>
 
-        <View style={styles.qrTile} {...qrAnchor}>
-          <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
-        </View>
+          <View style={styles.qrTile} {...qrAnchor}>
+            <QRCode value={shareUrl} size={QR_SIZE} backgroundColor={QR_TILE_BACKGROUND} />
+          </View>
 
-        <View style={styles.buttonRow}>
-          <Button
-            title={t('mobile.session.inviteCopyLink')}
-            icon="copy"
-            variant="outlined"
-            onPress={handleCopyLink}
-            style={styles.button}
-          />
-          <Button title={t('mobile.session.inviteShare')} icon="share" onPress={handleShare} style={styles.button} />
+          {/* Content actions, not a form confirm: they stay in the body, one
+              full-width row (stacked they would overflow the 60% detent). */}
+          <View style={styles.actions}>
+            <Button
+              title={t('mobile.session.inviteCopyLink')}
+              icon="copy"
+              variant="outlined"
+              onPress={handleCopyLink}
+              style={styles.button}
+            />
+            <Button title={t('mobile.session.inviteShare')} icon="share" onPress={handleShare} style={styles.button} />
+          </View>
         </View>
       </BottomSheetView>
     </BottomSheet>
@@ -102,16 +106,14 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
 }
 
 const styles = StyleSheet.create({
-  content: {
+  column: {
     flex: 1,
+  },
+  content: {
     alignItems: 'center',
     paddingHorizontal: spacing[6],
     paddingTop: spacing[4],
     gap: spacing[3],
-  },
-  title: {
-    fontWeight: '600',
-    textAlign: 'center',
   },
   subtitle: {
     textAlign: 'center',
@@ -123,10 +125,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     marginVertical: spacing[2],
   },
-  buttonRow: {
+  actions: {
     flexDirection: 'row',
     gap: spacing[3],
-    width: '100%',
+    alignSelf: 'stretch',
   },
   button: {
     flex: 1,

@@ -7,28 +7,21 @@
 // nearby-name dedup guards before minting. A raw create-gym form in the app
 // would bypass those and become a fresh source of duplicate gyms.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetView,
-  BottomSheetFlatList,
-  BottomSheetTextInput,
-} from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomSheetFlatList, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
 import { useNearbyGyms } from '../../lib/graphql/hooks';
 import { useDeviceLocation } from '../../lib/use-device-location';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 
 export type PickedGym = {
   uuid: string;
@@ -53,6 +46,8 @@ type GymPickerSheetProps = {
   onRequestManualLocation: () => void;
   onDismiss: () => void;
 };
+
+const SNAP_POINTS = ['75%'];
 
 const keyExtractor = (gym: Gym) => gym.uuid;
 
@@ -106,12 +101,6 @@ export function GymPickerSheet({
 }: GymPickerSheetProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheetModal>(null);
-
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['75%']), []);
-  const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
-
   const [search, setSearch] = useState('');
   const deviceLocation = useDeviceLocation();
 
@@ -152,26 +141,30 @@ export function GymPickerSheet({
 
   const needsLocation = coords == null && search.trim().length === 0;
 
+  const handleRequestManualLocation = useCallback(() => {
+    hapticLight();
+    onRequestManualLocation();
+  }, [onRequestManualLocation]);
+
+  // ModalSheet hands the native sheet a single flex child, lifts the search
+  // field over the keyboard and pads the body once for the window bottom inset.
+  // "My gym isn't listed" is a row beside "Not at a gym", not a top-bar action:
+  // it is too long for the bar, and as a row it stays reachable when a search
+  // finds nothing.
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onChange={managed.onChange}
-      onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={styles.indicator}
+    <ModalSheet
+      visible
+      snapPoints={SNAP_POINTS}
+      onClose={onDismiss}
+      header={<SheetTopBar title={t('mobile.gymPicker.title')} leading={{ kind: 'close', onPress: onDismiss }} />}
     >
-      <BottomSheetView style={styles.header}>
-        <Text variant="title3" color={systemColors.label}>
-          {t('mobile.gymPicker.title')}
-        </Text>
+      <View style={styles.intro}>
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
           {t('mobile.gymPicker.subtitle')}
         </Text>
-      </BottomSheetView>
+      </View>
 
-      <BottomSheetView style={styles.searchWrapper}>
+      <View style={styles.searchWrapper}>
         <BottomSheetTextInput
           value={search}
           onChangeText={setSearch}
@@ -181,7 +174,10 @@ export function GymPickerSheet({
           autoCorrect={false}
           style={[styles.searchInput, { backgroundColor: systemColors.tertiaryBackground, color: systemColors.label }]}
         />
-      </BottomSheetView>
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.centered}>
+          {t('mobile.gymPicker.sharedEditHint')}
+        </Text>
+      </View>
 
       <Pressable
         onPress={handleSelectNone}
@@ -189,7 +185,6 @@ export function GymPickerSheet({
         accessibilityState={{ selected: selectedUuid == null }}
         style={({ pressed }) => [
           styles.row,
-          styles.noGymRow,
           { backgroundColor: pressed ? systemColors.tertiaryBackground : 'transparent' },
         ]}
       >
@@ -202,6 +197,26 @@ export function GymPickerSheet({
           </Text>
         </View>
         {selectedUuid == null ? <Icon name="check.small" size={20} color={brandColors.primary} /> : null}
+      </Pressable>
+
+      <Pressable
+        onPress={handleRequestManualLocation}
+        accessibilityRole="button"
+        style={({ pressed }) => [
+          styles.row,
+          styles.lastFixedRow,
+          {
+            backgroundColor: pressed ? systemColors.tertiaryBackground : 'transparent',
+            borderBottomColor: systemColors.separator,
+          },
+        ]}
+      >
+        <View style={styles.rowText}>
+          <Text variant="body" color={brandColors.primary}>
+            {t('mobile.gymPicker.addNew')}
+          </Text>
+        </View>
+        <Icon name="plus" size={20} color={brandColors.primary} />
       </Pressable>
 
       {needsLocation ? (
@@ -228,39 +243,26 @@ export function GymPickerSheet({
         </View>
       ) : (
         <BottomSheetFlatList
+          style={styles.list}
           data={gyms}
           // The search field keeps the keyboard up; without this the first tap
           // on a result only dismissed it and a second tap picked the gym (#5960).
           keyboardShouldPersistTaps="handled"
           keyExtractor={keyExtractor}
           renderItem={renderItem}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing[4] }]}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.centered}>
-          {t('mobile.gymPicker.sharedEditHint')}
-        </Text>
-        <Button title={t('mobile.gymPicker.addNew')} onPress={onRequestManualLocation} variant="text" size="medium" />
-      </View>
-    </BottomSheetModal>
+    </ModalSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
-  header: {
+  intro: {
     paddingHorizontal: spacing[4],
+    paddingTop: spacing[3],
     paddingBottom: spacing[2],
-    alignItems: 'center',
-    gap: 4,
   },
   centered: {
     textAlign: 'center',
@@ -268,6 +270,7 @@ const styles = StyleSheet.create({
   searchWrapper: {
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
+    gap: spacing[2],
   },
   searchInput: {
     borderRadius: borderRadius.md,
@@ -282,9 +285,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
   },
-  noGymRow: {
+  lastFixedRow: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: iosSystemColors.separator,
   },
   rowText: {
     flex: 1,
@@ -298,14 +300,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[8],
     paddingHorizontal: spacing[6],
   },
+  list: {
+    flex: 1,
+  },
   listContent: {
     paddingTop: spacing[1],
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
-    gap: spacing[1],
+    paddingBottom: spacing[4],
   },
 });

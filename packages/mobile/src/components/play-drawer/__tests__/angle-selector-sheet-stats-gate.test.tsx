@@ -62,8 +62,18 @@ vi.mock('react-native-screens', () => ({
   FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
-vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
+
+type TopBarAction = { label?: string; kind?: string; onPress: () => void };
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({ title, leading, trailing }: { title: string; leading?: TopBarAction; trailing?: TopBarAction }) =>
+    createElement(
+      'div',
+      null,
+      title,
+      leading ? createElement('button', { onClick: leading.onPress, 'aria-label': `leading-${leading.kind}` }) : null,
+      trailing ? createElement('button', { onClick: trailing.onPress, 'aria-label': trailing.label }) : null,
+    ),
 }));
 
 vi.mock('react-i18next', () => ({

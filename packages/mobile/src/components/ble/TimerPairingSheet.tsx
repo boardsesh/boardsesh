@@ -8,20 +8,20 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
-import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { DiscoveredDevice } from '../../lib/ble/types';
 import { RogueTimerController } from '../../lib/ble/rogue-timer-ble';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
-import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+
+const SNAP_POINTS = ['60%'];
 
 type TimerPairingSheetProps = {
   onSelect: (timerName: string) => void;
@@ -81,11 +81,6 @@ const TimerRow = memo(function TimerRow({
 export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
-  const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheetModal>(null);
-
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['60%']), []);
-  const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
 
   const controllerRef = useRef<RogueTimerController | null>(null);
   if (controllerRef.current === null) controllerRef.current = new RogueTimerController();
@@ -115,24 +110,23 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
   const showScanning = isScanning && devices.length === 0;
   const showEmpty = !isScanning && devices.length === 0;
 
+  // ModalSheet hands the native sheet one flex child and pads the body for the
+  // window bottom inset, so the list never sits under the home indicator.
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onChange={managed.onChange}
-      onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={styles.indicator}
+    <ModalSheet
+      visible
+      snapPoints={SNAP_POINTS}
+      onClose={onDismiss}
+      // Opens by itself (a connect or the pairing flow raises it), not from a tap.
+      presentHaptic={false}
+      header={<SheetTopBar title={t('mobile.timerPair.title')} leading={{ kind: 'cancel', onPress: onDismiss }} />}
     >
-      <BottomSheetView style={styles.header}>
-        <Text variant="title3" color={systemColors.label}>
-          {t('mobile.timerPair.title')}
-        </Text>
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.headerSubtitle}>
+      {/* A full sentence: too long for the bar's one-line subtitle. */}
+      <View style={styles.intro}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
           {t('mobile.timerPair.subtitle')}
         </Text>
-      </BottomSheetView>
+      </View>
 
       {showScanning && (
         <View style={styles.centerState}>
@@ -145,7 +139,7 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
 
       {showEmpty && (
         <View style={styles.centerState}>
-          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyText}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
             {t('mobile.timerPair.empty')}
           </Text>
         </View>
@@ -160,28 +154,16 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-        <Button title={t('mobile.timerPair.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
-      </View>
-    </BottomSheetModal>
+    </ModalSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  indicator: {
-    backgroundColor: iosSystemColors.separator,
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
-  header: {
+  intro: {
     paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-    alignItems: 'center',
-    gap: 4,
+    paddingTop: spacing[3],
   },
-  headerSubtitle: {
+  centered: {
     textAlign: 'center',
   },
   centerState: {
@@ -192,10 +174,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[10],
     paddingHorizontal: spacing[6],
   },
-  emptyText: {
-    textAlign: 'center',
-  },
   listContent: {
+    paddingTop: spacing[2],
     paddingHorizontal: spacing[2],
     paddingBottom: spacing[4],
     gap: spacing[1],
@@ -220,12 +200,5 @@ const styles = StyleSheet.create({
   rssiBar: {
     width: 4,
     borderRadius: 1,
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
   },
 });

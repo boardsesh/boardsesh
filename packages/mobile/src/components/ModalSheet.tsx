@@ -48,6 +48,12 @@ type ModalSheetProps = {
    * native post-animation `onDismiss` (accurate); on Android it settles off the
    * coordinator's ceiling timer (no native signal there). */
   onFullyDismissed?: () => void;
+  /** Fired when another sheet displaces this one. Defaults to `onClose`. */
+  onDisplaced?: () => void;
+  /** Fire the medium haptic when the sheet opens (default). Pass false for a
+   * sheet that opens by itself rather than from a tap, e.g. the device picker
+   * a connect raises; drags between detents keep their haptic either way. */
+  presentHaptic?: boolean;
   /** Serialization domain. Sheets presented off the same view controller share a
    * group; defaults to the root window VC. */
   presenterGroup?: PresenterGroup;
@@ -97,6 +103,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     onChange,
     onClose,
     onFullyDismissed,
+    onDisplaced,
+    presentHaptic = true,
     presenterGroup,
     enablePanDownToClose = true,
     scrollable = false,
@@ -130,6 +138,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     group: presenterGroup,
     sheetRef,
     onClose,
+    onDisplaced,
     onFullyDismissed,
   });
   useImperativeHandle(ref, () => managed.handle, [managed.handle]);
@@ -146,12 +155,18 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // The keyboard-detent snap on field focus is not a drag: no haptic for it.
   const { programmaticSnapRef, snapWithoutHaptic } = useProgrammaticSnap(managed.handle.snapToIndex);
 
+  // Whether the sheet is resting open, so the first onChange after a present
+  // can be told apart from a drag between detents (see `presentHaptic`).
+  const isOpenRef = useRef(false);
   const handleChange = useCallback(
     (index: number) => {
       if (index >= 0) {
-        if (!programmaticSnapRef.current) hapticMedium();
+        const isPresent = !isOpenRef.current;
+        isOpenRef.current = true;
+        if (!programmaticSnapRef.current && (presentHaptic || !isPresent)) hapticMedium();
         setActiveIndex(index);
       } else {
+        isOpenRef.current = false;
         // Reset on close so a re-open of an always-mounted sheet starts at the
         // first detent's (shortest) column height until the native onChange
         // confirms the detent — erring short beats a stale taller column pushing
@@ -161,7 +176,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
       managed.onChange(index);
       onChangeRef.current?.(index);
     },
-    [managed, programmaticSnapRef],
+    [managed, programmaticSnapRef, presentHaptic],
   );
 
   // A fixed header or a pinned footer both need a wrapper around the body, and

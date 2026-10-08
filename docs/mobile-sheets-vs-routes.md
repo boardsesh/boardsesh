@@ -137,8 +137,9 @@ And on iOS the SwiftUI host can propose an **unbounded** height to that child, s
 column sizes to its content instead of the detent and anything past the detent (a pinned footer)
 lands off-screen (#3330). The `Sheet` / `ModalSheet` wrappers pin that single flex child to the
 active detent's height on iOS via `useSheetColumnStyle` (`src/components/use-sheet-column-style.ts`);
-Android bounds it natively and keeps `flex: 1`. A raw-`BottomSheet` surface with a pinned footer
-(`ClimbFilterSheet`) must apply the same hook itself. `LogAscentSheet` is a `ModalSheet` now
+Android bounds it natively and keeps `flex: 1`. A raw-`BottomSheet` surface with a scroll body
+(`ClimbFilterSheet`) must apply the same hook itself. Anything else hands the native sheet its
+single flex child by going through `Sheet` / `ModalSheet` (the picker sheets do). `LogAscentSheet` is a `ModalSheet` now
 and gets it from the wrapper.
 
 **Android sizing — only two real states.** `@expo/ui`'s Android sheet is a plain Material 3

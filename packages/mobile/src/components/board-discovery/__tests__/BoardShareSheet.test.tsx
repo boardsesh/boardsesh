@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode } from 'react';
 
 // #5960: on the glass sheet the body copy and the URL were light grey and hard
@@ -38,6 +38,16 @@ vi.mock('../../Text', () => ({
     ),
 }));
 vi.mock('../../Button', () => ({ Button: ({ title }: { title: string }) => createElement('button', null, title) }));
+type TopBarMockProps = { title: string; leading?: { kind: string; onPress: () => void } };
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBar: ({ title, leading }: TopBarMockProps) =>
+    createElement(
+      'div',
+      null,
+      title,
+      leading ? createElement('button', { 'data-testid': `leading-${leading.kind}`, onClick: leading.onPress }) : null,
+    ),
+}));
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: COLORS }) }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
@@ -56,11 +66,19 @@ import { BoardShareSheet } from '../BoardShareSheet';
 const URL = 'https://www.boardsesh.com/b/garage/40/list?wall=abc';
 
 describe('BoardShareSheet text', () => {
-  function renderSheet() {
+  function renderSheet(onDismiss: () => void = vi.fn()) {
     return render(
-      <BoardShareSheet visible onDismiss={vi.fn()} shareUrl={URL} wallName="Garage" visibility="unlisted" />,
+      <BoardShareSheet visible onDismiss={onDismiss} shareUrl={URL} wallName="Garage" visibility="unlisted" />,
     );
   }
+
+  it('closes from the top bar, which carries the title', () => {
+    const onDismiss = vi.fn();
+    const { getByTestId, getByText } = renderSheet(onDismiss);
+    expect(getByText('mobile.sprayShare.title')).toBeTruthy();
+    act(() => getByTestId('leading-close').click());
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
 
   it('draws the body in the full label colour', () => {
     expect(renderSheet().getByText('mobile.sprayShare.unlistedBody').getAttribute('data-color')).toBe('#LABEL');
