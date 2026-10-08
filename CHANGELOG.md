@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Spray wall photos keep every pixel of a 24 MP phone shot, so holds stay crisp when you zoom right in to mark them ([#6221](https://github.com/boardsesh/boardsesh/pull/6221))
 - See every look for your spray wall before you pick one ([#6215](https://github.com/boardsesh/boardsesh/pull/6215))
   Photo, Wall only and Holds only now show as previews of your own wall, right in the add-a-wall flow
 - Adding a spray wall is calmer: Next and Back sit in the top bar and the keyboard no longer covers fields ([#6219](https://github.com/boardsesh/boardsesh/pull/6219))
