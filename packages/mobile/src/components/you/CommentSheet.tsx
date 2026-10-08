@@ -1,3 +1,5 @@
+import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
+import { InlineSheetError } from '../InlineSheetError';
 import { type RefObject, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { BottomSheetTextInput, type BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -39,7 +41,7 @@ export function CommentSheet({
   const { t } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { submitError, setSubmitError } = useScopedSheetError(entityId ?? 'comment', !!entityId);
   const [draft, setDraft] = useState('');
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
@@ -97,11 +99,7 @@ export function CommentSheet({
                 />
               </Pressable>
             </View>
-            {submitError ? (
-              <Text variant="footnote" color={systemColors.error} accessibilityLiveRegion="polite">
-                {submitError}
-              </Text>
-            ) : null}
+            <InlineSheetError message={submitError} visible={!!entityId} scope={entityId ?? 'comment'} />
           </View>
         ) : (
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.signInPrompt}>

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 const confirmDiscard = vi.hoisted(() => vi.fn(async () => false));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => confirmDiscard }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { it, expect, vi, beforeEach } from 'vitest';
 import { render, renderHook, fireEvent, act } from '@testing-library/react';
 import { createElement, createRef, useSyncExternalStore, Profiler, useState, type ReactNode } from 'react';

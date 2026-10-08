@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
+vi.mock('../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +29,7 @@ const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn(async (_text: string
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
@@ -156,10 +158,10 @@ describe('AddBetaVideoSheet attach analytics', () => {
     attach.mutate.mockImplementationOnce((_variables, callbacks) => callbacks.onError?.(new Error('offline')));
     const screen = renderSheet();
     typeAndSubmit('https://www.instagram.com/reel/ABC123/');
-    expect(screen.getByTestId('sheet-top-bar-error').textContent).toBe('mobile.betaVideos.attachError');
+    expect(screen.getByText('mobile.betaVideos.attachError')).toBeTruthy();
     expect(analytics.track).not.toHaveBeenCalled();
     act(() => captured.onChangeText?.('https://www.instagram.com/reel/XYZ456/'));
-    expect(screen.queryByTestId('sheet-top-bar-error')).toBeNull();
+    expect(screen.queryByText('mobile.betaVideos.attachError')).toBeNull();
     typeAndSubmit('https://www.instagram.com/reel/XYZ456/');
     expect(attach.mutate).toHaveBeenCalledTimes(2);
   });

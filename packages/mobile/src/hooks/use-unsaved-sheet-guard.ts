@@ -21,8 +21,8 @@ export function useUnsavedSheetGuard({
 }) {
   const confirm = useConfirm();
   const { t } = useTranslation('common');
-  const latest = useRef({ visible, dirty, busy, onClose, onDiscard });
-  latest.current = { visible, dirty, busy, onClose, onDiscard };
+  const latest = useRef({ visible, dirty, busy, onClose, onDiscard, scope });
+  latest.current = { visible, dirty, busy, onClose, onDiscard, scope };
   const generation = useRef(0);
   const prompting = useRef(false);
   useEffect(() => {
@@ -50,7 +50,13 @@ export function useUnsavedSheetGuard({
         destructive: true,
       });
       // A delayed answer must not close a newly opened form or an in-flight save.
-      if (discard && requestedGeneration === generation.current && latest.current.visible && !latest.current.busy) {
+      if (
+        discard &&
+        requestedGeneration === generation.current &&
+        current.scope === latest.current.scope &&
+        latest.current.visible &&
+        !latest.current.busy
+      ) {
         latest.current.onDiscard?.();
         latest.current.onClose();
       }

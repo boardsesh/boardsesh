@@ -1,3 +1,5 @@
+import { useScopedSheetError } from '../hooks/use-scoped-sheet-error';
+import { InlineSheetError } from './InlineSheetError';
 import { useUnsavedSheetGuard } from '../hooks/use-unsaved-sheet-guard';
 // "Share your beta" modal — the outbound half of the beta-video flow. It hands
 // the climber a ready-to-paste, board-aware caption (with the climb name baked
@@ -62,7 +64,7 @@ export function AddBetaVideoSheet({
 
   const attach = useAttachBetaLink();
 
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { submitError, setSubmitError, clearError } = useScopedSheetError(climb?.uuid ?? 'beta', visible && !!climb);
   const guard = useUnsavedSheetGuard({
     visible: visible && !!climb,
     dirty: url.length > 0,
@@ -85,9 +87,9 @@ export function AddBetaVideoSheet({
 
   const handleFullyDismissed = useCallback(() => {
     setUrl('');
-    setSubmitError(null);
+    clearError();
     onFullyDismissed?.();
-  }, [onFullyDismissed]);
+  }, [onFullyDismissed, clearError]);
 
   const handleCopyCaption = useCallback(async () => {
     if (!caption || !climb) return;
@@ -108,7 +110,7 @@ export function AddBetaVideoSheet({
     track(SHARED_EVENTS.BetaInstagramOpened, { boardType: boardName, climbUuid: climb.uuid, opened, usedFallback });
     if (!opened) setSubmitError(t('mobile.betaVideos.instagramOpenFailed'));
     else if (usedFallback) showToast(t('mobile.betaVideos.instagramNotInstalled'), 'info');
-  }, [caption, climb, boardName, showToast, t]);
+  }, [caption, climb, boardName, showToast, t, setSubmitError]);
 
   const trimmed = url.trim();
   const hasInput = trimmed.length > 0;
@@ -136,7 +138,7 @@ export function AddBetaVideoSheet({
         },
       },
     );
-  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose]);
+  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose, setSubmitError]);
 
   // A form: large, so the field and its keyboard both fit (HIG Sheets).
   const snapPoints = LARGE_SNAP_POINTS;
@@ -144,8 +146,6 @@ export function AddBetaVideoSheet({
 
   const header = (
     <SheetTopBar
-      error={submitError}
-      reserveErrorSlot
       title={t('mobile.betaVideos.shareTitle')}
       leading={{ kind: 'cancel', onPress: guard.requestClose }}
       trailing={{
@@ -171,6 +171,7 @@ export function AddBetaVideoSheet({
       header={header}
     >
       <View style={styles.container}>
+        <InlineSheetError message={submitError} visible={visible} scope={climb?.uuid ?? 'beta'} />
         <StepRow index={1} title={t('mobile.betaVideos.step1Title')}>
           <View style={[styles.captionBox, { borderColor: systemColors.separator }]}>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>

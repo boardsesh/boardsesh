@@ -739,7 +739,7 @@ bypass that guard after success. A late confirmation cannot dismiss a reopened
 form or a different record. Coordinator displacement remains a separate host
 notification, so it never attempts to reopen a sheet during native handoff.
 
-**Submit failures stay in their sheet:** use the `SheetTopBar` error slot, or inline
-text beside a composer. Preserve typed text and attachments on failure, and clear
+**Submit failures stay in their sheet:** use an uncapped, wrapping error row inside the
+scroll body, or beside a composer. Preserve typed text and attachments on failure, and clear
 the error on retry. Root toasts appear behind native sheets and cannot explain
 why a form remains open. Logbook editing already follows this contract.

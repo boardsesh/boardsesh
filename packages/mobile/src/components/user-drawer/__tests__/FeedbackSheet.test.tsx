@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
@@ -7,6 +8,7 @@ import type { ManagedSheetHandle } from '../../../providers/sheet-presentation-p
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children }: ViewMockProps) => createElement('div', {}, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));

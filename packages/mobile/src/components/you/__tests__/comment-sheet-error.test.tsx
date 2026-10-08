@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';

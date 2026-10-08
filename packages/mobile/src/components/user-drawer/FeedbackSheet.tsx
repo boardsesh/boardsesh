@@ -1,3 +1,5 @@
+import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
+import { InlineSheetError } from '../InlineSheetError';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -77,16 +79,16 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   const submitLabel = isBugReport ? t('feedbackDialog.submitBug') : t('feedbackDialog.submitRating');
   const inputPlaceholder = isBugReport ? t('feedbackForm.bugPlaceholder') : t('feedbackForm.ratingPlaceholder');
 
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const { submitError, setSubmitError, clearError } = useScopedSheetError(mode, visible);
   const resetForm = useCallback(() => {
     setSelectedRating(null);
     setComment('');
     setCaptureBleDiag(false);
     setContactConsent(true);
     setScreenshotUris([]);
-    setSubmitError(null);
+    clearError();
     reset();
-  }, [reset]);
+  }, [reset, clearError]);
   useEffect(resetForm, [mode, resetForm]);
 
   const dirty =
@@ -174,8 +176,6 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         contentContainerStyle={styles.content}
         header={
           <SheetTopBar
-            error={submitError}
-            reserveErrorSlot
             title={title}
             leading={{ kind: 'cancel', onPress: guard.requestClose }}
             trailing={{
@@ -191,6 +191,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
           />
         }
       >
+        <InlineSheetError message={submitError} visible={visible} scope={mode} />
         {!isBugReport ? (
           <View style={styles.starRow}>
             {STAR_RATING_VALUES.map((starRating) => {
