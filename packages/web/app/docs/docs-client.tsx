@@ -24,6 +24,7 @@ import Stack from '@mui/material/Stack';
 import MuiDivider from '@mui/material/Divider';
 import { ApiOutlined, CloudOutlined, ElectricBoltOutlined, MenuBookOutlined } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import { TabPanel } from '@/app/components/ui/tab-panel';
 import styles from './docs.module.css';
 
@@ -54,6 +55,14 @@ function OverviewTab() {
 
       <Typography variant="body1" component="p" sx={{ mb: 2 }}>
         {t('docs.overview.intro')}
+      </Typography>
+
+      <Typography variant="body1" component="p" sx={{ mb: 2 }}>
+        {t('docs.overview.usagePolicy')}{' '}
+        <MuiLink component={LocaleLink} href="/legal">
+          {t('docs.overview.usagePolicyLink')}
+        </MuiLink>
+        .
       </Typography>
 
       <Stack spacing={3} className={styles.fullWidth}>

@@ -60,6 +60,16 @@ Our controller is designed to be interoperable with both this project's software
 
 We use board and product names (e.g. "Kilter Board", "MoonBoard", "Tension Board") solely to describe hardware compatibility and interoperability. These names are trademarks of their respective owners. This project is not affiliated with, endorsed by, or sponsored by Aurora Climbing, Moon Climbing, or any board manufacturer.
 
+## Hosted Service & API Access
+
+Boardsesh's code is open source under the Apache 2.0 licence. That licence covers the code. It does not cover the hosted service: the accounts, climb database, logbook sync and real-time servers that the Boardsesh apps and website connect to. We run and pay for those.
+
+The public API documented on the [API docs page](https://www.boardsesh.com/docs) is for integrations: tools that read climb data, or act on behalf of a signed-in climber from their own account, within the published rate limits.
+
+The hosted service is not a backend for other apps. A publicly distributed app or fork that uses Boardsesh accounts, data or servers as its service needs our written permission, and we do not currently grant it. If you fork Boardsesh, run your own backend too. The code and the self-hosting docs are there for exactly that.
+
+Questions about this policy: [legal@boardsesh.com](mailto:legal@boardsesh.com)
+
 ---
 
 ## Third-Party Notices
@@ -94,4 +104,4 @@ If you are a board manufacturer and would like to discuss collaboration or have 
 
 ---
 
-_This document is provided for informational purposes and does not constitute legal advice. Last updated: 08-02-2026_
+_This document is provided for informational purposes and does not constitute legal advice. Last updated: 10-08-2026_

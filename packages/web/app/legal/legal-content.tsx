@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
 import { GavelOutlined } from '@mui/icons-material';
 import { Trans, useTranslation } from 'react-i18next';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 
 export default function LegalContent() {
@@ -70,6 +71,22 @@ export default function LegalContent() {
           <Prose>{t('legal.interop.controller.p1')}</Prose>
           <Prose>{t('legal.interop.controller.p2')}</Prose>
         </PageSection>
+      </PageSection>
+
+      <PageSection title={t('legal.hostedService.title')}>
+        <Prose>{t('legal.hostedService.p1')}</Prose>
+        <Prose>
+          {t('legal.hostedService.p2Start')}{' '}
+          <MuiLink component={LocaleLink} href="/docs">
+            {t('legal.hostedService.p2Link')}
+          </MuiLink>{' '}
+          {t('legal.hostedService.p2End')}
+        </Prose>
+        <Prose>{t('legal.hostedService.p3')}</Prose>
+        <Prose>
+          {t('legal.hostedService.contact')} {/* i18n-ignore-next-line -- contact email, not translated */}
+          <MuiLink href="mailto:legal@boardsesh.com">legal@boardsesh.com</MuiLink>
+        </Prose>
       </PageSection>
 
       <PageSection title={t('legal.trademark.title')}>
