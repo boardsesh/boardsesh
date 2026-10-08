@@ -3,7 +3,6 @@
 // "what happens on tap", and it can be unit-tested without mounting a native
 // @expo/ui tree. Mirrors SwitchRow.logic.ts.
 
-import type { TextProps as ComposeTextProps } from '@expo/ui/jetpack-compose';
 import type { ViewStyle } from 'react-native';
 import { hapticLight } from '../lib/haptics';
 import type { ButtonVariant } from './Button.types';
@@ -195,7 +194,11 @@ const LABEL_LARGE_LINE_HEIGHT = 20;
  * the line height scales with it, keeping labelLarge's 20/14 ratio; a capped
  * size on labelLarge's fixed 20sp line would leave the label mis-spaced.
  */
-export function buttonLabelStyle(cappedSize: number | undefined): NonNullable<ComposeTextProps['style']> {
+export function buttonLabelStyle(cappedSize: number | undefined): {
+  typography: 'labelLarge';
+  fontSize?: number;
+  lineHeight?: number;
+} {
   if (cappedSize == null) return { typography: 'labelLarge' };
   return {
     typography: 'labelLarge',
