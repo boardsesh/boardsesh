@@ -184,13 +184,13 @@ describe('warm-up against sparse / mid-range grade pools', () => {
     expect(warmUpSlots.every((slot) => slot.grade < 15)).toBe(true);
   });
 
-  it('returns no warm-up slots when target is at the pool minimum', () => {
+  it('keeps the standard warm-up at the target when it is the pool minimum', () => {
     const slots = generateGradeFocusPlan(
       { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp: 'standard', numberOfClimbs: 3, targetGrade: 13 },
       MOONBOARD_LIKE_GRADES,
     );
     const warmUpSlots = slots.filter((slot) => slot.section === 'warmUp');
-    expect(warmUpSlots).toHaveLength(0);
+    expect(warmUpSlots.map((slot) => slot.grade)).toEqual([13, 13, 13, 13]);
   });
 
   it('handles an empty grade scale by emitting no warm-up slots', () => {
@@ -199,6 +199,60 @@ describe('warm-up against sparse / mid-range grade pools', () => {
       [],
     );
     expect(slots).toEqual([]);
+  });
+});
+
+describe('configured warm-up length', () => {
+  it.each([DEFAULT_VOLUME_OPTIONS, DEFAULT_PYRAMID_OPTIONS, DEFAULT_LADDER_OPTIONS, DEFAULT_GRADE_FOCUS_OPTIONS])(
+    'keeps the lowest-grade warm-up before a $type workout',
+    (options) => {
+      const slots = generateWorkoutPlan({ ...options, warmUp: 'standard', targetGrade: 13 }, [
+        { difficulty_id: 13 },
+        { difficulty_id: 17 },
+      ]);
+      expect(slots.slice(0, 4)).toEqual(
+        Array.from({ length: 4 }, (_, index) => ({ grade: 13, section: 'warmUp', index })),
+      );
+      expect(slots.slice(4).every((slot) => slot.section !== 'warmUp')).toBe(true);
+      expect(slots.map((slot) => slot.index)).toEqual(Array.from({ length: slots.length }, (_, index) => index));
+    },
+  );
+
+  it.each([
+    { warmUp: 'standard' as const, targetGrade: 1, grades: GRADES, expected: [1, 1, 1, 1] },
+    { warmUp: 'extended' as const, targetGrade: 1, grades: GRADES, expected: Array(12).fill(1) },
+    { warmUp: 'standard' as const, targetGrade: 2, grades: GRADES, expected: [1, 1, 1, 1] },
+    { warmUp: 'extended' as const, targetGrade: 2, grades: GRADES, expected: Array(12).fill(1) },
+    { warmUp: 'standard' as const, targetGrade: 7, grades: GRADES, expected: [3, 4, 5, 6] },
+    { warmUp: 'extended' as const, targetGrade: 7, grades: GRADES, expected: [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6] },
+    {
+      warmUp: 'standard' as const,
+      targetGrade: 14,
+      grades: [{ difficulty_id: 13 }, { difficulty_id: 14 }, { difficulty_id: 17 }],
+      expected: [13, 13, 13, 13],
+    },
+    {
+      warmUp: 'standard' as const,
+      targetGrade: 25,
+      grades: [13, 17, 21, 25].map((difficulty_id) => ({ difficulty_id })),
+      expected: [13, 13, 17, 21],
+    },
+    {
+      warmUp: 'extended' as const,
+      targetGrade: 6,
+      grades: GRADES,
+      expected: [1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 5],
+    },
+  ])('preserves $warmUp length at target $targetGrade', ({ warmUp, targetGrade, grades, expected }) => {
+    const slots = generateGradeFocusPlan(
+      { ...DEFAULT_GRADE_FOCUS_OPTIONS, warmUp, numberOfClimbs: 2, targetGrade },
+      grades,
+    );
+    const warmUpSlots = slots.filter((slot) => slot.section === 'warmUp');
+    expect(warmUpSlots).toHaveLength(warmUp === 'standard' ? 4 : 12);
+    expect(warmUpSlots.map((slot) => slot.grade)).toEqual(expected);
+    expect(slots.map((slot) => slot.index)).toEqual(Array.from({ length: expected.length + 2 }, (_, i) => i));
+    expect(slots.slice(expected.length).map((slot) => slot.grade)).toEqual([targetGrade, targetGrade]);
   });
 });
 

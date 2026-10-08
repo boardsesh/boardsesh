@@ -47,15 +47,21 @@ const generateWarmUp = (
   // future boards may skip values entirely). Walking the array keeps the
   // warm-up grounded in the real grade table.
   const targetIndex = grades.findIndex((grade) => grade.difficulty_id >= targetGrade);
-  if (targetIndex <= 0) return [];
+  if (targetIndex < 0) return [];
 
   const startIndex = Math.max(0, targetIndex - config.grades);
+  const warmUpGrades = targetIndex === 0 ? [{ difficulty_id: targetGrade }] : grades.slice(startIndex, targetIndex);
+  const totalClimbs = config.grades * config.climbsPerGrade;
+  const climbsPerGrade = Math.floor(totalClimbs / warmUpGrades.length);
+  const remainder = totalClimbs % warmUpGrades.length;
   let slotIndex = 0;
 
-  for (let i = startIndex; i < targetIndex; i++) {
-    for (let copy = 0; copy < config.climbsPerGrade; copy++) {
+  for (let i = 0; i < warmUpGrades.length; i++) {
+    // Assign remainder climbs to easier grades first, preserving ascending order.
+    const climbCount = climbsPerGrade + (i < remainder ? 1 : 0);
+    for (let copy = 0; copy < climbCount; copy++) {
       slots.push({
-        grade: grades[i].difficulty_id,
+        grade: warmUpGrades[i].difficulty_id,
         section: 'warmUp',
         index: slotIndex++,
       });
