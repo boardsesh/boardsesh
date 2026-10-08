@@ -319,6 +319,9 @@
       "p2Link": "página de documentación de la API",
       "p2End": "es para integraciones: herramientas que leen datos de bloques, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso que aplica el servicio.",
       "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente que use las cuentas, los datos o los servidores de Boardsesh como su servicio necesita nuestro permiso por escrito, y por ahora no lo concedemos. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código está ahí precisamente para eso. La guía de configuración de desarrollo en CONTRIBUTING.md es el punto de partida hoy; la documentación oficial de autoalojamiento aún está por llegar.",
+      "p4Start": "Tampoco tienes que empezar con una base de datos vacía. Las",
+      "p4Link": "instantáneas nocturnas de los plafones",
+      "p4End": "son archivos SQLite públicos con los catálogos de bloques, nos cuesta poco servirlas y puedes usarlas con total libertad. También estamos abiertos a hablar de sincronizar datos que no sean de usuarios, como bloques y grados, con un servicio alternativo.",
       "contact": "Preguntas sobre esta política:"
     },
     "trademark": {

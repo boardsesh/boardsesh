@@ -68,6 +68,8 @@ The public API documented on the [API docs page](https://www.boardsesh.com/docs)
 
 The hosted service is not a backend for other apps. A publicly distributed app or fork that uses Boardsesh accounts, data or servers as its service needs our written permission, and we do not currently grant it. If you fork Boardsesh, run your own backend too. The code is there for exactly that. The development setup in [CONTRIBUTING.md](./CONTRIBUTING.md) is the starting point today; official self-hosting docs are still to come.
 
+You do not have to start from an empty database either. The [nightly board snapshots](./docs/board-snapshots-dataset.md) are public SQLite files of the climb catalogs, cheap for us to serve, and you are welcome to use them. We are also happy to talk about syncing non-user data such as climbs and grades to an alternative service.
+
 Questions about this policy: [legal@boardsesh.com](mailto:legal@boardsesh.com)
 
 ---

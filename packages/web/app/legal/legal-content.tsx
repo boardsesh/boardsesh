@@ -84,6 +84,17 @@ export default function LegalContent() {
         </Prose>
         <Prose>{t('legal.hostedService.p3')}</Prose>
         <Prose>
+          {t('legal.hostedService.p4Start')}{' '}
+          <MuiLink
+            href="https://github.com/boardsesh/boardsesh/blob/main/docs/board-snapshots-dataset.md"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t('legal.hostedService.p4Link')}
+          </MuiLink>{' '}
+          {t('legal.hostedService.p4End')}
+        </Prose>
+        <Prose>
           {t('legal.hostedService.contact')} {/* i18n-ignore-next-line -- contact email, not translated */}
           <MuiLink href="mailto:legal@boardsesh.com">legal@boardsesh.com</MuiLink>
         </Prose>

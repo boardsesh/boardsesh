@@ -319,6 +319,9 @@
       "p2Link": "API-Dokumentationsseite",
       "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder für angemeldete Kletterer*innen über deren eigenes Konto handeln, innerhalb der Ratenlimits, die der Dienst anwendet.",
       "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, der Boardsesh-Konten, -Daten oder -Server als eigenen Dienst nutzt, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code ist genau dafür da. Das Entwicklungs-Setup in CONTRIBUTING.md ist heute der Einstieg; eine offizielle Self-Hosting-Doku kommt noch.",
+      "p4Start": "Du musst auch nicht mit einer leeren Datenbank anfangen. Die",
+      "p4Link": "nächtlichen Board-Snapshots",
+      "p4End": "sind öffentliche SQLite-Dateien der Boulder-Kataloge, für uns günstig auszuliefern, und du darfst sie gern nutzen. Wir sprechen auch gern darüber, Daten ohne Personenbezug wie Boulder und Grade mit einem anderen Dienst zu synchronisieren.",
       "contact": "Fragen zu dieser Richtlinie:"
     },
     "trademark": {

@@ -319,6 +319,9 @@
       "p2Link": "API docs page",
       "p2End": "is for integrations: tools that read climb data, or act on behalf of a signed-in climber from their own account, within the rate limits the service applies.",
       "p3": "The hosted service is not a backend for other apps. A publicly distributed app or fork that uses Boardsesh accounts, data or servers as its service needs our written permission, and we do not currently grant it. If you fork Boardsesh, run your own backend too. The code is there for exactly that. The development setup in CONTRIBUTING.md is the starting point today; official self-hosting docs are still to come.",
+      "p4Start": "You do not have to start from an empty database either. The",
+      "p4Link": "nightly board snapshots",
+      "p4End": "are public SQLite files of the climb catalogs, cheap for us to serve, and you are welcome to use them. We are also happy to talk about syncing non-user data such as climbs and grades to an alternative service.",
       "contact": "Questions about this policy:"
     },
     "trademark": {
