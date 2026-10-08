@@ -15,6 +15,7 @@ import { namedAccessibilityActions, onNamedAccessibilityAction } from '../../lib
 import { boardTypeLabel } from '../board-discovery/board-builder-labels';
 import { useTheme } from '../../providers/theme-provider';
 import { applySectionCaption } from '../../theme/variants/variant-tokens';
+import { sectionHeaderText } from '../section-header-text';
 import { spacing, borderRadius, shadows } from '../../theme/tokens';
 import { useGymPanelGesture, type GymPanelDetent } from './use-gym-panel-gesture';
 import { findRowIndex, type GymListRow } from './gym-list-rows';
@@ -211,10 +212,20 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
 // --- rows (memoized; each reads its own colours so renderItem deps stay clean) ---
 
 const SectionHeaderRow = memo(function SectionHeaderRow({ label }: { label: string }) {
-  const { systemColors, sectionCaption } = useTheme();
+  const { systemColors, m3, variant, sectionCaption } = useTheme();
   const caption = applySectionCaption(label, sectionCaption);
+  // Same type as SectionHeader: footnote semibold / secondaryLabel on Liquid
+  // Glass, titleSmall / onSurfaceVariant on Material.
+  const headerText = sectionHeaderText(variant, {
+    secondaryLabel: systemColors.secondaryLabel,
+    onSurfaceVariant: m3.onSurfaceVariant,
+  });
   return (
-    <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.sectionLabel, caption.style]}>
+    <Text
+      variant={headerText.textVariant}
+      color={headerText.color}
+      style={[styles.sectionLabel, caption.style, { fontWeight: headerText.fontWeight }]}
+    >
       {caption.text}
     </Text>
   );
@@ -464,9 +475,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing[2],
   },
-  // HIG grouped-list section header: footnote semibold, sentence case.
   sectionLabel: {
-    fontWeight: '600',
     marginBottom: spacing[1],
     marginTop: spacing[2],
   },

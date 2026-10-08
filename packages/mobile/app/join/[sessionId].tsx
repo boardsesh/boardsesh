@@ -172,7 +172,12 @@ function JoinSessionScreen() {
           <Text variant="title3" style={styles.centeredTitle}>
             {t('mobileJoin.signInToJoin')}
           </Text>
-          <Button title={t('mobileJoin.signInToJoin')} variant="filled" onPress={() => router.replace('/auth/login')} />
+          <Button
+            title={t('mobileJoin.signInToJoin')}
+            variant="filled"
+            size="large"
+            onPress={() => router.replace('/auth/login')}
+          />
         </View>
       </View>
     );
@@ -201,7 +206,7 @@ function JoinSessionScreen() {
           <Text variant="title3" style={styles.centeredTitle}>
             {t('mobileJoin.error')}
           </Text>
-          <Button title={t('mobileJoin.retry')} variant="filled" onPress={() => void preview.refetch()} />
+          <Button title={t('mobileJoin.retry')} variant="filled" size="large" onPress={() => void preview.refetch()} />
           <Button title={t('mobileJoin.cancel')} variant="text" onPress={() => router.back()} />
         </View>
       </View>

@@ -95,6 +95,15 @@ describe('iOS Button label weight', () => {
 
     expect(modifierArg('font')).toEqual({ textStyle: 'callout', weight });
   });
+
+  // Over board art the middle tier draws a solid borderedProminent scrim pill,
+  // so its label takes the prominent weight too.
+  it.each<ButtonVariant>(['outlined', 'tonal'])('%s over content is semibold', (variant) => {
+    render(<Button title="Switch" onPress={vi.fn()} variant={variant} over="content" />);
+
+    expect(modifierArg('buttonStyle')).toBe('borderedProminent');
+    expect(modifierArg('font')).toEqual({ textStyle: 'callout', weight: 'semibold' });
+  });
 });
 
 // Every native label is capped, so a button never outgrows the 1.5x-capped Text
