@@ -199,10 +199,10 @@ function optionsFor(name: string, params: object = {}): ScreenOptions {
 const SPRAY_SCREENS = ['spray/new', 'spray/holds'];
 
 describe('the spray screens on iPad', () => {
-  it.each(SPRAY_SCREENS)('%s covers the screen and fades the home indicator', (name) => {
+  it.each(SPRAY_SCREENS)('%s uses a native card and fades the home indicator', (name) => {
     platformMock.isPad = true;
     const options = optionsFor(name);
-    expect(options.presentation).toBe('fullScreenModal');
+    expect(options.presentation).toBe('modal');
     expect(options.autoHideHomeIndicator).toBe(true);
   });
 

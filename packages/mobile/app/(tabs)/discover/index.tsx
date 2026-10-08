@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Pressable, RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -105,6 +106,7 @@ function playlistKey(playlist: { uuid: string }): string {
 }
 
 export default function DiscoverLibrary() {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('playlists');
   const { brandColors, systemColors, variant } = useTheme();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
@@ -634,7 +636,7 @@ export default function DiscoverLibrary() {
           />
         }
         style={styles.flex}
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{
           paddingTop: chromeHeight,
           paddingBottom: bottomChrome.scrollBottomPadding + spacing[6],

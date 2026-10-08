@@ -11,6 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', isPad: false }));
 const screens = vi.hoisted(() => new Map<string, Record<string, unknown>>());
 
+vi.mock('../../../../src/components/navigation/NativeTabletContent', () => ({
+  NativeTabletContent: ({ children }: { children?: ReactNode }) => children,
+}));
+
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -80,10 +84,10 @@ describe('the New climb route', () => {
     expect(options.animation).toBe('slide_from_bottom');
   });
 
-  it('covers the whole screen on iPad, where a modal is a small page card and there are no NativeTabs', () => {
+  it('uses an iPad editing card, preserving the live native tab sidebar', () => {
     platform.isPad = true;
     const options = createOptions();
-    expect(options.presentation).toBe('fullScreenModal');
+    expect(options.presentation).toBe('modal');
     expect(options.gestureEnabled).toBe(false);
   });
 

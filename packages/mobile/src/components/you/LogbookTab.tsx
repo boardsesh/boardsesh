@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, Pressable, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -92,6 +93,7 @@ type LogbookGroupUnit = AscentFeedItem & {
 };
 
 export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: LogbookTabProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors, brandColors, variant } = useTheme();
   // Kill switch for the search + filter UI — rolled out 100% in PostHog since
@@ -677,7 +679,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
           renderItem={renderItem}
           keyExtractor={keyExtractor}
           getItemType={getRowType}
-          contentInsetAdjustmentBehavior="never"
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           contentContainerStyle={{ paddingBottom }}

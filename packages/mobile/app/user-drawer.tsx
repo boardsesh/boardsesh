@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { router } from 'expo-router';
+import { Stack, router } from 'expo-router';
+import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useProfile } from '../src/lib/graphql/hooks';
@@ -40,7 +41,8 @@ const DRAWER_ANIMATION_MS = 220;
  * navigate or present the (root-mounted) FeedbackSheet without ever stacking a
  * second presentation over the still-up drawer.
  */
-function UserDrawerScreen() {
+export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: 'drawer' | 'account' }) {
+  const isAccount = presentation === 'account';
   const { t } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
@@ -121,11 +123,12 @@ function UserDrawerScreen() {
 
   // Slide in on mount.
   useEffect(() => {
+    if (isAccount) return;
     drawerProgress.value = withTiming(1, {
       duration: DRAWER_ANIMATION_MS,
       easing: Easing.out(Easing.cubic),
     });
-  }, [drawerProgress]);
+  }, [drawerProgress, isAccount]);
 
   // Fire the queued action once the route's view controller is gone. Deferring it
   // ONE FRAME past unmount is load-bearing: router.back() (the pop) and a deferred
@@ -154,6 +157,10 @@ function UserDrawerScreen() {
       if (closingRef.current) return;
       closingRef.current = true;
       if (after) pendingAfterCloseRef.current = after;
+      if (isAccount) {
+        popRoute();
+        return;
+      }
       drawerProgress.value = withTiming(
         0,
         {
@@ -170,7 +177,7 @@ function UserDrawerScreen() {
         },
       );
     },
-    [drawerProgress, popRoute],
+    [drawerProgress, popRoute, isAccount],
   );
 
   const backdropStyle = useAnimatedStyle(() => ({
@@ -192,6 +199,151 @@ function UserDrawerScreen() {
     setFeedbackMode('bug');
     close(() => presentFeedback());
   };
+
+  const menuContent = (
+    <ScrollView
+      contentContainerStyle={[
+        styles.drawerContent,
+        isAccount && { paddingTop: spacing[4], paddingBottom: insets.bottom + spacing[4] },
+      ]}
+      contentInsetAdjustmentBehavior="automatic"
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* Tappable to edit only when signed in; otherwise a plain header. Both
+              branches render the same body, differing only in the wrapper +
+              chevron. */}
+      {profile?.id ? (
+        <Pressable
+          style={styles.profileHeader}
+          onPress={() => (isAccount ? router.push('/account/settings/edit') : close(() => navigateToEditProfile()))}
+          accessibilityRole="button"
+          accessibilityLabel={tSettings('profile.editAction')}
+        >
+          <ProfileHeaderBody avatarUrl={profile.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
+          <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+        </Pressable>
+      ) : (
+        <View style={styles.profileHeader}>
+          <ProfileHeaderBody avatarUrl={profile?.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
+        </View>
+      )}
+
+      <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+        {/* One row, not two: "Change board" and "My Boards" were adjacent
+                entries with the same glyph and the same chevron, and nothing on
+                screen said which one edited a board and which one switched to it
+                (#4623). /boards now does both. */}
+        <DrawerRow icon="boards" title={t('userDrawer.changeBoard')} onPress={() => close(() => navigateToBoards())} />
+      </View>
+
+      <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+        <DrawerRow
+          icon="settings"
+          title={t('ariaLabels.settings')}
+          onPress={() => (isAccount ? router.push('/account/settings') : close(() => navigateToSettings()))}
+        />
+        <DrawerRow
+          icon="playlist"
+          title={t('userDrawer.myPlaylists')}
+          onPress={() => close(() => navigateToPlaylists())}
+        />
+        {/* No subtitle: drawer rows are single-line menu entries (Settings,
+                About, …); the "Recent updates and fixes" line lives on the
+                changelog screen itself. The "New" pill carries the unseen cue. */}
+        <DrawerRow
+          icon="changelog"
+          title={t('userDrawer.whatsNew')}
+          onPress={() => close(() => navigateToChangelog())}
+          trailing={
+            changelogUnseen ? (
+              <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
+                <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
+                  {t('userDrawer.newBadge')}
+                </Text>
+              </View>
+            ) : undefined
+          }
+        />
+        <DrawerRow
+          icon="info"
+          title={t('userDrawer.about')}
+          onPress={() => close(() => navigateToAbout())}
+          showSeparator={false}
+        />
+      </View>
+
+      {showQaRows ? (
+        <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+          {qaPrNumber !== null ? (
+            <>
+              <DrawerRow
+                icon="checkmark.circle.fill"
+                title={t('userDrawer.qa.finishTesting', { prNumber: qaPrNumber })}
+                onPress={() => close(() => presentQaVerdict())}
+                trailing={
+                  <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
+                    <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
+                      {t('userDrawer.qa.badge')}
+                    </Text>
+                  </View>
+                }
+              />
+              <DrawerRow
+                icon="doc.text"
+                title={t('userDrawer.qa.testPlan', { prNumber: qaPrNumber })}
+                onPress={() => close(() => navigateToQaBrief())}
+                showSeparator={false}
+              />
+            </>
+          ) : (
+            <DrawerRow
+              icon="branch"
+              title={t('userDrawer.qa.pick')}
+              onPress={() => close(() => navigateToQaPick())}
+              showSeparator={false}
+            />
+          )}
+        </View>
+      ) : null}
+
+      <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+        <DrawerRow icon="star" title={t('userDrawer.rateBoardsesh')} onPress={handleRate} />
+        <DrawerRow icon="flag" title={t('userDrawer.reportBug')} onPress={handleReportBug} />
+        <DrawerRow
+          icon="open.external"
+          title={t('userDrawer.joinDiscord')}
+          tintColor={brandColors.primary}
+          onPress={() => close(() => openDiscord())}
+          showSeparator={false}
+        />
+      </View>
+
+      <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
+        <DrawerRow
+          icon="logout"
+          title={t('userDrawer.logout')}
+          tintColor={brandColors.error}
+          onPress={() => close(() => signOutAction())}
+          showSeparator={false}
+        />
+      </View>
+    </ScrollView>
+  );
+
+  if (isAccount) {
+    return (
+      <View style={[styles.root, { backgroundColor: systemColors.secondaryBackground }]}>
+        <Stack.Screen
+          options={{
+            title: t('userDrawer.accountTitle'),
+            headerRight: () => <HeaderLeadingButton kind="close" onPress={() => close()} />,
+          }}
+        />
+        {menuContent}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -217,134 +369,7 @@ function UserDrawerScreen() {
           drawerStyle,
         ]}
       >
-        <ScrollView
-          contentContainerStyle={styles.drawerContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Tappable to edit only when signed in; otherwise a plain header. Both
-              branches render the same body, differing only in the wrapper +
-              chevron. */}
-          {profile?.id ? (
-            <Pressable
-              style={styles.profileHeader}
-              onPress={() => close(() => navigateToEditProfile())}
-              accessibilityRole="button"
-              accessibilityLabel={tSettings('profile.editAction')}
-            >
-              <ProfileHeaderBody avatarUrl={profile.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
-              <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-            </Pressable>
-          ) : (
-            <View style={styles.profileHeader}>
-              <ProfileHeaderBody avatarUrl={profile?.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
-            </View>
-          )}
-
-          <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-            {/* One row, not two: "Change board" and "My Boards" were adjacent
-                entries with the same glyph and the same chevron, and nothing on
-                screen said which one edited a board and which one switched to it
-                (#4623). /boards now does both. */}
-            <DrawerRow
-              icon="boards"
-              title={t('userDrawer.changeBoard')}
-              onPress={() => close(() => navigateToBoards())}
-            />
-          </View>
-
-          <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-            <DrawerRow
-              icon="settings"
-              title={t('ariaLabels.settings')}
-              onPress={() => close(() => navigateToSettings())}
-            />
-            <DrawerRow
-              icon="playlist"
-              title={t('userDrawer.myPlaylists')}
-              onPress={() => close(() => navigateToPlaylists())}
-            />
-            {/* No subtitle: drawer rows are single-line menu entries (Settings,
-                About, …); the "Recent updates and fixes" line lives on the
-                changelog screen itself. The "New" pill carries the unseen cue. */}
-            <DrawerRow
-              icon="changelog"
-              title={t('userDrawer.whatsNew')}
-              onPress={() => close(() => navigateToChangelog())}
-              trailing={
-                changelogUnseen ? (
-                  <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
-                    <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
-                      {t('userDrawer.newBadge')}
-                    </Text>
-                  </View>
-                ) : undefined
-              }
-            />
-            <DrawerRow
-              icon="info"
-              title={t('userDrawer.about')}
-              onPress={() => close(() => navigateToAbout())}
-              showSeparator={false}
-            />
-          </View>
-
-          {showQaRows ? (
-            <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-              {qaPrNumber !== null ? (
-                <>
-                  <DrawerRow
-                    icon="checkmark.circle.fill"
-                    title={t('userDrawer.qa.finishTesting', { prNumber: qaPrNumber })}
-                    onPress={() => close(() => presentQaVerdict())}
-                    trailing={
-                      <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
-                        <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
-                          {t('userDrawer.qa.badge')}
-                        </Text>
-                      </View>
-                    }
-                  />
-                  <DrawerRow
-                    icon="doc.text"
-                    title={t('userDrawer.qa.testPlan', { prNumber: qaPrNumber })}
-                    onPress={() => close(() => navigateToQaBrief())}
-                    showSeparator={false}
-                  />
-                </>
-              ) : (
-                <DrawerRow
-                  icon="branch"
-                  title={t('userDrawer.qa.pick')}
-                  onPress={() => close(() => navigateToQaPick())}
-                  showSeparator={false}
-                />
-              )}
-            </View>
-          ) : null}
-
-          <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-            <DrawerRow icon="star" title={t('userDrawer.rateBoardsesh')} onPress={handleRate} />
-            <DrawerRow icon="flag" title={t('userDrawer.reportBug')} onPress={handleReportBug} />
-            <DrawerRow
-              icon="open.external"
-              title={t('userDrawer.joinDiscord')}
-              tintColor={brandColors.primary}
-              onPress={() => close(() => openDiscord())}
-              showSeparator={false}
-            />
-          </View>
-
-          <View style={[styles.menuGroup, { backgroundColor: systemColors.elevatedSurface }]}>
-            <DrawerRow
-              icon="logout"
-              title={t('userDrawer.logout')}
-              tintColor={brandColors.error}
-              onPress={() => close(() => signOutAction())}
-              showSeparator={false}
-            />
-          </View>
-        </ScrollView>
+        {menuContent}
       </Animated.View>
     </View>
   );

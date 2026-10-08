@@ -80,7 +80,8 @@
       "finishTesting": "Terminar de probar #{{prNumber}}",
       "testPlan": "Plan de pruebas #{{prNumber}}",
       "badge": "QA"
-    }
+    },
+    "accountTitle": "Cuenta"
   },
   "qa": {
     "shared": {

@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
   View,
@@ -222,6 +223,7 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 function ClimbListInner() {
   const { isPad, widthClass } = useDeviceLayout();
   const gradeUsesPopover = isPad && widthClass === 'regular';
+  const nativeRootHeader = useNativeRootHeader();
   const router = useRouter();
   // Screenshot mode opens the first climb's board view via this deep-link param
   // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
@@ -1730,10 +1732,11 @@ function ClimbListInner() {
             // shadow, no title. The floating glass chrome then owns the top.
             headerShown: true,
             headerTransparent: true,
-            headerBlurEffect: 'none' as const,
+            headerBlurEffect: nativeRootHeader ? undefined : ('none' as const),
             headerShadowVisible: false,
             headerStyle: { backgroundColor: 'transparent' },
-            title: '',
+            title: nativeRootHeader ? tCommon('mobile.nav.climbs') : '',
+            headerLargeTitle: nativeRootHeader,
             headerSearchBarOptions: {
               ref: nativeSearchRef,
               placement: 'automatic' as const,
@@ -1747,8 +1750,17 @@ function ClimbListInner() {
               onCancelButtonPress: handleNativeSearchCancel,
             },
           }
-        : { headerShown: false },
-    [useNativeSearch, t, handleNativeSearchChange, handleSearchFocus, handleSearchBlur, handleNativeSearchCancel],
+        : { headerShown: nativeRootHeader, headerLargeTitle: nativeRootHeader, title: tCommon('mobile.nav.climbs') },
+    [
+      useNativeSearch,
+      nativeRootHeader,
+      t,
+      tCommon,
+      handleNativeSearchChange,
+      handleSearchFocus,
+      handleSearchBlur,
+      handleNativeSearchCancel,
+    ],
   );
 
   const renderClimbItem = useCallback(
@@ -1936,7 +1948,7 @@ function ClimbListInner() {
           // The header is transparent on every path now, so the chrome owns the top
           // inset and the list pads manually by the measured chrome height. Leaving
           // this 'automatic' would double-inset under the (invisible) native header.
-          contentInsetAdjustmentBehavior="never"
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
           contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
           scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
           keyboardShouldPersistTaps="handled"

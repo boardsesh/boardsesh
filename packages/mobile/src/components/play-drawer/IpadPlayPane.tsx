@@ -1,5 +1,6 @@
+import { useTabletPaneWidth } from '../../hooks/native-tablet-pane-width';
 import { memo } from 'react';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useSegments } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +12,6 @@ import { useBoardPresenceControls } from '../../providers/board-presence-provide
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { resolveEffectiveWallSurface } from '../../theme/size-class';
 import { tabsActiveSegment } from '../../lib/route-segments';
-import { SIDEBAR_WIDTH } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -30,7 +30,7 @@ function IpadPlayPaneComponent() {
   const { playDrawerPaneProps } = useDrawerHost();
   const insets = useSafeAreaInsets();
   const { t } = useTranslation('session');
-  const { width } = useWindowDimensions();
+  const { width, sidebarWidth: paneSidebarWidth } = useTabletPaneWidth();
   const { widthClass, wallDeviceClass } = useDeviceLayout();
   const { enabled, boardId } = useBoardPresenceControls();
   const segments = useSegments();
@@ -42,7 +42,12 @@ function IpadPlayPaneComponent() {
   // it — same gate the shell uses), and the "On the Wall" tab isn't already the
   // focused destination. When it shows, the strip owns the top inset (PlayDrawer
   // skips it).
-  const wallSurface = resolveEffectiveWallSurface({ width, widthClass, wallDeviceClass, sidebarWidth: SIDEBAR_WIDTH });
+  const wallSurface = resolveEffectiveWallSurface({
+    width,
+    widthClass,
+    wallDeviceClass,
+    sidebarWidth: paneSidebarWidth,
+  });
   const showStrip = wallSurface === 'strip' && enabled && boardId !== null && !onWallTab;
 
   // No board resolved yet — the pane has no selection to show.

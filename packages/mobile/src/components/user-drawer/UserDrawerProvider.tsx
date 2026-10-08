@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { router, useSegments } from 'expo-router';
+import { useSegments } from 'expo-router';
+import { Platform } from 'react-native';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { openDiscordInvite } from '../../lib/discord';
 import { useConfirmSignOut } from '../../hooks/use-confirm-sign-out';
 import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
@@ -70,7 +72,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
 
   const openUserDrawer = useCallback(() => {
     returnToRef.current = currentBoardReturnTo(segmentsRef.current);
-    router.push('/user-drawer');
+    router.push(Platform.OS === 'ios' ? '/account' : '/user-drawer');
   }, []);
 
   const closeUserDrawer = useCallback(() => {
@@ -93,7 +95,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const navigateToPlaylists = useCallback(() => {
-    router.push('/(tabs)/discover/all');
+    router.dismissTo('/(tabs)/discover/all');
   }, []);
 
   const navigateToChangelog = useCallback(() => {

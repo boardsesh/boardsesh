@@ -1,3 +1,4 @@
+import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
@@ -16,16 +17,19 @@ export default function RecordLayout() {
   return (
     <BoardArtVisibilityProvider tab="record">
       <NativeTabContentInsetProbe />
-      <Stack screenOptions={screenOptions}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="summary"
-          options={{
-            title: t('summary.dialogTitle'),
-            presentation: 'modal',
-          }}
-        />
-      </Stack>
+      <NativeTabletContent>
+        <Stack screenOptions={screenOptions}>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="summary"
+            options={{
+              title: t('summary.dialogTitle'),
+              presentation: 'modal',
+            }}
+          />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
+        </Stack>
+      </NativeTabletContent>
     </BoardArtVisibilityProvider>
   );
 }

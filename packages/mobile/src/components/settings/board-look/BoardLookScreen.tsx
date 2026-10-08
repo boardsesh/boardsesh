@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
 import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';

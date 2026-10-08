@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../src/lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';

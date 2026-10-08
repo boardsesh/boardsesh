@@ -712,7 +712,8 @@
       "finishTesting": "Finish testing #{{prNumber}}",
       "testPlan": "Test plan #{{prNumber}}",
       "badge": "QA"
-    }
+    },
+    "accountTitle": "Account"
   },
   "qa": {
     "shared": {

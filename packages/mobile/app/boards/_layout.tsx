@@ -7,7 +7,7 @@ import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options'
 import { isFirstBoardMode, isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
-import { sprayFlowCoversScreen, sprayFlowScreenOptions } from '../../src/lib/spray/spray-flow-presentation';
+import { isIpadSprayFlow, sprayFlowScreenOptions } from '../../src/lib/spray/spray-flow-presentation';
 
 /**
  * The holds screen on iPad: full screen, so it also needs an X, as it has
@@ -19,7 +19,7 @@ import { sprayFlowCoversScreen, sprayFlowScreenOptions } from '../../src/lib/spr
  * #5960 X on every platform already, and only adds the iPad presentation.
  */
 function sprayMaintenanceOptions(): NativeStackNavigationOptions {
-  if (!sprayFlowCoversScreen()) return {};
+  if (!isIpadSprayFlow()) return {};
   return {
     ...sprayFlowScreenOptions(),
     headerLeft: () => <SprayWizardExitButton returnTo={resolveBoardReturnTo(undefined)} />,

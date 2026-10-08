@@ -1,8 +1,9 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useScopedRouter as useRouter } from '../../../src/lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -63,6 +64,7 @@ const keyExtractor = (item: CrewFeedItem) => item.id;
 const getItemType = (item: CrewFeedItem) => item.__typename;
 
 export default function HomeTab() {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
@@ -414,7 +416,7 @@ export default function HomeTab() {
         keyExtractor={keyExtractor}
         // The floating glass header owns the top inset on every platform (the
         // iOS-only `automatic` behaviour left an Android gap), so pad manually.
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{
           paddingTop: chromeHeight,
           paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],

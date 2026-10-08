@@ -63,11 +63,11 @@ describe('resolveTabChrome', () => {
     });
   });
 
-  it('keeps tablets on the JS shell at every width', () => {
+  it('uses native iPad tabs at every width without the iPhone accessory', () => {
     for (const device of [IOS_26_IPHONE, IOS_18_IPHONE]) {
       expect(resolveTabChrome({ ...device, isTablet: true })).toEqual({
-        nativeTabBar: false,
-        liquidGlassTabBar: false,
+        nativeTabBar: true,
+        liquidGlassTabBar: device.glassCapable,
         nativeAccessory: false,
       });
     }

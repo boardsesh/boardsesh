@@ -237,7 +237,7 @@ work and native QA before claiming that contract works on Android.
 | _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` / `setters` filters                                                           |
 | **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`; **New climb** (`climbs/create`, swipe-down off — see the worked example) |
 | **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
-| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | the spray-wall flows, **on iPad only** (see the worked example); nothing on a phone (`onboarding` moved to `transparentModal` in #5654) |
+| **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | no tab-root editing flow; nothing on a phone (`onboarding` moved to `transparentModal` in #5654) |
 
 ## The decision tree
 
@@ -289,10 +289,10 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    paints its own opaque `View` under its `GlassSurface` so the live tabs screen doesn't show
    through. See `isTabsChromeRoute` in `src/lib/route-segments.ts`.
 
-   The rule is about `NativeTabs`, so it is iPhone-only: iPad never mounts them
-   (`app/(tabs)/_layout.tsx` returns the JS `Tabs` for a tablet), and a
-   `fullScreenModal` gated on `Platform.isPad` has no accessory to snapshot. The
-   spray-wall flows rely on that; see the worked example.
+   The rule also reaches iPad: `NativeTabs.sidebarAdaptable` owns the adaptive
+   tab sidebar at every window size. Editing routes use native cards, and board
+   editors fit their measured card host rather than the full window. Never
+   switch to `fullScreenModal` based solely on `Platform.isPad`.
 
    A **pushed route** under `NativeTabs` keeps the native tab bar — and therefore keeps the
    `NativeTabs.BottomAccessory` **host mounted**. The accessory is a child of the bar, so a
@@ -541,10 +541,10 @@ climb changes reuse the carousel without restarting the opening placeholder.
 - **New climb** (`/(tabs)/climbs/create`) — a focused modal task, like Mail's compose or a new
   reminder (HIG "Modality"), so a **`modal`** route: on iPhone a pageSheet that covers the
   screen with the climbs list scaled behind it, on Android an M3 full-screen dialog that slides
-  up (`animation: 'slide_from_bottom'`, Android only, so iOS keeps its own). On **iPad** it is a
-  `fullScreenModal` (`flowCoversScreen()`, the rule the spray flows use): a `modal` there is a
-  ~540pt page card that clips the board, and rule 2 does not apply without `NativeTabs`. The
-  editor then adds the status-bar inset that a pageSheet does not need. It used to be a
+  up (`animation: 'slide_from_bottom'`, Android only, so iOS keeps its own). iPad
+  also uses a native editing card. `CreateDrawer` measures its root's width and
+  height and fits the board to that card, with no status-bar inset inside it.
+  It used to be a
   `transparentModal` hosting a two-detent `@expo/ui` bottom sheet (`CreateDrawer`) with a
   collapse chevron, which read like a music player's mini-player; that sheet is gone, and
   `CreateDrawer` is now just the editor body. Four decisions carry it:
@@ -612,23 +612,18 @@ climb changes reuse the carousel without restarting the opening placeholder.
   nested navigator costs you the back-swipe and the inherited header for nothing — the depth is
   already expressed by the route names. Reach for the same shape for any settings screen that grows
   sub-pages.
-- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`) — pushed routes on the
-  `boards` modal everywhere (rule 3: their corner markers and hold editor are pan-and-pinch
-  boards), but on iPad the `boards` page card is a box in the middle of the screen, the wrong size
-  for an editor. So on iPad, and only there, they are a `fullScreenModal`. Rule 2 does not apply:
-  iPad never mounts `NativeTabs`, so there is no bottom accessory for the cover to snapshot. Two
-  details carry the case. First, **a stack's first screen ignores its own `presentation`**: the
-  live wall sheet opens `/boards/spray/holds` straight onto an empty `boards` stack, so the holds
-  screen IS that stack's root and its own `fullScreenModal` does nothing. The root `boards` screen
-  in `app/_layout.tsx` therefore takes an options function and picks `fullScreenModal` when
-  `opensIntoSprayFlow(route)` says the modal was opened on a spray screen. It reads the ENTRY
-  screen (`params.screen`, then the first route of a cold link's state), never the top one, so the
-  presentation cannot change while the modal is up. Second, a full-screen modal has neither a swipe
-  down nor a back chevron, so every such screen needs a header X that goes through `router.back()`
-  and therefore through its `usePreventRemove` guard. Phones and Android keep the `modal` card and
-  push, key for key: the nested options add no `presentation` key at all there, because an
-  explicit `undefined` would override the stack's `screenOptions`. Details in
-  `docs/spray-walls.md`, "Full screen on iPad".
+- **Spray-wall flows on iPad** (`/boards/spray/new`, `/holds`) stay native modal
+  cards over the adaptive tab sidebar. The hold editor and scan step measure the
+  card area to choose their phone/tablet layout and fit the photo. iPad maintenance
+  screens retain an X through the leave guard and can hide the home indicator.
+  `fullScreenModal` would snapshot the native tab container (rule 2).
+- **Account** (`/account`) is the native iOS avatar sheet. Settings and Edit profile
+  push inside its own stack; Back returns to the account menu. Android and the
+  browser retain the side drawer. User search, connections, profiles and Settings
+  opened directly from a tab resolve into that tab's stack, preserving the tab bar.
+- **Native iPad pickers** use an anchored `AnchoredPopover` at regular width; compact
+  windows retain the phone sheet. `AppMenu` already anchors native UIKit menus.
+  The angle toolbar picker keeps its diagram and slider in the popover.
 - **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
   and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
   **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js

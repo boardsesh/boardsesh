@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { type ReactNode, useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +7,7 @@ import { spacing } from '../../theme/tokens';
 import { Text } from '../Text';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { TOP_ACTION_SIZE } from './GlassActionToolbar';
+import { NativeRootHeader } from './NativeRootHeader';
 
 const ROW_GUTTER = spacing[4];
 
@@ -49,6 +51,7 @@ export function CollapsingLargeTitleHeader({
 }: CollapsingLargeTitleHeaderProps) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const nativeHeader = useNativeRootHeader();
 
   // Always-on progressive blur from the top of the screen to just below the
   // islands row; frosts content scrolling under the islands.
@@ -58,6 +61,14 @@ export function CollapsingLargeTitleHeader({
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
     [onHeightChange],
   );
+
+  if (nativeHeader)
+    return (
+      <NativeRootHeader leftActions={leftActions} rightActions={rightActions} onHeightChange={onHeightChange}>
+        {centerContent}
+        {children}
+      </NativeRootHeader>
+    );
 
   return (
     <View pointerEvents="box-none" style={[styles.container, { paddingTop: insets.top }]} onLayout={handleLayout}>

@@ -1,4 +1,5 @@
-import { type ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
+import { NativeHeaderActionContext } from './native-header-action-context';
 import type { AccessibilityActionEvent, AccessibilityActionInfo } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
@@ -22,6 +23,11 @@ const TOP_TOOLBAR_RADIUS = TOP_ACTION_SIZE / 2;
 export function GlassActionToolbar({ actionCount, children }: { actionCount: number; children: ReactNode }) {
   const { systemColors } = useTheme();
   const nativeGlass = useNativeGlass();
+  const nativeHeader = useContext(NativeHeaderActionContext);
+  if (nativeHeader)
+    return (
+      <View style={[styles.toolbar, { width: TOP_ACTION_SIZE * actionCount, overflow: 'visible' }]}>{children}</View>
+    );
   return (
     <View
       style={[

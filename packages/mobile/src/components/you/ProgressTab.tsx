@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, StyleSheet } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
@@ -69,6 +70,7 @@ export const ProgressTab = memo(function ProgressTab({
   onOpenFilters,
   isOwnProfile = true,
 }: ProgressTabProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t, i18n } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
@@ -393,7 +395,7 @@ export const ProgressTab = memo(function ProgressTab({
       keyExtractor={keyForProgressItem}
       getItemType={typeForProgressItem}
       maintainVisibleContentPosition={{ disabled: true }}
-      contentInsetAdjustmentBehavior="never"
+      contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
       contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
       scrollIndicatorInsets={{ top: topInset }}
       refreshControl={

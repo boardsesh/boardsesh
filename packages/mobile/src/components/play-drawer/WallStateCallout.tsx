@@ -20,7 +20,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp, useReducedMotion } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius, shadows } from '../../theme/tokens';

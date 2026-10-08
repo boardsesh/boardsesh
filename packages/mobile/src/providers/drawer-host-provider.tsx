@@ -1,3 +1,4 @@
+import { useTabletPaneWidth } from '../hooks/native-tablet-pane-width';
 /**
  * DrawerHostProvider mounts PlayDrawer and LogAscentSheet once at the app root
  * and exposes imperative openers via `useDrawerHost()`. This lets the
@@ -13,7 +14,6 @@
 
 import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useWindowDimensions } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import { tabsActiveSegment } from '../lib/route-segments';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -57,7 +57,6 @@ import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 import { resolveDetailPaneSurface } from '../theme/size-class';
-import { SIDEBAR_WIDTH } from '../theme/layout';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
@@ -394,7 +393,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // budget (resolveDetailPaneSurface — the tightest regular portraits fall back
   // to the route + compact sheets). A ref lets the empty-dep `openPlayDrawer`
   // read it without churning its identity.
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, sidebarWidth: paneSidebarWidth } = useTabletPaneWidth();
   const { widthClass } = useDeviceLayout();
   // The "On the Wall" kiosk tab hides the shell's detail pane (it IS the wall
   // surface and needs the full content pane), so a climb open there must fall back
@@ -404,7 +403,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const routeSegments = useSegments();
   const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
   const usesDetailPane =
-    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane' && !onWallTab;
+    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane' &&
+    !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);
   usesDetailPaneRef.current = usesDetailPane;
   // Auth gates two things here. (1) myBoards requires authentication: running it

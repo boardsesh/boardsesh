@@ -84,6 +84,7 @@ vi.mock('../../../src/hooks/use-device-layout', () => ({
   // always implies isTablet; cfg.isTablet additionally models a tablet in a narrow split.
   useDeviceLayout: () => ({
     widthClass: cfg.widthClass,
+    isPad: cfg.platformOS === 'ios' && (cfg.widthClass === 'regular' || cfg.isTablet),
     expanded: false,
     isTablet: cfg.widthClass === 'regular' || cfg.isTablet,
     wallDeviceClass: cfg.wallDeviceClass,
@@ -241,8 +242,10 @@ vi.mock('expo-router/unstable-native-tabs', () => {
       tintColor,
       badgeBackgroundColor,
       unstable_nativeProps,
+      sidebarAdaptable,
     }: {
       children?: ReactNode;
+      sidebarAdaptable?: boolean;
       minimizeBehavior?: string;
       iconColor?: unknown;
       labelStyle?: unknown;
@@ -254,6 +257,7 @@ vi.mock('expo-router/unstable-native-tabs', () => {
         'nav',
         {
           'data-tabs': 'true',
+          'data-sidebar-adaptable': String(sidebarAdaptable ?? false),
           'data-minimize-behavior': minimizeBehavior ?? '',
           'data-icon-color': JSON.stringify(iconColor),
           'data-label-style': JSON.stringify(labelStyle),
@@ -389,32 +393,24 @@ describe('TabLayout', () => {
     ]);
   });
 
-  it('keeps an iPad in a narrow split on the JS Material tab bar (never NativeTabs)', () => {
-    // Slide Over / Split View: compact width but still an iPad. The single-navigator
-    // shell routes it through JS Tabs + the Material bar so a resize across the 700pt
-    // boundary doesn't swap navigator types — NativeTabs never renders on iPad, and
-    // there's no rail at compact width.
+  it('keeps native iPad tabs and the Wall destination across a sidebar resize', () => {
     cfg.isTablet = true;
     cfg.widthClass = 'compact';
-    cfg.variant = 'liquidGlass';
-    cfg.glassCapable = true;
-
-    const { container } = render(<TabLayout />);
-
-    expect(container.querySelector('[data-tabs-material="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-tabs="true"]')).toBeNull();
+    const { container, rerender } = render(<TabLayout />);
+    const navigator = container.querySelector('[data-tabs="true"]');
+    expect(navigator?.getAttribute('data-sidebar-adaptable')).toBe('true');
+    expect(container.querySelector('[data-trigger="wall"]')).not.toBeNull();
+    expect(container.querySelector('[data-accessory="true"]')).toBeNull();
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    rerender(<TabLayout />);
+    expect(container.querySelector('[data-tabs="true"]')).toBe(navigator);
+    expect(container.querySelector('[data-trigger="wall"]')).not.toBeNull();
     expect(container.querySelector('[data-tablet-sidebar="true"]')).toBeNull();
-    expect(cfg.materialScreens.map((screen) => screen.name)).toEqual([
-      'home',
-      'climbs',
-      'record',
-      'wall',
-      'discover',
-      'profile',
-    ]);
   });
 
   it('renders the iPad sidebar shell at regular width and registers all six tabs (wall hidden from the bar)', () => {
+    cfg.variant = 'material';
     // Regular-width iPad takes the sidebar branch before the native/Material tab
     // bars: the glass sidebar carries navigation and the native iOS 26 tab bar is
     // gone, but the Tabs navigator still registers every tab screen.
@@ -521,6 +517,7 @@ describe('TabLayout', () => {
   });
 
   it('suppresses the detail pane on the tightest regular portraits, keeping the list full width', () => {
+    cfg.variant = 'material';
     // iPad mini portrait (744): sidebar (96) + the pane's 320pt floor would leave the
     // browse list ~328pt — below the 400pt readable floor — so resolveDetailPaneSurface
     // drops the pane and the compact bottom-sheet PlayDrawer hosts the drawer instead.
@@ -536,6 +533,7 @@ describe('TabLayout', () => {
   });
 
   it('shows the dedicated wall column in landscape with a bound board, hiding the rail cell', () => {
+    cfg.variant = 'material';
     // Wide enough for sidebar + browse list + detail pane + wall column (1366), and
     // a board is bound — so the wall graduates to its own column and the ambient
     // sidebar cell steps aside (one wall surface per layout).
@@ -556,6 +554,7 @@ describe('TabLayout', () => {
   });
 
   it('shows the dedicated wall column on a landscape Android tablet with a bound board', () => {
+    cfg.variant = 'material';
     // The chosen v1 scope: a wide Android tablet is panel-capable (no dp floor), so
     // the wall graduates to its own column beside the browse list + detail pane —
     // exactly the wall-mounted-gym-tablet scenario, in Material dress.
@@ -580,6 +579,7 @@ describe('TabLayout', () => {
   });
 
   it('collapses the wall column to the sheet on a small (sheet-only) iPad, even in landscape', () => {
+    cfg.variant = 'material';
     // iPad mini / base 11" / Air 11": physically below the 11" Pro, so the wall panel
     // is dropped even though the window is wide enough for a column — the wall reaches
     // the user via the BoardSheet peek + the "On the Wall" tab instead, like the phone.
@@ -598,6 +598,7 @@ describe('TabLayout', () => {
   });
 
   it('hides the wall column while the "On the Wall" tab is the focused destination', () => {
+    cfg.variant = 'material';
     // Panel-capable landscape with a bound board would show the column, but on the
     // wall tab the same feed is already the content pane — so the ambient column
     // steps aside (no two live copies of the feed).
@@ -631,6 +632,7 @@ describe('TabLayout', () => {
   });
 
   it('hides the sidebar wall cell when the portrait play-pane strip owns the wall surface', () => {
+    cfg.variant = 'material';
     // 13" portrait has room for the play pane but not the dedicated wall column.
     // The wall therefore renders as the strip inside IpadPlayPane, so the sidebar
     // cell steps aside just like it does for the landscape wall column.
@@ -648,6 +650,7 @@ describe('TabLayout', () => {
   });
 
   it('keeps the sidebar wall cell when tight regular width suppresses the play pane', () => {
+    cfg.variant = 'material';
     // iPad mini portrait has no play pane, so there is no strip host either. The
     // sidebar cell remains the only wall affordance in that regular-width shell.
     cfg.widthClass = 'regular';
@@ -664,6 +667,7 @@ describe('TabLayout', () => {
   });
 
   it('keeps the sidebar wall cell in portrait while the active board config is unresolved', () => {
+    cfg.variant = 'material';
     // Presence can be bound from BLE before the active board query resolves. The
     // strip cannot render a useful wall surface yet, so the sidebar cell remains.
     cfg.widthClass = 'regular';
@@ -680,6 +684,7 @@ describe('TabLayout', () => {
   });
 
   it('keeps the wall as the sidebar cell (no column) when no board is bound', () => {
+    cfg.variant = 'material';
     // Landscape width, but presence has no bound board — an empty column would be
     // dead space, so the wall stays the ambient sidebar cell.
     cfg.widthClass = 'regular';
@@ -695,6 +700,7 @@ describe('TabLayout', () => {
   });
 
   it('does not reserve a wall column when a board is BLE-bound but no active board is resolved', () => {
+    cfg.variant = 'material';
     // boardId can be set from the BLE serial before/without an active board; the
     // column renders its content from the active board config, so without one the
     // layout must NOT reserve the 300pt column (it would be dead space).
@@ -916,6 +922,7 @@ describe('TabLayout', () => {
   });
 
   it('keeps iPad shell tabs resident (#3153)', () => {
+    cfg.variant = 'material';
     cfg.widthClass = 'regular';
 
     const { container } = render(<TabLayout />);

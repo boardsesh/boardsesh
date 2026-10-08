@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import type { ActivityFeedItem, CrewFeedItem } from '@boardsesh/shared-schema';
 import { formatBoardDisplayName } from '@boardsesh/board-config';

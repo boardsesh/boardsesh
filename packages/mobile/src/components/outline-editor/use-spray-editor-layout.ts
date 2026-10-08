@@ -5,12 +5,12 @@
 // the iPadOS 26 resizable windows) drops below the regular width and gets the
 // phone layout, and widens back out the same way. Android tablets keep the
 // phone layout: the spray flows only cover the screen on iPad
-// (`sprayFlowCoversScreen`), and the tablet layout is built for that cover.
+// (`isIpadSprayFlow`), and the tablet layout is built for that cover.
 
 import { useMemo } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
-import type { WidthClass } from '../../theme/size-class';
+import { resolveDeviceLayout, type WidthClass } from '../../theme/size-class';
 
 export type SprayEditorLayoutKind = 'tablet' | 'phone';
 
@@ -47,9 +47,12 @@ export function sprayPhotoReservesBottom(layout: SprayEditorLayoutKind): boolean
   return layout === 'phone';
 }
 
-export function useSprayEditorLayout(): SprayEditorLayout {
-  const { isPad, widthClass } = useDeviceLayout();
-  const { width, height } = useWindowDimensions();
+export function useSprayEditorLayout(viewport?: { width: number; height: number }): SprayEditorLayout {
+  const { isPad, isTablet } = useDeviceLayout();
+  const window = useWindowDimensions();
+  const width = viewport && viewport.width > 0 ? viewport.width : window.width;
+  const height = viewport && viewport.height > 0 ? viewport.height : window.height;
+  const { widthClass } = resolveDeviceLayout({ width, isTablet });
   return useMemo(
     () => resolveSprayEditorLayout({ isPad, widthClass, windowWidth: width, windowHeight: height }),
     [isPad, widthClass, width, height],

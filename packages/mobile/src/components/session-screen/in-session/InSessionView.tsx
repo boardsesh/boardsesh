@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GestureScrollView } from 'react-native-gesture-handler';
@@ -273,6 +274,7 @@ export function InSessionView({
   translateY,
   screenHeight,
 }: InSessionViewProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('session');
   const { systemColors, brandColors, features } = useTheme();
   const insets = useSafeAreaInsets();
@@ -712,7 +714,7 @@ export function InSessionView({
       nestedScrollEnabled={showChrome}
       // The floating chrome owns the top inset (tab mode), so pad manually by the
       // measured chrome height and never auto-inset under the (absent) header.
-      contentInsetAdjustmentBehavior="never"
+      contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
       contentContainerStyle={{
         paddingHorizontal: spacing[4],
         paddingTop: listPaddingTop,

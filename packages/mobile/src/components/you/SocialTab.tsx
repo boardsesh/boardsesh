@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
@@ -49,6 +50,7 @@ type SocialTabProps = {
 const EMPTY_PEOPLE: SocialPerson[] = [];
 
 export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop }: SocialTabProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
@@ -208,7 +210,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
         keyExtractor={(person) => person.id}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}

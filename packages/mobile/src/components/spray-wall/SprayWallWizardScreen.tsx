@@ -142,7 +142,7 @@ import {
   type DetectionOutcome,
 } from './add-wall-machine';
 import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
-import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
+import { SPRAY_FORM_MAX_WIDTH, isIpadSprayFlow } from '../../lib/spray/spray-flow-presentation';
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
 const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
@@ -246,7 +246,7 @@ export function SprayWallWizardScreen({
   const { width: windowWidth } = useWindowDimensions();
   // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
   // cover however its window is later resized.
-  const formColumnCapped = sprayFlowCoversScreen();
+  const formColumnCapped = isIpadSprayFlow();
   const bottomInset = useWindowBottomInset();
 
   const builder = useSprayWallBuilder();

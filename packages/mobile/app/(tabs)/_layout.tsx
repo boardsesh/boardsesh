@@ -273,25 +273,10 @@ export default function TabLayout() {
     />,
   ];
 
-  // Large-screen adaptive shell. ONE JS `Tabs` navigator is mounted across the
-  // regular↔compact boundary, so resizing an iPad window across the breakpoint (a
-  // Split View drag, a Stage Manager resize) swaps only the CHROME — the glass
-  // sidebar + content panes at regular width, the Material tab bar in a narrow
-  // split — and keeps each tab's scroll offset and nested-stack depth instead of
-  // remounting the navigator. Web follows this path with Material chrome. The
-  // navigator still owns routing; at regular width
-  // its bar is hidden and the sidebar drives it through the global router. iPad
-  // never uses NativeTabs: swapping navigator *types* on the boundary cross would
-  // remount, and a single NativeTabs across both widths cannot work either. Its
-  // navigator remounts whenever a trigger's `hidden` flag changes, a hidden tab
-  // cannot be navigated to, and the iPad-only "On the Wall" tab would have to
-  // be visible beside the sidebar yet hidden in a narrow split, where a sixth
-  // native tab spills into UIKit's More list. The native `sidebarAdaptable`
-  // sidebar has the same tab set, cannot host the live wall cell, and does not
-  // report its width or collapsed state to JS, which the pane budgets below need.
-  // NativeTabs stays the iPhone path below. The `content` View carries a stable
-  // key so the navigator survives the chrome swap.
-  if (deviceLayout.isTablet) {
+  // Material tablets retain the JS rail and pane shell at every width.
+  // Native iPad instead keeps one UIKit adaptive sidebar navigator below;
+  // NativeTabletContent owns panes inside each measured native tab host.
+  if (deviceLayout.isTablet && !nativeTabBar) {
     const isRegular = deviceLayout.widthClass === 'regular';
     const tabsNavigator = (
       <Tabs
@@ -361,6 +346,7 @@ export default function TabLayout() {
     // iOS 26 UIKit feature (react-native-screens logs a warning for any other
     // value below 26), so the iOS 18 bar keeps the system default.
     <NativeTabs
+      sidebarAdaptable={deviceLayout.isPad}
       minimizeBehavior={liquidGlassTabBar ? 'onScrollDown' : undefined}
       unstable_nativeProps={accessoryNativeProps}
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
@@ -388,6 +374,13 @@ export default function TabLayout() {
         <NativeTabs.BottomAccessory key="queue-bottom-accessory">
           <QueueBottomAccessory />
         </NativeTabs.BottomAccessory>
+      ) : null}
+
+      {deviceLayout.isPad ? (
+        <NativeTabs.Trigger name="wall">
+          <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.portrait', selected: 'rectangle.portrait.fill' }} />
+          <NativeTabs.Trigger.Label>{t('mobile.nav.wall')}</NativeTabs.Trigger.Label>
+        </NativeTabs.Trigger>
       ) : null}
 
       <NativeTabs.Trigger name="home">

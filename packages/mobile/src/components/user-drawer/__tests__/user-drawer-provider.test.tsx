@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
-const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmSignOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 // Mutable so a test can set the focused tab before openUserDrawer captures the
@@ -31,6 +31,7 @@ vi.mock('../../launch-update/hold-until-launch-ready', () => ({
   holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
 }));
 vi.mock('react-native', () => ({
+  Platform: { OS: 'android' },
   Pressable: ({
     accessibilityLabel,
     children,
@@ -60,6 +61,7 @@ vi.mock('react-native-reanimated', () => ({
   },
 }));
 
+vi.mock('../../HeaderActionButtons', () => ({ HeaderLeadingButton: () => null }));
 vi.mock('expo-router', () => ({
   router: routerMock,
   useSegments: () => segmentsMock.current,
@@ -253,6 +255,7 @@ function Harness({ showScreen }: { showScreen: boolean }) {
 beforeEach(() => {
   browser.openBrowserAsync.mockClear();
   routerMock.push.mockClear();
+  routerMock.dismissTo.mockClear();
   routerMock.back.mockClear();
   signOutMock.mockClear();
   signOutMock.mockResolvedValue(undefined);
@@ -348,7 +351,8 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(routerMock.push).not.toHaveBeenCalled();
 
     rerender(<Harness showScreen={false} />);
-    expect(routerMock.push).toHaveBeenCalledWith(route);
+    const navigate = route === '/(tabs)/discover/all' ? routerMock.dismissTo : routerMock.push;
+    expect(navigate).toHaveBeenCalledWith(route);
   });
 
   it('shows the "New" pill on the What\'s New row when there is an unseen changelog entry', async () => {

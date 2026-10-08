@@ -25,6 +25,10 @@ vi.mock('expo-router', () => {
   };
   return { Stack, router: routerMock };
 });
+vi.mock('../../../src/components/navigation/NativeTabletContent', () => ({
+  NativeTabletContent: ({ children }: { children?: ReactNode }) => children,
+}));
+
 vi.mock('react-native', () => ({
   Pressable: ({
     children,
@@ -98,10 +102,9 @@ describe('the settings stack', () => {
     expect(screenNames(SettingsLayout)).toEqual(SETTINGS_PAGES);
   });
 
-  it('leaves the You tab holding only profile screens', () => {
-    // The regression guard: a settings page back in this list is the bug — the
-    // You tab would carry it in its own history again.
-    expect(screenNames(ProfileLayout)).toEqual(['index', 'session/[sessionId]', 'notifications']);
+  it('registers Settings as a headerless nested stack inside the You tab', () => {
+    expect(screenNames(ProfileLayout)).toEqual(['index', 'session/[sessionId]', 'notifications', 'settings']);
+    expect(screens.options.get('settings')).toMatchObject({ headerShown: false });
   });
 
   it('gives the first Settings screen a back button, since iOS draws none for it', () => {

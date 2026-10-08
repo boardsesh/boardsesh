@@ -239,10 +239,10 @@ describe('CreateDrawer as a full-height modal', () => {
     expect(renderDrawer({}).scroll?.getAttribute('data-keyboard-insets')).toBe('true');
   });
 
-  it('clears the status bar on iPad, where New climb covers the screen', () => {
+  it('starts inside the iPad editing card below the status bar', () => {
     platform.isPad = true;
     const { container } = renderDrawer({});
-    expect(container.firstElementChild?.getAttribute('data-padding-top')).toBe('24');
+    expect(container.firstElementChild?.getAttribute('data-padding-top')).toBe('0');
   });
 
   it('pads the scroll by the keyboard on Android, on top of the window inset', () => {

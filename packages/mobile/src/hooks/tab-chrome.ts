@@ -49,12 +49,10 @@ export type TabChrome = {
  * tab layout, the bottom-chrome metrics, the toast offset and the climbs search
  * mode can never disagree about what is on screen.
  *
- * Tablets stay on the JS adaptive shell at every width (sidebar at regular
- * width, the JS bar in a narrow split). NativeTabs remounts its whole navigator
- * when a tab's `hidden` flag changes, and the iPad-only "On the Wall" tab would
- * have to be hidden in a narrow split (a sixth tab spills into UIKit's More
- * list) yet shown beside the sidebar, so crossing the size-class boundary would
- * throw away every tab's state. See `(tabs)/_layout`.
+ * iPad uses the same navigator at every width. Its permanent Wall destination
+ * remains registered when UIKit adapts the sidebar to a tab bar, so resizing
+ * never changes trigger visibility or resets tab history. The bottom accessory
+ * remains an iPhone surface; iPad's selected climb lives in the detail pane.
  */
 export function resolveTabChrome({
   platformOS,
@@ -63,11 +61,11 @@ export function resolveTabChrome({
   isTablet,
   accessoryAvailable,
 }: TabChromeInputs): TabChrome {
-  const nativeTabBar = platformOS === 'ios' && variant === 'liquidGlass' && !isTablet;
+  const nativeTabBar = platformOS === 'ios' && variant === 'liquidGlass';
   const liquidGlassTabBar = nativeTabBar && glassCapable;
   return {
     nativeTabBar,
     liquidGlassTabBar,
-    nativeAccessory: liquidGlassTabBar && accessoryAvailable,
+    nativeAccessory: liquidGlassTabBar && accessoryAvailable && !isTablet,
   };
 }

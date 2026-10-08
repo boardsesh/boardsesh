@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, type ComponentRef, type ComponentType, type RefObject } from 'react';
-import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+  type ComponentType,
+  type RefObject,
+} from 'react';
+import { Platform, View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
-import { flowCoversScreen } from '../../lib/routing/flow-covers-screen';
 // The scroll container is RNGH's own `ScrollView`, not React Native's plain one.
 // A plain ScrollView can't be declared a relation with an RNGH gesture, and on
 // Android its classic `onInterceptTouchEvent` can win the touch stream on the
@@ -96,11 +104,18 @@ export function CreateDrawer({
   // whose per-tab provider folds iOS 26 tab chrome the modal covers into
   // insets.bottom (see use-window-bottom-inset).
   const windowInsetBottom = useWindowBottomInset();
-  // An iPhone pageSheet starts below the status bar, so the top bar needs no
-  // top inset there. The iPad full-screen cover and Android's full-screen
-  // dialog both draw under the status bar.
-  const topInset = Platform.OS === 'ios' && !flowCoversScreen() ? 0 : insets.top;
+  // Native iOS editing cards start below the status bar; Android's full-screen
+  // dialog needs the status-bar inset.
+  const topInset = Platform.OS === 'ios' ? 0 : insets.top;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [hostSize, setHostSize] = useState<{ width: number; height: number } | null>(null);
+  const measureHost = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    if (width <= 0 || height <= 0) return;
+    setHostSize((previous) => (previous?.width === width && previous.height === height ? previous : { width, height }));
+  }, []);
+  const editorWidth = hostSize?.width ?? windowWidth;
+  const editorHeight = hostSize?.height ?? windowHeight;
   // The outer RNGH ScrollView, so the board's pinch/zoomed-pan can declare a
   // relation with it (see the import comment above). Typed as RNGH's
   // GestureRef shape so useZoomPanGesture/InteractiveCreateBoard need no cast
@@ -189,24 +204,23 @@ export function CreateDrawer({
   // pitching a feature most setters never use. Woods, which can only ever hold
   // one frame, likewise.
   const boardMaxHeight = computeBoardMaxHeight({
-    windowHeight,
+    windowHeight: editorHeight,
     insetTop: insets.top,
     insetBottom: windowInsetBottom,
     showRouteTransport: controller.showRouteTransport,
   });
 
-  // Compute the on-screen board size up front (window width minus the board
-  // section margins, capped by the height budget) so the board paints on the
-  // first frame instead of waiting for an onLayout pass inside the presenting modal.
+  // Fit the board to the measured editing card. Window dimensions seed the
+  // first frame; a narrower iPad card then resizes without clipping.
   const boardRender = useMemo(() => {
     const boardAspect = boardHolds.boardWidth / boardHolds.boardHeight;
-    const availWidth = windowWidth - spacing[4] * 2;
+    const availWidth = editorWidth - spacing[4] * 2;
     const availAspect = availWidth / boardMaxHeight;
     if (availAspect > boardAspect) {
       return { width: boardMaxHeight * boardAspect, height: boardMaxHeight };
     }
     return { width: availWidth, height: availWidth / boardAspect };
-  }, [boardHolds.boardWidth, boardHolds.boardHeight, windowWidth, boardMaxHeight]);
+  }, [boardHolds.boardWidth, boardHolds.boardHeight, editorWidth, boardMaxHeight]);
 
   // Heat covers every hold, painted ones included: the painted hold's own mark
   // is drawn in the holds layer on top and covers it. Skipping painted holds in
@@ -322,7 +336,10 @@ export function CreateDrawer({
   }, [heatmap, heatLayer.legend, systemColors.secondaryLabel, t, i18n?.language]);
 
   return (
-    <View style={[styles.root, { paddingTop: topInset, backgroundColor: systemColors.secondaryBackground }]}>
+    <View
+      onLayout={measureHost}
+      style={[styles.root, { paddingTop: topInset, backgroundColor: systemColors.secondaryBackground }]}
+    >
       {/* Pinned above the scroll, like every modal task's top bar: the X and
           Save never move with the content or the keyboard. */}
       <CreateDrawerHeader

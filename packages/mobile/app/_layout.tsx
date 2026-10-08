@@ -1,3 +1,4 @@
+import { NavigationScopePublisher } from '../src/components/navigation/NavigationScopePublisher';
 // Import first so Sentry.init() runs (and installs its global handler) before
 // any other module side-effect — notably posthog-client's analytics init and the
 // worklet-serialization global-error-capture install, which must wrap Sentry's
@@ -117,8 +118,6 @@ import {
   runChannelOverrideCleanupOnce,
 } from '../src/lib/ota-channel-override-cleanup-run';
 import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
-import { opensIntoSprayFlow } from '../src/lib/spray/spray-routes';
-import { sprayFlowCoversScreen } from '../src/lib/spray/spray-flow-presentation';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -759,6 +758,7 @@ function RootLayout() {
                                                               <ShareTargetProvider>
                                                                 <TabBarHeightProvider>
                                                                   <UserDrawerProvider>
+                                                                    <NavigationScopePublisher />
                                                                     <ThemedNavigation>
                                                                       <Stack
                                                                         // Root scenes keep the opaque, theme-aware nav background so a dark
@@ -835,14 +835,10 @@ function RootLayout() {
                                                       docs/mobile-sheets-vs-routes.md is not in play. */}
                                                                         <Stack.Screen
                                                                           name="boards"
-                                                                          options={({ route }) => ({
-                                                                            presentation:
-                                                                              sprayFlowCoversScreen() &&
-                                                                              opensIntoSprayFlow(route)
-                                                                                ? 'fullScreenModal'
-                                                                                : 'modal',
+                                                                          options={{
+                                                                            presentation: 'modal',
                                                                             headerShown: false,
-                                                                          })}
+                                                                          }}
                                                                         />
                                                                         {/* The moderation feed — ONE root modal, not a copy in each
                                                       tab stack. The play drawer's Community section links into
@@ -930,6 +926,13 @@ function RootLayout() {
                                                       way to close it. */}
                                                                         <Stack.Screen
                                                                           name="send-recovery"
+                                                                          options={{
+                                                                            presentation: 'modal',
+                                                                            headerShown: false,
+                                                                          }}
+                                                                        />
+                                                                        <Stack.Screen
+                                                                          name="account"
                                                                           options={{
                                                                             presentation: 'modal',
                                                                             headerShown: false,

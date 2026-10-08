@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { ScrollView, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useAnimatedReaction, useSharedValue, runOnJS } from 'react-native-reanimated';
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { reportHandledError } from '../../lib/error-reporting';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
