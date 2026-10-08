@@ -1,6 +1,21 @@
 {
-  "generatedAt": "2026-10-08T21:48:22.188Z",
+  "generatedAt": "2026-10-08T22:15:52.149Z",
   "entries": [
+    {
+      "prNumber": 6266,
+      "category": "fixed",
+      "title": "Find your logbook filters beside search, with day and location headings that stay readable.",
+      "mergedAt": "2026-10-08T22:13:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6266"
+    },
+    {
+      "prNumber": 6265,
+      "category": "fixed",
+      "title": "A cleaner session screen, with one title and clearer Stop controls.",
+      "mergedAt": "2026-10-08T22:13:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6265",
+      "body": "Add your recap and see your Apple Health save status clearly."
+    },
     {
       "prNumber": 6262,
       "category": "fixed",

@@ -29,6 +29,9 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Find your logbook filters beside search, with day and location headings that stay readable. ([#6266](https://github.com/boardsesh/boardsesh/pull/6266))
+- A cleaner session screen, with one title and clearer Stop controls. ([#6265](https://github.com/boardsesh/boardsesh/pull/6265))
+  Add your recap and see your Apple Health save status clearly.
 - Get cleaner headers, a centered current climb, and one playlist title. ([#6262](https://github.com/boardsesh/boardsesh/pull/6262))
   Build climbs with a centered name and hold-list controls in the menu.
   Write tick comments from the collapsed sheet, then tap Done to close the keyboard.
