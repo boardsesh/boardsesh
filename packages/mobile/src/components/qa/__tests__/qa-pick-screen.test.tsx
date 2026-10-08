@@ -131,6 +131,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 const showToast = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast }) }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12, full: 9999 },
 }));

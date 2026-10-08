@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+// Preserve native picker actions while isolating press animation internals.
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  return { PressableSurface: Pressable };
+});
 import { createElement, type ReactNode } from 'react';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -14,7 +19,11 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: onPress, disabled }, children),
   StyleSheet: { create: (styles: unknown) => styles },
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8, 3: 12, 4: 16 },
+  borderRadius: { md: 8 },
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../hooks/use-device-layout', () => ({ useDeviceLayout: () => device }));
 vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 40] }));

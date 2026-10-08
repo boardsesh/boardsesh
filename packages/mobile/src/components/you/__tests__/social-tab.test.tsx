@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };

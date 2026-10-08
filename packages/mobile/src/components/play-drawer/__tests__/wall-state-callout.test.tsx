@@ -112,7 +112,7 @@ vi.mock('react-native-reanimated', () => {
 vi.mock('../../../theme/animations', () => ({ springs: { gentle: { damping: 15, stiffness: 150, mass: 1 } } }));
 vi.mock('../../../theme/motion-config', () => ({ timingFor: (config: { duration: number }) => config }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: routerPush }) }));
+vi.mock('expo-router', () => ({ router: { push: routerPush }, useRouter: () => ({ push: routerPush }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../Text', () => ({

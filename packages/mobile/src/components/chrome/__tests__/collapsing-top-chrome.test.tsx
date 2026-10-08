@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
+vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
+vi.mock('../../../hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
+}));
+vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 40] }));
+vi.mock('../../navigation/AnchoredPopover', () => ({
+  AnchoredPopover: ({ trigger }: { trigger: ReactNode }) => trigger,
+}));
+vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
+vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
+vi.mock('../../../lib/boards/use-set-board-angle', () => ({ useSetBoardAngle: () => vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -28,6 +41,7 @@ type ViewMockProps = {
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
 };
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children, onLayout }: ViewMockProps) =>
     createElement(
       'div',

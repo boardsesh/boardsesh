@@ -1,4 +1,15 @@
 // @vitest-environment jsdom
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+  }) => createElement('button', { disabled, onClick: disabled ? undefined : onPress }, children),
+}));
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

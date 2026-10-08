@@ -752,7 +752,11 @@ describe('ClimbList previous results standing in for a loading search', () => {
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
     );
     expect(mocks.openClimbActions).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
-    expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
+    expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'climb-1' }),
+      undefined,
+      undefined,
+    );
   });
 });
 

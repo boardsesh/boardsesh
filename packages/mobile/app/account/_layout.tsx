@@ -1,7 +1,8 @@
 import { Stack } from 'expo-router';
+import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 
-export default function AccountLayout() {
+function AccountLayout() {
   const screenOptions = useStackScreenOptions();
   return (
     <Stack screenOptions={screenOptions}>
@@ -10,3 +11,5 @@ export default function AccountLayout() {
     </Stack>
   );
 }
+
+export default holdUntilLaunchReady(AccountLayout);

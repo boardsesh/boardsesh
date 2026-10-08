@@ -1,4 +1,16 @@
 // @vitest-environment jsdom
+vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
+vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
+vi.mock('../../../hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
+}));
+vi.mock('../../../hooks/use-board-angle-options', () => ({ useBoardAngleOptions: () => [30, 40] }));
+vi.mock('../../navigation/AnchoredPopover', () => ({
+  AnchoredPopover: ({ trigger }: { trigger: ReactNode }) => trigger,
+}));
+vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
+vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type MouseEvent, type ReactNode, type RefObject } from 'react';
@@ -32,6 +44,7 @@ type ViewMockProps = {
   pointerEvents?: string;
 };
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   Keyboard: { dismiss: vi.fn() },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'data-scrim': 'true' }, children),

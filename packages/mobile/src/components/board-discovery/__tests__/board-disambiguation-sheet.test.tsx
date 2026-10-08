@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };

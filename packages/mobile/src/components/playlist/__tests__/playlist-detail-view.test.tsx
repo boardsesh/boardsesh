@@ -705,13 +705,17 @@ describe('PlaylistDetailView', () => {
     for (const row of capturedClimbRows) {
       expect(row.onOpenPlaylist).toBeTypeOf('function');
       row.onOpenPlaylist?.(row.climb);
-      expect(ctrl.openAddToPlaylist).toHaveBeenLastCalledWith(row.climb, {
-        boardName: row.boardName,
-        layoutId: row.layoutId,
-        sizeId: row.sizeId,
-        setIds: row.setIds,
-        angle: row.angle,
-      });
+      expect(ctrl.openAddToPlaylist).toHaveBeenLastCalledWith(
+        row.climb,
+        {
+          boardName: row.boardName,
+          layoutId: row.layoutId,
+          sizeId: row.sizeId,
+          setIds: row.setIds,
+          angle: row.angle,
+        },
+        undefined,
+      );
     }
     expect(ctrl.openAddToPlaylist).toHaveBeenCalledTimes(2);
     expect(ctrl.addToQueue).not.toHaveBeenCalled();

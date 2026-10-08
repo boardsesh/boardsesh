@@ -79,6 +79,7 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844, scale: 3 }),
 }));
 vi.mock('expo-router', () => ({
+  router: { push: spies.push, navigate: spies.navigate },
   useIsFocused: () => true,
   useRouter: () => ({ push: spies.push, navigate: spies.navigate }),
 }));

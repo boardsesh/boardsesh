@@ -19,6 +19,7 @@ const cardProps = vi.hoisted(() => ({
 const sheet = vi.hoisted(() => ({ visible: false, title: null as string | null }));
 
 vi.mock('react-native', () => ({
+  AppState: { addEventListener: () => ({ remove: () => {} }) },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
   // Something in the import graph reads Platform at module scope.

@@ -5,7 +5,7 @@ import { createElement, type ReactNode } from 'react';
 
 const ctrl = vi.hoisted(() => ({ push: vi.fn(), haptic: vi.fn() }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: ctrl.push }) }));
+vi.mock('expo-router', () => ({ router: { push: ctrl.push }, useRouter: () => ({ push: ctrl.push }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}:${String(opts.name)}` : key),

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
@@ -16,7 +17,10 @@ vi.mock('react-native', () => ({
     useImperativeHandle(ref, () => ({ focus: () => undefined }));
     return createElement('input');
   }),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    create: (styles: Record<string, unknown>) => styles,
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+  },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -105,7 +109,10 @@ vi.mock('../../SheetTopBar', () => ({
     }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' } }),
+  useTheme: () => ({
+    textStyles: { body: { fontSize: 17, lineHeight: 22, fontWeight: '400' } },
+    systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' },
+  }),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 

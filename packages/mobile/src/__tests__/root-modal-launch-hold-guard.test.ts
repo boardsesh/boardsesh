@@ -96,6 +96,7 @@ describe('root modal routes and the launch update gate', () => {
     // The current set. A route dropping out of this list means either it stopped
     // being a modal, or the parser above stopped seeing it: look before updating.
     expect(rootModalRoutes.map(({ name }) => name).toSorted()).toEqual([
+      'account',
       'boards',
       'join/[sessionId]',
       'moderation',
