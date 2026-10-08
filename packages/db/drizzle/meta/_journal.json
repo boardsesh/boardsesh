@@ -1835,6 +1835,13 @@
       "when": 1791454934848,
       "tag": "0261_account_resource_privacy",
       "breakpoints": true
+    },
+    {
+      "idx": 262,
+      "version": "7",
+      "when": 1791496056466,
+      "tag": "0262_analytics_consent_and_user_activity",
+      "breakpoints": true
     }
   ]
 }
