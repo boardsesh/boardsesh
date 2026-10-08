@@ -96,7 +96,7 @@ export function isPlayerRoute(segments: Segments): boolean {
  * pushes/modals are not — the bar is hidden there (#3253).
  *
  * This is a presentation gate, not a mount gate. It drives the JS `PersistentQueueBar`
- * (Android / iOS < 26) and the bottom-chrome reserve that goes with it — surfaces with
+ * (Android / iOS 18 / tablets) and the bottom-chrome reserve that goes with it — surfaces with
  * no UIKit layout coupling, where hiding costs nothing. The native
  * `NativeTabs.BottomAccessory` HOST is gated by `isAccessoryHostRoute` instead, which
  * is deliberately wider; see its docblock for why the two must not be merged.

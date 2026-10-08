@@ -64,7 +64,12 @@ vi.mock('../use-device-layout', () => ({
   }),
 }));
 
-import { isBottomAccessoryAvailable, useNativeAccessoryActive, useNativeTabBar } from '../use-bottom-accessory';
+import {
+  isBottomAccessoryAvailable,
+  useLiquidGlassTabBar,
+  useNativeAccessoryActive,
+  useNativeTabBar,
+} from '../use-bottom-accessory';
 
 describe('use-bottom-accessory', () => {
   beforeEach(() => {
@@ -155,7 +160,7 @@ describe('use-bottom-accessory', () => {
   });
 
   describe('useNativeTabBar', () => {
-    it('is true only for the Liquid Glass variant on a glass-capable device', () => {
+    it('is true for the Liquid Glass variant and false for Material', () => {
       const { result, rerender } = renderHook(() => useNativeTabBar());
 
       expect(result.current).toBe(true);
@@ -166,13 +171,15 @@ describe('use-bottom-accessory', () => {
       expect(result.current).toBe(false);
     });
 
-    it('is false on the Liquid Glass variant when the device is not glass-capable', () => {
-      // Older iPhone / Android on Liquid Glass: the JS MaterialTabBar renders instead.
+    it('is true on an iOS 18 iPhone on the Liquid Glass variant (HIG Tab bars)', () => {
+      // No real glass and no accessory below iOS 26, but the system tab bar still
+      // belongs on screen; it used to fall back to the JS Material bar here.
       cfg.liquidGlassAvailable = false;
+      cfg.glassEffectApiAvailable = false;
 
       const { result } = renderHook(() => useNativeTabBar());
 
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     });
 
     it('is false off iOS even on the Liquid Glass variant', () => {
@@ -223,17 +230,51 @@ describe('use-bottom-accessory', () => {
     });
   });
 
-  it('keeps the accessory and the native tab bar consistent when the glass APIs diverge', () => {
-    // Liquid Glass reports available but the GlassView API does not: the native tab
-    // bar falls back to JS, and the accessory (which lives inside NativeTabs) must
-    // agree and stay inactive — otherwise the JS queue toolbar gets suppressed for an
-    // accessory that never mounts. Both predicates share useGlassCapability() now.
+  it('keeps the accessory off when the glass APIs diverge, while the bar stays native', () => {
+    // Liquid Glass reports available (so the accessory export alone would say yes)
+    // but the GlassView API does not: the bar is the classic native bar, and the
+    // accessory must stay inactive — otherwise the JS queue toolbar gets suppressed
+    // for an accessory that never mounts. All three read one useTabChrome() answer.
     cfg.glassEffectApiAvailable = false;
 
     const tabBar = renderHook(() => useNativeTabBar());
+    const liquidGlass = renderHook(() => useLiquidGlassTabBar());
     const accessory = renderHook(() => useNativeAccessoryActive());
 
-    expect(tabBar.result.current).toBe(false);
+    expect(isBottomAccessoryAvailable()).toBe(true);
+    expect(tabBar.result.current).toBe(true);
+    expect(liquidGlass.result.current).toBe(false);
     expect(accessory.result.current).toBe(false);
+  });
+
+  describe('useLiquidGlassTabBar', () => {
+    it('is true on an iOS 26 iPhone and false on iOS 18', () => {
+      const { result, rerender } = renderHook(() => useLiquidGlassTabBar());
+
+      expect(result.current).toBe(true);
+
+      cfg.liquidGlassAvailable = false;
+      cfg.glassEffectApiAvailable = false;
+      rerender();
+
+      expect(result.current).toBe(false);
+    });
+
+    it('is false on a tablet, even when glass-capable', () => {
+      cfg.isTablet = true;
+
+      const { result } = renderHook(() => useLiquidGlassTabBar());
+
+      expect(result.current).toBe(false);
+    });
+  });
+
+  it('does not report the native accessory active on an iOS 18 iPhone', () => {
+    cfg.liquidGlassAvailable = false;
+    cfg.glassEffectApiAvailable = false;
+
+    const { result } = renderHook(() => useNativeAccessoryActive());
+
+    expect(result.current).toBe(false);
   });
 });

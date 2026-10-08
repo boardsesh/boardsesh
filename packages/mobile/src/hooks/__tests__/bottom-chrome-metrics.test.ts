@@ -467,6 +467,79 @@ describe('computeBottomChromeMetrics', () => {
     });
   });
 
+  describe('iOS 18 iPhone: native tab bar without the bottom accessory', () => {
+    // The combination the HIG Tab bars fix introduced: NativeTabs is the bar, but
+    // the climb rides the floating JS queue bar because UIKit has no accessory
+    // below iOS 26. The native bar overlays content, so the tray, toasts, FABs and
+    // the last list row must all clear the in-tab inset PLUS the tray, once each.
+    const ios18 = (overrides: Partial<Parameters<typeof computeBottomChromeMetrics>[0]> = {}) =>
+      computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: true,
+        insetsBottom: ROOT_WINDOW_INSET,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryPresented: false,
+        ...overrides,
+      });
+
+    it('floats the JS tray directly above the native bar', () => {
+      const metrics = ios18();
+      expect(metrics.tabBarHeight).toBe(TAB_BAR_HEIGHT);
+      // Unmeasured: reconstructed from the root inset + the 49pt bar, no accessory.
+      expect(metrics.tabBarBottom).toBe(ROOT_WINDOW_INSET + TAB_BAR_HEIGHT);
+      expect(floatingContextBarBottom(metrics.tabBarBottom)).toBe(
+        ROOT_WINDOW_INSET + TAB_BAR_HEIGHT + TOOLBAR_GAP_ABOVE_TABBAR,
+      );
+      expect(metrics.nativeAccessoryReserve).toBe(0);
+    });
+
+    it('clears bar + tray for lists, floating controls, footers and both session bottoms', () => {
+      const metrics = ios18({ measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET });
+      const clearance = IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE;
+      expect(metrics.scrollBottomPadding).toBe(clearance);
+      expect(metrics.floatingControlBottom).toBe(clearance);
+      expect(metrics.fixedFooterBottom).toBe(clearance);
+      expect(metrics.inSessionListBottom).toBe(clearance);
+      expect(metrics.preSessionFooterBottom).toBe(clearance);
+    });
+
+    it('drops the tray reserve but keeps the native bar when no climb is current', () => {
+      const metrics = ios18({ hasCurrentClimb: false, measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET });
+      expect(metrics.jsQueueToolbarVisible).toBe(false);
+      expect(metrics.scrollBottomPadding).toBe(IN_TAB_INFERRED_BAR_INSET);
+      expect(metrics.floatingControlBottom).toBe(IN_TAB_INFERRED_BAR_INSET);
+    });
+
+    it('keeps the native bar clearance on a pushed sub-route, where the tray is gone', () => {
+      const metrics = ios18({ onAccessorySurface: false, measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET });
+      expect(metrics.jsQueueToolbarVisible).toBe(false);
+      expect(metrics.scrollBottomPadding).toBe(IN_TAB_INFERRED_BAR_INSET);
+    });
+
+    it('never counts the 49pt bar twice when the measurement arrives', () => {
+      // The JS bar fallback ADDS its height to the root inset; the native bar is
+      // already inside the measured in-tab inset. Mixing the two paths is the
+      // #4089 failure shape.
+      const metrics = ios18({ measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET });
+      expect(metrics.tabBarBottom).toBe(IN_TAB_INFERRED_BAR_INSET);
+      expect(metrics.tabBarBottom).not.toBe(IN_TAB_INFERRED_BAR_INSET + TAB_BAR_HEIGHT);
+    });
+
+    it('stacks the rest pill and the banner above the tray', () => {
+      const metrics = ios18({
+        measuredTabContentInsetBottom: IN_TAB_INFERRED_BAR_INSET,
+        restTimerArmed: true,
+        connectivityBannerHeight: 40,
+      });
+      const trayTop = IN_TAB_INFERRED_BAR_INSET + TOOLBAR_RESERVE;
+      expect(metrics.restTimerBottom).toBe(trayTop + TOOLBAR_GAP_ABOVE_TABBAR);
+      expect(metrics.connectivityBannerBottom).toBe(trayTop + REST_TIMER_RESERVE);
+      expect(metrics.floatingControlBottom).toBe(trayTop + REST_TIMER_RESERVE + 40);
+    });
+  });
+
   describe('pre-session Start capsule clears the floating queue tray (#3967)', () => {
     // The tray band is rebuilt from `floatingContextBarBottom` — the SAME function
     // `ActiveContextBar` positions itself with — rather than from
@@ -492,7 +565,7 @@ describe('computeBottomChromeMetrics', () => {
       return floatingContextBarBottom(metrics.tabBarBottom) + glassSize.hero - screenFloorAboveWindow;
     };
 
-    it('clears the tray on an iOS < 26 / non-glass-capable iPhone', () => {
+    it('clears the tray on the JS bar (Liquid Glass forced on Android)', () => {
       const metrics = computeBottomChromeMetrics({
         uiVariant: 'liquidGlass',
         usesNativeTabBar: false,
@@ -504,6 +577,30 @@ describe('computeBottomChromeMetrics', () => {
       });
       expect(metrics.jsQueueToolbarVisible).toBe(true);
       expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(trayTopAboveScreenFloor(metrics, false));
+    });
+
+    // iOS 18 iPhone: the native UIKit bar with no BottomAccessory, so the JS tray
+    // floats above the NATIVE bar. Covered measured and unmeasured, on a Face ID
+    // phone and a home-button SE (root inset 0, where the 49pt bar is everything).
+    it.each([
+      ['Face ID, measured', ROOT_WINDOW_INSET, IN_TAB_INFERRED_BAR_INSET],
+      ['Face ID, unmeasured', ROOT_WINDOW_INSET, null],
+      ['home button, measured', 0, TAB_BAR_HEIGHT],
+      ['home button, unmeasured', 0, null],
+    ] as const)('clears the tray over the iOS 18 native bar (%s)', (_label, insetsBottom, measured) => {
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: true,
+        insetsBottom,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryPresented: false,
+        measuredTabContentInsetBottom: measured,
+      });
+      expect(metrics.jsQueueToolbarVisible).toBe(true);
+      expect(metrics.nativeAccessoryVisible).toBe(false);
+      expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(trayTopAboveScreenFloor(metrics, true));
     });
 
     it('clears the tray on an iPad in a narrow split (sidebar without the detail pane)', () => {

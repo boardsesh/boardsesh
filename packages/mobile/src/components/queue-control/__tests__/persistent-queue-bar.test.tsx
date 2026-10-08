@@ -104,18 +104,19 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4 } }));
 // Default to the Liquid Glass layout (centered capsule + standalone hero tick).
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ variant: cfg.variant }) }));
 // The floating bar renders only where the native bottom accessory doesn't
-// (Material variant / iOS < 26 / Android) — force that path so the capsule/tick
-// assertions hold. use-bottom-chrome-metrics now derives the accessory the same
-// way the real useNativeAccessoryActive does — useNativeTabBar() &&
-// isBottomAccessoryAvailable() — so model availability off the same `nativeAccessoryActive`
-// flag (its two callers also set nativeTabBar=true), keeping the composite result
-// identical while exercising the real one-call arbitration.
+// (Material variant / iOS 18 / Android / tablets) — force that path so the
+// capsule/tick assertions hold. use-bottom-chrome-metrics reads the accessory from
+// the same useTabChrome() answer the tab layout mounts from, so model it off the
+// `nativeAccessoryActive` flag (its two callers also set nativeTabBar=true).
 vi.mock('../../../hooks/use-bottom-accessory', () => ({
   // Keep accessory availability and the native tab bar independent: a capable device
   // with no current climb mounts the tab bar but not the accessory, so the one-call
   // arbitration in use-bottom-chrome-metrics must see the two flags vary separately.
-  isBottomAccessoryAvailable: () => cfg.nativeAccessoryActive,
-  useNativeTabBar: () => cfg.nativeTabBar,
+  useTabChrome: () => ({
+    nativeTabBar: cfg.nativeTabBar,
+    liquidGlassTabBar: cfg.nativeTabBar,
+    nativeAccessory: cfg.nativeTabBar && cfg.nativeAccessoryActive,
+  }),
 }));
 vi.mock('../ClimbCapsule', () => ({
   ClimbCapsule: ({

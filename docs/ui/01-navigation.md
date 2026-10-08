@@ -54,11 +54,21 @@ stored active board. Selecting the initial tab does not reorder the bar. Explici
 deep links, session joins and warm resumes retain their own destinations.
 Screenshot mode intentionally starts on Home to preserve the capture readiness contract.
 
-- **Native iPhone:** Liquid Glass on iOS 26 uses `NativeTabs`. Climbs retains
-  `role="search"` and its native bottom search field. The queue accessory,
-  session/connection badge and scroll minimization retain their current behavior.
-- **Other phones:** Material and older-iOS Liquid Glass use JS `Tabs` with
-  `MaterialTabBar`. Tablet sidebars retain their existing order and panes.
+- **Native iPhone:** Liquid Glass uses `NativeTabs` (the system UIKit tab bar) on
+  every iPhone, iOS 18 included. On iOS 26 Climbs keeps `role="search"` and its
+  native bottom search field, and the queue accessory and scroll minimization
+  ride the bar. On iOS 18 the bar has none of those: Climbs is an ordinary
+  labelled tab with its own search field, and the current climb rides the
+  floating JS queue bar just above the native bar.
+- **Other phones:** Material, and Liquid Glass forced on Android, use JS `Tabs`
+  with `MaterialTabBar`.
+- **Tablets:** one JS `Tabs` navigator at every width (sidebar at regular width,
+  `MaterialTabBar` in a narrow split), so a Split View resize keeps each tab's
+  state. `NativeTabs` remounts when a tab's `hidden` flag flips, and the
+  iPad-only On the Wall tab would have to be hidden in a narrow split (a sixth
+  native tab spills into UIKit's More list), so the iPad shell stays JS. The
+  native `sidebarAdaptable` sidebar is not used for the same reason, and because
+  it cannot host the live wall cell or report its width to the pane budgets.
 - **Session setup:** Browse climbs opens the selected board's library
   directly, without rewriting the board selection.
   Change board is a separate action; its picker returns to Session. First-time

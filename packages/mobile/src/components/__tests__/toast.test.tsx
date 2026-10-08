@@ -84,8 +84,13 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 47, bottom: ctrl.insetsBottom, left: 0, right: 0 }),
 }));
 vi.mock('../../hooks/use-bottom-accessory', () => ({
-  isBottomAccessoryAvailable: () => ctrl.nativeBottomAccessoryAvailable,
-  useNativeTabBar: () => ctrl.nativeTabBar,
+  // nativeTabBar without the accessory models the iOS 18 native bar (or a build
+  // without the export): the JS queue bar floats above the native bar.
+  useTabChrome: () => ({
+    nativeTabBar: ctrl.nativeTabBar,
+    liquidGlassTabBar: ctrl.nativeTabBar,
+    nativeAccessory: ctrl.nativeTabBar && ctrl.nativeBottomAccessoryAvailable,
+  }),
 }));
 vi.mock('../../lib/native-tab-content-inset-store', () => ({
   useNativeTabContentInsetBottom: () => ctrl.measuredTabContentInsetBottom,

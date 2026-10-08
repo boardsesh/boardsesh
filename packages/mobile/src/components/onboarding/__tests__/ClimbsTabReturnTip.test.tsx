@@ -49,7 +49,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: env.createdAt === undefined ? undefined : { createdAt: env.createdAt } }),
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: env.isAuthenticated }) }));
-vi.mock('../../../hooks/use-bottom-accessory', () => ({ useNativeTabBar: () => env.nativeTabBar }));
+vi.mock('../../../hooks/use-bottom-accessory', () => ({ useLiquidGlassTabBar: () => env.nativeTabBar }));
 vi.mock('../../../hooks/use-sticky-accessory-presence', () => ({
   useStickyAccessoryPresence: () => env.hasCurrentClimb,
 }));
@@ -173,9 +173,9 @@ describe('ClimbsTabReturnTip', () => {
     expect(screen.getByText(TIP_TEXT)).toBeTruthy();
   });
 
-  // Android, iPhones before iOS 26, iPads and the Material variant all get the
-  // JS tab bar, where Climbs is a labelled tab like the others.
-  it('never shows without the iOS 26 native tab bar', async () => {
+  // Android, iPads and the Material variant get the JS tab bar, and an iOS 18
+  // iPhone gets the classic native bar; Climbs is a labelled tab on all of them.
+  it('never shows without the iOS 26 Liquid Glass tab bar', async () => {
     env.nativeTabBar = false;
     renderThenOpen('home');
     await settle();
