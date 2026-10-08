@@ -1,9 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Pressable, StyleSheet, TextInput } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { Text } from '../../../src/components/Text';
@@ -12,6 +11,8 @@ import { Button } from '../../../src/components/Button';
 import { SegmentedControl } from '../../../src/components/SegmentedControl';
 import { Icon } from '../../../src/components/Icon';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { useHeaderActions } from '../../../src/hooks/use-header-actions';
 import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { useSearchClimbsCount, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { withSetterSelection } from '../../../src/lib/climb-count-preview-input';
@@ -56,7 +57,7 @@ function parseSelectedSetters(serialized: string | undefined): string[] {
 }
 
 // Defensive parse of the count-input param. Anything missing the board fields a
-// search needs falls back to null, and the footer shows the plain Apply label.
+// search needs falls back to null, and the header shows the plain Apply label.
 function parseCountInput(serialized: string | undefined): ClimbSearchInput | null {
   if (!serialized) return null;
   try {
@@ -168,7 +169,7 @@ export default function SettersFilterScreen() {
   const [followingOnly, setFollowingOnly] = useState(false);
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
-  const insets = useSafeAreaInsets();
+  const bottomChrome = useBottomChromeMetrics();
 
   // A screenshot deep link (`://climbs/setters`) opens this route with none of
   // the params the filter sheet pushes, which would leave the setter query
@@ -187,23 +188,13 @@ export default function SettersFilterScreen() {
   // current value without re-subscribing on every toggle.
   const selectedSettersRef = useRef(selectedSetters);
   selectedSettersRef.current = selectedSetters;
-  // Set once the footer button has handed the selection back with `apply`, so
+  // Set once the header's Apply has handed the selection back with `apply`, so
   // the blur cleanup that follows the pop doesn't hand it back a second time.
   const appliedRef = useRef(false);
 
   const [searchInput, setSearchInput] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // The screen sits below an opaque native header, and KeyboardAvoidingView
-  // measures its frame relative to its parent, so on its own it under-pads by
-  // the header height. Measuring this screen's top in the window lets the offset
-  // below put the footer just above the keyboard.
-  const rootRef = useRef<View>(null);
-  const [windowTop, setWindowTop] = useState(0);
-  const handleRootLayout = useCallback(() => {
-    rootRef.current?.measureInWindow((_windowX, windowY) => setWindowTop(windowY));
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -318,23 +309,13 @@ export default function SettersFilterScreen() {
     navigation.goBack();
   }, [navigation]);
 
-  // "Clear all" lives in the native header's headerRight, shown only when setters
-  // are selected. The footer button applies; the back chevron / swipe-back keeps
-  // the picks as a draft (handed back on blur via the focus-cleanup above).
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight:
-        selectedSet.size > 0
-          ? () => (
-              <Pressable onPress={clear} hitSlop={8} accessibilityRole="button">
-                <Text variant="subheadline" color={brandColors.primary}>
-                  {t('mobile.filter.clearAll')}
-                </Text>
-              </Pressable>
-            )
-          : undefined,
-    });
-  }, [navigation, selectedSet.size, clear, brandColors.primary, t]);
+  // Apply ("Show N climbs") is the header's trailing action. "Clear all" sits
+  // in the selection bar under the search, next to the count it clears: beside
+  // Apply it would not fit in German. The back chevron / swipe-back keeps the
+  // picks as a draft (handed back on removal, see above).
+  useHeaderActions({
+    trailing: { label: applyLabel, onPress: handleApply, prominent: true },
+  });
 
   const openSetter = useCallback(
     (username: string) => {
@@ -388,109 +369,98 @@ export default function SettersFilterScreen() {
   );
 
   return (
-    <View
-      ref={rootRef}
-      onLayout={handleRootLayout}
-      style={[styles.container, { backgroundColor: systemColors.background }]}
-    >
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        // The footer already pads by insets.bottom, which the keyboard covers, so
-        // take it back off the offset: the button then rests spacing[3] above it.
-        keyboardVerticalOffset={windowTop - insets.bottom}
-      >
-        <View style={[styles.searchBarWrapper, { backgroundColor: systemColors.secondaryBackground }]}>
-          <Icon name="search" size={16} color={systemColors.secondaryLabel} />
-          <TextInput
-            value={searchInput}
-            onChangeText={handleSearchChange}
-            placeholder={t('mobile.filter.searchSetters')}
-            placeholderTextColor={systemColors.secondaryLabel}
-            accessibilityLabel={t('mobile.filter.searchSetters')}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-            style={[styles.searchInput, { color: systemColors.label }]}
+    <View style={[styles.container, { backgroundColor: systemColors.background }]}>
+      <View style={[styles.searchBarWrapper, { backgroundColor: systemColors.secondaryBackground }]}>
+        <Icon name="search" size={16} color={systemColors.secondaryLabel} />
+        <TextInput
+          value={searchInput}
+          onChangeText={handleSearchChange}
+          placeholder={t('mobile.filter.searchSetters')}
+          placeholderTextColor={systemColors.secondaryLabel}
+          accessibilityLabel={t('mobile.filter.searchSetters')}
+          autoCorrect={false}
+          autoCapitalize="none"
+          returnKeyType="search"
+          style={[styles.searchInput, { color: systemColors.label }]}
+        />
+      </View>
+
+      {isAuthenticated ? (
+        <View style={styles.scopeControl}>
+          <SegmentedControl
+            options={[
+              { key: 'all', label: t('authors.allSetters') },
+              { key: 'following', label: t('authors.following') },
+            ]}
+            selectedKey={followingOnly ? 'following' : 'all'}
+            onSelect={(scope) => setFollowingOnly(scope === 'following')}
+            accessibilityLabel={t('mobile.filter.setters')}
           />
         </View>
-
-        {isAuthenticated ? (
-          <View style={styles.scopeControl}>
-            <SegmentedControl
-              options={[
-                { key: 'all', label: t('authors.allSetters') },
-                { key: 'following', label: t('authors.following') },
-              ]}
-              selectedKey={followingOnly ? 'following' : 'all'}
-              onSelect={(scope) => setFollowingOnly(scope === 'following')}
-              accessibilityLabel={t('mobile.filter.setters')}
-            />
-          </View>
-        ) : null}
+      ) : null}
+      <Text variant="footnote" style={styles.pickerHint}>
+        {t('authors.selectHint')}
+      </Text>
+      {followingOnly ? (
         <Text variant="footnote" style={styles.pickerHint}>
-          {t('authors.selectHint')}
+          {t('authors.followingHint')}
         </Text>
-        {followingOnly ? (
-          <Text variant="footnote" style={styles.pickerHint}>
-            {t('authors.followingHint')}
+      ) : null}
+      {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
+      {isError || follows.isError ? (
+        <View>
+          <Text>{t('authors.syncNeeded')}</Text>
+          <Button
+            title={t('authors.retry')}
+            onPress={() => {
+              if (follows.isError) void follows.refetch();
+              if (isError) void refetch();
+            }}
+          />
+        </View>
+      ) : null}
+      {selectedSet.size > 0 ? (
+        <View style={styles.selectionBar}>
+          <Text variant="footnote" style={styles.selectionCount}>
+            {t('authors.selectedCount', { count: selectedSet.size })}
           </Text>
-        ) : null}
-        {followError ? <Text variant="footnote">{t('authors.followError')}</Text> : null}
-        {isError || follows.isError ? (
-          <View>
-            <Text>{t('authors.syncNeeded')}</Text>
-            <Button
-              title={t('authors.retry')}
-              onPress={() => {
-                if (follows.isError) void follows.refetch();
-                if (isError) void refetch();
-              }}
-            />
-          </View>
-        ) : null}
-        {selectedSet.size > 0 ? (
-          <View style={styles.selectionBar}>
-            <Text variant="footnote" style={styles.selectionCount}>
-              {t('authors.selectedCount', { count: selectedSet.size })}
+          <Pressable onPress={clear} hitSlop={8} accessibilityRole="button">
+            <Text variant="subheadline" color={brandColors.primary}>
+              {t('mobile.filter.clearAll')}
             </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <View style={styles.body}>
+        {isLoading ? (
+          <View style={styles.loading}>
+            <ActivityIndicator size="small" />
           </View>
-        ) : null}
-
-        <View style={styles.body}>
-          {isLoading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : (
-            <FlashList
-              data={setters ?? []}
-              extraData={selectedSetters}
-              keyExtractor={setterKey}
-              renderItem={renderRow}
-              ItemSeparatorComponent={SetterSeparator}
-              contentInsetAdjustmentBehavior="automatic"
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              contentContainerStyle={styles.listContent}
-              ListEmptyComponent={
-                <View style={styles.empty}>
-                  <Text variant="subheadline" style={styles.emptyText}>
-                    {debouncedSearch.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.filter.noSetters')}
-                  </Text>
-                </View>
-              }
-            />
-          )}
-        </View>
-
-        {/* Same footer as the climb filter sheet's, pinned under the list. */}
-        <View
-          style={[styles.footer, { paddingBottom: insets.bottom + spacing[3], borderTopColor: systemColors.separator }]}
-        >
-          <Button title={applyLabel} onPress={handleApply} variant="filled" size="large" style={styles.applyButton} />
-        </View>
-      </KeyboardAvoidingView>
+        ) : (
+          <FlashList
+            data={setters ?? []}
+            extraData={selectedSetters}
+            keyExtractor={setterKey}
+            renderItem={renderRow}
+            ItemSeparatorComponent={SetterSeparator}
+            contentInsetAdjustmentBehavior="automatic"
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            // The list runs to the screen's bottom edge: clear the tab
+            // bar, and let iOS lift the last rows above the keyboard.
+            automaticallyAdjustKeyboardInsets
+            contentContainerStyle={{ paddingBottom: bottomChrome.scrollBottomPadding + spacing[3] }}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <Text variant="subheadline" style={styles.emptyText}>
+                  {debouncedSearch.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.filter.noSetters')}
+                </Text>
+              </View>
+            }
+          />
+        )}
+      </View>
     </View>
   );
 }
@@ -517,9 +487,6 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-  },
-  listContent: {
-    paddingBottom: spacing[3],
   },
   row: {
     flexDirection: 'row',
@@ -585,14 +552,5 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     opacity: 0.6,
-  },
-  // Mirrors ClimbFilterSheet's footer: hairline top border, themed at the call site.
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  applyButton: {
-    width: '100%',
   },
 });

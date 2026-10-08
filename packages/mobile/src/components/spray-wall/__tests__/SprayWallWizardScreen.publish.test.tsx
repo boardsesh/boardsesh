@@ -18,7 +18,7 @@
 // are each one call into a stubbed child.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
@@ -53,11 +53,14 @@ const mocks = vi.hoisted(() => ({
   resetWall: vi.fn<(wallUuid: string) => Promise<unknown>>(),
   settleArchived: vi.fn<(queryClient: unknown, archivedUuid: string, replacementUuid: string) => void>(),
   track: vi.fn<(name: string, properties?: Record<string, unknown>) => void>(),
+  /** The header's trailing action, as the screen last set it through `useHeaderActions`. */
+  headerTrailing: { current: null as null | { label: string; onPress: () => void } },
 }));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   Alert: { alert: mocks.alert },
+  BackHandler: { addEventListener: () => ({ remove() {} }) },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
@@ -71,8 +74,22 @@ vi.mock('expo-router', () => ({
   useNavigation: () => ({
     getParent: () =>
       mocks.hasParent.current ? { canGoBack: mocks.rootCanGoBack, goBack: mocks.rootGoBack } : undefined,
+    setOptions: () => {},
   }),
+  useFocusEffect: () => {},
 }));
+vi.mock('../../../hooks/use-header-actions', () => ({
+  useHeaderActions: ({
+    trailing,
+    trailingAccessory,
+  }: {
+    trailing?: { label: string; onPress: () => void } | null;
+    trailingAccessory?: unknown;
+  }) => {
+    if (trailing || trailingAccessory != null) mocks.headerTrailing.current = trailing ?? null;
+  },
+}));
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('../../../lib/open-url', () => ({ openExternalUrl: vi.fn() }));
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => null }));
@@ -146,7 +163,6 @@ vi.mock('../../board-discovery/use-spray-wall-builder', () => ({
 }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
-vi.mock('../SprayCornerFooter', () => ({ SprayCornerFooter: () => null }));
 vi.mock('../SprayCornerStep', () => ({ SprayCornerStep: () => null }));
 vi.mock('../SprayPhotoAdjustStep', () => ({ SprayPhotoAdjustStep: () => null }));
 vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
@@ -228,6 +244,13 @@ async function flush(ms = 0) {
   });
 }
 
+/** Press the header's trailing action, checking it says what the test expects. */
+function pressHeaderTrailing(label: string) {
+  const trailing = mocks.headerTrailing.current;
+  expect(trailing?.label).toBe(label);
+  act(() => trailing?.onPress());
+}
+
 /** Mount, pick the draft back up, commit its holds and confirm its look: publish starts by itself. */
 async function reachPublish() {
   const view = render(createElement(SprayWallWizardScreen, { returnTo: '/(tabs)/climbs' }));
@@ -257,6 +280,7 @@ beforeEach(() => {
   mocks.finish.mockResolvedValue(undefined);
   mocks.rootCanGoBack.mockReturnValue(true);
   mocks.hasParent.current = true;
+  mocks.headerTrailing.current = null;
 });
 
 afterEach(() => {
@@ -294,7 +318,7 @@ describe('SprayWallWizardScreen — publish and bind', () => {
     mocks.activate.mockImplementationOnce(async (_queryClient, _wallUuid, activateBoard) => {
       await activateBoard(PUBLISHED_BOARD);
     });
-    fireEvent.click(screen.getByText('sprayWizard.publish.retry'));
+    pressHeaderTrailing('sprayWizard.publish.retry');
     await flush();
 
     // Published once: the latch held across the failed bind.
@@ -343,10 +367,10 @@ describe('SprayWallWizardScreen — publish and bind', () => {
   it('offers a way out of done once the bind has taken too long', async () => {
     mocks.activate.mockImplementation(() => new Promise<void>(() => {}));
     await reachPublish();
-    expect(screen.queryByText('sprayWizard.done.leave')).toBeNull();
+    expect(mocks.headerTrailing.current?.label).not.toBe('sprayWizard.done.leave');
 
     await flush(DONE_EXIT_OFFER_MS);
-    fireEvent.click(screen.getByText('sprayWizard.done.leave'));
+    pressHeaderTrailing('sprayWizard.done.leave');
     // The second road: the first may be the one that is not landing.
     expect(mocks.rootGoBack).toHaveBeenCalledTimes(1);
     expect(mocks.dismissTo).not.toHaveBeenCalled();

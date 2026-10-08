@@ -10,12 +10,10 @@ import { reportError } from '../../lib/error-reporting';
 
 // The optional link step owns its answer marker and navigation.
 export function OnboardingLinkRoute({
-  accentColor,
   iconColor,
   bodyColor,
   backgroundColor,
 }: {
-  accentColor: string;
   iconColor: string;
   bodyColor: string;
   backgroundColor: string;
@@ -49,7 +47,6 @@ export function OnboardingLinkRoute({
   return (
     <OnboardingLinkStep
       boardType={boardType as AuroraBoardName}
-      accentColor={accentColor}
       iconColor={iconColor}
       bodyColor={bodyColor}
       backgroundColor={backgroundColor}

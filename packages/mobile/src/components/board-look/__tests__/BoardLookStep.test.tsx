@@ -58,12 +58,25 @@ vi.mock('../../../theme/variants', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../GlassSurface', () => ({
-  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
+vi.mock('../../SheetTopBar', () => ({
+  // The top bar stub: its leading and trailing actions as clickable buttons.
+  SheetTopBar: ({
+    leading,
+    trailing,
+  }: {
+    leading?: { label?: string; onPress: () => void };
+    trailing?: { label: string; onPress: () => void };
+  }) =>
+    createElement(
+      'div',
+      null,
+      leading
+        ? createElement('button', { 'data-button': leading.label, onClick: leading.onPress }, leading.label)
+        : null,
+      trailing
+        ? createElement('button', { 'data-button': trailing.label, onClick: trailing.onPress }, trailing.label)
+        : null,
+    ),
 }));
 vi.mock('../BoardLookCarousel', () => ({
   BoardLookCarousel: (props: {
@@ -103,7 +116,6 @@ const PREVIEW = {
 
 function renderStep(overrides: Partial<Parameters<typeof BoardLookStep>[0]> = {}) {
   const props = {
-    accentColor: '#6D28D9',
     bodyColor: '#888888',
     backgroundColor: '#ffffff',
     preview: PREVIEW,

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import type { BoardReturnTo } from '../../lib/boards/board-return-to';
+import { exitSprayWizard } from './exit-spray-wizard';
 
 /** A visible way out even when a cold deep link created no back history. */
 export function SprayWizardExitButton({ returnTo, tintColor }: { returnTo: BoardReturnTo; tintColor?: ColorValue }) {
@@ -10,10 +11,7 @@ export function SprayWizardExitButton({ returnTo, tintColor }: { returnTo: Board
   const { t } = useTranslation('common');
   return (
     <Pressable
-      onPress={() => {
-        if (router.canGoBack()) router.back();
-        else router.dismissTo(returnTo);
-      }}
+      onPress={() => exitSprayWizard(router, returnTo)}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={t('ariaLabels.close')}

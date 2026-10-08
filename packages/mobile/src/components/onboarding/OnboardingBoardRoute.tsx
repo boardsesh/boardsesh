@@ -27,15 +27,7 @@ const EMPTY_BOARDS: UserBoard[] = [];
  * list, the downloaded-scope index) mount only while this step is the one on
  * screen — the framing card must not pay for them.
  */
-export function OnboardingBoardRoute({
-  accentColor,
-  bodyColor,
-  backgroundColor,
-}: {
-  accentColor: string;
-  bodyColor: string;
-  backgroundColor: string;
-}) {
+export function OnboardingBoardRoute({ bodyColor, backgroundColor }: { bodyColor: string; backgroundColor: string }) {
   const { isAuthenticated } = useAuth();
   // Who is looking, so viewer-owned boards lead the row. Same degraded-never-
   // blocked read as `/boards`: the stored id answers with no network, and a
@@ -169,7 +161,6 @@ export function OnboardingBoardRoute({
 
   return (
     <OnboardingBoardStep
-      accentColor={accentColor}
       bodyColor={bodyColor}
       backgroundColor={backgroundColor}
       boards={boards}

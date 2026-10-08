@@ -1,25 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BackHandler, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
-import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
-import { GlassSurface } from '../GlassSurface';
 import { OnboardingCard } from './OnboardingCard';
 import { LinkBoardAccountModal } from '../integrations/LinkBoardAccountModal';
 import { trackLinkPromptResolved, trackLinkPromptShown } from '../../lib/onboarding/link-step-analytics';
 import { hapticSelection } from '../../lib/haptics';
-import { useTheme } from '../../providers/theme-provider';
-import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 
 type OnboardingLinkStepProps = {
   /** The board bound in the previous step. Names the account being offered. */
   boardType: AuroraBoardName;
-  accentColor: string;
   iconColor: string;
   bodyColor: string;
   backgroundColor: string;
@@ -30,7 +26,6 @@ type OnboardingLinkStepProps = {
 // Optional account linking resolves once per presentation, including navigation away.
 export function OnboardingLinkStep({
   boardType,
-  accentColor,
   iconColor,
   bodyColor,
   backgroundColor,
@@ -39,7 +34,6 @@ export function OnboardingLinkStep({
   const { t } = useTranslation('common');
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
-  const { variant } = useTheme();
   const [dialogOpen, setDialogOpen] = useState(false);
   const resolvedRef = useRef(false);
 
@@ -88,10 +82,26 @@ export function OnboardingLinkStep({
     return () => subscription.remove();
   }, [isFocused, dialogOpen, closeDialog, decline]);
 
-  const footerPadding = useMemo(() => Math.max(insets.bottom, spacing[4]), [insets.bottom]);
-
+  // The route hides the native header (a transparentModal), so the step draws
+  // its own top bar: "Not now" leading, where iOS puts a decline, and the link
+  // as the trailing confirm.
   return (
-    <View style={[styles.root, { backgroundColor, paddingTop: insets.top }]} accessibilityViewIsModal>
+    <View
+      style={[
+        styles.root,
+        { backgroundColor, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, spacing[4]) },
+      ]}
+      accessibilityViewIsModal
+    >
+      <SheetTopBar
+        title=""
+        leading={{ kind: 'cancel', label: t('mobile.onboarding.link.skip'), onPress: decline }}
+        trailing={{
+          label: t('mobile.onboarding.link.continue', { boardName }),
+          onPress: openDialog,
+          prominent: true,
+        }}
+      />
       <View style={styles.cardArea}>
         <OnboardingCard
           icon="link"
@@ -103,28 +113,9 @@ export function OnboardingLinkStep({
         />
       </View>
 
-      <GlassSurface glassEffectStyle="regular" style={[styles.footer, { paddingBottom: footerPadding }]}>
-        <Button
-          title={t('mobile.onboarding.link.continue', { boardName })}
-          onPress={openDialog}
-          variant="filled"
-          size="large"
-          tintColor={selectByVariant(variant, { material: undefined, liquidGlass: accentColor })}
-          haptic={false}
-          style={styles.primary}
-        />
-        <Button
-          title={t('mobile.onboarding.link.skip')}
-          onPress={decline}
-          variant="text"
-          size="large"
-          haptic={false}
-          style={styles.primary}
-        />
-        <Text variant="footnote" color={bodyColor} style={styles.skipHint}>
-          {t('mobile.onboarding.link.skipHint')}
-        </Text>
-      </GlassSurface>
+      <Text variant="footnote" color={bodyColor} style={styles.skipHint}>
+        {t('mobile.onboarding.link.skipHint')}
+      </Text>
 
       <LinkBoardAccountModal
         boardType={dialogOpen ? boardType : null}
@@ -139,11 +130,5 @@ export function OnboardingLinkStep({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   cardArea: { flex: 1 },
-  footer: {
-    paddingTop: spacing[3],
-    paddingHorizontal: spacing[5],
-    gap: spacing[2],
-  },
-  primary: { alignSelf: 'stretch' },
-  skipHint: { textAlign: 'center' },
+  skipHint: { textAlign: 'center', paddingHorizontal: spacing[5] },
 });

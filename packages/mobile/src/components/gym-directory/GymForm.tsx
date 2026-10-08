@@ -1,12 +1,11 @@
 import { useCallback, useState, type ComponentProps, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useHeaderActions } from '../../hooks/use-header-actions';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
-import { Button } from '../Button';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { parseCoordinate, LATITUDE_RANGE, LONGITUDE_RANGE } from './gym-coordinate';
@@ -54,7 +53,7 @@ function coordToText(value: number | null): string {
 
 /**
  * The gym editor form — name, description, address, contact email/phone,
- * coordinates, and a public toggle, with a pinned primary action. The native
+ * coordinates, and a public toggle; the submit sits in the native header. The native
  * (StyleSheet + theme) counterpart of the web gym form; the gym-edit screen owns
  * the mutation, success toast, and navigation. Seeds its fields once via the
  * `useState` initializers, so re-renders never clobber in-progress edits (the
@@ -63,7 +62,6 @@ function coordToText(value: number | null): string {
 export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections }: GymFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
 
   const [name, setName] = useState(seed.name);
@@ -110,11 +108,20 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
     isPublic,
   ]);
 
+  // Save sits in the header, never pinned over the keyboard. The gym editor is
+  // pushed on the root stack, so the native back chevron stays as leading.
+  useHeaderActions({
+    trailing: { label: submitLabel, onPress: handleSubmit, disabled: !canSubmit, loading: submitting, prominent: true },
+    // The form can be swapped for a not-found or no-access state while the
+    // route stays: take Save with it.
+    clearOnUnmount: true,
+  });
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + spacing[16] }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -233,27 +240,6 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
 
         {extraSections}
       </ScrollView>
-
-      {/* Pinned, safe-area-aware primary action — mirrors the board form footer. */}
-      <View
-        style={[
-          styles.footer,
-          {
-            backgroundColor: systemColors.secondaryBackground,
-            borderTopColor: systemColors.separator,
-            paddingBottom: insets.bottom + spacing[3],
-          },
-        ]}
-      >
-        <Button
-          title={submitLabel}
-          onPress={handleSubmit}
-          variant="filled"
-          size="large"
-          disabled={!canSubmit}
-          loading={submitting}
-        />
-      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -326,10 +312,5 @@ const styles = StyleSheet.create({
   },
   switchBlock: {
     marginTop: spacing[4],
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -16,6 +16,11 @@
 // the floor at the default size, so it has to be safe: the page is held still
 // for as long as a finger is on a ring, and a drag can never become a scroll.
 //
+// "Start the corners again" sits in a row of its own above the photo, the way
+// the crop step puts Rotate and Reset there. It is always drawn and only
+// disabled until there are corners to undo, so the photo is never re-fitted at
+// the moment a drag ends. Back, Skip and Next are in the header.
+//
 // Nothing under the photo changes height either. The hint and the "those
 // corners cross over" sentence that replaces it share one slot, sized for the
 // taller of the two, so a refused quad does not re-fit the photo as the finger
@@ -27,8 +32,10 @@ import { useTranslation } from 'react-i18next';
 import type { Quad, ReferenceSize } from '@boardsesh/spray-wall-geometry';
 import { cornerQualityNote } from './corner-quality';
 import { Text } from '../Text';
+import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { SprayCornerMarker } from './SprayCornerMarker';
@@ -52,6 +59,10 @@ export type SprayCornerStepProps = {
    * for a reset. Left out, no grade is shown.
    */
   qualityFrame?: ReferenceSize | null;
+  /** True once there are corners to throw away. */
+  canClear: boolean;
+  /** "Start the corners again": back to the default rings. */
+  onClear: () => void;
 };
 
 const QUALITY_NOTES = ['good', 'soft', 'fail', 'small'] as const;
@@ -65,10 +76,13 @@ export function SprayCornerStep({
   onChange,
   invalid,
   qualityFrame,
+  canClear,
+  onClear,
 }: SprayCornerStepProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
+  const bottomInset = useWindowBottomInset();
 
   // The measured stage, the scroll-when-it-must rule and the hold-still-while-
   // dragging lock, shared with the crop step.
@@ -101,7 +115,7 @@ export function SprayCornerStep({
 
   // `predictCompressedSize` answers zeros for a picker that could not report a
   // size, and such a photo does reach this step. There is no pixel space to put
-  // corners in, so say so; Back is in the footer, and the add-a-wall flow can
+  // corners in, so say so; Back is in the header, and the add-a-wall flow can
   // still skip.
   const photoHasSize = photo.width > 0 && photo.height > 0;
 
@@ -111,7 +125,11 @@ export function SprayCornerStep({
       // The header inset is added by hand below: with `automatic`, iOS applies
       // it natively and the content could not be sized to the visible height.
       contentInsetAdjustmentBehavior="never"
-      contentContainerStyle={[styles.content, { paddingTop: headerInset + spacing[4] }]}
+      // Nothing is pinned under the page, so it pads only past the home indicator.
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: headerInset + spacing[4], paddingBottom: bottomInset + spacing[3] },
+      ]}
       {...fittedStage.scrollProps}
       bounces={false}
       showsVerticalScrollIndicator={false}
@@ -125,6 +143,16 @@ export function SprayCornerStep({
       <Text variant="subheadline" color={systemColors.secondaryLabel}>
         {body}
       </Text>
+      <View style={styles.clearRow}>
+        <Button
+          title={t('sprayWizard.anchors.clear')}
+          icon="undo"
+          variant="tonal"
+          size="small"
+          onPress={onClear}
+          disabled={!canClear}
+        />
+      </View>
       <View style={styles.stage} onLayout={fittedStage.onStageLayout}>
         {photoHasSize ? (
           <SprayCornerMarker
@@ -216,8 +244,11 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
     gap: spacing[2],
+  },
+  clearRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   stepCounter: {
     textTransform: 'uppercase',

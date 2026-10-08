@@ -3113,7 +3113,10 @@ export function SprayHoldEditorScreen({
     headerHelp,
     canEdit,
   ]);
-  useEffect(() => () => navigation.setOptions({ headerRight: undefined }), [navigation]);
+  // A layout cleanup, so it lands before the next screen's own header actions
+  // (the wizard's look step sets its confirm in a layout effect). A passive one
+  // would run after that and wipe it.
+  useLayoutEffect(() => () => navigation.setOptions({ headerRight: undefined }), [navigation]);
 
   const refineBarNode =
     refineOpen && canEdit ? (

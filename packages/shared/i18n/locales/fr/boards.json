@@ -1004,7 +1004,6 @@
       "rotateLabel": "Pivoter d'un quart de tour vers la droite",
       "done": "Terminé",
       "reset": "Réinitialiser",
-      "cancel": "Annuler",
       "handleTopLeft": "Coin en haut à gauche du cadre",
       "handleTop": "Bord du haut du cadre",
       "handleTopRight": "Coin en haut à droite du cadre",
@@ -1024,8 +1023,8 @@
       "cornerTopRight": "Coin en haut à droite",
       "cornerBottomRight": "Coin en bas à droite",
       "cornerBottomLeft": "Coin en bas à gauche",
-      "use": "Utiliser ces coins",
-      "skip": "Passer pour l'instant",
+      "next": "Suivant",
+      "skip": "Passer",
       "clear": "Recommencer les coins",
       "quality": {
         "good": "Bien en face. Le mur sera redressé proprement.",

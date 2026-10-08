@@ -64,6 +64,25 @@ describe('useHeaderActions', () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
+  it('hands a cancel action its custom word', () => {
+    renderHook(() => useHeaderActions({ leading: { kind: 'cancel', label: 'Not now', onPress: vi.fn() } }));
+    const left = lastWith('headerLeft')?.headerLeft?.({ tintColor: '#123' });
+    expect(left?.props).toMatchObject({ kind: 'cancel', label: 'Not now' });
+  });
+
+  it('hands the leading action its disabled state, and re-sets the slot when it changes', () => {
+    const { rerender } = renderHook(
+      ({ disabled }) => useHeaderActions({ leading: { kind: 'back', onPress: vi.fn(), disabled } }),
+      { initialProps: { disabled: true } },
+    );
+    expect(lastWith('headerLeft')?.headerLeft?.({ tintColor: '#123' })?.props).toMatchObject({
+      kind: 'back',
+      disabled: true,
+    });
+    rerender({ disabled: false });
+    expect(lastWith('headerLeft')?.headerLeft?.({ tintColor: '#123' })?.props).toMatchObject({ disabled: false });
+  });
+
   it('leaves a slot alone when it is not passed', () => {
     renderHook(() => useHeaderActions({ trailing: { label: 'Next', onPress: vi.fn() } }));
     expect(optionCalls().some((options) => 'headerLeft' in options)).toBe(false);
@@ -106,6 +125,42 @@ describe('useHeaderActions', () => {
     );
     cfg.navigation.setOptions.mockClear();
     rerender({ on: false });
+    unmount();
+    expect(cfg.navigation.setOptions).not.toHaveBeenCalled();
+  });
+
+  it('with clearOnUnmount, clears only on unmount, and only the slots it wrote', () => {
+    const { rerender, unmount } = renderHook(
+      ({ label }) => useHeaderActions({ trailing: { label, onPress: vi.fn() }, clearOnUnmount: true }),
+      { initialProps: { label: 'Save' } },
+    );
+    cfg.navigation.setOptions.mockClear();
+    // A re-render that changes what the bar shows re-sets it; it never clears.
+    rerender({ label: 'Saving' });
+    expect(optionCalls()).toHaveLength(1);
+    expect(optionCalls()[0]?.headerRight).toBeTypeOf('function');
+
+    cfg.navigation.setOptions.mockClear();
+    unmount();
+    // headerRight only: the layout's headerLeft (a back chevron, an X) stays.
+    expect(optionCalls()).toStrictEqual([{ headerRight: undefined }]);
+  });
+
+  it('with clearOnUnmount, clears a leading action it wrote as well', () => {
+    const { unmount } = renderHook(() =>
+      useHeaderActions({
+        leading: { kind: 'cancel', onPress: vi.fn() },
+        trailing: { label: 'Save', onPress: vi.fn() },
+        clearOnUnmount: true,
+      }),
+    );
+    cfg.navigation.setOptions.mockClear();
+    unmount();
+    expect(optionCalls()).toStrictEqual([{ headerLeft: undefined, headerRight: undefined }]);
+  });
+
+  it('with clearOnUnmount but nothing written, leaves the header alone on unmount', () => {
+    const { unmount } = renderHook(() => useHeaderActions({ leading: null, clearOnUnmount: true }));
     unmount();
     expect(cfg.navigation.setOptions).not.toHaveBeenCalled();
   });

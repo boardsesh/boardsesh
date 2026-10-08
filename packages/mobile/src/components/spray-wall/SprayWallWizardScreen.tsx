@@ -26,10 +26,11 @@
 // step and rejoins at the photo like any resumed wall. Its first publish
 // archives the old wall (`docs/spray-walls.md`, "Archive and reset").
 
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -39,8 +40,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useNavigation, useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS, sprayHoldsReviewed, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
@@ -50,7 +50,6 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
-import { SprayCornerFooter } from './SprayCornerFooter';
 import { SprayCornerStep } from './SprayCornerStep';
 import { SprayPhotoAdjustStep } from './SprayPhotoAdjustStep';
 import {
@@ -69,6 +68,8 @@ import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
+import { useHeaderActions, type HeaderLeadingAction, type HeaderTrailingAction } from '../../hooks/use-header-actions';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useConnectivityField } from '../../lib/connectivity/use-connectivity';
@@ -111,6 +112,7 @@ import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
 import { SprayWallLookStep } from './SprayWallLookStep';
 import { useSprayWizardLeaveGuard } from './use-spray-wizard-leave-guard';
+import { exitSprayWizard } from './exit-spray-wizard';
 import { canPhotographWall } from '../../lib/spray/camera-capability';
 import {
   pickWallPhotoFromCamera,
@@ -240,7 +242,7 @@ export function SprayWallWizardScreen({
   // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
   // cover however its window is later resized.
   const formColumnCapped = sprayFlowCoversScreen();
-  const insets = useSafeAreaInsets();
+  const bottomInset = useWindowBottomInset();
 
   const builder = useSprayWallBuilder();
   const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
@@ -1153,6 +1155,118 @@ export function SprayWallWizardScreen({
   const revealRings = state.detection.outcome === 'done' && state.detection.candidates.length > 0;
 
   // ============================================
+  // The header: a way back or out, and the step's forward action
+  // ============================================
+
+  // The X the layout draws, with the same leave guard behind it: it goes back
+  // through the history, which `useSprayWizardLeaveGuard` intercepts.
+  const exitFlow = useCallback(() => exitSprayWizard(router, returnTo), [router, returnTo]);
+
+  // Two steps draw their own header actions. The crop detour owns its edit, so
+  // it sets Cancel and Done itself; the editor and the look step set their own
+  // trailing confirm. The wizard leaves those slots alone.
+  const childOwnsHeader = state.step === 'adjust' && state.photo != null;
+  const childOwnsTrailing = (state.step === 'review' || state.step === 'look') && state.draft != null;
+
+  // A back chevron where Back steps back inside the flow, an X where it would
+  // leave (the first step, a reset's photo step, and everything from the draft
+  // on). Passed on every step: the header keeps whatever was set last.
+  const backStaysInFlow =
+    (state.step === 'photo' || state.step === 'anchors' || state.step === 'upload') &&
+    !backLeavesFlow(state) &&
+    !(resetOfWallUuid != null && state.step === 'photo');
+  // While a request runs, Back does nothing (`goBack` refuses), so the chevron
+  // says so. With the chevron leading there is no X: a German "Überspringen"
+  // beside it would not fit at 375 pt. Leaving from those steps is a swipe down
+  // through the same leave guard, or back to step 1's X.
+  const busy = isBusy(state);
+  const headerLeading: HeaderLeadingAction | null = childOwnsHeader
+    ? null
+    : backStaysInFlow
+      ? { kind: 'back', onPress: goBack, disabled: busy, accessibilityLabel: t('sprayWizard.back') }
+      : { kind: 'close', onPress: exitFlow };
+
+  const publishRunning = state.publish.running;
+  let headerTrailing: HeaderTrailingAction | null = null;
+  if (state.step === 'meta') {
+    headerTrailing = {
+      label: t('sprayWizard.meta.next'),
+      onPress: () => dispatch({ type: 'META_DONE' }),
+      disabled: !builder.canCreate,
+      prominent: true,
+    };
+  } else if (state.step === 'photo') {
+    headerTrailing = {
+      label: t('sprayWizard.photo.next'),
+      onPress: () => dispatch({ type: 'PHOTO_CONFIRMED' }),
+      disabled: state.photo == null,
+      prominent: true,
+    };
+  } else if (state.step === 'anchors' && state.photo) {
+    // Skip while the rings are where they started, Next once one has moved. No
+    // corners is a valid answer, so only a refused quad shuts the gate.
+    headerTrailing = {
+      label: state.anchors ? t('sprayWizard.anchors.next') : t('sprayWizard.anchors.skip'),
+      onPress: () => dispatch({ type: 'ANCHORS_DONE' }),
+      disabled: state.anchorRejection != null,
+      prominent: true,
+    };
+  } else if (state.step === 'upload' && state.upload.error) {
+    headerTrailing = { label: t('sprayWizard.upload.retry'), onPress: retryUpload, prominent: true };
+  } else if (state.step === 'publish' && state.publish.error) {
+    headerTrailing = {
+      label: t('sprayWizard.publish.retry'),
+      onPress: () => void publish(),
+      loading: publishRunning,
+      disabled: publishRunning,
+      prominent: true,
+    };
+  } else if (state.step === 'done' && doneExitOffered) {
+    headerTrailing = { label: t('sprayWizard.done.leave'), onPress: leaveFromDone, prominent: true };
+  }
+
+  useHeaderActions({
+    leading: headerLeading,
+    trailing: childOwnsTrailing ? null : headerTrailing,
+  });
+
+  // The hook never clears a slot, so a step with nothing on the right (the
+  // upload running, the publish, the scan) clears the last step's action here.
+  // Not on the steps whose own screen sets the right side.
+  const clearHeaderRight = headerTrailing == null && !childOwnsHeader && !childOwnsTrailing;
+  useLayoutEffect(() => {
+    if (clearHeaderRight) navigation.setOptions({ headerRight: undefined });
+  }, [clearHeaderRight, navigation, state.step]);
+
+  // The title only on the first step (and while the resume check runs). Past
+  // it the body's "STEP N OF M" says where the climber is, and the bar's room
+  // goes to the actions.
+  const showsTitle = state.step === 'resuming' || state.step === countedSteps[0];
+  const screenTitle = resetOfWallUuid != null ? t('sprayWizard.reset.screenTitle') : t('sprayWizard.screenTitle');
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: showsTitle ? screenTitle : '' });
+  }, [navigation, showsTitle, screenTitle]);
+
+  // Android Back steps back inside the flow where the chevron would; anywhere
+  // else it falls through to the stack, which the leave guard intercepts. Only
+  // while this screen is focused, so a screen above it keeps its own Back.
+  const hardwareBackRef = useRef<() => boolean>(() => false);
+  // On the crop detour it is the header's Cancel (the same `goBack` the crop
+  // step's Cancel calls), never a way out of the flow. A tap while busy is
+  // swallowed: `goBack` refuses, and the stack must not pop either.
+  hardwareBackRef.current = () => {
+    if (!backStaysInFlow && state.step !== 'adjust') return false;
+    goBack();
+    return true;
+  };
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => hardwareBackRef.current());
+      return () => subscription.remove();
+    }, []),
+  );
+
+  // ============================================
   // Render
   // ============================================
 
@@ -1237,34 +1351,24 @@ export function SprayWallWizardScreen({
   }
 
   // Its own screenful rather than a section of the scrolling page below: the
-  // photo is fitted to the space between the header and the footer, so all four
-  // rings are on screen and a vertical drag is never also a scroll (#5958).
+  // photo is fitted to the space under the header, so all four rings are on
+  // screen and a vertical drag is never also a scroll (#5958). Back, Skip and
+  // Next are in the header; "Start the corners again" sits with the photo.
   if (state.step === 'anchors' && state.photo) {
     return (
-      <View style={styles.flex}>
-        <SprayCornerStep
-          stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: countedSteps.length })}
-          title={t('sprayWizard.anchors.title')}
-          body={t('sprayWizard.anchors.body')}
-          photo={state.photo}
-          value={state.anchors}
-          onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
-          invalid={state.anchorRejection != null}
-          // A new wall's frame IS its first photo (version 1 defines it).
-          qualityFrame={state.photo}
-        />
-        <SprayCornerFooter
-          primaryTitle={state.anchors ? t('sprayWizard.anchors.use') : t('sprayWizard.anchors.skip')}
-          onPrimary={() => dispatch({ type: 'ANCHORS_DONE' })}
-          // No corners is a valid answer (that is Skip), so only a refused
-          // quad shuts the gate.
-          primaryDisabled={state.anchorRejection != null}
-          canClear={state.anchors != null}
-          onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
-          onBack={goBack}
-          backDisabled={isBusy(state)}
-        />
-      </View>
+      <SprayCornerStep
+        stepCounter={t('sprayWizard.stepCounter', { current: stepIndex + 1, total: countedSteps.length })}
+        title={t('sprayWizard.anchors.title')}
+        body={t('sprayWizard.anchors.body')}
+        photo={state.photo}
+        value={state.anchors}
+        onChange={(quad) => dispatch({ type: 'ANCHORS_SET', anchors: quad })}
+        invalid={state.anchorRejection != null}
+        // A new wall's frame IS its first photo (version 1 defines it).
+        qualityFrame={state.photo}
+        canClear={state.anchors != null && !isBusy(state)}
+        onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
+      />
     );
   }
 
@@ -1272,7 +1376,13 @@ export function SprayWallWizardScreen({
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={formColumnCapped ? [styles.content, styles.tabletContent] : styles.content}
+        // Nothing pinned under the page, so it pads only past the home
+        // indicator. iOS adds that inset itself under `automatic`.
+        contentContainerStyle={[
+          styles.content,
+          formColumnCapped ? styles.tabletContent : null,
+          { paddingBottom: spacing[4] + (Platform.OS === 'ios' ? 0 : bottomInset) },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
@@ -1495,57 +1605,6 @@ export function SprayWallWizardScreen({
           onDismiss={() => setGymPickerOpen(false)}
         />
       ) : null}
-
-      <View
-        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
-      >
-        {/* Nothing here while the resume check runs: the body already shows the
-            spinner and its label, and a second copy in the footer read as two
-            things happening rather than one. */}
-
-        {state.step === 'meta' ? (
-          <Button
-            title={t('sprayWizard.meta.next')}
-            variant="filled"
-            size="large"
-            onPress={() => dispatch({ type: 'META_DONE' })}
-            disabled={!builder.canCreate}
-          />
-        ) : null}
-
-        {state.step === 'photo' ? (
-          <Button
-            title={t('sprayWizard.photo.next')}
-            variant="filled"
-            size="large"
-            onPress={() => dispatch({ type: 'PHOTO_CONFIRMED' })}
-            disabled={state.photo == null}
-          />
-        ) : null}
-
-        {state.step === 'upload' && state.upload.error ? (
-          <Button title={t('sprayWizard.upload.retry')} variant="filled" size="large" onPress={retryUpload} />
-        ) : null}
-
-        {state.step === 'publish' && state.publish.error ? (
-          <Button
-            title={t('sprayWizard.publish.retry')}
-            variant="filled"
-            size="large"
-            onPress={() => void publish()}
-            loading={state.publish.running}
-            disabled={state.publish.running}
-          />
-        ) : null}
-
-        {state.step === 'done' && doneExitOffered ? (
-          <Button title={t('sprayWizard.done.leave')} variant="filled" size="large" onPress={leaveFromDone} />
-        ) : null}
-
-        {state.step !== 'done' && state.step !== 'resuming' ? (
-          <Button title={t('sprayWizard.back')} variant="text" onPress={goBack} disabled={isBusy(state)} />
-        ) : null}
-      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -1660,12 +1719,5 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     paddingVertical: spacing[8],
     alignItems: 'center',
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing[1],
   },
 });

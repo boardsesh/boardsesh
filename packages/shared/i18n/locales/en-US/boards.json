@@ -1004,7 +1004,6 @@
       "rotateLabel": "Rotate a quarter turn clockwise",
       "done": "Done",
       "reset": "Reset",
-      "cancel": "Cancel",
       "handleTopLeft": "Top left corner of the crop",
       "handleTop": "Top edge of the crop",
       "handleTopRight": "Top right corner of the crop",
@@ -1024,8 +1023,8 @@
       "cornerTopRight": "Top right corner",
       "cornerBottomRight": "Bottom right corner",
       "cornerBottomLeft": "Bottom left corner",
-      "use": "Use these corners",
-      "skip": "Skip for now",
+      "next": "Next",
+      "skip": "Skip",
       "clear": "Start the corners again",
       "quality": {
         "good": "Nice and square. The wall will flatten cleanly.",

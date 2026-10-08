@@ -2,8 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { Button } from '../Button';
-import { GlassSurface } from '../GlassSurface';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { BoardCarousel } from '../board-discovery/BoardCarousel';
@@ -15,12 +14,9 @@ import { useBoardOfflineState } from '../board-discovery/use-board-offline-state
 import { useOnboardingBoardCopy } from '../../lib/onboarding/use-onboarding-copy';
 import { useBlockBack } from './use-block-back';
 import { useTheme } from '../../providers/theme-provider';
-import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 
 export type OnboardingBoardStepProps = {
-  /** Primary CTA accent (HIG: systemColors.accent; Material: colors.primary). */
-  accentColor: string;
   /** Body/subtext colour. */
   bodyColor: string;
   /** Opaque background under the reading text. */
@@ -67,7 +63,6 @@ export type OnboardingBoardStepProps = {
  * be there.
  */
 export function OnboardingBoardStep({
-  accentColor,
   bodyColor,
   backgroundColor,
   boards,
@@ -81,7 +76,7 @@ export function OnboardingBoardStep({
 }: OnboardingBoardStepProps) {
   const copy = useOnboardingBoardCopy();
   const insets = useSafeAreaInsets();
-  const { variant, systemColors } = useTheme();
+  const { systemColors } = useTheme();
 
   useBlockBack();
 
@@ -121,12 +116,25 @@ export function OnboardingBoardStep({
 
   const downloadLabelFor = useCallback((item: DiscoveryBoardItem) => copy.downloadLabelFor(item.title), [copy]);
 
-  const footerPadding = useMemo(() => Math.max(insets.bottom, spacing[4]), [insets.bottom]);
   const hasBoards = items.length > 0;
 
+  // The route hides the native header (a transparentModal), so the step draws
+  // its own top bar. With boards on screen, tapping a card is the answer and the
+  // picker is the alternative, so the trailing action is plain; with none,
+  // including a list that failed to load, the picker is the only way forward and
+  // is the prominent confirm. Never a dead end. The offline hatch is a decline,
+  // so it takes the leading slot, where iOS puts "Not Now".
   return (
     <View style={[styles.root, { backgroundColor, paddingTop: insets.top }]} accessibilityViewIsModal>
-      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+      <SheetTopBar
+        title=""
+        leading={onSkipUnusable ? { kind: 'cancel', label: copy.offlineSkip, onPress: onSkipUnusable } : undefined}
+        trailing={{ label: hasBoards ? copy.findAnother : copy.findFirst, onPress: onFindBoard, prominent: !hasBoards }}
+      />
+      <ScrollView
+        contentContainerStyle={[styles.body, { paddingBottom: Math.max(insets.bottom, spacing[5]) }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.copy}>
           <Text variant="title1">{copy.title}</Text>
           <Text variant="body" color={bodyColor} style={styles.description}>
@@ -158,26 +166,6 @@ export function OnboardingBoardStep({
           </>
         ) : null}
       </ScrollView>
-
-      <GlassSurface glassEffectStyle="regular" style={[styles.footer, { paddingBottom: footerPadding }]}>
-        {/* With boards on screen the picker is the alternative, so it takes the
-            quiet slot; with none — including a list that failed to load — it is
-            the only way forward and takes the primary. Never a dead end. */}
-        <Button
-          title={hasBoards ? copy.findAnother : copy.findFirst}
-          onPress={onFindBoard}
-          variant={hasBoards ? 'text' : 'filled'}
-          size="large"
-          tintColor={
-            hasBoards ? undefined : selectByVariant(variant, { material: undefined, liquidGlass: accentColor })
-          }
-          haptic={false}
-          style={hasBoards ? undefined : styles.primary}
-        />
-        {onSkipUnusable ? (
-          <Button title={copy.offlineSkip} onPress={onSkipUnusable} variant="text" size="large" haptic={false} />
-        ) : null}
-      </GlassSurface>
     </View>
   );
 }
@@ -202,13 +190,5 @@ const styles = StyleSheet.create({
   spinner: {
     paddingVertical: spacing[8],
     alignItems: 'center',
-  },
-  footer: {
-    paddingTop: spacing[3],
-    paddingHorizontal: spacing[5],
-    gap: spacing[2],
-  },
-  primary: {
-    alignSelf: 'stretch',
   },
 });

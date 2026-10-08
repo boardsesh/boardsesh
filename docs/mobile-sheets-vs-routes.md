@@ -361,18 +361,25 @@ the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet 
   throw away an edit: forms and reports. Use `back` for step two onward of a multi-step sheet.
 - **How the confirm looks.** In a sheet, `prominent` is a filled brand capsule on Liquid Glass. On
   Material it is brand-coloured semibold text with no fill, like the confirm in an M3 full-screen
-  dialog. In a native header it is the label colour in semibold on both, the look the spray
-  editor's header already uses. Native prominent bar items (`unstable_headerRightItems`) were
+  dialog. In a native header it is the app's brand tint in semibold on both, the iOS bar-button
+  convention for Done; a plain action keeps the label colour, and a disabled one is tertiary
+  label. A leading action takes `disabled` too, with the same dimmed look. Native prominent bar items (`unstable_headerRightItems`) were
   passed over: the API is unstable and iOS-only, and it has no loading state.
 - **Pushed or modal screens.** Call `useHeaderActions({ leading, trailing })`
   (`src/hooks/use-header-actions.ts`). It takes the same shape and sets the native stack's
   `headerLeft` / `headerRight`. On iOS 26 those render as Liquid Glass bar items, and on Material
-  as top app bar actions. The hook only writes the slots you pass and never clears one, so leave
+  as top app bar actions. The hook only writes the slots you pass and never clears one (a form
+  that can be swapped for a not-found state while the route stays passes `clearOnUnmount`), so leave
   out `leading` (or pass `null`) to keep what the layout sets, such as the spray flow's
   leave-guarded X. Don't pass `leading: back` on a pushed stack screen: the native back chevron
   keeps its long-press history menu, and ours would not.
 - **Multi-step flows** (the spray wizard). Step 1 shows an X as leading. From step 2 on, show a
-  back chevron. Trailing is the step's forward action: "Next", "Skip" while untouched, "Done".
+  back chevron instead (disabled while a request runs), and blank the title: the body's step
+  counter says where you are, and a German forward label plus the X would not fit at 375 pt.
+  Leaving from there is a swipe down through the leave guard, or back to step 1's X; Android Back
+  steps back like the chevron. Trailing is the step's forward action: "Next", "Skip" while untouched, "Done". Pass a
+  leading action on every step: the hook never clears, so a step that leaves it out keeps the
+  last step's chevron.
 - **Secondary content actions** ("Reset", "Start the corners again", "Take a photo") sit inline
   next to the content they act on, the way Photos puts Reset over the crop. Never stack them under
   a primary button.

@@ -28,7 +28,6 @@ import {
   useWindowDimensions,
   type LayoutChangeEvent,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
@@ -41,6 +40,8 @@ import { RailIndexDots } from '../board-look/RailIndexDots';
 import { captionLineHeights } from '../board-look/board-look-card-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
+import { useHeaderActions } from '../../hooks/use-header-actions';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { hapticSelection } from '../../lib/haptics';
@@ -129,7 +130,7 @@ export function SprayWallLookStep({
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, textStyles } = useTheme();
-  const insets = useSafeAreaInsets();
+  const bottomInset = useWindowBottomInset();
   const headerInset = useTransparentHeaderInset();
   const { width: windowWidth, fontScale } = useWindowDimensions();
 
@@ -294,8 +295,20 @@ export function SprayWallLookStep({
 
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
 
+  // "Use <look>" is the step's forward action, so it is the header's confirm.
+  // The X stays leading: from here on, leaving keeps the draft.
+  useHeaderActions({
+    trailing: {
+      label: tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel }),
+      onPress: () => void handleContinue(),
+      loading: saving,
+      disabled: saving,
+      prominent: true,
+    },
+  });
+
   return (
-    <View style={[styles.root, { marginTop: headerInset }]}>
+    <View style={[styles.root, { marginTop: headerInset, paddingBottom: bottomInset }]}>
       <View style={styles.header}>
         <Text variant="footnote" color={systemColors.secondaryLabel}>
           {stepCounter}
@@ -308,6 +321,22 @@ export function SprayWallLookStep({
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {notice}
           </Text>
+        ) : null}
+        {/* Under the copy, above the rail: the rail gives up the room, so the
+            slider and picker below it stay where they are. */}
+        {saveError ? (
+          <View style={styles.saveError}>
+            <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+              {saveError}
+            </Text>
+            <Button
+              title={t('sprayWizard.look.publishWithout')}
+              variant="text"
+              size="small"
+              onPress={onConfirmed}
+              disabled={saving}
+            />
+          </View>
         ) : null}
       </View>
 
@@ -391,33 +420,6 @@ export function SprayWallLookStep({
           isDraft
         />
       </View>
-
-      <View
-        style={[styles.footer, { borderTopColor: systemColors.separator, paddingBottom: insets.bottom + spacing[3] }]}
-      >
-        {saveError ? (
-          <Text
-            variant="subheadline"
-            color={iosSystemColors.systemRed}
-            accessibilityLiveRegion="polite"
-            style={styles.centered}
-          >
-            {saveError}
-          </Text>
-        ) : null}
-        <Button
-          title={tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel })}
-          variant="filled"
-          size="large"
-          haptic={false}
-          onPress={() => void handleContinue()}
-          loading={saving}
-          disabled={saving}
-        />
-        {saveError ? (
-          <Button title={t('sprayWizard.look.publishWithout')} variant="text" onPress={onConfirmed} disabled={saving} />
-        ) : null}
-      </View>
     </View>
   );
 }
@@ -464,10 +466,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[3],
   },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: spacing[2],
+  saveError: {
+    alignItems: 'flex-start',
+    gap: spacing[1],
   },
 });

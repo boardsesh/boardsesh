@@ -10,7 +10,8 @@
 //    this screen mounted. A cached empty list served while a refetch runs would
 //    otherwise latch the prompt away and let the flow create a second wall;
 //  - every way out hands `confirmLeave` to the native guard, so the swipe, the
-//    header back and Android Back ask the same question as the footer.
+//    header X and Android Back all ask the same question;
+//  - the header shows the step's way back or out and its forward action.
 //
 // The guard hook is stubbed to capture `confirmLeave`; its own contract is
 // pinned by use-spray-wizard-leave-guard.test.tsx.
@@ -38,17 +39,50 @@ const editorProps = vi.hoisted(() => ({
 const confirmDiscardMock = vi.hoisted(() => vi.fn());
 const resetWallMock = vi.hoisted(() => vi.fn());
 const discardDraftMock = vi.hoisted(() => vi.fn(async () => true));
-const routerMock = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), dismissTo: vi.fn() }));
+const routerMock = vi.hoisted(() => ({
+  back: vi.fn(),
+  replace: vi.fn(),
+  dismissTo: vi.fn(),
+  canGoBack: vi.fn(() => true),
+}));
+/** What the screen last put in its header, through `useHeaderActions`. */
+type HeaderLeading = { kind: string; onPress: () => void; disabled?: boolean } | null | undefined;
+type HeaderTrailing =
+  | { label: string; onPress: () => void; disabled?: boolean; loading?: boolean; prominent?: boolean }
+  | null
+  | undefined;
+const header = vi.hoisted(() => ({
+  leading: null as HeaderLeading,
+  trailing: null as HeaderTrailing,
+  accessory: null as unknown,
+}));
+const setOptionsMock = vi.hoisted(() => vi.fn());
 /** The fail-soft lifecycle list: which walls are a reset's clone. */
 const lifecycleQuery = vi.hoisted(() => ({
   current: { data: undefined as unknown, isFetching: false },
 }));
 /** The `enabled` flag each list hook was called with, per render. */
 const listEnabled = vi.hoisted(() => ({ walls: [] as unknown[], lifecycle: [] as unknown[] }));
+/** Android Back: the focus effect the screen registers, and the handler it adds. */
+const hardwareBack = vi.hoisted(() => ({
+  focusEffect: null as null | (() => void | (() => void)),
+  handler: null as null | (() => boolean),
+  adjustProps: null as null | { onDone: (edit: unknown) => void },
+}));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { isReduceMotionEnabled: vi.fn(async () => false), addEventListener: () => ({ remove() {} }) },
   Alert: { alert: alertMock },
+  BackHandler: {
+    addEventListener: (_event: string, handler: () => boolean) => {
+      hardwareBack.handler = handler;
+      return {
+        remove: () => {
+          hardwareBack.handler = null;
+        },
+      };
+    },
+  },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
   Pressable: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
@@ -60,8 +94,25 @@ vi.mock('react-native', () => ({
 vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
-  useNavigation: () => ({ getParent: () => undefined }),
+  useNavigation: () => ({ getParent: () => undefined, setOptions: setOptionsMock }),
+  useFocusEffect: (effect: () => void | (() => void)) => {
+    hardwareBack.focusEffect = effect;
+  },
 }));
+// Records what the screen asks for, the way the real hook writes it: a slot
+// left out keeps its last value, and the right side (confirm plus accessory)
+// is written whole whenever either is passed. A test with the real hook is
+// SprayWallWizardScreen.header.test.tsx.
+vi.mock('../../../hooks/use-header-actions', () => ({
+  useHeaderActions: (actions: { leading?: HeaderLeading; trailing?: HeaderTrailing; trailingAccessory?: unknown }) => {
+    if (actions.leading) header.leading = actions.leading;
+    if (actions.trailing || actions.trailingAccessory != null) {
+      header.trailing = actions.trailing ?? null;
+      header.accessory = actions.trailingAccessory ?? null;
+    }
+  },
+}));
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 const stableQueryClient = vi.hoisted(() => ({}));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => stableQueryClient }));
@@ -165,9 +216,13 @@ vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityFi
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('../../play-drawer/AngleSlider', () => ({ AngleSlider: () => null }));
 vi.mock('../../play-drawer/AngleBoardDiagram', () => ({ AngleBoardDiagram: () => null }));
-vi.mock('../SprayCornerFooter', () => ({ SprayCornerFooter: () => null }));
 vi.mock('../SprayCornerStep', () => ({ SprayCornerStep: () => null }));
-vi.mock('../SprayPhotoAdjustStep', () => ({ SprayPhotoAdjustStep: () => null }));
+vi.mock('../SprayPhotoAdjustStep', () => ({
+  SprayPhotoAdjustStep: (props: { onDone: (edit: unknown) => void }) => {
+    hardwareBack.adjustProps = props;
+    return createElement('div', { 'data-testid': 'crop' });
+  },
+}));
 vi.mock('../SprayDetectionStep', () => ({ SprayDetectionStep: () => null }));
 vi.mock('../SprayWallLookStep', () => ({ SprayWallLookStep: () => null }));
 vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
@@ -241,6 +296,12 @@ beforeEach(() => {
   editorProps.last = null;
   listEnabled.walls = [];
   listEnabled.lifecycle = [];
+  header.leading = null;
+  header.trailing = null;
+  header.accessory = null;
+  hardwareBack.focusEffect = null;
+  hardwareBack.handler = null;
+  hardwareBack.adjustProps = null;
 });
 afterEach(cleanup);
 
@@ -415,9 +476,11 @@ describe('a reset (`resetOf`)', () => {
   it('leaves the flow from the photo step rather than opening the meta form', async () => {
     resetWallMock.mockResolvedValue(CLONE);
     fetchVersionsMock.mockResolvedValue({ ...CLONE, versions: [] });
-    const { getByText, queryByTestId } = await mountReset();
+    const { queryByTestId } = await mountReset();
 
-    act(() => getByText('sprayWizard.back').click());
+    // Nothing behind a reset's photo step, so the header leads with the X.
+    expect(header.leading?.kind).toBe('close');
+    act(() => header.leading?.onPress());
     expect(routerMock.back).toHaveBeenCalledTimes(1);
     expect(queryByTestId('identity')).toBeNull();
   });
@@ -665,5 +728,122 @@ describe('a targeted open (`wallUuid` + `versionId`)', () => {
     // Went straight to the draft, not to the new-wall form.
     expect(queryByTestId('editor')).not.toBeNull();
     expect(queryByTestId('identity')).toBeNull();
+  });
+});
+
+describe('the header', () => {
+  function mountAtMeta() {
+    setWalls({ data: [], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const view = mountWizard();
+    expect(view.queryByTestId('identity')).not.toBeNull();
+    return view;
+  }
+
+  /** The last title the screen gave the header. */
+  function lastTitle(): unknown {
+    const calls = setOptionsMock.mock.calls.filter(([options]) => 'title' in (options as object));
+    return (calls.at(-1)?.[0] as { title?: unknown } | undefined)?.title;
+  }
+
+  it('clears the right side while the resume check runs, as nothing can go forward yet', () => {
+    mountWizard();
+    expect(header.trailing).toBeNull();
+    expect(setOptionsMock).toHaveBeenCalledWith({ headerRight: undefined });
+  });
+
+  it('leads with the X on the first step and puts Next on the right, off until the wall is named', () => {
+    mountAtMeta();
+    expect(header.leading?.kind).toBe('close');
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.meta.next', disabled: true, prominent: true });
+    expect(header.accessory).toBeNull();
+    expect(lastTitle()).toBe('sprayWizard.screenTitle');
+  });
+
+  it('sends the X through the history, where the leave guard is waiting', () => {
+    mountAtMeta();
+    act(() => header.leading?.onPress());
+    expect(routerMock.back).toHaveBeenCalledTimes(1);
+    expect(routerMock.dismissTo).not.toHaveBeenCalled();
+  });
+
+  it('leaves a cold-linked flow for the tab it came from', () => {
+    routerMock.canGoBack.mockReturnValueOnce(false);
+    mountAtMeta();
+    act(() => header.leading?.onPress());
+    expect(routerMock.dismissTo).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
+  });
+
+  it('steps back with a chevron from the photo step, with no X beside Next and no title', () => {
+    const { getByText } = mountAtMeta();
+    act(() => header.trailing?.onPress());
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(header.leading).toMatchObject({ kind: 'back', disabled: false });
+    expect(header.trailing).toMatchObject({ label: 'sprayWizard.photo.next', disabled: true });
+    expect(header.accessory).toBeNull();
+    expect(lastTitle()).toBe('');
+
+    act(() => header.leading?.onPress());
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(header.leading?.kind).toBe('close');
+    expect(header.trailing?.label).toBe('sprayWizard.meta.next');
+    expect(lastTitle()).toBe('sprayWizard.screenTitle');
+  });
+
+  it('Android Back: falls through on step 1, steps back on a chevron step, cancels the crop, holds while busy', async () => {
+    const wallPhoto = await import('../../../lib/spray/wall-photo');
+    vi.mocked(wallPhoto.pickWallPhotoFromLibrary).mockResolvedValue({
+      outcome: 'picked',
+      photo: {
+        uri: 'file:///wall.jpg',
+        width: 4032,
+        height: 3024,
+        base: { uri: 'file:///wall.jpg', width: 4032, height: 3024 },
+        original: { uri: 'file:///wall.heic', longSide: 4032 },
+        edit: null,
+      },
+    } as unknown as Awaited<ReturnType<typeof wallPhoto.pickWallPhotoFromLibrary>>);
+    // A crop render that never finishes: the flow stays busy on the crop step.
+    vi.mocked(wallPhoto.renderWallPhotoEdit).mockReturnValue(new Promise(() => {}));
+
+    const { getByText, queryByText, queryByTestId } = mountAtMeta();
+    const unsubscribe = hardwareBack.focusEffect?.();
+    const pressBack = () => {
+      let handled: boolean | undefined;
+      act(() => {
+        handled = hardwareBack.handler?.();
+      });
+      return handled;
+    };
+
+    // Step 1: falls through to the stack, which the leave guard intercepts.
+    expect(pressBack()).toBe(false);
+
+    // A chevron step: steps back inside the flow, never popping the route.
+    act(() => header.trailing?.onPress());
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(pressBack()).toBe(true);
+    expect(queryByTestId('identity')).not.toBeNull();
+    expect(routerMock.back).not.toHaveBeenCalled();
+
+    // The crop step: Back is its Cancel.
+    act(() => header.trailing?.onPress());
+    await act(async () => getByText('sprayWizard.photo.library').click());
+    act(() => getByText('sprayWizard.photo.adjust').click());
+    expect(queryByTestId('crop')).not.toBeNull();
+    expect(pressBack()).toBe(true);
+    expect(queryByTestId('crop')).toBeNull();
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+
+    // Busy: the crop is rendering. Back is swallowed and nothing moves.
+    act(() => getByText('sprayWizard.photo.adjust').click());
+    act(() => hardwareBack.adjustProps?.onDone({ quarterTurns: 1, crop: { left: 0, top: 0, right: 1, bottom: 1 } }));
+    expect(pressBack()).toBe(true);
+    expect(queryByTestId('crop')).not.toBeNull();
+    expect(queryByText('sprayWizard.photo.title')).toBeNull();
+    expect(routerMock.back).not.toHaveBeenCalled();
+
+    // Unfocused, it stops listening.
+    if (typeof unsubscribe === 'function') unsubscribe();
+    expect(hardwareBack.handler).toBeNull();
   });
 });

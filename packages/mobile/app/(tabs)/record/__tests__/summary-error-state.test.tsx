@@ -22,6 +22,15 @@ const hook = vi.hoisted(() => ({
 }));
 
 const router = vi.hoisted(() => ({ back: vi.fn() }));
+// The latest actions the screen handed its native header.
+const headerActions = vi.hoisted(() => ({
+  current: null as null | { trailing?: { label: string; onPress: () => void } | null },
+}));
+vi.mock('../../../../src/hooks/use-header-actions', () => ({
+  useHeaderActions: (actions: typeof headerActions.current) => {
+    headerActions.current = actions;
+  },
+}));
 const routeParams = vi.hoisted(() => ({
   current: { sessionId: 'session-1' } as { sessionId: string; reviewCandidate?: string },
 }));
@@ -151,6 +160,7 @@ function setSummary(partial: Partial<SummaryResult>) {
 describe('SessionSummaryScreen settled error/empty state', () => {
   beforeEach(() => {
     router.back.mockClear();
+    headerActions.current = null;
     routeParams.current = { sessionId: 'session-1' };
     storeReview.maybeRequestSessionStoreReview.mockReset();
     storeReview.maybeRequestSessionStoreReview.mockResolvedValue(false);
@@ -161,20 +171,20 @@ describe('SessionSummaryScreen settled error/empty state', () => {
     vi.useRealTimers();
   });
 
-  it('shows a spinner while the summary is still loading', () => {
+  it('shows a spinner while the summary is still loading, with Done already in the header', () => {
     setSummary({ isPending: true, isFetching: true });
-    const { queryByText, getByTestId } = render(<SessionSummaryScreen />);
+    const { getByTestId } = render(<SessionSummaryScreen />);
     expect(getByTestId('spinner')).toBeTruthy();
-    expect(queryByText('summary.done')).toBeNull();
+    expect(headerActions.current?.trailing?.label).toBe('summary.done');
   });
 
-  it('shows a Done button (not an endless spinner) when the query errors', () => {
+  it('shows Retry and a header Done (not an endless spinner) when the query errors', () => {
     setSummary({ isError: true });
     const { queryByTestId, getByText } = render(<SessionSummaryScreen />);
     expect(queryByTestId('spinner')).toBeNull();
-    expect(getByText('summary.done')).toBeTruthy();
     expect(getByText('summary.retry')).toBeTruthy();
-    fireEvent.click(getByText('summary.done'));
+    expect(headerActions.current?.trailing?.label).toBe('summary.done');
+    act(() => headerActions.current?.trailing?.onPress());
     expect(router.back).toHaveBeenCalledOnce();
   });
 
@@ -183,7 +193,7 @@ describe('SessionSummaryScreen settled error/empty state', () => {
     const { queryByTestId, getByText } = render(<SessionSummaryScreen />);
     expect(queryByTestId('spinner')).toBeNull();
     expect(getByText('summary.loadErrorTitle')).toBeTruthy();
-    expect(getByText('summary.done')).toBeTruthy();
+    expect(headerActions.current?.trailing?.label).toBe('summary.done');
   });
 
   it('retry triggers refetch', () => {

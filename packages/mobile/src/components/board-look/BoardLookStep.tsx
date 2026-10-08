@@ -2,13 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../Button';
-import { GlassSurface } from '../GlassSurface';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
 import { BoardLookCarousel } from './BoardLookCarousel';
 import { RailIndexDots } from './RailIndexDots';
 import { useTheme } from '../../providers/theme-provider';
-import { selectByVariant } from '../../theme/variants';
 import { useBoardRenderSettings, resolveEffectiveRenderSettings } from '../../lib/board-render-settings';
 import {
   BOARD_LOOK_ONBOARDING_OPTIONS,
@@ -30,8 +28,6 @@ import { spacing } from '../../theme/tokens';
 import { captionBlockHeight, captionLineHeights, resolveHeroThumb } from './board-look-card-metrics';
 
 type BoardLookStepProps = {
-  /** Primary CTA accent (HIG: systemColors.accent; Material: colors.primary). */
-  accentColor: string;
   /** Body/subtext colour. */
   bodyColor: string;
   /** Opaque background under the reading text. */
@@ -54,7 +50,7 @@ type BoardLookStepProps = {
  * actually looks like. That is also why the rail is the hero here rather than a
  * thumbnail strip: the difference between these looks is glow radius and stroke
  * weight over a dozen holds, which is invisible at thumbnail size. The rail gets
- * every point of height the copy and the button do not need, and the cards take
+ * every point of height the copy and the notes do not need, and the cards take
  * the board's own shape so none of it is spent on letterbox bars.
  *
  * **There is no exit** (issue #4961): the "Not now" secondary is gone, because
@@ -76,7 +72,6 @@ type BoardLookStepProps = {
  * the active UI variant and injects it, so one component serves both skins.
  */
 export function BoardLookStep({
-  accentColor,
   bodyColor,
   backgroundColor,
   preview,
@@ -85,7 +80,7 @@ export function BoardLookStep({
   onCustomize,
 }: BoardLookStepProps) {
   const { t } = useTranslation('common');
-  const { systemColors, variant, textStyles } = useTheme();
+  const { systemColors, textStyles } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, fontScale } = useWindowDimensions();
   const { settings } = useBoardRenderSettings();
@@ -250,8 +245,6 @@ export function BoardLookStep({
     onSaved();
   }, [onCustomize, onSaved, report]);
 
-  const footerPadding = useMemo(() => Math.max(insets.bottom, spacing[4]), [insets.bottom]);
-
   // Clamped, not defaulted: `matchingBoardLookOptionId` can name a look this
   // step does not offer (`bold` is settings-only), and a -1 would otherwise index
   // past the end. Falling back to the leading card keeps a real option — and a
@@ -273,7 +266,16 @@ export function BoardLookStep({
       : t('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel });
 
   return (
-    <View style={[styles.root, { backgroundColor, paddingTop: insets.top }]} accessibilityViewIsModal>
+    <View
+      style={[
+        styles.root,
+        { backgroundColor, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, spacing[4]) },
+      ]}
+      accessibilityViewIsModal
+    >
+      {/* The route hides the native header (a transparentModal), so the step
+          draws its own top bar. No leading action: this step has no exit. */}
+      <SheetTopBar title="" trailing={{ label: ctaLabel, onPress: () => void handleSave(), prominent: true }} />
       <View style={styles.header}>
         <Text variant="title1">{t('mobile.settings.boardLook.intro.title')}</Text>
         <Text variant="subheadline" color={bodyColor} style={styles.description}>
@@ -281,11 +283,10 @@ export function BoardLookStep({
         </Text>
       </View>
 
-      {/* The rail takes every point the header and footer do not, and reports
-          back how many it got. No ScrollView: a vertical scroller wrapping a
-          near-full-height horizontal rail steals the swipes meant for the rail,
-          and on a one-time forced choice it could scroll the button away from
-          the thing the button commits to. */}
+      {/* The rail takes every point the copy above and the notes below do not,
+          and reports back how many it got. No ScrollView: a vertical scroller
+          wrapping a near-full-height horizontal rail steals the swipes meant for
+          the rail. */}
       <View style={styles.railSlot} onLayout={handleRailLayout}>
         {railSlotHeight > 0 ? (
           <BoardLookCarousel
@@ -298,7 +299,7 @@ export function BoardLookStep({
             heroThumb={heroThumb}
             windowWidth={windowWidth}
             // Safe here and nowhere else: this only moves local state until the
-            // footer button is pressed. In settings the same callback writes
+            // top bar's save is pressed. In settings the same callback writes
             // through to the physical board's LEDs.
             selectOnSnap={heroThumb != null}
             // Six cards each restating what the picture already shows is copy to
@@ -313,30 +314,18 @@ export function BoardLookStep({
           carry what the composition used to: how many looks there are. */}
       <RailIndexDots count={BOARD_LOOK_ONBOARDING_OPTIONS.length} activeIndex={selectedIndex} />
 
-      <GlassSurface glassEffectStyle="regular" style={[styles.footer, { paddingBottom: footerPadding }]}>
-        {/* Fine print about what the button will and will not do, so it sits with
-            the button rather than floating as a third block of copy. The second
-            line is the exit this step does not otherwise have: it is mandatory
-            and has no "Not now", so saying the choice is reversible is what
-            makes committing to one cheap. */}
-        <View style={styles.footnotes}>
-          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-            {t('mobile.settings.boardLook.intro.accessibilityNote')}
-          </Text>
-          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-            {t('mobile.settings.boardLook.intro.changeLaterNote')}
-          </Text>
-        </View>
-        <Button
-          title={ctaLabel}
-          onPress={() => void handleSave()}
-          variant="filled"
-          size="large"
-          tintColor={selectByVariant(variant, { material: undefined, liquidGlass: accentColor })}
-          haptic={false}
-          style={styles.primary}
-        />
-      </GlassSurface>
+      {/* Fine print about what the save will and will not do. The second line
+          is the exit this step does not otherwise have: it is mandatory and has
+          no "Not now", so saying the choice is reversible is what makes
+          committing to one cheap. */}
+      <View style={styles.footnotes}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
+          {t('mobile.settings.boardLook.intro.accessibilityNote')}
+        </Text>
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
+          {t('mobile.settings.boardLook.intro.changeLaterNote')}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -360,19 +349,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: spacing[4],
   },
-  footer: {
+  footnotes: {
     paddingTop: spacing[3],
     paddingHorizontal: spacing[5],
-    gap: spacing[3],
-  },
-  footnotes: {
     gap: spacing[1],
   },
   footnote: {
     textAlign: 'center',
     lineHeight: 16,
-  },
-  primary: {
-    alignSelf: 'stretch',
   },
 });

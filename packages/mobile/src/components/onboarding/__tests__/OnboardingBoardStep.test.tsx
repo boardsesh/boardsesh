@@ -35,15 +35,28 @@ vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ t
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../GlassSurface', () => ({
-  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
+vi.mock('../../SheetTopBar', () => ({
+  // The top bar stub: its leading and trailing actions as clickable buttons.
+  SheetTopBar: ({
+    leading,
+    trailing,
+  }: {
+    leading?: { label?: string; onPress: () => void };
+    trailing?: { label: string; onPress: () => void };
+  }) =>
+    createElement(
+      'div',
+      null,
+      leading
+        ? createElement('button', { 'data-button': leading.label, onClick: leading.onPress }, leading.label)
+        : null,
+      trailing
+        ? createElement('button', { 'data-button': trailing.label, onClick: trailing.onPress }, trailing.label)
+        : null,
+    ),
 }));
 vi.mock('../../board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: {
@@ -97,7 +110,6 @@ const BOARDS = [board('board-1', 'Klimmuur'), board('board-2', 'Sterk')];
 
 function renderStep(overrides: Partial<OnboardingBoardStepProps> = {}) {
   const props: OnboardingBoardStepProps = {
-    accentColor: '#6D28D9',
     bodyColor: '#888888',
     backgroundColor: '#ffffff',
     boards: BOARDS,
@@ -215,7 +227,8 @@ describe('OnboardingBoardStep', () => {
       const onSkipUnusable = vi.fn();
       const { container, getByText } = renderStep({ boards: [], onSkipUnusable });
 
-      expect(buttonTitles(container)).toEqual(['Find my board', 'Skip for now']);
+      // Leading decline, then the trailing picker.
+      expect(buttonTitles(container)).toEqual(['Skip for now', 'Find my board']);
       fireEvent.click(getByText('Skip for now'));
       expect(onSkipUnusable).toHaveBeenCalled();
     });

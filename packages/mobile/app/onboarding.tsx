@@ -50,16 +50,14 @@ function OnboardingScreen() {
 
   // Material reads MD3 roles from the Paper theme; HIG / Liquid Glass reads the
   // iOS-style system colours. Background stays opaque under the reading text in
-  // both (no glass behind the copy — only the floating footer is glass).
-  const { accentColor, iconColor, bodyColor, backgroundColor } = useVariantValue({
+  // both: no glass behind the copy.
+  const { iconColor, bodyColor, backgroundColor } = useVariantValue({
     material: {
-      accentColor: paperTheme.colors.primary,
       iconColor: paperTheme.colors.primary,
       bodyColor: paperTheme.colors.onSurfaceVariant,
       backgroundColor: paperTheme.colors.background,
     },
     liquidGlass: {
-      accentColor: systemColors.accent as string,
       iconColor: systemColors.accent as string,
       bodyColor: systemColors.secondaryLabel as string,
       backgroundColor: systemColors.background as string,
@@ -79,24 +77,14 @@ function OnboardingScreen() {
   // and let the live Climbs tabs show through whatever it leaves unpainted.
   let stepContent: ReactNode;
   if (step === 'board-look') {
-    stepContent = <BoardLookRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
+    stepContent = <BoardLookRoute bodyColor={bodyColor} backgroundColor={backgroundColor} />;
   } else if (step === 'link') {
-    stepContent = (
-      <OnboardingLinkRoute
-        accentColor={accentColor}
-        iconColor={iconColor}
-        bodyColor={bodyColor}
-        backgroundColor={backgroundColor}
-      />
-    );
+    stepContent = <OnboardingLinkRoute iconColor={iconColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />;
   } else if (step === 'board') {
-    stepContent = (
-      <OnboardingBoardRoute accentColor={accentColor} bodyColor={bodyColor} backgroundColor={backgroundColor} />
-    );
+    stepContent = <OnboardingBoardRoute bodyColor={bodyColor} backgroundColor={backgroundColor} />;
   } else {
     stepContent = (
       <OnboardingPrompt
-        accentColor={accentColor}
         iconColor={iconColor}
         bodyColor={bodyColor}
         backgroundColor={backgroundColor}
@@ -111,7 +99,7 @@ function OnboardingScreen() {
 /**
  * The opaque page under every step. The route is a `transparentModal`, so the
  * live tabs screen sits right behind it; a step that leaves any part of the
- * screen unpainted (a glass footer, a frame before its data lands) would
+ * screen unpainted (a frame before its data lands) would
  * otherwise show the Climbs list through it. Same job as the player's backstop
  * in app/play.tsx.
  */
@@ -126,15 +114,7 @@ function OnboardingBacking({ backgroundColor, children }: { backgroundColor: str
  * renderer capability probe) are only mounted when this step is the one being
  * shown — the first-run framing screen must not pay for them.
  */
-function BoardLookRoute({
-  accentColor,
-  bodyColor,
-  backgroundColor,
-}: {
-  accentColor: string;
-  bodyColor: string;
-  backgroundColor: string;
-}) {
+function BoardLookRoute({ bodyColor, backgroundColor }: { bodyColor: string; backgroundColor: string }) {
   const { status, preview } = useBoardPreviewClimb();
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
 
@@ -171,7 +151,6 @@ function BoardLookRoute({
 
   return (
     <BoardLookStep
-      accentColor={accentColor}
       bodyColor={bodyColor}
       backgroundColor={backgroundColor}
       preview={preview}

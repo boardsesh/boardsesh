@@ -21,16 +21,29 @@ const params = vi.hoisted(() => ({
   },
 }));
 const emitMock = vi.hoisted(() => vi.fn());
-// Captures navigation.setOptions calls so tests can assert the headerRight
-// "Clear all" shows only while setters are selected; goBack is the footer's pop.
+// goBack is the header Apply's pop.
 const navMock = vi.hoisted(() => ({
-  setOptions: vi.fn(),
   goBack: vi.fn(),
   push: vi.fn(),
   addListener: vi.fn((_event: string, handler: () => void) => {
     focus.cleanup = handler;
     return () => {};
   }),
+}));
+// The latest actions the screen handed its native header.
+const headerActions = vi.hoisted(() => ({
+  current: null as null | {
+    trailing?: { label: string; onPress: () => void } | null;
+    trailingAccessory?: unknown;
+  },
+}));
+vi.mock('../../../../src/hooks/use-header-actions', () => ({
+  useHeaderActions: (actions: typeof headerActions.current) => {
+    headerActions.current = actions;
+  },
+}));
+vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 34 }),
 }));
 const followMock = vi.hoisted(() => vi.fn());
 const authorQuery = vi.hoisted(() => ({ failed: false, refetch: vi.fn() }));
@@ -55,7 +68,7 @@ const setterStats = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 // The count query: returns a count only while enabled, like the real hook, and
-// records the input so tests can assert what the footer counts.
+// records the input so tests can assert what the header action counts.
 const countQuery = vi.hoisted(() => {
   const state = { count: 42 as number | undefined, isPlaceholderData: false };
   return {
@@ -75,7 +88,6 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => params.value,
-  // The screen drives the native header (title + headerRight) through setOptions.
   useNavigation: () => navMock,
   useRouter: () => navMock,
   // Run the effect immediately and stash its cleanup so the test can fire it.
@@ -83,10 +95,6 @@ vi.mock('expo-router', () => ({
     const cleanup = effect();
     focus.cleanup = typeof cleanup === 'function' ? cleanup : null;
   },
-}));
-
-vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
 }));
 
 vi.mock('@shopify/flash-list', () => ({
@@ -148,8 +156,6 @@ vi.mock('../../../../src/theme/tokens', () => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Platform: { OS: 'ios' },
   Pressable: ({
     children,
     onPress,
@@ -245,7 +251,7 @@ beforeEach(() => {
   followMock.mockReset();
   followMock.mockResolvedValue(undefined);
   emitMock.mockClear();
-  navMock.setOptions.mockClear();
+  headerActions.current = null;
   navMock.goBack.mockClear();
   countQuery.hook.mockClear();
   countQuery.state.count = 42;
@@ -257,10 +263,15 @@ beforeEach(() => {
   params.value.countInput = JSON.stringify(sheetCountInput);
 });
 
-// The headerRight the screen last handed the native header via setOptions.
-function lastHeaderRight(): unknown {
-  const lastOptions = navMock.setOptions.mock.calls.at(-1)?.[0] as { headerRight?: unknown } | undefined;
-  return lastOptions?.headerRight;
+// The header's trailing Apply, as the screen last set it.
+function headerApply(): { label: string; onPress: () => void } {
+  const trailing = headerActions.current?.trailing;
+  if (!trailing) throw new Error('The screen set no trailing header action');
+  return trailing;
+}
+
+function pressHeaderApply() {
+  act(() => headerApply().onPress());
 }
 
 function lastCountCall() {
@@ -306,15 +317,18 @@ describe('SettersFilterScreen', () => {
     expect(getByText('authors.viaUserFollow')).not.toBeNull();
     expect(getByText('authors.followingHint')).not.toBeNull();
   });
-  it('shows the headerRight Clear all only while setters are selected', () => {
-    const { getByLabelText } = render(<SettersFilterScreen />);
+  it('shows Clear all in the selection bar, not the header, only while setters are selected', () => {
+    const { getByLabelText, getByText, queryByText } = render(<SettersFilterScreen />);
 
-    // Nothing selected yet → no headerRight.
-    expect(lastHeaderRight()).toBeUndefined();
+    // Nothing selected yet → no Clear all anywhere; the header holds Apply alone.
+    expect(queryByText('mobile.filter.clearAll')).toBeNull();
+    expect(headerActions.current?.trailingAccessory).toBeUndefined();
 
-    // Select a setter → the Clear all headerRight appears.
+    // Select a setter → Clear all appears under the search, and clears.
     fireEvent.click(getByLabelText('alice'));
-    expect(lastHeaderRight()).toBeTypeOf('function');
+    expect(headerActions.current?.trailingAccessory).toBeUndefined();
+    fireEvent.click(getByText('mobile.filter.clearAll'));
+    expect(queryByText('mobile.filter.clearAll')).toBeNull();
   });
 
   it('hands the selected setters back without apply when the screen is removed', () => {
@@ -424,20 +438,19 @@ describe('SettersFilterScreen', () => {
     expect(emitMock).toHaveBeenCalledWith([]);
   });
 
-  describe('Show N climbs footer', () => {
-    it('labels the footer with the live count', () => {
-      const { getByText } = render(<SettersFilterScreen />);
+  describe('Show N climbs header action', () => {
+    it('labels the header action with the live count', () => {
+      render(<SettersFilterScreen />);
 
-      expect(getByText('mobile.filter.showCount:42')).not.toBeNull();
+      expect(headerApply().label).toBe('mobile.filter.showCount:42');
       expect(lastCountCall().enabled).toBe(true);
     });
 
     it('shows the plain Apply label while the held count still belongs to the previous picks', () => {
       countQuery.state.isPlaceholderData = true;
-      const { getByText, queryByText } = render(<SettersFilterScreen />);
+      render(<SettersFilterScreen />);
 
-      expect(getByText('mobile.filter.apply')).not.toBeNull();
-      expect(queryByText('mobile.filter.showCount:42')).toBeNull();
+      expect(headerApply().label).toBe('mobile.filter.apply');
     });
 
     it.each([
@@ -447,10 +460,9 @@ describe('SettersFilterScreen', () => {
       ['an array', JSON.stringify([sheetCountInput])],
     ])('falls back to the plain Apply label when the count input is %s', (_label, countInput) => {
       params.value.countInput = countInput;
-      const { getByText, queryByText } = render(<SettersFilterScreen />);
+      render(<SettersFilterScreen />);
 
-      expect(getByText('mobile.filter.apply')).not.toBeNull();
-      expect(queryByText('mobile.filter.showCount:42')).toBeNull();
+      expect(headerApply().label).toBe('mobile.filter.apply');
       expect(lastCountCall().enabled).toBe(false);
     });
 
@@ -469,10 +481,10 @@ describe('SettersFilterScreen', () => {
     });
 
     it('applies with the picks and pops the route', () => {
-      const { getByLabelText, getByText } = render(<SettersFilterScreen />);
+      const { getByLabelText } = render(<SettersFilterScreen />);
 
       fireEvent.click(getByLabelText('alice'));
-      fireEvent.click(getByText('mobile.filter.showCount:42'));
+      pressHeaderApply();
 
       expect(emitMock).toHaveBeenCalledTimes(1);
       expect(emitMock).toHaveBeenCalledWith(['alice'], { apply: true });
@@ -480,11 +492,11 @@ describe('SettersFilterScreen', () => {
     });
 
     it('does not hand the selection back again when the pop blurs the screen, or on a second tap', () => {
-      const { getByLabelText, getByText } = render(<SettersFilterScreen />);
+      const { getByLabelText } = render(<SettersFilterScreen />);
 
       fireEvent.click(getByLabelText('alice'));
-      fireEvent.click(getByText('mobile.filter.showCount:42'));
-      fireEvent.click(getByText('mobile.filter.showCount:42'));
+      pressHeaderApply();
+      pressHeaderApply();
       focus.cleanup?.();
 
       expect(emitMock).toHaveBeenCalledTimes(1);
@@ -508,7 +520,7 @@ describe('SettersFilterScreen', () => {
       render(<SettersFilterScreen />);
 
       expect(setterStats.inputs.at(-1)?.crossAngleStats).toBe(true);
-      // The footer counts the same opted-in search the sheet would apply.
+      // The header action counts the same opted-in search the sheet would apply.
       expect(lastCountCall().input.crossAngleStats).toBe(true);
     });
 
