@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, useEffect, type ReactNode } from 'react';
+import { Children, createElement, isValidElement, useEffect, type ReactNode } from 'react';
 
 const accessoryMounts = vi.hoisted(() => ({ count: 0 }));
 
@@ -252,11 +252,19 @@ vi.mock('expo-router/unstable-native-tabs', () => {
       tintColor?: unknown;
       badgeBackgroundColor?: string;
       unstable_nativeProps?: { ios?: { bottomAccessoryHidden?: boolean } };
-    }) =>
-      createElement(
+    }) => {
+      // Expo validates every declared screen before hiding any tab items. A
+      // hidden trigger still registers a route and must not duplicate its name.
+      const triggers = Children.toArray(children).filter(
+        (child) => isValidElement<{ name: string; hidden?: boolean }>(child) && child.type === Trigger,
+      );
+      const names = triggers.map((child) => (isValidElement<{ name: string }>(child) ? child.props.name : ''));
+      if (new Set(names).size !== names.length) throw new Error(`Screen names must be unique: ${names.join(',')}`);
+      return createElement(
         'nav',
         {
           'data-tabs': 'true',
+          'data-registered-trigger-names': JSON.stringify(names),
           'data-sidebar-adaptable': String(sidebarAdaptable ?? false),
           'data-minimize-behavior': minimizeBehavior ?? '',
           'data-icon-color': JSON.stringify(iconColor),
@@ -266,7 +274,8 @@ vi.mock('expo-router/unstable-native-tabs', () => {
           'data-bottom-accessory-hidden': String(unstable_nativeProps?.ios?.bottomAccessoryHidden ?? false),
         },
         children,
-      ),
+      );
+    },
     {
       BottomAccessory: ({ children }: { children?: ReactNode }) =>
         createElement('div', { 'data-bottom-accessory': 'true' }, children),
@@ -315,6 +324,30 @@ describe('TabLayout', () => {
 
     expect(triggerNames).toEqual(['home', 'climbs', 'record', 'discover', 'profile']);
   });
+
+  it.each([
+    ['phone', 'compact', false, true],
+    ['phone', 'compact', false, false],
+    ['split iPad', 'compact', true, true],
+    ['split iPad', 'compact', true, false],
+    ['regular iPad', 'regular', true, true],
+    ['regular iPad', 'regular', true, false],
+  ] as const)(
+    'registers unique native names including hidden routes on %s/%s (tablet=%s, glass=%s)',
+    (_device, widthClass, isTablet, glassCapable) => {
+      cfg.widthClass = widthClass;
+      cfg.isTablet = isTablet;
+      cfg.glassCapable = glassCapable;
+      const { container } = render(<TabLayout />);
+      const registered = JSON.parse(
+        container.querySelector('[data-tabs]')!.getAttribute('data-registered-trigger-names')!,
+      ) as string[];
+      expect(registered).toHaveLength(6);
+      expect(new Set(registered).size).toBe(6);
+      expect(registered.filter((name) => name === 'wall')).toHaveLength(1);
+      expect(container.querySelectorAll('[data-trigger="wall"]')).toHaveLength(isTablet ? 1 : 0);
+    },
+  );
 
   it('keeps Climbs in the native search role when it is the initial tab', () => {
     const { container } = render(<TabLayout />);

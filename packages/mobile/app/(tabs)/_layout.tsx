@@ -376,12 +376,12 @@ export default function TabLayout() {
         </NativeTabs.BottomAccessory>
       ) : null}
 
-      {deviceLayout.isPad ? (
-        <NativeTabs.Trigger name="wall">
-          <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.portrait', selected: 'rectangle.portrait.fill' }} />
-          <NativeTabs.Trigger.Label>{t('mobile.nav.wall')}</NativeTabs.Trigger.Label>
-        </NativeTabs.Trigger>
-      ) : null}
+      {/* A hidden trigger still registers its route. Declare Wall exactly once,
+          keeping it first in the iPad sidebar and off the iPhone tab bar. */}
+      <NativeTabs.Trigger name="wall" hidden={!deviceLayout.isPad}>
+        <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.portrait', selected: 'rectangle.portrait.fill' }} />
+        <NativeTabs.Trigger.Label>{t('mobile.nav.wall')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="home">
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.home} md="home" />
@@ -403,11 +403,6 @@ export default function TabLayout() {
           </NativeTabs.Trigger.Badge>
         ) : null}
       </NativeTabs.Trigger>
-
-      {/* /wall is a (tabs) route (the iPad sidebar routes to it), so it must be
-          declared to NativeTabs — but `hidden` keeps it off the iPhone glass bar,
-          where a 6th tab would spill into "More" and clash with the search slot. */}
-      <NativeTabs.Trigger name="wall" hidden />
 
       <NativeTabs.Trigger name="discover">
         <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.discover} md="bookmarks" />
