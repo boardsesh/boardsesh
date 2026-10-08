@@ -8,6 +8,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Choose who sees your climbing: everyone, approved followers, or just you. ([#6254](https://github.com/boardsesh/boardsesh/pull/6254))
+  Control who joins your sessions and sees your home board or location.
+  Review your privacy choices once after upgrading, then change them anytime.
+- Slide through board looks with a live preview. ([#6263](https://github.com/boardsesh/boardsesh/pull/6263))
+  Choose your spray wall’s background and hold lighting in two steps.
 - See when each climb in the wall's history was lit, including climbs displayed via Kilter ([#6260](https://github.com/boardsesh/boardsesh/pull/6260))
 - Read comments and controls at your preferred text size, keep your place while browsing, and undo queue or logbook changes. Create climbs in a focused editor, reach board holds with VoiceOver, and use anchored pickers on iPad. Attempt and Send stay tappable while writing an ascent comment. Keep the familiar climb reaction menu. ([#6253](https://github.com/boardsesh/boardsesh/pull/6253))
 - iPhones on iOS 18 get the standard iOS tab bar ([#6249](https://github.com/boardsesh/boardsesh/pull/6249))
@@ -24,6 +29,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Get cleaner headers, a centered current climb, and one playlist title. ([#6262](https://github.com/boardsesh/boardsesh/pull/6262))
+  Build climbs with a centered name and hold-list controls in the menu.
+  Write tick comments from the collapsed sheet, then tap Done to close the keyboard.
+- Your climbing records stand out sooner on your iPhone profile. ([#6264](https://github.com/boardsesh/boardsesh/pull/6264))
 - Keep your full warm-up even at your board's easiest grades. ([#6255](https://github.com/boardsesh/boardsesh/pull/6255))
 - Cleaner Spanish wording in climb search ([#6259](https://github.com/boardsesh/boardsesh/pull/6259))
 - Buttons are sized like the rest of iOS and Android, with labels that no longer look oversized ([#6247](https://github.com/boardsesh/boardsesh/pull/6247))

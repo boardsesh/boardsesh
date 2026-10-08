@@ -1,6 +1,37 @@
 {
-  "generatedAt": "2026-10-08T19:51:04.607Z",
+  "generatedAt": "2026-10-08T21:48:22.188Z",
   "entries": [
+    {
+      "prNumber": 6262,
+      "category": "fixed",
+      "title": "Get cleaner headers, a centered current climb, and one playlist title.",
+      "mergedAt": "2026-10-08T21:32:57Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6262",
+      "body": "Build climbs with a centered name and hold-list controls in the menu.\nWrite tick comments from the collapsed sheet, then tap Done to close the keyboard."
+    },
+    {
+      "prNumber": 6254,
+      "category": "new",
+      "title": "Choose who sees your climbing: everyone, approved followers, or just you.",
+      "mergedAt": "2026-10-08T21:27:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6254",
+      "body": "Control who joins your sessions and sees your home board or location.\nReview your privacy choices once after upgrading, then change them anytime."
+    },
+    {
+      "prNumber": 6264,
+      "category": "fixed",
+      "title": "Your climbing records stand out sooner on your iPhone profile.",
+      "mergedAt": "2026-10-08T21:20:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6264"
+    },
+    {
+      "prNumber": 6263,
+      "category": "new",
+      "title": "Slide through board looks with a live preview.",
+      "mergedAt": "2026-10-08T21:20:16Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6263",
+      "body": "Choose your spray wall’s background and hold lighting in two steps."
+    },
     {
       "prNumber": 6260,
       "category": "new",
