@@ -1,12 +1,16 @@
 /// <reference types="node" />
 
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildGateJobInputs,
   computeGateVerdict,
   formatDuration,
   gateJobDurationSeconds,
   gateJobState,
+  main,
   smokeDetail,
   type GateJobInput,
 } from '../mobile-e2e-gate-verdict';
@@ -150,5 +154,52 @@ describe('smokeDetail', () => {
   it('adds nothing to a clean pass', () => {
     expect(smokeDetail({ failure_class: '', failure_label: '', native_crash_at_launch_count: '0' })).toBe('');
     expect(smokeDetail({})).toBe('');
+  });
+});
+
+describe('verdict input failures', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it('emits a false verdict instead of dropping outputs for malformed required inputs', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'gate-verdict-'));
+    const outputPath = join(directory, 'outputs');
+    vi.stubEnv('GITHUB_OUTPUT', outputPath);
+    vi.stubEnv('GATE_JOBS', '{"expo-web":"blocking"}');
+    vi.stubEnv('GATE_NEEDS', '{broken');
+    vi.stubEnv('GATE_SHA', SHA);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(main()).toBe(1);
+      expect(readFileSync(outputPath, 'utf8')).toMatch(/passed<<[^\n]+\nfalse\n/);
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
+  });
+
+  it('keeps valid results when optional duration JSON is truncated', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'gate-verdict-'));
+    const jobsPath = join(directory, 'jobs');
+    writeFileSync(jobsPath, '{broken');
+    vi.stubEnv('GATE_JOBS', '{"expo-web":"blocking"}');
+    vi.stubEnv('GATE_NEEDS', '{"expo-web":{"result":"success"}}');
+    vi.stubEnv('GATE_SHA', SHA);
+    vi.stubEnv('GATE_RUN_JOBS_FILE', jobsPath);
+    vi.stubEnv('GITHUB_OUTPUT', '');
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(main()).toBe(0);
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
+  });
+
+  it('escapes pipes and newlines in Markdown table cells', () => {
+    const verdict = computeGateVerdict([job('job|name', 'advisory', 'failure', 'bad | render\nnext line')], SHA);
+    expect(verdict.table).toContain('job\\|name');
+    expect(verdict.table).toContain('bad \\| render<br>next line');
   });
 });

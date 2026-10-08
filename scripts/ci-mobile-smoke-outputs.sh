@@ -8,17 +8,23 @@
 # its shape is SmokeResult in scripts/lib/mobile-smoke.ts.
 set -euo pipefail
 
+write_output() {
+  local output_name="$1" output_content="$2"
+  local delimiter="SMOKE_${RANDOM}_${RANDOM}_$$"
+  while [[ "$output_content" == *"$delimiter"* ]]; do
+    delimiter="SMOKE_${RANDOM}_${RANDOM}_$$"
+  done
+  printf '%s<<%s\n%s\n%s\n' "$output_name" "$delimiter" "$output_content" "$delimiter" >> "$GITHUB_OUTPUT"
+}
+
 result="${SMOKE_RESULT_PATH:-.boardsesh/smoke-result.json}"
 if [ ! -f "$result" ]; then
-  # The job died before the smoke could judge anything (toolchain, APK, cache).
-  echo "failure_label=no smoke result: the job failed before the smoke ran" >> "$GITHUB_OUTPUT"
+  write_output failure_label 'no smoke result: the job failed before the smoke ran'
   echo "::warning::No smoke result at $result."
   exit 0
 fi
 
-{
-  echo "failure_class=$(jq -r '.failureClass // ""' "$result")"
-  echo "failure_label=$(jq -r '.failureLabel // ""' "$result")"
-  echo "native_crash_at_launch_count=$(jq -r '.nativeCrashAtLaunchCount' "$result")"
-} >> "$GITHUB_OUTPUT"
+write_output failure_class "$(jq -r '.failureClass // ""' "$result")"
+write_output failure_label "$(jq -r '.failureLabel // ""' "$result")"
+write_output native_crash_at_launch_count "$(jq -r '.nativeCrashAtLaunchCount' "$result")"
 cat "$result"

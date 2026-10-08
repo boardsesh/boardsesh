@@ -5,6 +5,7 @@ import {
   SMOKE_ROUTES,
   buildSmokeResult,
   classifySmokeFailure,
+  collectSmokeObservations,
   findAndroidNativeCrashes,
   findIosNativeCrashes,
   findSmokePingProblems,
@@ -262,5 +263,42 @@ describe('--flow smoke', () => {
   it('writes its result where the workflow says, defaulting under .boardsesh', () => {
     expect(smokeResultPath({ NODE_ENV: 'test', SMOKE_RESULT_PATH: '/tmp/result.json' })).toBe('/tmp/result.json');
     expect(smokeResultPath({ NODE_ENV: 'test' })).toMatch(/\.boardsesh\/smoke-result\.json$/);
+  });
+});
+
+describe('collectSmokeObservations', () => {
+  it('reads native crashes and render logs after the ping wait', () => {
+    let waitingFinished = false;
+    const crash = { headline: 'SIGSEGV after flow', frames: [], secondsAfterStart: null };
+    const observed = collectSmokeObservations({
+      maestroStatus: 0,
+      readNativeCrashes: () => (waitingFinished ? [crash] : []),
+      readCaptureLog: () => (waitingFinished ? 'late render error' : 'old log'),
+      logStreamAlive: () => true,
+      readPings: () => [],
+      waitForPings: () => {
+        waitingFinished = true;
+        return parseSmokePingLog(ALL_PRESENT);
+      },
+    });
+    expect(observed.nativeCrashes).toEqual([crash]);
+    expect(observed.captureLog).toBe('late render error');
+  });
+
+  it('detects a reader dying during the wait despite complete content pings', () => {
+    let alive = true;
+    const observed = collectSmokeObservations({
+      maestroStatus: 0,
+      readNativeCrashes: () => [],
+      readCaptureLog: () => 'truncated log',
+      logStreamAlive: () => alive,
+      readPings: () => [],
+      waitForPings: () => {
+        alive = false;
+        return parseSmokePingLog(ALL_PRESENT);
+      },
+    });
+    expect(observed.logStreamAlive).toBe(false);
+    expect(findSmokePingProblems(observed.pings, SMOKE_ROUTES)).toEqual({ errors: [], content: [] });
   });
 });

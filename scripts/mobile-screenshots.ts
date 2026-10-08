@@ -110,6 +110,7 @@ import {
   bestSmokeCounts,
   buildSmokeResult,
   classifySmokeFailure,
+  collectSmokeObservations,
   findAndroidNativeCrashes,
   findIosNativeCrashes,
   findSmokePingProblems,
@@ -1636,12 +1637,13 @@ function preserveSmokeEvidence(attemptNumber: number): void {
 
 interface SmokeAttemptInput {
   options: ScreenshotOptions;
-  nativeCrashes: NativeCrash[];
+  readNativeCrashes: () => NativeCrash[];
+  logStreamAlive: () => boolean;
   reachedHome: boolean;
   /** Maestro's exit code; null when the run never got that far. */
   maestroStatus: number | null;
   /** Where the app's own `[screenshot]` lines land: Metro's tee on iOS, logcat on Android. */
-  captureLog: string;
+  readCaptureLog: () => string;
   backendSession: ScreenshotBackendSession | null;
   backendLogBaseline: number;
 }
@@ -1651,8 +1653,12 @@ interface SmokeAttemptInput {
  * code the platform runner hands back.
  */
 function judgeSmokeAttempt(input: SmokeAttemptInput): number {
-  const flowRan = input.maestroStatus === 0 && input.nativeCrashes.length === 0;
-  const pings = flowRan ? waitForSmokePings() : parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH));
+  const { nativeCrashes, captureLog, pings, logStreamAlive } = collectSmokeObservations({
+    ...input,
+    readPings: () => parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH)),
+    waitForPings: waitForSmokePings,
+  });
+  const flowRan = input.maestroStatus === 0;
   const pingProblems = findSmokePingProblems(pings, SMOKE_ROUTES);
 
   let backendProblems: string[] = [];
@@ -1669,18 +1675,20 @@ function judgeSmokeAttempt(input: SmokeAttemptInput): number {
 
   // Only worth reading once the flow got to the end: a run that died earlier
   // never opened the board, and "no render line" would bury the real reason.
-  const captureLogProblems = flowRan
-    ? [
-        ...findScreenshotRenderProblems(input.captureLog, {
-          renderMode: input.options.renderMode,
-          requireRenderLine: true,
-        }),
-        ...(input.backendSession ? findFrozenClockProblems(input.captureLog, input.backendSession.frozenNow) : []),
-      ]
-    : [];
+  const captureLogProblems = !logStreamAlive
+    ? ['the device log stream died: native crashes and render errors cannot be ruled out.']
+    : flowRan
+      ? [
+          ...findScreenshotRenderProblems(captureLog, {
+            renderMode: input.options.renderMode,
+            requireRenderLine: true,
+          }),
+          ...(input.backendSession ? findFrozenClockProblems(captureLog, input.backendSession.frozenNow) : []),
+        ]
+      : [];
 
   const failureClass = classifySmokeFailure({
-    nativeCrashes: input.nativeCrashes,
+    nativeCrashes,
     reachedHome: input.reachedHome,
     backendProblems,
     pingProblems,
@@ -1689,7 +1697,7 @@ function judgeSmokeAttempt(input: SmokeAttemptInput): number {
   });
 
   const problems = [
-    ...input.nativeCrashes.map(describeNativeCrash),
+    ...nativeCrashes.map(describeNativeCrash),
     ...pingProblems.errors,
     ...backendProblems,
     ...(input.reachedHome ? [] : ['the app never signalled home (auto sign-in or bundle load).']),
@@ -1880,7 +1888,9 @@ function captureIosDevice(
   const deviceLogStream = options.flow === 'smoke' ? startIosDeviceLogStream(device.udid) : null;
   const smokeCrashes = (): NativeCrash[] => findIosNativeCrashes(readTextIfPresent(IOS_DEVICE_LOG_PATH));
   // A dead process will not reach home, so stop waiting for it (smoke only).
-  const giveUpOnCrash = deviceLogStream ? () => smokeCrashes().length > 0 : undefined;
+  const giveUpOnCrash = deviceLogStream
+    ? () => smokeCrashes().length > 0 || !deviceLogStreamAlive(deviceLogStream.pid)
+    : undefined;
   try {
     // Metro is already up and pre-warmed by runIos (once per locale, before this
     // per-device loop), so this goes straight to launching the app.
@@ -1940,10 +1950,11 @@ function captureIosDevice(
       dumpMetroLogTail();
       return judgeSmokeAttempt({
         options,
-        nativeCrashes: smokeCrashes(),
+        readNativeCrashes: smokeCrashes,
         reachedHome: false,
         maestroStatus: null,
-        captureLog: '',
+        readCaptureLog: () => '',
+        logStreamAlive: () => deviceLogStreamAlive(deviceLogStream?.pid),
         backendSession,
         backendLogBaseline,
       });
@@ -2001,10 +2012,11 @@ function captureIosDevice(
       // No screenshots to collect: the run is judged on evidence, pass or fail.
       const smokeStatus = judgeSmokeAttempt({
         options,
-        nativeCrashes: smokeCrashes(),
+        readNativeCrashes: smokeCrashes,
         reachedHome: true,
         maestroStatus,
-        captureLog: readTextIfPresent(METRO_LOG_PATH),
+        readCaptureLog: () => readTextIfPresent(METRO_LOG_PATH),
+        logStreamAlive: () => deviceLogStreamAlive(deviceLogStream?.pid),
         backendSession,
         backendLogBaseline,
       });
@@ -2129,7 +2141,7 @@ export function screenshotLogcatState(streamAlive: boolean, logText: string): 'r
  * that is gone; `Z` is one that exited and is still waiting to be reaped by an
  * event loop that will not run until the capture is over.
  */
-function logcatStreamAlive(pid: number | undefined): boolean {
+function deviceLogStreamAlive(pid: number | undefined): boolean {
   if (pid === undefined) return false;
   const state = runCapture('ps', ['-o', 'stat=', '-p', String(pid)]).stdout.trim();
   return state.length > 0 && !state.startsWith('Z');
@@ -2165,7 +2177,7 @@ function readSettledLogcat(stream: ChildProcess): string | null {
       lastSize = size;
       logcat = size > 0 ? readFileSync(LOGCAT_LOG_PATH, 'utf8') : '';
     }
-    const state = screenshotLogcatState(logcatStreamAlive(stream.pid), logcat);
+    const state = screenshotLogcatState(deviceLogStreamAlive(stream.pid), logcat);
     if (state === 'ready') return logcat;
     if (state === 'reader-died') {
       console.error(
@@ -2329,10 +2341,11 @@ function runAndroid(options: ScreenshotOptions): number {
         runCapture('sleep', ['5']);
         return judgeSmokeAttempt({
           options,
-          nativeCrashes: smokeCrashes(),
+          readNativeCrashes: smokeCrashes,
           reachedHome: false,
           maestroStatus: null,
-          captureLog: '',
+          readCaptureLog: () => '',
+          logStreamAlive: () => deviceLogStreamAlive(logcatStream.pid),
           backendSession,
           backendLogBaseline,
         });
@@ -2360,14 +2373,14 @@ function runAndroid(options: ScreenshotOptions): number {
       // No screenshots to collect: the run is judged on evidence, pass or fail.
       // The settled read waits for the board's render line, which only a flow
       // that ran to the end can have produced.
-      const captureLog =
-        maestroStatus === 0 ? (readSettledLogcat(logcatStream) ?? '') : readTextIfPresent(LOGCAT_LOG_PATH);
+      if (maestroStatus === 0) readSettledLogcat(logcatStream);
       const smokeStatus = judgeSmokeAttempt({
         options,
-        nativeCrashes: smokeCrashes(),
+        readNativeCrashes: smokeCrashes,
         reachedHome: true,
         maestroStatus,
-        captureLog,
+        readCaptureLog: () => readTextIfPresent(LOGCAT_LOG_PATH),
+        logStreamAlive: () => deviceLogStreamAlive(logcatStream.pid),
         backendSession,
         backendLogBaseline,
       });

@@ -262,6 +262,7 @@ describe('android-emulator-capture composite action', () => {
       'boards',
       'fixtures',
       'frozen-now',
+      'fixture-snapshot',
       'attempts',
       'user-email',
       'user-password',

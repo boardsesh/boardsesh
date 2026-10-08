@@ -391,7 +391,7 @@ export const ProgressTab = memo(function ProgressTab({
   return (
     <>
       {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
-        <ScreenshotSmokeMarker route="/profile" count={items.length} />
+        <ScreenshotSmokeMarker route="/profile" count={data.statisticsSummary.totalAscents} />
       ) : null}
       <FlashList
         ref={listRef}

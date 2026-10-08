@@ -40,7 +40,7 @@ Each screen is judged twice over:
 - **Both platforms read the app's own pings.** iOS Maestro on this build cannot
   match the app's elements, so in screenshot mode each smoke-visited screen
   mounts a `ScreenshotSmokeMarker` inside its content and that marker tells the
-  orchestrator "this route rendered, with N rows" (N lit holds for the board).
+  orchestrator "this route rendered, with N rows" (N recorded ascents for profile, N lit holds for the board).
   The root crash screen sends an error ping. On iOS this is the assertion; on
   Android it is a second signal.
 
@@ -54,7 +54,11 @@ when:
   Android, SpringBoard's exit line on iOS);
 - the replay backend logged a miss, or a batched operation got no recorded
   coverage;
-- the board never logged its render line, or the app ran on the wrong clock.
+- the board never logged its render line, or the app ran on the wrong clock;
+- the device log reader died, so later crashes cannot be ruled out.
+
+The gate rereads device crash and render evidence after waiting for content
+pings. A crash during that wait fails the same attempt.
 
 It takes no screenshots and writes nothing under `app-stores/`.
 

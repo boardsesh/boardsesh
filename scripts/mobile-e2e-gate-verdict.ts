@@ -24,6 +24,7 @@
  *   GATE_RUN_JOBS_FILE   optional, the run's jobs from the REST API, for durations
  */
 
+import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
@@ -69,6 +70,10 @@ export function formatDuration(seconds: number | null): string {
   return minutes > 0 ? `${minutes} min ${seconds % 60} s` : `${seconds} s`;
 }
 
+function markdownCell(content: string): string {
+  return content.replaceAll('\\', '\\\\').replaceAll('|', '\\|').replace(/\r?\n/g, '<br>');
+}
+
 export function computeGateVerdict(inputs: readonly GateJobInput[], sha: string): GateVerdict {
   const jobs = inputs.map((job) => ({ ...job, state: gateJobState(job.result) }));
   const blocking = jobs.filter((job) => job.mode === 'blocking');
@@ -92,7 +97,7 @@ export function computeGateVerdict(inputs: readonly GateJobInput[], sha: string)
     '| --- | --- | --- | --- | --- |',
     ...jobs.map(
       (job) =>
-        `| ${job.id} | ${job.mode} | ${job.state} | ${formatDuration(job.durationSeconds)} | ${job.detail || ''} |`,
+        `| ${markdownCell(job.id)} | ${job.mode} | ${job.state} | ${formatDuration(job.durationSeconds)} | ${markdownCell(job.detail)} |`,
     ),
     '',
   ].join('\n');
@@ -176,19 +181,26 @@ function writeOutput(name: string, value: string): void {
   const outputPath = process.env.GITHUB_OUTPUT;
   if (!outputPath) return;
   // The delimiter form, so a multi-line value (the table) survives.
-  appendFileSync(outputPath, `${name}<<__GATE_VERDICT__\n${value}\n__GATE_VERDICT__\n`);
+  const delimiter = `GATE_${randomUUID()}`;
+  appendFileSync(outputPath, `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
 }
 
-export function main(): number {
+function evaluateGate(): number {
   const modes = JSON.parse(requireEnv('GATE_JOBS')) as Record<string, string>;
   const needs = JSON.parse(requireEnv('GATE_NEEDS')) as Record<string, NeedsEntry>;
   const notes = JSON.parse(process.env.GATE_NOTES || '{}') as Record<string, string>;
   const sha = requireEnv('GATE_SHA');
   const runJobsFile = process.env.GATE_RUN_JOBS_FILE;
-  const runJobs =
-    runJobsFile && existsSync(runJobsFile)
-      ? (JSON.parse(readFileSync(runJobsFile, 'utf8')) as { jobs: RunJob[] }).jobs
-      : [];
+  let runJobs: RunJob[] = [];
+  if (runJobsFile && existsSync(runJobsFile)) {
+    try {
+      const parsed = JSON.parse(readFileSync(runJobsFile, 'utf8')) as { jobs: RunJob[] };
+      if (!Array.isArray(parsed.jobs)) throw new Error('jobs must be an array');
+      runJobs = parsed.jobs;
+    } catch {
+      console.warn('::warning::Cannot read optional run-job durations; reporting n/a.');
+    }
+  }
 
   const verdict = computeGateVerdict(buildGateJobInputs(modes, needs, runJobs, notes), sha);
   console.log(verdict.line);
@@ -202,6 +214,21 @@ export function main(): number {
     return 1;
   }
   return 0;
+}
+
+export function main(): number {
+  try {
+    return evaluateGate();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const line = `mobile-e2e-gate: passed=false; verdict input error: ${reason}`;
+    console.error(`::error::${line}`);
+    writeOutput('passed', 'false');
+    writeOutput('any_red', 'true');
+    writeOutput('line', line);
+    writeOutput('table', `### Mobile E2E gate\n\n**passed=false**: ${markdownCell(reason)}\n`);
+    return 1;
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

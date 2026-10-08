@@ -13,6 +13,7 @@ describe('screenshot smoke pings', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -40,6 +41,31 @@ describe('screenshot smoke pings', () => {
     expect(query.get('kind')).toBe('error');
     expect(query.get('message')).toMatch(/^TypeError: bad & broken x+$/);
     expect(query.get('message')).toHaveLength(300);
+  });
+
+  it('retries failed pings at two-second intervals, then stops after success', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_SMOKE_URL', SMOKE_URL);
+    fetchMock.mockRejectedValueOnce(new Error('unreachable')).mockResolvedValueOnce({ ok: false });
+    reportScreenshotSmokeContent('/home', 3);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('bounds delivery to three attempts when the smoke endpoint never answers', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_SMOKE_URL', SMOKE_URL);
+    fetchMock.mockRejectedValue(new Error('unreachable'));
+    reportScreenshotSmokeError(new Error('boom'));
+    await vi.runAllTimersAsync();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('counts the holds a frame string lights', () => {

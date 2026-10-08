@@ -259,6 +259,27 @@ export type SmokeFailureClass =
   | 'no-content'
   | 'capture-log';
 
+/** Read mutable device evidence after the bounded ping wait, never before it. */
+export function collectSmokeObservations(readers: {
+  maestroStatus: number | null;
+  readNativeCrashes: () => NativeCrash[];
+  readCaptureLog: () => string;
+  logStreamAlive: () => boolean;
+  readPings: () => SmokePing[];
+  waitForPings: () => SmokePing[];
+}): { nativeCrashes: NativeCrash[]; captureLog: string; pings: SmokePing[]; logStreamAlive: boolean } {
+  const pings =
+    readers.maestroStatus === 0 && readers.readNativeCrashes().length === 0 && readers.logStreamAlive()
+      ? readers.waitForPings()
+      : readers.readPings();
+  return {
+    pings,
+    nativeCrashes: readers.readNativeCrashes(),
+    captureLog: readers.readCaptureLog(),
+    logStreamAlive: readers.logStreamAlive(),
+  };
+}
+
 export interface SmokeEvidence {
   nativeCrashes: readonly NativeCrash[];
   /** Whether the app signalled home at any point in this attempt. */

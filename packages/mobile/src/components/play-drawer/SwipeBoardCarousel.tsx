@@ -263,6 +263,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     );
   }, []);
 
+  const smokeLitHoldCount = useMemo(
+    () => (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? countLitHolds(currentFrames) : 0),
+    [currentFrames],
+  );
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
   // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
@@ -298,7 +302,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor} {...boardAccessibility}>
             {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
             {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
-              <ScreenshotSmokeMarker route="play-drawer" count={countLitHolds(currentFrames)} />
+              <ScreenshotSmokeMarker route="play-drawer" count={smokeLitHoldCount} />
             ) : null}
             <BoardImageNative
               accessible={false}
