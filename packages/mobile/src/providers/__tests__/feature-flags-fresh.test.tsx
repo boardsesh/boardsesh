@@ -90,6 +90,18 @@ describe('useFeatureFlagsFresh', () => {
 
     expect(result.current.fresh).toBe(true);
   });
+  it('revokes freshness when an account change invalidates the response owner', () => {
+    const { result } = renderFlags();
+    posthog.requestId = 'account-a-response';
+    act(() => posthog.emit());
+    expect(result.current.fresh).toBe(true);
+    posthog.requestId = undefined;
+    act(() => posthog.emit());
+    expect(result.current.fresh).toBe(false);
+    posthog.requestId = 'account-b-response';
+    act(() => posthog.emit());
+    expect(result.current.fresh).toBe(true);
+  });
 
   it('treats a complete static bag as fresh, like it treats it as resolved', () => {
     expect(renderFlags({ 'early-updates': true }).result.current).toEqual({ fresh: true, resolved: true });

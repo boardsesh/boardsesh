@@ -211,5 +211,19 @@ x-boardsesh-platform: web so signed-in first-party activity remains counted.
 The backend PostHog proxy strips client IP and HTTP User-Agent headers from
 flags and capture traffic. Granted analytics explicitly supplies its consented
 user-agent event property; operational events use minimal payloads.
+Functional flag requests retain allowlisted OS, app version/build, namespace,
+and device-type properties without analytics consent. The proxy overwrites
+GeoIP properties with only a current, edge-verified country and sets
+`geoip_disable: true`, so neither the backend location nor stale account GeoIP
+can decide region targeting. Unknown or untrusted country resolves as `XX`.
+The trust boundary and header prerequisite are in `docs/cloudflare.md`.
+
+Pending consent restoration preserves a newer withdrawal, including equal
+timestamps rounded to cookie seconds. A rapid No thanks → Allow rebases its
+pending grant only onto its own successful withdrawal; a later withdrawal from
+another device still wins the backend comparison. Mobile flag freshness belongs
+to the current account and auth generation, so another account's response cannot
+remove early-update membership. SDK startup and reset restore current connectivity
+and remembered OTA super properties after asynchronous consent initialization.
 
 Consent copy and equal-choice controls follow the [EDPB consent guidelines](https://www.edpb.europa.eu/sites/default/files/files/file1/edpb_guidelines_202005_consent_en.pdf). Declining does not limit the app, and withdrawal uses the same two-choice controls.

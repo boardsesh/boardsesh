@@ -37,6 +37,9 @@ export class PostHog {
     return Promise.resolve();
   }
   setPersistedProperty(): void {}
+  getPersistedProperty<T>(): T | undefined {
+    return undefined;
+  }
   capture(): void {}
   captureException(): void {}
   identify(): void {}
@@ -67,6 +70,7 @@ export const PostHogPersistedProperty = {
   LogsQueue: 'logs_queue',
   DistinctId: 'distinct_id',
   OptedOut: 'opted_out',
+  FeatureFlagDetails: 'feature_flag_details',
 };
 
 export const PostHogProvider = ({ children }: { children?: unknown }) => children;

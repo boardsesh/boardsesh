@@ -15,6 +15,16 @@ import { isAnalyticsGranted } from '@boardsesh/consent';
 import { applySessionReplayConsent } from './session-replay-consent';
 import { applyNativeReplayPrivacy } from './replay-privacy';
 import { isDevBuild } from './is-dev-build';
+import { reregisterOtaSuperProperties } from './analytics-ota-context';
+import { registerConnectivitySuperProperty } from './analytics-connectivity';
+import {
+  functionalFlagProperties,
+  getPosthogFlagAuthority,
+  isPosthogFlagAuthorityCurrent,
+  rememberPosthogFlagResponse,
+  setPosthogFlagAuthority,
+  ownedPosthogFlagDetails,
+} from './posthog-flag-authority';
 
 // Registers the User-Agent as a super property on every event: the static,
 // non-bot app constant on native, the real browser UA in the Expo browser app
@@ -64,6 +74,7 @@ export function registerAppEnvironment(client: Pick<PostHog, 'register'>): void 
 export function registerAppSuperProperties(client: Pick<PostHog, 'register'>): void {
   registerMobileUserAgent(client);
   registerAppEnvironment(client);
+  reregisterOtaSuperProperties(client);
 }
 
 // PostHog project token. Intentionally the SAME project as web so a signed-in
@@ -74,7 +85,6 @@ const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 // The first-party proxy strips network identity headers for both native and web.
 const host = `${BACKEND_URL}/api/posthog`;
 const captureRequests = new Set<AbortController>();
-let flagAccountId: string | null = null;
 let initializingIdentity = false;
 const flagLaunchId = `flags-launch:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 
@@ -85,17 +95,35 @@ subscribeConsent(() => {
 });
 
 export class ConsentPostHog extends PostHog {
+  override setPersistedProperty<T>(key: PostHogPersistedProperty, property: T | null): void {
+    if (
+      key === PostHogPersistedProperty.FeatureFlagDetails &&
+      property &&
+      typeof property === 'object' &&
+      !Array.isArray(property)
+    ) {
+      const details = ownedPosthogFlagDetails(
+        property as Record<string, unknown>,
+        super.getPersistedProperty<Record<string, unknown>>(key),
+      );
+      if (details) super.setPersistedProperty(key, details);
+      return;
+    }
+    super.setPersistedProperty(key, property);
+  }
+
   override async fetch(url: string, options: Parameters<PostHog['fetch']>[1]): ReturnType<PostHog['fetch']> {
     const operational = /\/flags\//.test(url) || /\/array\/[^/]+\/config\/?(?:\?|$)/.test(url);
     if (operational) {
+      const authority = getPosthogFlagAuthority();
+      const flagsRequest = /\/flags\//.test(url);
       // Flags can target an account without changing the product identity that
       // the later anonymous-to-account identify event must reconcile.
       if (/\/flags\//.test(url) && typeof options.body === 'string') {
         const payload: unknown = JSON.parse(options.body);
         if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
           const granted = isProductAnalyticsGranted();
-          const account = getConsentSnapshot();
-          const flagsIdentity = account.authSettled && account.accountId === flagAccountId ? flagAccountId : null;
+          const flagsIdentity = authority.accountId;
           options = {
             ...options,
             body: JSON.stringify({
@@ -109,7 +137,8 @@ export class ConsentPostHog extends PostHog {
                 ? {
                     $device_id: undefined,
                     $anon_distinct_id: undefined,
-                    person_properties: {},
+                    person_properties:
+                      'person_properties' in payload ? functionalFlagProperties(payload.person_properties) : {},
                     group_properties: {},
                     groups: {},
                   }
@@ -118,7 +147,22 @@ export class ConsentPostHog extends PostHog {
           };
         }
       }
-      return super.fetch(url, { ...options, credentials: 'omit' });
+      const response = await super.fetch(url, { ...options, credentials: 'omit' });
+      if (!flagsRequest) return response;
+      return {
+        status: response.status,
+        text: () => response.text(),
+        json: async () => {
+          const payload: unknown = await response.json();
+          if (!isPosthogFlagAuthorityCurrent(authority)) {
+            // The SDK coalesces reloads; retry after its current request settles.
+            setTimeout(() => client?.reloadFeatureFlags(), 0);
+            throw new Error('Feature flag response belongs to a superseded account');
+          }
+          rememberPosthogFlagResponse(authority, payload);
+          return payload;
+        },
+      };
     }
     if (!isProductAnalyticsGranted()) return { status: 200, text: async () => '', json: async () => ({}) };
     const controller = new AbortController();
@@ -154,7 +198,7 @@ export function subscribePosthogInitialized(listener: () => void): () => void {
 
 /** Flags may target signed-in accounts without emitting an identify event or writing device storage. */
 export function setPosthogFlagIdentity(accountId: string | null): void {
-  flagAccountId = accountId;
+  setPosthogFlagAuthority(accountId);
   client?.reloadFeatureFlags();
 }
 
@@ -271,6 +315,7 @@ export async function initializePosthogClient(): Promise<void> {
   await client.ready();
   await applyPosthogConsent();
   registerAppSuperProperties(client);
+  registerConnectivitySuperProperty(client);
   for (const listener of initializedListeners) listener();
 }
 
@@ -312,6 +357,7 @@ export async function applyPosthogConsent(): Promise<void> {
         client.reset([]);
         clearPosthogQueues(client);
         registerAppSuperProperties(client);
+        registerConnectivitySuperProperty(client);
       }
       await client.optIn();
       await nativePrivacy;
@@ -333,6 +379,7 @@ export async function applyPosthogConsent(): Promise<void> {
       clearPosthogQueues(client);
       void client.optOut();
       registerAppSuperProperties(client);
+      registerConnectivitySuperProperty(client);
     }
   }
   await storageUpdate;

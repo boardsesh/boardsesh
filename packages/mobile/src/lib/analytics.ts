@@ -10,6 +10,11 @@ import { reregisterConnectStepArm } from './analytics-connect-step-arm';
 import { isProductAnalyticsGranted } from './consent-state';
 import { applyPosthogConsent, subscribePosthogInitialized, clearPosthogQueues } from './posthog-client';
 import { applySessionReplayConsent } from './session-replay-consent';
+import {
+  isPosthogFlagResponseCurrent,
+  isPosthogFlagBagCurrent,
+  subscribePosthogFlagAuthority,
+} from './posthog-flag-authority';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -185,6 +190,7 @@ export function readPosthogFeatureFlags(
 ): Record<string, boolean | string> {
   const posthog = getClient();
   if (!posthog) return {};
+  if (readPosthogFeatureFlagsRequestId() === undefined && !isPosthogFlagBagCurrent(posthog)) return {};
   const featureFlagClient = asFeatureFlagClient(posthog);
   const flags: Record<string, boolean | string> = {};
 
@@ -225,10 +231,11 @@ export function readPosthogFeatureFlagsRequestId(): string | undefined {
   const featureFlagClient = asFeatureFlagClient(posthog);
   if (typeof featureFlagClient.getFeatureFlagDetails !== 'function') return undefined;
   const requestId = featureFlagClient.getFeatureFlagDetails()?.requestId;
-  return typeof requestId === 'string' ? requestId : undefined;
+  return typeof requestId === 'string' && isPosthogFlagResponseCurrent(requestId) ? requestId : undefined;
 }
 
 export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
+  const unsubscribeAuthority = subscribePosthogFlagAuthority(onChange);
   const posthog = getClient();
   if (!posthog) {
     let unbind = () => {};
@@ -238,6 +245,7 @@ export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
       onChange();
     });
     return () => {
+      unsubscribeAuthority();
       unsubscribeInitialized();
       unbind();
     };
@@ -253,14 +261,17 @@ export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
   }
 
   if (typeof featureFlagClient.onFeatureFlags !== 'function') {
-    return () => {};
+    return unsubscribeAuthority;
   }
 
   const unsubscribe = featureFlagClient.onFeatureFlags(onChange);
   if (typeof unsubscribe === 'function') {
-    return unsubscribe as () => void;
+    return () => {
+      unsubscribeAuthority();
+      unsubscribe();
+    };
   }
-  return () => {};
+  return unsubscribeAuthority;
 }
 
 const analytics = createAnalytics(() => (isProductAnalyticsGranted() ? getClient() : null), {

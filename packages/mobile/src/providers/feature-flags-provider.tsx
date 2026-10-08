@@ -329,7 +329,7 @@ export function FeatureFlagsProvider({
       if (!mounted) return;
       setPosthogFlags((previousFlags) => (featureFlagsEqual(previousFlags, nextFlags) ? previousFlags : nextFlags));
       const requestId = readPosthogFeatureFlagsRequestId();
-      if (requestId !== undefined && requestId !== cachedRequestIdRef.current) setFresh(true);
+      setFresh(requestId !== undefined && requestId !== cachedRequestIdRef.current);
     };
 
     refreshFlags();

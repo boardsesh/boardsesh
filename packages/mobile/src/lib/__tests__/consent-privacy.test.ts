@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { PostHog } from 'posthog-react-native';
+import { PostHog, PostHogPersistedProperty } from 'posthog-react-native';
 import { ConsentPostHog, sanitizeRememberedPosthogFile, setPosthogFlagIdentity } from '../posthog-client';
 import { createConsentPosthogStorage } from '../consent-posthog-storage';
 import {
@@ -20,6 +20,7 @@ vi.mock('../replay-privacy', () => ({
 beforeEach(() => {
   setBrowserConsentReader(() => getConsentSnapshot().record);
   grantAnalyticsForTest();
+  setPosthogFlagIdentity(null);
   consumeConsentDestination();
 });
 afterEach(() => vi.restoreAllMocks());
@@ -59,7 +60,7 @@ describe('mobile consent privacy boundaries', () => {
     expect(requestSignal?.aborted).toBe(true);
     await pending;
   });
-  it('flags are available without consent and scrub all persisted identities and traits', async () => {
+  it('flags retain functional build targeting without consent and scrub personal traits', async () => {
     const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
     updateConsentState({ accountId: 'account-b', authSettled: true, accountResolved: false, sdkReady: false });
     setPosthogFlagIdentity('account-b');
@@ -71,7 +72,15 @@ describe('mobile consent privacy boundaries', () => {
         distinct_id: 'account-a',
         $device_id: 'device-a',
         $anon_distinct_id: 'anon-a',
-        person_properties: { email: 'a@example.com' },
+        person_properties: {
+          email: 'a@example.com',
+          $os_name: 'Android',
+          $app_version: '2.5.0',
+          $app_build: '42',
+          $device_id: 'device-a',
+          $device_name: 'private-name',
+          $geoip_country_code: 'spoofed',
+        },
         group_properties: { gym: 'private' },
         groups: { gym: 'private' },
       }),
@@ -80,7 +89,7 @@ describe('mobile consent privacy boundaries', () => {
     expect(options?.credentials).toBe('omit');
     expect(JSON.parse(String(options?.body))).toEqual({
       distinct_id: 'account-b',
-      person_properties: {},
+      person_properties: { $os_name: 'Android', $app_version: '2.5.0', $app_build: '42' },
       group_properties: {},
       groups: {},
     });
@@ -91,6 +100,73 @@ describe('mobile consent privacy boundaries', () => {
       body: JSON.stringify({ distinct_id: 'account-b' }),
     });
     expect(JSON.parse(String(fetchSpy.mock.calls.at(-1)?.[1]?.body)).distinct_id).toMatch(/^flags-launch:/);
+  });
+  it('preserves the real fetch Response contract when guarding flags JSON', async () => {
+    vi.spyOn(PostHog.prototype, 'fetch').mockImplementation(
+      async () => new Response(JSON.stringify({ requestId: 'current-response', flags: {} }), { status: 200 }),
+    );
+    const client = new ConsentPostHog('phc_test');
+    const response = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ requestId: 'current-response', flags: {} });
+    const textResponse = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
+    expect(await textResponse.text()).toBe(JSON.stringify({ requestId: 'current-response', flags: {} }));
+  });
+  it('rejects an anonymous response once flags target the signed-in account', async () => {
+    const payload = { requestId: 'anonymous-response', flags: { 'early-updates': false } };
+    vi.spyOn(PostHog.prototype, 'fetch').mockResolvedValue(new Response(JSON.stringify(payload)));
+    const client = new ConsentPostHog('phc_test');
+    const response = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
+    updateConsentState({ accountId: 'account-a', authSettled: true });
+    setPosthogFlagIdentity('account-a');
+    await expect(response.json()).rejects.toThrow('superseded account');
+    const { isPosthogFlagResponseCurrent } = await import('../posthog-flag-authority');
+    expect(isPosthogFlagResponseCurrent('anonymous-response')).toBe(false);
+  });
+  it('rejects an old account response without replacing the new account freshness', async () => {
+    const fetchSpy = vi.spyOn(PostHog.prototype, 'fetch');
+    updateConsentState({ accountId: 'account-a', authSettled: true });
+    setPosthogFlagIdentity('account-a');
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ requestId: 'account-a-response', flags: {} })));
+    const client = new ConsentPostHog('phc_test');
+    const oldResponse = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
+    invalidateConsentAccount();
+    updateConsentState({ accountId: 'account-b', authSettled: true });
+    setPosthogFlagIdentity('account-b');
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ requestId: 'account-b-response', flags: {} })));
+    const currentResponse = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
+    await currentResponse.json();
+    await expect(oldResponse.json()).rejects.toThrow('superseded account');
+    const { isPosthogFlagResponseCurrent } = await import('../posthog-flag-authority');
+    expect(isPosthogFlagResponseCurrent('account-a-response')).toBe(false);
+    expect(isPosthogFlagResponseCurrent('account-b-response')).toBe(true);
+    invalidateConsentAccount();
+    expect(isPosthogFlagResponseCurrent('account-b-response')).toBe(false);
+  });
+  it('blocks a response superseded after JSON consumption but before SDK persistence', async () => {
+    vi.spyOn(PostHog.prototype, 'fetch').mockImplementation(
+      async () => new Response(JSON.stringify({ requestId: 'before-account-switch', flags: {} })),
+    );
+    const persist = vi.spyOn(PostHog.prototype, 'setPersistedProperty');
+    const client = new ConsentPostHog('phc_test');
+    const response = await client.fetch('https://backend/api/posthog/flags/', { method: 'POST', headers: {} });
+    await response.json();
+    client.setPersistedProperty(PostHogPersistedProperty.FeatureFlagDetails, {
+      requestId: 'before-account-switch',
+      flags: {},
+    });
+    expect(persist).toHaveBeenLastCalledWith(PostHogPersistedProperty.FeatureFlagDetails, {
+      requestId: 'before-account-switch',
+      flags: {},
+      boardseshFlagAccountId: null,
+    });
+    persist.mockClear();
+    invalidateConsentAccount();
+    client.setPersistedProperty(PostHogPersistedProperty.FeatureFlagDetails, {
+      requestId: 'before-account-switch',
+      flags: {},
+    });
+    expect(persist).not.toHaveBeenCalled();
   });
   it('sanitizes the installed SDK file envelope without losing consented identity', () => {
     const sanitized = sanitizeRememberedPosthogFile(

@@ -1468,6 +1468,11 @@ describe('the shipped native privacy patches', () => {
     [
       'posthog-react-native-session-replay',
       'ios/PosthogReactNativeSessionReplay.swift',
+      'private var forwardingTask: URLSessionDataTask?',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
       'configuration.urlSessionConfiguration = transport?.configuration()',
     ],
     [

@@ -128,7 +128,7 @@ index de679ac056..f7abd16d3a 100644
 +}
 +
 +private final class ReplayConsentURLProtocol: URLProtocol {
-+    private var task: URLSessionDataTask?
++    private var forwardingTask: URLSessionDataTask?
 +    private var forwardingSession: URLSession?
 +    override class func canInit(with request: URLRequest) -> Bool {
 +        request.url?.scheme == "https" || request.url?.scheme == "http"
@@ -162,12 +162,12 @@ index de679ac056..f7abd16d3a 100644
 +            if let payload { self.client?.urlProtocol(self, didLoad: payload) }
 +            self.client?.urlProtocolDidFinishLoading(self)
 +        }
-+        task = pending
++        forwardingTask = pending
 +        if transport.add(pending, identifier: taskId) { pending.resume() }
 +        else { pending.cancel(); client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
 +    }
 +    override func stopLoading() {
-+        task?.cancel()
++        forwardingTask?.cancel()
 +        forwardingSession?.invalidateAndCancel()
 +    }
 +}

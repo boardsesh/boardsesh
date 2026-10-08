@@ -6,6 +6,7 @@ const sdk = vi.hoisted(() => ({
   calls: [] as string[],
   files: new Map<string, string>(),
   constructed: 0,
+  registrations: [] as unknown[],
 }));
 vi.mock('../is-dev-build', () => ({ isDevBuild: () => false }));
 vi.mock('../posthog-storage-backend', () => ({
@@ -26,6 +27,7 @@ vi.mock('posthog-react-native', () => ({
     AiCaptureQueue: 'ai_capture_queue',
     LogsQueue: 'logs_queue',
     OptedOut: 'opted_out',
+    FeatureFlagDetails: 'feature_flag_details',
   },
   PostHog: class {
     distinctId = 'anonymous';
@@ -81,7 +83,10 @@ vi.mock('posthog-react-native', () => ({
       this.optedOut = true;
     }
     setPersistedProperty() {}
-    register() {}
+    getPersistedProperty() {}
+    register(properties: unknown) {
+      sdk.registrations.push(properties);
+    }
     reloadFeatureFlags() {}
     stopSessionRecording() {
       return Promise.resolve();
@@ -98,6 +103,7 @@ beforeEach(() => {
   sdk.calls.length = 0;
   sdk.files.clear();
   sdk.constructed = 0;
+  sdk.registrations.length = 0;
   vi.stubEnv('EXPO_PUBLIC_POSTHOG_KEY', 'phc_consent_test');
   sdk.files.set(
     '.posthog-rn.json',
@@ -118,6 +124,24 @@ const grant = {
 };
 
 describe('enabled mobile SDK consent lifecycle', () => {
+  it('restores OTA and connectivity context saved before delayed initialization and after identity reset', async () => {
+    const { rememberOtaSuperProperties } = await import('../analytics-ota-context');
+    const properties = { ota_update_id: 'running-update', ota_channel: 'production', ota_is_embedded: false };
+    rememberOtaSuperProperties(properties);
+    const posthog = await import('../posthog-client');
+    expect(posthog.getPostHogClient()).toBeNull();
+    const consent = await import('../consent-state');
+    consent.updateConsentState({ loaded: true, settled: true, flagsResolved: true, record: grant, authSettled: false });
+    await posthog.initializePosthogClient();
+    expect(sdk.registrations).toContainEqual(properties);
+    expect(sdk.registrations).toContainEqual({ connectivity: 'online', offline_reason: null });
+    sdk.registrations.length = 0;
+    consent.updateConsentState({ authSettled: true, accountResolved: true, accountId: 'account-b' });
+    await posthog.applyPosthogConsent();
+    expect(sdk.calls).toContain('reset');
+    expect(sdk.registrations).toContainEqual(properties);
+    expect(sdk.registrations).toContainEqual({ connectivity: 'online', offline_reason: null });
+  });
   it('constructs one memory flags client while account authority is unresolved, preserving consented disk identity', async () => {
     const consent = await import('../consent-state');
     consent.updateConsentState({ loaded: true, settled: true, flagsResolved: true, record: grant, authSettled: false });
