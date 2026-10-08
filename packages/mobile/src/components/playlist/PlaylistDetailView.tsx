@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../ReadableColumn';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useState } from 'react';
@@ -548,74 +549,83 @@ export function PlaylistDetailView({
     const accent = brandColors.primary;
     return (
       <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-        <FlashList
-          data={climbs}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          extraData={editMode}
-          scrollEnabled={!isDragging}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          refreshControl={refreshControl}
-          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
-          ListHeaderComponent={
-            <>
-              <View onLayout={handleHeroLayout} style={styles.materialHero}>
-                <View
-                  style={[
-                    styles.materialHeroBand,
-                    { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
-                  ]}
-                >
-                  <View style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}>
-                    {heroEmojiIcon ? (
-                      <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
-                        {heroEmojiIcon}
+        <ReadableColumn style={styles.container}>
+          <FlashList
+            data={climbs}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            extraData={editMode}
+            scrollEnabled={!isDragging}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            refreshControl={refreshControl}
+            contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+            ListHeaderComponent={
+              <>
+                <View onLayout={handleHeroLayout} style={styles.materialHero}>
+                  <View
+                    style={[
+                      styles.materialHeroBand,
+                      { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
+                    ]}
+                  >
+                    <View
+                      style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}
+                    >
+                      {heroEmojiIcon ? (
+                        <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
+                          {heroEmojiIcon}
+                        </Text>
+                      ) : (
+                        <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
+                      )}
+                    </View>
+                    <View style={styles.materialHeroNameRow}>
+                      <Text
+                        variant="title2"
+                        numberOfLines={2}
+                        color={systemColors.label}
+                        style={styles.materialHeroName}
+                      >
+                        {hero.name}
                       </Text>
-                    ) : (
-                      <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
-                    )}
-                  </View>
-                  <View style={styles.materialHeroNameRow}>
-                    <Text variant="title2" numberOfLines={2} color={systemColors.label} style={styles.materialHeroName}>
-                      {hero.name}
+                      {renderEditDetailsCog(systemColors.label)}
+                    </View>
+                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                      {t('detail.climbCount', { count: hero.climbCount })}
                     </Text>
-                    {renderEditDetailsCog(systemColors.label)}
+                    {hero.followerLabel ? (
+                      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                        {hero.followerLabel}
+                      </Text>
+                    ) : null}
                   </View>
-                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
-                    {t('detail.climbCount', { count: hero.climbCount })}
-                  </Text>
-                  {hero.followerLabel ? (
-                    <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
-                      {hero.followerLabel}
-                    </Text>
+                  {hero.description || hero.subtitle ? (
+                    <View style={styles.heroBelow}>
+                      {hero.description ? (
+                        <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
+                          {hero.description}
+                        </Text>
+                      ) : null}
+                      {hero.subtitle ? (
+                        <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
+                          {hero.subtitle}
+                        </Text>
+                      ) : null}
+                    </View>
                   ) : null}
                 </View>
-                {hero.description || hero.subtitle ? (
-                  <View style={styles.heroBelow}>
-                    {hero.description ? (
-                      <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
-                        {hero.description}
-                      </Text>
-                    ) : null}
-                    {hero.subtitle ? (
-                      <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
-                        {hero.subtitle}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-              {bannerNode}
-              {addToQueueNode}
-              {headerSlot}
-            </>
-          }
-          ListFooterComponent={listFooterComponent}
-          ListEmptyComponent={listEmptyComponent}
-        />
+                {bannerNode}
+                {addToQueueNode}
+                {headerSlot}
+              </>
+            }
+            ListFooterComponent={listFooterComponent}
+            ListEmptyComponent={listEmptyComponent}
+          />
+        </ReadableColumn>
 
         {/* Collapsing M3 top app bar — sits over the hero band; its title fades in
             as the band scrolls under it, then the band's name is hidden behind. */}
@@ -745,35 +755,37 @@ export function PlaylistDetailView({
           is never the bare screen background — even on the first frame before the
           list lays its full-bleed hero out behind the island. */}
       <View pointerEvents="none" style={[styles.islandFill, { height: insets.top, backgroundColor: baseColor }]} />
-      <FlashList
-        data={climbs}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        extraData={editMode}
-        scrollEnabled={!isDragging}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        // The hero banner is full-bleed and runs up behind the status bar / dynamic
-        // island, owning the top inset itself (paddingTop above). Both props are
-        // needed so iOS doesn't inset the content down on the first frame (which
-        // would briefly expose the screen background behind the island).
-        contentInsetAdjustmentBehavior="never"
-        automaticallyAdjustContentInsets={false}
-        refreshControl={refreshControl}
-        contentContainerStyle={{ paddingBottom: listPaddingBottom }}
-        ListHeaderComponent={
-          <>
-            {header}
-            {bannerNode}
-            {addToQueueNode}
-            {headerSlot}
-          </>
-        }
-        ListFooterComponent={listFooterComponent}
-        ListEmptyComponent={listEmptyComponent}
-      />
+      <ReadableColumn style={styles.container}>
+        <FlashList
+          data={climbs}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          extraData={editMode}
+          scrollEnabled={!isDragging}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          // The hero banner is full-bleed and runs up behind the status bar / dynamic
+          // island, owning the top inset itself (paddingTop above). Both props are
+          // needed so iOS doesn't inset the content down on the first frame (which
+          // would briefly expose the screen background behind the island).
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          refreshControl={refreshControl}
+          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+          ListHeaderComponent={
+            <>
+              {header}
+              {bannerNode}
+              {addToQueueNode}
+              {headerSlot}
+            </>
+          }
+          ListFooterComponent={listFooterComponent}
+          ListEmptyComponent={listEmptyComponent}
+        />
+      </ReadableColumn>
 
       {/* Collapsed header bar — a progressive blur (matching the tabs' chrome)
           carrying the centered name, fading in once the hero scrolls off. Sits
@@ -950,6 +962,7 @@ const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
     container: {
       flex: 1,
+      minHeight: 0,
     },
     islandFill: {
       position: 'absolute',

@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
 import { PressableSurface } from '../PressableSurface';
@@ -556,67 +557,29 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
 
   return (
     <View style={styles.flex}>
-      {/* Fixed top toolbar — all logbook actions concentrated here, below the
+      <ReadableColumn style={styles.flex}>
+        {/* Fixed top toolbar — all logbook actions concentrated here, below the
           floating chrome. Sibling of the list, so list virtualization is intact. */}
-      <View style={[styles.toolbar, { paddingTop: topInset }]}>
-        <View style={styles.heading}>
-          <Text variant="title2" accessibilityRole="header">
-            {t('tabs.logbook')}
-          </Text>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('mobile.filter.allBoards')}
-          </Text>
-        </View>
-        {showSortChips ? (
-          // iOS Liquid Glass: search sits on its own row, and the chip row below
-          // carries the filter entry + sort + active-filter chips (so no separate
-          // filter button here).
-          <>
-            {/* The row wrapper is load-bearing: SearchHeader's capsule is flex:1,
+        <View style={[styles.toolbar, { paddingTop: topInset }]}>
+          <View style={styles.heading}>
+            <Text variant="title2" accessibilityRole="header">
+              {t('tabs.logbook')}
+            </Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('mobile.filter.allBoards')}
+            </Text>
+          </View>
+          {showSortChips ? (
+            // iOS Liquid Glass: search sits on its own row, and the chip row below
+            // carries the filter entry + sort + active-filter chips (so no separate
+            // filter button here).
+            <>
+              {/* The row wrapper is load-bearing: SearchHeader's capsule is flex:1,
                 sized for a HORIZONTAL slot (Climbs toolbar, the Material row
                 below). As a direct child of this vertical toolbar, flex-basis 0
                 in an auto-height column beats the explicit height and collapses
                 the capsule to 0px — the search box invisibly disappears. */}
-            <View style={styles.searchRow}>
-              <SearchHeader
-                ref={searchHeaderRef}
-                placeholder={t('mobile.logbook.searchPlaceholder')}
-                onChangeText={handleSearchChange}
-                initialValue={name}
-                height={40}
-              />
-            </View>
-            {/* Filter entry + Latest/Hardest + every facet chip (grade/angle/show/
-                date) — switch sort and adjust filters inline without opening the
-                sheet. Grade/angle/date toggle the rail below; Show is a native
-                menu. The sheet's Sort block is hidden (showSort={false}) so sort
-                isn't worded twice. */}
-            <LogbookChipRow
-              sortPreset={sortPreset}
-              onSelectPreset={handleSelectPreset}
-              onOpenFilters={handleOpenFilters}
-              filters={filters}
-              grades={grades ?? EMPTY_GRADES}
-              onToggleFacet={handleToggleFacet}
-              onUpdateFilters={handleUpdateFilters}
-            />
-            {/* The open facet's inline rail, below the chip row. It grows the
-                toolbar View; the FlashList insets below the toolbar so results
-                still scroll under it. Live-commits via setFilters. */}
-            <LogbookFacetRail
-              openFacet={openFacet}
-              filters={filters}
-              grades={grades ?? EMPTY_GRADES}
-              onUpdateFilters={handleUpdateFilters}
-              today={today}
-            />
-          </>
-        ) : (
-          // Android / Material: the current layout — search + the round filter
-          // button (no chip row).
-          <>
-            {logbookFiltersEnabled ? (
-              <View style={styles.toolbarRow}>
+              <View style={styles.searchRow}>
                 <SearchHeader
                   ref={searchHeaderRef}
                   placeholder={t('mobile.logbook.searchPlaceholder')}
@@ -624,103 +587,147 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
                   initialValue={name}
                   height={40}
                 />
-                <PressableSurface
-                  onPress={handleOpenFilters}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.logbook.filter')}
-                  style={({ pressed }) => [
-                    styles.filterButton,
-                    { backgroundColor: brandColors.primaryFill },
-                    pressed && styles.filterButtonPressed,
-                  ]}
-                >
-                  <Icon name="filter" size={18} color={brandColors.onPrimary} />
-                  {activeFilterCount > 0 ? (
-                    <View style={[styles.filterBadge, { backgroundColor: brandColors.onPrimary }]}>
-                      <Text variant="caption2" color={brandColors.primaryFill} style={styles.filterBadgeText}>
-                        {activeFilterCount}
-                      </Text>
-                    </View>
-                  ) : null}
-                </PressableSurface>
               </View>
-            ) : null}
-          </>
-        )}
-      </View>
-
-      {offline.isBlocked && offline.reason ? (
-        <View style={styles.centered}>
-          <OfflineState reason={offline.reason} onRetry={handleRetry} />
-        </View>
-      ) : feed.isPending ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" />
-        </View>
-      ) : feed.isError ? (
-        <View style={styles.errorContainer}>
-          <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-          <Text variant="headline" style={styles.errorTitle}>
-            {t('mobile.logbook.errorTitle')}
-          </Text>
-          <Text variant="subheadline" style={styles.errorBody}>
-            {t('mobile.logbook.errorBody')}
-          </Text>
-          <PressableSurface
-            onPress={handleRetry}
-            disabled={feed.isRefetching}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.logbook.retry')}
-            style={({ pressed }) => [
-              styles.retryButton,
-              { borderColor: brandColors.primary },
-              feed.isRefetching && styles.retryButtonDisabled,
-              pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
-            ]}
-          >
-            <Text variant="footnote" color={brandColors.primary}>
-              {t('mobile.logbook.retry')}
-            </Text>
-          </PressableSurface>
-        </View>
-      ) : (
-        <FlashList
-          testID="logbook-screen"
-          data={listRows}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          getItemType={getRowType}
-          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          contentContainerStyle={{ paddingBottom }}
-          refreshControl={
-            <RefreshControl refreshing={feed.isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
-          }
-          ListFooterComponent={
-            feed.isFetchingNextPage ? (
-              <View style={styles.footer}>
-                <ActivityIndicator size="small" />
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.emptyTitle}>
-                {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
-              </Text>
-              {/* Unfiltered only: a logbook emptied by a filter says nothing about
-                  whether a board account is linked. */}
-              <BoardLinkPrompt
-                key={userId}
-                viewerIsOwner={viewerIsOwner}
-                hasNoSends={activeFilterCount === 0 && !name}
+              {/* Filter entry + Latest/Hardest + every facet chip (grade/angle/show/
+                date) — switch sort and adjust filters inline without opening the
+                sheet. Grade/angle/date toggle the rail below; Show is a native
+                menu. The sheet's Sort block is hidden (showSort={false}) so sort
+                isn't worded twice. */}
+              <LogbookChipRow
+                sortPreset={sortPreset}
+                onSelectPreset={handleSelectPreset}
+                onOpenFilters={handleOpenFilters}
+                filters={filters}
+                grades={grades ?? EMPTY_GRADES}
+                onToggleFacet={handleToggleFacet}
+                onUpdateFilters={handleUpdateFilters}
               />
-            </View>
-          }
-        />
-      )}
+              {/* The open facet's inline rail, below the chip row. It grows the
+                toolbar View; the FlashList insets below the toolbar so results
+                still scroll under it. Live-commits via setFilters. */}
+              <LogbookFacetRail
+                openFacet={openFacet}
+                filters={filters}
+                grades={grades ?? EMPTY_GRADES}
+                onUpdateFilters={handleUpdateFilters}
+                today={today}
+              />
+            </>
+          ) : (
+            // Android / Material: the current layout — search + the round filter
+            // button (no chip row).
+            <>
+              {logbookFiltersEnabled ? (
+                <View style={styles.toolbarRow}>
+                  <SearchHeader
+                    ref={searchHeaderRef}
+                    placeholder={t('mobile.logbook.searchPlaceholder')}
+                    onChangeText={handleSearchChange}
+                    initialValue={name}
+                    height={40}
+                  />
+                  <PressableSurface
+                    onPress={handleOpenFilters}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.logbook.filter')}
+                    style={({ pressed }) => [
+                      styles.filterButton,
+                      { backgroundColor: brandColors.primaryFill },
+                      pressed && styles.filterButtonPressed,
+                    ]}
+                  >
+                    <Icon name="filter" size={18} color={brandColors.onPrimary} />
+                    {activeFilterCount > 0 ? (
+                      <View style={[styles.filterBadge, { backgroundColor: brandColors.onPrimary }]}>
+                        <Text variant="caption2" color={brandColors.primaryFill} style={styles.filterBadgeText}>
+                          {activeFilterCount}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </PressableSurface>
+                </View>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        {offline.isBlocked && offline.reason ? (
+          <View style={styles.centered}>
+            <OfflineState reason={offline.reason} onRetry={handleRetry} />
+          </View>
+        ) : feed.isPending ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" />
+          </View>
+        ) : feed.isError ? (
+          <View style={styles.errorContainer}>
+            <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+            <Text variant="headline" style={styles.errorTitle}>
+              {t('mobile.logbook.errorTitle')}
+            </Text>
+            <Text variant="subheadline" style={styles.errorBody}>
+              {t('mobile.logbook.errorBody')}
+            </Text>
+            <PressableSurface
+              onPress={handleRetry}
+              disabled={feed.isRefetching}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.logbook.retry')}
+              style={({ pressed }) => [
+                styles.retryButton,
+                { borderColor: brandColors.primary },
+                feed.isRefetching && styles.retryButtonDisabled,
+                pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
+              ]}
+            >
+              <Text variant="footnote" color={brandColors.primary}>
+                {t('mobile.logbook.retry')}
+              </Text>
+            </PressableSurface>
+          </View>
+        ) : (
+          <FlashList
+            testID="logbook-screen"
+            data={listRows}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            getItemType={getRowType}
+            contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            contentContainerStyle={{ paddingBottom }}
+            refreshControl={
+              <RefreshControl
+                refreshing={feed.isRefetching}
+                onRefresh={handleRefresh}
+                tintColor={brandColors.primary}
+              />
+            }
+            ListFooterComponent={
+              feed.isFetchingNextPage ? (
+                <View style={styles.footer}>
+                  <ActivityIndicator size="small" />
+                </View>
+              ) : null
+            }
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
+                <Text variant="headline" style={styles.emptyTitle}>
+                  {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
+                </Text>
+                {/* Unfiltered only: a logbook emptied by a filter says nothing about
+                  whether a board account is linked. */}
+                <BoardLinkPrompt
+                  key={userId}
+                  viewerIsOwner={viewerIsOwner}
+                  hasNoSends={activeFilterCount === 0 && !name}
+                />
+              </View>
+            }
+          />
+        )}
+      </ReadableColumn>
 
       {viewerIsOwner ? (
         <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
@@ -762,7 +769,7 @@ function getRowType(row: LogbookListRow<LogbookGroupUnit>) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, minHeight: 0 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingVertical: spacing[5], alignItems: 'center' },
   toolbar: {

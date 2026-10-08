@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../../../src/components/ReadableColumn';
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -626,204 +627,206 @@ export default function DiscoverLibrary() {
 
   return (
     <View style={styles.flex}>
-      <ScrollView
-        refreshControl={
-          <RefreshControl
-            refreshing={pullRefresh.refreshing}
-            onRefresh={pullRefresh.onRefresh}
-            tintColor={brandColors.primary}
-            // Android draws the spinner over the content; start it below the chrome.
-            progressViewOffset={chromeHeight}
-          />
-        }
-        style={styles.flex}
-        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-        contentContainerStyle={{
-          paddingTop: chromeHeight,
-          paddingBottom: bottomChrome.scrollBottomPadding + spacing[6],
-        }}
-        scrollIndicatorInsets={{ top: chromeHeight }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* The screen's identity, in-body under the floating chrome (the grey
+      <ReadableColumn style={styles.flex}>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefresh.refreshing}
+              onRefresh={pullRefresh.onRefresh}
+              tintColor={brandColors.primary}
+              // Android draws the spinner over the content; start it below the chrome.
+              progressViewOffset={chromeHeight}
+            />
+          }
+          style={styles.flex}
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+          contentContainerStyle={{
+            paddingTop: chromeHeight,
+            paddingBottom: bottomChrome.scrollBottomPadding + spacing[6],
+          }}
+          scrollIndicatorInsets={{ top: chromeHeight }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* The screen's identity, in-body under the floating chrome (the grey
             "Discover" stack header is gone). */}
-        <Text variant="largeTitle" style={styles.screenTitle}>
-          {t('bottomTabBar.discover')}
-        </Text>
+          <Text variant="largeTitle" style={styles.screenTitle}>
+            {t('bottomTabBar.discover')}
+          </Text>
 
-        {showSignInPrompt ? (
-          <PressableSurface
-            style={[styles.signInBanner, { borderColor: systemColors.separator }]}
-            onPress={() => router.push('/auth/login')}
-            accessibilityRole="button"
-          >
-            <Icon name="person" size={26} color={systemColors.secondaryLabel} />
-            <View style={styles.signInText}>
-              <Text variant="subheadline" style={styles.signInTitle}>
-                {t('library.signInBanner.title')}
-              </Text>
-              <Text variant="caption1" style={styles.signInDescription}>
-                {t('library.signInBanner.description')}
-              </Text>
-            </View>
-            <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
-              {t('library.signInBanner.cta')}
-            </Text>
-          </PressableSurface>
-        ) : null}
-
-        {/* Pinned — dense grid capped at four rows of two. */}
-        {isAuthenticated && hasVisiblePinnedItems ? (
-          <View style={styles.section}>
-            <SectionHeader title={t('library.sections.pinned')} />
-            <View style={styles.grid}>
-              {visiblePinnedSmartCards.map(({ preset, count }, index) => (
-                <View key={preset.type} style={styles.gridItem}>
-                  <DiscoverSmartPlaylistCard
-                    smartType={preset.type}
-                    name={t(preset.titleI18nKey)}
-                    climbCount={count}
-                    color={preset.color}
-                    icon={preset.icon}
-                    variant="grid"
-                    index={index}
-                    onOpen={goToSmartPlaylist}
-                    isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
-                    onPin={smartPinsHydrated ? handleToggleSmartPin : undefined}
-                  />
-                </View>
-              ))}
-              {visiblePinnedPlaylists.map((playlist, index) => (
-                <View key={playlist.uuid} style={styles.gridItem}>
-                  <DiscoverPlaylistCard
-                    uuid={playlist.uuid}
-                    name={playlist.name}
-                    climbCount={playlist.climbCount}
-                    color={playlist.color}
-                    icon={playlist.icon}
-                    variant="grid"
-                    index={visiblePinnedSmartCards.length + index}
-                    onOpen={goToPlaylist}
-                    isPinned={playlist.isPinnedByMe}
-                    onPin={togglePlaylistPin}
-                  />
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        {/* My Playlists — user's own playlists, excluding the pinned grid above. */}
-        {isAuthenticated && (userLoading || unpinnedUserPlaylists.length > 0) ? (
-          <PlaylistShelf
-            title={t('library.allPlaylists.title')}
-            actionLabel={userPlaylists.length > 0 ? t('library.allPlaylists.seeAll') : undefined}
-            onActionPress={userPlaylists.length > 0 ? openAllPlaylists : undefined}
-            loading={userLoading && unpinnedUserPlaylists.length === 0}
-            isLoadingMore={userLoadingMore}
-            hasMore={userHasMore || userLoadMoreError}
-            onEndReached={screenshotModeLoadMore(userLoadMoreError ? retryLoadMoreUser : loadMoreUser)}
-            items={unpinnedUserPlaylists}
-            renderItem={renderOwnedPlaylist}
-            keyExtractor={playlistKey}
-          />
-        ) : null}
-
-        {/* For You — personal smart playlists, then followed setters on this board. */}
-        {isAuthenticated && userId && (smartCountsLoading || followedSettersLoading || forYouCards.length > 0) ? (
-          <PlaylistShelf
-            title={t('library.sections.forYou')}
-            loading={(smartCountsLoading || followedSettersLoading) && forYouCards.length === 0}
-            isLoadingMore={(smartCountsLoading || followedSettersLoading) && forYouCards.length > 0}
-            hasMore={false}
-            onEndReached={noMoreForYouCards}
-            items={forYouCards}
-            renderItem={renderForYouCard}
-            keyExtractor={forYouCardKey}
-            extraData={forYouInvalidation}
-          />
-        ) : null}
-
-        {/* Community Playlists — user-made public playlists. */}
-        {communityLoading || communityItems.length > 0 ? (
-          <PlaylistShelf
-            title={t('library.sections.community')}
-            loading={communityLoading && communityItems.length === 0}
-            isLoadingMore={communityLoadingMore}
-            hasMore={communityHasMore}
-            onEndReached={screenshotModeLoadMore(loadMoreCommunity)}
-            items={communityItems}
-            renderItem={renderCommunityPlaylist}
-            keyExtractor={playlistKey}
-            extraData={communityInvalidation}
-          />
-        ) : null}
-
-        {/* Load error: a section's first page failed and the hub is empty.
-            Offer a retry instead of falsely claiming the library is empty. */}
-        {showLoadError ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('library.errors.loadTitle')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('library.errors.loadDescription')}
-            </Text>
+          {showSignInPrompt ? (
             <PressableSurface
-              onPress={handleRetryLoad}
+              style={[styles.signInBanner, { borderColor: systemColors.separator }]}
+              onPress={() => router.push('/auth/login')}
               accessibilityRole="button"
-              accessibilityLabel={t('library.errors.tryAgain')}
-              hitSlop={8}
             >
-              <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
-                {t('library.errors.tryAgain')}
+              <Icon name="person" size={26} color={systemColors.secondaryLabel} />
+              <View style={styles.signInText}>
+                <Text variant="subheadline" style={styles.signInTitle}>
+                  {t('library.signInBanner.title')}
+                </Text>
+                <Text variant="caption1" style={styles.signInDescription}>
+                  {t('library.signInBanner.description')}
+                </Text>
+              </View>
+              <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
+                {t('library.signInBanner.cta')}
               </Text>
             </PressableSurface>
-          </View>
-        ) : null}
+          ) : null}
 
-        {showOfflineState ? <OfflineState reason={offlineStateReason} /> : null}
-
-        {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
-        {!showOfflineState &&
-        isAuthenticated &&
-        !userLoading &&
-        !smartCountsLoading &&
-        !followedSettersLoading &&
-        !communityLoading &&
-        !profileLoading &&
-        !showLoadError &&
-        !hasVisiblePinnedItems &&
-        userPlaylists.length === 0 &&
-        forYouCards.length === 0 &&
-        communityItems.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('library.empty.title')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('library.empty.description')}
-            </Text>
-            <View style={styles.emptyCta}>
-              <Button title={t('library.empty.createCta')} icon="plus" onPress={handleCreatePress} />
+          {/* Pinned — dense grid capped at four rows of two. */}
+          {isAuthenticated && hasVisiblePinnedItems ? (
+            <View style={styles.section}>
+              <SectionHeader title={t('library.sections.pinned')} />
+              <View style={styles.grid}>
+                {visiblePinnedSmartCards.map(({ preset, count }, index) => (
+                  <View key={preset.type} style={styles.gridItem}>
+                    <DiscoverSmartPlaylistCard
+                      smartType={preset.type}
+                      name={t(preset.titleI18nKey)}
+                      climbCount={count}
+                      color={preset.color}
+                      icon={preset.icon}
+                      variant="grid"
+                      index={index}
+                      onOpen={goToSmartPlaylist}
+                      isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
+                      onPin={smartPinsHydrated ? handleToggleSmartPin : undefined}
+                    />
+                  </View>
+                ))}
+                {visiblePinnedPlaylists.map((playlist, index) => (
+                  <View key={playlist.uuid} style={styles.gridItem}>
+                    <DiscoverPlaylistCard
+                      uuid={playlist.uuid}
+                      name={playlist.name}
+                      climbCount={playlist.climbCount}
+                      color={playlist.color}
+                      icon={playlist.icon}
+                      variant="grid"
+                      index={visiblePinnedSmartCards.length + index}
+                      onOpen={goToPlaylist}
+                      isPinned={playlist.isPinnedByMe}
+                      onPin={togglePlaylistPin}
+                    />
+                  </View>
+                ))}
+              </View>
             </View>
-          </View>
-        ) : null}
+          ) : null}
 
-        {/* Initial spinner before any section has resolved. */}
-        {!showOfflineState &&
-        (authLoading || tokenLoading) &&
-        !hasVisiblePinnedItems &&
-        userPlaylists.length === 0 &&
-        forYouCards.length === 0 &&
-        communityItems.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" />
-          </View>
-        ) : null}
-      </ScrollView>
+          {/* My Playlists — user's own playlists, excluding the pinned grid above. */}
+          {isAuthenticated && (userLoading || unpinnedUserPlaylists.length > 0) ? (
+            <PlaylistShelf
+              title={t('library.allPlaylists.title')}
+              actionLabel={userPlaylists.length > 0 ? t('library.allPlaylists.seeAll') : undefined}
+              onActionPress={userPlaylists.length > 0 ? openAllPlaylists : undefined}
+              loading={userLoading && unpinnedUserPlaylists.length === 0}
+              isLoadingMore={userLoadingMore}
+              hasMore={userHasMore || userLoadMoreError}
+              onEndReached={screenshotModeLoadMore(userLoadMoreError ? retryLoadMoreUser : loadMoreUser)}
+              items={unpinnedUserPlaylists}
+              renderItem={renderOwnedPlaylist}
+              keyExtractor={playlistKey}
+            />
+          ) : null}
+
+          {/* For You — personal smart playlists, then followed setters on this board. */}
+          {isAuthenticated && userId && (smartCountsLoading || followedSettersLoading || forYouCards.length > 0) ? (
+            <PlaylistShelf
+              title={t('library.sections.forYou')}
+              loading={(smartCountsLoading || followedSettersLoading) && forYouCards.length === 0}
+              isLoadingMore={(smartCountsLoading || followedSettersLoading) && forYouCards.length > 0}
+              hasMore={false}
+              onEndReached={noMoreForYouCards}
+              items={forYouCards}
+              renderItem={renderForYouCard}
+              keyExtractor={forYouCardKey}
+              extraData={forYouInvalidation}
+            />
+          ) : null}
+
+          {/* Community Playlists — user-made public playlists. */}
+          {communityLoading || communityItems.length > 0 ? (
+            <PlaylistShelf
+              title={t('library.sections.community')}
+              loading={communityLoading && communityItems.length === 0}
+              isLoadingMore={communityLoadingMore}
+              hasMore={communityHasMore}
+              onEndReached={screenshotModeLoadMore(loadMoreCommunity)}
+              items={communityItems}
+              renderItem={renderCommunityPlaylist}
+              keyExtractor={playlistKey}
+              extraData={communityInvalidation}
+            />
+          ) : null}
+
+          {/* Load error: a section's first page failed and the hub is empty.
+            Offer a retry instead of falsely claiming the library is empty. */}
+          {showLoadError ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('library.errors.loadTitle')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('library.errors.loadDescription')}
+              </Text>
+              <PressableSurface
+                onPress={handleRetryLoad}
+                accessibilityRole="button"
+                accessibilityLabel={t('library.errors.tryAgain')}
+                hitSlop={8}
+              >
+                <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
+                  {t('library.errors.tryAgain')}
+                </Text>
+              </PressableSurface>
+            </View>
+          ) : null}
+
+          {showOfflineState ? <OfflineState reason={offlineStateReason} /> : null}
+
+          {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
+          {!showOfflineState &&
+          isAuthenticated &&
+          !userLoading &&
+          !smartCountsLoading &&
+          !followedSettersLoading &&
+          !communityLoading &&
+          !profileLoading &&
+          !showLoadError &&
+          !hasVisiblePinnedItems &&
+          userPlaylists.length === 0 &&
+          forYouCards.length === 0 &&
+          communityItems.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('library.empty.title')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('library.empty.description')}
+              </Text>
+              <View style={styles.emptyCta}>
+                <Button title={t('library.empty.createCta')} icon="plus" onPress={handleCreatePress} />
+              </View>
+            </View>
+          ) : null}
+
+          {/* Initial spinner before any section has resolved. */}
+          {!showOfflineState &&
+          (authLoading || tokenLoading) &&
+          !hasVisiblePinnedItems &&
+          userPlaylists.length === 0 &&
+          forYouCards.length === 0 &&
+          communityItems.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" />
+            </View>
+          ) : null}
+        </ScrollView>
+      </ReadableColumn>
 
       <DiscoverTopChrome
         canCreate={isAuthenticated}
@@ -867,6 +870,7 @@ export default function DiscoverLibrary() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+    minHeight: 0,
   },
   // Material create FAB: bottom-trailing, the list scrolls under it; the host sets
   // `bottom` from the variant-correct floating-control offset (clears tab bar +

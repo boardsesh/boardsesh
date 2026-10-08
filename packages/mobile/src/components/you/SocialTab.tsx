@@ -1,3 +1,4 @@
+import { ReadableColumn } from '../ReadableColumn';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -196,7 +197,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
   }
 
   return (
-    <View style={styles.flex}>
+    <ReadableColumn style={styles.flex}>
       <FlashList
         ref={listRef}
         data={showInitialSpinner || showSearchHint || showError || showOffline ? EMPTY_PEOPLE : people}
@@ -236,7 +237,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
           ) : null
         }
       />
-    </View>
+    </ReadableColumn>
   );
 }
 
@@ -305,7 +306,7 @@ function SocialEmptyState({ mode }: { mode: Exclude<SocialMode, 'search'> }) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, minHeight: 0 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   summaryRow: {
     flexDirection: 'row',
