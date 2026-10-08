@@ -114,6 +114,21 @@ describe('mobile publish argument routing', () => {
     expect(args).toContain('pr-staging');
   });
 
+  it('retains a preview export only for its optional boot receipt, without sourcemaps or relaxing the clean-tree check', () => {
+    const defaultArgs = buildSelfHostedEoasArgs('pr-6131', 'android', 'preview');
+    expect(defaultArgs).not.toContain('--outputDir');
+    const receiptArgs = buildSelfHostedEoasArgs('pr-6131', 'android', 'preview', {
+      retainExport: true,
+      allowDirtyTree: true,
+    });
+    expect(receiptArgs.slice(receiptArgs.indexOf('--outputDir'), receiptArgs.indexOf('--outputDir') + 2)).toEqual([
+      '--outputDir',
+      'dist',
+    ]);
+    expect(receiptArgs).not.toContain('--dumpSourcemap');
+    expect(receiptArgs).not.toContain('--disableRepositoryCheck');
+  });
+
   it('keeps the EAS preview command arguments unchanged', () => {
     const args = buildEasUpdateArgs('fix-branch', 'preview message', 'all');
 
