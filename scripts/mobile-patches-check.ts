@@ -109,6 +109,8 @@ export interface PatchRule {
   patchedKey: string;
   /** Optional negative assertions scoped to a single method body. */
   forbiddenInMethod?: readonly ForbiddenInMethod[];
+  /** Source fragments that must not occur anywhere in this patched file. */
+  forbiddenSubstrings?: readonly string[];
 }
 
 /**
@@ -228,6 +230,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'ios/PosthogReactNativeSessionReplay.swift',
     sentinels: [
       'private var consentAllowed = false',
+      'private var nativeInitialized = false',
       'self.storageToken = publicToken + "-boardsesh-replay-" + UUID().uuidString',
       'let config = PostHogConfig(projectToken: nextTransport.storageToken, host: host)',
       'configuration.urlSessionConfiguration = transport?.configuration()',
@@ -247,7 +250,26 @@ export const RULES: readonly PatchRule[] = [
             PostHogSDK.shared.optOut()
             PostHogSDK.shared.stopSessionRecording()
             PostHogSDK.shared.close()
+            nativeInitialized = false
             config = nil`,
+      `transport?.retire()
+        PostHogSDK.shared.close()
+        nativeInitialized = false
+        self.config = nil
+        PostHogSessionManager.shared.setSessionId(sessionIdStr)
+        transport = nextTransport`,
+      `guard let storageManager = self.config?.storageManager else {
+            transport?.retire()
+            transport = nil
+            self.config = nil`,
+      `do { try purgeCache(projectToken) }
+        catch {
+            transport?.retire()
+            transport = nil`,
+      `nativeInitialized = true
+        setIdentify(storageManager, distinctId: distinctId, anonymousId: anonymousId)`,
+      'if !nativeInitialized {',
+      'guard consentAllowed, nativeInitialized else { resolve(nil); return }',
       'if manager.fileExists(atPath: project.path) { try manager.removeItem(at: project) }',
       'folder.lastPathComponent.hasPrefix(token + "-boardsesh-replay-") { try manager.removeItem(at: folder) }',
       'if manager.fileExists(atPath: location.path) { try manager.removeItem(at: location) }',
@@ -256,6 +278,7 @@ export const RULES: readonly PatchRule[] = [
       'guard consentAllowed, let storageManager = config?.storageManager else',
       'guard consentAllowed, !publicProjectToken.isEmpty else',
     ],
+    forbiddenSubstrings: ['.isEnabled'],
     patchedKey: 'posthog-react-native-session-replay@1.6.0',
   },
   {
@@ -892,6 +915,13 @@ export function checkPatchesApplied(rules: readonly PatchRule[], env: PatchCheck
 
     // (5) Shape assertions: a symbol can survive a re-keyed patch while the
     //     dangerous line it replaced comes back with it.
+    const forbiddenFragments = (rule.forbiddenSubstrings ?? []).filter((fragment) => source.includes(fragment));
+    if (forbiddenFragments.length > 0) {
+      errors.push(
+        `${rule.package}: ${rule.file} contains forbidden source ${forbiddenFragments.map((fragment) => `"${fragment}"`).join(', ')}. ` +
+          `Re-verify patches/${rule.patchedKey}.patch against the installed native SDK API.`,
+      );
+    }
     for (const forbidden of rule.forbiddenInMethod ?? []) {
       const body = extractObjCMethodBody(source, forbidden.method);
       if (body === null) {

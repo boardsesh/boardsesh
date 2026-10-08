@@ -246,6 +246,17 @@ describe('checkPatchesApplied', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toContain('cannot read patched file');
   });
+
+  it('rejects forbidden source even when every positive sentinel survives', () => {
+    const rules = [{ ...RULES[0], forbiddenSubstrings: ['.isEnabled'] }];
+    const env = makeEnv({
+      versions: { [PKG]: '4.25.2' },
+      files: { [`${PKG}::${FILE}`]: `${PATCHED_SOURCE}\nPostHogSDK.shared.isEnabled()` },
+    });
+    expect(checkPatchesApplied(rules, env).errors).toEqual([
+      expect.stringContaining('contains forbidden source ".isEnabled"'),
+    ]);
+  });
 });
 
 // The @expo/ui shape: a SCOPED package, so the key carries two `@` and the
@@ -1418,6 +1429,19 @@ describe('the shipped native privacy patches', () => {
     expect(checkPatchesApplied(privacyRules, installed)).toEqual({ checked: privacyRules.length, errors: [] });
   });
 
+  it('rejects private replay SDK isEnabled calls even when lifecycle guards survive', () => {
+    const rule = privacyRules.find(
+      (candidate) => candidate.package === 'posthog-react-native-session-replay' && candidate.file.endsWith('.swift'),
+    );
+    expect(rule?.forbiddenSubstrings).toContain('.isEnabled');
+    const source = installed.readInstalledFile(rule!.package, rule!.file);
+    const result = checkPatchesApplied([rule!], {
+      ...installed,
+      readInstalledFile: () => `${source}\nPostHogSDK.shared.isEnabled()`,
+    });
+    expect(result.errors).toEqual([expect.stringContaining('contains forbidden source ".isEnabled"')]);
+  });
+
   it.each(Object.entries(expectedKeys))('rejects %s version drift before inspecting its source', (pkg) => {
     const result = checkPatchesApplied(
       privacyRules.filter((rule) => rule.package === pkg),
@@ -1465,6 +1489,31 @@ describe('the shipped native privacy patches', () => {
       'RCT_EXTERN_METHOD(setOptOut:(BOOL)optedOut',
     ],
     ['posthog-react-native-session-replay', 'ios/PosthogReactNativeSessionReplay.swift', 'sealed = true'],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'self.config = nil\n        PostHogSessionManager.shared.setSessionId(sessionIdStr)',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'private var nativeInitialized = false',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'nativeInitialized = false\n            config = nil',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'nativeInitialized = true\n        setIdentify',
+    ],
+    [
+      'posthog-react-native-session-replay',
+      'ios/PosthogReactNativeSessionReplay.swift',
+      'guard consentAllowed, nativeInitialized else',
+    ],
     [
       'posthog-react-native-session-replay',
       'ios/PosthogReactNativeSessionReplay.swift',

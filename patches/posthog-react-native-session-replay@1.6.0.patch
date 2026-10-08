@@ -2,7 +2,7 @@ diff --git a/ios/PosthogReactNativeSessionReplay.swift b/ios/PosthogReactNativeS
 index de679ac056..f7abd16d3a 100644
 --- a/ios/PosthogReactNativeSessionReplay.swift
 +++ b/ios/PosthogReactNativeSessionReplay.swift
-@@ -1,13 +1,224 @@
+@@ -1,13 +1,226 @@
  import PostHog
 +import Foundation
 +import zlib
@@ -176,6 +176,7 @@ index de679ac056..f7abd16d3a 100644
  class PosthogReactNativeSessionReplay: NSObject {
      private var config: PostHogConfig?
 +    private var consentAllowed = false
++    private var nativeInitialized = false
 +    private var transport: ReplayConsentTransport?
 +    private var latestDistinctId = ""
 +    private var latestAnonymousId = ""
@@ -193,6 +194,7 @@ index de679ac056..f7abd16d3a 100644
 +            PostHogSDK.shared.optOut()
 +            PostHogSDK.shared.stopSessionRecording()
 +            PostHogSDK.shared.close()
++            nativeInitialized = false
 +            config = nil
 +            latestDistinctId = ""
 +            latestAnonymousId = ""
@@ -227,7 +229,7 @@ index de679ac056..f7abd16d3a 100644
  
      @objc(start:withSdkOptions:withSdkReplayConfig:withDecideReplayConfig:withResolver:withRejecter:)
      func start(
-@@ -15,6 +226,7 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -15,6 +228,7 @@ class PosthogReactNativeSessionReplay: NSObject {
          decideReplayConfig: [String: Any], resolve: RCTPromiseResolveBlock,
          reject _: RCTPromiseRejectBlock
      ) {
@@ -235,9 +237,9 @@ index de679ac056..f7abd16d3a 100644
          // we've seen cases where distinctId and anonymousId are not strings, so we need to check and convert them
          guard let sessionIdStr = sessionId as? String else {
              hedgeLog("Invalid sessionId provided: \(sessionId). Expected a string.")
-@@ -31,7 +243,15 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -31,7 +245,18 @@ class PosthogReactNativeSessionReplay: NSObject {
  
-         PostHogSessionManager.shared.setSessionId(sessionIdStr)
+-        PostHogSessionManager.shared.setSessionId(sessionIdStr)
  
 -        let config = PostHogConfig(projectToken: projectToken, host: host)
 +        publicProjectToken = projectToken
@@ -247,23 +249,44 @@ index de679ac056..f7abd16d3a 100644
 +        savedDecideConfig = decideReplayConfig
 +        let nextTransport = ReplayConsentTransport(publicToken: projectToken)
 +        transport?.retire()
++        PostHogSDK.shared.close()
++        nativeInitialized = false
++        self.config = nil
++        PostHogSessionManager.shared.setSessionId(sessionIdStr)
 +        transport = nextTransport
 +        let config = PostHogConfig(projectToken: nextTransport.storageToken, host: host)
          config.sessionReplay = true
          config.captureApplicationLifecycleEvents = false
          config.captureScreenViews = false
-@@ -89,6 +309,10 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -89,6 +314,15 @@ class PosthogReactNativeSessionReplay: NSObject {
              postHogVersion = sdkVersion
          }
  
 +        // Old native replay buffers must never be uploaded by a fresh grant.
 +        do { try purgeCache(projectToken) }
-+        catch { resolve(nil); return }
++        catch {
++            transport?.retire()
++            transport = nil
++            resolve(nil)
++            return
++        }
 +        prepareTransport(config)
          PostHogSDK.shared.setup(config)
  
          self.config = config
-@@ -114,6 +338,7 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -96,5 +330,8 @@ class PosthogReactNativeSessionReplay: NSObject {
+         guard let storageManager = self.config?.storageManager else {
++            transport?.retire()
++            transport = nil
++            self.config = nil
+             hedgeLog("Storage manager is not available in the config.")
+             resolve(nil)
+             return
+         }
+@@ -102,1 +339,2 @@ class PosthogReactNativeSessionReplay: NSObject {
++        nativeInitialized = true
+         setIdentify(storageManager, distinctId: distinctId, anonymousId: anonymousId)
+@@ -114,6 +352,7 @@ class PosthogReactNativeSessionReplay: NSObject {
              resolve(nil)
              return
          }
@@ -271,7 +294,7 @@ index de679ac056..f7abd16d3a 100644
          PostHogSessionManager.shared.setSessionId(sessionIdStr)
          PostHogSDK.shared.startSession()
          resolve(nil)
-@@ -146,7 +371,9 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -146,7 +385,9 @@ class PosthogReactNativeSessionReplay: NSObject {
              resolve(nil)
              return
          }
@@ -282,7 +305,7 @@ index de679ac056..f7abd16d3a 100644
              hedgeLog("Storage manager is not available in the config.")
              resolve(nil)
              return
-@@ -159,6 +386,9 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -159,6 +400,9 @@ class PosthogReactNativeSessionReplay: NSObject {
      private func setIdentify(
          _ storageManager: PostHogStorageManager, distinctId: String, anonymousId: String
      ) {
@@ -292,19 +315,19 @@ index de679ac056..f7abd16d3a 100644
          if !anonymousId.isEmpty {
              storageManager.setAnonymousId(anonymousId)
          }
-@@ -171,6 +401,16 @@ class PosthogReactNativeSessionReplay: NSObject {
+@@ -171,6 +415,16 @@ class PosthogReactNativeSessionReplay: NSObject {
      func startRecording(
          resumeCurrent: Bool, resolve: RCTPromiseResolveBlock, reject _: RCTPromiseRejectBlock
      ) {
 +        guard consentAllowed, !publicProjectToken.isEmpty else { resolve(nil); return }
-+        if !PostHogSDK.shared.isEnabled() {
++        if !nativeInitialized {
 +            var options = savedSdkOptions
 +            options["distinctId"] = latestDistinctId
 +            options["anonymousId"] = latestAnonymousId
 +            options["optOut"] = false
 +            start(sessionId: savedSessionId, sdkOptions: options, sdkReplayConfig: savedReplayConfig,
 +                  decideReplayConfig: savedDecideConfig, resolve: { _ in }, reject: { _, _, _ in })
-+            guard PostHogSDK.shared.isEnabled() else { resolve(nil); return }
++            guard consentAllowed, nativeInitialized else { resolve(nil); return }
 +        }
          PostHogSDK.shared.startSessionRecording(resumeCurrent: resumeCurrent)
          resolve(nil)
