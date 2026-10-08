@@ -317,7 +317,7 @@
       "p1": "Der Code von Boardsesh ist Open Source unter der Apache-2.0-Lizenz. Diese Lizenz gilt für den Code. Sie gilt nicht für den gehosteten Dienst: die Konten, die Boulder-Datenbank, die Logbuch-Synchronisierung und die Echtzeit-Server, mit denen sich die Boardsesh-Apps und die Website verbinden. Die betreiben und bezahlen wir.",
       "p2Start": "Die öffentliche API, die auf der",
       "p2Link": "API-Dokumentationsseite",
-      "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder im Namen eines angemeldeten Kletterers über dessen eigenes Konto handeln, innerhalb der veröffentlichten Ratenlimits.",
+      "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder für angemeldete Kletterer*innen über deren eigenes Konto handeln, innerhalb der veröffentlichten Ratenlimits.",
       "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, der Boardsesh-Konten, -Daten oder -Server als eigenen Dienst nutzt, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code und die Self-Hosting-Doku sind genau dafür da.",
       "contact": "Fragen zu dieser Richtlinie:"
     },
@@ -852,8 +852,8 @@
     "overview": {
       "title": "Überblick über die Boardsesh-API",
       "intro": "Boardsesh bietet zwei APIs, die sich ergänzen, für den Umgang mit interaktiven Kletter-Trainingsboards (Kilter, Tension):",
-      "usagePolicy": "Diese API ist für Integrationen gedacht. Wer eine App veröffentlicht, die das Boardsesh-Backend als ihren Dienst nutzt, braucht eine schriftliche Erlaubnis, siehe unsere",
-      "usagePolicyLink": "Rechtliche Seite",
+      "usagePolicy": "Diese API ist für Integrationen gedacht. Wer eine App veröffentlicht, die das Boardsesh-Backend als ihren Dienst nutzt, braucht eine schriftliche Erlaubnis, die wir derzeit nicht erteilen. Siehe unsere",
+      "usagePolicyLink": "rechtliche Seite",
       "rest": {
         "title": "REST-API",
         "intro": "Nimm die REST-API für zustandslose Vorgänge wie die Bouldersuche, das Abrufen der Board-Konfiguration und die Authentifizierung. Die REST-API passt für:",

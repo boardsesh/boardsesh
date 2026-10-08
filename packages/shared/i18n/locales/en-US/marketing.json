@@ -852,7 +852,7 @@
     "overview": {
       "title": "Boardsesh API Overview",
       "intro": "Boardsesh provides two complementary APIs for interacting with interactive climbing training boards (Kilter, Tension):",
-      "usagePolicy": "This API is for integrations. Publishing an app that uses the Boardsesh backend as its service needs written permission, see our",
+      "usagePolicy": "This API is for integrations. Publishing an app that uses the Boardsesh backend as its service needs written permission, which we do not currently grant. See our",
       "usagePolicyLink": "legal page",
       "rest": {
         "title": "REST API",

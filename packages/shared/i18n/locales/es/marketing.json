@@ -314,10 +314,10 @@
     },
     "hostedService": {
       "title": "Servicio alojado y acceso a la API",
-      "p1": "El código de Boardsesh es de código abierto bajo la licencia Apache 2.0. Esa licencia cubre el código. No cubre el servicio alojado: las cuentas, la base de datos de problemas, la sincronización del logbook y los servidores en tiempo real a los que se conectan las apps y el sitio web de Boardsesh. Los gestionamos y los pagamos nosotros.",
+      "p1": "El código de Boardsesh es de código abierto bajo la licencia Apache 2.0. Esa licencia cubre el código. No cubre el servicio alojado: las cuentas, la base de datos de bloques, la sincronización del logbook y los servidores en tiempo real a los que se conectan las apps y el sitio web de Boardsesh. Los gestionamos y los pagamos nosotros.",
       "p2Start": "La API pública documentada en la",
       "p2Link": "página de documentación de la API",
-      "p2End": "es para integraciones: herramientas que leen datos de problemas, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso publicados.",
+      "p2End": "es para integraciones: herramientas que leen datos de bloques, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso publicados.",
       "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente que use las cuentas, los datos o los servidores de Boardsesh como su servicio necesita nuestro permiso por escrito, y por ahora no lo concedemos. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código y la documentación de autoalojamiento están ahí precisamente para eso.",
       "contact": "Preguntas sobre esta política:"
     },
@@ -852,7 +852,7 @@
     "overview": {
       "title": "Resumen de la API de Boardsesh",
       "intro": "Boardsesh ofrece dos APIs complementarias para interactuar con plafones de entrenamiento de escalada interactivos (Kilter, Tension):",
-      "usagePolicy": "Esta API es para integraciones. Publicar una app que use el backend de Boardsesh como su servicio requiere permiso por escrito; consulta nuestra",
+      "usagePolicy": "Esta API es para integraciones. Publicar una app que use el backend de Boardsesh como su servicio requiere permiso por escrito, y por ahora no lo concedemos. Consulta nuestra",
       "usagePolicyLink": "página legal",
       "rest": {
         "title": "API REST",

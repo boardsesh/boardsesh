@@ -852,7 +852,7 @@
     "overview": {
       "title": "Aperçu de l'API Boardsesh",
       "intro": "Boardsesh fournit deux API complémentaires pour interagir avec les boards d'entraînement interactives (Kilter, Tension) :",
-      "usagePolicy": "Cette API est destinée aux intégrations. Publier une app qui utilise le backend de Boardsesh comme son service demande une autorisation écrite, voir notre",
+      "usagePolicy": "Cette API est destinée aux intégrations. Publier une app qui utilise le backend de Boardsesh comme son service demande une autorisation écrite, que nous n'accordons pas pour le moment. Voir notre",
       "usagePolicyLink": "page légale",
       "rest": {
         "title": "API REST",
