@@ -67,6 +67,7 @@ import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
+import { formatRelativeTime } from '../../lib/format-relative-time';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -1208,6 +1209,19 @@ function HistoryRowContent({
 }: HistoryRowContentProps) {
   const { t } = useTranslation('session');
   const litBy = climb.sentByDisplayName?.trim() || null;
+  const isKilterImport = climb.source === 'kilter';
+  // Kilter imports only arrive while someone has the app open, so the history
+  // has gaps; the time on each row is what makes them readable (#6012). It
+  // rides on the first caption line (the Kilter source line, else the sender
+  // row) and gets a line of its own only when the row has neither. Computed
+  // at render: the rows are memoized, so it can lag while the sheet stays open.
+  const sentAgo = formatRelativeTime(climb.sentAt);
+  const sourceLine = isKilterImport
+    ? [t('mobile.boardPresence.kilterHistorySource'), sentAgo].filter(Boolean).join(' · ')
+    : litBy
+      ? ''
+      : sentAgo;
+  const senderTime = !isKilterImport && litBy ? sentAgo : '';
 
   return (
     <>
@@ -1216,9 +1230,9 @@ function HistoryRowContent({
         <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.historyName}>
           {climb.name ?? ''}
         </Text>
-        {climb.source === 'kilter' ? (
-          <Text variant="caption1" color={secondaryColor}>
-            {t('mobile.boardPresence.kilterHistorySource')}
+        {sourceLine ? (
+          <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
+            {sourceLine}
           </Text>
         ) : null}
         {litBy ? (
@@ -1236,6 +1250,12 @@ function HistoryRowContent({
             <Text variant="caption1" color={secondaryColor} numberOfLines={1} style={styles.historyDriverName}>
               {litBy}
             </Text>
+            {/* Its own Text so a long name truncates before the time does. */}
+            {senderTime ? (
+              <Text variant="caption1" color={secondaryColor} numberOfLines={1} style={styles.historySentAgo}>
+                {`· ${senderTime}`}
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -1584,6 +1604,12 @@ const styles = StyleSheet.create({
   },
   historyDriverName: {
     flexShrink: 1,
+  },
+  historySentAgo: {
+    flexShrink: 0,
+    // Pulls back half of the row's gap so "Name · 2 minutes ago" reads with
+    // the same spacing as the single-Text Kilter line.
+    marginLeft: -spacing[1],
   },
   historyGrade: {
     fontVariant: ['tabular-nums'],

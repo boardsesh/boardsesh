@@ -14,7 +14,7 @@ vi.mock('../../PressableSurface', async () => {
 });
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardPresenceClimb, BoardPresenceStats, Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { NowOnTheWallPanelProps } from '../NowOnTheWallPanel';
 import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
@@ -677,6 +677,55 @@ describe('NowOnTheWallPanel', () => {
         size: 34,
       }),
     );
+  });
+});
+
+// Kilter imports only land while a linked viewer has the app open, so the
+// history is a set of snapshots with gaps. Each row says when it was on the
+// wall, once, so "on the wall now" reads apart from "displayed last night" (#6012).
+describe('NowOnTheWallPanel history row times', () => {
+  beforeEach(() => {
+    // Date only: the panel's promises and waitFor keep their real timers.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T08:40:00.000Z'));
+    presence.currentClimb = null;
+    presence.holder = null;
+    presence.stats = null;
+    presence.history = [
+      makeClimb('kilter-import', 3, {
+        source: 'kilter',
+        sentAt: '2026-10-07T21:40:00.000Z',
+        sentByDisplayName: 'siqo mode',
+      }),
+      makeClimb('native-sent', 2, { sentAt: '2026-10-08T08:38:00.000Z', sentByDisplayName: 'Marco' }),
+      makeClimb('no-sender', 1, { sentAt: '2026-10-06T08:40:00.000Z', sentByDisplayName: null }),
+    ];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function spanTexts(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('span'), (span) => span.textContent ?? '');
+  }
+
+  it.each([
+    ['plain rows', {}],
+    ['interactive rows', { onClimbPress: noop }],
+  ])('puts the time on the first caption line of each row (%s)', (_label, overrides) => {
+    const { container } = render(panelElement(overrides));
+    const texts = spanTexts(container);
+
+    // Kilter import: on the source line, not again beside the sender.
+    expect(texts).toContain('mobile.boardPresence.kilterHistorySource · 11 hours ago');
+    expect(texts).toContain('siqo mode');
+    expect(texts.filter((text) => text.includes('11 hours ago'))).toHaveLength(1);
+    // Native send: beside the sender, in its own span so the name truncates first.
+    expect(texts).toContain('Marco');
+    expect(texts).toContain('· 2 minutes ago');
+    // Nobody attributed: the time stands on its own line.
+    expect(texts).toContain('2 days ago');
   });
 });
 
