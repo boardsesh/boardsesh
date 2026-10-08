@@ -31,8 +31,8 @@ function boardParams(board: BoardConfig): Record<string, string> {
  *
  * A single accepted action owns the whole handoff: dismiss the custom actions overlay,
  * await any source native sheet, await the `/play` native-stack closing transition, then
- * push create. CreateDrawer intentionally remains outside the sheet coordinator, so the
- * two preceding surfaces must be physically gone before its first render presents it.
+ * push create. New climb is a native modal route outside the sheet coordinator, so the
+ * two preceding surfaces must be physically gone before it presents.
  */
 export function useCreateClimbNavigation({
   dismissSourceSheet,

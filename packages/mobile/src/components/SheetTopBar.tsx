@@ -60,6 +60,8 @@ type SheetTopBarLeadingBase = {
   onPress: () => void;
   /** Overrides the default spoken label. */
   accessibilityLabel?: string;
+  /** What leaving does, e.g. that a draft is kept. */
+  accessibilityHint?: string;
   /** Dims the action and swallows taps, as on the trailing confirm. */
   disabled?: boolean;
 };
@@ -154,10 +156,10 @@ type SheetTopBarProps = {
   testID?: string;
 };
 
-const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
+export const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
   leading: SheetTopBarLeading | SheetTopBarTextLeading,
 ) {
-  const { kind, onPress, accessibilityLabel, disabled = false } = leading;
+  const { kind, onPress, accessibilityLabel, accessibilityHint, disabled = false } = leading;
   const { t } = useTranslation('common');
   const { systemColors, brandColors, variant } = useTheme();
   const spec = topBarFor(variant);
@@ -173,6 +175,7 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
         feedback="opacity"
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
         accessibilityState={{ disabled }}
         style={[styles.textTarget, { minHeight: spec.iconTarget, minWidth: spec.iconTarget }]}
       >
@@ -197,6 +200,7 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
       onPress={onPress}
       disabled={disabled}
       accessibilityLabel={accessibilityLabel ?? t(isClose ? 'ariaLabels.close' : 'ariaLabels.back')}
+      accessibilityHint={accessibilityHint}
     />
   );
 });

@@ -1,13 +1,16 @@
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
 import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-blur';
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
+import { useTheme } from '../../../src/providers/theme-provider';
 
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
+  const { systemColors } = useTheme();
   usePopToTopOnTabBlur('climbs');
 
   return (
@@ -35,11 +38,20 @@ export default function ClimbsLayout() {
         <Stack.Screen
           name="create"
           options={{
-            // The create UI is just the drawer floating over the climbs/search
-            // list — a transparent, headerless modal (no separate card around it).
+            // New climb is a focused, full-height modal task, like Mail's compose
+            // or a new reminder (HIG "Modality"). iOS: a pageSheet, with the list
+            // scaled behind it. Android: an M3 full-screen dialog sliding up. Not
+            // fullScreenModal: that snapshots the tab bar and doubles the iOS 26
+            // accessory (docs/mobile-sheets-vs-routes.md, rule 2).
+            //
+            // Swipe-down is off: painting and pinching the board are drags, and
+            // a sheet's dismiss pan fights them (rule 3). The X leaves instead,
+            // and leaving loses nothing because the draft is kept.
             headerShown: false,
-            presentation: 'transparentModal',
-            animation: 'fade',
+            presentation: 'modal',
+            gestureEnabled: false,
+            contentStyle: { backgroundColor: systemColors.secondaryBackground },
+            ...(Platform.OS === 'android' ? { animation: 'slide_from_bottom' as const } : null),
           }}
         />
         <Stack.Screen

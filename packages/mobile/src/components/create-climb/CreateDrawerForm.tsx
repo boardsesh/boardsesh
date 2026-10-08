@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
-import { View, StyleSheet, type TextStyle } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { View, StyleSheet, TextInput, type TextStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { SwitchRow } from '../SwitchRow';
@@ -72,7 +71,7 @@ export function CreateDrawerForm({
       <Text variant="footnote" style={styles.label}>
         {t('createClimbForm.fields.description')}
       </Text>
-      <BottomSheetTextInput
+      <TextInput
         value={description}
         onChangeText={onChangeDescription}
         placeholder={t('createClimbForm.descriptionPlaceholder')}

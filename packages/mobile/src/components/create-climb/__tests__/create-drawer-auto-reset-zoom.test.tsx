@@ -15,12 +15,11 @@ vi.mock('react-native', () => ({
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 405, height: 900 }),
+  Platform: { OS: 'ios' },
+  Keyboard: { addListener: () => ({ remove: () => undefined }) },
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
 // The drawer scrolls in RNGH's own ScrollView (so the board's pinch can declare
 // a relation with it), so the real RNGH module is in this file's import graph.
 vi.mock('react-native-gesture-handler', () => ({
@@ -33,7 +32,6 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
-  sheetStyles: { background: {} },
 }));
 
 // Publishes the handle the drawer calls, the same way the real board's
@@ -157,7 +155,6 @@ const drawer = (controllerOverrides: Record<string, unknown> = {}) =>
     controller: makeController(controllerOverrides),
     boardHolds,
     onLongPressHold: vi.fn(),
-    subSheetOpen: false,
     onLoadDraft,
     onClose: vi.fn(),
     onViewDuplicate: vi.fn(),
