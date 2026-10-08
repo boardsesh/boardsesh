@@ -41,6 +41,13 @@ interface CaptureBackendEventOptions {
   properties?: AnalyticsProperties;
   /** A fixed id for an aggregate system event, e.g. `system:active-users`. Never a user id. */
   systemDistinctId?: `system:${string}`;
+  /** Overrides the event time, e.g. to date a daily snapshot to the day it counts. */
+  timestamp?: Date;
+  /**
+   * A deterministic event UUID, so a re-sent aggregate (a manual re-run of a
+   * daily job) collapses into the first copy in PostHog instead of doubling it.
+   */
+  uuid?: string;
 }
 
 /**
@@ -207,6 +214,8 @@ export function captureBackendEvent(
       distinctId: options.systemDistinctId ?? eventScopedDistinctId(eventName),
       event: eventName,
       properties,
+      ...(options.timestamp ? { timestamp: options.timestamp } : {}),
+      ...(options.uuid ? { uuid: options.uuid } : {}),
     });
     if (!loggedQueuedEvents.has(eventName)) {
       loggedQueuedEvents.add(eventName);

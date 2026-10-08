@@ -1,6 +1,7 @@
 import { triggerWebCron } from './trigger-web-cron';
 import { refreshGymActivityStats } from './refresh-gym-activity-stats';
 import { purgeSprayWallPhotos } from './purge-spray-wall-photos';
+import { purgeUserActivity, snapshotActiveUsers } from './active-users';
 import type { JobDefinition } from './types';
 
 /**
@@ -69,6 +70,16 @@ const GYM_ACTIVITY_REFRESH_TIMEOUT_MS = 900_000;
  * them.
  */
 const SPRAY_PHOTO_PURGE_TIMEOUT_MS = 600_000;
+
+/**
+ * The active-user snapshot is six `count(DISTINCT user_id)` reads over at most
+ * 30 days of `user_activity_days` (one row per signed-in climber per day per
+ * platform) through its `day` index, and the retention purge deletes about one
+ * day's rows. Both finish in seconds; ten minutes is headroom for a cold,
+ * contended primary, short enough that a wedged backend can't hold the run
+ * until the next day's tick.
+ */
+const ACTIVE_USERS_TIMEOUT_MS = 600_000;
 
 export const JOBS: readonly JobDefinition[] = [
   {
@@ -162,6 +173,41 @@ export const JOBS: readonly JobDefinition[] = [
     timezone: 'UTC',
     timeoutMs: SPRAY_PHOTO_PURGE_TIMEOUT_MS,
     run: purgeSprayWallPhotos,
+  },
+
+  // First-party active users (#2644, docs/analytics-consent.md): yesterday's
+  // DAU and the trailing WAU/MAU from `user_activity_days`, sent to PostHog as
+  // one aggregate event. Counted whatever climbers' analytics consent, which is
+  // why it is the canonical MAU in docs/growth-metrics.md.
+  //
+  // Overlap-safe, which JobDefinition requires: the counts are reads, and the
+  // event's uuid is derived from the day, so a second send collapses into the
+  // first in PostHog.
+  {
+    name: 'snapshot-active-users',
+    // 00:20 UTC: yesterday is complete, and twenty minutes clear of the
+    // 00:00 sitemap refresh so the two never start on the same tick.
+    schedule: '20 0 * * *',
+    // Load-bearing: "yesterday" is a UTC day, and so is the schedule.
+    timezone: 'UTC',
+    timeoutMs: ACTIVE_USERS_TIMEOUT_MS,
+    run: snapshotActiveUsers,
+  },
+
+  // Retention for `user_activity_days`: rows older than 13 months go. Daily,
+  // so the table never holds more than a day past the window.
+  //
+  // Overlap-safe, which JobDefinition requires: a second run finds nothing
+  // older than the cutoff and deletes nothing.
+  {
+    name: 'purge-user-activity',
+    // 07:30 UTC — after the 07:00 spray wall photo purge rather than alongside it.
+    schedule: '30 7 * * *',
+    // Load-bearing for the same reason as every row above: a container's local
+    // zone is not guaranteed to be UTC.
+    timezone: 'UTC',
+    timeoutMs: ACTIVE_USERS_TIMEOUT_MS,
+    run: purgeUserActivity,
   },
 ];
 

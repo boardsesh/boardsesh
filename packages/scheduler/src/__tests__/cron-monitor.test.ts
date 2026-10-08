@@ -51,6 +51,8 @@ describe('monitorSlugForJob', () => {
       'scheduler-refresh-sitemap-climbs',
       'scheduler-refresh-gym-activity-stats',
       'scheduler-purge-spray-wall-photos',
+      'scheduler-snapshot-active-users',
+      'scheduler-purge-user-activity',
     ]);
   });
 });
@@ -82,6 +84,8 @@ describe('monitorConfigForJob', () => {
       'scheduler-refresh-sitemap-climbs': '0 */6 * * *',
       'scheduler-refresh-gym-activity-stats': '30 6 * * *',
       'scheduler-purge-spray-wall-photos': '0 7 * * *',
+      'scheduler-snapshot-active-users': '20 0 * * *',
+      'scheduler-purge-user-activity': '30 7 * * *',
     });
 
     for (const config of Object.values(configBySlug)) {
