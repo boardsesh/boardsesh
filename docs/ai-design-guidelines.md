@@ -853,7 +853,9 @@ on-wall climb capsule stays in the navigation bar's centre slot. Each tab's layo
 owns its localized title; opening a transparent drawer must not rewrite that
 title from the globally focused route. While the climb capsule is present, the
 native bar stays compact without an additional large title. Removing the capsule
-restores the route's collapsing large title.
+restores the route's collapsing large title. Search setup only configures the
+search controller; root chrome owns the title mode and header actions, including
+empty-board fallbacks.
 
 The create-climb header uses the same measured flank balancing as `SheetTopBar`.
 Its editable name centres when room permits, while the ellipsis and Save share a

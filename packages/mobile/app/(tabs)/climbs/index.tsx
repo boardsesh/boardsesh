@@ -43,6 +43,7 @@ import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
 import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../src/components/ClimbFilterSheet';
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
+import { NativeRootHeader } from '../../../src/components/chrome/NativeRootHeader';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
@@ -1734,17 +1735,20 @@ function ClimbListInner() {
         ? {
             // iOS 26 presents this screen's search controller in the bottom tab
             // bar (the NativeTabs role="search" liquid-glass pattern) — there is
-            // no header search bar. The header only has to stay mounted to host
-            // the controller, so we make it fully invisible: transparent, no
-            // blur (the parent layout's systemMaterial was the grey bar), no
-            // shadow, no title. The floating glass chrome then owns the top.
-            headerShown: true,
-            headerTransparent: true,
-            headerBlurEffect: nativeRootHeader ? undefined : ('none' as const),
-            headerShadowVisible: false,
-            headerStyle: { backgroundColor: 'transparent' },
-            title: nativeRootHeader ? tCommon('mobile.nav.climbs') : '',
-            headerLargeTitle: nativeRootHeader,
+            // no header search bar. NativeRootHeader owns the visible native
+            // title/pill; this screen only installs its search controller.
+            // Floating chrome still needs an invisible native search host.
+            ...(nativeRootHeader
+              ? {}
+              : {
+                  headerShown: true,
+                  headerTransparent: true,
+                  headerBlurEffect: 'none' as const,
+                  headerShadowVisible: false,
+                  headerStyle: { backgroundColor: 'transparent' },
+                  title: '',
+                  headerLargeTitle: false,
+                }),
             headerSearchBarOptions: {
               ref: nativeSearchRef,
               placement: 'automatic' as const,
@@ -1758,7 +1762,9 @@ function ClimbListInner() {
               onCancelButtonPress: handleNativeSearchCancel,
             },
           }
-        : { headerShown: nativeRootHeader, headerLargeTitle: nativeRootHeader, title: tCommon('mobile.nav.climbs') },
+        : nativeRootHeader
+          ? {}
+          : { headerShown: false, headerLargeTitle: false, title: tCommon('mobile.nav.climbs') },
     [
       useNativeSearch,
       nativeRootHeader,
@@ -1817,6 +1823,8 @@ function ClimbListInner() {
     return (
       <>
         <Stack.Screen options={stackOptions} />
+        {/* The empty state replaces action chrome; clear its native center slot. */}
+        {nativeRootHeader ? <NativeRootHeader onHeightChange={setSearchBarHeight} /> : null}
         <View style={styles.emptyContainer}>
           <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
@@ -1842,6 +1850,7 @@ function ClimbListInner() {
     return (
       <>
         <Stack.Screen options={stackOptions} />
+        {nativeRootHeader ? <NativeRootHeader onHeightChange={setSearchBarHeight} /> : null}
         <View style={styles.emptyContainer}>
           <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
