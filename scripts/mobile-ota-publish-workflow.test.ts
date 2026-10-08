@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
-import { minimumPublishJobTimeoutMinutes, SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES } from './lib/mobile-publish-retry';
+import {
+  minimumPublishJobTimeoutMinutes,
+  PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES,
+  SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES,
+} from './lib/mobile-publish-retry';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW_DIR = resolve(REPO_ROOT, '.github', 'workflows');
@@ -70,6 +74,24 @@ describe('production OTA workflow reliability', () => {
     expect(production).toContain('scripts/mobile-ota-stage-verify.ts');
     expect(production).not.toContain('await-backend-schema:');
   });
+  it('archives both beta and production baselines captured before either staged export', () => {
+    const baseline = stepBlock(production, 'Capture production OTA baseline before staging');
+    const receipt = stepBlock(production, 'Record staged export fingerprints and hashes');
+    expect(baseline).toContain('--capture-baseline --branch pr-beta');
+    expect(baseline).toContain('--out ota-stage/early-baseline.json');
+    expect(baseline).toContain('--out ota-stage/baseline.json');
+    for (const platform of ['iOS', 'Android']) {
+      expect(production.indexOf('      - name: Capture production OTA baseline before staging')).toBeLessThan(
+        production.indexOf(`      - name: Publish ${platform} OTA`),
+      );
+      expect(stepBlock(production, `Publish ${platform} OTA`)).toContain("steps.baseline.outcome == 'success'");
+    }
+    expect(receipt).toContain('--slurpfile early_baseline ota-stage/early-baseline.json');
+    expect(receipt).toContain('baselineEarlyUpdateIds:$early_baseline[0]');
+    expect(receipt).toContain('baselineProductionUpdateIds:$baseline[0]');
+    expect(stepBlock(production, 'Upload staged OTA export')).toContain('path: ota-stage/');
+  });
+
   it('serializes runs without cancelling an active publish and has enough retry time', () => {
     expect(production).toContain("'mobile-ota-staging' || 'mobile-ota-production'");
     expect(production).toContain('cancel-in-progress: false');
@@ -77,7 +99,7 @@ describe('production OTA workflow reliability', () => {
     // iOS then Android in one job, so the job must outlast two full backoff
     // budgets. Killed mid-backoff, the run dies by timeout and never reports
     // `s3-slowdown` or fires the failure notification.
-    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2));
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2, false, true));
   });
 
   it('waits for a same-commit OTA server rollout before every upload to the server', () => {
@@ -95,9 +117,8 @@ describe('production OTA workflow reliability', () => {
     expect(publishJob).toMatch(/fetch-depth: 0/);
     expect(promotion).toMatch(/fetch-depth: 0/);
     const deployJobs = (parse(pipeline) as { jobs: Record<string, { permissions?: Record<string, string> }> }).jobs;
-    for (const jobName of ['stage-mobile-ota', 'promote-mobile-ota']) {
-      expect(deployJobs[jobName].permissions).toMatchObject({ actions: 'read' });
-    }
+    expect(deployJobs['stage-mobile-ota'].permissions).toMatchObject({ actions: 'write' });
+    expect(deployJobs['promote-mobile-ota'].permissions).toMatchObject({ actions: 'read' });
   });
 
   it('gives the staging publish room for the server-rollout wait on top of its retry budget', () => {
@@ -105,7 +126,7 @@ describe('production OTA workflow reliability', () => {
     const waitMinutes = Number(gateSource.match(/WAIT_BUDGET_MS = (\d+) \* 60_000/)?.[1]);
     expect(waitMinutes).toBeGreaterThan(0);
     const timeout = Number(jobBlock(production, 'publish').match(/timeout-minutes: (\d+)/)?.[1]);
-    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2) + waitMinutes);
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(2, false, true) + waitMinutes);
   });
 
   it('keeps the gate watching exactly the paths that trigger the Railway apply job', () => {
@@ -141,7 +162,26 @@ describe('production OTA workflow reliability', () => {
     expect(stepTimeouts).not.toContain(jobTimeout);
 
     expect(stepTimeouts.length).toBeGreaterThanOrEqual(2);
-    expect(SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES).toBeGreaterThan(stepTimeoutTotal);
+    expect(SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES + PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES).toBeGreaterThan(
+      stepTimeoutTotal,
+    );
+  });
+
+  it('budgets direct unlock waiting without charging staging or previews', () => {
+    const unlockScript = readFileSync(resolve(REPO_ROOT, 'scripts', 'mobile-ota-unlock-wait.mjs'), 'utf8');
+    const waitMinutes = Number(unlockScript.match(/UNLOCK_WAIT_MS = (\d+) \* 60_000/)?.[1]);
+    expect(waitMinutes).toBeGreaterThan(0);
+    for (const [workflow, stepName] of [
+      [production, 'Await trusted main unlock before direct production publish'],
+      [backport, 'Await trusted main unlock before the backport publish'],
+    ]) {
+      const timeout = Number(stepBlock(workflow, stepName).match(/timeout-minutes: (\d+)/)?.[1]);
+      expect(timeout).toBeGreaterThan(waitMinutes);
+      expect(PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES).toBeGreaterThanOrEqual(timeout);
+    }
+    expect(minimumPublishJobTimeoutMinutes(2, false, true) - minimumPublishJobTimeoutMinutes(2)).toBe(
+      PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES,
+    );
   });
 
   it('attempts Android after iOS and records the aggregate result', () => {
@@ -323,7 +363,7 @@ describe('backport OTA workflow upload pressure', () => {
     const timeout = Number(jobBlock(backport, 'backport').match(/timeout-minutes: (\d+)/)?.[1]);
     // `max-parallel: 1` over a platform matrix, so each job publishes one
     // platform and needs one backoff budget rather than two.
-    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(1));
+    expect(timeout).toBeGreaterThanOrEqual(minimumPublishJobTimeoutMinutes(1, false, true));
   });
 
   it('checks out the release anchor before the package-manager-neutral install', () => {

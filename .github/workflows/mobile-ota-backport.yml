@@ -111,13 +111,17 @@ jobs:
           esac
 
   backport:
+    permissions:
+      contents: read
+      actions: write
     needs: setup
     runs-on: ubuntu-latest
     # One platform per matrix job, so this needs a single 34-minute backoff
-    # budget rather than production's two. Derived and enforced in
+    # budget rather than production's two, plus the 25-minute unlock ceiling.
+    # Derived and enforced in
     # mobile-ota-publish-workflow.test.ts from the ladder in
     # scripts/lib/mobile-publish-retry.ts.
-    timeout-minutes: 90
+    timeout-minutes: 110
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
     strategy:
@@ -156,6 +160,7 @@ jobs:
           mkdir -p "$tooling_root/scripts/lib"
           for source_path in \
             scripts/mobile-publish.ts \
+            scripts/mobile-ota-unlock-wait.mjs \
             scripts/lib/eoas.ts \
             scripts/lib/mobile-publish-retry.ts \
             scripts/lib/ota-branch-probe.ts \
@@ -281,6 +286,7 @@ jobs:
           EOF
 
       - name: Resolve fingerprint and verify it matches the approved anchor
+        id: fingerprint
         env:
           PLATFORM: ${{ matrix.platform }}
           EXPECTED_SHORTFP: ${{ steps.anchor.outputs.shortfp }}
@@ -293,9 +299,8 @@ jobs:
           # beats the bare "Could not resolve" message below with no root cause.
           raw="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
-          # Require >= 12 hex chars: we compare the first 12 against the anchor's
-          # shortfp, so anything shorter couldn't form a valid comparison anyway.
-          if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{12,}$'; then
+          # Unlock and publish both require the complete native fingerprint.
+          if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{40}$'; then
             echo "::error::Could not resolve the $PLATFORM fingerprint for the hotfix tree."
             exit 1
           fi
@@ -307,10 +312,22 @@ jobs:
             exit 1
           fi
           echo "::notice::$PLATFORM fingerprint $short matches the approved anchor — safe to publish."
+          echo "runtime_version=$(printf '%s' "$fp" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Await trusted main unlock before the backport publish
+        id: unlock
+        if: ${{ !inputs.dry_run }}
+        timeout-minutes: 25
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OTA_BRANCH: production
+          IOS_RUNTIME_VERSION: ${{ matrix.platform == 'ios' && steps.fingerprint.outputs.runtime_version || '' }}
+          ANDROID_RUNTIME_VERSION: ${{ matrix.platform == 'android' && steps.fingerprint.outputs.runtime_version || '' }}
+        run: node "$RUNNER_TEMP/ota-publish-tooling/scripts/mobile-ota-unlock-wait.mjs"
 
       - name: Publish OTA to the approved release
         id: publish
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.unlock.outcome == 'success' }}
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           PLATFORM: ${{ matrix.platform }}

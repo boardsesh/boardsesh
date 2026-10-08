@@ -205,14 +205,12 @@ describe('mobile-e2e-gate.yml verdict', () => {
     for (const mode of Object.values(gateJobs)) expect(['blocking', 'advisory']).toContain(mode);
   });
 
-  it('starts with every job advisory', () => {
-    // The release PR flips the three suites once they have been green five
-    // nights running; the real-bytes PR flips its own. Update this test then.
+  it('requires each implemented smoke; real OTA boots are a separate frozen gate', () => {
     expect(gateJobs).toEqual({
       'boot-real-bytes': 'advisory',
-      'expo-web': 'advisory',
-      'android-smoke': 'advisory',
-      'ios-smoke': 'advisory',
+      'expo-web': 'blocking',
+      'android-smoke': 'blocking',
+      'ios-smoke': 'blocking',
     });
   });
 
