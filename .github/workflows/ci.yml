@@ -419,6 +419,7 @@ jobs:
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
+              - 'packages/db/src/__tests__/board-climb-alias-index-migration.integration.test.ts'
               - 'packages/db/scripts/moonboard-reconciliation-report*'
               - 'packages/db/scripts/report-moonboard-reconciliation*'
               - 'packages/db/scripts/moonboard-catalog-helpers.ts'
@@ -1014,6 +1015,15 @@ jobs:
         env:
           MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: vp run test:db:migration-journal
+      # 0250 must no-op against the exact index an operator prebuilds while still
+      # creating it on an empty development/CI database. The test uses only
+      # session-local temporary relations.
+      - name: Verify alias index migration replay on real PostgreSQL
+        env:
+          MIGRATION_INDEX_TEST_REQUIRED: '1'
+          MIGRATION_INDEX_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+          MIGRATION_INDEX_TEST_EXPECTED_DATABASE: postgres
+        run: vp exec tsx --test packages/db/src/__tests__/board-climb-alias-index-migration.integration.test.ts
       # These node:test files are outside Vitest's module graph. In particular,
       # the report's projection must keep agreeing with the immutable SQL.
       - name: Replay MoonBoard reconciliation and verify report projections

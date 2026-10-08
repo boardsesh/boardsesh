@@ -1668,8 +1668,10 @@ export function PlayDrawer({
     if (Platform.OS === 'ios' && onOpenClimbActions && displayedClimb) {
       // Hand the reaction menu the drawer's OWN beta opener so the share-your-beta
       // sheet presents inside the `/play` modal (above it) rather than the root
-      // sheet, which can't stack over the fullScreenModal (#3505).
-      onOpenClimbActions(displayedClimb, undefined, {
+      // sheet, which can't stack over the fullScreenModal (#3505). Snapshot the
+      // board config used to draw this climb too: on a cross-board preview its
+      // angle is the one playlist membership must save for the next open.
+      onOpenClimbActions(displayedClimb, renderBoardConfig, {
         onAddBetaVideo: handleOpenAddBetaVideoForClimb,
         onTick: handleOpenTickForClimb,
         onReportClimb: handleOpenReportClimbForClimb,
@@ -1681,6 +1683,7 @@ export function PlayDrawer({
   }, [
     onOpenClimbActions,
     displayedClimb,
+    renderBoardConfig,
     handleOpenAddBetaVideoForClimb,
     handleOpenTickForClimb,
     handleOpenReportClimbForClimb,

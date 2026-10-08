@@ -1,3 +1,4 @@
+import { climbFitsPlaylistBoard } from '@boardsesh/board-config';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 
 /**
@@ -9,22 +10,28 @@ export function sortPlaylistsByName(playlists: Playlist[]): Playlist[] {
 }
 
 /**
- * Keep only playlists that belong to the given board+layout, using the same rule
- * the backend already applies for board-scoped playlist lists —
- * `boardType = $board AND (layout_id = $layout OR layout_id IS NULL)` in
- * `userPlaylists` / `allUserPlaylists`
- * (packages/backend/src/graphql/resolvers/playlists/queries/user-playlists.ts).
+ * Keep only the playlists a climb on `boardName`/`layoutId` may actually be
+ * added to.
  *
- * `layoutId` is nullable on `Playlist` by design: a playlist is scoped to a
- * board and only *optionally* to a layout (see packages/db schema), which is how
- * Aurora- and Kilter-synced circuits arrive. Those are legitimate add targets on
- * every layout of their board, and the Discover "My playlists" list already
- * shows them — so a null `layoutId` matches here too, rather than silently
- * dropping a climber's circuits from the add-to-playlist picker.
+ * The predicate is `climbFitsPlaylistBoard` from `@boardsesh/board-config` — the
+ * same function `addClimbToPlaylist` guards the write with, so the picker can
+ * never offer a target the server rejects (#4015). `layoutId` is nullable on
+ * `Playlist` by design: a playlist is scoped to a board and only *optionally* to
+ * a layout, which is how Aurora- and Kilter-synced circuits arrive. Those are
+ * legitimate targets on every layout of their board, and the Discover "My
+ * playlists" list already shows them.
+ *
+ * The climb's `layoutId` is nullable for the other reason: a caller that could
+ * not resolve which layout the climb is on (see `resolveClimbBoardScope`) passes
+ * null rather than a guess, and every playlist on the board stays in the list.
+ * The server, which always knows the layout, still has the final say on those.
  */
-export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number): Playlist[] {
-  return playlists.filter(
-    (playlist) => playlist.boardType === boardName && (playlist.layoutId == null || playlist.layoutId === layoutId),
+export function filterPlaylistsByBoard(playlists: Playlist[], boardName: string, layoutId: number | null): Playlist[] {
+  return playlists.filter((playlist) =>
+    climbFitsPlaylistBoard(
+      { boardType: boardName, layoutId },
+      { boardType: playlist.boardType, layoutId: playlist.layoutId ?? null },
+    ),
   );
 }
 

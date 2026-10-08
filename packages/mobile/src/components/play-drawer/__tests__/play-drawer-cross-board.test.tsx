@@ -38,6 +38,7 @@ const recorded = vi.hoisted(() => ({
   scroll: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
+const platformState = vi.hoisted(() => ({ OS: 'web' as 'web' | 'ios' }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
 const dismissGestureRef = vi.hoisted(() => ({ current: undefined as unknown }));
 const queueState = vi.hoisted(() => ({
@@ -65,7 +66,9 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFillObject: {} },
-  Platform: { OS: 'web', select: (spec: Record<string, unknown>) => spec.web ?? spec.default },
+  Platform: Object.assign(platformState, {
+    select: (spec: Record<string, unknown>) => spec[platformState.OS] ?? spec.default,
+  }),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
 }));
@@ -302,7 +305,10 @@ const HOMEWALL_CLIMB = climbOn('kilter', 8, 30, 'HOMEWALL00000000000000000000AAA
 // A climb that genuinely belongs to the selected 12x12.
 const TWELVE_CLIMB = climbOn('kilter', 1, 40, 'TWELVE0000000000000000000000BBBB');
 
-function renderDrawer(onSwitchBoard?: (boardConfig?: unknown) => void) {
+function renderDrawer(
+  onSwitchBoard?: (boardConfig?: unknown) => void,
+  onOpenClimbActions?: (climb: Climb, boardConfig?: unknown, options?: unknown) => void,
+) {
   return render(
     createElement(PlayDrawer, {
       presentation: 'pane' as const,
@@ -310,6 +316,7 @@ function renderDrawer(onSwitchBoard?: (boardConfig?: unknown) => void) {
       openTarget: null,
       onOpenQueue: vi.fn(),
       onSwitchBoard,
+      onOpenClimbActions,
     }),
   );
 }
@@ -338,6 +345,7 @@ beforeEach(() => {
   queueState.currentClimbQueueItem = null;
   navigation.state = { nextItem: null, prevItem: null, canNext: false, canPrevious: false };
   prefetchWalk.items = [];
+  platformState.OS = 'web';
 });
 
 describe('PlayDrawer relay board compatibility', () => {
@@ -405,6 +413,50 @@ describe('PlayDrawer opening layout', () => {
 });
 
 describe('PlayDrawer draws the climb on its own board (#5099)', () => {
+  it('opens climb actions with the cross-board preview board and angle', () => {
+    platformState.OS = 'ios';
+    const preview = climbOn('tension', 10, 35, 'TENSION00000000000000000000000CCC');
+    const previewQueueItem = queueItem(preview, 'preview-tension');
+    const onOpenClimbActions = vi.fn();
+    render(
+      createElement(PlayDrawer, {
+        presentation: 'pane' as const,
+        boardConfig: TWELVE_BY_TWELVE,
+        openTarget: { climb: preview, options: { previewQueueItem }, nonce: 1 },
+        onOpenQueue: vi.fn(),
+        onOpenClimbActions,
+      }),
+    );
+
+    act(() => {
+      (recorded.actionBar.at(-1)?.onOpenActions as () => void)();
+    });
+
+    expect(onOpenClimbActions).toHaveBeenCalledWith(
+      preview,
+      expect.objectContaining({ boardName: 'tension', layoutId: 10, angle: 35 }),
+      expect.objectContaining({ onAddBetaVideo: expect.any(Function) }),
+    );
+  });
+
+  it('keeps the selected angle for a climb on the active board', () => {
+    platformState.OS = 'ios';
+    const selectedBoardClimb = { ...TWELVE_CLIMB, angle: 35 } as Climb;
+    queueState.currentClimbQueueItem = queueItem(selectedBoardClimb, 'queue-twelve');
+    const onOpenClimbActions = vi.fn();
+    renderDrawer(vi.fn(), onOpenClimbActions);
+
+    act(() => {
+      (recorded.actionBar.at(-1)?.onOpenActions as () => void)();
+    });
+
+    expect(onOpenClimbActions).toHaveBeenCalledWith(
+      selectedBoardClimb,
+      expect.objectContaining({ boardName: 'kilter', layoutId: 1, angle: 40 }),
+      expect.any(Object),
+    );
+  });
+
   it('renders a carried-over Homewall climb on the Homewall, not on the selected 12x12', () => {
     queueState.currentClimbQueueItem = queueItem(HOMEWALL_CLIMB, 'queue-homewall');
     renderDrawer(vi.fn());
