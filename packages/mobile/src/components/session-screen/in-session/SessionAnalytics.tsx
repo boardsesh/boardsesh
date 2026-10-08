@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SessionGradeDistributionItem } from '@boardsesh/shared-schema';
@@ -11,7 +10,6 @@ import { SectionHeader } from '../../SectionHeader';
 import { useTheme } from '../../../providers/theme-provider';
 import { gradeBadgeColor } from '../../you/profile-chart-colors';
 import { spacing } from '../../../theme/tokens';
-import { hapticSuccess } from '../../../lib/haptics';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { SessionGradeChart } from './SessionGradeChart';
 import { SessionTimer } from './SessionTimer';
@@ -20,8 +18,6 @@ import type { HardestSend } from './hardest-sends';
 type SessionAnalyticsProps = {
   sends: number;
   flashes: number;
-  /** Aggregate session-hardest grade — drives the celebration haptic. */
-  hardestGrade: string | null;
   /** Hardest send(s) to display: one entry solo, one per climber in a party. */
   hardestSends: HardestSend[];
   /** Session start time for the live duration cell (null until summary loads). */
@@ -34,13 +30,15 @@ type SessionAnalyticsProps = {
 /**
  * Analytics block for the live in-session view: a row of stat cells
  * (Sent / Flashed / Attempted / Duration), a hardest-send celebration, and the
- * grade-distribution chart. Replaces the old SessionStatsHeader. Fires a single
- * tasteful success haptic the first time a new hardest grade lands.
+ * grade-distribution chart. Replaces the old SessionStatsHeader.
+ *
+ * No haptic when a new hardest grade lands: in a crew it is usually a
+ * teammate's send, and the climber's own send already buzzed when they logged
+ * it (HIG "Playing haptics": only for the person's own action).
  */
 export function SessionAnalytics({
   sends,
   flashes,
-  hardestGrade,
   hardestSends,
   startedAt,
   gradeDistribution,
@@ -49,17 +47,6 @@ export function SessionAnalytics({
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
-
-  // Celebrate a fresh hardest grade once. Seeded with the initial grade so the
-  // first render (which may already carry a hardest) doesn't buzz; only a later
-  // change to a different grade fires the haptic.
-  const lastHardestGrade = useRef<string | null>(hardestGrade);
-  useEffect(() => {
-    if (hardestGrade && hardestGrade !== lastHardestGrade.current) {
-      hapticSuccess();
-    }
-    lastHardestGrade.current = hardestGrade;
-  }, [hardestGrade]);
 
   return (
     <View style={styles.container}>

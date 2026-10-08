@@ -133,8 +133,8 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
 }));
 
-const hapticMedium = vi.fn();
-vi.mock('../../lib/haptics', () => ({ hapticMedium: () => hapticMedium() }));
+const hapticSelection = vi.fn();
+vi.mock('../../lib/haptics', () => ({ hapticSelection: () => hapticSelection() }));
 
 // Isolate the wrapper from the coordinator: useManagedSheet's serialization is
 // covered by sheet-presentation-provider.test.tsx. Here we only assert the
@@ -186,7 +186,7 @@ beforeEach(() => {
   snapToIndex.mockClear();
   columnMeasure.mockClear();
   platform.os = 'ios';
-  hapticMedium.mockClear();
+  hapticSelection.mockClear();
 });
 
 describe('Sheet', () => {
@@ -321,10 +321,10 @@ describe('Sheet', () => {
     it('raises a short detent to the keyboard detent without the drag haptic', () => {
       // FeedbackSheet's 44% detent: the keyboard would leave its body 0pt.
       renderOpenFooterSheet(['44%', '90%'], 0);
-      hapticMedium.mockClear();
+      hapticSelection.mockClear();
       act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
       expect(snapToIndex).toHaveBeenCalledWith(1);
-      expect(hapticMedium).not.toHaveBeenCalled();
+      expect(hapticSelection).not.toHaveBeenCalled();
       // The same keyboard reporting a new frame (QuickType bar) is not a new show.
       act(() =>
         keyboard.listeners.get('keyboardWillChangeFrame')?.({
@@ -472,7 +472,7 @@ describe('Sheet', () => {
     });
   });
 
-  it('fires a haptic and onChange only when the sheet opens (index >= 0)', () => {
+  it('forwards every onChange, and stays silent when the sheet presents', () => {
     const onChange = vi.fn();
     render(
       <Sheet onChange={onChange}>
@@ -482,10 +482,30 @@ describe('Sheet', () => {
 
     captures.onChange?.(-1);
     expect(onChange).toHaveBeenLastCalledWith(-1);
-    expect(hapticMedium).not.toHaveBeenCalled();
 
+    // The present is the result of a tap that already gave feedback (HIG:
+    // haptics match the person's own action, sparingly).
     captures.onChange?.(0);
     expect(onChange).toHaveBeenLastCalledWith(0);
-    expect(hapticMedium).toHaveBeenCalledTimes(1);
+    expect(hapticSelection).not.toHaveBeenCalled();
+  });
+
+  it('ticks once per drag between detents, never for a re-report of the same detent', () => {
+    render(
+      <Sheet snapPoints={['50%', '90%']}>
+        <div>body</div>
+      </Sheet>,
+    );
+    captures.onChange?.(0);
+    captures.onChange?.(1);
+    expect(hapticSelection).toHaveBeenCalledTimes(1);
+    captures.onChange?.(1);
+    expect(hapticSelection).toHaveBeenCalledTimes(1);
+    captures.onChange?.(0);
+    expect(hapticSelection).toHaveBeenCalledTimes(2);
+    // Closed, then presented again: the present stays silent.
+    captures.onChange?.(-1);
+    captures.onChange?.(0);
+    expect(hapticSelection).toHaveBeenCalledTimes(2);
   });
 });

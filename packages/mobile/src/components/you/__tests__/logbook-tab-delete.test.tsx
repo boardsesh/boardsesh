@@ -214,7 +214,7 @@ describe('LogbookTab guarded delete', () => {
     expect(dialog.confirm).toHaveBeenCalledTimes(2);
   });
 
-  it('surfaces a failed delete with the error haptic + toast', async () => {
+  it('surfaces a failed delete with one error toast, which owns the haptic', async () => {
     dialog.confirm.mockImplementation(async () => true);
     render(createElement(LogbookTab, { userId: 'user-1' }));
 
@@ -223,7 +223,8 @@ describe('LogbookTab guarded delete', () => {
     const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onError: () => void };
     act(() => mutateOptions.onError());
 
-    expect(haptics.hapticError).toHaveBeenCalled();
+    // The toast provider plays the error haptic; a second one here would double it.
+    expect(haptics.hapticError).not.toHaveBeenCalled();
     expect(toast.showToast).toHaveBeenCalledWith('mobile.logbook.deleteError', 'error');
     expect(analytics.track).not.toHaveBeenCalledWith('Logbook Entry Deleted', expect.anything());
   });

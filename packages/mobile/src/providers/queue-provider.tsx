@@ -55,6 +55,7 @@ import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { getHttpClient } from '../lib/graphql/client';
+import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
 import {
   GET_SESSION_QUEUE_STATE,
   type SessionLiveStatsEvent,
@@ -244,6 +245,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     queueMutationTailRef.current = Promise.resolve();
     resyncFlightsByOriginRef.current.clear();
   }, []);
+  // The transport owns bounded attempts and rate-limit retries. Keep the lane
+  // waiting for that promise; racing it against another deadline would let its
+  // abandoned retry remove a climb AFTER a later Undo restored it.
   const enqueueQueueMutation = useCallback((operation: () => Promise<void>): Promise<void> => {
     const nextOperation = queueMutationTailRef.current.then(operation, operation);
     queueMutationTailRef.current = nextOperation.catch(() => undefined);
@@ -523,6 +527,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     authenticatedUserIdRef.current = null;
   }
   lastObservedAuthenticationRef.current = isAuthenticated;
+  const undoScopeIdentity = JSON.stringify([
+    sessionId,
+    activeBoardKey,
+    isAuthenticated,
+    authenticatedUserIdRef.current,
+  ]);
+  const undoScopeIdentityRef = useRef({ identity: undoScopeIdentity, revision: 0 });
+  if (undoScopeIdentityRef.current.identity !== undoScopeIdentity) {
+    undoScopeIdentityRef.current = { identity: undoScopeIdentity, revision: undoScopeIdentityRef.current.revision + 1 };
+  }
+  // A switch away and back still retires an already queued Undo.
+  const undoScope = JSON.stringify([undoScopeIdentity, undoScopeIdentityRef.current.revision]);
+  const undoScopeRef = useRef(undoScope);
+  undoScopeRef.current = undoScope;
   const identityRef = useRef<{ username: string | undefined; avatarUrl: string | undefined }>({
     username: partyUsername,
     avatarUrl: partyAvatarUrl,
@@ -1432,37 +1450,39 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       queue: ClimbQueueItem[],
       currentClimbQueueItem: ClimbQueueItem | null | undefined,
       origin: QueueMutationOrigin,
+      deferredSnapshot?: () => QueueContentSnapshot | null,
     ) => {
-      // A whole-queue replace sets its own current; it supersedes any deferred
-      // current re-broadcast (#3868).
-      pendingUnsyncedCurrentRef.current = null;
-      // Stamp BEFORE the dispatch, and feed the same array to both the local
-      // reducer and the broadcast — otherwise this device's own queue would show
-      // no author while peers saw one (#3995). The membership check reads
-      // `stateRef.current.queue`, which is still the pre-dispatch queue here, so
-      // a climb the crew already had keeps whoever queued it.
-      const existingUuids = new Set(stateRef.current.queue.map((queueItem) => queueItem.uuid));
-      const attributedQueue = queue.map((item) => attributeNewItem(item, existingUuids));
-      const attributedCurrent = currentClimbQueueItem
-        ? (attributedQueue.find((item) => item.uuid === currentClimbQueueItem.uuid) ??
-          attributeNewItem(currentClimbQueueItem, existingUuids))
-        : currentClimbQueueItem;
-      dispatch({
-        type: 'UPDATE_QUEUE',
-        payload: { queue: attributedQueue, currentClimbQueueItem: attributedCurrent ?? null },
-      });
-      // Keep the full queue locally, but never broadcast a placeholder/thin item
-      // to peers (#2527): drop unresolved items from the wire payload (they can't
-      // form a valid ClimbInput and peers can't render them). useQueueResolveClimbs
-      // hydrates any resolvable item in place; a later mutation re-syncs the real
-      // one. An unresolved current climb is likewise not sent as current.
-      const syncableQueue = attributedQueue.filter((item) => isClimbResolved(item.climb));
-      const syncableCurrent =
-        attributedCurrent && isClimbResolved(attributedCurrent.climb) ? attributedCurrent : undefined;
+      const commitSnapshot = (snapshot: QueueContentSnapshot) => {
+        pendingUnsyncedCurrentRef.current = null;
+        const existingUuids = new Set(stateRef.current.queue.map((queueItem) => queueItem.uuid));
+        const attributedQueue = snapshot.queue.map((item) => attributeNewItem(item, existingUuids));
+        const attributedCurrent = snapshot.currentClimbQueueItem
+          ? (attributedQueue.find((item) => item.uuid === snapshot.currentClimbQueueItem?.uuid) ??
+            attributeNewItem(snapshot.currentClimbQueueItem, existingUuids))
+          : null;
+        dispatch({
+          type: 'UPDATE_QUEUE',
+          payload: { queue: attributedQueue, currentClimbQueueItem: attributedCurrent },
+        });
+        return {
+          queue: attributedQueue.filter((item) => isClimbResolved(item.climb)),
+          current: attributedCurrent && isClimbResolved(attributedCurrent.climb) ? attributedCurrent : undefined,
+        };
+      };
+      // Ordinary replacements stay optimistic. Undo waits until its removals
+      // finish, then composes from live state immediately before setQueue reads
+      // the server baseline. Crew changes during that wait stay in the payload.
+      const optimistic = deferredSnapshot
+        ? null
+        : commitSnapshot({ queue, currentClimbQueueItem: currentClimbQueueItem ?? null });
       void enqueueQueueMutation(async () => {
         if (!isQueueMutationOriginCurrent(origin)) return;
+        const snapshot = deferredSnapshot?.();
+        if (deferredSnapshot && !snapshot) return;
+        const prepared = snapshot ? commitSnapshot(snapshot) : optimistic;
+        if (!prepared) return;
         try {
-          await mutations.setQueue(syncableQueue, syncableCurrent);
+          await mutations.setQueue(prepared.queue, prepared.current);
         } catch (error) {
           if (!isQueueMutationOriginCurrent(origin)) return;
           if (__DEV__) console.warn('[queue] setQueue sync failed', error);
@@ -1471,6 +1491,46 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
     },
     [attributeNewItem, enqueueQueueMutation, isQueueMutationOriginCurrent, mutations, reconcileFailedContentMutation],
+  );
+
+  // The wire half of a multi-item removal (clear, bulk remove). There is no
+  // bulk-remove mutation, so it fans out per item, queued behind any send
+  // already on the lane so the server sees the climber's order.
+  //
+  // ONE AT A TIME, for the reason `appendQueueItems` gives: each remove lands in
+  // the backend's single-key Redis CAS with three retries and no backoff, so N
+  // concurrent removes mostly exhaust their retries, the reconcile below resyncs,
+  // and the "removed" climbs come back — while the Undo snackbar still says
+  // they're gone. A failure doesn't stop the rest: each later item still goes,
+  // in order.
+  //
+  // If any remove fails in a party session, the items may still live on peers —
+  // reconcile once against the server and tell the user we refreshed. Solo: the
+  // local removal is authoritative, so resync no-ops and no toast fires.
+  const sendRemovalsOnLane = useCallback(
+    (itemsToRemove: readonly ClimbQueueItem[], origin: QueueMutationOrigin) => {
+      void enqueueQueueMutation(async () => {
+        const failures: unknown[] = [];
+        for (const item of itemsToRemove) {
+          if (!isQueueMutationOriginCurrent(origin)) return;
+          try {
+            await mutations.removeQueueItem(item.uuid);
+          } catch (error) {
+            if (!isQueueMutationOriginCurrent(origin)) return;
+            if (__DEV__) console.warn('[queue] removeQueueItem sync failed', error);
+            failures.push(error);
+          }
+        }
+        if (!isQueueMutationOriginCurrent(origin)) return;
+        if (failures.length === 0) return;
+        // The limiter typically rejects only the tail, so prefer a throttled
+        // reason over the first one — otherwise an unrelated early failure
+        // would swallow the pacing hint.
+        const throttledFailure = failures.find((error) => isRateLimitedError(error));
+        reconcileFailedContentMutation(throttledFailure ?? failures[0], origin);
+      });
+    },
+    [enqueueQueueMutation, isQueueMutationOriginCurrent, mutations, reconcileFailedContentMutation],
   );
 
   const clearQueue = useCallback(() => {
@@ -1485,32 +1545,44 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'CLEAR_QUEUE' });
     track(SHARED_EVENTS.QueueCleared, { layoutId: activeBoardRef.current?.layoutId, totalCount: itemsToRemove.length });
     setPlaylistSuggestionSourceState(null);
-    // If any per-item remove fails in a party session, the cleared items may
-    // still live on peers — reconcile once against the server (single-flight
-    // coalesces the burst) and tell the user we refreshed. Solo: the local
-    // clear is authoritative, so resync no-ops and no toast fires.
-    void enqueueQueueMutation(async () => {
-      if (!isQueueMutationOriginCurrent(origin)) return;
-      const results = await Promise.allSettled(itemsToRemove.map((item) => mutations.removeQueueItem(item.uuid)));
-      if (!isQueueMutationOriginCurrent(origin)) return;
-      const rejectedRemovals = results.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      );
-      if (rejectedRemovals.length === 0) return;
-      // A clear fires N per-item removes and the limiter typically rejects only
-      // the tail, so prefer a throttled reason over the first one — otherwise an
-      // unrelated early failure would swallow the pacing hint.
-      const throttledRemoval = rejectedRemovals.find((rejected) => isRateLimitedError(rejected.reason));
-      reconcileFailedContentMutation((throttledRemoval ?? rejectedRemovals[0]).reason, origin);
-    });
-  }, [
-    captureQueueMutationOrigin,
-    enqueueQueueMutation,
-    invalidateQueuedQueueMutations,
-    isQueueMutationOriginCurrent,
-    mutations,
-    reconcileFailedContentMutation,
-  ]);
+    sendRemovalsOnLane(itemsToRemove, origin);
+  }, [captureQueueMutationOrigin, invalidateQueuedQueueMutations, sendRemovalsOnLane]);
+
+  // Remove several climbs at once (the queue sheet's edit-mode bulk remove).
+  // Unlike N calls to `removeFromQueue`, the wire sends ride the serialized
+  // queue lane, so a later `setQueue` — the sheet's Undo — is guaranteed to
+  // reach the server AFTER these removes instead of racing them and being
+  // deleted by a late one. One reconcile for the batch, like `clearQueue`.
+  //
+  // Trade-off, kept on purpose: these removes wait behind whatever is already
+  // on the lane (a playlist append still draining), where `removeFromQueue`
+  // sends at once. Unlike `clearQueue` this does NOT invalidate the queued work:
+  // that would cancel the unsent adds of climbs the climber KEPT, which then
+  // never reach the crew. A pending add of a climb removed here still goes out
+  // first and the remove follows it, so the crew ends in the right state, one
+  // round-trip later. The transport bounds each attempt and its retry count.
+  const removeQueueItems = useCallback(
+    (uuids: readonly string[]) => {
+      const targets = new Set(uuids);
+      const itemsToRemove = stateRef.current.queue.filter((queueItem) => targets.has(queueItem.uuid));
+      if (itemsToRemove.length === 0) return;
+      const origin = captureQueueMutationOrigin();
+      const partyMode = countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1;
+      for (const removedItem of itemsToRemove) {
+        dispatch({ type: 'DELTA_REMOVE_QUEUE_ITEM', payload: { uuid: removedItem.uuid } });
+        track(SHARED_EVENTS.ClimbRemovedFromQueue, {
+          climbUuid: removedItem.climb.uuid,
+          queueItemUuid: removedItem.uuid,
+          boardName: activeBoardRef.current?.boardType,
+          layoutId: activeBoardRef.current?.layoutId,
+          partyMode,
+          removedBy: 'self',
+        });
+      }
+      sendRemovalsOnLane(itemsToRemove, origin);
+    },
+    [captureQueueMutationOrigin, sendRemovalsOnLane],
+  );
 
   // Replace the whole queue in one shot: optimistic local UPDATE_QUEUE (the
   // source of truth for the user's queue) + SET_QUEUE sync that no-ops in solo
@@ -1523,6 +1595,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       applyQueueSnapshot(queue, currentClimbQueueItem, captureQueueMutationOrigin());
     },
     [applyQueueSnapshot, captureQueueMutationOrigin, invalidateQueuedQueueMutations],
+  );
+
+  const restoreQueueItems = useCallback(
+    (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => {
+      if (scope !== undoScopeRef.current) return;
+      applyQueueSnapshot(before.queue, before.currentClimbQueueItem, captureQueueMutationOrigin(), () => {
+        if (scope !== undoScopeRef.current) return null;
+        return restoreRemovedQueueItems(before, removedUuids, {
+          queue: stateRef.current.queue,
+          currentClimbQueueItem: stateRef.current.currentClimbQueueItem,
+        });
+      });
+    },
+    [applyQueueSnapshot, captureQueueMutationOrigin],
   );
 
   // Stable live read of the queue + current climb (see QueueContextValue). Reads
@@ -2192,6 +2278,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      removeQueueItems,
+      restoreQueueItems,
       reorderQueue,
       clearQueue,
       setQueue,
@@ -2221,6 +2309,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      removeQueueItems,
+      restoreQueueItems,
       reorderQueue,
       clearQueue,
       setQueue,
@@ -2286,7 +2376,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // SessionId-only selector: identity changes only when a session starts/ends,
   // so structural readers (tab layout, board adapter, session screen) stop
   // re-rendering the navigation tree on every queue mutation.
-  const sessionIdValue = useMemo<QueueSessionIdContextValue>(() => ({ sessionId }), [sessionId]);
+  const sessionIdValue = useMemo<QueueSessionIdContextValue>(() => ({ sessionId, undoScope }), [sessionId, undoScope]);
 
   // Live analytics + presence: the ≤1/2s party push recreates only this small
   // value, re-rendering only SessionScreen + InSessionView.

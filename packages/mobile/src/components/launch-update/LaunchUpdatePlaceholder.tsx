@@ -6,6 +6,7 @@ import { Text } from '../Text';
 import { brandColors } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
 import { useLaunchUpdateGate, useLaunchUpdateProgress } from './use-launch-update-gate';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
 
 const PROGRESS_TRACK_WIDTH = 200;
 const INDETERMINATE_SEGMENT_WIDTH = 72;
@@ -24,10 +25,16 @@ type LaunchUpdatePlaceholderProps = {
   progress: number | undefined;
 };
 
+// With Reduce Motion on, the segment rests mid-track instead of sweeping: the
+// copy underneath already says the app is working (HIG "Motion").
+const RESTING_SEGMENT_OFFSET = (PROGRESS_TRACK_WIDTH - INDETERMINATE_SEGMENT_WIDTH) / 2;
+
 function IndeterminateBar() {
   const sweep = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReduceMotion();
 
   useEffect(() => {
+    if (reduceMotion) return undefined;
     const loop = Animated.loop(
       Animated.timing(sweep, {
         toValue: 1,
@@ -38,7 +45,16 @@ function IndeterminateBar() {
     );
     loop.start();
     return () => loop.stop();
-  }, [sweep]);
+  }, [sweep, reduceMotion]);
+
+  if (reduceMotion) {
+    return (
+      <View
+        testID="launch-update-resting-segment"
+        style={[styles.indeterminateSegment, { transform: [{ translateX: RESTING_SEGMENT_OFFSET }] }]}
+      />
+    );
+  }
 
   const translateX = sweep.interpolate({
     inputRange: [0, 1],

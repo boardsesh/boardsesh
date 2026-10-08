@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // Minimal RN surface. Pressable exposes its a11y label + hitSlop so the angle
@@ -66,13 +66,16 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     checked,
     accessibilityLabel,
     accessibilityValueText,
+    onPress,
   }: {
     iconName?: string;
     checked?: boolean;
     accessibilityLabel?: string;
     accessibilityValueText?: string;
+    onPress?: () => void;
   }) =>
     createElement('div', {
+      onClick: onPress,
       'data-action': iconName,
       'data-checked': checked == null ? undefined : String(checked),
       'data-label': accessibilityLabel,
@@ -111,7 +114,8 @@ vi.mock('../../../theme/ios-colors', () => ({
   iosSystemColors: { white: '#FFFFFF', systemGray: '#8E8E93', systemRed: '#FF3B30', separator: '#ccc' },
 }));
 vi.mock('../../../theme/layout', () => ({ glassSize: { mini: 32 } }));
-vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn(), hapticSelection: vi.fn() }));
+vi.mock('../../../lib/haptics', () => haptics);
 
 import { PlayDrawerActionBar } from '../PlayDrawerActionBar';
 
@@ -483,5 +487,62 @@ describe('PlayDrawerActionBar (connect-step pill)', () => {
     expect(container.querySelector('[data-ble="true"]')).toBeTruthy();
     expect(actions(container)).toContain(ACTION_ICONS.queue);
     expect(container.querySelector('[data-icon="share"]')).toBeTruthy();
+  });
+});
+
+// HIG "Playing haptics": plain buttons give no haptic, toggles a selection tick.
+describe('PlayDrawerActionBar haptics', () => {
+  function press(container: HTMLElement, selector: string) {
+    const node = container.querySelector(selector);
+    if (!node) throw new Error(`nothing matches ${selector}`);
+    fireEvent.click(node);
+  }
+
+  it('gives prev, next, share, angle and the tick no haptic, and still runs them', () => {
+    haptics.hapticMedium.mockClear();
+    haptics.hapticSelection.mockClear();
+    const onPrevClick = vi.fn();
+    const onNextClick = vi.fn();
+    const onShare = vi.fn();
+    const onOpenAngleSelector = vi.fn();
+    const onTickPress = vi.fn();
+    const { container } = render(
+      createElement(PlayDrawerActionBar, {
+        ...baseProps,
+        onPrevClick,
+        onNextClick,
+        onShare,
+        onOpenAngleSelector,
+        onTickPress,
+      }),
+    );
+    press(container, `[data-action="${ACTION_ICONS.previous}"]`);
+    press(container, `[data-action="${ACTION_ICONS.next}"]`);
+    press(container, '[data-label="mobile.climbRow.share"]');
+    press(container, '[data-label="mobile.angleSelector.title"]');
+    press(container, '[data-label="playView.tickFab.logAscentAria"]');
+
+    expect(onPrevClick).toHaveBeenCalledTimes(1);
+    expect(onNextClick).toHaveBeenCalledTimes(1);
+    expect(onShare).toHaveBeenCalledTimes(1);
+    expect(onOpenAngleSelector).toHaveBeenCalledTimes(1);
+    expect(onTickPress).toHaveBeenCalledTimes(1);
+    expect(haptics.hapticMedium).not.toHaveBeenCalled();
+    expect(haptics.hapticSelection).not.toHaveBeenCalled();
+  });
+
+  it('ticks a selection for the mirror and favourite toggles', () => {
+    haptics.hapticMedium.mockClear();
+    haptics.hapticSelection.mockClear();
+    const onMirror = vi.fn();
+    const onToggleFavorite = vi.fn();
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, onMirror, onToggleFavorite }));
+    press(container, `[data-action="${ACTION_ICONS.mirror}"]`);
+    press(container, `[data-action="${ACTION_ICONS.favorite}"]`);
+
+    expect(onMirror).toHaveBeenCalledTimes(1);
+    expect(onToggleFavorite).toHaveBeenCalledTimes(1);
+    expect(haptics.hapticSelection).toHaveBeenCalledTimes(2);
+    expect(haptics.hapticMedium).not.toHaveBeenCalled();
   });
 });

@@ -51,7 +51,7 @@ import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
 import { normalizeSearchName } from '../../lib/search-name';
-import { hapticSelection, hapticSuccess, hapticError } from '../../lib/haptics';
+import { hapticSelection, hapticSuccess } from '../../lib/haptics';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -417,7 +417,6 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
           },
           onError: () => {
             deleteFlowActiveRef.current = false;
-            hapticError();
             showToast(t('mobile.logbook.deleteError'), 'error');
           },
         });

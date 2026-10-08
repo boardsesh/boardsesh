@@ -4,6 +4,7 @@ import type { BoardCandidate } from '@boardsesh/shared-schema';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { Text } from '../Text';
 
 type BoardDisambiguationSheetProps = {
@@ -32,9 +33,11 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
   const { systemColors } = useTheme();
   const { t } = useTranslation('boards');
   const windowInsetBottom = useWindowBottomInset();
+  // Reduce Motion swaps the slide-up for a fade (HIG "Motion").
+  const reduceMotion = useReduceMotion();
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType={reduceMotion ? 'fade' : 'slide'} onRequestClose={onCancel}>
       <View style={styles.backdrop}>
         {/* Sibling, not parent: a tappable ancestor hides the card's buttons from VoiceOver. */}
         <Pressable

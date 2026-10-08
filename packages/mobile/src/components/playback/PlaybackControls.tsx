@@ -18,7 +18,7 @@ import { ValuePill } from '../ValuePill';
 import { ValueSlider } from '../ValueSlider';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
-import { hapticLight, hapticSelection, hapticSuccess } from '../../lib/haptics';
+import { hapticLight, hapticSelection } from '../../lib/haptics';
 import { withAlpha } from '../../theme/colors';
 import { glassSize } from '../../theme/layout';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -545,8 +545,8 @@ export function PlaybackControls({
     const wasPlaying = wasPlayingRef.current;
     wasPlayingRef.current = isPlaying;
     if (!isPlaying && wasPlaying && atLastFrame) {
-      // Reached the end of the route — a small celebratory beat.
-      hapticSuccess();
+      // Reached the end of the route — a small celebratory beat. Visual only:
+      // playback ended by itself, so no haptic (HIG "Playing haptics").
       playPulse.value = withSequence(withTiming(1.22, { duration: timing.instant }), withSpring(1, springs.bouncy));
     } else {
       playPulse.value = withSequence(withTiming(1.12, { duration: timing.instant }), withSpring(1, springs.snappy));

@@ -465,7 +465,12 @@
       "emptyQueue": "Votre file est vide",
       "toggleHistory": "Afficher l'historique",
       "editQueue": "Modifier la file",
-      "doneEditing": "Terminé"
+      "doneEditing": "Terminé",
+      "cleared": "File vidée",
+      "removed_one": "{{count}} bloc retiré",
+      "removed_other": "{{count}} blocs retirés",
+      "undo": "Annuler",
+      "undoAria": "Remettre les blocs dans la file"
     },
     "queueSnackbar": {
       "added_one": "Bloc ajouté à la file",
