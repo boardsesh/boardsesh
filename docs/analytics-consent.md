@@ -46,7 +46,7 @@ the server.
 
 ## The account copy
 
-`user_analytics_consent_events` (migration 0261) is append-only. The newest row
+`user_analytics_consent_events` (migration 0262) is append-only. The newest row
 per user is the current answer; the older rows are the record of when consent
 was given and withdrawn (GDPR Art. 7(1)). It is not a column on
 `user_profiles`: a profile row is not guaranteed to exist, and its

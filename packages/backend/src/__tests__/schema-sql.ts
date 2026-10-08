@@ -55,7 +55,7 @@ const providerSyncControlsSchema = readFileSync(
 // the generated migration so the fixture can't drift from the CHECK constraints
 // the resolvers rely on.
 const analyticsConsentSchema = readFileSync(
-  new URL('../../../db/drizzle/0261_analytics_consent_and_user_activity.sql', import.meta.url),
+  new URL('../../../db/drizzle/0262_analytics_consent_and_user_activity.sql', import.meta.url),
   'utf8',
 );
 
