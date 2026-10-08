@@ -203,6 +203,9 @@ importers:
       '@boardsesh/community-roles':
         specifier: workspace:*
         version: link:../shared/community-roles
+      '@boardsesh/consent':
+        specifier: workspace:*
+        version: link:../shared/consent
       '@boardsesh/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -1206,6 +1209,12 @@ importers:
         version: 7.0.2
 
   packages/shared/community-roles:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/consent:
     devDependencies:
       typescript:
         specifier: ~7.0.2

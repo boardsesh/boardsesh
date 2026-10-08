@@ -36,6 +36,7 @@
     "@boardsesh/board-renderer-wasm": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/community-roles": "workspace:*",
+    "@boardsesh/consent": "workspace:*",
     "@boardsesh/crypto": "workspace:*",
     "@boardsesh/db": "workspace:*",
     "@boardsesh/email": "workspace:*",

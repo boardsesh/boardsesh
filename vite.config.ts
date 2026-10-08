@@ -177,6 +177,7 @@ export default defineConfig({
       './packages/shared/climb-filters/vite.config.ts',
       './packages/shared/gym-filters/vite.config.ts',
       './packages/shared/community-roles/vite.config.ts',
+      './packages/shared/consent/vite.config.ts',
       './packages/shared/gym-claim/vite.config.ts',
       './packages/shared/kiosk/vite.config.ts',
       './packages/shared/i18n/vite.config.ts',
