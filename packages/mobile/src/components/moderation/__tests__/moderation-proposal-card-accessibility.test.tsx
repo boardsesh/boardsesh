@@ -50,6 +50,7 @@ vi.mock('../../PressableSurface', () => ({
 }));
 vi.mock('../proposal-presenters', () => ({
   extraReasonCount: () => 0,
+  proposalToClimb: () => null,
   isUnhideProposal: () => false,
   proposalTypeLine: () => ({ textI18nKey: 'climbs:type', params: {} }),
   statusChip: () => null,
