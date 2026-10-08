@@ -220,6 +220,8 @@ function SessionSummaryContent({
       ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] + keyboardHeight }]}
+      // The modal's native header floats over the scroll surface on iOS.
+      contentInsetAdjustmentBehavior="automatic"
       // Keep the inline recap editor visible above the keyboard on iOS (no-op on
       // Android). The recap card lives near the bottom of a scroll surface.
       automaticallyAdjustKeyboardInsets
