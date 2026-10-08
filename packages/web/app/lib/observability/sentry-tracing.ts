@@ -242,10 +242,11 @@ export type RedactableSpan = {
 /**
  * Drop the query string from a URL that shouldn't have one recorded.
  *
- * `sendDefaultPii: true` is on and stays on — it is what puts a user on an
- * error, and triage depends on it. But turning tracing on widens its blast
- * radius from "errors carry a user" to "every sampled request records its URL",
- * so the two query strings that actually matter get stripped here:
+ * `sendDefaultPii` is off (#2644), but that is no promise a span's URL loses
+ * its query string: at most Sentry masks parameters whose NAMES look sensitive
+ * (`auth`, `token`, `session`, ...), and NextAuth's `code` and `state` match
+ * none of them. Tracing records a URL on every sampled request, so the two
+ * query strings that actually matter get stripped here:
  *
  *   /api/auth/**  — NextAuth's `code` and `state`. An OAuth authorization code
  *                   is a single-use credential; it has no business sitting in a
@@ -311,9 +312,16 @@ export type RailwayTaggableEvent = {
  * edge stamps `x-railway-request-id` on the request to the container and logs
  * the same value, so with the tag in place a slow or failing request found in
  * one system can be looked up in the other. Nothing has to be plumbed through
- * the app — `sendDefaultPii: true` already puts request headers on the
- * isolation scope, so the header is sitting on the event by the time a
- * processor runs.
+ * the app: the SDK records the incoming request on the isolation scope, and its
+ * RequestData integration copies the headers onto the event before any scope
+ * processor (this one) runs.
+ *
+ * That still holds with `sendDefaultPii: false` (#2644). With PII off the
+ * integration keeps request headers and only deletes the IP-carrying ones
+ * (`x-forwarded-for`, `cf-connecting-ip`, ...), and `x-railway-request-id` is
+ * not one of them (@sentry/core `requestDataIntegration`,
+ * `extractNormalizedRequestData`). `sentry-railway-request-id.test.ts` runs the
+ * real integration with PII off to prove it.
  *
  * Absent header is the normal case off Railway (local dev, tests): return the
  * event untouched rather than writing an empty tag.

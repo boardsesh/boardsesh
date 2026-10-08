@@ -28,9 +28,12 @@ Sentry.init({
   // Enable logs to be sent to Sentry
   enableLogs: true,
 
-  // Enable sending user PII (Personally Identifiable Information)
+  // Off (#2644). Sentry runs under legitimate interest whatever a visitor's
+  // analytics consent, so it collects no IP address, IP headers or request
+  // bodies. Request headers that aren't IP headers still reach the event, which
+  // is what keeps the Railway request-id tag working (see tagRailwayRequestId).
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-  sendDefaultPii: true,
+  sendDefaultPii: false,
 
   // Same shape as sentry.server.config.ts so a route can't be sampled at one
   // rate in middleware and another in its handler. The edge runtime only runs

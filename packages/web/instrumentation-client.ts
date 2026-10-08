@@ -50,9 +50,11 @@ Sentry.init({
   // Enable logs to be sent to Sentry
   enableLogs: true,
 
-  // Enable sending user PII (Personally Identifiable Information)
+  // Off (#2644). Sentry runs under legitimate interest whatever a visitor's
+  // analytics consent, so the browser SDK must not ask Sentry to infer the
+  // visitor's IP address or attach other personal data by default.
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
-  sendDefaultPii: true,
+  sendDefaultPii: false,
 
   // Browser page loads and client-side navigations. `browserTracingIntegration`
   // is already in @sentry/nextjs's client defaults (its `getDefaultIntegrations`
