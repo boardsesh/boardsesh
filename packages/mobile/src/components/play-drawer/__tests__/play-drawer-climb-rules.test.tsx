@@ -16,6 +16,7 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
   // The header drops its second grade line above a 1.3 font scale rather than

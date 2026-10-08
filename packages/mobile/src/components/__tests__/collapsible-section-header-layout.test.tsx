@@ -29,6 +29,7 @@ vi.mock('react-native', () => ({
     createElement('button', { onClick: () => onPress?.() }, children),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('react-native-reanimated', () => ({

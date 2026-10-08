@@ -17,6 +17,7 @@ const releaseMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scroll-view': true }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },

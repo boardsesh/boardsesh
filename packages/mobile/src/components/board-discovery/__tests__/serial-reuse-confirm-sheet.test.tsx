@@ -56,6 +56,7 @@ vi.mock('react-native', () => ({
     ),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFill: {} },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

@@ -8,6 +8,7 @@ const openUrl = vi.hoisted(() => ({ openExternalUrl: vi.fn() }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (colorName: string) => colorName,
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

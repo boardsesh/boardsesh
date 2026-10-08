@@ -26,6 +26,7 @@ const captured = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

@@ -9,6 +9,7 @@ vi.mock('react-native', () => ({
     createElement('div', { 'data-testid': 'shelf-scroll' }, children),
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('../SectionHeader', () => ({

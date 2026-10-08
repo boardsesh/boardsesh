@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('react-native', () => ({
   StyleSheet: { absoluteFill: {}, create: (styles: unknown) => styles },
   Platform: { OS: 'ios', select: (choices: Record<string, unknown>) => choices.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('react-native-reanimated', () => ({

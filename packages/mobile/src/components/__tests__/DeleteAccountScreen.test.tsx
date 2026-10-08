@@ -37,6 +37,7 @@ vi.mock('react-native', () => ({
   // theme/tokens transitively imports theme/colors, which reads Platform.OS and
   // PlatformColor at module load — provide enough for that to evaluate.
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

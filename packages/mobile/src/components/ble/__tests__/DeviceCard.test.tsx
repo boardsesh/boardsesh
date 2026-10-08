@@ -8,6 +8,7 @@ import type { ResolvedBoardEntry } from '../../../lib/ble/resolve-serials';
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (colorName: string) => colorName,
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   // Exposes the resolved background colour so the RSSI bars can be asserted.

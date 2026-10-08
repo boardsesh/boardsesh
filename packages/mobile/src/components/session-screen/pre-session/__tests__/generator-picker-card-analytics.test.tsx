@@ -35,6 +35,7 @@ vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   // Chip uses an animated Pressable; capture its onPress + label so a test can
   // tap the workout-type chips.

@@ -78,6 +78,7 @@ vi.mock('../../../../src/lib/store-review', () => ({
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

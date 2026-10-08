@@ -12,6 +12,7 @@ vi.mock('react-native', () => ({
   ActivityIndicator: () => createElement('i', { 'data-testid': 'spinner' }),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('../../Text', () => ({

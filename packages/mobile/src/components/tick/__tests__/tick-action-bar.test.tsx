@@ -12,6 +12,7 @@ const screen = vi.hoisted(() => ({ fontScale: 1 }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({
     children,

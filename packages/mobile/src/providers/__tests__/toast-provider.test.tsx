@@ -5,6 +5,7 @@ import { render } from '@testing-library/react';
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { absoluteFill: {}, create: (styles: Record<string, unknown>) => styles },

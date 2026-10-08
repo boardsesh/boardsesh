@@ -13,6 +13,7 @@ const hostCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }))
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('@expo/ui', () => ({
