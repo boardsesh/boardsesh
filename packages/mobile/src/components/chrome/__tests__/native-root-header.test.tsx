@@ -134,11 +134,19 @@ describe('NativeRootHeader', () => {
     for (const focusedSegments of [['play'], ['(tabs)', 'climbs']]) {
       expect(lastOptions()).not.toHaveProperty('title');
       expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
+      expect(lastOptions().headerLargeTitle).toBe(false);
       controls.focusedSegments = focusedSegments;
       rerender(<NativeRootHeader centerContent={<span>Current climb</span>} onHeightChange={onHeightChange} />);
     }
     expect(lastOptions()).not.toHaveProperty('title');
     expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
+    expect(lastOptions().headerLargeTitle).toBe(false);
+
+    rerender(<NativeRootHeader onHeightChange={onHeightChange} />);
+    expect(lastOptions()).not.toHaveProperty('title');
+    expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
+    expect(lastOptions().headerLargeTitle).toBe(true);
+    expect(lastOptions().headerTitle).toBeUndefined();
   });
 
   it('keeps an explicit title override independent of the focused route', () => {
@@ -198,7 +206,7 @@ describe('NativeRootHeader', () => {
     );
     expect(container.querySelector('[data-controls]')).toBeNull();
     expect(onHeightChange).toHaveBeenLastCalledWith(0);
-    expect(lastOptions()).toMatchObject({ title: 'Climbs', headerLargeTitle: true });
+    expect(lastOptions()).toMatchObject({ title: 'Climbs', headerLargeTitle: false });
     const headerTitle = lastOptions().headerTitle;
     if (typeof headerTitle !== 'function') throw new Error('Expected a native center renderer');
     const { container: headerContainer, getByRole } = render(
@@ -220,10 +228,11 @@ describe('NativeRootHeader', () => {
     rerender(<NativeRootHeader title="Climbs" centerContent={currentClimb} onHeightChange={onHeightChange} />);
     expect(container.querySelector('[data-controls]')).toBeNull();
     expect(onHeightChange).toHaveBeenLastCalledWith(0);
-    expect(lastOptions()).toMatchObject({ title: 'Climbs', headerLargeTitle: true });
+    expect(lastOptions()).toMatchObject({ title: 'Climbs', headerLargeTitle: false });
 
     rerender(<NativeRootHeader title="Climbs" onHeightChange={onHeightChange} />);
     expect(lastOptions().headerTitle).toBeUndefined();
+    expect(lastOptions()).toMatchObject({ title: 'Climbs', headerLargeTitle: true });
   });
 
   it('reserves supplementary search height without counting the centered climb', () => {

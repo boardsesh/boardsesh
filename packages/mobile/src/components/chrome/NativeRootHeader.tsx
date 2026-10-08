@@ -49,7 +49,8 @@ export function NativeRootHeader({
       <Stack.Screen
         options={{
           headerShown: true,
-          headerLargeTitle: true,
+          // The current-climb pill replaces the root title while it is present.
+          headerLargeTitle: centerContent == null,
           headerTransparent: true,
           // iOS 26 owns the scroll-edge material; don't inherit the legacy blur.
           headerBlurEffect: glassCapability ? undefined : 'systemMaterial',

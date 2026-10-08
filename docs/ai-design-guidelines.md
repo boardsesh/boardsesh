@@ -851,7 +851,9 @@ slots. A standalone avatar draws one circular background, while grouped bar item
 use UIKit's shared material. Home's scope selector scrolls with the feed, and the
 on-wall climb capsule stays in the navigation bar's centre slot. Each tab's layout
 owns its localized title; opening a transparent drawer must not rewrite that
-title from the globally focused route.
+title from the globally focused route. While the climb capsule is present, the
+native bar stays compact without an additional large title. Removing the capsule
+restores the route's collapsing large title.
 
 The create-climb header uses the same measured flank balancing as `SheetTopBar`.
 Its editable name centres when room permits, while the ellipsis and Save share a
