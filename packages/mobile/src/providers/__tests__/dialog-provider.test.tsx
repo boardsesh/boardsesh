@@ -8,6 +8,18 @@ const ctrl = vi.hoisted(() => ({
   os: 'android' as 'ios' | 'android',
 }));
 type AlertButton = { text: string; style?: string; onPress?: () => void };
+type ActionSheetCall = {
+  options: {
+    title?: string;
+    message?: string;
+    options: string[];
+    destructiveButtonIndex?: number;
+    cancelButtonIndex?: number;
+    anchor?: number;
+  };
+  callback: (buttonIndex: number) => void;
+};
+const actionSheetMock = vi.hoisted(() => ({ calls: [] as ActionSheetCall[] }));
 const alertMock = vi.hoisted(() => ({
   calls: [] as Array<{ title: string; message?: string; buttons: AlertButton[]; onDismiss?: () => void }>,
 }));
@@ -22,6 +34,11 @@ vi.mock('react-native', () => ({
     },
   },
   StyleSheet: { create: (sheet: Record<string, unknown>) => sheet },
+  ActionSheetIOS: {
+    showActionSheetWithOptions: (options: ActionSheetCall['options'], callback: ActionSheetCall['callback']) => {
+      actionSheetMock.calls.push({ options, callback });
+    },
+  },
   Alert: {
     alert: (
       title: string,
@@ -92,6 +109,7 @@ beforeEach(() => {
   ctrl.variant = 'material';
   ctrl.os = 'android';
   alertMock.calls = [];
+  actionSheetMock.calls = [];
 });
 
 describe('useConfirm — Android Material (Paper Dialog)', () => {
@@ -293,5 +311,68 @@ describe('useChoose — three actions on the native Alert', () => {
     });
     act(() => alertMock.calls[0].onDismiss?.());
     await expect(promise).resolves.toBe('cancel');
+  });
+});
+
+describe('useConfirm — destructive confirms on iOS are a confirmation dialog (action sheet)', () => {
+  beforeEach(() => {
+    ctrl.os = 'ios';
+  });
+
+  it.each(['liquidGlass', 'material'] as const)('uses an action sheet, not an Alert, on %s', async (variant) => {
+    ctrl.variant = variant;
+    setup();
+    let promise!: Promise<boolean>;
+    act(() => {
+      promise = confirmFn({ ...OPTS, destructive: true });
+    });
+    expect(alertMock.calls).toHaveLength(0);
+    expect(actionSheetMock.calls).toHaveLength(1);
+    const [{ options, callback }] = actionSheetMock.calls;
+    expect(options.title).toBe('Delete?');
+    expect(options.message).toBe('This cannot be undone.');
+    expect(options.options[options.destructiveButtonIndex ?? -1]).toBe('Delete');
+    expect(options.options[options.cancelButtonIndex ?? -1]).toBe('Cancel');
+    expect(options).not.toHaveProperty('anchor');
+    act(() => callback(options.destructiveButtonIndex ?? -1));
+    await expect(promise).resolves.toBe(true);
+  });
+
+  it('resolves false on Cancel (also what a tap outside the sheet reports)', async () => {
+    setup();
+    let promise!: Promise<boolean>;
+    act(() => {
+      promise = confirmFn({ ...OPTS, destructive: true });
+    });
+    const [{ options, callback }] = actionSheetMock.calls;
+    act(() => callback(options.cancelButtonIndex ?? -1));
+    await expect(promise).resolves.toBe(false);
+  });
+
+  it('points the iPad popover at the source control when the caller knows it', () => {
+    setup();
+    act(() => {
+      void confirmFn({ ...OPTS, destructive: true, anchor: 42 });
+    });
+    expect(actionSheetMock.calls[0].options.anchor).toBe(42);
+  });
+
+  it('keeps a non-destructive confirm as an Alert', () => {
+    setup();
+    act(() => {
+      void confirmFn(OPTS);
+    });
+    expect(actionSheetMock.calls).toHaveLength(0);
+    expect(alertMock.calls).toHaveLength(1);
+  });
+
+  it('keeps the M3 dialog for a destructive confirm on Android', () => {
+    ctrl.os = 'android';
+    const { container } = setup();
+    act(() => {
+      void confirmFn({ ...OPTS, destructive: true });
+    });
+    expect(actionSheetMock.calls).toHaveLength(0);
+    expect(container.querySelector('[data-dialog]')).not.toBeNull();
   });
 });

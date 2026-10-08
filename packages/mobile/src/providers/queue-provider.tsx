@@ -1473,6 +1473,33 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [attributeNewItem, enqueueQueueMutation, isQueueMutationOriginCurrent, mutations, reconcileFailedContentMutation],
   );
 
+  // The wire half of a multi-item removal (clear, bulk remove). There is no
+  // bulk-remove mutation, so it fans out per item, queued behind any send
+  // already on the lane so the server sees the climber's order. If any remove
+  // fails in a party session, the items may still live on peers — reconcile
+  // once against the server (single-flight coalesces the burst) and tell the
+  // user we refreshed. Solo: the local removal is authoritative, so resync
+  // no-ops and no toast fires.
+  const sendRemovalsOnLane = useCallback(
+    (itemsToRemove: readonly ClimbQueueItem[], origin: QueueMutationOrigin) => {
+      void enqueueQueueMutation(async () => {
+        if (!isQueueMutationOriginCurrent(origin)) return;
+        const results = await Promise.allSettled(itemsToRemove.map((item) => mutations.removeQueueItem(item.uuid)));
+        if (!isQueueMutationOriginCurrent(origin)) return;
+        const rejectedRemovals = results.filter(
+          (result): result is PromiseRejectedResult => result.status === 'rejected',
+        );
+        if (rejectedRemovals.length === 0) return;
+        // N per-item removes and the limiter typically rejects only the tail, so
+        // prefer a throttled reason over the first one — otherwise an unrelated
+        // early failure would swallow the pacing hint.
+        const throttledRemoval = rejectedRemovals.find((rejected) => isRateLimitedError(rejected.reason));
+        reconcileFailedContentMutation((throttledRemoval ?? rejectedRemovals[0]).reason, origin);
+      });
+    },
+    [enqueueQueueMutation, isQueueMutationOriginCurrent, mutations, reconcileFailedContentMutation],
+  );
+
   const clearQueue = useCallback(() => {
     const itemsToRemove = stateRef.current.queue;
     // Clear is a new queue intent. Cancel this provider's unsent appends, then
@@ -1485,32 +1512,36 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'CLEAR_QUEUE' });
     track(SHARED_EVENTS.QueueCleared, { layoutId: activeBoardRef.current?.layoutId, totalCount: itemsToRemove.length });
     setPlaylistSuggestionSourceState(null);
-    // If any per-item remove fails in a party session, the cleared items may
-    // still live on peers — reconcile once against the server (single-flight
-    // coalesces the burst) and tell the user we refreshed. Solo: the local
-    // clear is authoritative, so resync no-ops and no toast fires.
-    void enqueueQueueMutation(async () => {
-      if (!isQueueMutationOriginCurrent(origin)) return;
-      const results = await Promise.allSettled(itemsToRemove.map((item) => mutations.removeQueueItem(item.uuid)));
-      if (!isQueueMutationOriginCurrent(origin)) return;
-      const rejectedRemovals = results.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      );
-      if (rejectedRemovals.length === 0) return;
-      // A clear fires N per-item removes and the limiter typically rejects only
-      // the tail, so prefer a throttled reason over the first one — otherwise an
-      // unrelated early failure would swallow the pacing hint.
-      const throttledRemoval = rejectedRemovals.find((rejected) => isRateLimitedError(rejected.reason));
-      reconcileFailedContentMutation((throttledRemoval ?? rejectedRemovals[0]).reason, origin);
-    });
-  }, [
-    captureQueueMutationOrigin,
-    enqueueQueueMutation,
-    invalidateQueuedQueueMutations,
-    isQueueMutationOriginCurrent,
-    mutations,
-    reconcileFailedContentMutation,
-  ]);
+    sendRemovalsOnLane(itemsToRemove, origin);
+  }, [captureQueueMutationOrigin, invalidateQueuedQueueMutations, sendRemovalsOnLane]);
+
+  // Remove several climbs at once (the queue sheet's edit-mode bulk remove).
+  // Unlike N calls to `removeFromQueue`, the wire sends ride the serialized
+  // queue lane, so a later `setQueue` — the sheet's Undo — is guaranteed to
+  // reach the server AFTER these removes instead of racing them and being
+  // deleted by a late one. One reconcile for the batch, like `clearQueue`.
+  const removeQueueItems = useCallback(
+    (uuids: readonly string[]) => {
+      const targets = new Set(uuids);
+      const itemsToRemove = stateRef.current.queue.filter((queueItem) => targets.has(queueItem.uuid));
+      if (itemsToRemove.length === 0) return;
+      const origin = captureQueueMutationOrigin();
+      const partyMode = countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1;
+      for (const removedItem of itemsToRemove) {
+        dispatch({ type: 'DELTA_REMOVE_QUEUE_ITEM', payload: { uuid: removedItem.uuid } });
+        track(SHARED_EVENTS.ClimbRemovedFromQueue, {
+          climbUuid: removedItem.climb.uuid,
+          queueItemUuid: removedItem.uuid,
+          boardName: activeBoardRef.current?.boardType,
+          layoutId: activeBoardRef.current?.layoutId,
+          partyMode,
+          removedBy: 'self',
+        });
+      }
+      sendRemovalsOnLane(itemsToRemove, origin);
+    },
+    [captureQueueMutationOrigin, sendRemovalsOnLane],
+  );
 
   // Replace the whole queue in one shot: optimistic local UPDATE_QUEUE (the
   // source of truth for the user's queue) + SET_QUEUE sync that no-ops in solo
@@ -2192,6 +2223,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      removeQueueItems,
       reorderQueue,
       clearQueue,
       setQueue,
@@ -2221,6 +2253,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       addToQueue,
       playNext,
       removeFromQueue,
+      removeQueueItems,
       reorderQueue,
       clearQueue,
       setQueue,

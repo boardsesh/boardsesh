@@ -12,7 +12,7 @@ const captures = vi.hoisted(() => ({
   onChange: undefined as ((index: number) => void) | undefined,
   managedOptions: undefined as Record<string, unknown> | undefined,
 }));
-const haptics = vi.hoisted(() => ({ hapticMedium: vi.fn() }));
+const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn() }));
 const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 type ViewMockProps = { children?: ReactNode };
@@ -82,7 +82,7 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
 }));
 
-vi.mock('../../lib/haptics', () => ({ hapticMedium: haptics.hapticMedium }));
+vi.mock('../../lib/haptics', () => ({ hapticSelection: haptics.hapticSelection }));
 
 vi.mock('../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: (options: Record<string, unknown>) => {
@@ -125,7 +125,7 @@ beforeEach(() => {
   captures.scrollStyle = undefined;
   captures.onChange = undefined;
   captures.managedOptions = undefined;
-  haptics.hapticMedium.mockClear();
+  haptics.hapticSelection.mockClear();
   platform.os = 'ios';
 });
 
@@ -206,31 +206,29 @@ describe('ModalSheet', () => {
     expect(captures.managedOptions?.onClose).toBe(onClose);
   });
 
-  describe('presentHaptic', () => {
-    it('fires the haptic when the sheet opens by default', () => {
+  describe('detent haptic', () => {
+    it('stays silent when the sheet presents', () => {
       render(
         <ModalSheet visible>
           <div>body</div>
         </ModalSheet>,
       );
       act(() => captures.onChange?.(0));
-      expect(haptics.hapticMedium).toHaveBeenCalledTimes(1);
+      expect(haptics.hapticSelection).not.toHaveBeenCalled();
     });
 
-    it('stays quiet on open when false, but keeps the haptic for a drag between detents and the next open', () => {
+    it('ticks a selection for a drag between detents, and stays silent on the next present', () => {
       render(
-        <ModalSheet visible presentHaptic={false} snapPoints={['50%', '90%']}>
+        <ModalSheet visible snapPoints={['50%', '90%']}>
           <div>body</div>
         </ModalSheet>,
       );
       act(() => captures.onChange?.(0));
-      expect(haptics.hapticMedium).not.toHaveBeenCalled();
       act(() => captures.onChange?.(1));
-      expect(haptics.hapticMedium).toHaveBeenCalledTimes(1);
-      // Closed, then opened again: still no haptic for the open itself.
+      expect(haptics.hapticSelection).toHaveBeenCalledTimes(1);
       act(() => captures.onChange?.(-1));
       act(() => captures.onChange?.(0));
-      expect(haptics.hapticMedium).toHaveBeenCalledTimes(1);
+      expect(haptics.hapticSelection).toHaveBeenCalledTimes(1);
     });
   });
 });

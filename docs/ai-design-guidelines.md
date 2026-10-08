@@ -491,6 +491,22 @@ press feedback is separate (that's `PressableSurface`); fire haptics from the ha
 - `hapticHeavy()` — significant interactions (drag-drop, destructive)
 - `hapticSuccess()` / `hapticError()` / `hapticWarning()` — notification feedback (climb logged, etc.)
 
+### Haptics
+
+Apple's "Playing haptics" guidance: use them sparingly, and only for something the climber
+just did. The rules:
+
+1. **Only the local climber's own action buzzes.** A teammate's send, a screen mounting, a
+   playback reaching its end, or a sheet presenting do not.
+2. **A plain button gets no haptic.** The press state is the feedback. Prev, next, share and
+   sign-in stay silent.
+3. **A toggle gets `hapticSelection()`.** Mirror, favourite, segmented controls, and a sheet
+   dragged from one detent to another (`useDetentDragHaptic`).
+4. **An outcome gets a notification haptic, once, from its toast.** `showToast(…, 'success')`
+   and `showToast(…, 'error')` play `hapticSuccess()` / `hapticError()` themselves. A caller
+   that toasts must not also call a notification haptic, or the climber feels it twice. An
+   outcome with no toast (an inline error, a sheet closing on save) keeps its own haptic.
+
 ---
 
 ## Iconography

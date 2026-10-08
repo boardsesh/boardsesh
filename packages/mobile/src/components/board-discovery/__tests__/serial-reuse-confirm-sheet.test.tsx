@@ -19,8 +19,8 @@ function readPaddingBottom(style: unknown): number | undefined {
 // react-native isn't satisfiable under jsdom; stub the host surface the sheet
 // touches onto DOM elements so the interaction assertions can drive it.
 vi.mock('react-native', () => ({
-  Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
-    visible ? createElement('div', { 'data-testid': 'modal' }, children) : null,
+  Modal: ({ visible, children, animationType }: { visible: boolean; children?: ReactNode; animationType?: string }) =>
+    visible ? createElement('div', { 'data-testid': 'modal', 'data-animation': animationType }, children) : null,
   View: ({
     children,
     style,
@@ -67,6 +67,8 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 // A gesture-nav phone: the card must clear the home indicator.
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 34 }));
+const motion = vi.hoisted(() => ({ reduce: false }));
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => motion.reduce }));
 
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemOrange: '#FF9500' } }));
 
@@ -203,5 +205,31 @@ describe('SerialReuseConfirmSheet', () => {
     expect(backdrop.contains(card)).toBe(false);
     fireEvent.click(backdrop);
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SerialReuseConfirmSheet motion', () => {
+  function renderSheet() {
+    return render(
+      <SerialReuseConfirmSheet
+        visible
+        board={existingBoard}
+        serialNumber="ABC-123"
+        onUseExisting={vi.fn()}
+        onCreateAnyway={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+  }
+
+  it('slides up by default', () => {
+    motion.reduce = false;
+    expect(renderSheet().getByTestId('modal').getAttribute('data-animation')).toBe('slide');
+  });
+
+  it('fades in instead under Reduce Motion', () => {
+    motion.reduce = true;
+    expect(renderSheet().getByTestId('modal').getAttribute('data-animation')).toBe('fade');
+    motion.reduce = false;
   });
 });

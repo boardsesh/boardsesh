@@ -140,7 +140,7 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+vi.mock('../../lib/haptics', () => ({ hapticMedium: vi.fn(), hapticSelection: vi.fn() }));
 vi.mock('../../theme/tokens', () => ({ spacing: new Proxy({}, { get: () => 0 }) }));
 
 // The tick chrome, stubbed down to the props LogAscentSheet is responsible for

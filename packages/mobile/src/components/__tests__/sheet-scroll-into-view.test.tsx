@@ -46,7 +46,7 @@ const NOTE_REVEALED = 270;
 const native = vi.hoisted(() => ({
   scrollTo: vi.fn(),
   snapToIndex: vi.fn(),
-  hapticMedium: vi.fn(),
+  hapticSelection: vi.fn(),
   probeLayout: vi.fn(),
   sheetOnChange: null as null | ((index: number) => void),
   contentView: { tag: 'content-view' },
@@ -121,7 +121,7 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 44, bottom: 34, left: 0, right: 0 }),
 }));
 
-vi.mock('../../lib/haptics', () => ({ hapticMedium: () => native.hapticMedium() }));
+vi.mock('../../lib/haptics', () => ({ hapticSelection: () => native.hapticSelection() }));
 
 // The #3922 probe is dev-only; stub it so its body `onLayout` is observable.
 vi.mock('../sheet-detent-probe', () => ({
@@ -189,7 +189,7 @@ beforeEach(() => {
   native.scrollTo.mockClear();
   native.snapToIndex.mockReset();
   native.snapToIndex.mockImplementation((index: number) => native.sheetOnChange?.(index));
-  native.hapticMedium.mockClear();
+  native.hapticSelection.mockClear();
   native.probeLayout.mockClear();
   native.sheetOnChange = null;
   native.measuredRelativeTo = [];
@@ -258,15 +258,18 @@ describe.each([
 ] as const)('%s + TickNoteField', (_name, SheetComponent) => {
   it('raises the sheet to its keyboard detent on focus, without the drag haptic', () => {
     renderNoteSheet(SheetComponent);
+    // Resting open at the first detent, so the snap below is a detent CHANGE.
+    dragSheetTo(0);
     focusNote();
     expect(native.snapToIndex).toHaveBeenCalledWith(1);
-    expect(native.hapticMedium).not.toHaveBeenCalled();
+    expect(native.hapticSelection).not.toHaveBeenCalled();
   });
 
   it('still gives a climber-driven detent change its haptic', () => {
     renderNoteSheet(SheetComponent);
+    dragSheetTo(0);
     dragSheetTo(1);
-    expect(native.hapticMedium).toHaveBeenCalledTimes(1);
+    expect(native.hapticSelection).toHaveBeenCalledTimes(1);
   });
 
   it('scrolls the note clear of the footer once the keyboard shrinks the body', () => {

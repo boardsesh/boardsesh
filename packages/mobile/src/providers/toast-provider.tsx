@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import { Toast, type ToastVariant, type ToastData } from '../components/Toast';
 import { hapticSuccess, hapticError } from '../lib/haptics';
 
@@ -29,8 +29,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const id = String(++nextId);
     const toast: ToastData = { id, message, variant, duration };
 
+    // The toast OWNS the outcome haptic (HIG "Playing haptics"): a caller that
+    // shows a success or error toast must not play its own notification haptic
+    // as well, or the climber feels it twice.
     if (variant === 'success') hapticSuccess();
     if (variant === 'error') hapticError();
+
+    // VoiceOver ignores `accessibilityLiveRegion` (Android-only), so iOS is told
+    // explicitly, once per toast. Android already reads the live region; an
+    // announce there would read the message twice.
+    if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(message);
 
     setToasts((prev) => {
       const next = [...prev, toast];

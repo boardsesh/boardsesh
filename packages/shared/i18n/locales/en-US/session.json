@@ -466,7 +466,12 @@
       "emptyQueue": "Your queue is empty",
       "toggleHistory": "Toggle history",
       "editQueue": "Edit queue",
-      "doneEditing": "Done editing"
+      "doneEditing": "Done editing",
+      "cleared": "Queue cleared",
+      "removed_one": "{{count}} climb removed",
+      "removed_other": "{{count}} climbs removed",
+      "undo": "Undo",
+      "undoAria": "Put the climbs back in the queue"
     },
     "queueSnackbar": {
       "added_one": "Climb added to queue",

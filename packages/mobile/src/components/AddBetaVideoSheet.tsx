@@ -80,7 +80,7 @@ export function AddBetaVideoSheet({
   const handleCopyCaption = useCallback(async () => {
     if (!caption || !climb) return;
     await Clipboard.setStringAsync(caption);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // The success toast below plays the success haptic; don't double it.
     track(SHARED_EVENTS.BetaCaptionCopied, { boardType: boardName, climbUuid: climb.uuid });
     showToast(t('mobile.betaVideos.captionCopied'), 'success');
   }, [caption, climb, boardName, showToast, t]);
@@ -114,13 +114,11 @@ export function AddBetaVideoSheet({
           if (isTikTokUrl(trimmed)) platform = 'TikTok';
           else if (isInstagramUrl(trimmed)) platform = 'Instagram';
           track(SHARED_EVENTS.BetaVideoAdded, { boardType: boardName, climbUuid: climb.uuid, platform });
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           showToast(t('mobile.betaVideos.attachSuccess'), 'success');
           setUrl('');
           onClose();
         },
         onError: (error: unknown) => {
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           showToast(extractGraphqlMessage(error) ?? t('mobile.betaVideos.attachError'), 'error');
         },
       },

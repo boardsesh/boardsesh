@@ -1528,7 +1528,8 @@ export function PlayDrawer({
 
   const handleToggleFavorite = useCallback(() => {
     if (!displayedClimb) return;
-    hapticSuccess();
+    // No haptic here: the button that toggles it ticks a selection, and a
+    // failure buzzes through its error toast.
     const nextIsFavorited = !isFavorited;
     const previousOverride = favoriteOverride;
     setFavoriteOverride(nextIsFavorited);

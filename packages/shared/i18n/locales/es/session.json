@@ -466,7 +466,12 @@
       "emptyQueue": "Tu cola está vacía",
       "toggleHistory": "Mostrar historial",
       "editQueue": "Editar cola",
-      "doneEditing": "Listo"
+      "doneEditing": "Listo",
+      "cleared": "Cola vaciada",
+      "removed_one": "{{count}} bloque quitado",
+      "removed_other": "{{count}} bloques quitados",
+      "undo": "Deshacer",
+      "undoAria": "Devolver los bloques a la cola"
     },
     "queueSnackbar": {
       "added_one": "Bloque añadido a la cola",

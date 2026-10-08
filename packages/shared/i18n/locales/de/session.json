@@ -466,7 +466,12 @@
       "emptyQueue": "Deine Warteschlange ist leer",
       "toggleHistory": "Historie ein- oder ausblenden",
       "editQueue": "Warteschlange bearbeiten",
-      "doneEditing": "Fertig"
+      "doneEditing": "Fertig",
+      "cleared": "Warteschlange geleert",
+      "removed_one": "{{count}} Boulder entfernt",
+      "removed_other": "{{count}} Boulder entfernt",
+      "undo": "Rückgängig",
+      "undoAria": "Boulder zurück in die Warteschlange"
     },
     "queueSnackbar": {
       "added_one": "Boulder in die Warteschlange gelegt",

@@ -278,6 +278,7 @@ type Snapshot = {
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
+  removeQueueItems: ReturnType<typeof useQueue>['removeQueueItems'];
   clearQueue: ReturnType<typeof useQueue>['clearQueue'];
   reorderQueue: ReturnType<typeof useQueue>['reorderQueue'];
   setQueue: ReturnType<typeof useQueue>['setQueue'];
@@ -379,6 +380,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playlistSuggestionSource,
       addToQueue: queue.addToQueue,
       removeFromQueue: queue.removeFromQueue,
+      removeQueueItems: queue.removeQueueItems,
       clearQueue: queue.clearQueue,
       reorderQueue: queue.reorderQueue,
       setQueue: queue.setQueue,
@@ -403,6 +405,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     playlistSuggestionSource,
     queue.addToQueue,
     queue.removeFromQueue,
+    queue.removeQueueItems,
     queue.clearQueue,
     queue.reorderQueue,
     queue.setQueue,
@@ -3545,6 +3548,79 @@ describe('QueueProvider mutation-failure resync', () => {
     });
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+  });
+
+  // The queue sheet's bulk remove offers an Undo that restores through
+  // setQueue. The removes must ride the serialized lane so that restore reaches
+  // the server AFTER them — a late remove landing behind it would delete the
+  // climbs the Undo just put back, for the whole crew.
+  it('sends a bulk remove on the queue lane, so an Undo setQueue lands after it', async () => {
+    const snapshots: Snapshot[] = [];
+    routeHttpRequest(queueStateResponse([]));
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      void prepared.addToQueue(makeQueueItem('bulk-one', 'climb-bulk-one'));
+      void prepared.addToQueue(makeQueueItem('bulk-two', 'climb-bulk-two'));
+      void prepared.addToQueue(makeQueueItem('bulk-kept', 'climb-bulk-kept'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['bulk-one', 'bulk-two', 'bulk-kept']);
+    });
+
+    // Hold the removes in flight.
+    const order: string[] = [];
+    let releaseRemoves: () => void = () => {};
+    const removesHeld = new Promise<void>((resolve) => {
+      releaseRemoves = resolve;
+    });
+    queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
+      await removesHeld;
+      order.push(`remove:${uuid}`);
+    });
+    queueMutations.setQueue.mockImplementation(async () => {
+      order.push('setQueue');
+    });
+    queueMutations.removeQueueItem.mockClear();
+    queueMutations.setQueue.mockClear();
+
+    const beforeRemove = snapshots.at(-1);
+    if (!beforeRemove) throw new Error('queue snapshot was not captured');
+    const restoredQueue = beforeRemove.state.queue;
+    act(() => {
+      beforeRemove.removeQueueItems(['bulk-one', 'bulk-two']);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['bulk-kept']);
+    });
+    await waitFor(() => {
+      expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(2);
+    });
+
+    const afterRemove = snapshots.at(-1);
+    if (!afterRemove) throw new Error('queue snapshot was not captured');
+    act(() => {
+      afterRemove.setQueue(restoredQueue, null);
+    });
+    // The restore is local at once…
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['bulk-one', 'bulk-two', 'bulk-kept']);
+    });
+    // …but its wire send waits behind the removes still in flight.
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
+
+    await act(async () => {
+      releaseRemoves();
+      await removesHeld;
+    });
+    await waitFor(() => {
+      expect(order).toEqual(['remove:bulk-one', 'remove:bulk-two', 'setQueue']);
+    });
   });
 
   it('keeps a non-throttled add failure silent about pacing', async () => {

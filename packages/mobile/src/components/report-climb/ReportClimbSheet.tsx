@@ -164,7 +164,7 @@ export function ReportClimbSheet({
       {
         onSuccess: (result) => {
           track(SHARED_EVENTS.ClimbReported, { kind, boardType: boardName, status: result.status });
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          // The success toast plays the haptic.
           const copy = reportToastCopy(result.status, kind, result.proposal);
           resetForm();
           // Toast AFTER the close request: a toast raised while the sheet is up

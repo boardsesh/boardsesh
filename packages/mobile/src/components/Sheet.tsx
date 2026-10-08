@@ -23,7 +23,6 @@ import BottomSheet, {
   BottomSheetView,
   type BottomSheetMethods,
 } from '@expo/ui/community/bottom-sheet';
-import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -37,6 +36,7 @@ import {
   useProgrammaticSnap,
   useSheetScrollIntoViewHost,
 } from './sheet-scroll-into-view';
+import { useDetentDragHaptic } from './sheet-detent-haptic';
 import { useManagedSheet, type PresenterGroup } from '../providers/sheet-presentation-provider';
 
 type SheetProps = {
@@ -161,11 +161,13 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
 
   // The keyboard-detent snap on field focus is not a drag: no haptic for it.
   const { programmaticSnapRef, snapWithoutHaptic } = useProgrammaticSnap(managed.handle.snapToIndex);
+  // Silent on present; a selection tick only on the climber's own detent drags.
+  const playDetentHaptic = useDetentDragHaptic(programmaticSnapRef);
 
   const handleChange = useCallback(
     (index: number) => {
+      playDetentHaptic(index);
       if (index >= 0) {
-        if (!programmaticSnapRef.current) hapticMedium();
         setActiveIndex(index);
         setIsOpen(true);
       } else {
@@ -179,7 +181,7 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
       managed.onChange(index);
       onChangeRef.current?.(index);
     },
-    [managed, programmaticSnapRef],
+    [managed, playDetentHaptic],
   );
 
   // A fixed header or a pinned footer both need a wrapper around the body, and

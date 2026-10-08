@@ -77,6 +77,11 @@ type QueueContextValue = {
     queueItemUuid?: string;
   }) => Promise<'added' | 'moved' | 'unchanged' | 'cancelled'>;
   removeFromQueue: (uuid: string) => void;
+  /**
+   * Remove several queue items in one intent. The wire sends share the
+   * serialized queue lane, so a following `setQueue` (an Undo) lands after them.
+   */
+  removeQueueItems: (uuids: readonly string[]) => void;
   /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
   clearQueue: () => void;
