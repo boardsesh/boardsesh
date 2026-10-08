@@ -321,10 +321,10 @@ describe('Sheet', () => {
     it('raises a short detent to the keyboard detent without the drag haptic', () => {
       // FeedbackSheet's 44% detent: the keyboard would leave its body 0pt.
       renderOpenFooterSheet(['44%', '90%'], 0);
-      hapticMedium.mockClear();
+      hapticSelection.mockClear();
       act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: IOS_KEYBOARD, duration: 250 }));
       expect(snapToIndex).toHaveBeenCalledWith(1);
-      expect(hapticMedium).not.toHaveBeenCalled();
+      expect(hapticSelection).not.toHaveBeenCalled();
       // The same keyboard reporting a new frame (QuickType bar) is not a new show.
       act(() =>
         keyboard.listeners.get('keyboardWillChangeFrame')?.({
