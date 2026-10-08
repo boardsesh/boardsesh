@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-10-08T08:31:36.543Z",
+  "generatedAt": "2026-10-08T09:34:52.983Z",
   "entries": [
+    {
+      "prNumber": 6244,
+      "category": "fixed",
+      "title": "VoiceOver and TalkBack can now reach every button, including hidden long-press actions",
+      "mergedAt": "2026-10-08T09:23:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6244"
+    },
+    {
+      "prNumber": 6241,
+      "category": "fixed",
+      "title": "The Log ascent buttons and sheet fields now stay fully above the keyboard",
+      "mergedAt": "2026-10-08T09:21:03Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6241"
+    },
     {
       "prNumber": 6240,
       "category": "new",

@@ -20,6 +20,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- VoiceOver and TalkBack can now reach every button, including hidden long-press actions ([#6244](https://github.com/boardsesh/boardsesh/pull/6244))
+- The Log ascent buttons and sheet fields now stay fully above the keyboard ([#6241](https://github.com/boardsesh/boardsesh/pull/6241))
 - Filter, angle and board pickers keep their buttons at the top and no longer leave a gap at the bottom ([#6220](https://github.com/boardsesh/boardsesh/pull/6220))
 
 ## 2026-10-07
