@@ -109,7 +109,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
         onPrepare={preparePlay}
         zoomSourceRetained
       >
-        {/* tapClip reserves the leading slot via paddingLeft (not a real child),
+        {/* tapClip reserves the leading slot via paddingStart (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}
         <LargeContentViewer
           style={styles.labelSlot}
@@ -147,8 +147,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: ACCESSORY_LEADING_INSET,
-    paddingRight: ACCESSORY_TRAILING_INSET,
+    paddingStart: ACCESSORY_LEADING_INSET,
+    paddingEnd: ACCESSORY_TRAILING_INSET,
   },
   // The lightbulb sits in this absolute slot on TOP of the climb gesture, so its
   // Pressable keeps a full, unobscured 44pt tap target. left matches the row's
@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
     // Reserve the leading slot so the thumbnail starts just past the lightbulb.
-    paddingLeft: THUMBNAIL_LEADING_INSET,
+    paddingStart: THUMBNAIL_LEADING_INSET,
   },
   labelSlot: {
     justifyContent: 'center',
@@ -179,8 +179,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 0,
     gap: spacing[2],
-    paddingLeft: spacing[2],
-    paddingRight: spacing[1],
+    paddingStart: spacing[2],
+    paddingEnd: spacing[1],
   },
   name: {
     flex: 1,

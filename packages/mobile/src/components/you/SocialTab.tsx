@@ -1,13 +1,7 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from 'react-native';
+import { RefreshControl, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
@@ -263,7 +257,7 @@ function SocialStatCard({
   const color = active ? brandColors.primary : systemColors.secondaryLabel;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${value} ${label}`}
@@ -290,7 +284,7 @@ function SocialStatCard({
       <Text variant="footnote" color={systemColors.secondaryLabel}>
         {label}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 

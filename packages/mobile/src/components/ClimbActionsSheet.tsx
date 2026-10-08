@@ -307,7 +307,7 @@ function ClimbActionsSheet({
         {onTick && (
           <ListRow
             title={t('mobile.climbActions.tick')}
-            leading={<Icon name="tick" size={22} color={successActionIconColor} />}
+            leading={<Icon name="tick.fill" size={22} color={successActionIconColor} />}
             onPress={handleTick}
             showSeparator
           />

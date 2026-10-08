@@ -1,5 +1,6 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
   View,
@@ -8,7 +9,6 @@ import {
   Keyboard,
   InteractionManager,
   Platform,
-  Pressable,
   type ColorValue,
 } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
@@ -2109,7 +2109,7 @@ function ClimbListInner() {
           !filterInTopChrome.) */}
       {showFilterChips && !filterInTopChrome && !gradeUsesPopover && showGrade ? (
         <>
-          <Pressable
+          <PressableSurface
             style={styles.chipGradeDismiss}
             onPress={handleDismissGrade}
             accessibilityElementsHidden

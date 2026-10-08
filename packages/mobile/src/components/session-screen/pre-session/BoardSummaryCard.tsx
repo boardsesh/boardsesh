@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4] + BOARD_THUMB_WIDTH + spacing[3],
+    marginStart: spacing[4] + BOARD_THUMB_WIDTH + spacing[3],
   },
   thumbnail: {
     width: BOARD_THUMB_WIDTH,

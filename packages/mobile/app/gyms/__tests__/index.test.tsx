@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The gym finder binds a board through the same `useActivateBoard` path as every
 // other picker (#5654), so a pick here fires the pick event, follows the board
@@ -73,7 +86,12 @@ vi.mock('react-native', () => ({
         if (event.key === 'Enter') onSubmitEditing();
       },
     }),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    absoluteFill: {},
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
@@ -104,6 +122,7 @@ vi.mock('../../../src/lib/use-place-search', () => ({
   useGeocodePlace: () => ({ geocode: geocodeMock, isGeocoding: false }),
 }));
 vi.mock('../../../src/providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       background: '#fff',
@@ -173,6 +192,7 @@ vi.mock('../../../src/components/gym-directory/gym-list-rows', () => ({
   },
 }));
 vi.mock('../../../src/theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { lg: 12, full: 9999 },
   shadows: { sm: {} },

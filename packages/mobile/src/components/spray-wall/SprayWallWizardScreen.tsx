@@ -1,3 +1,5 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { PressableSurface } from '../PressableSurface';
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
 // Name it → photograph it → optionally mark its corners → upload → let the
@@ -33,7 +35,6 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -199,6 +200,7 @@ export function SprayWallWizardScreen({
   wallUuid,
   versionId,
 }: SprayWallWizardScreenProps) {
+  const headerHeight = useHeaderHeight();
   const countedSteps = resetOfWallUuid != null ? RESET_COUNTED_STEPS : COUNTED_STEPS;
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -1382,7 +1384,11 @@ export function SprayWallWizardScreen({
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         // Nothing pinned under the page, so it pads only past the home
@@ -1479,7 +1485,7 @@ export function SprayWallWizardScreen({
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.tip')}
             </Text>
-            <Pressable
+            <PressableSurface
               onPress={openPhotoGuide}
               hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
               style={styles.photoGuideLink}
@@ -1489,7 +1495,7 @@ export function SprayWallWizardScreen({
               <Text variant="subheadline" color={systemColors.accent}>
                 {t('sprayWizard.photo.helpLink')}
               </Text>
-            </Pressable>
+            </PressableSurface>
             {/* Said before the upload, not after it fails: Offline mode is a
                 switch the climber can turn off right now. */}
             {offlineModeOn ? (

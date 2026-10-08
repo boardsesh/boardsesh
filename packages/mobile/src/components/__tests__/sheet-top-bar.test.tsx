@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+// Native magnification has its own wrapper tests; keep bar-geometry assertions on the bar.
+vi.mock('../LargeContentViewer', () => ({
+  LargeContentViewer: ({ children }: { children: React.ReactNode }) => children,
+}));
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';

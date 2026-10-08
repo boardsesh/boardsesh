@@ -114,5 +114,5 @@ const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
 const styles = StyleSheet.create({
   state: { paddingTop: spacing[2] },
   list: { marginTop: spacing[2], gap: spacing[2] },
-  row: { borderLeftWidth: 2, paddingLeft: spacing[3], gap: 2 },
+  row: { borderLeftWidth: 2, paddingStart: spacing[3], gap: 2 },
 });

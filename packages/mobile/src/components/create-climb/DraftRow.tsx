@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -45,7 +46,7 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
 
   return (
     <View style={[styles.row, { borderBottomColor: systemColors.separator }]}>
-      <Pressable
+      <PressableSurface
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={climb.name || t('createClimbForm.draftBadge')}
@@ -57,8 +58,8 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
         <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
           {subtitleParts.join(' · ')}
         </Text>
-      </Pressable>
-      <Pressable
+      </PressableSurface>
+      <PressableSurface
         onPress={() => onDelete(climb)}
         accessibilityRole="button"
         accessibilityLabel={t('draftsDrawer.delete.tooltip')}
@@ -66,7 +67,7 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
         style={styles.deleteButton}
       >
         <Icon name="delete" size={20} color={systemColors.error} />
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 }

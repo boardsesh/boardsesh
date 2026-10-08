@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -15,13 +29,30 @@ type ViewMockProps = { children?: ReactNode; testID?: string; style?: unknown };
 const flatten = (style: unknown): Record<string, unknown> =>
   Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : ((style as Record<string, unknown>) ?? {});
 vi.mock('react-native', () => ({
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress, 'aria-label': accessibilityLabel }, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children, testID, style }: ViewMockProps) =>
     createElement(
       'div',
       { 'data-testid': testID, 'data-padding-top': flatten(style).paddingTop as number | undefined },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
   useWindowDimensions: () => ({ width: 405, height: 900 }),
   Platform: {
     get OS() {
@@ -70,9 +101,11 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { secondaryBackground: '#221A33' } }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
 }));
 // The heat layer pulls in the native renderer hook and the download flow; the

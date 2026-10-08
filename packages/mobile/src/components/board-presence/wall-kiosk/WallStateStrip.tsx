@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../../../hooks/use-typography-styles';
 import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -39,6 +40,7 @@ function WallStateStripComponent({
   typeScale,
   boardName,
 }: WallStateStripProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { brandColors, systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
@@ -131,59 +133,60 @@ function WallStateStripComponent({
 
 export const WallStateStrip = memo(WallStateStripComponent);
 
-const styles = StyleSheet.create({
-  root: { gap: spacing[2] },
-  bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.md,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  barTextGroup: {
-    flexShrink: 1,
-    gap: 2,
-  },
-  barText: {
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  barDetail: {
-    fontWeight: '600',
-    opacity: 0.85,
-  },
-  onWallRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[1],
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  onWallLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  onWallName: {
-    flexShrink: 1,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  onWallGrade: {
-    fontSize: 15,
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    root: { gap: spacing[2] },
+    bar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      borderRadius: borderRadius.md,
+    },
+    dot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+    },
+    barTextGroup: {
+      flexShrink: 1,
+      gap: 2,
+    },
+    barText: {
+      fontWeight: '800',
+      textTransform: 'uppercase',
+      letterSpacing: 0.4,
+    },
+    barDetail: {
+      fontWeight: '600',
+      opacity: 0.85,
+    },
+    onWallRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[1],
+    },
+    liveDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    onWallLabel: {
+      fontSize: textStyles.caption1.fontSize,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.3,
+    },
+    onWallName: {
+      flexShrink: 1,
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '700',
+    },
+    onWallGrade: {
+      fontSize: textStyles.subheadline.fontSize,
+      fontWeight: '800',
+      fontVariant: ['tabular-nums'],
+    },
+  });

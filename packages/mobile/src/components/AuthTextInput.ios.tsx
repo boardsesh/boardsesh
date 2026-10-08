@@ -34,6 +34,7 @@ import {
   autocorrectionDisabled,
   disabled as disabledModifier,
   frame,
+  font,
   keyboardType as keyboardTypeModifier,
   onSubmit as onSubmitModifier,
   submitLabel as submitLabelModifier,
@@ -42,6 +43,7 @@ import {
   textInputAutocapitalization,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
+import { useBoldText } from '../hooks/use-bold-text';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { Text } from './Text';
@@ -80,6 +82,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   ref,
 ) {
   const { brandColors, systemColors } = useTheme();
+  const boldText = useBoldText();
   const textState = useNativeState(value);
   const lastEmittedRef = useRef(value);
   const fieldRef = useRef<TextFieldRef | SecureFieldRef>(null);
@@ -121,6 +124,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
   const iosSubmitLabel = toIosSubmitLabel(returnKeyType);
 
   const modifiers = [
+    font({ textStyle: 'body', weight: boldText ? 'medium' : 'regular' }),
     textFieldStyle('roundedBorder'),
     // Floor the field's intrinsic height at the native level so the Host's
     // matchContents reports a value that can't squish/clip the field. The RN

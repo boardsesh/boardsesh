@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -15,18 +28,26 @@ vi.mock('react-native', () => ({
     createElement('div', { role: accessibilityRole }, children),
   Pressable: ({ children, onPress, accessibilityRole }: PressMockProps) =>
     createElement('button', { onClick: onPress, 'data-role': accessibilityRole }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+  },
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { fill: '#EFEFF0', secondaryLabel: '#5B5563' },
     brandColors: { error: '#C81E1E' },
   }),
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
+  borderRadius: { md: 8 },
+}));
 
 import { InlineConfirmBanner } from '../InlineConfirmBanner';
 

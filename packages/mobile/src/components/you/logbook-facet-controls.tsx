@@ -1,3 +1,5 @@
+import { Pressable } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
 // Reusable logbook filter controls, shared by the LogbookFilterSheet (the full
 // bottom sheet) and the inline toolbar rails (LogbookFacetRail, the iOS-glass
 // chip row's grade/angle/date facets). Extracted so the angle chip rail and the
@@ -9,7 +11,7 @@
 // mounted, but the controls themselves are cross-platform, matching the sheet).
 
 import { memo, useCallback, useState } from 'react';
-import { View, Pressable, StyleSheet, Platform, type ViewStyle } from 'react-native';
+import { View, StyleSheet, Platform, type ViewStyle } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -223,7 +225,7 @@ export const DateRangeRow = memo(function DateRangeRow({
               onChange={handleChange}
             />
           ) : (
-            <Pressable
+            <PressableSurface
               onPress={() => {
                 hapticSelection();
                 setRevealed(true);
@@ -240,10 +242,10 @@ export const DateRangeRow = memo(function DateRangeRow({
                 {clearLabel}
               </Text>
               <Icon name="calendar" size={16} color={systemColors.secondaryLabel} />
-            </Pressable>
+            </PressableSurface>
           )
         ) : (
-          <Pressable
+          <PressableSurface
             onPress={openAndroid}
             accessibilityRole="button"
             accessibilityLabel={label}
@@ -257,12 +259,17 @@ export const DateRangeRow = memo(function DateRangeRow({
               {value || clearLabel}
             </Text>
             <Icon name="calendar" size={16} color={systemColors.secondaryLabel} />
-          </Pressable>
+          </PressableSurface>
         )}
         {value || revealed ? (
-          <Pressable onPress={handleClear} hitSlop={8} accessibilityRole="button" accessibilityLabel={clearLabel}>
+          <PressableSurface
+            onPress={handleClear}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={clearLabel}
+          >
             <Icon name="close" size={14} color={systemColors.secondaryLabel} />
-          </Pressable>
+          </PressableSurface>
         ) : null}
       </View>
     </View>

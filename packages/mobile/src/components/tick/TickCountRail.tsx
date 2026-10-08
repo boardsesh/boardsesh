@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     // The row owns the leading gutter (TICK_CONTROL_ORIGIN); the rail only adds
     // the trailing inset that keeps the last chip short of the screen edge.
-    paddingLeft: RAIL_LEAD_IN,
-    paddingRight: TICK_RAIL_TRAIL_INSET,
+    paddingStart: RAIL_LEAD_IN,
+    paddingEnd: TICK_RAIL_TRAIL_INSET,
   },
 });

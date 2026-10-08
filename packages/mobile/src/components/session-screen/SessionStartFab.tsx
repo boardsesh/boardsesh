@@ -10,7 +10,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useNativeGlass } from '../../hooks/use-native-glass';
 import { hapticLight } from '../../lib/haptics';
-import { spacing, shadows } from '../../theme/tokens';
+import { opacity, spacing, shadows } from '../../theme/tokens';
 
 const CAPSULE_HEIGHT = 52;
 const CAPSULE_RADIUS = CAPSULE_HEIGHT / 2;
@@ -147,7 +147,7 @@ function StartGlassCapsule({
       accessibilityLabel={label}
       style={[
         styles.capsule,
-        { opacity: disabled ? 0.5 : 1 },
+        { opacity: disabled ? opacity.disabled : 1 },
         !nativeGlass && shadows.sm,
         !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
       ]}

@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
@@ -45,6 +46,7 @@ function normalize(value: string): string | null {
  * session's detail + feeds, so the screen refreshes on its own.
  */
 export function SessionEditSheet({ visible, sessionId, currentName, currentNotes, onClose }: SessionEditSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const updateSession = useUpdateSession();
@@ -193,32 +195,33 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
   );
 }
 
-const styles = StyleSheet.create({
-  body: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    paddingBottom: spacing[4],
-    gap: spacing[2],
-  },
-  label: {
-    fontWeight: '600',
-    marginTop: spacing[2],
-  },
-  input: {
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  multiline: {
-    minHeight: 96,
-    textAlignVertical: 'top',
-  },
-  counter: {
-    textAlign: 'right',
-    marginTop: -spacing[1],
-  },
-  feedback: {
-    marginTop: spacing[2],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    body: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[2],
+      paddingBottom: spacing[4],
+      gap: spacing[2],
+    },
+    label: {
+      fontWeight: '600',
+      marginTop: spacing[2],
+    },
+    input: {
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    multiline: {
+      minHeight: 96,
+      textAlignVertical: 'top',
+    },
+    counter: {
+      textAlign: 'right',
+      marginTop: -spacing[1],
+    },
+    feedback: {
+      marginTop: spacing[2],
+    },
+  });

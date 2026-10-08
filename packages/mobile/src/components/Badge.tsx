@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Badge as PaperBadge } from 'react-native-paper';
@@ -39,6 +40,7 @@ function BadgeMaterial({ count, visible = true, color, size = 'medium' }: BadgeP
 
 // Liquid Glass badge — the original animated implementation, unchanged.
 function BadgeGlass({ count, visible = true, color, size = 'medium' }: BadgeProps) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   if (!visible) return null;
   const badgeColor = color ?? systemColors.error;
@@ -60,14 +62,14 @@ function BadgeGlass({ count, visible = true, color, size = 'medium' }: BadgeProp
         styles.badge,
         {
           backgroundColor: badgeColor,
-          height: badgeSize,
+          minHeight: badgeSize,
           minWidth,
           borderRadius: badgeSize / 2,
         },
       ]}
     >
       {!isDot && (
-        <Text variant="caption2" color={iosSystemColors.white} style={styles.text}>
+        <Text maxFontSizeMultiplier={1.2} variant="caption2" color={iosSystemColors.white} style={styles.text}>
           {displayCount}
         </Text>
       )}
@@ -75,15 +77,16 @@ function BadgeGlass({ count, visible = true, color, size = 'medium' }: BadgeProp
   );
 }
 
-const styles = StyleSheet.create({
-  badge: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  text: {
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 13,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    badge: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+    },
+    text: {
+      fontSize: textStyles.caption2.fontSize,
+      fontWeight: '600',
+      lineHeight: textStyles.caption2.lineHeight,
+    },
+  });

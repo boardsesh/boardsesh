@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, Pressable, StyleSheet, type FlatList } from 'react-native';
+import { View, StyleSheet, type FlatList } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -274,7 +275,7 @@ function QueueListComponent({
       switch (row.type) {
         case 'history-show-all':
           return (
-            <Pressable
+            <PressableSurface
               onPress={onShowFullHistory}
               style={styles.showAllRow}
               accessibilityRole="button"
@@ -283,7 +284,7 @@ function QueueListComponent({
               <Text variant="subheadline" color={brandColors.primary}>
                 {t('queueList.showFullHistory', { count: row.hiddenCount })}
               </Text>
-            </Pressable>
+            </PressableSurface>
           );
 
         case 'history-divider':
@@ -353,7 +354,7 @@ function QueueListComponent({
         case 'suggestion':
           return (
             <View>
-              <Pressable
+              <PressableSurface
                 onPress={() => handleSuggestionPress(row.climb)}
                 accessibilityRole="button"
                 accessibilityLabel={row.climb.name}
@@ -368,7 +369,7 @@ function QueueListComponent({
                   setIds={board.setIds}
                   angle={board.angle}
                 />
-              </Pressable>
+              </PressableSurface>
               <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
             </View>
           );
@@ -462,6 +463,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: SEPARATOR_INSET,
+    marginStart: SEPARATOR_INSET,
   },
 });

@@ -25,6 +25,8 @@ import type { BoardName, Climb, HoldStat } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
+import { AccessibleHoldList } from './AccessibleHoldList';
+import { Button } from '../Button';
 import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveCreateBoard';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
@@ -92,6 +94,7 @@ export function CreateDrawer({
   lostHolds,
 }: CreateDrawerProps) {
   const { systemColors } = useTheme();
+  const [holdListVisible, setHoldListVisible] = useState(false);
   const { t, i18n } = useTranslation('climbs');
   // A SEPARATE hook, not `useTranslation(['climbs', 'session'])`: with an array,
   // `t('a.b.c')` resolves against the FIRST namespace only, so the wall-state
@@ -356,124 +359,138 @@ export function CreateDrawer({
         onSave={handleSavePress}
         climbReady={climbReady}
       />
+      <Button
+        variant="text"
+        title={t(holdListVisible ? 'mobile.boardAccessibility.showBoard' : 'mobile.boardAccessibility.showList')}
+        onPress={() => setHoldListVisible((visible) => !visible)}
+      />
       <GestureHandlerRootView style={styles.scroll}>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: windowInsetBottom + spacing[4] + keyboardPad }}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
-        >
-          {/* Transient banners sit at the top of the scroll, under the pinned
+        {holdListVisible ? (
+          <AccessibleHoldList
+            holds={boardHolds.holdTargets}
+            roles={controller.litUpHoldsMap}
+            onPaint={controller.handlePaint}
+            onChooseRole={onLongPressHold}
+          />
+        ) : (
+          <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={{ paddingBottom: windowInsetBottom + spacing[4] + keyboardPad }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            automaticallyAdjustKeyboardInsets
+          >
+            {/* Transient banners sit at the top of the scroll, under the pinned
             top bar, and push the board down rather than covering it. */}
-          {controller.pendingNewClimb ? (
-            <InlineConfirmBanner
-              title={t('mobile.create.newClimb.confirm.title')}
-              message={t('mobile.create.newClimb.confirm.message')}
-              confirmLabel={t('mobile.create.newClimb.confirm.action')}
-              cancelLabel={t('createClimbForm.dismiss')}
-              onConfirm={controller.confirmNewClimb}
-              onCancel={controller.cancelNewClimb}
-            />
-          ) : null}
+            {controller.pendingNewClimb ? (
+              <InlineConfirmBanner
+                title={t('mobile.create.newClimb.confirm.title')}
+                message={t('mobile.create.newClimb.confirm.message')}
+                confirmLabel={t('mobile.create.newClimb.confirm.action')}
+                cancelLabel={t('createClimbForm.dismiss')}
+                onConfirm={controller.confirmNewClimb}
+                onCancel={controller.cancelNewClimb}
+              />
+            ) : null}
 
-          {controller.nameMissingHint ? <NameRequiredHint announceKey={controller.nameMissingTick} /> : null}
+            {controller.nameMissingHint ? <NameRequiredHint announceKey={controller.nameMissingTick} /> : null}
 
-          {controller.publishDuplicateError ? (
-            <DuplicateBanner
-              name={controller.publishDuplicateError.existingClimbName}
-              onView={
-                controller.publishDuplicateError.existingClimbUuid
-                  ? () => {
-                      const uuid = controller.publishDuplicateError?.existingClimbUuid;
-                      if (uuid) onViewDuplicate(uuid);
-                    }
-                  : undefined
-              }
-              onDismiss={controller.dismissDuplicateError}
-            />
-          ) : null}
+            {controller.publishDuplicateError ? (
+              <DuplicateBanner
+                name={controller.publishDuplicateError.existingClimbName}
+                onView={
+                  controller.publishDuplicateError.existingClimbUuid
+                    ? () => {
+                        const uuid = controller.publishDuplicateError?.existingClimbUuid;
+                        if (uuid) onViewDuplicate(uuid);
+                      }
+                    : undefined
+                }
+                onDismiss={controller.dismissDuplicateError}
+              />
+            ) : null}
 
-          <View testID="create-drawer-board-block">
-            <View style={styles.boardSection}>
-              <InteractiveCreateBoard
-                frames={controller.currentFramesString}
-                boardName={board.boardName as BoardName}
-                layoutId={board.layoutId}
-                sizeId={board.sizeId}
-                setIds={board.setIds}
-                boardWidth={boardHolds.boardWidth}
-                boardHeight={boardHolds.boardHeight}
-                holdTargets={boardHolds.holdTargets}
-                litUpHoldsMap={controller.litUpHoldsMap}
-                onPaint={controller.handlePaint}
-                onLongPressHold={onLongPressHold}
-                renderWidth={boardRender.width}
-                renderHeight={boardRender.height}
-                controlRef={boardControlsRef}
-                scrollRef={scrollGestureRef}
-                overlay={boardOverlay}
-                ghostTargets={lostHolds?.ghostTargets}
-                onGhostPress={lostHolds?.dismissGhost}
+            <View testID="create-drawer-board-block">
+              <View style={styles.boardSection}>
+                <InteractiveCreateBoard
+                  frames={controller.currentFramesString}
+                  boardName={board.boardName as BoardName}
+                  layoutId={board.layoutId}
+                  sizeId={board.sizeId}
+                  setIds={board.setIds}
+                  boardWidth={boardHolds.boardWidth}
+                  boardHeight={boardHolds.boardHeight}
+                  holdTargets={boardHolds.holdTargets}
+                  litUpHoldsMap={controller.litUpHoldsMap}
+                  onPaint={controller.handlePaint}
+                  onLongPressHold={onLongPressHold}
+                  renderWidth={boardRender.width}
+                  renderHeight={boardRender.height}
+                  controlRef={boardControlsRef}
+                  scrollRef={scrollGestureRef}
+                  overlay={boardOverlay}
+                  ghostTargets={lostHolds?.ghostTargets}
+                  onGhostPress={lostHolds?.dismissGhost}
+                />
+              </View>
+
+              <CreateRoutePlaybackSlot
+                showRouteTransport={controller.showRouteTransport}
+                frameCount={controller.frameCount}
+                frameIndex={controller.currentFrameIndex}
+                playback={controller.playback}
+                wallStateLabel={controller.handedOff ? tSession('playView.wallState.onWall') : null}
+                onAddFrame={controller.duplicateFrame}
+                onDeleteFrame={controller.deleteFrame}
+                onPaceChange={controller.setFramesPace}
+              />
+
+              <CreateDrawerActionBar
+                boardName={board.boardName}
+                selectedBrush={controller.selectedBrush}
+                onSelectBrush={controller.setSelectedBrush}
+                canUndo={controller.canUndo}
+                canRedo={controller.canRedo}
+                onUndo={controller.undo}
+                onRedo={controller.redo}
+                onClearHolds={controller.handleClearHolds}
+                frameCount={controller.frameCount}
+                frameDeletions={controller.frameDeletions}
+                currentFrameIndex={controller.currentFrameIndex}
+                canSetActive={controller.canSetActive}
+                onSetActive={controller.handleSetActive}
+                lightbulb={lightbulb}
+                draftStatus={controller.draftStatus}
+                onToggleHeatmap={heatmap?.toggle}
+                heatmapActive={heatmapActive}
+                heatmapBusy={heatmap?.busy ?? false}
+                heatmapLine={heatmapLine}
+                saveBlockedLine={saveBlockedLine}
               />
             </View>
 
-            <CreateRoutePlaybackSlot
-              showRouteTransport={controller.showRouteTransport}
-              frameCount={controller.frameCount}
-              frameIndex={controller.currentFrameIndex}
-              playback={controller.playback}
-              wallStateLabel={controller.handedOff ? tSession('playView.wallState.onWall') : null}
-              onAddFrame={controller.duplicateFrame}
-              onDeleteFrame={controller.deleteFrame}
-              onPaceChange={controller.setFramesPace}
-            />
-
-            <CreateDrawerActionBar
-              boardName={board.boardName}
-              selectedBrush={controller.selectedBrush}
-              onSelectBrush={controller.setSelectedBrush}
-              canUndo={controller.canUndo}
-              canRedo={controller.canRedo}
-              onUndo={controller.undo}
-              onRedo={controller.redo}
-              onClearHolds={controller.handleClearHolds}
-              frameCount={controller.frameCount}
-              frameDeletions={controller.frameDeletions}
-              currentFrameIndex={controller.currentFrameIndex}
-              canSetActive={controller.canSetActive}
-              onSetActive={controller.handleSetActive}
-              lightbulb={lightbulb}
-              draftStatus={controller.draftStatus}
-              onToggleHeatmap={heatmap?.toggle}
-              heatmapActive={heatmapActive}
-              heatmapBusy={heatmap?.busy ?? false}
-              heatmapLine={heatmapLine}
-              saveBlockedLine={saveBlockedLine}
-            />
-          </View>
-
-          <View style={styles.belowFold}>
-            <CreateDrawerForm
-              boardName={board.boardName}
-              description={controller.description}
-              onChangeDescription={controller.setDescription}
-              noMatch={controller.noMatch}
-              onChangeNoMatch={controller.setNoMatch}
-              noKickboard={controller.noKickboard}
-              onChangeNoKickboard={controller.setNoKickboard}
-              campus={controller.campus}
-              onChangeCampus={controller.setCampus}
-              anyFeet={controller.anyFeet}
-              onChangeAnyFeet={controller.setAnyFeet}
-              anyFeetAvailable={controller.anyFeetAvailable}
-              isDraft={controller.isDraft}
-              onChangeIsDraft={controller.setIsDraft}
-            />
-            <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
-          </View>
-        </ScrollView>
+            <View style={styles.belowFold}>
+              <CreateDrawerForm
+                boardName={board.boardName}
+                description={controller.description}
+                onChangeDescription={controller.setDescription}
+                noMatch={controller.noMatch}
+                onChangeNoMatch={controller.setNoMatch}
+                noKickboard={controller.noKickboard}
+                onChangeNoKickboard={controller.setNoKickboard}
+                campus={controller.campus}
+                onChangeCampus={controller.setCampus}
+                anyFeet={controller.anyFeet}
+                onChangeAnyFeet={controller.setAnyFeet}
+                anyFeetAvailable={controller.anyFeetAvailable}
+                isDraft={controller.isDraft}
+                onChangeIsDraft={controller.setIsDraft}
+              />
+              <OpenDraftsSection board={board} onLoadDraft={handleLoadDraft} />
+            </View>
+          </ScrollView>
+        )}
       </GestureHandlerRootView>
     </View>
   );

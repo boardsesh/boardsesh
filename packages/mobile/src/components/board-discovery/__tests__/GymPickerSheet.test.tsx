@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -12,7 +25,11 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('div', { role: 'button', onClick: onPress }, children),
   ActivityIndicator: () => null,
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetTextInput: () => createElement('input'),
@@ -50,13 +67,18 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Button', () => ({ Button: ({ title }: { title: string }) => createElement('button', null, title) }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { label: '#fff', secondaryLabel: '#888', tertiaryLabel: '#666', tertiaryBackground: '#222' },
     brandColors: { primary: '#6D28D9' },
   }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, borderRadius: { md: 8 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
+  borderRadius: { md: 8 },
+}));
 
 import { GymPickerSheet } from '../GymPickerSheet';
 

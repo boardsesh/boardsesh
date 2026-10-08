@@ -116,7 +116,7 @@ function RankAvatar({ participant, isLeader }: { participant: SessionFeedPartici
       <Avatar uri={participant.avatarUrl} name={participant.displayName} size={32} />
       {isLeader ? (
         <View style={[styles.crownBadge, { backgroundColor: brandColors.accent }]}>
-          <Icon name="crown" size={10} color={iosSystemColors.white} />
+          <Icon name="crown.fill" size={10} color={iosSystemColors.white} />
         </View>
       ) : null}
     </View>

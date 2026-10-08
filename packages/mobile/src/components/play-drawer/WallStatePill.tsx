@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // The drawer header's leading slot: one capsule that says what the WALL is
 // doing, so the climber never has to guess whether looking at a climb moved it.
 //
@@ -19,7 +20,7 @@
 // so an effect in here would die with the transition it needs to speak.
 
 import { memo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
@@ -124,7 +125,7 @@ function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePil
   const rippleColor = state === 'browsing' ? brandColors.onAccent : m3.onSurface;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={reserveOnly ? undefined : onPress}
       accessibilityRole={reserveOnly ? undefined : 'button'}
       accessibilityLabel={reserveOnly ? undefined : accessibilityLabel}
@@ -194,7 +195,7 @@ function WallStatePillImpl({ state, onPress, reserveOnly = false }: WallStatePil
           </>
         )}
       </Animated.View>
-    </Pressable>
+    </PressableSurface>
   );
 }
 

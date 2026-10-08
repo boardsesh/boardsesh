@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -137,7 +150,12 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+    absoluteFill: {},
+  },
   Alert: { alert: vi.fn() },
   Platform: { OS: 'ios' },
 }));
@@ -146,6 +164,7 @@ vi.mock('../../../../src/theme/ios-colors', () => ({
   iosSystemColors: { systemGray4: '#C7C7CC' },
 }));
 vi.mock('../../../../src/providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { label: '#000', fill: '#eee' }, brandColors: { primary: '#6D28D9' } }),
 }));
 const authMock = vi.hoisted(() => ({ isAuthenticated: true }));

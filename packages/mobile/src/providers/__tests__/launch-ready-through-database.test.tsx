@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // #5654: the four launch gates sat frozen at "not ready" from 2.2.0 on, because
 // they are mounted inside <DatabaseProvider> and expo-sqlite's SQLiteProvider is
@@ -144,7 +157,12 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: () => {} },
   Pressable: () => null,
   View: () => null,
-  StyleSheet: { create: <T,>(styles: T) => styles, absoluteFill: {}, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: <T,>(styles: T) => styles,
+    absoluteFill: {},
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('react-native-reanimated', () => ({
   default: { View: () => null },
@@ -195,6 +213,7 @@ vi.mock('../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }
 vi.mock('../../lib/connectivity-banner-inset-store', () => ({ publishConnectivityBannerHeight: vi.fn() }));
 vi.mock('../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: new Proxy({}, { get: () => 0 }),
   borderRadius: new Proxy({}, { get: () => 0 }),
 }));

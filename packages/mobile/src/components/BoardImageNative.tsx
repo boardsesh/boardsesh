@@ -6,9 +6,11 @@ import type { BackgroundVariant } from '../lib/background-image-cache';
 import type { BoardRenderSettings } from '../lib/board-render-settings';
 import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
+import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
 
 type BoardImageNativeProps = {
+  accessible?: boolean;
   frames: string;
   boardName: BoardName;
   layoutId: number;
@@ -128,6 +130,7 @@ type BoardImageNativeProps = {
  * not used here, so a single cached PNG serves both orientations.
  */
 const BoardImageNative = React.memo(function BoardImageNative({
+  accessible = true,
   frames,
   boardName,
   layoutId,
@@ -182,8 +185,15 @@ const BoardImageNative = React.memo(function BoardImageNative({
     ...style,
   };
 
+  const accessibilitySummary = useBoardAccessibilitySummary(boardName, frames);
+
   return (
-    <View style={containerStyle}>
+    <View
+      accessible={accessible}
+      accessibilityRole="image"
+      accessibilityLabel={accessibilitySummary}
+      style={containerStyle}
+    >
       <LayeredClimbImage
         overlayUri={overlayUri}
         overlayLoadKey={overlayLoadKey}

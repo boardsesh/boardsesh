@@ -1,5 +1,6 @@
+import { PressableSurface } from './PressableSurface';
 import { useEffect, useRef } from 'react';
-import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
 import { Text } from './Text';
@@ -108,7 +109,7 @@ function UndoSnackbarGlass({
           <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={1}>
             {message}
           </Text>
-          <Pressable
+          <PressableSurface
             onPress={onUndo}
             hitSlop={8}
             accessibilityRole="button"
@@ -117,7 +118,7 @@ function UndoSnackbarGlass({
             <Text variant="subheadline" color={brandColors.primary} style={styles.undo}>
               {undoLabel}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </Animated.View>
       ) : null}
     </View>

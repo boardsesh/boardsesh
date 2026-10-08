@@ -10,6 +10,8 @@ import Animated, {
 import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture-handler';
 import { computePeekOffset, type PeekDirection } from '@boardsesh/play-view';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
+import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
@@ -96,6 +98,31 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
+  const { t } = useTranslation('climbs');
+  const accessibilitySummary = useBoardAccessibilitySummary(boardName, currentFrameOverride ?? currentFrames);
+  const handleAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (!enabled) return;
+      if (event.nativeEvent.actionName === 'increment' && canSwipeNext) onSwipeNext();
+      if (event.nativeEvent.actionName === 'decrement' && canSwipePrevious) onSwipePrevious();
+    },
+    [enabled, canSwipeNext, canSwipePrevious, onSwipeNext, onSwipePrevious],
+  );
+  const boardAccessibility = useMemo(
+    () => ({
+      accessible: true,
+      accessibilityRole: 'adjustable' as const,
+      accessibilityLabel: accessibilitySummary,
+      accessibilityHint: t('mobile.boardAccessibility.adjustHint'),
+      accessibilityState: { disabled: !enabled },
+      accessibilityActions: [
+        ...(enabled && canSwipeNext ? [{ name: 'increment', label: t('mobile.boardAccessibility.next') }] : []),
+        ...(enabled && canSwipePrevious ? [{ name: 'decrement', label: t('mobile.boardAccessibility.previous') }] : []),
+      ],
+      onAccessibilityAction: handleAccessibilityAction,
+    }),
+    [accessibilitySummary, enabled, canSwipeNext, canSwipePrevious, handleAccessibilityAction, t],
+  );
   // Measured box the board is laid out into. The board is sized to *fit* this
   // box (contain) so the play drawer's full-screen first view can keep the
   // action bar and a Beta-videos teaser on screen instead of the tall board
@@ -266,8 +293,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // board-presence sheet (no carousel) already captures reliably, confirming
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
-          <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor}>
+          <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor} {...boardAccessibility}>
             <BoardImageNative
+              accessible={false}
               frames={currentFrameOverride ?? currentFrames}
               boardName={boardName}
               layoutId={layoutId}
@@ -288,9 +316,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             />
           </View>
         ) : (
-          <Animated.View style={[styles.boardWrapper, boardBox, currentStyle]}>
+          <Animated.View style={[styles.boardWrapper, boardBox, currentStyle]} {...boardAccessibility}>
             <Animated.View style={[boardBox, animatedZoomStyle]}>
               <BoardImageNative
+                accessible={false}
                 frames={currentFrameOverride ?? currentFrames}
                 boardName={boardName}
                 layoutId={layoutId}
@@ -320,9 +349,15 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 
         {/* The climb being swiped to, sliding in edge-adjacent from the swipe
             direction (below the current card's zIndex). Off-screen at rest. */}
-        <Animated.View style={[styles.peekWrapper, peekStyle]} pointerEvents="none">
+        <Animated.View
+          style={[styles.peekWrapper, peekStyle]}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
           {peekFrames && (
             <BoardImageNative
+              accessible={false}
               frames={peekFrames}
               boardName={boardName}
               layoutId={layoutId}

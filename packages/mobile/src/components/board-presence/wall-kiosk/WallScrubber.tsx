@@ -1,5 +1,6 @@
+import { PressableSurface } from '../../PressableSurface';
 import { memo, useCallback } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../../Text';
 import { Icon } from '../../Icon';
@@ -8,7 +9,7 @@ import { useOptionalBluetoothContext } from '../../../providers/bluetooth-provid
 import { useTheme } from '../../../providers/theme-provider';
 import { hapticSelection } from '../../../lib/haptics';
 import { trackBoardConnectTapped } from '../../../lib/analytics-board-connect';
-import { borderRadius, spacing } from '../../../theme/tokens';
+import { opacity, borderRadius, spacing } from '../../../theme/tokens';
 import type { WallPreviewState } from './useWallPreview';
 
 type WallScrubberProps = {
@@ -143,7 +144,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       </View>
     </View>
   ) : (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       onPress={withHaptic(() => step('older'))}
       disabled={!canStepOlder}
@@ -159,7 +160,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       <Text variant="callout" color={systemColors.label} style={styles.bold}>
         {t('mobile.boardPresence.kiosk.browseHistory')}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 
   // On a wall with no lights nothing is lit — the climb goes UP on the wall, so
@@ -175,7 +176,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
         {t('mobile.boardPresence.kiosk.confirmOverrideBody', { name: liveClimb?.name ?? '' })}
       </Text>
       <View style={styles.overrideActions}>
-        <Pressable
+        <PressableSurface
           accessibilityRole="button"
           onPress={withHaptic(cancelOverride)}
           style={[styles.secondaryBtn, { borderColor: systemColors.separator }]}
@@ -183,8 +184,8 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
           <Text variant="footnote" color={systemColors.label}>
             {t('mobile.boardPresence.kiosk.confirmOverrideCancel')}
           </Text>
-        </Pressable>
-        <Pressable
+        </PressableSurface>
+        <PressableSurface
           accessibilityRole="button"
           onPress={withHaptic(confirmOverride)}
           style={[styles.primaryBtn, { backgroundColor: brandColors.primaryFill }]}
@@ -192,11 +193,11 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
           <Text variant="footnote" color={brandColors.onPrimary} style={styles.bold}>
             {t('mobile.boardPresence.kiosk.confirmOverrideConfirm')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     </View>
   ) : lightBlockedReason === 'not-driver' ? (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       onPress={withHaptic(handleConnect)}
       disabled={!bluetooth}
@@ -218,12 +219,12 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       >
         {t('mobile.boardPresence.kiosk.notDriverChip', { name: previewName })}
       </Text>
-    </Pressable>
+    </PressableSurface>
   ) : lightBlockedReason === 'no-leds-not-held' ? (
     // Wall with no light kit: there is no Bluetooth link to offer, so the way to
     // put a climb up is to take the wall. Session-local — nothing is written to
     // the board record here.
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       onPress={handleTakeWall}
       disabled={!takeVirtualWall}
@@ -245,7 +246,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       >
         {t('mobile.boardPresence.kiosk.noLedsNotHeldChip', { name: previewName })}
       </Text>
-    </Pressable>
+    </PressableSurface>
   ) : lightBlockedReason === 'no-frames' ? (
     <View style={styles.blockedChip}>
       <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -253,7 +254,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       </Text>
     </View>
   ) : (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       onPress={withHaptic(lightThis)}
       disabled={!canLight}
@@ -279,7 +280,7 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       >
         {isLighting ? inFlightLabel : lightError ? t('mobile.boardPresence.kiosk.lightFailed') : relightLabel}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 
   return (
@@ -287,12 +288,12 @@ function WallScrubberComponent({ preview }: WallScrubberProps) {
       {navRow}
       {confirmSlot}
       {isPreviewing ? (
-        <Pressable accessibilityRole="button" onPress={withHaptic(backToLive)} style={styles.backToLive}>
+        <PressableSurface accessibilityRole="button" onPress={withHaptic(backToLive)} style={styles.backToLive}>
           <Icon name="skip.next" size={16} color={brandColors.live} />
           <Text variant="footnote" color={brandColors.live} style={styles.bold}>
             {t('mobile.boardPresence.kiosk.backToLive')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
@@ -349,7 +350,7 @@ const styles = StyleSheet.create({
   },
   bold: { fontWeight: '700' },
   pressed: { opacity: 0.75 },
-  disabled: { opacity: 0.5 },
+  disabled: { opacity: opacity.disabled },
   backToLive: {
     flexDirection: 'row',
     alignItems: 'center',

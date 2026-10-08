@@ -1,7 +1,8 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { Text } from '../Text';
@@ -39,7 +40,7 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
   return (
     <View style={styles.row}>
       {options.map((option) => (
-        <Pressable
+        <PressableSurface
           key={option.key}
           onPress={disabled ? undefined : () => onSelect(option.value)}
           disabled={disabled}
@@ -61,7 +62,7 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
           <Text variant="footnote" color={option.selected ? iosSystemColors.white : systemColors.label}>
             {option.label}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ))}
     </View>
   );
@@ -88,6 +89,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   chipDisabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
 });

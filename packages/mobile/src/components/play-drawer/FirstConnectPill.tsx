@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
@@ -41,7 +42,7 @@ function FirstConnectPillComponent({ pending, onPress }: FirstConnectPillProps) 
   }, [pending, onPress]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -69,7 +70,7 @@ function FirstConnectPillComponent({ pending, onPress }: FirstConnectPillProps) 
       >
         {label}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 

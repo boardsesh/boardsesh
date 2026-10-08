@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +17,7 @@ import { remainingSeconds, requestWatchPairingCode, type WatchPairingCode } from
  * bearer via `authenticatedFetch`.
  */
 export function WatchPairScreen() {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('settings');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -121,37 +123,41 @@ export function WatchPairScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    paddingTop: spacing[4],
-    paddingBottom: spacing[8],
-    gap: spacing[5],
-  },
-  card: {
-    overflow: 'hidden',
-    borderRadius: borderRadius.lg,
-    marginHorizontal: spacing[4],
-    padding: spacing[4],
-  },
-  codeCard: {
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  loadingBlock: {
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingVertical: spacing[3],
-  },
-  centeredText: {
-    textAlign: 'center',
-  },
-  codeText: {
-    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
-    fontSize: 44,
-    lineHeight: 52,
-    fontWeight: '700',
-    letterSpacing: 8,
-    textAlign: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+      maxWidth: 672,
+      alignSelf: 'center',
+      flexGrow: 1,
+      paddingTop: spacing[4],
+      paddingBottom: spacing[8],
+      gap: spacing[5],
+    },
+    card: {
+      overflow: 'hidden',
+      borderRadius: borderRadius.lg,
+      marginHorizontal: spacing[4],
+      padding: spacing[4],
+    },
+    codeCard: {
+      alignItems: 'center',
+      gap: spacing[3],
+    },
+    loadingBlock: {
+      alignItems: 'center',
+      gap: spacing[3],
+      paddingVertical: spacing[3],
+    },
+    centeredText: {
+      textAlign: 'center',
+    },
+    codeText: {
+      fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+      fontSize: textStyles.largeTitle.fontSize,
+      lineHeight: textStyles.largeTitle.lineHeight,
+      fontWeight: '700',
+      letterSpacing: 8,
+      textAlign: 'center',
+    },
+  });

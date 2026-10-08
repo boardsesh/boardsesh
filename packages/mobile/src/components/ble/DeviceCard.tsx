@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
@@ -215,7 +216,7 @@ export const DeviceCard = memo(function DeviceCard({
   const boardLabel = boardType ? formatBoardDisplayName(boardType) : undefined;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={presentation.title}
@@ -258,7 +259,7 @@ export const DeviceCard = memo(function DeviceCard({
       <View style={styles.rightSection}>
         <RssiIndicator rssi={device.rssi} />
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

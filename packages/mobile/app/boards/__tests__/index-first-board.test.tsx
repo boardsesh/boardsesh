@@ -1,7 +1,20 @@
+// @vitest-environment jsdom
+vi.mock('../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 vi.mock('../../../src/providers/queue-provider', () => ({
   useQueueActions: () => ({ clearSession: vi.fn(async () => {}) }),
 }));
-// @vitest-environment jsdom
 //
 // #5654: the launch gate opens /boards?source=onboarding&firstBoard=1 for a new
 // account with no board. This suite pins what the SCREEN does in that mode:
@@ -81,7 +94,11 @@ vi.mock('react-native', () => ({
   ScrollView: ({ children }: Children) => createElement('div', null, children),
   Pressable: ({ children, onPress }: Children & { onPress?: () => void }) =>
     createElement('button', { onClick: onPress, type: 'button' }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
@@ -168,6 +185,7 @@ vi.mock('../../../src/providers/auth-provider', () => ({
 vi.mock('../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../src/providers/dialog-provider', () => ({ useConfirm: () => vi.fn() }));
 vi.mock('../../../src/providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ brandColors: { primary: '#6D28D9' }, systemColors: { tertiaryLabel: '#999' } }),
 }));
 vi.mock('../../../src/lib/haptics', () => ({ hapticSelection: vi.fn() }));
@@ -209,7 +227,10 @@ vi.mock('../../../src/providers/feature-flags-provider', () => ({
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
 vi.mock('../../../src/offline/use-remember-downloaded-boards', () => ({ useRememberDownloadedBoards: vi.fn() }));
-vi.mock('../../../src/theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 8: 32 } }));
+vi.mock('../../../src/theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 8: 32 },
+}));
 vi.mock('../../../src/theme/ios-colors', () => ({
   iosSystemColors: { systemGray: '#8e8e93', systemRed: '#f00' },
 }));

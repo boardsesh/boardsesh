@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // One honest banner for "the app cannot reach the server right now" (issue
 // #4862), mounted ONCE at the app root so it can say the same thing on every
 // screen instead of each surface inventing its own empty state.
@@ -17,7 +18,7 @@
 // form, and in offline mode it is also the only way back online.
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { AccessibilityInfo, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -182,7 +183,7 @@ function ConnectivityBannerContent() {
           {tintColor ? (
             <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tintColor }]} />
           ) : null}
-          <Pressable
+          <PressableSurface
             onPress={expand}
             accessibilityRole="button"
             accessibilityLabel={countLine ? `${presentation.title}. ${countLine}` : presentation.title}
@@ -200,7 +201,7 @@ function ConnectivityBannerContent() {
                 </Text>
               </View>
             ) : null}
-          </Pressable>
+          </PressableSurface>
         </Animated.View>
       ) : (
         <Animated.View
@@ -238,7 +239,7 @@ function ConnectivityBannerContent() {
                 </Text>
               ) : null}
             </View>
-            <Pressable
+            <PressableSurface
               onPress={dismiss}
               accessibilityRole="button"
               accessibilityLabel={t('mobile.connectivity.dismiss')}
@@ -246,7 +247,7 @@ function ConnectivityBannerContent() {
               style={styles.close}
             >
               <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-            </Pressable>
+            </PressableSurface>
           </View>
           {actions.length > 0 ? (
             <View style={styles.actions}>

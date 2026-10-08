@@ -897,6 +897,18 @@
     },
     "project": {
       "chip": "Projekt"
+    },
+    "boardAccessibility": {
+      "summary": "Board: {{starting}} Startgriffe, {{hand}} Handgriffe, {{finish}} Topgriffe, {{foot}} Tritte.",
+      "adjustHint": "Wische nach oben oder unten, um den Boulder zu wechseln.",
+      "next": "Nächster Boulder",
+      "previous": "Vorheriger Boulder",
+      "hold": "Griff {{id}}, {{role}}",
+      "unlit": "unbeleuchtet",
+      "paintHint": "Tippe zum Markieren mit dem ausgewählten Pinsel. Über Aktionen wählst du die Griffart.",
+      "chooseRole": "Griffart wählen",
+      "showList": "Griffe aus einer Liste wählen",
+      "showBoard": "Zurück zum Board"
     }
   },
   "frontDoor": {

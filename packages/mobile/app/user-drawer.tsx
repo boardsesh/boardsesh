@@ -1,5 +1,6 @@
+import { PressableSurface } from '../src/components/PressableSurface';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Stack, router } from 'expo-router';
 import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
@@ -214,7 +215,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
               branches render the same body, differing only in the wrapper +
               chevron. */}
       {profile?.id ? (
-        <Pressable
+        <PressableSurface
           style={styles.profileHeader}
           onPress={() => (isAccount ? router.push('/account/settings/edit') : close(() => navigateToEditProfile()))}
           accessibilityRole="button"
@@ -222,7 +223,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
         >
           <ProfileHeaderBody avatarUrl={profile.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
           <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-        </Pressable>
+        </PressableSurface>
       ) : (
         <View style={styles.profileHeader}>
           <ProfileHeaderBody avatarUrl={profile?.avatarUrl} displayName={profileDisplayName} email={profileEmail} />
@@ -348,7 +349,7 @@ export function UserDrawerScreen({ presentation = 'drawer' }: { presentation?: '
   return (
     <View style={styles.root}>
       <Animated.View style={[styles.backdrop, { backgroundColor: overlays.scrim }, backdropStyle]}>
-        <Pressable
+        <PressableSurface
           style={StyleSheet.absoluteFill}
           onPress={() => close()}
           accessibilityRole="button"

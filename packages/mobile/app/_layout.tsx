@@ -1,3 +1,4 @@
+import { PressableSurface } from '../src/components/PressableSurface';
 // Import first so Sentry.init() runs (and installs its global handler) before
 // any other module side-effect — notably posthog-client's analytics init and the
 // worklet-serialization global-error-capture install, which must wrap Sentry's
@@ -14,7 +15,7 @@ import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
 import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, Pressable, StyleSheet, View } from 'react-native';
+import { LogBox, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -396,7 +397,7 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
             secondary style. In dev / when the button is hidden, "Try again" keeps
             the primary style. */}
         {showRecoveryButton && (
-          <Pressable
+          <PressableSurface
             onPress={() => void handleCheckForFix()}
             disabled={isBusy}
             accessibilityRole="button"
@@ -411,9 +412,9 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
             <Text variant="body" color={brandColors.onPrimary} style={errorStyles.buttonLabel}>
               {recoveryLabel}
             </Text>
-          </Pressable>
+          </PressableSurface>
         )}
-        <Pressable
+        <PressableSurface
           onPress={retry}
           accessibilityRole="button"
           accessibilityLabel="Try again"
@@ -429,8 +430,8 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
           >
             Try again
           </Text>
-        </Pressable>
-        <Pressable
+        </PressableSurface>
+        <PressableSurface
           onPress={handleGoHome}
           accessibilityRole="button"
           accessibilityLabel="Go home"
@@ -439,7 +440,7 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
           <Text variant="body" color={brandColors.primary} style={errorStyles.buttonLabel}>
             Go home
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
       {recovery.kind === 'no-fix-available' && (
         <Text variant="footnote" style={errorStyles.statusText}>

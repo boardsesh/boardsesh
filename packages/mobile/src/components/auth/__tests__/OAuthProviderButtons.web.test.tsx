@@ -1,4 +1,22 @@
 // @vitest-environment jsdom
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8, 3: 12, 4: 16 },
+  radii: { sm: 4, md: 8 },
+}));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +33,10 @@ vi.mock('react-native', () => ({
     disabled?: boolean;
     onPress?: () => void;
   }) => createElement('button', { 'aria-label': accessibilityLabel, disabled, onClick: onPress }, children),
-  StyleSheet: { create: <Styles,>(styles: Styles) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: <Styles,>(styles: Styles) => styles,
+  },
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   View: ({ accessibilityLabel, children }: { accessibilityLabel?: string; children: ReactNode }) =>
     createElement('div', { 'aria-label': accessibilityLabel }, children),
@@ -35,6 +56,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     colorScheme: 'light',
     systemColors: { accent: '#0066cc', fill: '#cccccc', secondaryLabel: '#666666' },

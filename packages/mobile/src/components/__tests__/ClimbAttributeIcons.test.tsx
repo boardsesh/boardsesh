@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -6,7 +19,10 @@ import { createElement, type ReactNode } from 'react';
 // react-native View → a div that surfaces the a11y label; Text → a plain span
 // (the method / extra-characteristic text badges); StyleSheet passthrough.
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>
     createElement('div', { 'data-a11y': accessibilityLabel }, children),
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -20,6 +36,7 @@ vi.mock('../Icon', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { secondaryLabel: '#8E8E93' } }),
 }));
 

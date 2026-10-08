@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { createElement, type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +22,12 @@ vi.mock('react-native', () => ({
     createElement('div', { 'data-testid': testID }, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1, absoluteFill: {} },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+    absoluteFill: {},
+  },
 }));
 
 const offer = vi.hoisted(() => ({
@@ -46,6 +64,7 @@ vi.mock('../../../../lib/preference-store', () => ({
   },
 }));
 vi.mock('../../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     colorScheme: 'dark',
     systemColors: { secondaryLabel: '#888', tertiaryLabel: '#999', separator: '#ccc' },
@@ -53,7 +72,11 @@ vi.mock('../../../../providers/theme-provider', () => ({
     heatRamp: ['#4C1D95', '#6D28D9', '#8B5CF6', '#C4B5FD', '#F5F3FF'],
   }),
 }));
-vi.mock('../../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, borderRadius: { sm: 4, full: 999 } }));
+vi.mock('../../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 4: 16 },
+  borderRadius: { sm: 4, full: 999 },
+}));
 vi.mock('../../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: [] }) }));
 vi.mock('../../../../lib/filter-summary', () => ({ getFilterSummary: () => 'V4–V6' }));
 vi.mock('../../../../lib/offline-nudges/use-offline-nudge', () => ({

@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useEffect, useMemo, useRef } from 'react';
-import { View, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
 import { PointAnchoredPopover } from '../navigation/PointAnchoredPopover';
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
@@ -12,7 +13,7 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { getEffectiveHoldStateShape, useHoldColorOverrides } from '../../lib/hold-color-overrides';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } from './brush-roles';
 import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
@@ -110,7 +111,7 @@ export function HoldRoleSheet({
           const color = brushRoleColor(boardName, role, holdColorOverrides);
           const markerDiameter = 20 * shapeSize;
           return (
-            <Pressable
+            <PressableSurface
               key={role}
               onPress={() => handleSelect(role)}
               disabled={disabled}
@@ -136,10 +137,10 @@ export function HoldRoleSheet({
               <Text variant="subheadline" style={styles.cellLabel}>
                 {roleLabels[role]}
               </Text>
-            </Pressable>
+            </PressableSurface>
           );
         })}
-        <Pressable
+        <PressableSurface
           onPress={() => handleSelect('OFF')}
           accessibilityRole="button"
           accessibilityLabel={t('mobile.create.holdRole.clear')}
@@ -149,7 +150,7 @@ export function HoldRoleSheet({
           <Text variant="subheadline" style={styles.cellLabel}>
             {t('mobile.create.holdRole.clear')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     </View>
   );
@@ -204,7 +205,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   cellDisabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
   swatch: {
     width: 36,

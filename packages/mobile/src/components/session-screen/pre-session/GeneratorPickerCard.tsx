@@ -712,7 +712,7 @@ const styles = StyleSheet.create({
   },
   groupDivider: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4],
+    marginStart: spacing[4],
   },
   tuningBody: {
     gap: spacing[4],

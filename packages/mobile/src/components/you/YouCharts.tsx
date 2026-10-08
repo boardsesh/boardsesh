@@ -1,7 +1,7 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   PixelRatio,
-  Pressable,
   View,
   StyleSheet,
   type GestureResponderEvent,
@@ -207,7 +207,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthCha
         children(width, zoomScale, canZoom && isZoomed)
       ) : null}
       {canZoom && isZoomed ? (
-        <Pressable
+        <PressableSurface
           onPress={resetZoom}
           style={[
             styles.resetZoomButton,
@@ -222,7 +222,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthCha
           hitSlop={8}
         >
           <Icon name="crop.free" size={15} color={systemColors.label} />
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );

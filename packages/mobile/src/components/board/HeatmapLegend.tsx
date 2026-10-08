@@ -145,6 +145,6 @@ const styles = StyleSheet.create({
   },
   scope: {
     flexShrink: 1,
-    marginLeft: 'auto',
+    marginStart: 'auto',
   },
 });

@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 import { useFullSwipe } from '../use-full-swipe';
 import {
   SWIPE_ACTION_REVEAL as ACTION_REVEAL,
@@ -6,7 +7,7 @@ import {
   SWIPE_FRICTION,
 } from '../swipe-action-model';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Pressable, View, StyleSheet, type AccessibilityActionEvent } from 'react-native';
+import { View, StyleSheet, type AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Animated, {
   useAnimatedStyle,
@@ -149,7 +150,7 @@ function SwipeAction({
   label: string;
 }) {
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -163,7 +164,7 @@ function SwipeAction({
       <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
         {label}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -644,7 +645,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   mirrorIcon: {
-    marginLeft: 4,
+    marginStart: 4,
     flexShrink: 0,
   },
   metaRow: {
@@ -662,7 +663,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'flex-end',
     gap: 1,
-    marginLeft: spacing[2],
+    marginStart: spacing[2],
     maxWidth: 120,
   },
   gradeText: {
@@ -678,7 +679,7 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     // Inset to the text column: row padding + status slot + column gap.
-    marginLeft: spacing[4] + 28 + spacing[3],
+    marginStart: spacing[4] + 28 + spacing[3],
   },
   swipeLabel: { textAlign: 'center' },
   swipeAction: {

@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../NativeMarkerSlider', () => ({ NativeMarkerSlider: () => null }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The Classic-gating guard for the Board look "Accessibility" leaf.
 //
@@ -125,7 +139,11 @@ vi.mock('react-native', () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
   PanResponder: { create: () => ({ panHandlers: {} }) },
   // Something in the render tree reaches `theme/ios-colors.ts`, which reads
   // `Platform.OS` at module top level (outside any component body) — needed
@@ -138,6 +156,7 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       accent: '#6D28D9',

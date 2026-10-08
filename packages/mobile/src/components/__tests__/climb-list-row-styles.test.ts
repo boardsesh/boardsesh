@@ -1,7 +1,24 @@
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('react-native', () => ({
-  StyleSheet: { create: <T>(styles: T): T => styles, hairlineWidth: 0.5 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: <T>(styles: T): T => styles,
+    hairlineWidth: 0.5,
+  },
   Platform: { OS: 'ios', select: () => undefined },
   PlatformColor: (name: string) => name,
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,

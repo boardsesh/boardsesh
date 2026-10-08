@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Animated from 'react-native-reanimated';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -436,7 +436,7 @@ const EDIT_ACTION_NAME = 'edit';
 const EditButton = memo(function EditButton({ onPress, label }: { onPress: () => void; label: string }) {
   const { systemColors } = useTheme();
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       hitSlop={10}
       accessibilityRole="button"
@@ -444,7 +444,7 @@ const EditButton = memo(function EditButton({ onPress, label }: { onPress: () =>
       style={styles.editButton}
     >
       <Icon name="edit" size={18} color={systemColors.secondaryLabel} />
-    </Pressable>
+    </PressableSurface>
   );
 });
 
@@ -522,13 +522,13 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[3],
-    paddingLeft: spacing[6],
+    paddingStart: spacing[6],
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   noBoards: {
     paddingHorizontal: spacing[3],
     paddingBottom: spacing[3],
-    paddingLeft: spacing[6],
+    paddingStart: spacing[6],
   },
   claimRow: {
     flexDirection: 'row',
@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
     gap: spacing[2],
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[3],
-    paddingLeft: spacing[6],
+    paddingStart: spacing[6],
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   standaloneRow: {

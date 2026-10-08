@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
@@ -67,6 +68,7 @@ const ChannelSlider = memo(function ChannelSlider({
   onDragEnd,
   step,
 }: ChannelSliderProps) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   const gradientId = `okhsl-${useId().replace(/:/g, '_')}`;
   const trackRef = useRef<View>(null);
@@ -416,6 +418,7 @@ type OkhslColorPickerProps = {
  * dragging never drifts from hex round-tripping.
  */
 export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const [okhsl, setOkhsl] = useState<Okhsl>(() => hexToOkhsl(value) ?? DEFAULT_OKHSL);
@@ -566,52 +569,53 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
 const TRACK_HEIGHT = 14;
 const ACCESSIBILITY_ACTIONS = [{ name: 'increment' }, { name: 'decrement' }] as const;
 
-const styles = StyleSheet.create({
-  container: {
-    gap: spacing[4],
-  },
-  sliderBlock: {
-    gap: spacing[2],
-  },
-  sliderLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sliderTouchArea: {
-    paddingVertical: spacing[2],
-  },
-  trackContainer: {
-    height: TRACK_HEIGHT,
-    justifyContent: 'center',
-  },
-  trackSvg: {
-    borderRadius: TRACK_HEIGHT / 2,
-  },
-  thumb: {
-    position: 'absolute',
-    top: -5,
-    width: TRACK_HEIGHT + 10,
-    height: TRACK_HEIGHT + 10,
-    marginLeft: -(TRACK_HEIGHT + 10) / 2,
-    borderRadius: (TRACK_HEIGHT + 10) / 2,
-    borderWidth: 3,
-    backgroundColor: 'transparent',
-  },
-  hexRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-  },
-  hexInput: {
-    minWidth: 120,
-    minHeight: 44,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing[3],
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '600',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      gap: spacing[4],
+    },
+    sliderBlock: {
+      gap: spacing[2],
+    },
+    sliderLabelRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    sliderTouchArea: {
+      paddingVertical: spacing[2],
+    },
+    trackContainer: {
+      height: TRACK_HEIGHT,
+      justifyContent: 'center',
+    },
+    trackSvg: {
+      borderRadius: TRACK_HEIGHT / 2,
+    },
+    thumb: {
+      position: 'absolute',
+      top: -5,
+      width: TRACK_HEIGHT + 10,
+      height: TRACK_HEIGHT + 10,
+      marginStart: -(TRACK_HEIGHT + 10) / 2,
+      borderRadius: (TRACK_HEIGHT + 10) / 2,
+      borderWidth: 3,
+      backgroundColor: 'transparent',
+    },
+    hexRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing[3],
+    },
+    hexInput: {
+      minWidth: 120,
+      minHeight: 44,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.md,
+      paddingHorizontal: spacing[3],
+      textAlign: 'center',
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '600',
+    },
+  });

@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // Regression coverage for the Android hexagon-shadow bug (see
 // BleLightbulbButton-elevation.test.tsx): BoardControlIndicator shares the exact
 // same "connected" halo pattern, so it needs the same iOS-only elevation guard.
@@ -25,13 +38,17 @@ function mockReactNative(platformOS: 'ios' | 'android') {
     Platform: { OS: platformOS },
     Pressable: ({ children, style }: PressableMockProps) =>
       createElement('button', { 'data-elevation': String(flattenStyle(style).elevation) }, children),
-    StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+    StyleSheet: {
+      flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+      create: (styles: Record<string, unknown>) => styles,
+    },
   }));
 }
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { secondaryLabel: '#8e8e93' },
     brandColors: { warning: '#ffcc00', primary: '#7c5cff' },

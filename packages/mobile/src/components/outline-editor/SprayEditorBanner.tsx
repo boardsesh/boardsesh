@@ -59,8 +59,8 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
     paddingVertical: spacing[2],
-    paddingLeft: spacing[4],
-    paddingRight: spacing[2],
+    paddingStart: spacing[4],
+    paddingEnd: spacing[2],
   },
   line: {
     flexDirection: 'row',
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   accessory: {
-    paddingRight: spacing[2],
+    paddingEnd: spacing[2],
   },
   message: {
     flex: 1,

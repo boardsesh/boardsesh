@@ -47,14 +47,14 @@ export const iconMap = {
   logout: { ios: 'rectangle.portrait.and.arrow.right', android: 'logout' },
 
   // Navigation
-  'chevron.right': { ios: 'chevron.right', android: 'chevron-right' },
-  'chevron.left': { ios: 'chevron.left', android: 'chevron-left' },
+  'chevron.right': { ios: 'chevron.forward', android: 'chevron-right' },
+  'chevron.left': { ios: 'chevron.backward', android: 'chevron-left' },
   'chevron.down': { ios: 'chevron.down', android: 'chevron-down' },
   'chevron.up': { ios: 'chevron.up', android: 'chevron-up' },
   close: { ios: 'xmark', android: 'close' },
   // A search field's clear control: the system's filled circle glyph (no hand-drawn disc).
   'search.clear': { ios: 'xmark.circle.fill', android: 'close-circle' },
-  back: { ios: 'chevron.left', android: 'arrow-left' },
+  back: { ios: 'chevron.backward', android: 'arrow-left' },
 
   // Actions
   favorite: { ios: 'heart', android: 'heart-outline' },
@@ -82,7 +82,7 @@ export const iconMap = {
   flag: { ios: 'flag', android: 'flag-outline' },
   link: { ios: 'link', android: 'link-variant' },
   github: { ios: 'chevron.left.forwardslash.chevron.right', android: 'github' },
-  upload: { ios: 'square.and.arrow.up', android: 'upload-outline' },
+  upload: { ios: 'arrow.up.to.line', android: 'upload-outline' },
   delete: { ios: 'trash', android: 'delete-outline' },
   'delete.fill': { ios: 'trash.fill', android: 'delete' },
   edit: { ios: 'pencil', android: 'pencil-outline' },
@@ -96,7 +96,8 @@ export const iconMap = {
   // The iOS 26 top-bar confirm: a ✓ in a brand circle (SheetTopBar, the native
   // header). Same optical correction as `check.small`.
   confirm: { ios: 'checkmark', android: 'check', iosOpticalCenterRatio: 0.09 },
-  flash: { ios: 'bolt.fill', android: 'flash' },
+  flash: { ios: 'bolt', android: 'lightning-bolt-outline' },
+  'flash.fill': { ios: 'bolt.fill', android: 'flash' },
   // What's New / changelog. Mirrors the More tab's native changelog glyph
   // (sparkles on iOS) so the same feature reads consistently across surfaces.
   changelog: { ios: 'sparkles', android: 'star-four-points' },
@@ -110,7 +111,8 @@ export const iconMap = {
   'lightbulb.fill': { ios: 'lightbulb.fill', android: 'lightbulb-on' },
   'lightbulb.slash': { ios: 'lightbulb.slash', android: 'lightbulb-off' },
   angle: { ios: 'angle', android: 'angle-acute' },
-  tick: { ios: 'checkmark.circle.fill', android: 'check-circle' },
+  tick: { ios: 'checkmark.circle', android: 'check-circle-outline' },
+  'tick.fill': { ios: 'checkmark.circle.fill', android: 'check-circle' },
   // Opens something at a size you can actually judge — the hint on a board
   // preview card that tapping it enlarges rather than re-picks.
   expand: { ios: 'arrow.up.left.and.arrow.down.right', android: 'arrow-expand' },
@@ -125,12 +127,13 @@ export const iconMap = {
   // Intrinsic climb-attribute glyphs shown after the name (web parity:
   // climb-card/climb-icons.tsx © benchmark + ⊘ no-match).
   'no.match': { ios: 'hand.raised.slash', android: 'hand-back-right-off-outline' },
-  benchmark: { ios: 'c.circle', android: 'copyright' },
+  benchmark: { ios: 'rosette', android: 'seal-variant' },
   bluetooth: { ios: 'antenna.radiowaves.left.and.right', android: 'bluetooth' },
   'bluetooth.connected': { ios: 'antenna.radiowaves.left.and.right', android: 'bluetooth-connect' },
   'bluetooth.off': { ios: 'antenna.radiowaves.left.and.right.slash', android: 'bluetooth-off' },
   playlist: { ios: 'folder.badge.plus', android: 'folder-plus-outline' },
-  send: { ios: 'paperplane.fill', android: 'send' },
+  send: { ios: 'paperplane', android: 'send-outline' },
+  'send.fill': { ios: 'paperplane.fill', android: 'send' },
 
   // Create climb
   flame: { ios: 'flame', android: 'fire' },
@@ -149,9 +152,9 @@ export const iconMap = {
   // Status
   info: { ios: 'info.circle', android: 'information-outline' },
   // The spray editor's replay-the-hints button.
-  help: { ios: 'questionmark', android: 'help' },
+  help: { ios: 'questionmark.circle', android: 'help' },
   warning: { ios: 'exclamationmark.triangle', android: 'alert-outline' },
-  error: { ios: 'xmark.circle', android: 'alert-circle-outline' },
+  error: { ios: 'exclamationmark.circle', android: 'alert-circle-outline' },
   success: { ios: 'checkmark.circle', android: 'check-circle-outline' },
 
   // Offline / downloads
@@ -208,7 +211,8 @@ export const iconMap = {
   gym: { ios: 'building.2', android: 'office-building' },
   star: { ios: 'star', android: 'star-outline' },
   'star.fill': { ios: 'star.fill', android: 'star' },
-  crown: { ios: 'crown.fill', android: 'crown' },
+  crown: { ios: 'crown', android: 'crown-outline' },
+  'crown.fill': { ios: 'crown.fill', android: 'crown' },
   location: { ios: 'location', android: 'map-marker-outline' },
   'location.fill': { ios: 'location.fill', android: 'map-marker' },
   calendar: { ios: 'calendar', android: 'calendar-outline' },

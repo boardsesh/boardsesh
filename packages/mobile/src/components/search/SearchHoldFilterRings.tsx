@@ -166,7 +166,7 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
                 width: outerDiameter,
                 height: outerDiameter,
                 borderRadius: baseRadius,
-                marginLeft: -baseRadius,
+                marginStart: -baseRadius,
                 marginTop: -baseRadius,
                 backgroundColor: 'rgba(0, 0, 0, 0.55)',
               },
@@ -186,7 +186,7 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
               {
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
-                marginLeft: -baseRadius,
+                marginStart: -baseRadius,
                 marginTop: -baseRadius,
               },
             ]}
@@ -214,7 +214,7 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
                   width: ringDiameter,
                   height: ringDiameter,
                   borderRadius: ringRadius,
-                  marginLeft: -ringRadius,
+                  marginStart: -ringRadius,
                   marginTop: -ringRadius,
                   borderWidth,
                   borderColor: color,
@@ -240,7 +240,7 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
               {
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
-                marginLeft: -ringRadius,
+                marginStart: -ringRadius,
                 marginTop: -ringRadius,
               },
             ]}

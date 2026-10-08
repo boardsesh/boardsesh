@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -10,7 +23,11 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (colorName: string) => colorName,
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
   // Exposes the resolved background colour so the RSSI bars can be asserted.
   View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
     const styleEntries = (Array.isArray(style) ? style : [style]) as Array<{ backgroundColor?: string } | undefined>;
@@ -54,6 +71,7 @@ vi.mock('../../BoardImageNative', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       label: '#111111',

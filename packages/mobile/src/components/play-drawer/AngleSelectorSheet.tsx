@@ -1,5 +1,7 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -39,6 +41,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   currentAngle,
   onAngleChange,
 }: AngleSelectorSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
@@ -170,7 +173,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
               {snapAngles.map((angle) => {
                 const isSelected = angle === selectedAngle;
                 return (
-                  <Pressable
+                  <PressableSurface
                     key={angle}
                     onPress={() => setSelectedAngle(angle)}
                     accessibilityRole="button"
@@ -188,7 +191,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
                     >
                       {angle}°
                     </Text>
-                  </Pressable>
+                  </PressableSurface>
                 );
               })}
             </View>
@@ -203,54 +206,55 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   );
 });
 
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: spacing[5],
-    paddingTop: spacing[4],
-    alignItems: 'center',
-  },
-  angleValue: {
-    fontWeight: '700',
-    marginTop: spacing[2],
-  },
-  grade: {
-    marginTop: spacing[1],
-  },
-  stars: {
-    flexDirection: 'row',
-    gap: spacing[1],
-    marginTop: spacing[1],
-  },
-  star: {
-    fontSize: 18,
-  },
-  ascents: {
-    marginTop: spacing[1],
-  },
-  hint: {
-    marginTop: spacing[1],
-  },
-  snapRow: {
-    flexDirection: 'row',
-    gap: spacing[3],
-    marginTop: spacing[4],
-  },
-  snapButton: {
-    minWidth: 88,
-    height: 44,
-    paddingHorizontal: spacing[4],
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  snapButtonPressed: {
-    opacity: 0.85,
-  },
-  snapText: {
-    fontWeight: '600',
-  },
-  sliderWrap: {
-    width: '100%',
-    marginTop: spacing[4],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      paddingHorizontal: spacing[5],
+      paddingTop: spacing[4],
+      alignItems: 'center',
+    },
+    angleValue: {
+      fontWeight: '700',
+      marginTop: spacing[2],
+    },
+    grade: {
+      marginTop: spacing[1],
+    },
+    stars: {
+      flexDirection: 'row',
+      gap: spacing[1],
+      marginTop: spacing[1],
+    },
+    star: {
+      fontSize: textStyles.body.fontSize,
+    },
+    ascents: {
+      marginTop: spacing[1],
+    },
+    hint: {
+      marginTop: spacing[1],
+    },
+    snapRow: {
+      flexDirection: 'row',
+      gap: spacing[3],
+      marginTop: spacing[4],
+    },
+    snapButton: {
+      minWidth: 88,
+      height: 44,
+      paddingHorizontal: spacing[4],
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    snapButtonPressed: {
+      opacity: 0.85,
+    },
+    snapText: {
+      fontWeight: '600',
+    },
+    sliderWrap: {
+      width: '100%',
+      marginTop: spacing[4],
+    },
+  });

@@ -1,5 +1,5 @@
-vi.mock('../../../src/lib/onboarding/use-onboarding-link-offer', () => ({ useOnboardingLinkOffer: () => () => false }));
 // @vitest-environment jsdom
+vi.mock('../../../src/lib/onboarding/use-onboarding-link-offer', () => ({ useOnboardingLinkOffer: () => () => false }));
 //
 // #4166. Creating a board silently did nothing: `handleCreate` looked for an
 // already-owned board with the same (type, layout, size, sets) and, on a match,

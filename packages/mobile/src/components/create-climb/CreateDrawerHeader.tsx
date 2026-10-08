@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, TextInput } from 'react-native';
+import { View, StyleSheet, type TextInput as NativeTextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { AppMenu } from '../AppMenu';
@@ -61,9 +63,10 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   onSave,
   climbReady,
 }: CreateDrawerHeaderProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<NativeTextInput>(null);
 
   useEffect(() => {
     if (focusSignal > 0) inputRef.current?.focus();
@@ -156,35 +159,36 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   );
 });
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    minHeight: 56,
-    gap: spacing[2],
-  },
-  overflow: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  center: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-  },
-  nameInput: {
-    fontWeight: '700',
-    fontSize: 17,
-    textAlign: 'center',
-    paddingVertical: 0,
-    alignSelf: 'stretch',
-  },
-  subtitle: {
-    marginTop: 2,
-    textAlign: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      minHeight: 56,
+      gap: spacing[2],
+    },
+    overflow: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    center: {
+      flex: 1,
+      minWidth: 0,
+      alignItems: 'center',
+    },
+    nameInput: {
+      fontWeight: '700',
+      fontSize: textStyles.body.fontSize,
+      textAlign: 'center',
+      paddingVertical: 0,
+      alignSelf: 'stretch',
+    },
+    subtitle: {
+      marginTop: 2,
+      textAlign: 'center',
+    },
+  });

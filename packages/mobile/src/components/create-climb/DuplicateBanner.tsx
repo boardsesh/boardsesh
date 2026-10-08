@@ -1,4 +1,5 @@
-import { View, Pressable, StyleSheet } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -30,18 +31,18 @@ export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProp
             : t('createClimbForm.alerts.publishDuplicateUnnamed')}
         </Text>
         {onView ? (
-          <Pressable onPress={onView} accessibilityRole="button">
+          <PressableSurface onPress={onView} accessibilityRole="button">
             <Text variant="footnote" color={brandColors.primary}>
               {t('createClimbForm.alerts.viewMatchingClimb')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         ) : null}
       </View>
       {/* 16dp glyph + hitSlop 8 was a 32dp effective target, under the 44 floor.
           14 lands it at 44 without moving anything visually. */}
-      <Pressable onPress={onDismiss} accessibilityRole="button" hitSlop={14}>
+      <PressableSurface onPress={onDismiss} accessibilityRole="button" hitSlop={14}>
         <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 }

@@ -7,7 +7,7 @@ type SeparatorProps = {
 
 export function Separator({ inset = 0 }: SeparatorProps) {
   const { systemColors } = useTheme();
-  return <View style={[styles.separator, { marginLeft: inset, backgroundColor: systemColors.separator }]} />;
+  return <View style={[styles.separator, { marginStart: inset, backgroundColor: systemColors.separator }]} />;
 }
 
 const styles = StyleSheet.create({

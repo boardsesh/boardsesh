@@ -1,6 +1,6 @@
 // Profile navigation stays separate from the filters in the Progress section.
 import { useCallback, useMemo } from 'react';
-import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { type LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { createVariantComponent } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { SegmentedControl } from '../SegmentedControl';
+import { ScrollableTabs } from '../navigation/ScrollableTabs';
 import { MaterialTabs } from '../navigation/MaterialTabs';
 import { CollapsingLargeTitleHeader, GlassActionToolbar } from '../chrome';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
@@ -48,6 +49,8 @@ function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange }: Pr
 
   const dashboardTitle = t('metadata.dashboard.title');
   const tabOptions = useSegmentOptions();
+  const { fontScale } = useWindowDimensions();
+  const Tabs = fontScale > 1.3 ? ScrollableTabs : MaterialTabs;
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -85,12 +88,7 @@ function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange }: Pr
       {/* Inner box-none is fine: the outer `auto` container already claims the RNGH
           pointer, so this wrapper only needs RN hit-testing to reach the tabs. */}
       <View pointerEvents="box-none" style={[styles.materialTabsRow, { borderTopColor: m3.outlineVariant }]}>
-        <MaterialTabs
-          options={tabOptions}
-          selectedKey={activeTab}
-          onSelect={onSelectTab}
-          accessibilityLabel={dashboardTitle}
-        />
+        <Tabs options={tabOptions} selectedKey={activeTab} onSelect={onSelectTab} accessibilityLabel={dashboardTitle} />
       </View>
     </View>
   );
@@ -101,6 +99,7 @@ function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange }: Profi
 
   const dashboardTitle = t('metadata.dashboard.title');
   const segmentOptions = useSegmentOptions();
+  const { fontScale } = useWindowDimensions();
 
   const leftActions = (
     <GlassActionToolbar actionCount={1}>
@@ -114,14 +113,23 @@ function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange }: Profi
           renders directly — wrapping it in the old GlassSurface track doubled the
           border. The padded segmentStack positions it under the large title. */}
       <View pointerEvents="box-none" style={styles.segmentStack}>
-        <SegmentedControl
-          options={segmentOptions}
-          selectedKey={activeTab}
-          onSelect={onSelectTab}
-          trackColor="transparent"
-          textVariant="footnote"
-          accessibilityLabel={dashboardTitle}
-        />
+        {fontScale > 1.3 ? (
+          <ScrollableTabs
+            options={segmentOptions}
+            selectedKey={activeTab}
+            onSelect={onSelectTab}
+            accessibilityLabel={dashboardTitle}
+          />
+        ) : (
+          <SegmentedControl
+            options={segmentOptions}
+            selectedKey={activeTab}
+            onSelect={onSelectTab}
+            trackColor="transparent"
+            textVariant="footnote"
+            accessibilityLabel={dashboardTitle}
+          />
+        )}
       </View>
     </CollapsingLargeTitleHeader>
   );

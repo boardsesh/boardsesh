@@ -1,5 +1,7 @@
 import { Text as RNText, type TextProps as RNTextProps, type ColorValue, StyleSheet } from 'react-native';
 import { textStyles, type TextVariant } from '../theme/typography';
+import { useBoldText } from '../hooks/use-bold-text';
+import { boldTextWeight } from '../theme/accessible-typography';
 import { useOptionalTheme } from '../providers/theme-provider';
 
 export type { TextVariant };
@@ -33,21 +35,25 @@ export function Text({ variant = 'body', color, numeric = false, style, ...props
   // `color` prop or a `style.color` still wins. `useOptionalTheme` keeps this
   // safe in the pre-provider error boundary (falls back to the RN default).
   const theme = useOptionalTheme();
+  const boldText = useBoldText();
   const resolvedColor = color ?? theme?.systemColors.label;
   // Pull the type scale from the theme so the resolved per-UI-variant scale
   // (HIG on Liquid Glass, M3 on Material) applies. Falls back to the static glass
   // scale when no provider is mounted.
   const typeStyle = theme?.textStyles[variant] ?? variantStyles[variant];
 
+  const resolvedWeight = StyleSheet.flatten([typeStyle, style])?.fontWeight;
+
   return (
     <RNText
       allowFontScaling
-      maxFontSizeMultiplier={1.5}
+      maxFontSizeMultiplier={0}
       style={[
         typeStyle,
         numeric ? tabularStyle : undefined,
         resolvedColor != null ? { color: resolvedColor } : undefined,
         style,
+        boldText ? { fontWeight: boldTextWeight(resolvedWeight) } : undefined,
       ]}
       {...props}
     />

@@ -1,5 +1,7 @@
+import { Pressable } from 'react-native';
+import { PressableSurface } from './PressableSurface';
 import { useCallback } from 'react';
-import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
@@ -99,11 +101,11 @@ export function RecentFilterPills({
         <Text variant="footnote" style={styles.headerLabel}>
           {t('mobile.search.recentFilters')}
         </Text>
-        <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button">
+        <PressableSurface onPress={onClear} hitSlop={8} accessibilityRole="button">
           <Text variant="footnote" color={brandColors.primary}>
             {t('mobile.search.clearRecent')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
       <ScrollView
         horizontal

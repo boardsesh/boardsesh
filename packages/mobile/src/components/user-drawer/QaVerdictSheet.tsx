@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
@@ -60,6 +61,7 @@ type QaVerdictSheetProps = {
  * live native presentation.
  */
 export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -276,23 +278,24 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
 
 const SNAP_POINTS = ['64%', '90%'];
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[6],
-    gap: spacing[4],
-  },
-  input: {
-    minHeight: 116,
-    maxHeight: 220,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  helperText: {
-    marginTop: -spacing[2],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    content: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[4],
+      paddingBottom: spacing[6],
+      gap: spacing[4],
+    },
+    input: {
+      minHeight: 116,
+      maxHeight: 220,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    helperText: {
+      marginTop: -spacing[2],
+    },
+  });

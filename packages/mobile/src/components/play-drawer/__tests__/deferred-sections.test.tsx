@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { createElement, type ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,7 +60,10 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 
 // Keys by default. A test that reads a whole sentence sets `i18n.locale`, and
@@ -84,7 +100,10 @@ vi.mock('@boardsesh/board-react', () => ({ useLogbook: () => ({ logbook: logbook
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 const auth = vi.hoisted(() => ({ isAuthenticated: false }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: auth.isAuthenticated }) }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ brandColors: { primary: '#000' } }) }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
+  useTheme: () => ({ brandColors: { primary: '#000' } }),
+}));
 
 vi.mock('../../../hooks/use-deferred-after-interactions', () => ({
   useDeferredAfterInteractions: (active: boolean, resetKey?: string | number) => {

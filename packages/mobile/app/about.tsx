@@ -184,6 +184,9 @@ export default function AboutScreen() {
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     flexGrow: 1,
     paddingHorizontal: spacing[4],
     paddingTop: spacing[4],

@@ -1,6 +1,7 @@
+import { PressableSurface } from '../../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CvdType } from '../../../lib/color-contrast-oracle';
-import { Pressable, StyleSheet, View, type ColorValue } from 'react-native';
+import { StyleSheet, View, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toBoardName } from '@boardsesh/board-config';
@@ -413,11 +414,11 @@ export function AccessibilitySection({
           ) : null}
         </View>
         {hasMarkerOverrides ? (
-          <Pressable accessibilityRole="button" onPress={handleResetMarkers} style={styles.resetButton}>
+          <PressableSurface accessibilityRole="button" onPress={handleResetMarkers} style={styles.resetButton}>
             <Text variant="footnote" color={systemColors.accent}>
               {t('mobile.settings.accessibility.resetAll')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         ) : null}
       </View>
 
@@ -570,7 +571,7 @@ function HoldColorPickerSheet({
               {HOLD_MARKER_SHAPES.map((option) => {
                 const selected = shape === option;
                 return (
-                  <Pressable
+                  <PressableSurface
                     key={option}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
@@ -592,7 +593,7 @@ function HoldColorPickerSheet({
                     <Text variant="caption1" color={systemColors.label} style={styles.shapeLabel} numberOfLines={2}>
                       {labelForShape(t, option)}
                     </Text>
-                  </Pressable>
+                  </PressableSurface>
                 );
               })}
             </View>

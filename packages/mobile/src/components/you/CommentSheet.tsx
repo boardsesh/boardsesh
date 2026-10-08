@@ -1,7 +1,9 @@
 import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from '../InlineSheetError';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 import { type RefObject, useState } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetTextInput, type BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
@@ -38,6 +40,7 @@ export function CommentSheet({
   canComment = true,
   onClose,
 }: CommentSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -86,18 +89,18 @@ export function CommentSheet({
                 }}
                 multiline
               />
-              <Pressable
+              <PressableSurface
                 onPress={submit}
                 disabled={draft.trim().length === 0 || addComment.isPending}
                 style={styles.send}
                 accessibilityRole="button"
               >
                 <Icon
-                  name="send"
+                  name="send.fill"
                   size={22}
                   color={draft.trim().length > 0 ? brandColors.primary : systemColors.tertiaryLabel}
                 />
-              </Pressable>
+              </PressableSurface>
             </View>
             <InlineSheetError message={submitError} visible={!!entityId} scope={`${entityType}:${entityId ?? ''}`} />
           </View>
@@ -146,29 +149,30 @@ export function CommentSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  title: { paddingHorizontal: spacing[4], paddingTop: spacing[2], paddingBottom: spacing[3] },
-  centered: { paddingVertical: spacing[10], alignItems: 'center' },
-  empty: { paddingHorizontal: spacing[4], paddingVertical: spacing[6], opacity: 0.6 },
-  commentRow: {
-    flexDirection: 'row',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  commentBody: { flex: 1, gap: 2 },
-  commentMeta: { flexDirection: 'row', alignItems: 'baseline', gap: spacing[2] },
-  commentName: { fontWeight: '600' },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing[2] },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    fontSize: 15,
-  },
-  send: { paddingBottom: spacing[2] },
-  signInPrompt: { paddingVertical: spacing[2], textAlign: 'center' },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    title: { paddingHorizontal: spacing[4], paddingTop: spacing[2], paddingBottom: spacing[3] },
+    centered: { paddingVertical: spacing[10], alignItems: 'center' },
+    empty: { paddingHorizontal: spacing[4], paddingVertical: spacing[6], opacity: 0.6 },
+    commentRow: {
+      flexDirection: 'row',
+      gap: spacing[3],
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[2],
+    },
+    commentBody: { flex: 1, gap: 2 },
+    commentMeta: { flexDirection: 'row', alignItems: 'baseline', gap: spacing[2] },
+    commentName: { fontWeight: '600' },
+    composer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing[2] },
+    input: {
+      flex: 1,
+      minHeight: 40,
+      maxHeight: 120,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      fontSize: textStyles.subheadline.fontSize,
+    },
+    send: { paddingBottom: spacing[2] },
+    signInPrompt: { paddingVertical: spacing[2], textAlign: 'center' },
+  });

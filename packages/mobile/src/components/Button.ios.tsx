@@ -38,6 +38,7 @@ import {
   type ModifierConfig,
 } from '@expo/ui/swift-ui/modifiers';
 import { useGlassCapability } from '../hooks/use-glass-capability';
+import { useBoldText } from '../hooks/use-bold-text';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { overlays } from '../theme/tokens';
@@ -85,6 +86,7 @@ export function Button({
   style,
 }: ButtonProps) {
   const { brandColors, radii, colorScheme } = useTheme();
+  const boldText = useBoldText();
   const supportsGlass = useGlassCapability();
   const surfaceFromContext = useButtonSurface();
   const effectiveOver = over ?? surfaceFromContext;
@@ -140,12 +142,18 @@ export function Button({
     styleModifier,
     buttonBorderShape('roundedRectangle', radii.button),
     controlSize(CONTROL_SIZE[size]),
-    font({ textStyle: TEXT_STYLE[size], weight: buttonLabelWeight(nativeStyle) }),
+    font({
+      textStyle: TEXT_STYLE[size],
+      weight: boldText
+        ? buttonLabelWeight(nativeStyle) === 'semibold'
+          ? 'bold'
+          : 'medium'
+        : buttonLabelWeight(nativeStyle),
+    }),
     frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
-    // Always capped: an uncapped native label outgrew the 1.5x-capped Text
-    // around it at the accessibility sizes.
+    // Content reaches the full AX range; fixed chrome opts into its own cap.
     dynamicTypeSize({ max: dynamicTypeSizeCap(resolveButtonMaxFontScale(maxFontSizeMultiplier)) }),
   ];
   if (!isDestructive) {

@@ -3,8 +3,9 @@ import {
   SWIPE_REVEAL_THRESHOLD,
   SWIPE_FULL_THRESHOLD,
 } from './swipe-action-model';
+import { PressableSurface } from './PressableSurface';
 import { memo, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Pressable, View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS } from 'react-native-reanimated';
 import {
   Gesture,
@@ -558,7 +559,7 @@ function QueueItemRowComponent({
               onAccessibilityAction={handleTickAccessibilityAction}
               style={styles.trailingButton}
             >
-              <Icon name="tick" size={26} color={brandColors.success} />
+              <Icon name="tick.fill" size={26} color={brandColors.success} />
             </View>
           </GestureDetector>
         ) : showDragHandle && dragHandleGesture ? (
@@ -586,7 +587,7 @@ function QueueItemRowComponent({
         {/* Delete action behind the row */}
         {swipeEnabled && (
           <Animated.View style={[styles.deleteAction, { backgroundColor: systemColors.error }, deleteButtonStyle]}>
-            <Pressable
+            <PressableSurface
               testID="delete-button"
               onPress={handleDeletePress}
               accessibilityRole="button"
@@ -594,7 +595,7 @@ function QueueItemRowComponent({
               style={styles.deleteButton}
             >
               <Icon name="delete" size={22} color={iosSystemColors.white} />
-            </Pressable>
+            </PressableSurface>
           </Animated.View>
         )}
 
@@ -613,7 +614,7 @@ function QueueItemRowComponent({
       </View>
 
       {/* Separator */}
-      <View style={[styles.separator, { marginLeft: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
+      <View style={[styles.separator, { marginStart: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
     </Animated.View>
   );
 }

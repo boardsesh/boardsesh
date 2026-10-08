@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   footer: {
     width: 48,
     height: 120,
-    marginLeft: spacing[4],
+    marginStart: spacing[4],
     alignItems: 'center',
     justifyContent: 'center',
   },

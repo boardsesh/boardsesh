@@ -1,3 +1,6 @@
+import { Text } from './Text';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 // SwitcherForm — web implementation (react-native-web + react-native-paper). The
 // OTA Channel / Branch switcher screens, rendered from the same plain
 // `SwitcherFormModel` the native files consume. Structurally follows
@@ -11,10 +14,10 @@
 // exhaustiveness guard live in SwitcherForm.logic.ts, shared with both native files.
 
 import { type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Surface, TextInput } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
-import { spacing } from '../theme/tokens';
+import { opacity, spacing } from '../theme/tokens';
 import { assertNeverSwitcherRow, isSwitchRowPressable } from './SwitcherForm.logic';
 import type {
   SwitcherActionRow,
@@ -35,6 +38,7 @@ type RowColors = {
 };
 
 function TargetTrailing({ row, colors }: { row: SwitcherTargetRow; colors: RowColors }) {
+  const styles = useTypographyStyles(createStyles);
   if (row.state === 'switching') return <ActivityIndicator size={18} />;
   if (row.state === 'active') return <Text style={[styles.glyph, { color: colors.secondaryLabel }]}>{CHECK}</Text>;
   if ((row.state === 'pressable' || row.state === 'disabled') && row.showChevronWhenPressable) {
@@ -44,6 +48,7 @@ function TargetTrailing({ row, colors }: { row: SwitcherTargetRow; colors: RowCo
 }
 
 function TargetRow({ row, colors }: { row: SwitcherTargetRow; colors: RowColors }) {
+  const styles = useTypographyStyles(createStyles);
   const pressable = isSwitchRowPressable(row.state) && row.onPress != null;
   const content = (
     <View style={[styles.row, row.state === 'disabled' ? styles.dimmed : null]}>
@@ -56,10 +61,11 @@ function TargetRow({ row, colors }: { row: SwitcherTargetRow; colors: RowColors 
       <TargetTrailing row={row} colors={colors} />
     </View>
   );
-  return pressable ? <Pressable onPress={row.onPress}>{content}</Pressable> : content;
+  return pressable ? <PressableSurface onPress={row.onPress}>{content}</PressableSurface> : content;
 }
 
 function FieldRow({ row }: { row: SwitcherFieldRow }) {
+  const styles = useTypographyStyles(createStyles);
   return (
     <View style={styles.fieldRow}>
       <TextInput
@@ -80,15 +86,17 @@ function FieldRow({ row }: { row: SwitcherFieldRow }) {
 }
 
 function ActionRow({ row, colors }: { row: SwitcherActionRow; colors: RowColors }) {
+  const styles = useTypographyStyles(createStyles);
   const content = (
     <View style={[styles.row, row.disabled ? styles.dimmed : null]}>
       <Text style={[styles.rowTitle, { color: row.destructive ? colors.error : colors.label }]}>{row.label}</Text>
     </View>
   );
-  return row.disabled ? content : <Pressable onPress={row.onPress}>{content}</Pressable>;
+  return row.disabled ? content : <PressableSurface onPress={row.onPress}>{content}</PressableSurface>;
 }
 
-function renderRow(row: SwitcherRow, colors: RowColors): ReactNode {
+function RenderRow({ row, colors }: { row: SwitcherRow; colors: RowColors }): ReactNode {
+  const styles = useTypographyStyles(createStyles);
   switch (row.kind) {
     case 'info':
       return (
@@ -116,6 +124,7 @@ function renderRow(row: SwitcherRow, colors: RowColors): ReactNode {
 }
 
 function Section({ section, colors }: { section: SwitcherSection; colors: RowColors }) {
+  const styles = useTypographyStyles(createStyles);
   return (
     <View style={styles.section}>
       {section.title ? (
@@ -125,7 +134,9 @@ function Section({ section, colors }: { section: SwitcherSection; colors: RowCol
         <Text style={[styles.sectionNote, { color: colors.secondaryLabel }]}>{section.intro}</Text>
       ) : null}
       <Surface style={styles.card} elevation={1}>
-        {section.rows.map((row) => renderRow(row, colors))}
+        {section.rows.map((row) => (
+          <RenderRow key={row.key} row={row} colors={colors} />
+        ))}
       </Surface>
       {section.footer ? (
         <Text style={[styles.sectionNote, { color: colors.secondaryLabel }]}>{section.footer}</Text>
@@ -135,6 +146,7 @@ function Section({ section, colors }: { section: SwitcherSection; colors: RowCol
 }
 
 export function SwitcherForm({ model }: SwitcherFormProps) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors, brandColors } = useTheme();
   const colors: RowColors = {
     label: systemColors.label as string,
@@ -151,67 +163,68 @@ export function SwitcherForm({ model }: SwitcherFormProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing[4],
-    paddingBottom: spacing[10],
-    gap: spacing[3],
-  },
-  section: {
-    gap: spacing[2],
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.7,
-  },
-  sectionNote: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  card: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    gap: spacing[2],
-    minHeight: 48,
-  },
-  rowText: {
-    flex: 1,
-    gap: spacing[1],
-  },
-  flex: {
-    flex: 1,
-  },
-  rowTitle: {
-    fontSize: 16,
-  },
-  rowSubtitle: {
-    fontSize: 13,
-    opacity: 0.8,
-  },
-  rowValue: {
-    fontSize: 15,
-  },
-  dimmed: {
-    opacity: 0.5,
-  },
-  glyph: {
-    fontSize: 18,
-  },
-  statusSpinner: {
-    marginRight: spacing[2],
-  },
-  fieldRow: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    scroll: {
+      flex: 1,
+    },
+    content: {
+      padding: spacing[4],
+      paddingBottom: spacing[10],
+      gap: spacing[3],
+    },
+    section: {
+      gap: spacing[2],
+    },
+    sectionTitle: {
+      fontSize: textStyles.footnote.fontSize,
+      fontWeight: '600',
+      opacity: 0.7,
+    },
+    sectionNote: {
+      fontSize: textStyles.caption1.fontSize,
+      opacity: 0.6,
+    },
+    card: {
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      gap: spacing[2],
+      minHeight: 48,
+    },
+    rowText: {
+      flex: 1,
+      gap: spacing[1],
+    },
+    flex: {
+      flex: 1,
+    },
+    rowTitle: {
+      fontSize: textStyles.callout.fontSize,
+    },
+    rowSubtitle: {
+      fontSize: textStyles.footnote.fontSize,
+      opacity: 0.8,
+    },
+    rowValue: {
+      fontSize: textStyles.subheadline.fontSize,
+    },
+    dimmed: {
+      opacity: opacity.disabled,
+    },
+    glyph: {
+      fontSize: textStyles.body.fontSize,
+    },
+    statusSpinner: {
+      marginEnd: spacing[2],
+    },
+    fieldRow: {
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+    },
+  });

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -138,7 +138,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
 
           {selected ? (
             <View testID="palette-active-badge" style={[styles.activeBadge, { backgroundColor: scrimColor }]}>
-              <Icon name="tick" size={11} color={scrimLabel} />
+              <Icon name="tick.fill" size={11} color={scrimLabel} />
               <Text
                 variant="caption2"
                 color={scrimLabel}
@@ -150,7 +150,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
             </View>
           ) : null}
 
-          <Pressable
+          <PressableSurface
             testID="palette-expand-badge"
             accessibilityRole="button"
             accessibilityLabel={t('mobile.settings.boardLook.presets.showFullSize', { look: label })}
@@ -162,7 +162,7 @@ export const PalettePreviewCard = React.memo(function PalettePreviewCard({
             ]}
           >
             <Icon name="expand" size={style.expandIcon} color={scrimLabel} />
-          </Pressable>
+          </PressableSurface>
         </View>
 
         <Text variant={style.titleVariant} numberOfLines={1} style={styles.title}>

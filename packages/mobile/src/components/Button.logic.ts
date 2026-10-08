@@ -7,16 +7,9 @@ import type { ViewStyle } from 'react-native';
 import { hapticLight } from '../lib/haptics';
 import type { ButtonVariant } from './Button.types';
 
-/**
- * How far any Button label may grow with the OS text size when the caller sets
- * no cap: 1.5x, the same ceiling every `Text` has (`maxFontSizeMultiplier={1.5}`
- * in Text.tsx). On iOS that resolves to the `xxxLarge` Dynamic Type size (body
- * 23pt, 1.35x), so a button label never outgrows the copy around it. A caller's
- * own cap (the tick bar's 1.3) still wins.
- */
-export const DEFAULT_BUTTON_MAX_FONT_SCALE = 1.5;
+/** Zero means full system text scaling. Fixed chrome opts into an explicit cap. */
+export const DEFAULT_BUTTON_MAX_FONT_SCALE = 0;
 
-/** The cap a Button applies: the caller's, else {@link DEFAULT_BUTTON_MAX_FONT_SCALE}. */
 export function resolveButtonMaxFontScale(maxFontSizeMultiplier: number | undefined): number {
   return maxFontSizeMultiplier ?? DEFAULT_BUTTON_MAX_FONT_SCALE;
 }
@@ -162,6 +155,7 @@ export type ButtonDynamicTypeSize = (typeof BODY_POINT_SIZE_BY_DYNAMIC_TYPE)[num
  * default, so a cap can only stop growth, never shrink a label.
  */
 export function dynamicTypeSizeCap(maxScale: number): ButtonDynamicTypeSize {
+  if (maxScale <= 0) return 'accessibility5';
   const defaultSize = 17;
   let cap: ButtonDynamicTypeSize = 'large';
   for (const [size, points] of BODY_POINT_SIZE_BY_DYNAMIC_TYPE) {
@@ -180,7 +174,7 @@ export function cappedComposeLabelSize(
   fontScale: number,
   maxScale: number | undefined,
 ): number | undefined {
-  if (maxScale == null || fontScale <= maxScale) return undefined;
+  if (maxScale == null || maxScale <= 0 || fontScale <= maxScale) return undefined;
   return (defaultSize * maxScale) / fontScale;
 }
 

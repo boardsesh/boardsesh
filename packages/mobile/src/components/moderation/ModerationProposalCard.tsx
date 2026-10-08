@@ -43,7 +43,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 
 /** Portrait board-art cell. Narrower than the feed hero — this is a list row. */
 const THUMBNAIL = { width: 64, height: 80 } as const;
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: borderRadius.full,
   },
-  voteButtonDisabled: { opacity: 0.5 },
+  voteButtonDisabled: { opacity: opacity.disabled },
   moderatorRow: { flexDirection: 'row', gap: spacing[2], marginTop: spacing[2] },
   flex: { flex: 1 },
 });

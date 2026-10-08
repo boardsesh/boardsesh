@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // "Photo / Wall only / Holds only" — what a spray wall is drawn on.
 //
 // Wall only is the photo flattened into the wall's frame and cropped to it;
@@ -15,7 +16,7 @@
 // Rendered by the add-a-wall look step and by the wall's edit screen.
 
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, View, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
@@ -25,7 +26,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
-import { borderRadius, spacing } from '../../theme/tokens';
+import { opacity, borderRadius, spacing } from '../../theme/tokens';
 import type { SprayWallBackground } from '../../lib/spray/spray-wall-background';
 import {
   lookPreviewMask,
@@ -223,7 +224,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
           const lookLocked = locked && look !== 'photo';
           const selected = value === look;
           return (
-            <Pressable
+            <PressableSurface
               key={look}
               onPress={() => handleSelect(look)}
               disabled={disabled || lookLocked}
@@ -259,7 +260,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
               >
                 {label}
               </Text>
-            </Pressable>
+            </PressableSurface>
           );
         })}
       </View>
@@ -331,7 +332,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   dimmed: {
-    opacity: 0.5,
+    opacity: opacity.disabled,
   },
   tileLabel: {
     textAlign: 'center',

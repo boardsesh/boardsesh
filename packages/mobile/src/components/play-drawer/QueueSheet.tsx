@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
@@ -336,7 +337,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
             },
           ]}
         >
-          <Pressable
+          <PressableSurface
             onPress={handleBulkRemove}
             accessibilityRole="button"
             accessibilityLabel={t('queueDrawer.removeItems', { count: selectedItems.size })}
@@ -345,7 +346,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
             <Text variant="headline" color={iosSystemColors.white}>
               {t('queueDrawer.removeItems', { count: selectedItems.size })}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       )}
     </>

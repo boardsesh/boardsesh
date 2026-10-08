@@ -1,5 +1,7 @@
+import { Pressable } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ScrollView, StyleSheet, type ColorValue, type LayoutChangeEvent } from 'react-native';
+import { View, ScrollView, StyleSheet, type ColorValue, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -185,7 +187,7 @@ const FrameChip = memo(function FrameChip({
     onSeek(index);
   }, [index, onSeek]);
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       // 32dp chip + 6dp of slop on each edge = the 44dp touch floor, without
       // widening the 32dp strip row the card's height budget is built on.
@@ -208,7 +210,7 @@ const FrameChip = memo(function FrameChip({
       >
         {index + 1}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 });
 
@@ -368,7 +370,7 @@ function FrameEditPair({
 
   return (
     <View style={[styles.framePair, { backgroundColor: systemColors.fill }]} testID="playback-frame-edit-pair">
-      <Pressable
+      <PressableSurface
         onPress={handleAdd}
         // Asymmetric on purpose. Nothing reaches UP: the frame chips sit 8dp
         // above with 6dp of their own slop, and a chip tap that slid into a
@@ -381,11 +383,11 @@ function FrameEditPair({
         testID="playback-add-frame"
       >
         <Icon name="plus" size={20} color={systemColors.secondaryLabel} />
-      </Pressable>
+      </PressableSurface>
 
       <View style={[styles.framePairDivider, { backgroundColor: systemColors.separator }]} />
 
-      <Pressable
+      <PressableSurface
         onPress={handleDelete}
         disabled={!canDelete}
         hitSlop={{ top: 0, bottom: 6, left: 0, right: 4 }}
@@ -407,7 +409,7 @@ function FrameEditPair({
         testID="playback-delete-frame"
       >
         <Icon name="minus" size={20} color={canDelete ? systemColors.secondaryLabel : systemColors.tertiaryLabel} />
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 }

@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -110,7 +123,11 @@ vi.mock('react-native', () => {
     );
 
   return {
-    StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+    StyleSheet: {
+      flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+      create: (styles: Record<string, unknown>) => styles,
+      hairlineWidth: 1,
+    },
     View: ({ children }: ViewMockProps) => createElement('div', null, children),
     Pressable: ({ children, onPress, accessibilityLabel, style }: PressableMockProps) => {
       const flatStyle = flattenStyle(style);
@@ -246,6 +263,7 @@ vi.mock('../../queue-control/AccessoryClimbThumbnail', () => ({
   AccessoryClimbThumbnail: () => createElement('div', { 'data-thumb': 'true' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       label: '#000',
@@ -267,6 +285,7 @@ vi.mock('../../../theme/colors', () => ({
   withAlpha: (color: string, alpha: number) => `${color}|${alpha}`,
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { md: 8, lg: 12 },
 }));

@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 0 }));
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The add-a-wall wizard's last two steps, mounted: publish, then the bind that
 // leaves the flow.
@@ -58,13 +72,19 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  Pressable: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress }, children),
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   Alert: { alert: mocks.alert },
   BackHandler: { addEventListener: () => ({ remove() {} }) },
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   Platform: { OS: 'ios' },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
-  StyleSheet: { hairlineWidth: 1, create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    hairlineWidth: 1,
+    create: (styles: unknown) => styles,
+  },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
@@ -120,11 +140,13 @@ vi.mock('../../../lib/spray/spray-lifecycle-copy', () => ({
 }));
 vi.mock('../../../lib/spray/settle-archived-spray-wall', () => ({ settleArchivedSprayWall: mocks.settleArchived }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12 },
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { secondaryLabel: '#888', tertiaryLabel: '#999', separator: '#222', tertiaryBackground: '#333' },
   }),

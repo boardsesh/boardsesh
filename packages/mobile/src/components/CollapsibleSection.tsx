@@ -1,5 +1,6 @@
+import { PressableSurface } from './PressableSurface';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Text } from './Text';
 import { Icon } from './Icon';
@@ -183,7 +184,7 @@ function CollapsibleSectionInternal({
           Videos "+" can never fold the section by accident. Visual order (title
           … action, chevron) is unchanged. */}
       <View style={styles.header} onLayout={onHeaderLayoutEvent}>
-        <Pressable
+        <PressableSurface
           onPress={toggleExpanded}
           accessibilityRole="button"
           accessibilityLabel={title}
@@ -198,9 +199,9 @@ function CollapsibleSectionInternal({
               {summary}
             </Text>
           ) : null}
-        </Pressable>
+        </PressableSurface>
         {headerAction}
-        <Pressable
+        <PressableSurface
           onPress={toggleExpanded}
           // The title pressable above already announces the section and its
           // expanded state; a second identical button would just be noise.
@@ -214,7 +215,7 @@ function CollapsibleSectionInternal({
           <Animated.View style={chevronStyle}>
             <Icon name="chevron.down" size={16} color={systemColors.tertiaryLabel} />
           </Animated.View>
-        </Pressable>
+        </PressableSurface>
       </View>
 
       {/* Plain View, not a FadeIn/FadeOut Animated.View: inside a FlashList header
@@ -257,8 +258,8 @@ const styles = StyleSheet.create({
     flexBasis: 0,
     flexShrink: 1,
     textAlign: 'right',
-    marginLeft: spacing[2],
-    marginRight: spacing[2],
+    marginStart: spacing[2],
+    marginEnd: spacing[2],
   },
   content: {
     paddingHorizontal: spacing[4],

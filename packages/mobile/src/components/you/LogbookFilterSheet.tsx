@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
@@ -236,11 +237,11 @@ export function LogbookFilterSheet({
     >
       <View style={styles.header}>
         <Text variant="title3">{t('mobile.logbook.filter')}</Text>
-        <Pressable onPress={handleReset} hitSlop={8} accessibilityRole="button">
+        <PressableSurface onPress={handleReset} hitSlop={8} accessibilityRole="button">
           <Text variant="subheadline" color={theme.systemColors.accent}>
             {t('mobile.logbook.reset')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
 
       <BottomSheetScrollView
@@ -369,6 +370,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[3],
   },
   scrollContent: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     // Fill the sheet so the content is always scrollable to the last row (the
     // inline override supplies the generous safe-area-aware bottom padding).
     flexGrow: 1,

@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // Bottom sheet for pairing a Rogue Fitness workout timer to a board. Scans for
 // nearby Rogue/Echo timers (via a throwaway RogueTimerController — pairing only
 // *records the timer's name*, it doesn't hold a connection) and returns the
@@ -7,7 +8,7 @@
 // resolves climbing-board serials, none of which apply to a plain UART timer.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ActivityIndicator, StyleSheet, type ColorValue } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { DiscoveredDevice } from '../../lib/ble/types';
@@ -52,7 +53,7 @@ const TimerRow = memo(function TimerRow({
   }, [name, onSelect]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={name}
@@ -75,7 +76,7 @@ const TimerRow = memo(function TimerRow({
           />
         ))}
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

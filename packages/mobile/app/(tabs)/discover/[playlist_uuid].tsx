@@ -1,5 +1,6 @@
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Alert, Pressable } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -606,7 +607,7 @@ export default function PlaylistDetail() {
         <Text variant="subheadline" style={styles.stateSubtitle}>
           {t('detail.errors.loadDescription')}
         </Text>
-        <Pressable
+        <PressableSurface
           onPress={() => {
             void refetchMeta();
             void query.refetch();
@@ -618,7 +619,7 @@ export default function PlaylistDetail() {
           <Text variant="subheadline" color={brandColors.primary} style={styles.stateRetry}>
             {t('detail.errors.tryAgain')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     );
   }

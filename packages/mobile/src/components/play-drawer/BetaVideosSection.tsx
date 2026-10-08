@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 // The play drawer's outer scroll is a react-native-gesture-handler ScrollView, so
 // a nested horizontal shelf must also be RNGH's ScrollView — otherwise on Android
 // the outer scroll's native gesture handler swallows the horizontal pans and this
@@ -14,7 +15,7 @@ import { Icon } from '../Icon';
 import { useBetaLinks } from '../../lib/graphql/hooks';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { BetaVideoCard, BETA_CARD_WIDTH, BETA_CARD_HEIGHT } from './BetaVideoCard';
 
 type BetaVideosSectionProps = {
@@ -82,7 +83,7 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.errorText}>
             {t('mobile.betaVideos.errorTitle')}
           </Text>
-          <Pressable
+          <PressableSurface
             onPress={handleRetry}
             disabled={isRefetching}
             accessibilityRole="button"
@@ -97,7 +98,7 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
             <Text variant="footnote" color={brandColors.primary}>
               {t('mobile.betaVideos.retry')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       ) : !links || links.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -162,6 +163,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   retryButtonDisabled: {
-    opacity: 0.5,
+    opacity: opacity.disabled,
   },
 });

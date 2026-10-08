@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, View, StyleSheet, type GestureResponderEvent } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { NativeMarkerSlider } from './NativeMarkerSlider';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { brandAccentColor } from '../../theme/expo-ui-modifiers';
@@ -9,8 +10,7 @@ import { spacing } from '../../theme/tokens';
  * A drag-to-set slider for one numeric render setting (marker brush/size in
  * Classic, glow reach/plateau share/veil/fill opacity in Boardsesh). Extracted
  * from the old AccessibilitySettingsScreen so every numeric knob on the "Board
- * look" screen (issue #2202) shares one PanResponder implementation instead of
- * six near-identical copies.
+ * look" screen (issue #2202) uses the platform slider, with a responder fallback on the browser.
  *
  * `onChange` fires continuously while dragging (and from the increment/decrement
  * accessibility action) — wire it to local draft state for a live label/thumb.
@@ -40,7 +40,7 @@ function normalizeToStep(raw: number, min: number, max: number, step: number): n
   // Guards against float dust (0.1 + 0.2 territory) without claiming the
   // precision the persisted store itself owns — sanitizeBoardseshRenderSettings
   // rounds to two decimals on every write regardless of what this hands it.
-  return Math.round(stepped * 1000) / 1000;
+  return Math.min(max, Math.max(min, Math.round(stepped * 1000) / 1000));
 }
 
 export function MarkerMultiplierSlider({
@@ -57,82 +57,25 @@ export function MarkerMultiplierSlider({
   // The same on-track tint the native @expo/ui Slider and Switch use (HIG Color:
   // one accent across every control), so this hand-built slider can't drift.
   const onTrackColor = brandAccentColor(brandColors);
-  const trackRef = useRef<View>(null);
-  const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
-  // The last value `applyPageX` actually applied via `onChange`. RN seeds
-  // `gestureState.moveX` at 0 and only updates it on a touch-move, so a tap
-  // that releases (or is interrupted) without ever moving reports
-  // `moveX === 0` — recomputing the release/terminate value from that
-  // coordinate would silently commit `min`. Committing this ref instead means
-  // release and terminate always land on wherever the gesture actually left
-  // the thumb (the grant coordinate, if the touch never moved).
-  const lastAppliedValueRef = useRef<number | null>(null);
-  const ratio = (value - min) / (max - min);
-
-  const valueFromPageX = useCallback(
-    (pageX: number, trackLayout: { pageLeft: number; width: number }): number | null => {
-      if (trackLayout.width <= 0) return null;
-      const nextRatio = Math.max(0, Math.min(1, (pageX - trackLayout.pageLeft) / trackLayout.width));
-      return normalizeToStep(min + nextRatio * (max - min), min, max, step);
+  const lastAppliedValueRef = useRef(value);
+  useEffect(() => {
+    lastAppliedValueRef.current = value;
+  }, [value]);
+  const handleValueChange = useCallback(
+    (nextValue: number) => {
+      const stepped = normalizeToStep(nextValue, min, max, step);
+      lastAppliedValueRef.current = stepped;
+      onChange(stepped);
     },
-    [max, min, step],
+    [min, max, step, onChange],
   );
-
-  const applyPageX = useCallback(
-    (pageX: number, trackLayout: { pageLeft: number; width: number }) => {
-      const nextValue = valueFromPageX(pageX, trackLayout);
-      if (nextValue === null) return;
-      lastAppliedValueRef.current = nextValue;
-      onChange(nextValue);
-    },
-    [onChange, valueFromPageX],
-  );
-
-  const measureTrackAndSetFromPageX = useCallback(
-    (pageX: number) => {
-      trackRef.current?.measure((_x, _y, width, _height, pageLeft) => {
-        if (width <= 0) return;
-        const trackLayout = { pageLeft, width };
-        trackLayoutRef.current = trackLayout;
-        applyPageX(pageX, trackLayout);
-      });
-    },
-    [applyPageX],
-  );
-
-  const setFromPageX = useCallback(
-    (pageX: number) => {
-      const trackLayout = trackLayoutRef.current;
-      if (trackLayout) {
-        applyPageX(pageX, trackLayout);
-        return;
-      }
-      measureTrackAndSetFromPageX(pageX);
-    },
-    [applyPageX, measureTrackAndSetFromPageX],
-  );
-
-  const commitLastAppliedValue = useCallback(() => {
-    if (!onChangeEnd) return;
-    const finalValue = lastAppliedValueRef.current;
-    if (finalValue !== null) onChangeEnd(finalValue);
+  const handleValueChangeEnd = useCallback(() => {
+    onChangeEnd?.(lastAppliedValueRef.current);
   }, [onChangeEnd]);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event: GestureResponderEvent) => measureTrackAndSetFromPageX(event.nativeEvent.pageX),
-        onPanResponderMove: (_event, gestureState) => setFromPageX(gestureState.moveX),
-        onPanResponderRelease: () => commitLastAppliedValue(),
-        onPanResponderTerminate: () => commitLastAppliedValue(),
-      }),
-    [commitLastAppliedValue, measureTrackAndSetFromPageX, setFromPageX],
-  );
 
   const handleAccessibilityAction = useCallback(
     (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName !== 'increment' && event.nativeEvent.actionName !== 'decrement') return;
       const delta = event.nativeEvent.actionName === 'increment' ? step : -step;
       const nextValue = normalizeToStep(value + delta, min, max, step);
       onChange(nextValue);
@@ -152,7 +95,6 @@ export function MarkerMultiplierSlider({
       accessibilityActions={ACCESSIBILITY_ACTIONS}
       onAccessibilityAction={handleAccessibilityAction}
       style={styles.container}
-      {...panResponder.panHandlers}
     >
       <View style={styles.labels}>
         <Text variant="caption1" color={systemColors.secondaryLabel}>
@@ -163,25 +105,16 @@ export function MarkerMultiplierSlider({
           {format(max)}
         </Text>
       </View>
-      <View
-        ref={trackRef}
-        onLayout={() => {
-          trackLayoutRef.current = null;
-        }}
-        style={[styles.track, { backgroundColor: systemColors.separator }]}
-      >
-        <View
-          style={[styles.fill, { backgroundColor: onTrackColor, width: `${Math.max(0, Math.min(1, ratio)) * 100}%` }]}
-        />
-        <View
-          style={[
-            styles.thumb,
-            {
-              backgroundColor: systemColors.background,
-              borderColor: onTrackColor,
-              left: `${Math.max(0, Math.min(1, ratio)) * 100}%`,
-            },
-          ]}
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <NativeMarkerSlider
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          accessibilityLabel={accessibilityLabel}
+          color={onTrackColor}
+          onValueChange={handleValueChange}
+          onValueChangeEnd={handleValueChangeEnd}
         />
       </View>
     </View>
@@ -241,7 +174,7 @@ const styles = StyleSheet.create({
     top: -9,
     width: 24,
     height: 24,
-    marginLeft: -12,
+    marginStart: -12,
     borderRadius: 12,
     borderWidth: 2,
   },

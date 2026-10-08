@@ -17,8 +17,16 @@
 
 import { Host } from '@expo/ui';
 import { Picker, Text } from '@expo/ui/swift-ui';
-import { pickerStyle, tint, tag, accessibilityLabel as accessibilityLabelModifier } from '@expo/ui/swift-ui/modifiers';
-import { StyleSheet } from 'react-native';
+import {
+  pickerStyle,
+  tint,
+  tag,
+  font,
+  accessibilityLabel as accessibilityLabelModifier,
+} from '@expo/ui/swift-ui/modifiers';
+import { StyleSheet, useWindowDimensions } from 'react-native';
+import { useBoldText } from '../hooks/use-bold-text';
+import { ScrollableTabs } from './navigation/ScrollableTabs';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { makeSelectHandler } from './SegmentedControl.logic';
@@ -33,11 +41,23 @@ export function SegmentedControl<K extends string = string>({
   tint: tintColor,
 }: SegmentedControlProps<K>) {
   const { brandColors } = useTheme();
+  const boldText = useBoldText();
+  const { fontScale } = useWindowDimensions();
   const handleSelect = makeSelectHandler(onSelect, disabledKeys);
   // The selected-pill fill: brand accent (purple) by default; the logbook passes
   // amber. SwiftUI's segmented Picker derives the selected label's contrast colour
   // from the tint, so no separate on-fill text colour is needed here.
   const selectedFill = tintColor ?? brandAccentColor(brandColors);
+
+  if (fontScale > 1.3)
+    return (
+      <ScrollableTabs
+        options={options}
+        selectedKey={selectedKey}
+        onSelect={handleSelect}
+        accessibilityLabel={accessibilityLabel}
+      />
+    );
 
   return (
     // Explicit height, NOT matchContents: the native iOS Host under-reported the
@@ -66,7 +86,10 @@ export function SegmentedControl<K extends string = string>({
         ]}
       >
         {options.map((option) => (
-          <Text key={option.key} modifiers={[tag(option.key)]}>
+          <Text
+            key={option.key}
+            modifiers={[tag(option.key), font({ textStyle: 'subheadline', weight: boldText ? 'semibold' : 'regular' })]}
+          >
             {option.label}
           </Text>
         ))}

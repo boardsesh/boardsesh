@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   mirrorIcon: {
-    marginLeft: 4,
+    marginStart: 4,
     flexShrink: 0,
   },
   resultRow: {
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    marginLeft: spacing[1],
+    marginStart: spacing[1],
     maxWidth: 110,
   },
   grade: {
@@ -296,6 +296,6 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     // Inset to the text column: row padding + thumbnail + column gap.
-    marginLeft: spacing[4] + THUMBNAIL_SIZE.width + spacing[3],
+    marginStart: spacing[4] + THUMBNAIL_SIZE.width + spacing[3],
   },
 });

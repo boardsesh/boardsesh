@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import type { ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import { Link } from 'expo-router';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 import { opacity } from '../../theme/tokens';
@@ -18,7 +19,7 @@ type AccessoryPlayLinkProps = {
 // static styles, so giving it a Pressable style function would erase feedback.
 function PlayPressable({ style, ...props }: Omit<PressableProps, 'style'> & { style?: StyleProp<ViewStyle> }) {
   return (
-    <Pressable
+    <PressableSurface
       {...props}
       role="button"
       accessibilityRole="button"

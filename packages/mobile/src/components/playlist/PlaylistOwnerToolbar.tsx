@@ -34,13 +34,13 @@ export function PlaylistOwnerToolbar({ isPinned, onTogglePin, onEdit, onDelete }
         }}
         accessibilityLabel={isPinned ? t('library.pin.unpinAriaLabel') : t('library.pin.pinAriaLabel')}
       >
-        <Icon name={isPinned ? 'pin.fill' : 'pin'} size={22} color={iosSystemColors.white} />
+        <Icon maxFontSizeMultiplier={1} name={isPinned ? 'pin.fill' : 'pin'} size={22} color={iosSystemColors.white} />
       </GlassToolbarAction>
       <GlassToolbarAction onPress={onEdit} accessibilityLabel={t('detail.menu.editClimbs')}>
-        <Icon name="edit" size={22} color={iosSystemColors.white} />
+        <Icon maxFontSizeMultiplier={1} name="edit" size={22} color={iosSystemColors.white} />
       </GlassToolbarAction>
       <GlassToolbarAction onPress={onDelete} accessibilityLabel={t('detail.menu.delete')}>
-        <Icon name="delete" size={22} color={iosSystemColors.white} />
+        <Icon maxFontSizeMultiplier={1} name="delete" size={22} color={iosSystemColors.white} />
       </GlassToolbarAction>
     </GlassActionToolbar>
   );

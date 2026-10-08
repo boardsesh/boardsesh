@@ -536,7 +536,7 @@ export function GradeSingleSelectRail({
       contentContainerStyle={[
         styles.singleSelectContent,
         style,
-        { paddingLeft: contentInsetLeft, paddingRight: contentInsetRight },
+        { paddingStart: contentInsetLeft, paddingEnd: contentInsetRight },
       ]}
       onContentSizeChange={handleContentSizeChange}
       onLayout={(event) => {

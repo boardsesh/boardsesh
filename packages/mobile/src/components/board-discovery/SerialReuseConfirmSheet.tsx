@@ -1,4 +1,5 @@
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { Modal, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -62,7 +63,7 @@ export function SerialReuseConfirmSheet({
     <Modal visible={visible} transparent animationType={reduceMotion ? 'fade' : 'slide'} onRequestClose={onCancel}>
       <View style={styles.backdrop}>
         {/* Sibling, not parent: a tappable ancestor hides the card's buttons from VoiceOver. */}
-        <Pressable
+        <PressableSurface
           accessible={false}
           importantForAccessibility="no"
           style={StyleSheet.absoluteFill}

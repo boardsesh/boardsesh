@@ -897,6 +897,18 @@
     },
     "project": {
       "chip": "Projet"
+    },
+    "boardAccessibility": {
+      "summary": "Board : {{starting}} prises de départ, {{hand}} de main, {{finish}} de fin, {{foot}} de pied.",
+      "adjustHint": "Balayez vers le haut ou le bas pour changer de bloc.",
+      "next": "Bloc suivant",
+      "previous": "Bloc précédent",
+      "hold": "Prise {{id}}, {{role}}",
+      "unlit": "éteinte",
+      "paintHint": "Touchez pour peindre avec le pinceau sélectionné. Les actions permettent de choisir un rôle.",
+      "chooseRole": "Choisir le rôle de la prise",
+      "showList": "Choisir des prises dans une liste",
+      "showBoard": "Revenir au board"
     }
   },
   "frontDoor": {

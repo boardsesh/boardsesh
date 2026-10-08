@@ -1,3 +1,4 @@
+import { PressableSurface } from './PressableSurface';
 // MoreForm — React Native renderer, over the SAME `MoreFormModel` the three
 // native files consume.
 //
@@ -13,7 +14,7 @@
 // files is one Host per control rather than one Host for the whole form — which
 // is exactly what every settings screen in the app did before MoreForm existed.
 
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
 import { Text } from './Text';
@@ -93,14 +94,14 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
       );
     case 'button':
       return (
-        <Pressable accessibilityRole="button" onPress={row.onPress} style={styles.buttonRow}>
+        <PressableSurface accessibilityRole="button" onPress={row.onPress} style={styles.buttonRow}>
           <Text
             variant={row.emphasis === 'subtle' ? 'footnote' : 'subheadline'}
             color={row.role === 'destructive' ? systemColors.error : systemColors.accent}
           >
             {row.label}
           </Text>
-        </Pressable>
+        </PressableSurface>
       );
     case 'slider':
       return (

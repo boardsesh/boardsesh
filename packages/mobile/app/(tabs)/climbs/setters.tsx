@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from '../../../src/components/AccessibleTextInput';
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, TextInput } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -105,7 +107,7 @@ const SetterRow = memo(function SetterRow({
   const { brandColors } = useTheme();
   return (
     <View style={styles.row}>
-      <Pressable
+      <PressableSurface
         onPress={() => onToggle(setter.setterUsername)}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: isSelected }}
@@ -116,8 +118,8 @@ const SetterRow = memo(function SetterRow({
         <View style={[styles.checkbox, { borderColor: brandColors.primary }]}>
           {isSelected ? <Icon name="check.small" size={18} color={brandColors.primary} /> : null}
         </View>
-      </Pressable>
-      <Pressable style={styles.rowText} onPress={() => onOpen(setter.setterUsername)} accessibilityRole="button">
+      </PressableSurface>
+      <PressableSurface style={styles.rowText} onPress={() => onOpen(setter.setterUsername)} accessibilityRole="button">
         <Text variant="body">{setter.setterUsername}</Text>
         <Text variant="footnote" style={styles.count}>
           {t('mobile.search.climbsCount', { count: setter.climbCount })}
@@ -127,9 +129,9 @@ const SetterRow = memo(function SetterRow({
             {t('authors.viaUserFollow')}
           </Text>
         ) : null}
-      </Pressable>
+      </PressableSurface>
       {canFollow ? (
-        <Pressable
+        <PressableSurface
           disabled={followPending}
           accessibilityLabel={`${following ? t('authors.unfollow') : t('authors.follow')}: ${setter.setterUsername}`}
           accessibilityState={{ disabled: followPending, busy: followPending }}
@@ -140,7 +142,7 @@ const SetterRow = memo(function SetterRow({
           <Text variant="footnote" color={brandColors.primary}>
             {following ? t('authors.unfollow') : t('authors.follow')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
@@ -424,11 +426,11 @@ export default function SettersFilterScreen() {
           <Text variant="footnote" style={styles.selectionCount}>
             {t('authors.selectedCount', { count: selectedSet.size })}
           </Text>
-          <Pressable onPress={clear} hitSlop={8} accessibilityRole="button">
+          <PressableSurface onPress={clear} hitSlop={8} accessibilityRole="button">
             <Text variant="subheadline" color={brandColors.primary}>
               {t('mobile.filter.clearAll')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       ) : null}
 
@@ -529,7 +531,7 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4],
+    marginStart: spacing[4],
   },
   selectionBar: {
     flexDirection: 'row',

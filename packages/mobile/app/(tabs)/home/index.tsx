@@ -1,4 +1,5 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { ReadableColumn } from '../../../src/components/ReadableColumn';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
@@ -407,95 +408,96 @@ export default function HomeTab() {
 
   return (
     <View testID="home-screen" style={[styles.flex, { backgroundColor: systemColors.background }]}>
-      <FlashList
-        ref={listRef}
-        data={feedItems}
-        getItemType={getItemType}
-        extraData={summaryMap}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        // The floating glass header owns the top inset on every platform (the
-        // iOS-only `automatic` behaviour left an Android gap), so pad manually.
-        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-        contentContainerStyle={{
-          paddingTop: chromeHeight,
-          paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],
-        }}
-        scrollIndicatorInsets={{ top: chromeHeight }}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        ListHeaderComponent={header}
-        refreshControl={
-          <RefreshControl refreshing={feed.isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
-        }
-        ListEmptyComponent={
-          <>
-            {STARTUP_PROFILING_ENABLED ? (
-              <HomeStartupCommit
-                outcome={homeEmptyStartupOutcome({
-                  authenticated: isAuthenticated,
-                  blockedReason: feedOffline.isBlocked ? feedOffline.reason : null,
-                  loading: feed.isLoading,
-                  scopeReady,
-                  error: feed.isError,
-                })}
-              />
-            ) : null}
-            {feedOffline.isBlocked && feedOffline.reason ? (
-              <OfflineState reason={feedOffline.reason} onRetry={handleRefresh} />
-            ) : feed.isLoading || !scopeReady ? (
-              <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
-            ) : feed.isError ? (
-              <View style={styles.feedState}>
-                <Icon name="error" size={32} color={systemColors.error} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('errors.loadActivity')}
-                </Text>
-                <View style={styles.emptyCta}>
-                  <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
+      <ReadableColumn style={styles.flex}>
+        <FlashList
+          ref={listRef}
+          data={feedItems}
+          getItemType={getItemType}
+          extraData={summaryMap}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          // UIKit owns the native title inset; other variants use the measured chrome.
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+          contentContainerStyle={{
+            paddingTop: chromeHeight,
+            paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],
+          }}
+          scrollIndicatorInsets={{ top: chromeHeight }}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          ListHeaderComponent={header}
+          refreshControl={
+            <RefreshControl refreshing={feed.isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
+          }
+          ListEmptyComponent={
+            <>
+              {STARTUP_PROFILING_ENABLED ? (
+                <HomeStartupCommit
+                  outcome={homeEmptyStartupOutcome({
+                    authenticated: isAuthenticated,
+                    blockedReason: feedOffline.isBlocked ? feedOffline.reason : null,
+                    loading: feed.isLoading,
+                    scopeReady,
+                    error: feed.isError,
+                  })}
+                />
+              ) : null}
+              {feedOffline.isBlocked && feedOffline.reason ? (
+                <OfflineState reason={feedOffline.reason} onRetry={handleRefresh} />
+              ) : feed.isLoading || !scopeReady ? (
+                <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
+              ) : feed.isError ? (
+                <View style={styles.feedState}>
+                  <Icon name="error" size={32} color={systemColors.error} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('errors.loadActivity')}
+                  </Text>
+                  <View style={styles.emptyCta}>
+                    <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
+                  </View>
                 </View>
-              </View>
-            ) : requiresManualPage ? null : mode === 'gym' && selectedBoard != null ? (
-              <View style={styles.feedState}>
-                <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
-                </Text>
-                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                  {t('mobile.home.boardEmptyBody')}
-                </Text>
-                <View style={styles.emptyCta}>
-                  <Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />
+              ) : requiresManualPage ? null : mode === 'gym' && selectedBoard != null ? (
+                <View style={styles.feedState}>
+                  <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
+                  </Text>
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
+                    {t('mobile.home.boardEmptyBody')}
+                  </Text>
+                  <View style={styles.emptyCta}>
+                    <Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />
+                  </View>
                 </View>
-              </View>
-            ) : mode === 'crew' ? (
-              <View style={styles.feedState}>
-                <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.home.emptyTitle')}
-                </Text>
-                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                  {t('mobile.home.emptyBody')}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.feedState}>
-                <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('emptyStates.noRecentActivity')}
-                </Text>
-              </View>
-            )}
-          </>
-        }
-        ListFooterComponent={
-          feed.isFetchingNextPage ? (
-            <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} />
-          ) : requiresManualPage ? (
-            <Button title={t('crewLoadMore')} onPress={loadNextPage} />
-          ) : null
-        }
-      />
+              ) : mode === 'crew' ? (
+                <View style={styles.feedState}>
+                  <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('mobile.home.emptyTitle')}
+                  </Text>
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
+                    {t('mobile.home.emptyBody')}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.feedState}>
+                  <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
+                  <Text variant="headline" style={styles.emptyTitle}>
+                    {t('emptyStates.noRecentActivity')}
+                  </Text>
+                </View>
+              )}
+            </>
+          }
+          ListFooterComponent={
+            feed.isFetchingNextPage ? (
+              <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} />
+            ) : requiresManualPage ? (
+              <Button title={t('crewLoadMore')} onPress={loadNextPage} />
+            ) : null
+          }
+        />
+      </ReadableColumn>
       <HomeTopChrome
         scopeTitle={scopeMenu.title}
         scopeActions={scopeMenu.actions}

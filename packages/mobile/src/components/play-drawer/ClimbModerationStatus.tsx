@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   container: {
     gap: spacing[3],
     borderLeftWidth: 2,
-    paddingLeft: spacing[3],
+    paddingStart: spacing[3],
   },
   block: {
     gap: spacing[1],

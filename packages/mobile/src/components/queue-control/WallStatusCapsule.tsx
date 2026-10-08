@@ -21,7 +21,7 @@
 // Compact by design — the name truncates, the grade stays.
 
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
@@ -32,6 +32,7 @@ import { withAlpha } from '../../theme/colors';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
@@ -189,20 +190,22 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
                   />
                 ) : (
                   <View style={[styles.bandAnon, { backgroundColor: m3SurfaceContainers.highest }]}>
-                    <Icon name="profile.fill" size={ANON_GLYPH} color={m3.onSurfaceVariant} />
+                    <Icon maxFontSizeMultiplier={1} name="profile.fill" size={ANON_GLYPH} color={m3.onSurfaceVariant} />
                   </View>
                 )}
               </View>
-              <Text
-                variant="subheadline"
-                color={m3.onSurface}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.bandName}
-              >
-                {name}
-              </Text>
+              <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={{ flex: 1 }}>
+                <Text
+                  variant="subheadline"
+                  color={m3.onSurface}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                  style={styles.bandName}
+                >
+                  {name}
+                </Text>
+              </LargeContentViewer>
               {gradeNode}
             </View>
           </View>
@@ -226,7 +229,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
       ]}
     >
       <View pointerEvents="none" style={glassTintStyle} />
-      <Pressable
+      <PressableSurface
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={a11yLabel}
@@ -250,19 +253,21 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
               status="none"
             />
           ) : (
-            <Icon name="profile.fill" size={18} color={brandColors.warning} />
+            <Icon maxFontSizeMultiplier={1} name="profile.fill" size={18} color={brandColors.warning} />
           )}
         </View>
-        <Text
-          variant="footnote"
-          color={systemColors.label}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.name}
-        >
-          {name}
-        </Text>
+        <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={{ flex: 1 }}>
+          <Text
+            variant="footnote"
+            color={systemColors.label}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.name}
+          >
+            {name}
+          </Text>
+        </LargeContentViewer>
         {formattedGrade ? (
           <Text
             variant="footnote"
@@ -273,7 +278,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
             {formattedGrade}
           </Text>
         ) : null}
-      </Pressable>
+      </PressableSurface>
     </Animated.View>
   );
 }
@@ -295,8 +300,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: '100%',
-    paddingLeft: spacing[1],
-    paddingRight: spacing[3],
+    paddingStart: spacing[1],
+    paddingEnd: spacing[3],
     gap: spacing[2],
   },
   name: {

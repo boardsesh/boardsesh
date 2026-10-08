@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // What the iOS Button hands its @expo/ui `Host`. The native SwiftUI tree can't
 // mount under vitest, so the `Host` is captured, not rendered. The SwiftUI side
 // of the prop (expo-modules-core `setSafeAreaRegions(ignoring:)` removing
@@ -114,7 +127,7 @@ describe('iOS Button Dynamic Type cap', () => {
   it('caps at xxxLarge (1.5x, like Text) when the caller sets nothing', () => {
     render(<Button title="Save" onPress={vi.fn()} />);
 
-    expect(modifierArg('dynamicTypeSize')).toEqual({ max: 'xxxLarge' });
+    expect(modifierArg('dynamicTypeSize')).toEqual({ max: 'accessibility5' });
   });
 
   it("keeps the caller's tighter cap", () => {

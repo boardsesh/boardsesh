@@ -571,7 +571,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   pileOverlap: {
-    marginLeft: -spacing[2],
+    marginStart: -spacing[2],
   },
   bareText: {
     flex: 1,

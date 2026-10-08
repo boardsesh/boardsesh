@@ -1,5 +1,6 @@
+import { PressableSurface } from './PressableSurface';
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
@@ -124,7 +125,7 @@ function QueueAddedSnackbarGlass({
           <Text variant="subheadline" color={systemColors.label} style={styles.message} numberOfLines={1}>
             {snackbarMessage(t, queueAdded)}
           </Text>
-          <Pressable
+          <PressableSurface
             onPress={onOpen}
             hitSlop={8}
             accessibilityRole="button"
@@ -133,7 +134,7 @@ function QueueAddedSnackbarGlass({
             <Text variant="subheadline" color={brandColors.primary} style={styles.open}>
               {t('mobile.queueSnackbar.open')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </Animated.View>
       ) : null}
     </View>

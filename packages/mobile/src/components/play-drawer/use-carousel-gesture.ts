@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useRef, type ComponentType, type RefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
-import { useSharedValue, withTiming, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
-import {
-  SWIPE_THRESHOLD,
-  DIRECTION_THRESHOLD,
-  VERTICAL_LOCK_RATIO,
-  EXIT_DURATION,
-  SWIPE_OFFSCREEN_PAD,
-} from '@boardsesh/play-view';
+import { useSharedValue, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
+import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO, SWIPE_OFFSCREEN_PAD } from '@boardsesh/play-view';
+import { carouselCommitDirection } from './carousel-commit';
 import { springs } from '../../theme/animations';
 import { hapticMedium } from '../../lib/haptics';
 
@@ -136,7 +131,7 @@ export function useCarouselGesture({
     }
   };
 
-  // Fired from the fling's withTiming completion — i.e. once the outgoing card is
+  // Fired from the fling's spring completion — i.e. once the outgoing card is
   // fully OFF-SCREEN and the incoming peek board has slid to centre. We commit the
   // navigation here, but DON'T reset translateX yet when a host is wired up: the
   // host keeps the (frozen) peek covering centre and resets translateX only after
@@ -234,14 +229,16 @@ export function useCarouselGesture({
           runOnJS(triggerHaptic)();
         }
       })
-      .onEnd(() => {
+      .onEnd((event) => {
         'worklet';
         if (isAnimating.value) return;
 
         const offset = translateX.value;
         const skipAnimation = reduceMotionSV.value;
+        const velocity = event.velocityX ?? 0;
+        const commitDirection = carouselCommitDirection(offset, velocity, SWIPE_THRESHOLD);
 
-        if (offset < -SWIPE_THRESHOLD && canSwipeNextSV.value) {
+        if (commitDirection === 'next' && canSwipeNextSV.value) {
           if (skipAnimation) {
             translateX.value = 0;
             runOnJS(commitImmediate)('next');
@@ -250,24 +247,24 @@ export function useCarouselGesture({
             // Fling fully off-screen (Tinder throw) — past the screen edge so the
             // tilt/letterbox clears. Commit on COMPLETION (card off-screen, peek at
             // centre) so the translateX reset is an invisible hand-off, not a snap.
-            translateX.value = withTiming(
+            translateX.value = withSpring(
               -(screenWidthSV.value + SWIPE_OFFSCREEN_PAD),
-              { duration: EXIT_DURATION },
+              { ...springs.interactive, velocity, overshootClamping: true },
               (finished) => {
                 'worklet';
                 if (finished) runOnJS(commitAtEnd)('next');
               },
             );
           }
-        } else if (offset > SWIPE_THRESHOLD && canSwipePreviousSV.value) {
+        } else if (commitDirection === 'previous' && canSwipePreviousSV.value) {
           if (skipAnimation) {
             translateX.value = 0;
             runOnJS(commitImmediate)('previous');
           } else {
             isAnimating.value = true;
-            translateX.value = withTiming(
+            translateX.value = withSpring(
               screenWidthSV.value + SWIPE_OFFSCREEN_PAD,
-              { duration: EXIT_DURATION },
+              { ...springs.interactive, velocity, overshootClamping: true },
               (finished) => {
                 'worklet';
                 if (finished) runOnJS(commitAtEnd)('previous');
@@ -275,7 +272,7 @@ export function useCarouselGesture({
             );
           }
         } else {
-          translateX.value = skipAnimation ? 0 : withSpring(0, springs.interactive);
+          translateX.value = skipAnimation ? 0 : withSpring(0, { ...springs.interactive, velocity });
         }
       })
       // manualActivation hands the touch lifecycle to these worklets, so a touch

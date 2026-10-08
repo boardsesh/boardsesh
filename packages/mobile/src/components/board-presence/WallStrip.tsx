@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '../Icon';
@@ -47,7 +48,7 @@ function WallStripComponent() {
   const grade = litClimb ? resolveGrade({ difficulty: litClimb.grade ?? '' }, boardConfig?.boardName).label : null;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={
@@ -85,7 +86,7 @@ function WallStripComponent() {
         </Text>
       ) : null}
       <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 

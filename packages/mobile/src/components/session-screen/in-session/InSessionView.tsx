@@ -854,7 +854,7 @@ const styles = StyleSheet.create({
   },
   historySeparator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[3] + 28 + spacing[3],
+    marginStart: spacing[3] + 28 + spacing[3],
   },
   inviteRow: {
     flexDirection: 'row',

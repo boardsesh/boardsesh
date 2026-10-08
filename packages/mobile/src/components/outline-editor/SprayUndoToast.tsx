@@ -91,8 +91,8 @@ const styles = StyleSheet.create({
     borderRadius: glassSize.capsule / 2,
     overflow: 'hidden',
     justifyContent: 'center',
-    paddingLeft: spacing[4],
-    paddingRight: spacing[1],
+    paddingStart: spacing[4],
+    paddingEnd: spacing[1],
   },
   line: {
     flexDirection: 'row',

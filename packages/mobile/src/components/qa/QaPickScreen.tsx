@@ -13,7 +13,7 @@ import { Text } from '../Text';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useAppColorScheme, useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
@@ -708,7 +708,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
   },
   rowDimmed: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
   rowBody: {
     flex: 1,

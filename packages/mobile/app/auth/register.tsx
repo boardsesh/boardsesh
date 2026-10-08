@@ -1,5 +1,8 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { useTypographyStyles, type TypographyScale } from '../../src/hooks/use-typography-styles';
+import { PressableSurface } from '../../src/components/PressableSurface';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS, loginProviderProperties } from '@boardsesh/analytics';
@@ -22,6 +25,8 @@ import { readPostLoginReturnHref } from '../../src/lib/routing/anonymous-auth-ga
 type FieldKey = 'name' | 'email' | 'password';
 
 export default function RegisterScreen() {
+  const headerHeight = useHeaderHeight();
+  const styles = useTypographyStyles(createStyles);
   const { register } = useAuth();
   const { t } = useTranslation('auth');
   const theme = useTheme();
@@ -226,7 +231,11 @@ export default function RegisterScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: true, title: t('login.tabs.signUp') }} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        keyboardVerticalOffset={headerHeight}
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <ScrollView
           // The stack header is transparent + blurred on iOS; inset the form
           // below it (and the status bar) instead of drawing under it.
@@ -381,7 +390,7 @@ export default function RegisterScreen() {
                 </Text>
                 {/* replace (not back) so a deep-link straight to /auth/register still
                 lands on login rather than no-op'ing on an empty back stack. */}
-                <Pressable
+                <PressableSurface
                   onPress={() => router.replace(signInHref)}
                   hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                   style={styles.footerLinkHit}
@@ -390,7 +399,7 @@ export default function RegisterScreen() {
                   <Text variant="subheadline" color={theme.systemColors.accent} style={styles.footerLink}>
                     {t('login.submit.signIn')}
                   </Text>
-                </Pressable>
+                </PressableSurface>
               </View>
             </>
           )}
@@ -400,36 +409,44 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'flex-start', padding: 24 },
-  intro: { marginBottom: 24 },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-  },
-  form: { gap: 12 },
-  submitButton: { alignSelf: 'stretch', marginTop: 4 },
-  errorText: { color: '#FF3B30', marginTop: 4 },
-  oauthErrorText: { marginTop: 12 },
-  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
-  successText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
-  footer: {
-    flexDirection: 'row',
-    // A long translation ("Noch kein Konto? Registrieren") drops the link onto
-    // its own line instead of running off the screen (HIG Localization: leave
-    // room for text that grows).
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 24,
-  },
-  footerLink: { fontWeight: '600' },
-  // Keeps the tappable area at the 44pt/48dp minimum.
-  footerLinkHit: { minHeight: 44, justifyContent: 'center' },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+      maxWidth: 672,
+      alignSelf: 'center',
+      flexGrow: 1,
+      justifyContent: 'flex-start',
+      padding: 24,
+    },
+    intro: { marginBottom: 24 },
+    dividerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginVertical: 24,
+      gap: 12,
+    },
+    dividerLine: {
+      flex: 1,
+      height: StyleSheet.hairlineWidth,
+    },
+    form: { gap: 12 },
+    submitButton: { alignSelf: 'stretch', marginTop: 4 },
+    errorText: { color: '#FF3B30', marginTop: 4 },
+    oauthErrorText: { marginTop: 12 },
+    successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
+    successText: { fontSize: textStyles.body.fontSize, textAlign: 'center', lineHeight: textStyles.body.lineHeight },
+    footer: {
+      flexDirection: 'row',
+      // A long translation ("Noch kein Konto? Registrieren") drops the link onto
+      // its own line instead of running off the screen (HIG Localization: leave
+      // room for text that grows).
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginTop: 24,
+    },
+    footerLink: { fontWeight: '600' },
+    // Keeps the tappable area at the 44pt/48dp minimum.
+    footerLinkHit: { minHeight: 44, justifyContent: 'center' },
+  });

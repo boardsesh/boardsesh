@@ -1,5 +1,8 @@
+import { AccessibleTextInput as TextInput } from '../../../src/components/AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../../src/hooks/use-typography-styles';
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useUserPlaylists } from '@boardsesh/playlists-react';
@@ -27,6 +30,7 @@ import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
  * `useUserPlaylists` already returns owned playlists only.
  */
 export default function AllPlaylistsScreen() {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
   const { systemColors, brandColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
@@ -101,11 +105,11 @@ export default function AllPlaylistsScreen() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('library.signInBanner.title')}
         </Text>
-        <Pressable onPress={() => router.push('/auth/login')} accessibilityRole="button" hitSlop={8}>
+        <PressableSurface onPress={() => router.push('/auth/login')} accessibilityRole="button" hitSlop={8}>
           <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
             {t('library.signInBanner.cta')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     );
   }
@@ -123,7 +127,7 @@ export default function AllPlaylistsScreen() {
         <Text variant="subheadline" style={styles.stateSubtitle}>
           {t('library.errors.loadDescription')}
         </Text>
-        <Pressable
+        <PressableSurface
           onPress={refetch}
           accessibilityRole="button"
           accessibilityLabel={t('library.errors.tryAgain')}
@@ -132,7 +136,7 @@ export default function AllPlaylistsScreen() {
           <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
             {t('library.errors.tryAgain')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     );
   }
@@ -157,14 +161,14 @@ export default function AllPlaylistsScreen() {
             accessibilityLabel={t('library.allPlaylists.searchPlaceholder')}
           />
           {query.length > 0 ? (
-            <Pressable
+            <PressableSurface
               onPress={() => setQuery('')}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel={t('library.allPlaylists.clearSearch')}
             >
               <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-            </Pressable>
+            </PressableSurface>
           ) : null}
         </View>
       </View>
@@ -208,7 +212,7 @@ export default function AllPlaylistsScreen() {
           }
           ListFooterComponent={
             hasLoadMoreError ? (
-              <Pressable
+              <PressableSurface
                 style={styles.footer}
                 onPress={retryLoadMore}
                 accessibilityRole="button"
@@ -220,7 +224,7 @@ export default function AllPlaylistsScreen() {
                 <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
-              </Pressable>
+              </PressableSurface>
             ) : showDrainingFooter ? (
               <View style={styles.footer}>
                 <ActivityIndicator size="small" />
@@ -237,59 +241,60 @@ export default function AllPlaylistsScreen() {
 // centre (spacing[16] + spacing[4] = 80).
 const STATE_BLOCK_TOP_INSET = spacing[16] + spacing[4];
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchWrap: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    paddingBottom: spacing[2],
-  },
-  searchField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    height: 40,
-    borderRadius: 10,
-    paddingHorizontal: spacing[3],
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 0,
-  },
-  emptyBlock: {
-    paddingTop: STATE_BLOCK_TOP_INSET,
-    paddingHorizontal: spacing[8],
-    gap: spacing[2],
-  },
-  stateTitle: {
-    marginTop: spacing[3],
-    opacity: 0.6,
-    textAlign: 'center',
-  },
-  stateSubtitle: {
-    opacity: 0.4,
-    textAlign: 'center',
-  },
-  stateCta: {
-    marginTop: spacing[3],
-    fontWeight: '600',
-  },
-  footer: {
-    paddingVertical: spacing[4],
-    alignItems: 'center',
-  },
-  footerError: {
-    textAlign: 'center',
-  },
-  footerRetry: {
-    marginTop: spacing[1],
-    fontWeight: '600',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    flex: {
+      flex: 1,
+    },
+    centered: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    searchWrap: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[2],
+      paddingBottom: spacing[2],
+    },
+    searchField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      height: 40,
+      borderRadius: 10,
+      paddingHorizontal: spacing[3],
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: textStyles.body.fontSize,
+      paddingVertical: 0,
+    },
+    emptyBlock: {
+      paddingTop: STATE_BLOCK_TOP_INSET,
+      paddingHorizontal: spacing[8],
+      gap: spacing[2],
+    },
+    stateTitle: {
+      marginTop: spacing[3],
+      opacity: 0.6,
+      textAlign: 'center',
+    },
+    stateSubtitle: {
+      opacity: 0.4,
+      textAlign: 'center',
+    },
+    stateCta: {
+      marginTop: spacing[3],
+      fontWeight: '600',
+    },
+    footer: {
+      paddingVertical: spacing[4],
+      alignItems: 'center',
+    },
+    footerError: {
+      textAlign: 'center',
+    },
+    footerRetry: {
+      marginTop: spacing[1],
+      fontWeight: '600',
+    },
+  });

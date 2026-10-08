@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // The accessory bar's leading board-control element. It is both the connection
 // STATUS (so a climber can tell at a glance whether they're driving the wall —
 // the user-testing gap) and the connect CONTROL, mirroring the in-drawer
@@ -19,7 +20,7 @@
 // bulb; the Live Activity keeps reading the narrower BLE-only value.
 
 import { useCallback } from 'react';
-import { Platform, Pressable, StyleSheet, type AccessibilityActionEvent } from 'react-native';
+import { Platform, StyleSheet, type AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
@@ -123,7 +124,7 @@ export function BoardControlIndicator({
     enableLongPress && localConnected ? [{ name: 'longpress', label: t('ble.holdForControls') }] : undefined;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       onLongPress={enableLongPress ? handleLongPress : undefined}
       accessibilityRole="button"
@@ -141,8 +142,8 @@ export function BoardControlIndicator({
         pressed ? styles.pressed : null,
       ]}
     >
-      <Icon name={visual.iconName} size={iconSize} color={visual.iconColor} />
-    </Pressable>
+      <Icon maxFontSizeMultiplier={1} name={visual.iconName} size={iconSize} color={visual.iconColor} />
+    </PressableSurface>
   );
 }
 

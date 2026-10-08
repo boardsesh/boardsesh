@@ -897,6 +897,18 @@
     },
     "project": {
       "chip": "Project"
+    },
+    "boardAccessibility": {
+      "summary": "Board: {{starting}} start holds, {{hand}} hand holds, {{finish}} finish holds, {{foot}} foot holds.",
+      "adjustHint": "Swipe up or down to change climb.",
+      "next": "Next climb",
+      "previous": "Previous climb",
+      "hold": "Hold {{id}}, {{role}}",
+      "unlit": "unlit",
+      "paintHint": "Tap to paint with the selected brush. Actions can choose a role.",
+      "chooseRole": "Choose hold role",
+      "showList": "Choose holds from a list",
+      "showBoard": "Back to the board"
     }
   },
   "frontDoor": {

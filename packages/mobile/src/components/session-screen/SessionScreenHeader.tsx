@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { StyleSheet, View } from 'react-native';
 import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -89,7 +90,7 @@ export function SessionScreenHeader({
       {onShare || onEndSession ? (
         <View style={styles.rightCluster}>
           {onShare ? (
-            <Pressable
+            <PressableSurface
               onPress={onShare}
               hitSlop={12}
               accessibilityRole="button"
@@ -107,21 +108,26 @@ export function SessionScreenHeader({
                   {t('mobile.session.inviteAction')}
                 </Text>
               ) : null}
-              <Icon name="share" size={22} color={systemColors.label} />
-            </Pressable>
+              <Icon maxFontSizeMultiplier={1} name="share" size={22} color={systemColors.label} />
+            </PressableSurface>
           ) : null}
           {onEndSession ? (
             // Icon + word, matching the Stop pill in RecordTopChrome — the two
             // surfaces show the same control for the same action, so neither can
             // be the one a climber has to guess at.
-            <Pressable
+            <PressableSurface
               onPress={onEndSession}
               hitSlop={12}
               accessibilityRole="button"
               accessibilityLabel={exitLabel}
               style={styles.exitButton}
             >
-              <Icon name={isLeaveExit ? 'leave.session' : 'flag'} size={22} color={exitTint} />
+              <Icon
+                maxFontSizeMultiplier={1}
+                name={isLeaveExit ? 'leave.session' : 'flag'}
+                size={22}
+                color={exitTint}
+              />
               <Text
                 variant="subheadline"
                 color={exitTint}
@@ -133,7 +139,7 @@ export function SessionScreenHeader({
               >
                 {exitActionLabel}
               </Text>
-            </Pressable>
+            </PressableSurface>
           ) : null}
         </View>
       ) : (
@@ -175,7 +181,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     minWidth: 40,
     height: 40,
-    paddingLeft: spacing[2],
+    paddingStart: spacing[2],
   },
   shareLabel: {
     fontWeight: '600',
@@ -189,7 +195,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     minWidth: 40,
     height: 40,
-    paddingLeft: spacing[2],
+    paddingStart: spacing[2],
   },
   exitLabel: {
     fontWeight: '600',

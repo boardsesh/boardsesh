@@ -1,4 +1,5 @@
-import { View, Pressable, StyleSheet } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { View, StyleSheet } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { glassSize } from '../../theme/layout';
@@ -51,16 +52,16 @@ export function InlineConfirmBanner({
         </Text>
       </View>
       <View style={styles.actions}>
-        <Pressable onPress={onCancel} accessibilityRole="button" hitSlop={8} style={styles.action}>
+        <PressableSurface onPress={onCancel} accessibilityRole="button" hitSlop={8} style={styles.action}>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {cancelLabel}
           </Text>
-        </Pressable>
-        <Pressable onPress={onConfirm} accessibilityRole="button" hitSlop={8} style={styles.action}>
+        </PressableSurface>
+        <PressableSurface onPress={onConfirm} accessibilityRole="button" hitSlop={8} style={styles.action}>
           <Text variant="footnote" color={brandColors.error}>
             {confirmLabel}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     </View>
   );

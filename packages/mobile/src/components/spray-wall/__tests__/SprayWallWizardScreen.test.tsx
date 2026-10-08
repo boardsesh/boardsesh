@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 0 }));
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The add-a-wall wizard, mounted (epic #5346, SW-09b).
 //
@@ -87,7 +101,12 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   Pressable: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
-  StyleSheet: { hairlineWidth: 1, absoluteFillObject: {}, create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    hairlineWidth: 1,
+    absoluteFillObject: {},
+    create: (styles: unknown) => styles,
+  },
   View: ({ children }: { children?: ReactNode }) => createElement('div', {}, children),
   useWindowDimensions: () => ({ width: 400, height: 800 }),
 }));
@@ -124,11 +143,13 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: stableT, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 },
   borderRadius: { lg: 12 },
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { background: '#000', secondaryLabel: '#888', tertiaryLabel: '#666', separator: '#222' },
   }),

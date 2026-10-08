@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { createElement, type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,7 +51,11 @@ vi.mock('react-native', () => ({
       renderedChildren,
     );
   },
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 // The sheet commits the draft on close (there's no Apply button). The component
@@ -160,6 +177,7 @@ vi.mock('../../Text', () => ({
 vi.mock('../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: [] }) }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { fill: '#eee', label: '#111', secondaryLabel: '#666', separator: '#ccc' },
     brandColors: { primary: '#6D28D9', accent: '#FFB000', onPrimary: '#fff' },
@@ -171,6 +189,7 @@ vi.mock('../../../theme/ios-colors', () => ({
   iosSystemColors: { separator: '#ccc', systemGray: '#999', black: '#000' },
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: new Proxy({}, { get: () => 0 }),
   borderRadius: { lg: 12 },
 }));

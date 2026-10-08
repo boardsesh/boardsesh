@@ -787,3 +787,33 @@ The `with-brand-accent-color` config plugin generates a light/dark iOS
 `#C4B5FD` dark), and the app target's global accent setting. Android AppTheme
 uses the matching light/night `colorAccent`; Expo's `primaryColor` sets the same
 brand violet. These native inputs require a new binary; an OTA cannot add them.
+
+
+### Full accessibility text and board alternatives
+
+Content `Text`, native buttons, and RN inputs accept the full system text range.
+Only fixed chrome opts into an explicit cap; capped climb labels expose Large
+Content Viewer. Bold Text changes apply live and are reread on foregrounding.
+Reduce Motion and Bold Text use ref-counted external stores: one native setting
+subscription plus one foreground subscription, with revision-fenced async reads.
+PressableSurface preserves caller transforms, uses immediate opacity under Reduce
+Motion, and supplies Material ripple and semantic disabled opacity.
+Use `useTypographyStyles` for style factories so Material uses its own type scale.
+Never introduce numeric `fontSize` literals in mobile components or routes.
+
+Readable text and feed/profile columns have a 672pt maximum width on iPad.
+Logical Start/End spacing and directional SF Symbols prepare UI for RTL; board
+hold coordinates remain physical. At scales above 1.3, segmented choices become
+scrollable text-sized tabs. Native linear settings sliders commit once on release;
+nonlinear ValueSlider tracks retain their existing mapping.
+
+Boards announce the rendered hold-role counts. Play boards expose adjustable
+previous/next actions at queue boundaries. Create's “Choose holds from a list”
+switch replaces the drawing area with a virtualized list using the same paint and
+role-picker callbacks. A short fast flick commits a carousel swipe; springs use
+release velocity and retain the host's post-render handoff.
+
+Device QA remains required: iPhone/iPad AX1–AX5 plus Bold Text, VoiceOver/TalkBack
+hold editing and queue boundaries, native slider drag/accessibility commits,
+keyboard-visible form submission, RTL semantic navigation, and Reduce Motion.
+Linux typechecking/tests/bundles cannot validate UIKit/SwiftUI layout or gestures.

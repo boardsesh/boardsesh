@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -43,7 +56,11 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress, accessibilityLabel }: PressableProps) =>
     createElement('button', { onClick: onPress, 'data-row': accessibilityLabel }, children),
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 type FlatListProps = { data?: DiscoveredDevice[]; renderItem?: (info: { item: DiscoveredDevice }) => ReactNode };
@@ -72,10 +89,12 @@ vi.mock('../../SheetTopBar', () => ({
     ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { error: 'theme-error', fill: 'theme-fill' }, brandColors: { primary: '#000' } }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: new Proxy({}, { get: () => 0 }),
   borderRadius: new Proxy({}, { get: () => 0 }),
 }));

@@ -1,5 +1,9 @@
+import { opacity } from '../../theme/tokens';
+import { Text } from '../Text';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { isGoogleSignInConfigured } from '../../lib/auth';
 import { useTheme } from '../../providers/theme-provider';
@@ -28,6 +32,7 @@ export function useOAuthProviders(): OAuthProviderAvailability {
  * OAuthProviderButtons.web.tsx.
  */
 export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthProviderButtonsProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const isDark = theme.colorScheme === 'dark';
@@ -52,7 +57,7 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
         />
       ) : null}
       {providers.google ? (
-        <Pressable
+        <PressableSurface
           testID="auth-google-button"
           accessibilityRole="button"
           accessibilityLabel={t('login.providers.google')}
@@ -77,26 +82,27 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           >
             {t('login.providers.google')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  buttons: { gap: 12 },
-  // The Apple button is a native view and needs explicit dimensions or it
-  // renders nothing. Google matches it so the pair reads as one stack.
-  providerButton: { width: '100%', height: 50 },
-  googleButton: {
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-  },
-  googleLabel: { fontSize: 17, fontWeight: '600' },
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.8 },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    buttons: { gap: 12 },
+    // The Apple button is a native view and needs explicit dimensions or it
+    // renders nothing. Google matches it so the pair reads as one stack.
+    providerButton: { width: '100%', height: 50 },
+    googleButton: {
+      borderWidth: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      paddingHorizontal: 16,
+    },
+    googleLabel: { fontSize: textStyles.body.fontSize, fontWeight: '600' },
+    disabled: { opacity: opacity.disabled },
+    pressed: { opacity: 0.8 },
+  });

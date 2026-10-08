@@ -1,6 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
 import {
-  Pressable,
   View,
   StyleSheet,
   type AccessibilityActionEvent,
@@ -118,7 +118,7 @@ function PlaylistEditClimbRowComponent({
     <Animated.View style={dragAnimatedStyle} onLayout={handleRowLayout}>
       <View style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}>
         {/* Leading: red remove control */}
-        <Pressable
+        <PressableSurface
           onPress={handleRemove}
           hitSlop={8}
           accessibilityRole="button"
@@ -126,7 +126,7 @@ function PlaylistEditClimbRowComponent({
           style={({ pressed }) => [styles.controlSlot, pressed && styles.pressed]}
         >
           <Icon name="minus.circle" size={24} color={systemColors.error} />
-        </Pressable>
+        </PressableSurface>
 
         {/* Center: shared climb visual (thumbnail + name/subtitle + grade). Ascent
             status is dropped in edit mode to keep the row focused on curation. */}
@@ -154,7 +154,7 @@ function PlaylistEditClimbRowComponent({
         </GestureDetector>
       </View>
 
-      <View style={[styles.separator, { marginLeft: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
+      <View style={[styles.separator, { marginStart: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
     </Animated.View>
   );
 }

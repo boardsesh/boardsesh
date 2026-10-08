@@ -1,14 +1,8 @@
+import { Text } from './Text';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  StatusBar,
-  Dimensions,
-  useWindowDimensions,
-  type ScaledSize,
-} from 'react-native';
+import { View, StyleSheet, StatusBar, Dimensions, useWindowDimensions, type ScaledSize } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
@@ -50,6 +44,7 @@ export function FreezeDebugOverlay() {
 }
 
 function FreezeDebugOverlayInner() {
+  const styles = useTypographyStyles(createStyles);
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
   const [screen, setScreen] = useState<ScaledSize>(() => Dimensions.get('screen'));
@@ -107,12 +102,12 @@ function FreezeDebugOverlayInner() {
         <Text style={styles.title}>FREEZE DEBUG</Text>
         <Text style={styles.metrics}>{metrics}</Text>
         <View style={styles.buttonRow}>
-          <Pressable onPress={snap} style={styles.button} hitSlop={8}>
+          <PressableSurface onPress={snap} style={styles.button} hitSlop={8}>
             <Text style={styles.buttonText}>Snap</Text>
-          </Pressable>
-          <Pressable onPress={nudge} style={styles.button} hitSlop={8}>
+          </PressableSurface>
+          <PressableSurface onPress={nudge} style={styles.button} hitSlop={8}>
             <Text style={styles.buttonText}>Nudge relayout</Text>
-          </Pressable>
+          </PressableSurface>
         </View>
         {snapshots.map((snapshot) => (
           <Text key={snapshot.id} style={styles.snapshot}>
@@ -124,55 +119,56 @@ function FreezeDebugOverlayInner() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: {
-    position: 'absolute',
-    left: 8,
-    right: 8,
-    zIndex: 99999,
-    elevation: 99999,
-    alignItems: 'flex-start',
-  },
-  panel: {
-    backgroundColor: 'rgba(0, 0, 0, 0.82)',
-    borderColor: '#ff2d55',
-    borderWidth: 2,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  title: {
-    color: '#ff2d55',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  metrics: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontVariant: ['tabular-nums'],
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 6,
-  },
-  button: {
-    backgroundColor: '#ff2d55',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  snapshot: {
-    color: '#9fe7ff',
-    fontSize: 11,
-    marginTop: 3,
-    fontVariant: ['tabular-nums'],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    root: {
+      position: 'absolute',
+      left: 8,
+      right: 8,
+      zIndex: 99999,
+      elevation: 99999,
+      alignItems: 'flex-start',
+    },
+    panel: {
+      backgroundColor: 'rgba(0, 0, 0, 0.82)',
+      borderColor: '#ff2d55',
+      borderWidth: 2,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+    },
+    title: {
+      color: '#ff2d55',
+      fontSize: textStyles.caption2.fontSize,
+      fontWeight: '700',
+      letterSpacing: 1,
+      marginBottom: 2,
+    },
+    metrics: {
+      color: '#ffffff',
+      fontSize: textStyles.caption1.fontSize,
+      fontVariant: ['tabular-nums'],
+    },
+    buttonRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 6,
+    },
+    button: {
+      backgroundColor: '#ff2d55',
+      borderRadius: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    buttonText: {
+      color: '#ffffff',
+      fontSize: textStyles.caption1.fontSize,
+      fontWeight: '600',
+    },
+    snapshot: {
+      color: '#9fe7ff',
+      fontSize: textStyles.caption2.fontSize,
+      marginTop: 3,
+      fontVariant: ['tabular-nums'],
+    },
+  });

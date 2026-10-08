@@ -1,3 +1,4 @@
+import { LargeContentViewer } from './LargeContentViewer';
 // The one top bar for a sheet's actions: leading Cancel / close / back, a
 // centred title, and a trailing confirm. Passed through `ModalSheet` / `Sheet`'s
 // `header` slot, which sits above the body and outside its scroll, so the bar
@@ -179,15 +180,17 @@ export const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingBu
         accessibilityState={{ disabled }}
         style={[styles.textTarget, { minHeight: spec.iconTarget, minWidth: spec.iconTarget }]}
       >
-        <Text
-          variant="label"
-          color={look.labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={spec.labelMaxFontScale}
-          style={look.opacity < 1 ? { opacity: look.opacity } : null}
-        >
-          {label}
-        </Text>
+        <LargeContentViewer title={accessibilityLabel ?? label} onActivate={disabled ? undefined : onPress}>
+          <Text
+            variant="label"
+            color={look.labelColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={spec.labelMaxFontScale}
+            style={look.opacity < 1 ? { opacity: look.opacity } : null}
+          >
+            {label}
+          </Text>
+        </LargeContentViewer>
       </PressableSurface>
     );
   }
@@ -290,20 +293,22 @@ export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailing
       <View style={[surface, icon ? [styles.iconRow, { gap: spacing[1] }] : null]}>
         {icon ? (
           <View testID="sheet-top-bar-trailing-icon" style={[dimLabel, loading ? styles.hidden : null]}>
-            <Icon name={icon} size={TRAILING_ICON_SIZE} color={look.labelColor} />
+            <Icon maxFontSizeMultiplier={1} name={icon} size={TRAILING_ICON_SIZE} color={look.labelColor} />
           </View>
         ) : null}
         {/* The label stays in the tree while loading, only hidden, so the slot
             keeps the label's width and nothing beside it moves. */}
-        <Text
-          variant="label"
-          color={look.labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={spec.labelMaxFontScale}
-          style={[look.fontWeight ? { fontWeight: look.fontWeight } : null, dimLabel, loading ? styles.hidden : null]}
-        >
-          {label}
-        </Text>
+        <LargeContentViewer title={accessibilityLabel ?? label} onActivate={inert ? undefined : handlePress}>
+          <Text
+            variant="label"
+            color={look.labelColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={spec.labelMaxFontScale}
+            style={[look.fontWeight ? { fontWeight: look.fontWeight } : null, dimLabel, loading ? styles.hidden : null]}
+          >
+            {label}
+          </Text>
+        </LargeContentViewer>
         {loading ? (
           <View style={styles.spinner} testID="sheet-top-bar-spinner">
             <ActivityIndicator size="small" color={look.labelColor} />

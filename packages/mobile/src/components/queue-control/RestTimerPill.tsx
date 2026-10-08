@@ -19,6 +19,7 @@ import {
   type ColorValue,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
@@ -177,14 +178,16 @@ export function RestTimerClock({ variant = 'title1', color }: RestTimerClockProp
   if (!armed) return null;
 
   return (
-    <Text
-      variant={variant}
-      color={color ?? phaseColor(phase, systemColors, brandColors)}
-      maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-      style={styles.tabularDigits}
-    >
-      {displayLabel}
-    </Text>
+    <LargeContentViewer title={displayLabel}>
+      <Text
+        variant={variant}
+        color={color ?? phaseColor(phase, systemColors, brandColors)}
+        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+        style={styles.tabularDigits}
+      >
+        {displayLabel}
+      </Text>
+    </LargeContentViewer>
   );
 }
 
@@ -391,7 +394,7 @@ export function RestTimerPill({ onPress, compact = false }: RestTimerPillProps) 
         testID="rest-timer-pill"
         style={[styles.row, { height, borderRadius: height / 2 }, compact ? styles.rowCompact : null]}
       >
-        <Icon name="clock" size={glyphSize} color={systemColors.secondaryLabel} />
+        <Icon maxFontSizeMultiplier={1} name="clock" size={glyphSize} color={systemColors.secondaryLabel} />
         <Text
           variant={compact ? 'subheadline' : 'headline'}
           color={numberColor}

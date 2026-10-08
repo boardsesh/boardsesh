@@ -1,3 +1,4 @@
+import { PressableSurface } from './PressableSurface';
 import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
 import { Text } from './Text';
 import { useFullSwipe } from './use-full-swipe';
@@ -9,7 +10,6 @@ import {
 } from './swipe-action-model';
 import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
-  Pressable,
   View,
   StyleSheet,
   Platform,
@@ -101,7 +101,7 @@ function QueueSwipeActionInner({ translation }: { translation: SharedValue<numbe
         <Icon name="queue" size={26} color={iosSystemColors.white} />
       </Animated.View>
       <Animated.View style={[styles.swipeIconLayer, checkStyle]}>
-        <Icon name="tick" size={26} color={iosSystemColors.white} />
+        <Icon name="tick.fill" size={26} color={iosSystemColors.white} />
       </Animated.View>
     </View>
   );
@@ -126,7 +126,7 @@ function QueueSwipeAction({
   label: string;
 }) {
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -144,7 +144,7 @@ function QueueSwipeAction({
       <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
         {label}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -192,7 +192,7 @@ function PlaylistSwipeAction({
   label: string;
 }) {
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -206,7 +206,7 @@ function PlaylistSwipeAction({
       <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
         {label}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -702,7 +702,7 @@ const styles = StyleSheet.create({
     // Pull the 44pt target into the row's trailing gutter so the 20pt glyph's
     // edge sits on the 16pt margin, like the thumbnail on the leading side,
     // instead of 28pt in. Only the empty half of the target overlaps padding.
-    marginRight: MORE_BUTTON_GUTTER_PULL,
+    marginEnd: MORE_BUTTON_GUTTER_PULL,
   },
   moreIconRotate: {
     transform: [{ rotate: '90deg' }],

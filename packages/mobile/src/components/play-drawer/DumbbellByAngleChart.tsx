@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, View, Pressable, type LayoutChangeEvent } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import { Text } from '../Text';
@@ -140,7 +141,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
           });
 
       return (
-        <Pressable
+        <PressableSurface
           style={[styles.column, { width: slotWidth, height: CHART_HEIGHT }]}
           onPress={() => setFocusedAngle((current) => (current === row.angle ? null : row.angle))}
           accessibilityRole="button"
@@ -235,7 +236,7 @@ export const DumbbellByAngleChart = memo(function DumbbellByAngleChart({
               ]}
             />
           ) : null}
-        </Pressable>
+        </PressableSurface>
       );
     },
     [focusedAngle, slotWidth, localY, neutralStroke, diamondEdge, chartColors.tertiaryLabel, chartColors.separator, t],

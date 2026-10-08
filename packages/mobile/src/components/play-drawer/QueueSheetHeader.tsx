@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { ChromeIconButton } from '../ChromeIconButton';
@@ -49,7 +50,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
     return (
       <View style={styles.container}>
         <View style={styles.leftSection}>
-          <Pressable
+          <PressableSurface
             onPress={onClearAll}
             accessibilityRole="button"
             accessibilityLabel={t('queueDrawer.clear')}
@@ -63,7 +64,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             >
               {t('queueDrawer.clear')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
 
         <View style={styles.centerSection}>

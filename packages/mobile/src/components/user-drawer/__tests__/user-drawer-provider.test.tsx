@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
@@ -43,7 +56,12 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
   }) => createElement('button', { 'aria-label': accessibilityLabel, onClick: onPress, type: 'button' }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { absoluteFill: {}, create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    absoluteFill: {},
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
   useWindowDimensions: () => ({ width: 390 }),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -169,6 +187,7 @@ vi.mock('../../../hooks/use-confirm-sign-out', () => ({
   useConfirmSignOut: () => confirmSignOutMock,
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { error: '#c00', primary: '#6D28D9' },
     systemColors: {
@@ -182,6 +201,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   borderRadius: { lg: 12 },
   overlays: { scrim: 'rgba(0,0,0,0.4)' },
   shadows: { lg: {} },

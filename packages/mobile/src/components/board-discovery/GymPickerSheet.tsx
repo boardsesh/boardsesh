@@ -1,3 +1,5 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 // Picks the gym a board sits in, so it lands on the map under that gym instead
 // of as a lone pin. Before #4166 mobile never set `gymUuid` at all and a board's
 // only tie to a place was a free-text location name.
@@ -8,7 +10,7 @@
 // would bypass those and become a fresh source of duplicate gyms.
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetFlatList, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
@@ -61,6 +63,7 @@ const GymRow = memo(function GymRow({
   isSelected: boolean;
   onSelect: (gym: Gym) => void;
 }) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors, brandColors } = useTheme();
   const handlePress = useCallback(() => {
     hapticLight();
@@ -68,7 +71,7 @@ const GymRow = memo(function GymRow({
   }, [gym, onSelect]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected }}
@@ -88,7 +91,7 @@ const GymRow = memo(function GymRow({
         ) : null}
       </View>
       {isSelected ? <Icon name="check.small" size={20} color={brandColors.primary} /> : null}
-    </Pressable>
+    </PressableSurface>
   );
 });
 
@@ -100,6 +103,7 @@ export function GymPickerSheet({
   onRequestManualLocation,
   onDismiss,
 }: GymPickerSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const [search, setSearch] = useState('');
@@ -180,7 +184,7 @@ export function GymPickerSheet({
         </Text>
       </View>
 
-      <Pressable
+      <PressableSurface
         onPress={handleSelectNone}
         accessibilityRole="button"
         accessibilityState={{ selected: selectedUuid == null }}
@@ -198,9 +202,9 @@ export function GymPickerSheet({
           </Text>
         </View>
         {selectedUuid == null ? <Icon name="check.small" size={20} color={brandColors.primary} /> : null}
-      </Pressable>
+      </PressableSurface>
 
-      <Pressable
+      <PressableSurface
         onPress={handleRequestManualLocation}
         accessibilityRole="button"
         style={({ pressed }) => [
@@ -218,7 +222,7 @@ export function GymPickerSheet({
           </Text>
         </View>
         <Icon name="plus" size={20} color={brandColors.primary} />
-      </Pressable>
+      </PressableSurface>
 
       {needsLocation ? (
         <View style={styles.centerState}>
@@ -259,53 +263,54 @@ export function GymPickerSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  intro: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[2],
-  },
-  centered: {
-    textAlign: 'center',
-  },
-  searchWrapper: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
-    gap: spacing[2],
-  },
-  searchInput: {
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    fontSize: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-  lastFixedRow: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  rowText: {
-    flex: 1,
-    gap: 2,
-  },
-  centerState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[3],
-    paddingVertical: spacing[8],
-    paddingHorizontal: spacing[6],
-  },
-  list: {
-    flex: 1,
-  },
-  listContent: {
-    paddingTop: spacing[1],
-    paddingBottom: spacing[4],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    intro: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[3],
+      paddingBottom: spacing[2],
+    },
+    centered: {
+      textAlign: 'center',
+    },
+    searchWrapper: {
+      paddingHorizontal: spacing[4],
+      paddingBottom: spacing[2],
+      gap: spacing[2],
+    },
+    searchInput: {
+      borderRadius: borderRadius.md,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      fontSize: textStyles.callout.fontSize,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+    },
+    lastFixedRow: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+    },
+    rowText: {
+      flex: 1,
+      gap: 2,
+    },
+    centerState: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing[3],
+      paddingVertical: spacing[8],
+      paddingHorizontal: spacing[6],
+    },
+    list: {
+      flex: 1,
+    },
+    listContent: {
+      paddingTop: spacing[1],
+      paddingBottom: spacing[4],
+    },
+  });

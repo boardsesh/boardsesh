@@ -1,8 +1,9 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -130,6 +131,7 @@ export function InlinePlaylistPicker({
   ListComponent = FlatList,
   onDetachedFailure,
 }: InlinePlaylistPickerProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
   const { t: tc } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -488,7 +490,7 @@ export function InlinePlaylistPicker({
     <View style={[styles.container, maxHeight != null ? { maxHeight } : null]}>
       <View style={styles.header} onLayout={onHeaderLayout}>
         {onBack ? (
-          <Pressable
+          <PressableSurface
             onPress={onBack}
             accessibilityRole="button"
             accessibilityLabel={tc('actions.back')}
@@ -496,7 +498,7 @@ export function InlinePlaylistPicker({
             style={styles.backButton}
           >
             <Icon name="chevron.left" size={20} color={systemColors.label} />
-          </Pressable>
+          </PressableSurface>
         ) : (
           <Icon name="playlist" size={20} color={systemColors.accent} />
         )}
@@ -504,7 +506,7 @@ export function InlinePlaylistPicker({
           {t('actions.playlist.popover.title')}
         </Text>
         {isAuthenticated && !createOpen ? (
-          <Pressable
+          <PressableSurface
             onPress={handleOpenCreate}
             accessibilityRole="button"
             accessibilityLabel={t('actions.playlist.popover.createNew')}
@@ -512,7 +514,7 @@ export function InlinePlaylistPicker({
             style={[styles.createButton, { backgroundColor: systemColors.fill }]}
           >
             <Icon name="plus" size={18} color={brandColors.primary} />
-          </Pressable>
+          </PressableSurface>
         ) : null}
       </View>
 
@@ -544,7 +546,7 @@ export function InlinePlaylistPicker({
               {PLAYLIST_COLORS.map((swatch) => {
                 const selected = color === swatch;
                 return (
-                  <Pressable
+                  <PressableSurface
                     key={swatch}
                     onPress={() => setColor(selected ? undefined : swatch)}
                     accessibilityRole="button"
@@ -556,7 +558,7 @@ export function InlinePlaylistPicker({
                     ]}
                   >
                     {selected ? <Icon name="check.small" size={14} color={iosSystemColors.white} /> : null}
-                  </Pressable>
+                  </PressableSurface>
                 );
               })}
             </View>
@@ -564,7 +566,7 @@ export function InlinePlaylistPicker({
               {QUICK_EMOJI.map((preset) => {
                 const selected = icon === preset;
                 return (
-                  <Pressable
+                  <PressableSurface
                     key={preset}
                     onPress={() => setIcon(selected ? undefined : preset)}
                     accessibilityRole="button"
@@ -578,7 +580,7 @@ export function InlinePlaylistPicker({
                     <Text style={styles.emoji} allowFontScaling={false}>
                       {preset}
                     </Text>
-                  </Pressable>
+                  </PressableSurface>
                 );
               })}
             </View>
@@ -656,95 +658,96 @@ export function InlinePlaylistPicker({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    width: '100%',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[2],
-  },
-  backButton: {
-    width: spacing[6],
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-  },
-  createButton: {
-    width: spacing[8],
-    height: spacing[8],
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  createForm: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
-    gap: spacing[3],
-  },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  swatchRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[3],
-  },
-  swatch: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchSelected: {
-    borderWidth: 3,
-    borderColor: iosSystemColors.white,
-  },
-  emojiRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  emojiChip: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emojiChipSelected: {
-    borderWidth: 2,
-  },
-  emoji: {
-    fontSize: 20,
-  },
-  createActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: spacing[3],
-    marginTop: spacing[1],
-  },
-  message: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing[6],
-    paddingHorizontal: spacing[4],
-  },
-  errorText: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[3],
+      paddingBottom: spacing[2],
+    },
+    backButton: {
+      width: spacing[6],
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+    },
+    headerTitle: {
+      flex: 1,
+    },
+    createButton: {
+      width: spacing[8],
+      height: spacing[8],
+      borderRadius: borderRadius.full,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    createForm: {
+      paddingHorizontal: spacing[4],
+      paddingBottom: spacing[3],
+      gap: spacing[3],
+    },
+    input: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: 10,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    swatchRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing[3],
+    },
+    swatch: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    swatchSelected: {
+      borderWidth: 3,
+      borderColor: iosSystemColors.white,
+    },
+    emojiRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing[2],
+    },
+    emojiChip: {
+      width: 38,
+      height: 38,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emojiChipSelected: {
+      borderWidth: 2,
+    },
+    emoji: {
+      fontSize: textStyles.title3.fontSize,
+    },
+    createActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: spacing[3],
+      marginTop: spacing[1],
+    },
+    message: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: spacing[6],
+      paddingHorizontal: spacing[4],
+    },
+    errorText: {
+      paddingHorizontal: spacing[4],
+      paddingBottom: spacing[2],
+    },
+  });

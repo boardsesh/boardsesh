@@ -170,7 +170,7 @@ export function RecordTopChrome({
               accessibilityLabel={exitLabel}
               style={[styles.materialExitAction, { borderRadius: radii.button }]}
             >
-              <Icon name={exitIcon} size={20} color={exitTint} />
+              <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
               <Text
                 variant="subheadline"
                 color={exitTint}
@@ -196,7 +196,7 @@ export function RecordTopChrome({
   const inSession = onEndSession !== undefined;
   const leadingAction = onShare ? (
     <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
-      <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+      <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={22} color={systemColors.label} />
     </GlassToolbarAction>
   ) : undefined;
   // Stop is a labelled glass pill (icon + "Stop"), not an icon-only slot, so it reads
@@ -211,7 +211,7 @@ export function RecordTopChrome({
       accessibilityLabel={exitLabel}
       style={styles.glassExitAction}
     >
-      <Icon name={exitIcon} size={20} color={exitTint} />
+      <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
       <Text
         variant="subheadline"
         color={exitTint}
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     paddingHorizontal: spacing[3],
     height: MATERIAL_EXIT_HEIGHT,
-    marginRight: spacing[1],
+    marginEnd: spacing[1],
     overflow: 'hidden',
   },
   exitLabel: {

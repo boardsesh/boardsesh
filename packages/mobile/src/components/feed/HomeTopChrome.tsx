@@ -144,7 +144,7 @@ function HomeTopChromeGlass({
           <GlassActionToolbar actionCount={2}>
             <NotificationsToolbarAction variant="glass" onPress={handleOpenNotifications} />
             <GlassToolbarAction onPress={onOpenSearch} accessibilityLabel={searchAccessibilityLabel}>
-              <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+              <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={22} color={systemColors.label} />
             </GlassToolbarAction>
           </GlassActionToolbar>
         </View>

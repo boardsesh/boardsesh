@@ -1,4 +1,13 @@
 // @vitest-environment jsdom
+// Native magnification has its own wrapper tests; keep bar-geometry assertions on the bar.
+vi.mock('../LargeContentViewer', () => ({
+  LargeContentViewer: ({ children }: { children: React.ReactNode }) => children,
+}));
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -16,7 +25,11 @@ vi.mock('react-native', () => ({
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
     createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style)) }, children),
-  StyleSheet: { create: (sheet: Record<string, unknown>) => sheet, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (sheet: Record<string, unknown>) => sheet,
+    hairlineWidth: 1,
+  },
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => `t:${key}` }) }));

@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { GymMemberRole } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -45,6 +47,7 @@ function roleLabel(role: GymMemberRole, t: TranslateFn): string {
  * screen's toast (the surface is a pushed route, not a modal sheet).
  */
 export function GymWriteAccessSection({ gymUuid }: { gymUuid: string }) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -230,64 +233,65 @@ export function GymWriteAccessSection({ gymUuid }: { gymUuid: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  section: {
-    marginTop: spacing[6],
-  },
-  sectionLabel: {
-    marginBottom: spacing[1],
-    textTransform: 'uppercase',
-  },
-  rosterLabel: {
-    marginTop: spacing[5],
-  },
-  description: {
-    marginBottom: spacing[3],
-  },
-  searchField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    minHeight: 42,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 0,
-  },
-  clearButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -spacing[3],
-  },
-  card: {
-    marginTop: spacing[2],
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-  },
-  personRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-  },
-  personText: {
-    flex: 1,
-  },
-  actionButton: {
-    minHeight: 44,
-  },
-  searchState: {
-    paddingVertical: spacing[4],
-    alignItems: 'center',
-  },
-  emptyResults: {
-    marginTop: spacing[2],
-    paddingHorizontal: spacing[1],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    section: {
+      marginTop: spacing[6],
+    },
+    sectionLabel: {
+      marginBottom: spacing[1],
+      textTransform: 'uppercase',
+    },
+    rosterLabel: {
+      marginTop: spacing[5],
+    },
+    description: {
+      marginBottom: spacing[3],
+    },
+    searchField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      minHeight: 42,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: textStyles.body.fontSize,
+      paddingVertical: 0,
+    },
+    clearButton: {
+      minWidth: 44,
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginEnd: -spacing[3],
+    },
+    card: {
+      marginTop: spacing[2],
+      borderRadius: borderRadius.lg,
+      overflow: 'hidden',
+    },
+    personRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+    },
+    personText: {
+      flex: 1,
+    },
+    actionButton: {
+      minHeight: 44,
+    },
+    searchState: {
+      paddingVertical: spacing[4],
+      alignItems: 'center',
+    },
+    emptyResults: {
+      marginTop: spacing[2],
+      paddingHorizontal: spacing[1],
+    },
+  });

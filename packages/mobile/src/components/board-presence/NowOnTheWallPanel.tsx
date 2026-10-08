@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // Now-on-the-wall panel — the board-presence "now on the wall" content, factored
 // out of BoardSheet so it can render either inside the native BottomSheetModal
 // (variant 'sheet', using `@expo/ui`'s BottomSheetFlatList) or as a standalone
@@ -22,7 +23,7 @@ import {
   useState,
   type Ref,
 } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, View, type ColorValue } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -807,7 +808,7 @@ function NowOnTheWallPanelComponent(
           <ActivityIndicator size="small" accessibilityLabel={t('mobile.boardPresence.loadingMore')} />
         </View>
       ) : hasMore ? (
-        <Pressable
+        <PressableSurface
           onPress={loadOlder}
           accessibilityRole="button"
           accessibilityLabel={loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
@@ -816,7 +817,7 @@ function NowOnTheWallPanelComponent(
           <Text variant="subheadline" color={brandColors.primary}>
             {loadError ? t('mobile.boardPresence.retryHistory') : t('mobile.boardPresence.loadMore')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ) : null,
     [isLoadingOlder, t, hasMore, loadOlder, loadError, brandColors.primary],
   );
@@ -840,7 +841,7 @@ function NowOnTheWallPanelComponent(
     <>
       <View style={[styles.header, { borderBottomColor: systemColors.separator, paddingTop: headerTopPadding }]}>
         {onClose ? (
-          <Pressable
+          <PressableSurface
             onPress={handleClose}
             hitSlop={8}
             accessibilityRole="button"
@@ -848,7 +849,7 @@ function NowOnTheWallPanelComponent(
             style={styles.headerAction}
           >
             <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
-          </Pressable>
+          </PressableSurface>
         ) : (
           <View pointerEvents="none" style={styles.headerAction} />
         )}
@@ -860,7 +861,7 @@ function NowOnTheWallPanelComponent(
           // a dead spacer holding the title centred — so the switch costs no
           // vertical space at all. A transfer glyph, not a caret: this moves you
           // to another board rather than revealing more of this one.
-          <Pressable
+          <PressableSurface
             onPress={toggleGymWalls}
             hitSlop={8}
             accessibilityRole="button"
@@ -880,7 +881,7 @@ function NowOnTheWallPanelComponent(
               size={20}
               color={gymWallsExpanded ? brandColors.primary : systemColors.secondaryLabel}
             />
-          </Pressable>
+          </PressableSurface>
         ) : (
           <View pointerEvents="none" style={styles.headerAction} />
         )}
@@ -924,7 +925,7 @@ function NowOnTheWallPanelComponent(
         />
       )}
 
-      <Pressable
+      <PressableSurface
         onPress={handleSwitchBoard}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.boardPresence.switchBoardAria')}
@@ -957,7 +958,7 @@ function NowOnTheWallPanelComponent(
           ) : null}
         </View>
         <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
-      </Pressable>
+      </PressableSurface>
     </>
   );
 }
@@ -1414,7 +1415,7 @@ function HardestSendRow({
           size={34}
         />
         <View style={[styles.crownBadge, { backgroundColor: withAlpha(crownColor, 0.18) }]}>
-          <Icon name="crown" size={11} color={crownColor} />
+          <Icon name="crown.fill" size={11} color={crownColor} />
         </View>
       </View>
       <View style={styles.hardestBody}>

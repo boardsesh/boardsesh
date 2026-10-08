@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile, UserSearchResult } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -142,7 +143,7 @@ export function ClimberSearchErrorState({ onRetry }: { onRetry: () => void }) {
       <Text variant="headline" style={styles.stateTitle}>
         {t('mobile.social.loadError')}
       </Text>
-      <Pressable
+      <PressableSurface
         onPress={onRetry}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.social.retry')}
@@ -155,7 +156,7 @@ export function ClimberSearchErrorState({ onRetry }: { onRetry: () => void }) {
         <Text variant="footnote" color={brandColors.primary}>
           {t('mobile.social.retry')}
         </Text>
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 }

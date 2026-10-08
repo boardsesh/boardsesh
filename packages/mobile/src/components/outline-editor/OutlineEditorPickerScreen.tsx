@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { type BoardName } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
@@ -100,7 +101,7 @@ export function OutlineEditorPickerScreen() {
     rows.map((row) => {
       const isSelected = selectedId === row.id;
       return (
-        <Pressable
+        <PressableSurface
           key={row.key}
           onPress={() => onSelect(row.id)}
           accessibilityRole="button"
@@ -119,7 +120,7 @@ export function OutlineEditorPickerScreen() {
               {row.detail}
             </Text>
           ) : null}
-        </Pressable>
+        </PressableSurface>
       );
     });
 
@@ -136,7 +137,7 @@ export function OutlineEditorPickerScreen() {
         {boardRows.map((row) => {
           const isSelected = boardName === row.detail;
           return (
-            <Pressable
+            <PressableSurface
               key={row.key}
               onPress={() => handleSelectBoard(row.key as BoardName)}
               accessibilityRole="button"
@@ -150,7 +151,7 @@ export function OutlineEditorPickerScreen() {
               ]}
             >
               <Text variant="body">{row.label}</Text>
-            </Pressable>
+            </PressableSurface>
           );
         })}
       </View>

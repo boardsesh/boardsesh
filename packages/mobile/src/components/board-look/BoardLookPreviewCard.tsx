@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo } from 'react';
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -252,7 +252,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
               holds the climber is finally big enough to compare. */}
           {selected && style.showActiveBadge ? (
             <View testID="board-look-active-badge" style={[styles.activeBadge, { backgroundColor: scrimColor }]}>
-              <Icon name="tick" size={11} color={scrimLabel} />
+              <Icon name="tick.fill" size={11} color={scrimLabel} />
               <Text
                 variant="caption2"
                 color={scrimLabel}
@@ -268,7 +268,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
               selected card only — invisible to assistive tech, a 19pt target, and
               absent from exactly the card you most want a closer look at: one you
               have not chosen yet. */}
-          <Pressable
+          <PressableSurface
             testID="board-look-expand-badge"
             accessibilityRole="button"
             accessibilityLabel={t('mobile.settings.boardLook.presets.showFullSize', { look: label })}
@@ -280,7 +280,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
             ]}
           >
             <Icon name="expand" size={style.expandIcon} color={scrimLabel} />
-          </Pressable>
+          </PressableSurface>
         </View>
 
         {/* `alignSelf: 'stretch'` is what makes the centring work: the container

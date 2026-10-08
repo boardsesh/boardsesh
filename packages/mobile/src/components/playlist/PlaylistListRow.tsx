@@ -117,6 +117,6 @@ export const PlaylistListRowSeparator = memo(function PlaylistListRowSeparator()
 const separatorStyles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4] + THUMB_SIZE + spacing[3],
+    marginStart: spacing[4] + THUMB_SIZE + spacing[3],
   },
 });

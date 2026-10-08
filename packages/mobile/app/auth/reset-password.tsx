@@ -1,5 +1,8 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { Text } from '../../src/components/Text';
+import { useTypographyStyles, type TypographyScale } from '../../src/hooks/use-typography-styles';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../src/lib/auth-validation';
@@ -12,6 +15,8 @@ import { reportError } from '../../src/lib/error-reporting';
 import { track } from '../../src/lib/analytics';
 
 export default function ResetPasswordScreen() {
+  const headerHeight = useHeaderHeight();
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
@@ -78,7 +83,11 @@ export default function ResetPasswordScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: true, title: t('resetPassword.heading') }} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        keyboardVerticalOffset={headerHeight}
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.container}
@@ -179,12 +188,21 @@ export default function ResetPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, paddingTop: 16 },
-  description: { fontSize: 15, lineHeight: 22, marginBottom: 24 },
-  form: { gap: 12 },
-  submitButton: { alignSelf: 'stretch', marginTop: 4 },
-  errorText: { fontSize: 15 },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  invalidLinkText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: { width: '100%', maxWidth: 672, alignSelf: 'center', flexGrow: 1, padding: 24, paddingTop: 16 },
+    description: {
+      fontSize: textStyles.subheadline.fontSize,
+      lineHeight: textStyles.subheadline.lineHeight,
+      marginBottom: 24,
+    },
+    form: { gap: 12 },
+    submitButton: { alignSelf: 'stretch', marginTop: 4 },
+    errorText: { fontSize: textStyles.subheadline.fontSize },
+    errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+    invalidLinkText: {
+      fontSize: textStyles.body.fontSize,
+      textAlign: 'center',
+      lineHeight: textStyles.body.lineHeight,
+    },
+  });

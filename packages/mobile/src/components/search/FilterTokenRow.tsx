@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // The "receipt" for the persistent filter-chip row: one removable pill per active
 // filter, built from the existing getActiveFilterTokens output ({key,label,clear}).
 // Tapping a pill clears just that one field. Rendered only when ≥1 filter is
@@ -5,7 +6,7 @@
 // the chrome, so the active filters show exactly once.
 
 import { memo } from 'react';
-import { ScrollView, Pressable, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -22,7 +23,7 @@ function TokenPill({ token }: { token: FilterToken }) {
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
   return (
-    <Pressable
+    <PressableSurface
       onPress={() => {
         hapticSelection();
         token.clear();
@@ -36,7 +37,7 @@ function TokenPill({ token }: { token: FilterToken }) {
         {token.label}
       </Text>
       <Icon name="close" size={14} color={systemColors.secondaryLabel} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -67,8 +68,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[1],
-    paddingLeft: spacing[3],
-    paddingRight: spacing[2],
+    paddingStart: spacing[3],
+    paddingEnd: spacing[2],
     paddingVertical: spacing[2],
     borderRadius: 20,
     borderWidth: 1,

@@ -63,7 +63,7 @@ export function NotificationsToolbarAction({ variant, onPress }: NotificationsTo
 
   return (
     <GlassToolbarAction onPress={handlePress} accessibilityLabel={accessibilityLabel}>
-      <Icon name="notification" size={22} color={systemColors.label} />
+      <Icon maxFontSizeMultiplier={1} name="notification" size={22} color={systemColors.label} />
       {unreadCount > 0 ? (
         // Nudged inward (top/right 2) so the island's rounded corner can't crop
         // the dot — same geometry as BoardToolbarAction's onboarding cue.

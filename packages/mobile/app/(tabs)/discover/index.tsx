@@ -1,6 +1,7 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, RefreshControl, ScrollView, StyleSheet } from 'react-native';
+import { View, RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
@@ -651,7 +652,7 @@ export default function DiscoverLibrary() {
         </Text>
 
         {showSignInPrompt ? (
-          <Pressable
+          <PressableSurface
             style={[styles.signInBanner, { borderColor: systemColors.separator }]}
             onPress={() => router.push('/auth/login')}
             accessibilityRole="button"
@@ -668,7 +669,7 @@ export default function DiscoverLibrary() {
             <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
               {t('library.signInBanner.cta')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         ) : null}
 
         {/* Pinned — dense grid capped at four rows of two. */}
@@ -769,7 +770,7 @@ export default function DiscoverLibrary() {
             <Text variant="subheadline" style={styles.emptySubtitle}>
               {t('library.errors.loadDescription')}
             </Text>
-            <Pressable
+            <PressableSurface
               onPress={handleRetryLoad}
               accessibilityRole="button"
               accessibilityLabel={t('library.errors.tryAgain')}
@@ -778,7 +779,7 @@ export default function DiscoverLibrary() {
               <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
                 {t('library.errors.tryAgain')}
               </Text>
-            </Pressable>
+            </PressableSurface>
           </View>
         ) : null}
 
@@ -891,7 +892,7 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: '50%',
-    paddingRight: spacing[3],
+    paddingEnd: spacing[3],
   },
   signInBanner: {
     flexDirection: 'row',

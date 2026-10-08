@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The connect-step pill (#5654, PR 7, treatment only): the play view's bulb
 // with a label, and the hook that decides when it replaces the bulb.
@@ -36,7 +49,10 @@ vi.mock('react-native', () => ({
       { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'aria-busy': accessibilityState?.busy },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+  },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -60,10 +76,12 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ brandColors: { primaryFill: '#6D28D9', onPrimary: '#fff' } }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: hapticMock }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   androidRipple: () => ({ color: '#fff', borderless: false }),
   spacing: { 2: 8, 4: 16 },
 }));

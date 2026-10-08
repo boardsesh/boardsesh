@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 // MoreForm — web implementation (react-native-web + react-native-paper). The main
 // "More" settings screen, rendered from the same plain `MoreFormModel` the native
 // files consume. Structurally follows MoreForm.android.tsx: each section is an
@@ -45,6 +46,7 @@ const MORE_ICON: Record<MoreIconName, string> = {
 };
 
 function SelectRow({ row }: { row: MoreSelectRow }) {
+  const styles = useTypographyStyles(createStyles);
   const [visible, setVisible] = useState(false);
   const { systemColors } = useTheme();
   const currentLabel = selectedOptionLabel(row.options, row.selectedKey);
@@ -76,7 +78,8 @@ function SelectRow({ row }: { row: MoreSelectRow }) {
   );
 }
 
-function renderRow(row: MoreRow): ReactNode {
+function RenderRow({ row }: { row: MoreRow }): ReactNode {
+  const styles = useTypographyStyles(createStyles);
   switch (row.kind) {
     case 'nav':
       return (
@@ -178,6 +181,7 @@ function renderRow(row: MoreRow): ReactNode {
 }
 
 export function MoreForm({ model }: MoreFormProps) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
 
   return (
@@ -192,13 +196,13 @@ export function MoreForm({ model }: MoreFormProps) {
               </Text>
             ) : null}
             {allButtons ? (
-              section.rows.map((row) => renderRow(row))
+              section.rows.map((row) => <RenderRow key={row.key} row={row} />)
             ) : (
               <Surface style={styles.card} elevation={1}>
                 {section.rows.map((row, index) => (
                   <View key={row.key}>
                     {index > 0 ? <Divider /> : null}
-                    {renderRow(row)}
+                    {<RenderRow key={row.key} row={row} />}
                   </View>
                 ))}
               </Surface>
@@ -215,75 +219,76 @@ export function MoreForm({ model }: MoreFormProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing[4],
-    paddingBottom: spacing[10],
-    gap: spacing[3],
-  },
-  section: {
-    gap: spacing[2],
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.7,
-  },
-  sectionFooter: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  card: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  trailing: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  badge: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  selectValue: {
-    alignSelf: 'center',
-    fontSize: 15,
-  },
-  segmentedRow: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-  sliderRow: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  customRow: {
-    paddingHorizontal: spacing[4],
-  },
-  infoRow: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    gap: spacing[1],
-  },
-  infoLabel: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  infoBody: {
-    fontSize: 14,
-  },
-  infoDetail: {
-    fontSize: 11,
-    opacity: 0.6,
-  },
-  buttonRow: {
-    paddingVertical: spacing[1],
-  },
-  fullWidth: {
-    alignSelf: 'stretch',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    scroll: {
+      flex: 1,
+    },
+    content: {
+      padding: spacing[4],
+      paddingBottom: spacing[10],
+      gap: spacing[3],
+    },
+    section: {
+      gap: spacing[2],
+    },
+    sectionTitle: {
+      fontSize: textStyles.footnote.fontSize,
+      fontWeight: '600',
+      opacity: 0.7,
+    },
+    sectionFooter: {
+      fontSize: textStyles.caption1.fontSize,
+      opacity: 0.6,
+    },
+    card: {
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    trailing: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+    },
+    badge: {
+      fontSize: textStyles.caption1.fontSize,
+      fontWeight: '600',
+    },
+    selectValue: {
+      alignSelf: 'center',
+      fontSize: textStyles.subheadline.fontSize,
+    },
+    segmentedRow: {
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+    },
+    sliderRow: {
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[2],
+    },
+    customRow: {
+      paddingHorizontal: spacing[4],
+    },
+    infoRow: {
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      gap: spacing[1],
+    },
+    infoLabel: {
+      fontSize: textStyles.caption1.fontSize,
+      opacity: 0.6,
+    },
+    infoBody: {
+      fontSize: textStyles.subheadline.fontSize,
+    },
+    infoDetail: {
+      fontSize: textStyles.caption2.fontSize,
+      opacity: 0.6,
+    },
+    buttonRow: {
+      paddingVertical: spacing[1],
+    },
+    fullWidth: {
+      alignSelf: 'stretch',
+    },
+  });

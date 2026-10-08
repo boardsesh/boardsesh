@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useMemo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
@@ -161,7 +162,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 that scrolls when it overflows, so the header height — and the board
                 below it — stays constant per climb. Under Reduce Motion it falls
                 back to a 2-line wrap (full name). */}
-            <Pressable
+            <PressableSurface
               onLongPress={onLongPressName}
               disabled={!onLongPressName}
               delayLongPress={350}
@@ -172,7 +173,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               <MarqueeText active variant="body" style={styles.nameClip} textStyle={styles.nameText} fallbackLines={2}>
                 {name}
               </MarqueeText>
-            </Pressable>
+            </PressableSurface>
             {/* Keep rules the matching/feet line does not state, including no kickboard. */}
             <ClimbAttributeIcons
               benchmarkDifficulty={benchmarkDifficulty}
@@ -197,7 +198,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               climb you can still open by link or queue, not an error. */}
           {isHidden ? (
             <View style={styles.hiddenRow} testID="play-drawer-climb-hidden">
-              <Icon name="visibility.off" size={14} color={systemColors.secondaryLabel} />
+              <Icon maxFontSizeMultiplier={1} name="visibility.off" size={14} color={systemColors.secondaryLabel} />
               <Text variant="caption1" color={systemColors.secondaryLabel}>
                 {t('mobile.hidden.banner')}
               </Text>
@@ -228,7 +229,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             {/* The play drawer is the screen you hand your partner to show them
                 the beta, so an unlabelled headline number that is actually your
                 private opinion needs to say so. */}
-            {markedAsMine ? <Icon name="person" size={13} color={systemColors.secondaryLabel} /> : null}
+            {markedAsMine ? (
+              <Icon maxFontSizeMultiplier={1} name="person" size={13} color={systemColors.secondaryLabel} />
+            ) : null}
             {/* Nobody has graded it yet (#5971): say so rather than leave the
                 slot blank. */}
             {isProjectClimb({ gradeLabel: difficulty, isDraft, statsKnown: climbStatsKnown(boardName, statsAngle) }) ? (
@@ -241,7 +244,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           </View>
           {secondaryGrade && !dropSecondaryLine ? (
             <View style={styles.gradeRow}>
-              <Icon name="people" size={11} color={systemColors.secondaryLabel} />
+              <Icon maxFontSizeMultiplier={1} name="people" size={11} color={systemColors.secondaryLabel} />
               <Text
                 variant="caption2"
                 color={systemColors.secondaryLabel}
@@ -376,7 +379,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   draftChip: {
-    marginLeft: 6,
+    marginStart: 6,
   },
   // Shrinks with the name so a long title scrolls within the available width while
   // the attribute glyphs stay visible; the long-press target is the name itself.

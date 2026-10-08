@@ -6,7 +6,10 @@ import { createElement } from 'react';
 // Controls the platform branch under test.
 const ctrl = vi.hoisted(() => ({ os: 'ios' as string }));
 
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 vi.mock('react-native', () => ({
+  useWindowDimensions: () => ({ fontScale: 1 }),
+  I18nManager: { isRTL: false },
   Platform: {
     get OS() {
       return ctrl.os;

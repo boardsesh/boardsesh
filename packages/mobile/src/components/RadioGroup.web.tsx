@@ -40,7 +40,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
 const styles = StyleSheet.create({
   description: {
     // Aligns under the label past the leading radio control + its gutter.
-    paddingLeft: 56,
+    paddingStart: 56,
     paddingBottom: 8,
     opacity: 0.8,
   },

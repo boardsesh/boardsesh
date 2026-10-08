@@ -1,3 +1,4 @@
+import { LargeContentViewer } from './LargeContentViewer';
 // The native stack header's leading and trailing actions, rendered by
 // `useHeaderActions` as a screen's `headerLeft` / `headerRight`. Same vocabulary
 // as SheetTopBar (cancel / close / back; a trailing confirm) and the same spec
@@ -60,15 +61,17 @@ export const HeaderLeadingButton = React.memo(function HeaderLeadingButton({
         accessibilityState={{ disabled }}
         style={[styles.textTarget, { minHeight: spec.nativeBarGlyphFrame, minWidth: spec.nativeBarGlyphFrame }]}
       >
-        <Text
-          variant="label"
-          color={look.labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={spec.labelMaxFontScale}
-          style={look.opacity < 1 ? { opacity: look.opacity } : null}
-        >
-          {label}
-        </Text>
+        <LargeContentViewer title={accessibilityLabel ?? label} onActivate={disabled ? undefined : onPress}>
+          <Text
+            variant="label"
+            color={look.labelColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={spec.labelMaxFontScale}
+            style={look.opacity < 1 ? { opacity: look.opacity } : null}
+          >
+            {label}
+          </Text>
+        </LargeContentViewer>
       </PressableSurface>
     );
   }
@@ -191,19 +194,21 @@ export const HeaderTrailingButton = React.memo(function HeaderTrailingButton({
       >
         {/* Hidden, not removed, while loading: the item keeps the label's width,
             so the native bar does not re-lay out its items mid-save. */}
-        <Text
-          variant="label"
-          color={look.labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={spec.labelMaxFontScale}
-          style={[
-            look.fontWeight ? { fontWeight: look.fontWeight } : null,
-            !look.filled && look.opacity < 1 ? { opacity: look.opacity } : null,
-            loading ? styles.hidden : null,
-          ]}
-        >
-          {label}
-        </Text>
+        <LargeContentViewer title={accessibilityLabel ?? label} onActivate={inert ? undefined : handlePress}>
+          <Text
+            variant="label"
+            color={look.labelColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={spec.labelMaxFontScale}
+            style={[
+              look.fontWeight ? { fontWeight: look.fontWeight } : null,
+              !look.filled && look.opacity < 1 ? { opacity: look.opacity } : null,
+              loading ? styles.hidden : null,
+            ]}
+          >
+            {label}
+          </Text>
+        </LargeContentViewer>
         {loading ? (
           <View style={styles.spinner} testID="header-trailing-spinner">
             <ActivityIndicator size="small" color={look.labelColor} />

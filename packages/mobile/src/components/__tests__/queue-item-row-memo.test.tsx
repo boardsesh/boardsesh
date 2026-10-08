@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
@@ -89,6 +102,7 @@ vi.mock('react-native', () => {
       return createElement('button', null, children);
     },
     StyleSheet: {
+      flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
       create: (styles: Record<string, unknown>) => styles,
       hairlineWidth: 1,
     },
@@ -214,6 +228,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       secondaryBackground: '#fff',
@@ -253,7 +268,10 @@ vi.mock('../board-presence/BoardDriverAvatar', () => ({
   BoardDriverAvatar: ({ name }: { name?: string | null }) => createElement('span', { 'data-added-by': name ?? '' }),
 }));
 
-vi.mock('../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
+}));
 
 vi.mock('../../theme/animations', () => ({ springs: { interactive: {} } }));
 

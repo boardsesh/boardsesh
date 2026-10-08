@@ -1,5 +1,8 @@
+import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 import { forwardRef, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { View, TextInput, Pressable, StyleSheet } from 'react-native';
+import { View, type TextInput as NativeTextInput, StyleSheet } from 'react-native';
 import { Searchbar } from 'react-native-paper';
 import { Icon } from './Icon';
 import { GlassSurface } from './GlassSurface';
@@ -45,7 +48,8 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
   { placeholder, onChangeText, onSubmit, onFocus, onBlur, initialValue = '', height = 44 },
   ref,
 ) {
-  const inputRef = useRef<TextInput>(null);
+  const styles = useTypographyStyles(createStyles);
+  const inputRef = useRef<NativeTextInput>(null);
   const { systemColors, variant: uiVariant } = useTheme();
   const { t } = useTranslation('common');
   const [text, setText] = useState(initialValue);
@@ -128,7 +132,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
         pointerEvents="none"
       />
       <View style={[styles.content, { height }]}>
-        <Icon name="search" size={18} color={systemColors.secondaryLabel} />
+        <Icon maxFontSizeMultiplier={1} name="search" size={18} color={systemColors.secondaryLabel} />
         <TextInput
           ref={inputRef}
           value={text}
@@ -146,65 +150,66 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
           accessibilityLabel={placeholder}
         />
         {text.length > 0 && (
-          <Pressable
+          <PressableSurface
             onPress={handleClear}
             accessibilityRole="button"
             accessibilityLabel={t('mobile.a11y.clearSearch')}
             style={styles.clearTarget}
           >
-            <Icon name="search.clear" size={18} color={systemColors.secondaryLabel} />
-          </Pressable>
+            <Icon maxFontSizeMultiplier={1} name="search.clear" size={18} color={systemColors.secondaryLabel} />
+          </PressableSurface>
         )}
       </View>
     </View>
   );
 });
 
-const styles = StyleSheet.create({
-  // Material (Paper Searchbar): fill the row slot's width; minHeight is applied
-  // inline from the `height` prop so the first layout pass can't collapse to 0.
-  materialFrame: {
-    flex: 1,
-    minWidth: 0,
-    overflow: 'hidden',
-    justifyContent: 'center',
-  },
-  materialSearchbar: {
-    flex: 1,
-    width: '100%',
-    margin: 0,
-  },
-  materialInput: {
-    minHeight: 0,
-    paddingVertical: 0,
-    textAlignVertical: 'center',
-    fontSize: 16,
-  },
-  capsule: {
-    flex: 1,
-    height: 44,
-    borderRadius: 22,
-    overflow: 'hidden',
-    justifyContent: 'center',
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 44,
-    paddingHorizontal: 14,
-    gap: 6,
-  },
-  input: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 0,
-  },
-  // 44 x 44 pt target (HIG Accessibility: touch targets; Material: 48dp) around the 18pt glyph.
-  clearTarget: {
-    width: 44,
-    height: 44,
-    marginRight: -13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    // Material (Paper Searchbar): fill the row slot's width; minHeight is applied
+    // inline from the `height` prop so the first layout pass can't collapse to 0.
+    materialFrame: {
+      flex: 1,
+      minWidth: 0,
+      overflow: 'hidden',
+      justifyContent: 'center',
+    },
+    materialSearchbar: {
+      flex: 1,
+      width: '100%',
+      margin: 0,
+    },
+    materialInput: {
+      minHeight: 0,
+      paddingVertical: 0,
+      textAlignVertical: 'center',
+      fontSize: textStyles.callout.fontSize,
+    },
+    capsule: {
+      flex: 1,
+      height: 44,
+      borderRadius: 22,
+      overflow: 'hidden',
+      justifyContent: 'center',
+    },
+    content: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      height: 44,
+      paddingHorizontal: 14,
+      gap: 6,
+    },
+    input: {
+      flex: 1,
+      fontSize: textStyles.body.fontSize,
+      paddingVertical: 0,
+    },
+    // 44 x 44 pt target (HIG Accessibility: touch targets; Material: 48dp) around the 18pt glyph.
+    clearTarget: {
+      width: 44,
+      height: 44,
+      marginEnd: -13,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });

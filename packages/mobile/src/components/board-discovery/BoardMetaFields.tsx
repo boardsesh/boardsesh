@@ -1,3 +1,6 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 // The fields every board has, whatever kind of board it is (epic #5346, SW-09).
 //
 // Extracted from `BoardForm.tsx` rather than copied, because a spray wall needs
@@ -17,7 +20,7 @@
 // them structurally without either importing the other.
 
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
-import { Pressable, StyleSheet, TextInput } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useDeviceLocation, type LocationStatus } from '../../lib/use-device-location';
@@ -64,6 +67,7 @@ export type BoardVisibilityBuilder = {
 
 /** Uppercase caption above a field group. Exported so both forms label alike. */
 export function SectionLabel({ children }: { children: string }) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   return (
     <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionLabel}>
@@ -74,6 +78,7 @@ export function SectionLabel({ children }: { children: string }) {
 
 /** Themed text input for a builder's form fields (name / location / serial). */
 export function BuilderTextInput({ style, ...props }: ComponentProps<typeof TextInput>) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   return (
     <TextInput
@@ -117,6 +122,7 @@ export function BoardIdentityFields({
    */
   onOpenGymPicker: () => void;
 }) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
 
@@ -137,7 +143,7 @@ export function BoardIdentityFields({
       />
 
       <SectionLabel>{t('mobile.create.gym')}</SectionLabel>
-      <Pressable
+      <PressableSurface
         onPress={onOpenGymPicker}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.create.gym')}
@@ -158,7 +164,7 @@ export function BoardIdentityFields({
           {builder.selectedGym?.name ?? t('mobile.create.gymNone')}
         </Text>
         <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-      </Pressable>
+      </PressableSurface>
     </>
   );
 }
@@ -178,6 +184,7 @@ export function SprayWallVisibilityField({
 }: {
   builder: Pick<BoardVisibilityBuilder, 'isPublic' | 'setIsPublic' | 'isUnlisted' | 'setIsUnlisted'>;
 }) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const visibility = sprayWallVisibility(builder);
@@ -324,33 +331,34 @@ export function BoardVisibilityFields({
   );
 }
 
-const styles = StyleSheet.create({
-  sectionLabel: {
-    marginTop: spacing[3],
-    marginBottom: spacing[1],
-    textTransform: 'uppercase',
-  },
-  input: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 17,
-  },
-  gymRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  gymRowLabel: {
-    flex: 1,
-  },
-  visibilityHint: {
-    marginTop: spacing[2],
-    lineHeight: 18,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    sectionLabel: {
+      marginTop: spacing[3],
+      marginBottom: spacing[1],
+      textTransform: 'uppercase',
+    },
+    input: {
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      borderRadius: borderRadius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      fontSize: textStyles.body.fontSize,
+    },
+    gymRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      borderRadius: borderRadius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    gymRowLabel: {
+      flex: 1,
+    },
+    visibilityHint: {
+      marginTop: spacing[2],
+      lineHeight: 18,
+    },
+  });

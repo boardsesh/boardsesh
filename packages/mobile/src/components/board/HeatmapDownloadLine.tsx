@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -62,7 +63,7 @@ export const HeatmapDownloadLine = memo(function HeatmapDownloadLine({
       <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={numberOfLines} style={styles.text}>
         {t('mobile.heatmap.downloadLine', { name: board.name })}
       </Text>
-      <Pressable
+      <PressableSurface
         onPress={handleDownload}
         accessibilityRole="button"
         accessibilityLabel={t('mobile.heatmap.download')}
@@ -72,7 +73,7 @@ export const HeatmapDownloadLine = memo(function HeatmapDownloadLine({
         <Text variant="caption1" color={brandColors.primary} style={styles.action}>
           {t('mobile.heatmap.download')}
         </Text>
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 });

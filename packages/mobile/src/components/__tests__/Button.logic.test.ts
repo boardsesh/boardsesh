@@ -165,23 +165,23 @@ describe('cappedComposeLabelSize', () => {
 });
 
 describe('resolveButtonMaxFontScale', () => {
-  it('defaults to the 1.5x Text cap', () => {
-    expect(DEFAULT_BUTTON_MAX_FONT_SCALE).toBe(1.5);
-    expect(resolveButtonMaxFontScale(undefined)).toBe(1.5);
+  it('defaults to full accessibility text sizes', () => {
+    expect(DEFAULT_BUTTON_MAX_FONT_SCALE).toBe(0);
+    expect(resolveButtonMaxFontScale(undefined)).toBe(0);
   });
 
   it("keeps a caller's own cap", () => {
     expect(resolveButtonMaxFontScale(1.3)).toBe(1.3);
   });
 
-  it('resolves to xxxLarge on iOS, one step above the tick bar cap', () => {
-    expect(dynamicTypeSizeCap(resolveButtonMaxFontScale(undefined))).toBe('xxxLarge');
+  it('resolves to accessibility5 on iOS', () => {
+    expect(dynamicTypeSizeCap(resolveButtonMaxFontScale(undefined))).toBe('accessibility5');
   });
 
   it('holds an Android label at 1.5x once the OS scale passes it', () => {
     // 14sp labelLarge at a 2x OS font scale: 14 * 1.5 / 2 = 10.5sp, drawn at 21sp.
-    expect(cappedComposeLabelSize(14, 2, resolveButtonMaxFontScale(undefined))).toBe(10.5);
-    expect(cappedComposeLabelSize(14, 1.4, resolveButtonMaxFontScale(undefined))).toBeUndefined();
+    expect(cappedComposeLabelSize(14, 2, 1.5)).toBe(10.5);
+    expect(cappedComposeLabelSize(14, 1.4, 1.5)).toBeUndefined();
   });
 });
 

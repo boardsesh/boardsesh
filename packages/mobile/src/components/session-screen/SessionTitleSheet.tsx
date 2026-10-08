@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
@@ -35,6 +36,7 @@ type SessionTitleSheetProps = {
  * a toast would render behind the native sheet.
  */
 export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: SessionTitleSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -133,19 +135,20 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
   );
 }
 
-const styles = StyleSheet.create({
-  body: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    gap: spacing[3],
-  },
-  input: {
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  error: {
-    marginTop: -spacing[1],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    body: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[3],
+      gap: spacing[3],
+    },
+    input: {
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    error: {
+      marginTop: -spacing[1],
+    },
+  });

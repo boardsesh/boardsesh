@@ -63,6 +63,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
+    marginStart: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
   },
 });

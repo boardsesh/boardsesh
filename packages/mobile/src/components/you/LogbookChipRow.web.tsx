@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
   },
   chip: {
-    marginRight: 0,
+    marginEnd: 0,
   },
 });
 

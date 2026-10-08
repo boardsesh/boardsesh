@@ -69,7 +69,7 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
       >
         {error ? (
           <>
-            <Icon name="warning" size={ERROR_ICON_SIZE} color={brandColors.error} />
+            <Icon maxFontSizeMultiplier={1} name="warning" size={ERROR_ICON_SIZE} color={brandColors.error} />
             <Text variant="footnote" color={brandColors.error} numberOfLines={2} style={styles.errorText}>
               {error}
             </Text>

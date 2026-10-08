@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import { Text } from '../Text';
@@ -249,7 +250,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
 
   if (fetchGrade && isError) {
     return (
-      <Pressable
+      <PressableSurface
         onPress={handleRetry}
         style={styles.row}
         accessibilityRole="button"
@@ -259,7 +260,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         <Text variant="subheadline" color={brandColors.primary}>
           {t('boardseshGrade.loadError')}
         </Text>
-      </Pressable>
+      </PressableSurface>
     );
   }
 

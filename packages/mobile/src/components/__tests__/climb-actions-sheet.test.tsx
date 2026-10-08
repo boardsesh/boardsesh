@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
@@ -26,7 +39,10 @@ const deletion = vi.hoisted(() => ({ request: vi.fn(async () => {}) }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Platform: { OS: 'ios' },
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({ BottomSheetModal: function BottomSheetModal() {} }));
@@ -78,6 +94,7 @@ vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../climb-actions/use-delete-climb-action', () => ({ useDeleteClimbAction: () => deletion.request }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => {
     const label = '#fff';
     return {
@@ -93,7 +110,10 @@ vi.mock('../../providers/theme-provider', () => ({
   },
 }));
 vi.mock('../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#f00', systemOrange: '#f80' } }));
-vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8 } }));
+vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8 },
+}));
 vi.mock('../../lib/env', () => ({ CLIMB_SHARE_BASE_URL: 'https://boardsesh.test' }));
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 
@@ -201,7 +221,7 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-icon="add"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="playlist"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="favorite"]')?.getAttribute('data-color')).toBe('#fff');
-    expect(container.querySelector('[data-icon="tick"]')?.getAttribute('data-color')).toBe('#fff');
+    expect(container.querySelector('[data-icon="tick.fill"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="branch"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="copy"]')?.getAttribute('data-color')).toBe('#fff');
     expect(container.querySelector('[data-icon="edit"]')?.getAttribute('data-color')).toBe('#fff');
@@ -227,7 +247,7 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
     expect(container.querySelector('[data-icon="add"]')?.getAttribute('data-color')).toBe('#0a0');
     expect(container.querySelector('[data-icon="playlist"]')?.getAttribute('data-color')).toBe('#00f');
     expect(container.querySelector('[data-icon="favorite"]')?.getAttribute('data-color')).toBe('#f00');
-    expect(container.querySelector('[data-icon="tick"]')?.getAttribute('data-color')).toBe('#0a0');
+    expect(container.querySelector('[data-icon="tick.fill"]')?.getAttribute('data-color')).toBe('#0a0');
     expect(container.querySelector('[data-icon="branch"]')?.getAttribute('data-color')).toBe('#00f');
     expect(container.querySelector('[data-icon="copy"]')?.getAttribute('data-color')).toBe('#00f');
     expect(container.querySelector('[data-icon="edit"]')?.getAttribute('data-color')).toBe('#00f');

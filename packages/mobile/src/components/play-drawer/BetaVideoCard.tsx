@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useState } from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
@@ -82,7 +83,7 @@ export const BetaVideoCard = memo(function BetaVideoCard({
   const pillMaxWidth = cardWidth - spacing[2] * 2;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="link"
       accessibilityLabel={accessibilityLabel}
@@ -136,7 +137,7 @@ export const BetaVideoCard = memo(function BetaVideoCard({
           </Text>
         </View>
       ) : null}
-    </Pressable>
+    </PressableSurface>
   );
 });
 
@@ -194,7 +195,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[1],
-    paddingLeft: 2,
+    paddingStart: 2,
   },
   uploaderName: { flexShrink: 1 },
 });

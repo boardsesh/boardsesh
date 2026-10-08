@@ -197,6 +197,9 @@ export function EditProfileScreen() {
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     flexGrow: 1,
     paddingTop: spacing[4],
     paddingBottom: spacing[8],

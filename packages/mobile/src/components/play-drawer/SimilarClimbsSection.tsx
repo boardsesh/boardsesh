@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 // RNGH ScrollView (not react-native's): the play drawer's outer scroll is an RNGH
 // ScrollView, so this nested horizontal strip must join the same gesture tree or
 // Android's outer scroll swallows its horizontal pans and it never scrolls. Same
@@ -113,7 +114,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
 
   if (isError) {
     return (
-      <Pressable
+      <PressableSurface
         onPress={handleRetry}
         style={styles.emptyContainer}
         accessibilityRole="button"
@@ -123,7 +124,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
         <Text variant="subheadline" color={brandColors.primary}>
           {t('mobile.similarClimbs.retry')}
         </Text>
-      </Pressable>
+      </PressableSurface>
     );
   }
 
@@ -145,7 +146,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
         );
         const byline = formatByline(similar, tClimbs);
         return (
-          <Pressable
+          <PressableSurface
             key={similar.uuid}
             onPress={() => handlePress(similar)}
             style={({ pressed }) => [styles.card, !compatible && styles.cardDimmed, pressed && styles.cardPressed]}
@@ -174,7 +175,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
                 {byline}
               </Text>
             ) : null}
-          </Pressable>
+          </PressableSurface>
         );
       })}
     </ScrollView>

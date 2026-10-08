@@ -1,10 +1,11 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
   View,
   ScrollView,
   StyleSheet,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
@@ -102,6 +103,7 @@ export function BoardForm({
   currentBoardUuid,
   sprayBackgroundSection,
 }: BoardFormProps) {
+  const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   // Only warn on a same-config foreign board — cross-model serial reuse is
@@ -232,7 +234,11 @@ export function BoardForm({
   }, [errorMessage, submitting, submitAttempt]);
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
@@ -377,7 +383,7 @@ export function BoardForm({
         ) : null}
 
         {/* Advanced — hold sets (default all), visibility, location, serial. */}
-        <Pressable
+        <PressableSurface
           onPress={() => setAdvancedOpen((open) => !open)}
           accessibilityRole="button"
           accessibilityState={{ expanded: advancedOpen }}
@@ -385,7 +391,7 @@ export function BoardForm({
         >
           <Text variant="headline">{t('mobile.create.moreOptions')}</Text>
           <Icon name={advancedOpen ? 'chevron.up' : 'chevron.down'} size={18} color={systemColors.secondaryLabel} />
-        </Pressable>
+        </PressableSurface>
 
         {advancedOpen ? (
           <View style={styles.advancedBody}>

@@ -361,7 +361,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
             top: `${geometry.topPct}%`,
             width: diameter,
             height: diameter,
-            marginLeft: -radius,
+            marginStart: -radius,
             marginTop: -radius,
             borderRadius: radius,
             borderWidth: Math.max(2.5, geometry.ringDiameter * 0.18),

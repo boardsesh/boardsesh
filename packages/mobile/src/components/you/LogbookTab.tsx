@@ -1,7 +1,8 @@
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, Pressable, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import { View, RefreshControl, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -52,7 +53,7 @@ import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { normalizeSearchName } from '../../lib/search-name';
 import { hapticSelection } from '../../lib/haptics';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 
@@ -623,7 +624,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
                   initialValue={name}
                   height={40}
                 />
-                <Pressable
+                <PressableSurface
                   onPress={handleOpenFilters}
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.logbook.filter')}
@@ -641,7 +642,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
                       </Text>
                     </View>
                   ) : null}
-                </Pressable>
+                </PressableSurface>
               </View>
             ) : null}
           </>
@@ -665,7 +666,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
           <Text variant="subheadline" style={styles.errorBody}>
             {t('mobile.logbook.errorBody')}
           </Text>
-          <Pressable
+          <PressableSurface
             onPress={handleRetry}
             disabled={feed.isRefetching}
             accessibilityRole="button"
@@ -680,7 +681,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
             <Text variant="footnote" color={brandColors.primary}>
               {t('mobile.logbook.retry')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       ) : (
         <FlashList
@@ -832,5 +833,5 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  retryButtonDisabled: { opacity: 0.5 },
+  retryButtonDisabled: { opacity: opacity.disabled },
 });

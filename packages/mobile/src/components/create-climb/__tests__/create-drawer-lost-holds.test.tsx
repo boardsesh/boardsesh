@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
@@ -10,8 +24,25 @@ import { createElement, forwardRef, useImperativeHandle, type ReactNode } from '
 type ViewMockProps = { children?: ReactNode; testID?: string };
 
 vi.mock('react-native', () => ({
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress, 'aria-label': accessibilityLabel }, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
   useWindowDimensions: () => ({ width: 405, height: 900 }),
   Platform: { OS: 'ios' },
   Keyboard: { addListener: () => ({ remove: () => undefined }) },
@@ -29,9 +60,11 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { secondaryBackground: '#221A33' } }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
 }));
 vi.mock('../../board/HeatmapOverlay', () => ({

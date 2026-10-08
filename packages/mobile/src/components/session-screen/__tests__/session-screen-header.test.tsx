@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -14,7 +27,10 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel ?? '' }, children),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 vi.mock('react-native-gesture-handler', () => ({
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -29,6 +45,7 @@ vi.mock('../../Icon', () => ({
     createElement('span', { 'data-icon': name, 'data-color': typeof color === 'string' ? color : '' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { label: '#000', tertiaryLabel: '#999' },
     brandColors: { primary: '#6D28D9', error: '#C81E1E' },
@@ -46,7 +63,10 @@ vi.mock('../../ChromeIconButton', () => ({
   }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel, 'data-chrome-icon': icon }),
   useChromeIconButtonSize: () => 44,
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
+}));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 import { SessionScreenHeader } from '../SessionScreenHeader';

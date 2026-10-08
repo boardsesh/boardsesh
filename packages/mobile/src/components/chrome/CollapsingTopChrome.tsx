@@ -186,7 +186,7 @@ export function CollapsingTopChrome({
       {leadingAction}
       {canCreate ? (
         <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
-          <Icon name="plus" size={24} color={systemColors.label} />
+          <Icon maxFontSizeMultiplier={1} name="plus" size={24} color={systemColors.label} />
         </GlassToolbarAction>
       ) : null}
     </GlassActionToolbar>

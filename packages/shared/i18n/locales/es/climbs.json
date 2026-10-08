@@ -897,6 +897,18 @@
     },
     "project": {
       "chip": "Proyecto"
+    },
+    "boardAccessibility": {
+      "summary": "Plafón: {{starting}} presas de inicio, {{hand}} de mano, {{finish}} de final, {{foot}} de pie.",
+      "adjustHint": "Desliza arriba o abajo para cambiar de bloque.",
+      "next": "Siguiente bloque",
+      "previous": "Bloque anterior",
+      "hold": "Presa {{id}}, {{role}}",
+      "unlit": "apagada",
+      "paintHint": "Toca para pintar con el pincel seleccionado. Las acciones permiten elegir un tipo.",
+      "chooseRole": "Elegir tipo de presa",
+      "showList": "Elegir presas de una lista",
+      "showBoard": "Volver al plafón"
     }
   },
   "frontDoor": {

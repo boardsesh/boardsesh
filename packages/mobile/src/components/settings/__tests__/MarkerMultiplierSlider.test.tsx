@@ -98,7 +98,7 @@ vi.mock('../../../theme/tokens', () => ({
   spacing: { 2: 8, 3: 12 },
 }));
 
-import { MarkerMultiplierSlider } from '../MarkerMultiplierSlider';
+import { MarkerMultiplierSlider } from '../MarkerMultiplierSlider.web';
 
 const LABEL = 'test slider';
 

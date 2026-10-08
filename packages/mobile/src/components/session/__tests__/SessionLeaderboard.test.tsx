@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,7 +19,10 @@ import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/share
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../Text', () => ({
@@ -28,6 +44,7 @@ vi.mock('../../../theme/colors', () => ({ withAlpha: (c: string) => c }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 const SECONDARY_LABEL = '#5B5563';
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { success: '#0a0', warning: '#fa0', accent: '#f83' },
     chartColors: { secondaryLabel: SECONDARY_LABEL },
@@ -101,7 +118,7 @@ describe('SessionLeaderboard', () => {
     expect(order).toEqual(['Bea', 'Cy', 'Alex']);
 
     // Exactly one crown — on the leader.
-    expect(container.querySelectorAll('[data-icon="crown"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-icon="crown.fill"]')).toHaveLength(1);
 
     // Hardest grades from sends/flashes are shown; the attempt's V17 is excluded.
     const text = container.textContent ?? '';

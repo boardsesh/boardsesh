@@ -2,6 +2,7 @@ import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from '../InlineSheetError';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
@@ -51,6 +52,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   onClose,
   showDiscordLink = false,
 }: FeedbackSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('settings');
   // The screenshot strings live in `common`, shared with the QA verdict sheet.
   const { t: tCommon } = useTranslation('common');
@@ -284,38 +286,39 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   );
 });
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[6],
-    gap: spacing[4],
-  },
-  starRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing[2],
-  },
-  starButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  input: {
-    minHeight: 116,
-    maxHeight: 220,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  helperText: {
-    marginTop: -spacing[2],
-  },
-  recordingCard: {
-    overflow: 'hidden',
-    borderRadius: borderRadius.lg,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    content: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[4],
+      paddingBottom: spacing[6],
+      gap: spacing[4],
+    },
+    starRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing[2],
+    },
+    starButton: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    input: {
+      minHeight: 116,
+      maxHeight: 220,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    helperText: {
+      marginTop: -spacing[2],
+    },
+    recordingCard: {
+      overflow: 'hidden',
+      borderRadius: borderRadius.lg,
+    },
+  });

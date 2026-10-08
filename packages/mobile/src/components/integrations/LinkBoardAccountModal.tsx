@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -68,6 +70,7 @@ type LinkBoardAccountModalProps = {
 
 /** Shared credential form with request, feedback and funnel reporting. */
 export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: LinkBoardAccountModalProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, colorScheme } = useTheme();
@@ -116,7 +119,11 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
 
   return (
     <Modal visible={boardType !== null} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
+      <KeyboardAvoidingView
+        keyboardVerticalOffset={0}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.modalBackdrop}
+      >
         <View style={[styles.modalCard, { backgroundColor: systemColors.secondaryBackground }]}>
           <Text variant="headline" style={styles.modalTitle}>
             {isKilter ? t('aurora.kilterLinkDialog.title') : t('aurora.linkDialog.title', { boardName })}
@@ -166,36 +173,37 @@ export function LinkBoardAccountModal({ boardType, source, onClose, onLinked }: 
   );
 }
 
-const styles = StyleSheet.create({
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing[4],
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 420,
-    borderRadius: borderRadius.lg,
-    padding: spacing[4],
-    gap: spacing[3],
-  },
-  modalTitle: { fontWeight: '700' },
-  modalCopy: { lineHeight: 20 },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    minHeight: 48,
-    paddingHorizontal: spacing[3],
-    fontSize: 16,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-    marginTop: spacing[2],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.45)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: spacing[4],
+    },
+    modalCard: {
+      width: '100%',
+      maxWidth: 420,
+      borderRadius: borderRadius.lg,
+      padding: spacing[4],
+      gap: spacing[3],
+    },
+    modalTitle: { fontWeight: '700' },
+    modalCopy: { lineHeight: 20 },
+    input: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.md,
+      minHeight: 48,
+      paddingHorizontal: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: spacing[2],
+      marginTop: spacing[2],
+    },
+  });

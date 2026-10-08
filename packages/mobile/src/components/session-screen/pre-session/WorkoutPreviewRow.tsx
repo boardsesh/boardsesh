@@ -173,8 +173,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing[3],
     paddingVertical: spacing[2],
-    paddingLeft: spacing[3],
-    paddingRight: spacing[2],
+    paddingStart: spacing[3],
+    paddingEnd: spacing[2],
   },
   missingClimbText: {
     flex: 1,
@@ -187,12 +187,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 22,
     flexShrink: 0,
-    marginRight: spacing[3],
+    marginEnd: spacing[3],
   },
   separator: {
     height: StyleSheet.hairlineWidth,
     // Inset to start under the climb name (after the thumbnail), matching the
     // queue list's row separators.
-    marginLeft: spacing[3] + THUMBNAIL_WIDTH + spacing[3],
+    marginStart: spacing[3] + THUMBNAIL_WIDTH + spacing[3],
   },
 });

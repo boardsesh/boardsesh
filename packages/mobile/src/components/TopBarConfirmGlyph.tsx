@@ -67,7 +67,7 @@ export const TopBarConfirmGlyph = React.memo(function TopBarConfirmGlyph({
           <ActivityIndicator size="small" color={glyphColor} />
         </View>
       ) : (
-        <Icon name={glyph} size={glyphSize} color={glyphColor} weight="semibold" />
+        <Icon maxFontSizeMultiplier={1} name={glyph} size={glyphSize} color={glyphColor} weight="semibold" />
       )}
     </PressableSurface>
   );

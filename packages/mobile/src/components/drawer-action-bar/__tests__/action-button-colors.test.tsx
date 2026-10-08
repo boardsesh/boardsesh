@@ -1,11 +1,28 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { createElement, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-native', () => ({
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: string }) =>
@@ -15,12 +32,16 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: ({ color }: { color?: string }) => createElement('progress', { 'data-color': color }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { secondaryLabel: 'theme-secondary-label', tertiaryLabel: 'theme-tertiary-label' },
   }),
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { separator: 'static-separator' } }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8, 3: 12, 4: 16 },
+}));
 vi.mock('../../../theme/layout', () => ({ glassSize: { inlinePrimary: 56, inline: 44 } }));
 
 import { ActionButton } from '../DrawerActionBar';

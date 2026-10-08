@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type CSSProperties } from 'react';
@@ -90,7 +103,7 @@ vi.mock('react-native', () => ({
     };
     const width = readStyleValue('width');
     const height = readStyleValue('height');
-    const paddingRight = readStyleValue('paddingRight');
+    const paddingEnd = readStyleValue('paddingEnd');
     const backgroundColor = readStyleValue('backgroundColor');
     const borderWidth = readStyleValue('borderWidth');
     const borderColor = readStyleValue('borderColor');
@@ -101,7 +114,7 @@ vi.mock('react-native', () => ({
       {
         'data-width': styleDataValue(width),
         'data-height': styleDataValue(height),
-        'data-padding-right': styleDataValue(paddingRight),
+        'data-padding-end': styleDataValue(paddingEnd),
         'data-background-color': styleDataValue(backgroundColor),
         'data-border-width': styleDataValue(borderWidth),
         'data-border-color': styleDataValue(borderColor),
@@ -117,6 +130,7 @@ vi.mock('react-native', () => ({
     );
   },
   StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
   },
 }));
@@ -195,6 +209,7 @@ vi.mock('../../MarqueeText', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { label: '#111111' },
   }),
@@ -219,6 +234,7 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 8: 32, 10: 40 },
   borderRadius: { md: 8 },
 }));
@@ -361,7 +377,7 @@ describe('NativeAccessoryClimbRow', () => {
     expect(container.querySelector('[data-tick-size="44"]')).not.toBeNull();
     expect(container.querySelector('[data-icon-size="24"]')).not.toBeNull();
     expect(container.querySelector('[data-height="48"]')).not.toBeNull();
-    expect(container.querySelector('[data-padding-right="32"]')).not.toBeNull();
+    expect(container.querySelector('[data-padding-end="32"]')).not.toBeNull();
 
     const thumbnail = getCurrentThumbnail(container);
     const thumbnailSlot = thumbnail.closest('[data-width="40"][data-height="40"]');

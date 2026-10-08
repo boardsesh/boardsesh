@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { forwardRef, useCallback, useEffect } from 'react';
-import { View, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -153,7 +154,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         return (
           <View style={styles.list}>
             {boards.map((board) => (
-              <Pressable
+              <PressableSurface
                 key={board.uuid}
                 accessibilityRole="button"
                 onPress={() => onSelect(board)}
@@ -167,7 +168,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                   </Text>
                 </View>
                 <Icon name="add" size={20} color={systemColors.tertiaryLabel} />
-              </Pressable>
+              </PressableSurface>
             ))}
           </View>
         );

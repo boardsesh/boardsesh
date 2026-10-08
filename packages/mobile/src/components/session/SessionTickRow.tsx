@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[3] + STATUS_ICON_SIZE + spacing[3],
+    marginStart: spacing[3] + STATUS_ICON_SIZE + spacing[3],
   },
   badge: {
     width: STATUS_ICON_SIZE,

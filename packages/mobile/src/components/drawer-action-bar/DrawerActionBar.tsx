@@ -1,9 +1,10 @@
-import { Pressable, StyleSheet, type ColorValue, type ViewStyle } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { StyleSheet, type ColorValue, type ViewStyle } from 'react-native';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing } from '../../theme/tokens';
+import { opacity, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 
 // Shared building blocks for the Play Drawer and Create Drawer action bars: the
@@ -75,7 +76,7 @@ export function ActionButton({
     : (iconColor ?? (active && activeColor ? activeColor : systemColors.secondaryLabel));
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       disabled={disabled}
       accessibilityRole={checked === undefined ? 'button' : 'togglebutton'}
@@ -92,9 +93,9 @@ export function ActionButton({
       {busy ? (
         <ActivityIndicator size="small" color={resolvedColor} />
       ) : (
-        <Icon name={iconName} size={icon} color={resolvedColor} />
+        <Icon maxFontSizeMultiplier={1} name={iconName} size={icon} color={resolvedColor} />
       )}
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -130,7 +131,7 @@ export const drawerActionBarStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionButtonDisabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
   actionButtonPressed: {
     opacity: 0.6,
