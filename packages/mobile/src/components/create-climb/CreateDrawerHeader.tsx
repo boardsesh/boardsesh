@@ -6,6 +6,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { BleLightbulbButton } from '../ble/BleLightbulbButton';
 import { AppMenu } from '../AppMenu';
+import { SheetTopBarTrailingButton } from '../SheetTopBar';
 import {
   buildCreateOverflowMenu,
   type CreateOverflowAction,
@@ -14,6 +15,8 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
+import { deriveSaveButtonView } from './save-button-view';
+import type { SaveButtonState } from './use-create-climb-screen';
 
 const NAME_MAX = 80;
 
@@ -36,12 +39,26 @@ type CreateDrawerHeaderProps = {
   /** Editor state the overflow (⋯) menu builds its rows from. */
   overflow: CreateOverflowMenuState;
   onSelectOverflowAction: (action: CreateOverflowAction) => void;
+  saveState: SaveButtonState;
+  onSave: () => void;
+  /**
+   * False while the holds can't be saved yet: no holds on a draft, or no start
+   * or finish on a publish (or a remix's lost holds still up). The counts under
+   * the name say what is missing, so a disabled Save is never mute.
+   */
+  climbReady: boolean;
 };
 
 /**
  * Create-drawer header, mirroring the Play Drawer chrome: a close chevron on the
- * left, the always-editable climb name + start/finish counts in the centre, and
- * the BLE lightbulb on the right (connect the wall to light up the climb).
+ * left, the always-editable climb name + start/finish counts in the centre, then
+ * the overflow menu, the BLE lightbulb (connect the wall to light up the climb)
+ * and the trailing Save.
+ *
+ * Bespoke rather than a SheetTopBar: its title is a text field, and the bar has
+ * to hold the lightbulb toggle as well as the menu. Save still uses the top
+ * bar's own trailing confirm, so it looks and behaves like every other sheet's
+ * (see docs/mobile-sheets-vs-routes.md, "Where actions go").
  */
 export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   name,
@@ -56,6 +73,9 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   onToggleBle,
   overflow,
   onSelectOverflowAction,
+  saveState,
+  onSave,
+  climbReady,
 }: CreateDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
   const { t: tSettings } = useTranslation('settings');
@@ -87,6 +107,8 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
     },
     [overflowRows, onSelectOverflowAction],
   );
+
+  const save = deriveSaveButtonView(saveState, t, climbReady);
 
   return (
     <View style={styles.row}>
@@ -151,6 +173,15 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
           containerSize={44}
         />
       ) : null}
+
+      <SheetTopBarTrailingButton
+        label={save.label}
+        accessibilityLabel={save.accessibilityLabel}
+        onPress={onSave}
+        disabled={save.disabled}
+        loading={save.loading}
+        prominent
+      />
     </View>
   );
 });

@@ -174,7 +174,12 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
   );
 });
 
-const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton({
+/**
+ * The trailing confirm on its own, for a bespoke header that cannot be a
+ * SheetTopBar (the create drawer's editable name) but still owes the same
+ * confirm look and behaviour.
+ */
+export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton({
   label,
   onPress,
   disabled = false,

@@ -54,6 +54,33 @@ vi.mock('../../AppMenu', () => ({
       ),
     ),
 }));
+// The trailing Save, drawn as a plain button carrying what the header handed it.
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBarTrailingButton: ({
+    label,
+    accessibilityLabel,
+    onPress,
+    disabled,
+    loading,
+    prominent,
+  }: {
+    label: string;
+    accessibilityLabel?: string;
+    onPress: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+    prominent?: boolean;
+  }) =>
+    createElement('button', {
+      'data-node': 'save',
+      'data-label': accessibilityLabel,
+      'data-loading': loading ? 'true' : 'false',
+      'data-prominent': prominent ? 'true' : 'false',
+      disabled: disabled || loading,
+      onClick: onPress,
+      children: label,
+    }),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' } }),
 }));
@@ -61,12 +88,18 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#8
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 
 import { CreateDrawerHeader } from '../CreateDrawerHeader';
+import type { SaveButtonState } from '../use-create-climb-screen';
 
 function renderHeader(
   overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]['overflow']> = {},
-  { showLightbulb = true }: { showLightbulb?: boolean } = {},
+  {
+    showLightbulb = true,
+    saveState = 'ready',
+    climbReady = true,
+  }: { showLightbulb?: boolean; saveState?: SaveButtonState; climbReady?: boolean } = {},
 ) {
   const onSelectOverflowAction = vi.fn();
+  const onSave = vi.fn();
   const { container } = render(
     createElement(CreateDrawerHeader, {
       name: 'Test climb',
@@ -81,6 +114,9 @@ function renderHeader(
       onToggleBle: vi.fn(),
       overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, ...overflow },
       onSelectOverflowAction,
+      saveState,
+      onSave,
+      climbReady,
     }),
   );
   // Looked up by scanning rather than a CSS selector: a label may carry
@@ -88,7 +124,8 @@ function renderHeader(
   const row = (label: string) =>
     (Array.from(container.querySelectorAll('[data-row]')).find((node) => node.getAttribute('data-row') === label) ??
       null) as HTMLButtonElement | null;
-  return { container, onSelectOverflowAction, row };
+  const save = container.querySelector('[data-node="save"]') as HTMLButtonElement;
+  return { container, onSelectOverflowAction, onSave, row, save };
 }
 
 describe('CreateDrawerHeader overflow menu', () => {
@@ -152,5 +189,44 @@ describe('CreateDrawerHeader lightbulb', () => {
   it('leaves the bulb out when the board has nothing to light', () => {
     const { container } = renderHeader({}, { showLightbulb: false });
     expect(container.querySelector('[data-ble="true"]')).toBeNull();
+  });
+});
+
+describe('CreateDrawerHeader Save', () => {
+  it('puts Save last in the header, prominent, and fires it', () => {
+    const { container, save, onSave } = renderHeader();
+    expect(save).toBeTruthy();
+    expect(save.getAttribute('data-prominent')).toBe('true');
+    expect(save.textContent).toBe('mobile.create.save.idle');
+    // Trailing: nothing follows it in the bar.
+    const buttons = Array.from(container.querySelectorAll('button, [data-ble]'));
+    expect(buttons[buttons.length - 1]).toBe(save);
+    save.click();
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays disabled until the climb is ready, with the counts showing what is missing', () => {
+    const notReady = renderHeader({}, { climbReady: false });
+    expect(notReady.save.disabled).toBe(true);
+    expect(notReady.container.textContent).toContain('mobile.create.counts.start');
+    notReady.save.click();
+    expect(notReady.onSave).not.toHaveBeenCalled();
+
+    const ready = renderHeader({}, { climbReady: true });
+    expect(ready.save.disabled).toBe(false);
+  });
+
+  it('shows the spinner while saving, and refuses a second press', () => {
+    const { save, onSave } = renderHeader({}, { saveState: 'saving' });
+    expect(save.getAttribute('data-loading')).toBe('true');
+    expect(save.getAttribute('data-label')).toBe('mobile.create.save.saving');
+    save.click();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps the signed-out Save live, so the tap can go to sign-in', () => {
+    const { save } = renderHeader({}, { saveState: 'login', climbReady: false });
+    expect(save.disabled).toBe(false);
+    expect(save.getAttribute('data-label')).toBe('mobile.create.save.login');
   });
 });

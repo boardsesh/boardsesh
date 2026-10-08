@@ -99,7 +99,7 @@ const NATIVE_HANDLE_RESERVE = spacing[6];
 
 /**
  * The create-climb drawer — one Play Drawer-style bottom sheet. Peek shows the
- * header (editable name + start/finish), the board, and the two-row action bar
+ * header (editable name + start/finish, Save), the board, and the two-row action bar
  * (brush chips + actions). Dragging up reveals the below-the-fold form
  * (description, toggles, connect) and the Open Drafts table.
  */
@@ -301,6 +301,14 @@ export function CreateDrawer({
     boardRender.height,
   ]);
   const ghostsPending = lostHoldGhosts != null && lostHoldGhosts.length > 0;
+  // Save in the header is live only once the holds can be stored: any hold for
+  // a draft, a start and a finish for a publish, and no lost-hold rings up.
+  // handleSave refuses the same cases, so this only makes the refusal visible.
+  const climbReady = (controller.isDraft ? controller.canSave : controller.canPublish) && !ghostsPending;
+  const { handleSave } = controller;
+  const handleSavePress = useCallback(() => {
+    void handleSave();
+  }, [handleSave]);
   const ghostCount = lostHoldGhosts?.length ?? 0;
   const saveBlockedLine = useMemo(
     () =>
@@ -312,7 +320,7 @@ export function CreateDrawer({
     [ghostCount, systemColors.secondaryLabel, t],
   );
 
-  // While heat is on, the line under Save explains it (or offers the download)
+  // While heat is on, the status line under the tools explains it (or offers the download)
   // in place of the autosave note. Erase hides the heat, and the line with it.
   const heatmapLine = useMemo(() => {
     if (!heatmap?.active) return null;
@@ -433,6 +441,9 @@ export function CreateDrawer({
               onToggleBle={controller.handleToggleBle}
               overflow={overflowState}
               onSelectOverflowAction={handleOverflowAction}
+              saveState={controller.saveState}
+              onSave={handleSavePress}
+              climbReady={climbReady}
             />
           </View>
 
@@ -526,9 +537,6 @@ export function CreateDrawer({
               currentFrameIndex={controller.currentFrameIndex}
               canSetActive={controller.canSetActive}
               onSetActive={controller.handleSetActive}
-              saveState={controller.saveState}
-              onSave={() => void controller.handleSave()}
-              publishBlocked={controller.publishBlocked || ghostsPending}
               draftStatus={controller.draftStatus}
               onToggleHeatmap={heatmap?.toggle}
               heatmapActive={heatmapActive}
