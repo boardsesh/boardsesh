@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     minWidth: 0,
     flexShrink: 1,
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
   },
 });

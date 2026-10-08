@@ -20,7 +20,7 @@
 // live in the single body so a variant flip never resets the announce dedupe.
 // Compact by design — the name truncates, the grade stays.
 
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
@@ -31,6 +31,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { withAlpha } from '../../theme/colors';
 import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { glassSize } from '../../theme/layout';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
 import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
@@ -38,6 +39,7 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { BoardDriverAvatar } from '../board-presence/BoardDriverAvatar';
 import { useOpenWallPreview } from './use-open-wall-preview';
+import { NativeHeaderActionContext } from '../chrome/native-header-action-context';
 
 const CAPSULE_HEIGHT = 32;
 // 20pt reads unambiguously as a face above M3's ~18dp floor while protecting the
@@ -68,6 +70,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
   const { resolveGrade } = useDisplayGrade();
   const reduceMotion = useReducedMotion();
   const openWallPreview = useOpenWallPreview();
+  const nativeHeader = useContext(NativeHeaderActionContext);
 
   const name = climb.name ?? '';
   // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
@@ -214,23 +217,16 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
     );
   }
 
-  // Liquid Glass (iOS) — the original non-glass amber pill, unchanged.
-  return (
-    <Animated.View
-      // Fades IN on mount and on each wall-climb change (keyed remount). Removal is
-      // an instant cut — Reanimated can't reliably intercept an `exiting` whose
-      // wrapping parent unmounts in the same commit (the Material under-app-bar row),
-      // so we don't promise a fade-out the layout can't deliver.
-      key={climbUuid}
-      entering={reduceMotion ? undefined : FadeIn.duration(180)}
-      style={[
-        styles.capsule,
-        { backgroundColor: systemColors.secondaryBackground, borderColor: withAlpha(brandColors.warning, 0.35) },
-      ]}
-    >
+  const capsuleStyle = [
+    styles.capsule,
+    { backgroundColor: systemColors.secondaryBackground, borderColor: withAlpha(brandColors.warning, 0.35) },
+  ];
+  const capsuleContent = (
+    <>
       <View pointerEvents="none" style={glassTintStyle} />
       <PressableSurface
         onPress={handlePress}
+        feedback={nativeHeader ? 'none' : 'scale'}
         accessibilityRole="button"
         accessibilityLabel={a11yLabel}
         accessibilityHint={t('mobile.boardPresence.stripA11yHint')}
@@ -256,7 +252,7 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
             <Icon maxFontSizeMultiplier={1} name="profile.fill" size={18} color={brandColors.warning} />
           )}
         </View>
-        <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={{ flex: 1 }}>
+        <LargeContentViewer title={a11yLabel} onActivate={handlePress} style={styles.capsuleNameViewer}>
           <Text
             variant="footnote"
             color={systemColors.label}
@@ -279,6 +275,18 @@ function WallStatusCapsuleImpl({ climb, boardName }: WallStatusCapsuleProps) {
           </Text>
         ) : null}
       </PressableSurface>
+    </>
+  );
+
+  // UIKit owns this title view's layout and navigation transitions. A keyed
+  // Reanimated entering transition can mutate it while the bar is laying out.
+  if (nativeHeader) {
+    return <View style={[capsuleStyle, styles.nativeCapsule]}>{capsuleContent}</View>;
+  }
+
+  return (
+    <Animated.View key={climbUuid} entering={reduceMotion ? undefined : FadeIn.duration(180)} style={capsuleStyle}>
+      {capsuleContent}
     </Animated.View>
   );
 }
@@ -294,6 +302,15 @@ const styles = StyleSheet.create({
     borderRadius: CAPSULE_HEIGHT / 2,
     borderWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
+  },
+  nativeCapsule: {
+    height: glassSize.inline,
+    borderRadius: glassSize.inline / 2,
+  },
+  capsuleNameViewer: {
+    // A flex:1 label has zero intrinsic width in a UIKit navigation title view.
+    flexShrink: 1,
+    minWidth: 0,
   },
   pressable: {
     flexShrink: 1,

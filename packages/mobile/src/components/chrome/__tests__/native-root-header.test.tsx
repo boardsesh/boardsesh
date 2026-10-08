@@ -182,6 +182,7 @@ describe('NativeRootHeader', () => {
       minWidth: 0,
       maxWidth: '100%',
       flexShrink: 1,
+      alignItems: 'stretch',
     });
     fireEvent.click(currentClimbButton);
     expect(onOpenClimb).toHaveBeenCalledOnce();
