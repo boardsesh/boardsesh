@@ -34,7 +34,6 @@ import type { BoardseshRenderSettings } from '../../../lib/board-render-settings
 import { OkhslColorPicker } from '../OkhslColorPicker';
 import { MarkerMultiplierSlider } from '../MarkerMultiplierSlider';
 import {
-  DEFAULT_HOLD_COLOR_SIGNATURE,
   DEFAULT_HOLD_BRUSH_THICKNESS,
   DEFAULT_HOLD_MARKER_SHAPE,
   DEFAULT_HOLD_SHAPE_SIZE,
@@ -47,6 +46,7 @@ import {
   getDefaultHoldRoleColor,
   getEffectiveHoldRoleColor,
   getEffectiveHoldRoleShape,
+  hasStoredHoldMarkerChoices,
   normalizeBrushThickness,
   normalizeHoldShapeSize,
   useHoldColorOverrides,
@@ -196,6 +196,7 @@ export function AccessibilitySection({
   const boardName = boardNameFromActiveBoard(activeBoard?.boardType);
   const {
     overrides,
+    markerOverrides,
     shapes,
     brushThickness,
     shapeSize,
@@ -204,7 +205,6 @@ export function AccessibilitySection({
     setBrushThickness,
     setShapeSize,
     resetOverrides,
-    renderSignature,
   } = useHoldColorOverrides();
   // The live colours, for the mirror below. Same reason `useBoardLookSettings`
   // keeps one: the store write is async, so a second save made before React
@@ -224,9 +224,10 @@ export function AccessibilitySection({
   // that answer took. Classic is certain in exactly two cases: they chose it, or
   // the installed binary cannot draw the other one.
   const isClassic = requestedMode === 'classic' || boardseshRendererAvailable === false;
-  // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
-  // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
-  const hasMarkerOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
+  // The climber's own choices, not what is drawn: with Differentiate Without
+  // Color on, the drawn shapes differ from circles without anyone choosing them,
+  // and Reset must not offer to undo the OS.
+  const hasMarkerOverrides = hasStoredHoldMarkerChoices(markerOverrides);
   // One source of truth for "which palette am I on", read by both the rail and
   // (through `roleColors` below) the verdict.
   const matchedPaletteId = matchingCvdPaletteId(overrides);
@@ -251,7 +252,7 @@ export function AccessibilitySection({
   const verdict = useMemo(() => verdictLine(t, evaluateRoleSeparation(roleColors)), [roleColors, t]);
 
   const handleSaveRole = useCallback(
-    (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
+    (role: HoldColorOverrideRole, color: string | null, shape?: HoldMarkerShape) => {
       setRoleMarkerOverride(role, color, shape);
       // The ONE manual colour edit in the app, so the one place the climber's own
       // colours get remembered. A palette apply deliberately does not mirror
@@ -347,7 +348,7 @@ export function AccessibilitySection({
               ? t('mobile.settings.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel })
               : modeLabel;
             const swatchColor = getEffectiveHoldRoleColor(boardName, role, overrides);
-            const hasRoleOverride = !!roleOverride || roleShape !== DEFAULT_HOLD_MARKER_SHAPE;
+            const hasRoleOverride = !!roleOverride || markerOverrides.shapes[role] !== undefined;
             return (
               <ListRow
                 key={role}
@@ -456,7 +457,7 @@ type HoldColorPickerSheetProps = {
   shapeSize: number;
   /** Classic only — Boardsesh draws the lit hold's own silhouette, so there's no shape to pick. */
   showShapePicker: boolean;
-  onSave: (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => void;
+  onSave: (role: HoldColorOverrideRole, color: string | null, shape?: HoldMarkerShape) => void;
   onClose: () => void;
 };
 
@@ -475,6 +476,7 @@ function HoldColorPickerSheet({
   const [mode, setMode] = useState<ColorMode>('default');
   const [userColor, setUserColor] = useState<string>('#00ff00');
   const [shape, setShape] = useState<HoldMarkerShape>(DEFAULT_HOLD_MARKER_SHAPE);
+  const [shapeChosen, setShapeChosen] = useState(false);
   const [seedCounter, setSeedCounter] = useState(0);
   // Tracks the closed->open transition so the fields re-seed each time the picker
   // opens; the ModalSheet is driven declaratively off `role != null`.
@@ -494,6 +496,7 @@ function HoldColorPickerSheet({
       setMode(currentColor ? 'user' : 'default');
       setUserColor(seedColor);
       setShape(currentShape);
+      setShapeChosen(false);
       setSeedCounter((value) => value + 1);
     }
     wasOpenRef.current = role != null;
@@ -514,8 +517,8 @@ function HoldColorPickerSheet({
 
   const handleSave = useCallback(() => {
     if (!role) return;
-    onSave(role, mode === 'default' ? null : userColor, shape);
-  }, [mode, onSave, role, shape, userColor]);
+    onSave(role, mode === 'default' ? null : userColor, showShapePicker && shapeChosen ? shape : undefined);
+  }, [mode, onSave, role, shape, shapeChosen, showShapePicker, userColor]);
 
   const header = (
     <SheetTopBar
@@ -567,7 +570,10 @@ function HoldColorPickerSheet({
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     accessibilityLabel={labelForShape(t, option)}
-                    onPress={() => setShape(option)}
+                    onPress={() => {
+                      setShape(option);
+                      setShapeChosen(true);
+                    }}
                     style={[
                       styles.shapeButton,
                       {

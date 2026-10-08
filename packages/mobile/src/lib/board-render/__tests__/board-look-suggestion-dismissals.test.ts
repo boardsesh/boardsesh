@@ -37,17 +37,39 @@ afterEach(() => {
 
 describe('board-look suggestion dismissals', () => {
   it('starts with nothing dismissed', async () => {
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: false, grayscale: false });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: false,
+      grayscale: false,
+      differentiateWithoutColor: false,
+    });
   });
 
   it('round-trips a dismissal without touching the other one', async () => {
     await dismissBoardLookSuggestion('grayscale');
 
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: false, grayscale: true });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: false,
+      grayscale: true,
+      differentiateWithoutColor: false,
+    });
 
     await dismissBoardLookSuggestion('increaseContrast');
 
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: true, grayscale: true });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: true,
+      grayscale: true,
+      differentiateWithoutColor: false,
+    });
+  });
+
+  it('keeps the Differentiate Without Color answer apart from the greyscale one', async () => {
+    await dismissBoardLookSuggestion('differentiateWithoutColor');
+
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: false,
+      grayscale: false,
+      differentiateWithoutColor: true,
+    });
   });
 
   it('clears back to nothing dismissed', async () => {
@@ -55,7 +77,11 @@ describe('board-look suggestion dismissals', () => {
 
     await clearBoardLookSuggestionDismissals();
 
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: false, grayscale: false });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: false,
+      grayscale: false,
+      differentiateWithoutColor: false,
+    });
   });
 
   it('reports DISMISSED when the store cannot be read', async () => {
@@ -64,19 +90,31 @@ describe('board-look suggestion dismissals', () => {
     // every cold start.
     store.failReads = true;
 
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: true, grayscale: true });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: true,
+      grayscale: true,
+      differentiateWithoutColor: true,
+    });
   });
 
   it('reports DISMISSED in screenshot mode', async () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
 
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: true, grayscale: true });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: true,
+      grayscale: true,
+      differentiateWithoutColor: true,
+    });
   });
 
   it('ignores a stored payload that is not the shape it wrote', async () => {
     store.values.set('boardLookSuggestionDismissals', JSON.stringify({ grayscale: 'yes', bogus: true }));
 
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({ increaseContrast: false, grayscale: false });
+    expect(await loadBoardLookSuggestionDismissals()).toEqual({
+      increaseContrast: false,
+      grayscale: false,
+      differentiateWithoutColor: false,
+    });
   });
 
   it('lives in AsyncStorage, next to the setting it refers to', async () => {

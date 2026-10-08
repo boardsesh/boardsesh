@@ -359,6 +359,10 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     orientation: 'portrait',
     icon: iconPath,
     userInterfaceStyle: 'automatic',
+    // Android `colorPrimary` (Expo's default is #023c69). The brand tint,
+    // brandColors.tint in @boardsesh/velvet-tokens; ./plugins/with-brand-accent-color
+    // sets the matching accent on both platforms.
+    primaryColor: '#6D28D9',
     newArchEnabled: true,
     // PILOT (draft — measure before merge): React Compiler auto-memoization.
     // SDK 57's babel-preset-expo enables babel-plugin-react-compiler when Expo
@@ -790,6 +794,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Boardsesh is iPhone-only. Keep App Store Connect from validating the
       // generated app target as a "Designed for iPhone/iPad" macOS binary.
       './plugins/with-ios-app-store-build-settings',
+      // HIG Color: the brand tint for what the OS draws (alerts, context menus,
+      // share sheets, pickers). iOS gets an AccentColor asset named as the app's
+      // global accent; Android gets colorAccent (light + night) in the app
+      // theme. Without it those fall back to system blue and AppCompat teal.
+      './plugins/with-brand-accent-color',
       // Adds the BoardseshWidgets Xcode target on every `expo prebuild`. The
       // widget bundle hosts the Live Activity UI (lock screen + Dynamic
       // Island) plus the Next/Previous AppIntents. Target sources live in

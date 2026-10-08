@@ -183,6 +183,9 @@
             "body": "Role glyphs put a shape on each lit hold, so start, hand, finish and foot stay apart without colour. Your board's own LEDs don't change.",
             "apply": "Turn on role glyphs"
           },
+          "differentiateWithoutColor": {
+            "title": "Differentiate Without Color is on"
+          },
           "dismiss": "Not now",
           "dismissAccessibility": "Dismiss this suggestion"
         },

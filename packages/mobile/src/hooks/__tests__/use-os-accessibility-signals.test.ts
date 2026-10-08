@@ -13,7 +13,25 @@ const mocks = vi.hoisted(() => ({
   isHighTextContrastEnabled: vi.fn(async (): Promise<boolean> => false),
   removeSubscription: vi.fn(),
   addEventListener: vi.fn((..._args: unknown[]) => ({ remove: mocks.removeSubscription })),
+  differentiateWithoutColor: 'unknown' as 'on' | 'off' | 'unknown',
+  differentiateWithoutColorListeners: new Set<(state: 'on' | 'off' | 'unknown') => void>(),
+  startDifferentiateWithoutColorSignal: vi.fn(),
 }));
+
+// The iOS-only native read lives behind its own store; this stands in for it.
+vi.mock('../../lib/differentiate-without-color', () => ({
+  startDifferentiateWithoutColorSignal: () => mocks.startDifferentiateWithoutColorSignal(),
+  getDifferentiateWithoutColor: () => mocks.differentiateWithoutColor,
+  subscribeDifferentiateWithoutColor: (listener: (state: 'on' | 'off' | 'unknown') => void) => {
+    mocks.differentiateWithoutColorListeners.add(listener);
+    return () => mocks.differentiateWithoutColorListeners.delete(listener);
+  },
+}));
+
+function setDifferentiateWithoutColor(state: 'on' | 'off' | 'unknown'): void {
+  mocks.differentiateWithoutColor = state;
+  for (const listener of mocks.differentiateWithoutColorListeners) listener(state);
+}
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: {
@@ -69,6 +87,8 @@ function sendAppState(state: 'background' | 'active'): void {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.appStateHandlers = [];
+  mocks.differentiateWithoutColor = 'unknown';
+  mocks.differentiateWithoutColorListeners.clear();
   mocks.isGrayscaleEnabled.mockResolvedValue(false);
   mocks.isDarkerSystemColorsEnabled.mockResolvedValue(false);
   mocks.isHighTextContrastEnabled.mockResolvedValue(false);
@@ -86,7 +106,24 @@ describe('useOsAccessibilitySignals', () => {
 
     const { result } = renderHook(() => useSignals());
 
-    expect(result.current).toEqual({ increaseContrast: 'unknown', grayscale: 'unknown', ready: false });
+    expect(result.current).toEqual({
+      increaseContrast: 'unknown',
+      grayscale: 'unknown',
+      differentiateWithoutColor: 'unknown',
+      ready: false,
+    });
+  });
+
+  it('reports Differentiate Without Color from its own store and follows a change', async () => {
+    mocks.differentiateWithoutColor = 'off';
+    const useSignals = await loadHook('ios');
+
+    const { result } = renderHook(() => useSignals());
+
+    expect(mocks.startDifferentiateWithoutColorSignal).toHaveBeenCalled();
+    expect(result.current.differentiateWithoutColor).toBe('off');
+    act(() => setDifferentiateWithoutColor('on'));
+    expect(result.current.differentiateWithoutColor).toBe('on');
   });
 
   it('maps a resolved false to `off` and settles', async () => {
@@ -140,7 +177,12 @@ describe('useOsAccessibilitySignals', () => {
     const { result } = renderHook(() => useSignals());
 
     await waitFor(() => expect(result.current.ready).toBe(true));
-    expect(result.current).toEqual({ increaseContrast: 'unknown', grayscale: 'unknown', ready: true });
+    expect(result.current).toEqual({
+      increaseContrast: 'unknown',
+      grayscale: 'unknown',
+      differentiateWithoutColor: 'unknown',
+      ready: true,
+    });
     expect(mocks.isGrayscaleEnabled).not.toHaveBeenCalled();
     expect(mocks.addEventListener).not.toHaveBeenCalled();
   });

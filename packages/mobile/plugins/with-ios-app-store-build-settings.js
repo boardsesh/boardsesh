@@ -73,6 +73,7 @@ function withIosAppStoreBuildSettings(config) {
 
 module.exports = createRunOncePlugin(withIosAppStoreBuildSettings, 'with-ios-app-store-build-settings', '1.0.0');
 module.exports.configureIosAppStoreBuildSettings = configureIosAppStoreBuildSettings;
+module.exports.findIosApplicationTarget = findIosApplicationTarget;
 module.exports.IOS_APPLICATION_PRODUCT_TYPE = IOS_APPLICATION_PRODUCT_TYPE;
 module.exports.MAC_DESIGNED_FOR_IPHONE_IPAD_BUILD_SETTING = MAC_DESIGNED_FOR_IPHONE_IPAD_BUILD_SETTING;
 module.exports.MAC_DESIGNED_FOR_IPHONE_IPAD_DISABLED = MAC_DESIGNED_FOR_IPHONE_IPAD_DISABLED;

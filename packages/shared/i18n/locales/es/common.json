@@ -457,6 +457,9 @@
             "body": "Los glifos de rol ponen una forma en cada presa encendida, para que inicio, mano, final y pie se distingan sin color. Los LED de tu plafón no cambian.",
             "apply": "Activar glifos de rol"
           },
+          "differentiateWithoutColor": {
+            "title": "«Diferenciar sin color» está activado"
+          },
           "dismiss": "Ahora no",
           "dismissAccessibility": "Descartar esta sugerencia"
         },

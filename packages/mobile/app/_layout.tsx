@@ -10,6 +10,7 @@ import { wrapWithSentry } from '../src/lib/sentry';
 import '../src/lib/observe-bootstrap';
 import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
+import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
 import { LogBox, Pressable, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
@@ -558,6 +559,11 @@ function RootLayout() {
 
   useEffect(() => {
     void initializeUserDataExportDownloads().catch(reportError);
+  }, []);
+
+  // iOS "Differentiate Without Color" turns on per-role hold shapes (HIG Color).
+  useEffect(() => {
+    startHoldShapeSystemDefaultSync();
   }, []);
 
   // Flush decoded board-art bitmaps on background / memory warning (#3479).
