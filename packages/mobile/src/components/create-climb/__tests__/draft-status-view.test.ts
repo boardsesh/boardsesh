@@ -21,6 +21,35 @@ describe('deriveDraftStatusView', () => {
     expect(deriveDraftStatusView({ ...base, hasContent: false }, identity)).toBeNull();
   });
 
+  it('asks for a first hold while the editor is empty, since Save is disabled', () => {
+    expect(deriveDraftStatusView({ ...base, hasContent: false, noHolds: true }, identity)).toEqual({
+      text: 'mobile.create.save.needsHold',
+      tone: 'muted',
+      announce: false,
+    });
+  });
+
+  it('asks for a first hold when only a name is typed', () => {
+    expect(deriveDraftStatusView({ ...base, noHolds: true }, identity)?.text).toBe('mobile.create.save.needsHold');
+  });
+
+  it('says Save goes to sign-in while signed out, empty or not', () => {
+    for (const hasContent of [false, true]) {
+      expect(
+        deriveDraftStatusView({ ...base, hasContent, signedOut: true, noHolds: !hasContent }, identity)?.text,
+      ).toBe('mobile.create.save.login');
+    }
+  });
+
+  it('keeps storage truth and failures ahead of the sign-in note', () => {
+    expect(deriveDraftStatusView({ ...base, signedOut: true, localPersistenceAvailable: false }, identity)?.text).toBe(
+      'mobile.create.autosave.notStored',
+    );
+    expect(deriveDraftStatusView({ ...base, signedOut: true, publishBlocked: true }, identity)?.text).toBe(
+      'mobile.create.publish.blocked',
+    );
+  });
+
   it('reports the on-device copy for a never-saved climb', () => {
     expect(deriveDraftStatusView(base, identity)).toEqual({
       text: 'mobile.create.autosave.onDevice',

@@ -26,9 +26,6 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name?: string }) => createElement('span', { 'data-icon': name }) }));
-vi.mock('../../ble/BleLightbulbButton', () => ({
-  BleLightbulbButton: () => createElement('span', { 'data-ble': 'true' }),
-}));
 // One button per row, in the order the header handed them over — enough to fire
 // a specific POSITION, which is the thing under test.
 vi.mock('../../AppMenu', () => ({
@@ -63,6 +60,8 @@ vi.mock('../../SheetTopBar', () => ({
     disabled,
     loading,
     prominent,
+    icon,
+    accessibilityHint,
   }: {
     label: string;
     accessibilityLabel?: string;
@@ -70,12 +69,16 @@ vi.mock('../../SheetTopBar', () => ({
     disabled?: boolean;
     loading?: boolean;
     prominent?: boolean;
+    icon?: string;
+    accessibilityHint?: string;
   }) =>
     createElement('button', {
       'data-node': 'save',
       'data-label': accessibilityLabel,
       'data-loading': loading ? 'true' : 'false',
       'data-prominent': prominent ? 'true' : 'false',
+      'data-icon': icon,
+      'data-hint': accessibilityHint,
       disabled: disabled || loading,
       onClick: onPress,
       children: label,
@@ -92,11 +95,7 @@ import type { SaveButtonState } from '../use-create-climb-screen';
 
 function renderHeader(
   overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]['overflow']> = {},
-  {
-    showLightbulb = true,
-    saveState = 'ready',
-    climbReady = true,
-  }: { showLightbulb?: boolean; saveState?: SaveButtonState; climbReady?: boolean } = {},
+  { saveState = 'ready', climbReady = true }: { saveState?: SaveButtonState; climbReady?: boolean } = {},
 ) {
   const onSelectOverflowAction = vi.fn();
   const onSave = vi.fn();
@@ -108,10 +107,6 @@ function renderHeader(
       finishCount: 0,
       focusSignal: 0,
       onClose: vi.fn(),
-      showLightbulb,
-      bleConnected: false,
-      bleConnecting: false,
-      onToggleBle: vi.fn(),
       overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, ...overflow },
       onSelectOverflowAction,
       saveState,
@@ -178,17 +173,20 @@ describe('CreateDrawerHeader overflow menu', () => {
   });
 });
 
-// #5960: the creator's bulb only starts a Bluetooth connect, and a spray wall has
-// no lights. The drawer passes `showLightbulb={false}` there.
-describe('CreateDrawerHeader lightbulb', () => {
-  it('draws the bulb on a board with lights', () => {
+// Every extra 44pt in this bar comes out of the name field, which a French or
+// German Save already narrows. The lightbulb moved to the tool row for that.
+describe('CreateDrawerHeader contents', () => {
+  it('holds only close, the name, the overflow menu and Save', () => {
     const { container } = renderHeader();
-    expect(container.querySelector('[data-ble="true"]')).not.toBeNull();
-  });
-
-  it('leaves the bulb out when the board has nothing to light', () => {
-    const { container } = renderHeader({}, { showLightbulb: false });
-    expect(container.querySelector('[data-ble="true"]')).toBeNull();
+    const bar = container.firstElementChild as HTMLElement;
+    const parts = Array.from(bar.children).map((child) => {
+      if (child.getAttribute('data-node')) return child.getAttribute('data-node');
+      if (child.querySelector('input')) return 'name';
+      if (child.querySelector('[data-icon="chevron.down"]')) return 'close';
+      return child.tagName;
+    });
+    expect(parts).toEqual(['close', 'name', 'overflow', 'save']);
+    expect(container.querySelector('[data-ble]')).toBeNull();
   });
 });
 
@@ -228,5 +226,16 @@ describe('CreateDrawerHeader Save', () => {
     const { save } = renderHeader({}, { saveState: 'login', climbReady: false });
     expect(save.disabled).toBe(false);
     expect(save.getAttribute('data-label')).toBe('mobile.create.save.login');
+  });
+
+  it('marks a climb past its edit window with a lock and says why', () => {
+    const { save } = renderHeader({}, { saveState: 'editLocked' });
+    expect(save.disabled).toBe(true);
+    expect(save.getAttribute('data-icon')).toBe('lock');
+    expect(save.getAttribute('data-hint')).toBe('createClimbForm.alerts.editWindowExpired');
+
+    // Not ready is plain: no lock, so the two never look alike.
+    const notReady = renderHeader({}, { climbReady: false });
+    expect(notReady.save.getAttribute('data-icon')).toBeNull();
   });
 });

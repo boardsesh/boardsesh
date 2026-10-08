@@ -44,7 +44,25 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
       'data-active-color': activeColor,
       'data-value': accessibilityValueText,
     }),
+  SIZES: { lg: { dim: 56, icon: 28 }, sm: { dim: 44, icon: 22 } },
   drawerActionBarStyles: { container: {}, rowSecondary: {}, spacer: {} },
+}));
+vi.mock('../../ble/BleLightbulbButton', () => ({
+  BleLightbulbButton: ({
+    isConnected,
+    containerSize,
+    accessibilityLabel,
+  }: {
+    isConnected: boolean;
+    containerSize?: number;
+    accessibilityLabel: string;
+  }) =>
+    createElement('button', {
+      'data-action': 'lightbulb',
+      'data-connected': String(isConnected),
+      'data-size': containerSize,
+      'data-label': accessibilityLabel,
+    }),
 }));
 vi.mock('../brush-roles', () => ({
   brushRoleColor: () => '#00FF00',
@@ -99,12 +117,30 @@ describe('CreateDrawerActionBar', () => {
   it('carries the editing tools and no Save, which is the header confirm', () => {
     // Save moved to the trailing end of the header (top bar everywhere); this
     // row is tools only, spread evenly with no scroller.
-    const { toolRow, container } = renderBar(1, { onToggleHeatmap: vi.fn() });
+    const { toolRow, container } = renderBar(1, {
+      onToggleHeatmap: vi.fn(),
+      lightbulb: { connected: false, connecting: false, onToggle: vi.fn() },
+    });
     const actions = Array.from(toolRow.querySelectorAll('[data-action]')).map((node) =>
       node.getAttribute('data-action'),
     );
-    expect(actions).toEqual(['undo', 'redo', 'delete', 'flame', 'queue']);
+    expect(actions).toEqual(['undo', 'redo', 'delete', 'flame', 'queue', 'lightbulb']);
     expect(container.textContent).not.toContain('mobile.create.save');
+  });
+
+  // #5960: the creator's bulb only starts a Bluetooth connect, and a spray wall
+  // has no lights, so the drawer passes no `lightbulb` there.
+  it('draws the bulb as a 44dp tool beside Set Active on a board with lights', () => {
+    const { toolRow } = renderBar(1, { lightbulb: { connected: true, connecting: false, onToggle: vi.fn() } });
+    const bulb = toolRow.querySelector('[data-action="lightbulb"]');
+    expect(bulb?.getAttribute('data-size')).toBe('44');
+    expect(bulb?.getAttribute('data-connected')).toBe('true');
+    expect(bulb?.previousElementSibling?.getAttribute('data-action')).toBe('queue');
+  });
+
+  it('leaves the bulb out when the board has nothing to light', () => {
+    const { toolRow } = renderBar(1);
+    expect(toolRow.querySelector('[data-action="lightbulb"]')).toBeNull();
   });
 
   it('holds no frame controls at all — the route slot under the board owns those', () => {

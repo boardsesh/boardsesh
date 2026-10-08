@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { deriveSaveButtonView } from '../save-button-view';
+import { deriveDraftStatusView, type DraftStatusState } from '../draft-status-view';
 import type { SaveButtonState } from '../use-create-climb-screen';
 
 // Identity translate: labels come back as the i18n key, so each test asserts
@@ -13,6 +14,8 @@ describe('deriveSaveButtonView', () => {
       accessibilityLabel: 'mobile.create.save.idle',
       disabled: false,
       loading: false,
+      icon: null,
+      accessibilityHint: null,
     });
   });
 
@@ -22,6 +25,8 @@ describe('deriveSaveButtonView', () => {
       accessibilityLabel: 'mobile.create.save.saving',
       disabled: false,
       loading: true,
+      icon: null,
+      accessibilityHint: null,
     });
   });
 
@@ -31,15 +36,19 @@ describe('deriveSaveButtonView', () => {
       accessibilityLabel: 'mobile.create.save.done',
       disabled: false,
       loading: false,
+      icon: null,
+      accessibilityHint: null,
     });
   });
 
-  it('editLocked: disabled, keeps the idle label', () => {
+  it('editLocked: disabled behind a lock, and says why', () => {
     expect(deriveSaveButtonView('editLocked', t)).toEqual({
       label: 'mobile.create.save.idle',
       accessibilityLabel: 'mobile.create.save.idle',
       disabled: true,
       loading: false,
+      icon: 'lock',
+      accessibilityHint: 'createClimbForm.alerts.editWindowExpired',
     });
   });
 
@@ -49,6 +58,8 @@ describe('deriveSaveButtonView', () => {
       accessibilityLabel: 'mobile.create.save.login',
       disabled: false,
       loading: false,
+      icon: null,
+      accessibilityHint: null,
     });
   });
 
@@ -66,5 +77,30 @@ describe('deriveSaveButtonView', () => {
       return `${view.label}|${view.accessibilityLabel}|${view.disabled}|${view.loading}`;
     });
     expect(new Set(fingerprints).size).toBe(states.length);
+  });
+
+  it('login, ready and editLocked look different on screen, not only to a screen reader', () => {
+    // What a sighted climber sees: the button's label, glyph and enabled state,
+    // plus the status line under the tools.
+    const status: DraftStatusState = {
+      hasContent: true,
+      localPersistenceAvailable: true,
+      hasSavedClimb: false,
+      hasUnsavedEdits: false,
+      saveFailed: false,
+      publishBlocked: false,
+    };
+    const visible = (state: SaveButtonState, signedOut: boolean) => {
+      const view = deriveSaveButtonView(state, t);
+      const line = deriveDraftStatusView({ ...status, signedOut }, t)?.text ?? '';
+      return `${view.label}|${view.icon}|${view.disabled}|${line}`;
+    };
+    const ready = visible('ready', false);
+    const login = visible('login', true);
+    const locked = visible('editLocked', false);
+    expect(new Set([ready, login, locked]).size).toBe(3);
+    // The sign-in cue is the status line, the lock cue is the glyph.
+    expect(login).toContain('mobile.create.save.login');
+    expect(deriveSaveButtonView('editLocked', t).icon).toBe('lock');
   });
 });

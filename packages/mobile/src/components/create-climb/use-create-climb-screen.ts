@@ -1453,14 +1453,15 @@ export function useCreateClimbScreen({
   }, [isAuthenticated, isSaving, justSaved, editLocked]);
 
   // ---- Is my work safe, and where is it? ----
-  // Only the PUBLIC transition is gated. Nothing else checks starts and finishes
-  // — not the editor, not SaveClimbInputSchema — so without this a one-hold blob
-  // is one tap from being a public climb. The draft threshold stays where it is:
-  // tightening it would regress every draft that saves today, and a disabled Save
-  // with nothing to say is worse than a silent no-op. While this is true, the
-  // status line names the missing requirement directly under the button.
-  // What disables Save: the holds.
+  // Only the PUBLIC transition needs starts and finishes. Nothing else checks
+  // them — not the editor, not SaveClimbInputSchema — so without this a one-hold
+  // blob is one tap from being a public climb. A draft needs one hold, as it
+  // always has. The header's Save is disabled until the holds meet the bar
+  // (CreateDrawer's `climbReady`), and the status line under the tools says what
+  // is missing, so a disabled Save is never mute: `publishBlocked` names the
+  // start and finish, `noHolds` asks for a first hold.
   const publishBlocked = !isDraft && hasContent && !canPublish;
+  const noHolds = !canSave;
   const localPersistenceAvailable = isDraftStorageAvailable();
   const saveFailed = failedSignature !== null && failedSignature === payloadSignature;
 
@@ -1475,10 +1476,23 @@ export function useCreateClimbScreen({
           saveFailed,
           publishBlocked,
           isDraft,
+          signedOut: !isAuthenticated,
+          noHolds,
         },
         t,
       ),
-    [hasContent, localPersistenceAvailable, savedClimb, hasUnsavedEdits, saveFailed, publishBlocked, isDraft, t],
+    [
+      hasContent,
+      localPersistenceAvailable,
+      savedClimb,
+      hasUnsavedEdits,
+      saveFailed,
+      publishBlocked,
+      isDraft,
+      isAuthenticated,
+      noHolds,
+      t,
+    ],
   );
 
   // Signal the screen should focus the header name field (e.g. on a save with

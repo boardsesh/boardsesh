@@ -780,7 +780,8 @@
         "saving": "Saving…",
         "done": "Saved",
         "draftToast": "Draft saved",
-        "publishedToast": "Climb published"
+        "publishedToast": "Climb published",
+        "needsHold": "Paint a hold to save"
       },
       "autosave": {
         "onDevice": "Draft saved on this phone",

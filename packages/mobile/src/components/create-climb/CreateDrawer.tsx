@@ -305,7 +305,13 @@ export function CreateDrawer({
   // a draft, a start and a finish for a publish, and no lost-hold rings up.
   // handleSave refuses the same cases, so this only makes the refusal visible.
   const climbReady = (controller.isDraft ? controller.canSave : controller.canPublish) && !ghostsPending;
-  const { handleSave } = controller;
+  const { handleSave, bleConnected, bleConnecting, handleToggleBle } = controller;
+  const showLightbulb = offersBoardLightbulb(board.boardName);
+  const lightbulb = useMemo(
+    () =>
+      showLightbulb ? { connected: bleConnected, connecting: bleConnecting, onToggle: handleToggleBle } : undefined,
+    [showLightbulb, bleConnected, bleConnecting, handleToggleBle],
+  );
   const handleSavePress = useCallback(() => {
     void handleSave();
   }, [handleSave]);
@@ -435,10 +441,6 @@ export function CreateDrawer({
               finishCount={controller.finishCount}
               focusSignal={controller.focusNameSignal}
               onClose={() => sheetRef.current?.close()}
-              showLightbulb={offersBoardLightbulb(board.boardName)}
-              bleConnected={controller.bleConnected}
-              bleConnecting={controller.bleConnecting}
-              onToggleBle={controller.handleToggleBle}
               overflow={overflowState}
               onSelectOverflowAction={handleOverflowAction}
               saveState={controller.saveState}
@@ -537,6 +539,7 @@ export function CreateDrawer({
               currentFrameIndex={controller.currentFrameIndex}
               canSetActive={controller.canSetActive}
               onSetActive={controller.handleSetActive}
+              lightbulb={lightbulb}
               draftStatus={controller.draftStatus}
               onToggleHeatmap={heatmap?.toggle}
               heatmapActive={heatmapActive}

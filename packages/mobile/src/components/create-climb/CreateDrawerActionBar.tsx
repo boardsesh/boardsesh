@@ -4,7 +4,8 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { ActionButton, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
+import { ActionButton, SIZES, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
+import { BleLightbulbButton } from '../ble/BleLightbulbButton';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { useHoldColorOverrides } from '../../lib/hold-color-overrides';
@@ -41,6 +42,15 @@ type CreateDrawerActionBarProps = {
   currentFrameIndex: number;
   canSetActive: boolean;
   onSetActive: () => void;
+  /**
+   * The wall's Bluetooth lightbulb. Omitted on a board with no lights to
+   * connect to (a spray wall, #5960), where it could only ever start a connect.
+   */
+  lightbulb?: {
+    connected: boolean;
+    connecting: boolean;
+    onToggle: () => void;
+  };
   /** The persistent "is my work safe?" line, or null for an empty editor. */
   draftStatus: DraftStatusView | null;
   /** The hold heatmap toggle; omitted → no button. */
@@ -65,13 +75,15 @@ type CreateDrawerActionBarProps = {
 /**
  * The create-drawer action bar, built on the shared drawer-action-bar grammar.
  * Row 1 (where the Play Drawer's play controls sit) is the brush chips; row 2 is
- * the editing tools (undo, redo, clear, heat, set-active), spread evenly across
- * the row; under both sits the persistent draft-status line.
+ * the editing tools (undo, redo, clear, heat, set-active, lightbulb), spread
+ * evenly across the row; under both sits the persistent draft-status line.
  *
  * Save is not here. It is the sheet's confirm, so it sits at the trailing end of
  * the header (docs/mobile-sheets-vs-routes.md, "Where actions go"). Without the
- * pill the row holds at most five 44dp icon buttons, which fit a 320pt screen,
- * so the horizontal scroller that used to keep Save on screen went with it.
+ * pill the row holds at most six 44dp icon buttons, 264dp plus 32dp of side
+ * padding, which fits a 320pt screen, so the horizontal scroller that used to
+ * keep Save on screen went with it. The lightbulb moved here from the header,
+ * where it took 44pt from the name field.
  *
  * Frame editing is NOT here. Duplicate and Delete frame moved to the route slot
  * under the board, which labels them in words — an unlabelled `copy` glyph
@@ -92,6 +104,7 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   currentFrameIndex,
   canSetActive,
   onSetActive,
+  lightbulb,
   draftStatus,
   onToggleHeatmap,
   heatmapActive = false,
@@ -100,6 +113,8 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   saveBlockedLine = null,
 }: CreateDrawerActionBarProps) {
   const { t } = useTranslation('climbs');
+  const { t: tSettings } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors: schemeBrandColors } = useTheme();
   const roleLabels = useBrushRoleLabels();
   const { overrides: holdColorOverrides } = useHoldColorOverrides();
@@ -256,6 +271,23 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
           accessibilityLabel={t('mobile.create.actions.setActive')}
           accessibilityHint={canSetActive ? undefined : t('mobile.create.actions.setActiveHint')}
         />
+        {/* Last, beside Set Active: both are about the wall. A stateful toggle
+            climbers reach for often, so a tool here rather than a ••• row. */}
+        {lightbulb ? (
+          <BleLightbulbButton
+            isConnected={lightbulb.connected}
+            isScanning={lightbulb.connecting}
+            onPress={lightbulb.onToggle}
+            accessibilityLabel={
+              lightbulb.connected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')
+            }
+            scanningAccessibilityHint={tSettings('ble.scanning')}
+            writingAccessibilityHint={tSettings('ble.writing')}
+            haptic="medium"
+            size={SIZES.sm.icon}
+            containerSize={SIZES.sm.dim}
+          />
+        ) : null}
       </View>
 
       {/* Always rendered, even with nothing to say — see CreateDraftStatusRow.
@@ -322,7 +354,7 @@ const styles = StyleSheet.create({
   chipLabel: {
     fontWeight: '600',
   },
-  // Five tools spread across the width. The status row carries the bar's
+  // Up to six tools spread across the width. The status row carries the bar's
   // bottom padding, so the line sits 4dp under the tools rather than a full gap
   // below them.
   toolRow: {

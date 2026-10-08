@@ -780,7 +780,8 @@
         "saving": "Wird gespeichert…",
         "done": "Gespeichert",
         "draftToast": "Entwurf gespeichert",
-        "publishedToast": "Boulder veröffentlicht"
+        "publishedToast": "Boulder veröffentlicht",
+        "needsHold": "Füge einen Griff hinzu, um zu speichern"
       },
       "autosave": {
         "onDevice": "Entwurf auf diesem Handy gespeichert",

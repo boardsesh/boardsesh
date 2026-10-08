@@ -49,6 +49,13 @@ export type DraftStatusState = {
    * is what every caller meant before the switch had a second default.
    */
   isDraft?: boolean;
+  /**
+   * Signed out. The header's Save still reads "Save" (its full "Sign in to
+   * save" doesn't fit beside the name), so this line says what the tap does.
+   */
+  signedOut?: boolean;
+  /** No holds painted, so Save is disabled; this line says why. */
+  noHolds?: boolean;
 };
 
 /**
@@ -61,7 +68,13 @@ export type DraftStatusState = {
  * line simply keeps whatever it said before the press, which stays true.
  */
 export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraftStatus): DraftStatusView | null {
-  if (!state.hasContent) return null;
+  // An empty editor has no work to report on, only the two things the header's
+  // Save is waiting for. Neither is announced: both are up from the first frame.
+  if (!state.hasContent) {
+    if (state.signedOut) return { text: t('mobile.create.save.login'), tone: 'muted', announce: false };
+    if (state.noHolds) return { text: t('mobile.create.save.needsHold'), tone: 'muted', announce: false };
+    return null;
+  }
 
   // Storage truth first: on signed-out expo-web every write is dropped, so no
   // other branch is allowed to claim the work is kept anywhere.
@@ -85,6 +98,18 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
       announce: true,
       yieldsToHeatmap: true,
     };
+  }
+
+  // Save is disabled with no holds; a name or description alone can't be saved.
+  if (state.noHolds) {
+    return { text: t('mobile.create.save.needsHold'), tone: 'muted', announce: false, yieldsToHeatmap: true };
+  }
+
+  // Signed out, the header's Save goes to sign-in. Said here, in muted tone,
+  // in place of the on-device line: the draft is kept on the phone either way,
+  // and the close button's hint already says so.
+  if (state.signedOut) {
+    return { text: t('mobile.create.save.login'), tone: 'muted', announce: false };
   }
 
   const savingAsDraft = state.isDraft ?? true;
