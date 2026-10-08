@@ -1069,7 +1069,8 @@
       "failed": "Couldn't save the look. Try again, or publish anyway.",
       "publishWithout": "Publish anyway",
       "dimTitle": "Dim the rest of the wall",
-      "dimOff": "Off"
+      "dimOff": "Off",
+      "previewPhoto": "Hold lighting is previewed on your original photo. {{background}} is used when you publish."
     },
     "publish": {
       "title": "Put it on your boards",
@@ -1109,6 +1110,12 @@
       "photoTitle": "Photograph the wall as it is now",
       "photoBody": "Same name and angle as before. Shoot the whole wall, then mark every hold.",
       "archiveNotice": "When this wall goes live, the old one is archived. Its climbs and sends stay."
+    },
+    "background": {
+      "title": "What should the wall show?",
+      "body": "Slide between the photo, the wall and the holds before choosing how they light up.",
+      "next": "Pick hold look",
+      "unsupported": "Only the photo is available right now. You can still finish your wall."
     }
   },
   "sprayResetConfirm": {

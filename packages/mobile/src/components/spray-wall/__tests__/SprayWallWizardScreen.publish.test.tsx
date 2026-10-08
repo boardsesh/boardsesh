@@ -63,7 +63,14 @@ const mocks = vi.hoisted(() => ({
   fetchVersions: vi.fn<(wallUuid: string) => Promise<unknown>>(),
   reportError: vi.fn<(error: unknown, context?: unknown) => void>(),
   editorProps: { current: null as null | { onCommitted: (summary: unknown) => void } },
-  lookProps: { current: null as null | { onConfirmed: () => void } },
+  lookProps: {
+    current: null as null | {
+      phase: 'background' | 'look';
+      stepCounter: string;
+      onBackgroundConfirmed: () => void;
+      onConfirmed: () => void;
+    },
+  },
   resetWall: vi.fn<(wallUuid: string) => Promise<unknown>>(),
   settleArchived: vi.fn<(queryClient: unknown, archivedUuid: string, replacementUuid: string) => void>(),
   track: vi.fn<(name: string, properties?: Record<string, unknown>) => void>(),
@@ -117,7 +124,11 @@ vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityFi
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: 'en-US', language: 'en-US' } }),
+  useTranslation: () => ({
+    t: (key: string, options?: { current?: number; total?: number }) =>
+      key === 'sprayWizard.stepCounter' ? `Step ${options?.current} of ${options?.total}` : key,
+    i18n: { resolvedLanguage: 'en-US', language: 'en-US' },
+  }),
 }));
 vi.mock('@boardsesh/analytics', () => ({
   SHARED_EVENTS: { BoardCreated: 'Board Created' },
@@ -197,9 +208,14 @@ vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
   },
 }));
 vi.mock('../SprayWallLookStep', () => ({
-  SprayWallLookStep: (props: { onConfirmed: () => void }) => {
+  SprayWallLookStep: (props: {
+    phase: 'background' | 'look';
+    stepCounter: string;
+    onBackgroundConfirmed: () => void;
+    onConfirmed: () => void;
+  }) => {
     mocks.lookProps.current = props;
-    return createElement('div', { 'data-testid': 'look' });
+    return createElement('div', { 'data-testid': 'look', 'data-step': props.stepCounter });
   },
 }));
 // Native removal prevention is covered by use-spray-wizard-leave-guard.test.tsx.
@@ -284,7 +300,10 @@ async function reachPublish() {
   await flush();
   expect(screen.getByTestId('editor')).toBeTruthy();
   act(() => mocks.editorProps.current?.onCommitted({ written: 0, removed: 0, holdCount: 5 }));
-  expect(screen.getByTestId('look')).toBeTruthy();
+  expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 7');
+  expect(mocks.publishVersion).not.toHaveBeenCalled();
+  act(() => mocks.lookProps.current?.onBackgroundConfirmed());
+  expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 6 of 7');
   act(() => mocks.lookProps.current?.onConfirmed());
   await flush();
   return view;
@@ -428,6 +447,9 @@ describe('SprayWallWizardScreen — publishing a reset', () => {
     act(() => pickUp?.onPress?.());
     await flush();
     act(() => mocks.editorProps.current?.onCommitted({ written: 0, removed: 0, holdCount: 3 }));
+    expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 4 of 6');
+    act(() => mocks.lookProps.current?.onBackgroundConfirmed());
+    expect(screen.getByTestId('look').getAttribute('data-step')).toBe('Step 5 of 6');
     act(() => mocks.lookProps.current?.onConfirmed());
     await flush();
 

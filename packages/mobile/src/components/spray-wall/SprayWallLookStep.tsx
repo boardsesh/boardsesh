@@ -1,9 +1,9 @@
-// "How should your holds light up?" — the add-a-wall flow's look step.
+// Background, then illuminated holds: the add-a-wall flow's two look steps.
 //
 // Between the editor's commit and the publish: the holds are on the draft, so
 // this is the first moment the wall can be drawn the way its climbers will see
-// it. The creator swipes the same looks the onboarding board-look step offers,
-// each drawn on THEIR wall with some of its own holds lit, and the pick is stored
+// it. The creator first slides between wall backgrounds, then hold looks,
+// drawn on THEIR wall with some of its own holds lit, and the pick is stored
 // on the wall (`setSprayWallRenderSettings`) before it publishes. Every climber
 // then sees the wall this way, unless they turned on "Use my look on spray
 // walls" (`boardLookForRender`).
@@ -11,15 +11,14 @@
 // Mandatory, like the onboarding step it mirrors: there is no Skip, because
 // skipping would silently store nothing and the wall would draw in whatever the
 // app default happens to be — the silence a choice step exists to end. The
-// default selection (`DEFAULT_SPRAY_WALL_LOOK_OPTION_ID`) is one tap away, so the
-// step costs a climber who does not care exactly one tap.
+// suggested background and default hold look can each be kept with Continue.
 //
 // The one way past without a stored look is a FAILED save. The look is the only
 // thing this step adds; a backend that cannot store it yet (the app and the
 // backend ship on different trains), or a save that keeps failing, must not keep
 // a finished wall from being published.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ScrollView,
@@ -31,12 +30,11 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Button } from '../Button';
-import { RadioGroup } from '../RadioGroup';
+import { LookOptionSlider } from '../LookOptionSlider';
 import { ValueSlider } from '../ValueSlider';
 import { adjustValue, notchIndex } from '../value-slider.logic';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { BoardLookCarousel } from '../board-look/BoardLookCarousel';
-import { RailIndexDots } from '../board-look/RailIndexDots';
+import { BoardLookSlider } from '../board-look/BoardLookSlider';
 import { captionLineHeights } from '../board-look/board-look-card-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
@@ -67,7 +65,7 @@ import {
   isSprayWallArtNotAvailableError,
   readSprayWallArtRefusalReason,
 } from '../../lib/graphql/extract-error-message';
-import { SprayWallBackgroundPicker } from './SprayWallBackgroundPicker';
+import { SprayWallBackgroundSlider } from './SprayWallBackgroundSlider';
 import {
   canPickBackground,
   sprayArtRefusalMessageKey,
@@ -101,6 +99,8 @@ function adjustDim(value: number, direction: 1 | -1): number {
 type SprayWallLookStepProps = {
   draft: CreatedWallDraft;
   stepCounter: string;
+  phase: 'background' | 'look';
+  onBackgroundConfirmed: () => void;
   /**
    * The save is in flight. The flow treats it as busy, so nothing can leave
    * under it: a Leave answered mid-save would pop the route, then the save's
@@ -121,6 +121,8 @@ type SprayWallLookStepProps = {
 export function SprayWallLookStep({
   draft,
   stepCounter,
+  phase,
+  onBackgroundConfirmed,
   onSaveStarted,
   onSaveFailed,
   onConfirmed,
@@ -132,6 +134,8 @@ export function SprayWallLookStep({
   const bottomInset = useWindowBottomInset();
   const headerInset = useTransparentHeaderInset();
   const { width: windowWidth, fontScale } = useWindowDimensions();
+  const savingRef = useRef(false);
+  const [localSaving, setLocalSaving] = useState(false);
 
   // The draft back in the registry. The editor's own `useSprayWallDraft`
   // unregistered it on its way out — its teardown reloads the PUBLISHED wall,
@@ -145,21 +149,22 @@ export function SprayWallLookStep({
   const { boardseshRendererAvailable } = useEffectiveBoardRenderSettings();
 
   // How hard the rest of the wall is dimmed. `null` until the creator touches
-  // the slider: each card keeps its own look's dimming, and the slider shows
+  // the slider: each preset keeps its own look's dimming, and the slider shows
   // the selected one's. Once touched, the value applies to every look that has
   // a veil, in the previews and in what is stored. Committed on release only:
-  // every committed value redraws every card.
+  // the selected preview follows the live value; the save uses that preview.
   const [dim, setDim] = useState<number | null>(null);
   const [liveDim, setLiveDim] = useState<number | null>(null);
 
   // Every look stays offered even when THIS phone cannot draw Aura: the pick
   // is stored for every climber on the wall, and one creator's binary (or a
   // runtime fallback that latched its renderer off) must not turn it into a
-  // wall-wide Classic. Those cards show as placeholders here (the carousel's
-  // own skeleton), and the default stays the spray look.
+  // wall-wide Classic. An unsupported selected look shows a skeleton, and the
+  // default stays the spray look.
   const options = useMemo(() => withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, dim), [dim]);
+  const previewOptions = useMemo(() => withSprayWallDim(SPRAY_WALL_LOOK_OPTIONS, liveDim ?? dim), [liveDim, dim]);
 
-  // Local until Continue: a carousel tap only moves the selection, and the one
+  // Local until Continue: sliding only moves the selection, and the one
   // write happens on the button.
   const [selectedId, setSelectedId] = useState<BoardLookOptionId>(DEFAULT_SPRAY_WALL_LOOK_OPTION_ID);
   const selectedIndex = Math.max(
@@ -172,10 +177,16 @@ export function SprayWallLookStep({
   const shownDim = liveDim ?? selectedDim ?? 0;
 
   const commitDim = useCallback((value: number) => {
+    if (savingRef.current) return;
     setLiveDim(null);
     setDim(value);
   }, []);
-  const cancelDim = useCallback(() => setLiveDim(null), []);
+  const cancelDim = useCallback(() => {
+    if (!savingRef.current) setLiveDim(null);
+  }, []);
+  const previewDim = useCallback((value: number) => {
+    if (!savingRef.current) setLiveDim(value);
+  }, []);
   const formatDim = useCallback(
     (value: number) =>
       value <= 0
@@ -184,27 +195,26 @@ export function SprayWallLookStep({
     [t, tCommon],
   );
 
-  const [railSlotHeight, setRailSlotHeight] = useState(0);
-  const handleRailLayout = useCallback((event: LayoutChangeEvent) => {
-    setRailSlotHeight(event.nativeEvent.layout.height);
+  const [previewSlotHeight, setPreviewSlotHeight] = useState(0);
+  const handlePreviewLayout = useCallback((event: LayoutChangeEvent) => {
+    setPreviewSlotHeight(event.nativeEvent.layout.height);
   }, []);
 
   const previewAspect = preview ? preview.boardWidth / preview.boardHeight : null;
   const heroThumb = useMemo(() => {
-    if (railSlotHeight <= 0 || previewAspect == null) return null;
+    if (previewSlotHeight <= 0 || previewAspect == null) return null;
     return fitSprayLookHero({
       aspect: previewAspect,
       windowWidth,
-      railSlotHeight,
+      railSlotHeight: Math.max(0, previewSlotHeight - spacing[8] * 3),
       captionLineHeights: captionLineHeights('hero', textStyles),
       fontScale,
     });
-  }, [railSlotHeight, previewAspect, textStyles, fontScale, windowWidth]);
+  }, [previewSlotHeight, previewAspect, textStyles, fontScale, windowWidth]);
 
-  // What the wall is drawn on. Asked of the server for this draft: its answer
-  // carries the live quality verdict the save is checked against, and a
-  // backend that cannot answer is one that cannot store a background either,
-  // so the picker stays hidden and nothing new is sent.
+  // The server decides which backgrounds this draft can save. Loading,
+  // unsupported and refused gates offer only the photo; unsupported backends
+  // receive no new background key.
   const artQuery = useSprayWallArt(draft.wallUuid, draft.versionNumber);
   const backgroundGate = useMemo(
     () => sprayBackgroundGate({ status: artQuery.status, art: artQuery.data }),
@@ -217,18 +227,19 @@ export function SprayWallLookStep({
     if (!backgroundTouched) setBackground(suggestedBackground(backgroundGate));
   }, [backgroundGate, backgroundTouched]);
   const pickBackground = useCallback((next: SprayWallBackground) => {
+    if (savingRef.current) return;
     setBackgroundTouched(true);
     setBackground(next);
   }, []);
 
   const setRenderSettings = useSetSprayWallRenderSettings();
   const setRenderSettingsAsync = setRenderSettings.mutateAsync;
-  const saving = setRenderSettings.isPending;
+  const saving = setRenderSettings.isPending || localSaving;
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleContinue = useCallback(async () => {
-    if (saving || !selectedOption) return;
-    const look = boardLookOptionWallDefault(selectedOption.id, options);
+    if (savingRef.current || saving || phase !== 'look' || !selectedOption) return;
+    const look = boardLookOptionWallDefault(selectedOption.id, previewOptions);
     if (!look) return;
     // `background` only to a backend that answered `sprayWallArt` (an older one
     // refuses the key), and only for a generated look or a photo the creator
@@ -239,6 +250,8 @@ export function SprayWallLookStep({
       backendKnowsBackgrounds && (sentBackground !== 'photo' || backgroundTouched)
         ? { ...look, background: sentBackground }
         : look;
+    savingRef.current = true;
+    setLocalSaving(true);
     hapticSelection();
     setSaveError(null);
     onSaveStarted();
@@ -264,11 +277,15 @@ export function SprayWallLookStep({
       setSaveError(message);
       // `accessibilityLiveRegion` below is Android-only; VoiceOver needs telling.
       AccessibilityInfo.announceForAccessibility(message);
+    } finally {
+      savingRef.current = false;
+      setLocalSaving(false);
     }
   }, [
     saving,
     selectedOption,
-    options,
+    previewOptions,
+    phase,
     setRenderSettingsAsync,
     draft.layoutId,
     draft.wallUuid,
@@ -282,25 +299,40 @@ export function SprayWallLookStep({
   ]);
 
   const fallbackOptions = useMemo(
-    () => options.map((option) => ({ value: option.id, label: tCommon(option.labelI18nKey) })),
+    () => options.map((option) => ({ id: option.id, label: tCommon(option.labelI18nKey) })),
     [options, tCommon],
   );
   const selectFallbackLook = useCallback(
-    (id: BoardLookOptionId) => {
-      if (!saving) setSelectedId(id);
+    (id: string) => {
+      if (savingRef.current || saving) return;
+      const option = options.find((candidate) => candidate.id === id);
+      if (option) setSelectedId(option.id);
     },
-    [saving],
+    [saving, options],
   );
 
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
+  const displayedBackground = canPickBackground(backgroundGate, background) ? background : 'photo';
+  const backgroundLabel =
+    displayedBackground === 'photo'
+      ? t('sprayBackground.photo')
+      : displayedBackground === 'wall-crop'
+        ? t('sprayBackground.wallCrop')
+        : t('sprayBackground.holdCutouts');
+  const publishWithout = useCallback(() => {
+    if (!savingRef.current && !saving) onConfirmed();
+  }, [saving, onConfirmed]);
 
   // "Use <look>" is the step's forward action: text, not the ✓.
   // The X stays leading: from here on, leaving keeps the draft.
   useHeaderActions({
     trailing: {
       kind: 'forward',
-      label: tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel }),
-      onPress: () => void handleContinue(),
+      label:
+        phase === 'background'
+          ? t('sprayWizard.background.next')
+          : tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel }),
+      onPress: phase === 'background' ? onBackgroundConfirmed : () => void handleContinue(),
       loading: saving,
       disabled: saving,
       prominent: true,
@@ -309,118 +341,121 @@ export function SprayWallLookStep({
 
   return (
     <View style={[styles.root, { marginTop: headerInset, paddingBottom: bottomInset }]}>
-      <View style={styles.header}>
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {stepCounter}
-        </Text>
-        <Text variant="title3">{t('sprayWizard.look.title')}</Text>
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {t('sprayWizard.look.body')}
-        </Text>
-        {notice ? (
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator>
+        <View style={styles.header}>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {notice}
+            {stepCounter}
           </Text>
-        ) : null}
-        {/* Under the copy, above the rail: the rail gives up the room, so the
-            slider and picker below it stay where they are. */}
-        {saveError ? (
-          <View style={styles.saveError}>
-            <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
-              {saveError}
+          <Text variant="title3">
+            {phase === 'background' ? t('sprayWizard.background.title') : t('sprayWizard.look.title')}
+          </Text>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {phase === 'background' ? t('sprayWizard.background.body') : t('sprayWizard.look.body')}
+          </Text>
+          {phase === 'look' && displayedBackground !== 'photo' ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('sprayWizard.look.previewPhoto', { background: backgroundLabel })}
             </Text>
-            <Button
-              title={t('sprayWizard.look.publishWithout')}
-              variant="text"
-              size="small"
-              onPress={onConfirmed}
+          ) : null}
+          {notice && phase === 'look' ? (
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {notice}
+            </Text>
+          ) : null}
+          {/* Under the copy, above the rail: the rail gives up the room, so the
+            slider and picker below it stay where they are. */}
+          {saveError && phase === 'look' ? (
+            <View style={styles.saveError}>
+              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
+                {saveError}
+              </Text>
+              <Button
+                title={t('sprayWizard.look.publishWithout')}
+                variant="text"
+                size="small"
+                onPress={publishWithout}
+                disabled={saving}
+              />
+            </View>
+          ) : null}
+        </View>
+
+        {phase === 'background' ? (
+          <SprayWallBackgroundSlider
+            gate={backgroundGate}
+            value={background}
+            onChange={pickBackground}
+            disabled={saving}
+            previewSource={draftState.lookPreviewSource}
+            unavailable={draftState.isUnavailable}
+          />
+        ) : (
+          <View style={styles.previewSlot} onLayout={handlePreviewLayout}>
+            {preview && previewSlotHeight > 0 ? (
+              <BoardLookSlider
+                options={previewOptions}
+                selectedId={selectedOption?.id ?? selectedId}
+                onSelect={selectFallbackLook}
+                preview={preview}
+                boardseshRendererAvailable={boardseshRendererAvailable}
+                heroThumb={heroThumb}
+                disabled={saving}
+                showDescription={false}
+                testID="spray-hold-look-slider"
+              />
+            ) : (
+              <ScrollView contentContainerStyle={styles.placeholder} showsVerticalScrollIndicator>
+                {draftState.isUnavailable || previewStatus === 'unavailable' ? (
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
+                    {t('sprayWizard.look.unavailable')}
+                  </Text>
+                ) : (
+                  <>
+                    <ActivityIndicator />
+                    <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
+                      {t('sprayWizard.look.loading')}
+                    </Text>
+                  </>
+                )}
+                <LookOptionSlider
+                  options={fallbackOptions}
+                  value={selectedId}
+                  onChange={selectFallbackLook}
+                  accessibilityLabel={t('sprayWizard.look.title')}
+                  disabled={saving}
+                  testID="spray-hold-look-slider"
+                />
+              </ScrollView>
+            )}
+          </View>
+        )}
+
+        {phase === 'look' && selectedDim !== null ? (
+          <View style={styles.dim} pointerEvents={saving ? 'none' : 'auto'} accessibilityState={{ disabled: saving }}>
+            <View style={styles.dimLabels}>
+              <Text variant="subheadline">{t('sprayWizard.look.dimTitle')}</Text>
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
+                {formatDim(shownDim)}
+              </Text>
+            </View>
+            <ValueSlider
+              value={selectedDim}
+              min={DIM_MIN}
+              max={DIM_MAX}
+              round={roundDim}
+              notch={dimNotch}
+              format={formatDim}
+              accessibilityLabel={t('sprayWizard.look.dimTitle')}
+              adjust={adjustDim}
               disabled={saving}
+              onLiveChange={previewDim}
+              onCommit={commitDim}
+              onCancel={cancelDim}
+              testID="spray-look-dim-slider"
             />
           </View>
         ) : null}
-      </View>
-
-      {/* The rail takes every point the header and footer do not, measured
-          rather than computed — the header grows with the locale and the text
-          size. No ScrollView around it, for the onboarding step's reason: a
-          vertical scroller steals the swipes meant for the rail. */}
-      <View style={styles.railSlot} onLayout={handleRailLayout}>
-        {preview && railSlotHeight > 0 ? (
-          <BoardLookCarousel
-            options={options}
-            selectedId={selectedOption?.id ?? selectedId}
-            onSelect={setSelectedId}
-            preview={preview}
-            boardseshRendererAvailable={boardseshRendererAvailable}
-            heroThumb={heroThumb}
-            windowWidth={windowWidth}
-            // Safe here: a snap only moves local state until Continue.
-            selectOnSnap={heroThumb != null}
-            showDescriptions={false}
-          />
-        ) : (
-          <ScrollView contentContainerStyle={styles.placeholder} showsVerticalScrollIndicator>
-            {draftState.isUnavailable || previewStatus === 'unavailable' ? (
-              <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
-                {t('sprayWizard.look.unavailable')}
-              </Text>
-            ) : (
-              <>
-                <ActivityIndicator />
-                <Text variant="subheadline" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
-                  {t('sprayWizard.look.loading')}
-                </Text>
-              </>
-            )}
-            <View
-              style={styles.fallbackChoices}
-              pointerEvents={saving ? 'none' : 'auto'}
-              accessibilityState={{ disabled: saving }}
-            >
-              <RadioGroup options={fallbackOptions} value={selectedId} onChange={selectFallbackLook} />
-            </View>
-          </ScrollView>
-        )}
-      </View>
-
-      {preview ? <RailIndexDots count={options.length} activeIndex={selectedIndex} /> : null}
-
-      {selectedDim !== null ? (
-        <View style={styles.dim}>
-          <View style={styles.dimLabels}>
-            <Text variant="subheadline">{t('sprayWizard.look.dimTitle')}</Text>
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {formatDim(shownDim)}
-            </Text>
-          </View>
-          <ValueSlider
-            value={selectedDim}
-            min={DIM_MIN}
-            max={DIM_MAX}
-            round={roundDim}
-            notch={dimNotch}
-            format={formatDim}
-            accessibilityLabel={t('sprayWizard.look.dimTitle')}
-            adjust={adjustDim}
-            onLiveChange={setLiveDim}
-            onCommit={commitDim}
-            onCancel={cancelDim}
-            testID="spray-look-dim-slider"
-          />
-        </View>
-      ) : null}
-
-      <View style={styles.background}>
-        <SprayWallBackgroundPicker
-          gate={backgroundGate}
-          art={artQuery.data}
-          value={background}
-          onChange={pickBackground}
-          disabled={saving}
-          isDraft
-          previewSource={draftState.lookPreviewSource}
-        />
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -429,20 +464,19 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
+  content: { flexGrow: 1 },
   header: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[4],
     gap: spacing[1],
-    // Yields to the rail on a short screen rather than squeezing it.
+    // Text wraps; the containing screen scrolls when the preview no longer fits.
     flexShrink: 1,
   },
-  railSlot: {
+  previewSlot: {
     flex: 1,
+    minHeight: 420,
     justifyContent: 'center',
     paddingVertical: spacing[4],
-  },
-  fallbackChoices: {
-    alignSelf: 'stretch',
   },
   placeholder: {
     alignItems: 'center',
@@ -462,10 +496,6 @@ const styles = StyleSheet.create({
   },
   centered: {
     textAlign: 'center',
-  },
-  background: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
   },
   saveError: {
     alignItems: 'flex-start',

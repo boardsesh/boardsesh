@@ -185,8 +185,22 @@ vi.mock('../../outline-editor/SprayHoldEditorScreen', () => ({
 vi.mock('../SprayWallLookStep', async () => {
   const { useHeaderActions } = await import('../../../hooks/use-header-actions');
   return {
-    SprayWallLookStep: ({ onConfirmed }: { onConfirmed: () => void }) => {
-      useHeaderActions({ trailing: { label: 'look.confirm', onPress: onConfirmed, prominent: true } });
+    SprayWallLookStep: ({
+      phase,
+      onBackgroundConfirmed,
+      onConfirmed,
+    }: {
+      phase: 'background' | 'look';
+      onBackgroundConfirmed: () => void;
+      onConfirmed: () => void;
+    }) => {
+      useHeaderActions({
+        trailing: {
+          label: phase === 'background' ? 'background.confirm' : 'look.confirm',
+          onPress: phase === 'background' ? onBackgroundConfirmed : onConfirmed,
+          prominent: true,
+        },
+      });
       return createElement('div', { 'data-testid': 'look' });
     },
   };
@@ -287,6 +301,15 @@ describe('the wizard header, with the real useHeaderActions', () => {
 
     act(() => stepProps.editor?.onCommitted({ written: 0, removed: 0, holdCount: 2 }));
     expect(screen.getByTestId('look')).toBeTruthy();
+    expect(trailingLabel()).toBe('background.confirm');
+    expect(lastSlotProps('headerLeft')?.kind).toBe('close');
+    pressTrailing();
+    expect(trailingLabel()).toBe('look.confirm');
+    expect(lastSlotProps('headerLeft')?.kind).toBe('back');
+    act(() => (lastSlotProps('headerLeft')?.onPress as (() => void) | undefined)?.());
+    expect(trailingLabel()).toBe('background.confirm');
+    expect(lastSlotProps('headerLeft')?.kind).toBe('close');
+    pressTrailing();
     expect(trailingLabel()).toBe('look.confirm');
 
     pressTrailing();

@@ -29,7 +29,7 @@
 // The pan gesture is invisible to VoiceOver / TalkBack, so the track is also
 // published as one `adjustable` node with increment / decrement actions.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -129,6 +129,9 @@ type ValueSliderProps = {
    */
   onCancel?: () => void;
   testID?: string;
+  /** Existing compact controls keep 28pt; standalone pickers use 44pt. */
+  touchTargetHeight?: number;
+  disabled?: boolean;
 };
 
 export function ValueSlider({
@@ -149,9 +152,20 @@ export function ValueSlider({
   onCommit,
   onCancel,
   testID,
+  touchTargetHeight = 28,
+  disabled = false,
 }: ValueSliderProps) {
   const theme = useTheme();
   const { systemColors } = theme;
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+  // A UI-thread report can arrive after a save disabled and re-enabled the
+  // control. A fresh gesture may run; callbacks from the old one stay fenced.
+  const gestureEpochRef = useRef({ disabled, epoch: 0 });
+  if (gestureEpochRef.current.disabled !== disabled) {
+    gestureEpochRef.current = { disabled, epoch: gestureEpochRef.current.epoch + 1 };
+  }
+  const gestureEpoch = gestureEpochRef.current.epoch;
   const [trackWidth, setTrackWidth] = useState(0);
   const usable = Math.max(0, trackWidth - THUMB_SIZE);
   const position = useSharedValue(0);
@@ -193,32 +207,38 @@ export function ValueSlider({
   }, [value, usable, toRatio, position, dragging, committedPosition]);
 
   const reportLive = useCallback(
-    (px: number) => onLiveChange(round(toValue(positionToRatio(px, usable)))),
-    [onLiveChange, round, toValue, usable],
+    (px: number) => {
+      if (!disabledRef.current && gestureEpoch === gestureEpochRef.current.epoch)
+        onLiveChange(round(toValue(positionToRatio(px, usable))));
+    },
+    [onLiveChange, round, toValue, usable, gestureEpoch],
   );
   const commit = useCallback(
     (px: number) => {
+      if (disabledRef.current || gestureEpoch !== gestureEpochRef.current.epoch) return;
       const raw = toValue(positionToRatio(px, usable));
       const rounded = round(raw);
       const snapped = magnet ? magnet(rounded, raw) : rounded;
       onLiveChange(snapped);
       onCommit(clampToRange(snapped, min, max));
     },
-    [onCommit, onLiveChange, round, toValue, usable, magnet, min, max],
+    [onCommit, onLiveChange, round, toValue, usable, magnet, min, max, gestureEpoch],
   );
   // A cancelled drag: the owner restores its own display if it has one this
   // slider can't express, otherwise the committed value is re-reported.
   const restore = useCallback(
     (committed: number) => {
+      if (disabledRef.current || gestureEpoch !== gestureEpochRef.current.epoch) return;
       if (onCancel) onCancel();
       else onLiveChange(committed);
     },
-    [onCancel, onLiveChange],
+    [onCancel, onLiveChange, gestureEpoch],
   );
 
   const pan = useMemo(
     () =>
       Gesture.Pan()
+        .enabled(!disabled)
         // Claim the touch only on horizontal intent; a vertical drag falls
         // through to the scroller behind it (matches QueueItemRow).
         .activeOffsetX([-10, 10])
@@ -288,20 +308,23 @@ export function ValueSlider({
       restore,
       reportLive,
       commit,
+      disabled,
     ],
   );
 
   // Tap-to-seek on the track.
   const tap = useMemo(
     () =>
-      Gesture.Tap().onEnd((event) => {
-        if (usable <= 0) return;
-        const next = Math.max(0, Math.min(usable, event.x - THUMB_SIZE / 2));
-        position.value = next;
-        runOnJS(reportLive)(next);
-        runOnJS(commit)(next);
-      }),
-    [usable, position, reportLive, commit],
+      Gesture.Tap()
+        .enabled(!disabled)
+        .onEnd((event) => {
+          if (usable <= 0) return;
+          const next = Math.max(0, Math.min(usable, event.x - THUMB_SIZE / 2));
+          position.value = next;
+          runOnJS(reportLive)(next);
+          runOnJS(commit)(next);
+        }),
+    [usable, position, reportLive, commit, disabled],
   );
 
   const composed = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
@@ -317,23 +340,30 @@ export function ValueSlider({
 
   const handleAccessibilityAction = useCallback(
     ({ nativeEvent }: { nativeEvent: { actionName: string } }) => {
+      if (
+        disabledRef.current ||
+        gestureEpoch !== gestureEpochRef.current.epoch ||
+        (nativeEvent.actionName !== 'increment' && nativeEvent.actionName !== 'decrement')
+      )
+        return;
       const next = adjust(value, nativeEvent.actionName === 'increment' ? 1 : -1);
       onLiveChange(next);
       onCommit(next);
     },
-    [value, adjust, onCommit, onLiveChange],
+    [value, adjust, onCommit, onLiveChange, gestureEpoch],
   );
 
   return (
     <GestureDetector gesture={composed}>
       <View
-        style={styles.trackWrapper}
+        style={[styles.trackWrapper, { height: touchTargetHeight }]}
         onLayout={handleLayout}
         accessible
         accessibilityRole="adjustable"
         accessibilityLabel={accessibilityLabel}
         accessibilityValue={{ text: format(value), min, max, now: value }}
-        accessibilityActions={ADJUSTABLE_ACTIONS}
+        accessibilityActions={disabled ? undefined : ADJUSTABLE_ACTIONS}
+        accessibilityState={{ disabled }}
         onAccessibilityAction={handleAccessibilityAction}
         testID={testID}
       >

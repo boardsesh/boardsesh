@@ -3,7 +3,7 @@ import { PressableSurface } from '../PressableSurface';
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
 // Name it → photograph it → optionally mark its corners → upload → let the
-// server suggest holds → correct them → pick how it lights up → publish. One route, not seven: the steps share
+// server suggest holds → correct them → pick the background → pick hold lighting → publish. One route: the steps share
 // state that must survive going back (`add-wall-machine.ts` is the transition
 // table), and two of them — the anchors and the hold editor — are full-screen
 // pan-and-pinch surfaces, which `docs/mobile-sheets-vs-routes.md` rule 3 puts on
@@ -159,9 +159,9 @@ const MAX_PREVIEW_WIDTH = 520;
 const LEAVE_AFTER_BIND = () => {};
 
 /** The steps that get a "step N of M" counter — the ones a climber drives. */
-const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'look', 'publish'];
+const COUNTED_STEPS: readonly AddWallStep[] = ['meta', 'photo', 'anchors', 'review', 'background', 'look', 'publish'];
 /** A reset never shows the meta step (its settings came from the wall it replaces), so it counts from the photo. */
-const RESET_COUNTED_STEPS: readonly AddWallStep[] = ['photo', 'anchors', 'review', 'look', 'publish'];
+const RESET_COUNTED_STEPS: readonly AddWallStep[] = ['photo', 'anchors', 'review', 'background', 'look', 'publish'];
 
 /**
  * Reset refusals no retry can fix: the server will say the same thing again.
@@ -1122,7 +1122,7 @@ export function SprayWallWizardScreen({
 
   const goBack = useCallback(() => {
     if (isBusy(state)) return;
-    // `review`, `look` and `publish` have no step behind them — the draft is on
+    // `review`, `background` and `publish` have no step behind them — the draft is on
     // the server by then — so back means leaving, which keeps the draft. A
     // reset's photo step has nothing behind it either: the clone's name and
     // angle came from the wall it replaces, so there is no meta step to return to.
@@ -1147,6 +1147,7 @@ export function SprayWallWizardScreen({
     [candidateCount],
   );
 
+  const onBackgroundConfirmed = useCallback(() => dispatch({ type: 'BACKGROUND_CONFIRMED' }), []);
   const onLookSaveStarted = useCallback(() => dispatch({ type: 'LOOK_SAVE_STARTED' }), []);
   const onLookSaveFailed = useCallback(() => dispatch({ type: 'LOOK_SAVE_FAILED' }), []);
   const onLookConfirmed = useCallback(() => dispatch({ type: 'LOOK_CONFIRMED' }), []);
@@ -1169,17 +1170,18 @@ export function SprayWallWizardScreen({
   // through the history, which `useSprayWizardLeaveGuard` intercepts.
   const exitFlow = useCallback(() => exitSprayWizard(router, returnTo), [router, returnTo]);
 
-  // Two steps draw their own header actions. The crop detour owns its edit, so
+  // Editing and look steps draw their own header actions. The crop detour owns its edit, so
   // it sets Cancel and Done itself; the editor and the look step set their own
   // trailing confirm. The wizard leaves those slots alone.
   const childOwnsHeader = state.step === 'adjust' && state.photo != null;
-  const childOwnsTrailing = (state.step === 'review' || state.step === 'look') && state.draft != null;
+  const childOwnsTrailing =
+    (state.step === 'review' || state.step === 'background' || state.step === 'look') && state.draft != null;
 
   // A back chevron where Back steps back inside the flow, an X where it would
-  // leave (the first step, a reset's photo step, and everything from the draft
-  // on). Passed on every step: the header keeps whatever was set last.
+  // leave (the first step, a reset's photo step, and persisted steps except
+  // the hold-look step, which returns to the background). Passed on every step: the header keeps whatever was set last.
   const backStaysInFlow =
-    (state.step === 'photo' || state.step === 'anchors' || state.step === 'upload') &&
+    (state.step === 'photo' || state.step === 'anchors' || state.step === 'upload' || state.step === 'look') &&
     !backLeavesFlow(state) &&
     !(resetOfWallUuid != null && state.step === 'photo');
   // While a request runs, Back does nothing (`goBack` refuses), so the chevron
@@ -1321,15 +1323,17 @@ export function SprayWallWizardScreen({
     );
   }
 
-  // The wall's look, on its own full-screen surface for the editor's reason: its
-  // rail is a near-full-height horizontal swiper, and the wizard's vertical
-  // scroll view around it would steal the swipes.
-  if (state.step === 'look' && state.draft) {
+  // Both look choices share one mounted surface, so Back preserves the
+  // background, hold style and dimming without writing either choice early.
+  if ((state.step === 'background' || state.step === 'look') && state.draft) {
     return (
       <SprayWallLookStep
+        key={state.draft.versionId}
         draft={state.draft}
+        phase={state.step}
+        onBackgroundConfirmed={onBackgroundConfirmed}
         stepCounter={t('sprayWizard.stepCounter', {
-          current: countedSteps.indexOf('look') + 1,
+          current: countedSteps.indexOf(state.step) + 1,
           total: countedSteps.length,
         })}
         onSaveStarted={onLookSaveStarted}

@@ -476,10 +476,13 @@ as one who never arrived.
 
 Two properties are worth naming:
 
-- `cards_viewed` counts the DISTINCT cards that actually scrolled into view, not
-  the number offered. A `saved` with one card viewed ("took the default on
-  sight") and one with six ("swiped through, then chose") are different
-  signals and must not be pooled.
+- `cards_viewed` counts the DISTINCT looks actually previewed, not the number
+  offered. The onboarding picker now shows one board above a stepped horizontal
+  slider, so its initial preview and each look reached by dragging or an
+  accessibility adjustment count once. Revisiting a look adds nothing. The
+  property name stays the same for existing consumers. A `saved` with one look
+  viewed ("took the default on sight") and one with six ("compared them, then
+  chose") are different signals and must not be pooled.
 - `selected_option` is `null` on a skip, and is the card id otherwise —
   including `'custom'`, whose apply also reports `preset_id: 'aura'`, because
   Custom lands the climber on the plain Aura bundle before opening the Board

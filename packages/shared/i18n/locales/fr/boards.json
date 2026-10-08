@@ -1069,7 +1069,8 @@
       "failed": "Impossible d'enregistrer le rendu. Réessaie ou publie quand même.",
       "publishWithout": "Publier quand même",
       "dimTitle": "Assombrir le reste du mur",
-      "dimOff": "Désactivé"
+      "dimOff": "Désactivé",
+      "previewPhoto": "L’éclairage des prises est prévisualisé sur ta photo d’origine. {{background}} sera utilisé à la publication."
     },
     "publish": {
       "title": "Ajoute-le à tes boards",
@@ -1109,6 +1110,12 @@
       "photoTitle": "Photographie le mur tel qu'il est maintenant",
       "photoBody": "Même nom et même angle qu’avant. Prends tout le mur en photo, puis marque chaque prise.",
       "archiveNotice": "Quand ce mur sera en ligne, l'ancien sera archivé. Ses blocs et ses croix restent."
+    },
+    "background": {
+      "title": "Que doit montrer le mur ?",
+      "body": "Fais glisser le curseur entre la photo, le mur et les prises avant de choisir leur éclairage.",
+      "next": "Choisir l’aspect des prises",
+      "unsupported": "Seule la photo est disponible pour le moment. Tu peux quand même terminer ton mur."
     }
   },
   "sprayResetConfirm": {
