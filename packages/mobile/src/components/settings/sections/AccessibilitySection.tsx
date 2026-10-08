@@ -1,4 +1,5 @@
 import { PressableSurface } from '../../PressableSurface';
+import { MEDIUM_LARGE_SNAP_POINTS, LARGE_SNAP_POINTS } from '../../sheet-snap-points';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CvdType } from '../../../lib/color-contrast-oracle';
 import { StyleSheet, View, type ColorValue } from 'react-native';
@@ -535,7 +536,7 @@ function HoldColorPickerSheet({
   );
 
   return (
-    <ModalSheet visible={role != null} snapPoints={['95%']} onClose={onClose} header={header} scrollable>
+    <ModalSheet visible={role != null} snapPoints={LARGE_SNAP_POINTS} onClose={onClose} header={header} scrollable>
       <View style={styles.pickerBody}>
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={previewColor} shape={shape} size={shapeSize} />
@@ -646,7 +647,7 @@ function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushT
   );
 
   return (
-    <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} header={header} scrollable>
+    <ModalSheet visible={open} snapPoints={MEDIUM_LARGE_SNAP_POINTS} onClose={onClose} header={header} scrollable>
       <View style={styles.pickerBody}>
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={systemColors.accent} shape="circle" thickness={draftValue} size={shapeSize} />
@@ -714,7 +715,7 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
   );
 
   return (
-    <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} header={header} scrollable>
+    <ModalSheet visible={open} snapPoints={MEDIUM_LARGE_SNAP_POINTS} onClose={onClose} header={header} scrollable>
       <View style={styles.pickerBody}>
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={systemColors.accent} shape="diamond" thickness={brushThickness} size={draftValue} />

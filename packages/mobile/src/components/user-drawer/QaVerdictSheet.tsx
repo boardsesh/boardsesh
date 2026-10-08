@@ -1,5 +1,6 @@
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet } from 'react-native';
 
@@ -277,7 +278,7 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
   );
 }
 
-const SNAP_POINTS = ['64%', '90%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({

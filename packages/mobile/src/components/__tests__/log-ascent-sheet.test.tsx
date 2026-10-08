@@ -448,29 +448,29 @@ describe('LogAscentSheet first ascent (#5971)', () => {
 // (#3330). The window here is 844 with a 44pt top inset, so the iOS 26 base is
 // 844 − 44 − 24 = 776; a detent is round(776 × fraction) − 20pt of chrome.
 describe('LogAscentSheet detent bound', () => {
-  it('pins the column to the 65% create detent on iOS instead of letting it flex to content', () => {
+  it('pins the column to the 50% medium detent on iOS instead of letting it flex to content', () => {
     const { container } = renderSheet();
 
-    expect(columnStyle(container)).toEqual({ height: 484 });
+    expect(columnStyle(container)).toEqual({ height: 368 });
   });
 
-  it('grows the column when the sheet settles on the taller 92% detent', () => {
+  it('grows the column when the sheet settles on the taller 90% large detent', () => {
     const { container, getByTestId } = renderSheet();
 
     fireEvent.click(getByTestId('simulate-expand'));
 
-    expect(columnStyle(container)).toEqual({ height: 694 });
+    expect(columnStyle(container)).toEqual({ height: 678 });
   });
 
   it('drops back to the shortest detent on close, so the next present starts bounded', () => {
-    // PlayDrawer keeps this host mounted, so a stale 92% height would survive
+    // PlayDrawer keeps this host mounted, so a stale 90% height would survive
     // into the next present and push the action bar past the first detent.
     const { container, getByTestId } = renderSheet();
 
     fireEvent.click(getByTestId('simulate-expand'));
     fireEvent.click(getByTestId('simulate-pandown'));
 
-    expect(columnStyle(container)).toEqual({ height: 484 });
+    expect(columnStyle(container)).toEqual({ height: 368 });
   });
 
   it('caps the column at window − topInset − chrome on Android (content-fitting path, #4720)', () => {
@@ -511,7 +511,7 @@ describe('LogAscentSheet keyboard', () => {
         duration: 250,
       }),
     );
-    expect(columnStyle(container)).toEqual({ height: 694, paddingBottom: 336 });
+    expect(columnStyle(container)).toEqual({ height: 678, paddingBottom: 336 });
     expect(footerPaddingBottom(container)).toBe(0);
 
     act(() =>
@@ -520,7 +520,7 @@ describe('LogAscentSheet keyboard', () => {
         duration: 250,
       }),
     );
-    expect(columnStyle(container)).toEqual({ height: 694 });
+    expect(columnStyle(container)).toEqual({ height: 678 });
     expect(footerPaddingBottom(container)).toBe(34);
   });
 

@@ -1,5 +1,6 @@
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
@@ -151,7 +152,7 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
   );
 
   return (
-    <Sheet visible={visible} snapPoints={['70%']} scrollable onClose={onClose} header={header}>
+    <Sheet visible={visible} snapPoints={MEDIUM_LARGE_SNAP_POINTS} scrollable onClose={onClose} header={header}>
       <View style={styles.body}>
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.label}>
           {t('detail.editNameLabel')}

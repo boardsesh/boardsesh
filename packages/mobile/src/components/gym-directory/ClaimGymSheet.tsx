@@ -1,5 +1,6 @@
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -173,7 +174,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   return (
     <ModalSheet
       ref={sheetRef}
-      snapPoints={['58%', '88%']}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       scrollable
       contentContainerStyle={styles.content}
       onFullyDismissed={handleFullyDismissed}

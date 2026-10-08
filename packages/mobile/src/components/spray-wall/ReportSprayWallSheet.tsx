@@ -1,3 +1,4 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -90,7 +91,7 @@ export function ReportSprayWallSheet({
   return (
     <ModalSheet
       visible
-      snapPoints={['65%', '90%']}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       androidContentSized
       scrollable
       onDisplaced={onClose}

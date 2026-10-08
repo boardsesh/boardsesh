@@ -1,3 +1,4 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 // "Report climb" — the climber-facing half of community moderation. One form,
 // two kinds: hide the climb (junk, duplicate, unclimbable) or argue its grade.
@@ -54,7 +55,7 @@ type ReportClimbSheetProps = {
   onFullyDismissed?: () => void;
 };
 
-const SNAP_POINTS = ['62%', '88%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 export function ReportClimbSheet({
   visible,

@@ -19,11 +19,14 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
+vi.mock('../../use-sheet-column-style', () => ({ useSheetColumnStyle: () => ({ height: 368 }) }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   default: forwardRef(function BottomSheetMock({ children }: { children?: ReactNode }, _ref) {
     return createElement('div', null, children);
   }),
   BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  BottomSheetScrollView: ({ children }: { children?: ReactNode }) =>
+    createElement('div', { 'data-testid': 'share-scroll-body' }, children),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: vi.fn(async () => true) }));
@@ -53,7 +56,10 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({ onChange: vi.fn(), onFullyDismissed: vi.fn() }),
 }));
-vi.mock('../../sheet-snap-points', () => ({ androidSafeSnapPoints: (points: string[]) => points }));
+vi.mock('../../sheet-snap-points', () => ({
+  androidSafeSnapPoints: (points: string[]) => points,
+  MEDIUM_LARGE_SNAP_POINTS: ['50%', '90%'],
+}));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 2: 8, 3: 12, 4: 16, 6: 24 },
@@ -71,6 +77,11 @@ describe('BoardShareSheet text', () => {
       <BoardShareSheet visible onDismiss={onDismiss} shareUrl={URL} wallName="Garage" visibility="unlisted" />,
     );
   }
+
+  it('keeps the QR code and actions in a scroll body at the medium detent', () => {
+    const { getByTestId, getByText } = renderSheet();
+    expect(getByTestId('share-scroll-body').contains(getByText('mobile.sprayShare.share'))).toBe(true);
+  });
 
   it('closes from the top bar, which carries the title', () => {
     const onDismiss = vi.fn();

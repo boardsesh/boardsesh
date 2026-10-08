@@ -743,3 +743,11 @@ DELETE_TICK. The root LogbookDeleteProvider owns that deadline across route chan
 An account, board, or session change cancels unsent deletions with visible feedback.
 Capture that scope before awaiting confirmation; a delayed answer cannot delete
 an old entry under a new identity. Never recreate a deleted Aurora tick for Undo.
+
+
+**Standard detents:** percentage-based sheets use the shared 50% medium and 90%
+large presets. QR share sheets and forms scroll at medium; large retains the
+keyboard expansion path and pinned footers. Tick sheets keep Android's measured
+content-fitting path. Create's full-height 90%/100% editor and genuinely measured
+content are separate layout contracts. The production source guard follows multiline JSX
+`snapPoints` expressions and aliases; no legacy percentage allowlist remains.

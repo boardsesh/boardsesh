@@ -1,7 +1,8 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from '../InlineSheetError';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { StyleSheet, View } from 'react-native';
@@ -105,7 +106,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
     scope: mode,
   });
 
-  const snapPoints = useMemo(() => (isBugReport ? ['62%', '88%'] : ['44%', '72%']), [isBugReport]);
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
 
   const handleSubmit = async () => {
     if (!canSubmit || submittingRef.current) return;

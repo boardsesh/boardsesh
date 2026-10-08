@@ -1,4 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -69,7 +70,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
     <>
       <Sheet
         visible={visible && !!board}
-        snapPoints={['55%', '90%']}
+        snapPoints={MEDIUM_LARGE_SNAP_POINTS}
         onClose={onClose}
         scrollable
         contentContainerStyle={styles.content}

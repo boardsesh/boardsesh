@@ -1,4 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -114,7 +115,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
     setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
   }, [undoScope]);
 
-  const snapPoints = useMemo(() => ['70%', '95%'], []);
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
 
   // Both QueueSheet instances (root + /play copy, PR #3337) stay mounted the whole
   // session. Freeze the hidden one's queue data to a referentially stable snapshot

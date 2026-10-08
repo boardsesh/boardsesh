@@ -1,6 +1,11 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useSheetColumnStyle } from '../use-sheet-column-style';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
-import BottomSheet, { BottomSheetView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
+import BottomSheet, {
+  BottomSheetView,
+  BottomSheetScrollView,
+  type BottomSheetMethods,
+} from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import QRCode from 'react-native-qrcode-svg';
@@ -11,7 +16,7 @@ import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { androidSafeSnapPoints, MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius, sheetStyles } from '../../theme/tokens';
 import type { SprayWallVisibility } from '../../lib/spray/spray-share';
@@ -61,9 +66,10 @@ export function BoardShareSheet({
 
   const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss, onFullyDismissed });
 
-  // A lone '60%' makes @expo/ui's Material sheet skip the partial state and open
-  // full-screen on Android; androidSafeSnapPoints adds the full detent.
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['60%']), []);
+  const [activeIndex, setActiveIndex] = useState(0);
+  // Standard medium/large keeps the QR code scrollable on small phones.
+  const snapPoints = useMemo(() => androidSafeSnapPoints(MEDIUM_LARGE_SNAP_POINTS), []);
+  const columnStyle = useSheetColumnStyle(snapPoints, { activeIndex });
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
@@ -83,15 +89,18 @@ export function BoardShareSheet({
       index={-1}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onChange={managed.onChange}
+      onChange={(index) => {
+        managed.onChange(index);
+        setActiveIndex(Math.max(0, index));
+      }}
       onFullyDismissed={managed.onFullyDismissed}
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
       {/* The sheet's single child: the top bar and the body share it. */}
-      <BottomSheetView style={[styles.column, { paddingBottom: windowInsetBottom + spacing[4] }]}>
+      <BottomSheetView style={[styles.column, columnStyle, { paddingBottom: windowInsetBottom + spacing[4] }]}>
         <SheetTopBar title={t('mobile.sprayShare.title')} leading={{ kind: 'close', onPress: onDismiss }} />
-        <View style={styles.content}>
+        <BottomSheetScrollView contentContainerStyle={styles.content}>
           <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
             {wallName}
           </Text>
@@ -114,7 +123,7 @@ export function BoardShareSheet({
           </Text>
 
           {/* Content actions, not a form confirm: they stay in the body, one
-              full-width row (stacked they would overflow the 60% detent). */}
+              full-width row (stacked they would overflow the medium detent). */}
           <View style={styles.actions}>
             <Button
               title={t('mobile.sprayShare.copyLink')}
@@ -125,7 +134,7 @@ export function BoardShareSheet({
             />
             <Button title={t('mobile.sprayShare.share')} icon="share" onPress={handleShare} style={styles.button} />
           </View>
-        </View>
+        </BottomSheetScrollView>
       </BottomSheetView>
     </BottomSheet>
   );
