@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   publisherGet: vi.fn(),
   publisherSet: vi.fn(),
   redisConnected: false,
+  db: { marker: 'primary' },
   dbRead: { marker: 'read-replica' },
 }));
 
@@ -22,7 +23,7 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/db/queries')>();
   return { ...actual, getHoldHeatmapData: mocks.getHoldHeatmapData };
 });
-vi.mock('../db/client', () => ({ db: {}, dbRead: mocks.dbRead }));
+vi.mock('../db/client', () => ({ db: mocks.db, dbRead: mocks.dbRead }));
 // requireAdmin's shape (authenticated first, then a role check) with the role
 // lookup swapped for a mock, so no community_roles table is needed.
 vi.mock('../graphql/resolvers/social/roles', async () => {
@@ -120,7 +121,7 @@ describe('holdHeatmap resolver', () => {
     expect(mocks.getHoldHeatmapData).not.toHaveBeenCalled();
   });
 
-  it('maps the search input the way searchClimbs does and reads the replica', async () => {
+  it('maps search filters and applies the current viewer policy on the primary', async () => {
     const ctx = makeCtx();
     const result = await climbQueries.holdHeatmap(undefined, { input }, ctx);
 
@@ -128,11 +129,11 @@ describe('holdHeatmap resolver', () => {
     expect(mocks.applyRateLimit).toHaveBeenCalledWith(ctx, 30, 'hold-heatmap');
     expect(mocks.getHoldHeatmapData).toHaveBeenCalledTimes(1);
     const [client, params, searchParams, userId] = mocks.getHoldHeatmapData.mock.calls[0];
-    expect(client).toBe(mocks.dbRead);
+    expect(client).toBe(mocks.db);
     expect(params).toEqual({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20], angle: 40 });
     expect(searchParams).toMatchObject({ minGrade: 16, maxGrade: 20, minAscents: 5 });
-    // No personal filter → no user id, so the aggregate is the anonymous one.
-    expect(userId).toBeUndefined();
+    // Visibility still depends on the viewer when no progress filter is active.
+    expect(userId).toBe('admin-1');
   });
 
   it('passes the caller for personal-progress filters', async () => {
@@ -140,24 +141,20 @@ describe('holdHeatmap resolver', () => {
     expect(mocks.getHoldHeatmapData.mock.calls[0][3]).toBe('admin-1');
   });
 
-  it('serves a cached aggregate without querying Postgres', async () => {
+  it('ignores an old cached aggregate and rechecks current authorization', async () => {
     mocks.redisConnected = true;
     mocks.publisherGet.mockResolvedValue(JSON.stringify(stats));
 
     await expect(climbQueries.holdHeatmap(undefined, { input }, makeCtx())).resolves.toEqual(stats);
-    expect(mocks.getHoldHeatmapData).not.toHaveBeenCalled();
+    expect(mocks.getHoldHeatmapData).toHaveBeenCalledTimes(1);
+    expect(mocks.publisherGet).not.toHaveBeenCalled();
   });
 
-  it('caches a fresh aggregate for five minutes', async () => {
+  it('does not persist a viewer-dependent aggregate in shared Redis cache', async () => {
     mocks.redisConnected = true;
 
     await climbQueries.holdHeatmap(undefined, { input }, makeCtx());
-    expect(mocks.publisherSet).toHaveBeenCalledWith(
-      holdHeatmapCacheKey(input, undefined),
-      JSON.stringify(stats),
-      'EX',
-      300,
-    );
+    expect(mocks.publisherSet).not.toHaveBeenCalled();
   });
 
   it('keys the cache on filters, not on sort or page', () => {

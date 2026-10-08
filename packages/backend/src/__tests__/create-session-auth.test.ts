@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
+import { db } from '../db/client';
 
 // Mock dependencies
 vi.mock('../services/room-manager', () => ({
@@ -42,8 +43,8 @@ vi.mock('uuid', () => ({
   v4: () => 'test-uuid-1234',
 }));
 
-vi.mock('../db/client', () => ({
-  db: {
+vi.mock('../db/client', () => {
+  const database = {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
@@ -52,8 +53,14 @@ vi.mock('../db/client', () => ({
     values: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
-  },
-}));
+  };
+  return {
+    db: {
+      ...database,
+      transaction: vi.fn((callback: (tx: typeof database) => Promise<unknown>) => callback(database)),
+    },
+  };
+});
 
 vi.mock('./session-summary', () => ({
   generateSessionSummary: vi.fn().mockResolvedValue(null),
@@ -117,6 +124,7 @@ describe('createSession authentication', () => {
     await expect(sessionMutations.createSession(undefined, { input: validDiscoverableInput }, ctx)).rejects.toThrow(
       'Authentication required',
     );
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it('allows authenticated users to create discoverable sessions', async () => {

@@ -10,15 +10,19 @@
  * - Bearer token not registered for sessionId → 401.
  * - Bearer token bound to a different session → 410.
  * - Bearer token registered for sessionId → 200.
- * - A token registered for the session with no bound userId still navigates
- *   (200) — membership, not driver ownership, is what's required now.
+ * - A legacy anonymous token can navigate a public session, never a private one.
+ * - A revoked resource grant denies access even with durable membership.
  * - Per-session rate limit returns 429 after burst exhausted.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
-import { boardSessionParticipants } from '../db/schema';
+import { activityPushTokens, boardSessionParticipants, boardSessions, resourceGrants } from '@boardsesh/db/schema';
+
+// setup.ts loads privacy.ts through roomManager before these DB mocks exist.
+// Reload that graph so the real policy service uses this file's fixture rows.
+vi.hoisted(() => vi.resetModules());
 
 // ---------------------------------------------------------------------------
 // Mocks (must be hoisted before importing the handler)
@@ -38,6 +42,11 @@ const tokenLookupRows = vi.fn<() => Array<{ sessionId: string; userId: string | 
 // Default: caller is a participant (non-empty). Separate from tokenLookupRows
 // so a test can simulate "token row exists but user isn't a participant".
 const participantRows = vi.fn<() => Array<{ sessionId: string }>>(() => [{ sessionId: 'participant-row' }]);
+// The resource policy reads a real-shaped session independently of the token.
+const privacySessionRows = vi.fn(() => [
+  { id: 'session-widget-test', createdByUserId: 'session-host', isPublic: true, boardPath: 'kilter/1/1/1/40' },
+]);
+const resourceGrantRows = vi.fn<() => Array<{ status: 'approved' | 'revoked' }>>(() => []);
 // Durable session row used by the guard's ended-session check. Default active.
 const getSessionByIdMock = vi.fn<() => Promise<{ status: string; endedAt: Date | null } | null>>(async () => ({
   status: 'active',
@@ -64,9 +73,14 @@ vi.mock('../db/client', () => {
     chain.where = vi.fn(() => chain);
     // The auth lookup hits activity_push_tokens; the guard's membership lookup
     // hits board_session_participants. Route each to its own mock.
-    chain.limit = vi.fn(async (_n: number) =>
-      table === boardSessionParticipants ? participantRows() : tokenLookupRows(),
-    );
+    chain.limit = vi.fn(async (_n: number) => {
+      if (table === activityPushTokens) return tokenLookupRows();
+      if (table === boardSessionParticipants) return participantRows();
+      if (table === boardSessions) return privacySessionRows();
+      if (table === resourceGrants) return resourceGrantRows();
+      // No resource override or approved-follow relationship in these fixtures.
+      return [];
+    });
     return chain;
   }
   return {
@@ -190,6 +204,10 @@ describe('handleWidgetNavigate', () => {
     vi.clearAllMocks();
     tokenLookupRows.mockReturnValue([]);
     participantRows.mockReturnValue([{ sessionId: 'participant-row' }]);
+    privacySessionRows.mockReturnValue([
+      { id: SESSION_ID, createdByUserId: 'session-host', isPublic: true, boardPath: 'kilter/1/1/1/40' },
+    ]);
+    resourceGrantRows.mockReturnValue([]);
     getSessionByIdMock.mockResolvedValue({ status: 'active', endedAt: null });
     getQueueStateMock.mockResolvedValue({
       queue: [
@@ -310,10 +328,39 @@ describe('handleWidgetNavigate', () => {
     });
   });
 
-  it('navigates for a registered token with no bound userId (membership suffices), attributing via the gap path', async () => {
-    // Always-live: a token registered for the session navigates even without a
-    // bound userId. With no userId we can't attribute the PostHog event to a
-    // person, so it flows through the attribution-gap path instead of 403ing.
+  it('refuses a revoked session grant even when the token user remains a durable participant', async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+    resourceGrantRows.mockReturnValue([{ status: 'revoked' }]);
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID, action: 'next', currentIndex: 0 },
+    });
+    const res = makeResponse();
+    await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(403);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a legacy anonymous token for a private session', async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: null }]);
+    privacySessionRows.mockReturnValue([
+      { id: SESSION_ID, createdByUserId: 'session-host', isPublic: false, boardPath: 'kilter/1/1/1/40' },
+    ]);
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID, action: 'next', currentIndex: 0 },
+    });
+    const res = makeResponse();
+    await handleWidgetNavigate(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(403);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('navigates a public session with a legacy anonymous token, attributing via the gap path', async () => {
+    // Public resource access permits this legacy token. With no bound userId,
+    // analytics uses the attribution-gap path.
     tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: null }]);
     const req = makeRequest({
       method: 'POST',

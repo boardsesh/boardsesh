@@ -125,6 +125,9 @@ describe('syncClimbGrades serial-plan guard', () => {
 
     const pageStatement = renderStatement(transactionDatabase.execute.mock.calls[1][0]);
     expect(pageStatement).toContain('FROM board_climb_grades');
-    expect(pageStatement).not.toContain('EXISTS (');
+    // Omitting layout/size does not omit the climb's current visibility gate.
+    expect(pageStatement).toContain('content_privacy');
+    expect(pageStatement).toContain('FROM board_climbs bc');
+    expect(pageStatement).not.toMatch(/\bbc\.layout_id\s*=/);
   });
 });

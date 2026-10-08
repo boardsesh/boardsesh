@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { resourceGrants, resourcePrivacy } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { socialGymQueries, socialGymMutations } from '../graphql/resolvers/social/gyms';
@@ -11,8 +12,8 @@ import { socialBoardQueries } from '../graphql/resolvers/social/boards';
  * surface:
  *   - updateGym persists the four branding columns (round-trip + null-clears),
  *     and rejects a malformed hex colour.
- *   - gymBoards is viewer-scoped: editors see every linked board; anon /
- *     non-editors see only public boards; a private gym is masked as NOT_FOUND
+ *   - gymBoards requires board access independently of gym edit access; anon /
+ *     non-editors see only listed public boards; a private gym is masked as NOT_FOUND
  *     to non-editors.
  *   - UserBoard.boardId is populated only when the board is public or the viewer
  *     can edit it, else null.
@@ -226,12 +227,44 @@ describe('updateGym branding', () => {
 // ============================================================================
 
 describe('gymBoards visibility', () => {
-  it('shows every linked board to a gym editor (incl. private and unlisted)', async () => {
+  it('requires board access in addition to gym edit access for private boards', async () => {
     for (const viewer of [OWNER, EDITOR]) {
       const boards = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, authCtx(viewer));
       const uuids = boards.map((b) => b.uuid).sort();
-      expect(uuids).toEqual([pubBoard.uuid, privBoard.uuid, unlistedBoard.uuid].sort());
+      const expected = viewer === OWNER ? [pubBoard.uuid, privBoard.uuid, unlistedBoard.uuid] : [pubBoard.uuid];
+      expect(uuids).toEqual(expected.sort());
     }
+  });
+
+  it('shows restricted boards to an explicitly approved gym editor until access is revoked', async () => {
+    await db
+      .insert(resourcePrivacy)
+      .values({ kind: 'board', resourceId: privBoard.uuid, ownerId: OWNER, audience: 'invite_only' });
+    const restrictedIds = [privBoard.uuid, unlistedBoard.uuid];
+    await db.insert(resourceGrants).values(
+      restrictedIds.map((resourceId) => ({
+        kind: 'board' as const,
+        resourceId,
+        userId: EDITOR,
+        status: 'approved' as const,
+        invitedBy: OWNER,
+      })),
+    );
+    const approved = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, authCtx(EDITOR));
+    expect(approved.map((board) => board.uuid).sort()).toEqual([pubBoard.uuid, ...restrictedIds].sort());
+
+    await db
+      .update(resourceGrants)
+      .set({ status: 'revoked' })
+      .where(
+        and(
+          eq(resourceGrants.kind, 'board'),
+          eq(resourceGrants.userId, EDITOR),
+          inArray(resourceGrants.resourceId, restrictedIds),
+        ),
+      );
+    const revoked = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, authCtx(EDITOR));
+    expect(revoked.map((board) => board.uuid)).toEqual([pubBoard.uuid]);
   });
 
   it('shows only publicly listed boards to an anonymous viewer', async () => {
@@ -338,8 +371,7 @@ describe('UserBoard.boardId', () => {
     // Stronger than the contract this used to pin (board enriched, boardId
     // nulled): since #3648 an anonymous caller cannot see the private board at
     // all, so there is no payload left to leak a presence channel through.
-    // boardId nulling still governs the reads that DO return a private board —
-    // the gym-editor case below, and gymBoards.
+    // Gym editing alone also does not grant access to a private board.
     const board = await socialBoardQueries.board(null, { boardUuid: privBoard.uuid }, anonCtx());
     expect(board).toBeNull();
   });
@@ -361,13 +393,9 @@ describe('UserBoard.boardId', () => {
     expect(ownerPriv!.boardId).toBe(privBoard.id);
   });
 
-  it('withholds boardId from a gym editor on a private board they can only view', async () => {
-    // A gym EDITOR can *see* the private board via gymBoards (gym-level access),
-    // but boardId follows the stricter board-level edit gate — a gym editor is
-    // not a board editor — so the private board's presence channel stays hidden.
+  it('withholds the private board from a gym editor without board access', async () => {
     const editorBoards = await socialBoardQueries.gymBoards(null, { gymUuid: publicGymUuid }, authCtx(EDITOR));
     const editorPriv = editorBoards.find((b) => b.uuid === privBoard.uuid);
-    expect(editorPriv).toBeDefined();
-    expect(editorPriv!.boardId).toBeNull();
+    expect(editorPriv).toBeUndefined();
   });
 });

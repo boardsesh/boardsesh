@@ -972,6 +972,9 @@ export const socialBoardQueries = {
     const conditions = [
       eq(dbSchema.userBoards.gymId, gym.id),
       isNull(dbSchema.userBoards.deletedAt),
+      // Enumerating a gym is not possession of each unlisted board's link.
+      // Board owners and explicit grants still pass this independent gate.
+      resourceAccessCondition('board', dbSchema.userBoards.uuid, viewerId, { allowUnlistedLink: false }),
       // A spray wall with nothing published yet is a board nobody can climb on —
       // not even for the gym's admins, who do see the private rows below. Its
       // owner sees it, so they can go and finish it (SW-14).

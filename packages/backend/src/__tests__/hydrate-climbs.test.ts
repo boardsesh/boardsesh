@@ -13,6 +13,7 @@ vi.mock('../db/queries/util/table-select', () => ({
   UNIFIED_TABLES: {
     climbs: {
       uuid: 'climbs.uuid',
+      userId: 'climbs.userId',
       layoutId: 'climbs.layoutId',
       boardType: 'climbs.boardType',
       setterUsername: 'climbs.setterUsername',
@@ -33,7 +34,8 @@ vi.mock('../db/queries/util/table-select', () => ({
   },
 }));
 
-vi.mock('@boardsesh/db/queries', () => ({
+vi.mock('@boardsesh/db/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/db/queries')>()),
   getGradeLabel: (id: number | null | undefined) => (id == null ? '?' : `V${id}`),
   getClimbStars: (_boardName: string | null | undefined, qualityAverage: number | string | null | undefined) => {
     const numericQualityAverage = Number(qualityAverage);

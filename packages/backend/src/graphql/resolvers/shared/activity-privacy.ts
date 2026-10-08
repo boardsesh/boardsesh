@@ -143,12 +143,38 @@ export function socialEntityPrivacyCondition(
   entityType: SQLWrapper,
   entityId: SQLWrapper,
   viewerId: string | null | undefined,
-  depth = 0,
 ): SQL {
-  if (depth > 2) return sql`false`;
+  // Resolve at most two comment references before checking the real entity.
+  // Expanding every entity branch recursively produces a huge query plan (and
+  // seconds of JIT compilation) even for a feed containing only a few comments.
+  // Each traversed comment still checks its own audience and reply ancestors;
+  // missing references, cycles and longer chains never reach an allowed entity.
+  return sql`EXISTS (
+    WITH RECURSIVE privacy_entity_chain AS (
+      SELECT ${entityType}::text AS entity_type, ${entityId}::text AS entity_id, 0 AS depth
+      UNION ALL
+      SELECT privacy_entity_reference.entity_type, privacy_entity_reference.entity_id, privacy_entity_chain.depth + 1
+      FROM privacy_entity_chain
+      JOIN comments privacy_entity_reference ON privacy_entity_reference.uuid = privacy_entity_chain.entity_id
+      WHERE privacy_entity_chain.entity_type = 'comment' AND privacy_entity_chain.depth < 2
+        AND ${commentPrivacyCondition(viewerId, {
+          uuid: sql`privacy_entity_reference.uuid`,
+          userId: sql`privacy_entity_reference.user_id`,
+          parentCommentId: sql`privacy_entity_reference.parent_comment_id`,
+        })}
+    )
+    SELECT 1 FROM privacy_entity_chain privacy_entity_target
+    WHERE ${terminalSocialEntityPrivacyCondition(sql`privacy_entity_target.entity_type`, sql`privacy_entity_target.entity_id`, viewerId)}
+  )`;
+}
+
+function terminalSocialEntityPrivacyCondition(
+  entityType: SQLWrapper,
+  entityId: SQLWrapper,
+  viewerId: string | null | undefined,
+): SQL {
   const tick = alias(schema.boardseshTicks, 'privacy_entity_tick');
   const climb = alias(schema.boardClimbs, 'privacy_entity_climb');
-  const comment = alias(schema.comments, `privacy_entity_comment_${depth}`);
   const proposal = alias(schema.climbProposals, 'privacy_entity_proposal');
   return sql`CASE
     WHEN ${entityType} = 'tick' THEN ${exists(
@@ -172,18 +198,6 @@ export function socialEntityPrivacyCondition(
               viewerId ? eq(climb.userId, viewerId) : sql`false`,
               and(eq(climb.isDraft, false), eq(climb.isListed, true)),
             ),
-          ),
-        ),
-    )}
-    WHEN ${entityType} = 'comment' THEN ${exists(
-      queryBuilder
-        .select({ id: comment.id })
-        .from(comment)
-        .where(
-          and(
-            eq(comment.uuid, entityId),
-            commentPrivacyCondition(viewerId, comment),
-            socialEntityPrivacyCondition(comment.entityType, comment.entityId, viewerId, depth + 1),
           ),
         ),
     )}

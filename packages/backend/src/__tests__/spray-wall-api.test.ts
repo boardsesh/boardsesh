@@ -2278,11 +2278,11 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     // The summary is keyed on a session id alone and returns the hardest send's
     // climb NAME. It establishes no viewer at all, so the gate is deliberately the
     // strict one: only PUBLIC walls appear.
-    const { climbUuid } = await wallWithAClimb();
+    const { wall, climbUuid } = await wallWithAClimb();
     const sessionId = uuidv4();
     await db.execute(sql`
       INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
-      VALUES (${sessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+      VALUES (${sessionId}, ${`spray/${wall.layoutId}/${wall.sizeId}/1/40`}, ${OWNER}, now() - interval '1 hour', now(), now(), now())
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
@@ -2298,7 +2298,7 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     const publicSessionId = uuidv4();
     await db.execute(sql`
       INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
-      VALUES (${publicSessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+      VALUES (${publicSessionId}, ${`spray/${publicWall.wall.layoutId}/${publicWall.wall.sizeId}/1/40`}, ${OWNER}, now() - interval '1 hour', now(), now(), now())
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
@@ -2603,12 +2603,7 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     expect(asOwner.totalCount).toBe(2);
   });
 
-  it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {
-    // Four callers AND this predicate onto a LEFT-JOINed `board_climbs`, and a tick
-    // with no climb row is a case they deliberately render as "Unknown Climb". With
-    // a plain `<>`, `NULL <> 'spray'` is NULL and the row vanishes — and
-    // `sessionDetail`, which returns null when it finds no ticks, loses the whole
-    // session. Hence `IS DISTINCT FROM`.
+  it('retains a missing-climb tick in its author’s logbook, excluding enriched feeds', async () => {
     const orphanUuid = 'ORPHANTICKCLIMBUUID0000000000001';
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
@@ -2624,15 +2619,16 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
       { sessionId: `daily:${OWNER}:${day}` },
       ctxFor(OWNER),
     )) as { ticks?: Array<{ climbUuid?: string }> } | null;
-    expect(detail).not.toBeNull();
-    expect((detail?.ticks ?? []).map((tick) => tick.climbUuid)).toContain(orphanUuid);
+    expect((detail?.ticks ?? []).map((tick) => tick.climbUuid)).not.toContain(orphanUuid);
+    const ownTicks = await tickQueries.userTicks({}, { userId: OWNER, boardType: 'kilter' }, ctxFor(OWNER));
+    expect(ownTicks).toEqual(expect.arrayContaining([expect.objectContaining({ climbUuid: orphanUuid })]));
 
     const global = (await socialFeedQueries.globalAscentsFeed(
       {},
       { input: { limit: 50, offset: 0 } },
       ctxFor(null),
     )) as { items: Array<{ climbUuid?: string }> };
-    expect(global.items.map((item) => item.climbUuid)).toContain(orphanUuid);
+    expect(global.items.map((item) => item.climbUuid)).not.toContain(orphanUuid);
   });
 
   it('lets a GYM MEMBER read a gym wall\u2019s climbs', async () => {
@@ -4666,17 +4662,22 @@ describe('activityFeed and a wall that went private after the fan-out', () => {
     expect(await read(OWNER)).toContain(wall.climbUuid);
   });
 
-  it('leaves a row with no climb uuid alone', async () => {
-    // Follows and session summaries carry no `climbUuid`, so the reference form
-    // matches nothing for them and they must pass straight through.
+  it('authorizes the session even when the feed row has no climb uuid', async () => {
+    const sessionId = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, is_public)
+      VALUES (${sessionId}, 'kilter/1/1/1/40', ${OWNER}, true)
+    `);
     await db.execute(sql`
       INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, metadata, created_at)
-      VALUES (${STRANGER}, ${OWNER}, 'session_summary', 'session', ${uuidv4()}, ${'{}'}::jsonb, now())
+      VALUES (${STRANGER}, ${OWNER}, 'session_summary', 'session', ${sessionId}, ${'{}'}::jsonb, now())
     `);
     const items = (await activityFeedQueries.activityFeed({}, { input: { limit: 20 } }, ctxFor(STRANGER))) as {
       items: Array<{ entityType: string }>;
     };
     expect(items.items.map((item) => item.entityType)).toEqual(['session']);
+    await db.execute(sql`UPDATE board_sessions SET is_public = false WHERE id = ${sessionId}`);
+    expect(await read(STRANGER)).toEqual([]);
   });
 });
 
@@ -5367,11 +5368,11 @@ describe('the owner’s own session summary', () => {
     // context and wrong for `sessionSummary` and `endSession`, where the viewer IS
     // known: the hardest send of a garage session is usually on the garage wall, and
     // the owner was shown "Unknown climb" for their own climb.
-    const { climbUuid } = await wallWithAClimb();
+    const { wall, climbUuid } = await wallWithAClimb();
     const sessionId = uuidv4();
     await db.execute(sql`
       INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
-      VALUES (${sessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+      VALUES (${sessionId}, ${`spray/${wall.layoutId}/${wall.sizeId}/1/40`}, ${OWNER}, now() - interval '1 hour', now(), now(), now())
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)

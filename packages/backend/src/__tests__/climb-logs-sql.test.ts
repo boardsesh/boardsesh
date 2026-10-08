@@ -156,9 +156,10 @@ describe.each([
   });
 
   it('ignores excludeFollowed for an anonymous caller', () => {
-    const { sql } = sqlOf({ latestPerClimber, viewerUserId: null, filters: { excludeFollowed: true } });
-
-    expect(sql).not.toContain('user_follows');
+    const filtered = sqlOf({ latestPerClimber, viewerUserId: null, filters: { excludeFollowed: true } });
+    // Resource privacy may contain follower joins; the optional feed filter
+    // must contribute nothing when there is no authenticated viewer.
+    expect(filtered).toEqual(sqlOf({ latestPerClimber, viewerUserId: null }));
   });
 
   it('leaves out the optional filters nobody asked for', () => {
@@ -166,7 +167,7 @@ describe.each([
 
     expect(sql).not.toContain('"comment" ~');
     expect(sql).not.toContain(`in ('flash', 'send')`);
-    expect(sql).not.toContain('user_follows');
+    expect(sql).not.toContain('"user_follows"."following_id"');
     expect(sql).not.toMatch(/"angle" = \$\d+\)/);
   });
 });

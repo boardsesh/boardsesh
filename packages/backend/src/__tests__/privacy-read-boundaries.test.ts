@@ -4,6 +4,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
+import { socialCommentQueries } from '../graphql/resolvers/social/comments';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
   betaPrivacyCondition,
@@ -129,6 +130,81 @@ describe('SQL privacy boundaries against Postgres', () => {
     expect(await canReadSocialEntity('comment', 'privacy-parent', stranger)).toBe(false);
     expect(await canReadSocialEntity('comment', 'privacy-reply', approved)).toBe(true);
     expect(await canReadSocialEntity('climb', climbUuid, undefined)).toBe(true);
+  });
+  it('bounds referenced-comment chains and checks every intermediate audience', async () => {
+    await db.insert(schema.comments).values([
+      { uuid: 'privacy-chain-terminal', userId: stranger, entityType: 'climb', entityId: climbUuid, body: 'Public' },
+      {
+        uuid: 'privacy-chain-two',
+        userId: stranger,
+        entityType: 'comment',
+        entityId: 'privacy-chain-terminal',
+        body: 'Two hops',
+      },
+      {
+        uuid: 'privacy-chain-three',
+        userId: stranger,
+        entityType: 'comment',
+        entityId: 'privacy-chain-two',
+        body: 'Too deep',
+      },
+      {
+        uuid: 'privacy-chain-private',
+        userId: owner,
+        entityType: 'comment',
+        entityId: 'privacy-chain-terminal',
+        body: 'Private intermediate',
+      },
+      {
+        uuid: 'privacy-chain-inner-private',
+        userId: owner,
+        entityType: 'climb',
+        entityId: climbUuid,
+        body: 'Private target',
+      },
+      {
+        uuid: 'privacy-chain-public-outer',
+        userId: stranger,
+        entityType: 'comment',
+        entityId: 'privacy-chain-inner-private',
+        body: 'Public outer',
+      },
+      {
+        uuid: 'privacy-chain-cycle',
+        userId: stranger,
+        entityType: 'comment',
+        entityId: 'privacy-chain-cycle',
+        body: 'Cycle',
+      },
+    ]);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-two', null)).toBe(true);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-three', null)).toBe(false);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-private', stranger)).toBe(false);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-private', approved)).toBe(true);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-public-outer', stranger)).toBe(false);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-public-outer', approved)).toBe(true);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-cycle', stranger)).toBe(false);
+    expect(await canReadSocialEntity('comment', 'privacy-chain-missing', stranger)).toBe(false);
+  });
+  it('filters the global comment page without changing database JIT defaults', async () => {
+    const settingsBefore = await db.execute(sql`SELECT current_setting('jit') AS jit`);
+    await db.insert(schema.comments).values({
+      uuid: 'privacy-global-public',
+      userId: stranger,
+      entityType: 'climb',
+      entityId: climbUuid,
+      body: 'Public page fixture',
+    });
+    const result = await socialCommentQueries.globalCommentFeed(null, { input: { limit: 50 } }, {
+      userId: null,
+      isAuthenticated: false,
+      connectionId: 'privacy-global-test',
+    } as unknown as ConnectionContext);
+    const commentIds = result.comments.map((comment) => comment.uuid);
+    expect(commentIds).toContain('privacy-global-public');
+    expect(commentIds).not.toContain('privacy-parent');
+    expect(commentIds).not.toContain('privacy-reply');
+    expect(await db.execute(sql`SELECT current_setting('jit') AS jit`)).toEqual(settingsBefore);
   });
   it('hides a tick-linked beta URL when its tick is only-me', async () => {
     await db.insert(schema.boardBetaLinks).values({

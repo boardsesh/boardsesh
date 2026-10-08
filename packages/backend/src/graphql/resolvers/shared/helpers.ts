@@ -266,10 +266,10 @@ export async function requireSessionMember(
   maxRetries = SESSION_MEMBER_RETRY_CONFIG.maxRetries,
   initialDelayMs = SESSION_MEMBER_RETRY_CONFIG.initialDelayMs,
 ): Promise<void> {
-  await requireResourceAccess('session', sessionId, ctx.userId);
   // Durable membership fast-path (authenticated WS connections only). See the
   // JSDoc above for why this short-circuits the retry loop.
   if (ctx.transport !== 'http' && ctx.userId && (await isDurableSessionMember(ctx.userId, sessionId))) {
+    await requireResourceAccess('session', sessionId, ctx.userId);
     return;
   }
 
@@ -277,6 +277,7 @@ export async function requireSessionMember(
     // First check local context (fast path for same-instance)
     const latestCtx = getContext(ctx.connectionId);
     if (latestCtx?.sessionId === sessionId) {
+      await requireResourceAccess('session', sessionId, ctx.userId);
       return; // Success - session matches locally
     }
 
@@ -288,6 +289,7 @@ export async function requireSessionMember(
     if (distributedState) {
       const isInSession = await distributedState.isConnectionInSession(ctx.connectionId, sessionId);
       if (isInSession) {
+        await requireResourceAccess('session', sessionId, ctx.userId);
         return; // Success - session matches in distributed state
       }
     }
@@ -308,10 +310,15 @@ export async function requireSessionMember(
   if (distributedState) {
     const isInSession = await distributedState.isConnectionInSession(ctx.connectionId, sessionId);
     if (isInSession) {
+      await requireResourceAccess('session', sessionId, ctx.userId);
       return; // Success via distributed state
     }
   }
 
+  // A first JOIN may create the durable session while a subscription waits.
+  // Check its current policy before any success or membership-error response,
+  // rather than rejecting that legitimate creation race before the retry loop.
+  await requireResourceAccess('session', sessionId, ctx.userId);
   if (!finalCtx?.sessionId) {
     // Benign, high-volume race (stale subscriber / anonymous reconnect / slow
     // join). Logged at `debug` so it stays out of prod error/warn dashboards

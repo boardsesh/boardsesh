@@ -460,10 +460,12 @@ describe('board-presence resolvers', () => {
         { serial, boardType: 'kilter', layoutId: 7, sizeId: 11, setIds: '3,4' },
         authCtx(),
       );
-      expect(resolved.boardName).toBe('My Garage');
+      // A serial lookup returns the hardware label, not a home's identifying name.
+      expect(resolved.boardName).toBe('Kilter Board');
 
-      const [row] = await db.execute(sql`SELECT serial_number FROM user_boards WHERE id = ${resolved.boardId}`);
+      const [row] = await db.execute(sql`SELECT serial_number, name FROM user_boards WHERE id = ${resolved.boardId}`);
       expect((row as { serial_number: string }).serial_number).toBe(serial);
+      expect((row as { name: string }).name).toBe('My Garage');
     });
 
     it('normalizes setIds before binding a serial to an own config board', async () => {
@@ -478,7 +480,7 @@ describe('board-presence resolvers', () => {
         { serial, boardType: 'kilter', layoutId: 17, sizeId: 21, setIds: '4,3' },
         authCtx(),
       );
-      expect(resolved.boardName).toBe('My Normalized Garage');
+      expect(resolved.boardName).toBe('Kilter Board');
       expect(resolved.setIds).toBe('3,4');
 
       const [row] = await db.execute(sql`

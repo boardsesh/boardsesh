@@ -13,7 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import type { ClimbQueueItem, ConnectionContext, LiveSession } from '@boardsesh/shared-schema';
 import { getGradeLabel } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -140,6 +140,12 @@ async function makeGym(name: string): Promise<number> {
 
 async function followBoard(userId: string, boardUuid: string): Promise<void> {
   await db.insert(dbSchema.boardFollows).values({ userId, boardUuid }).onConflictDoNothing();
+}
+
+async function approveSessionGuest(sessionId: string, userId: string): Promise<void> {
+  await db
+    .insert(dbSchema.resourceGrants)
+    .values({ kind: 'session', resourceId: sessionId, userId, status: 'approved' });
 }
 
 async function makeSession(
@@ -588,20 +594,37 @@ describe('followedLiveSessions — exclusions', () => {
     expect(await followedLiveSessions(VIEWER)).toEqual([]);
   });
 
-  it('hides a private session from a viewer who joined it and left', async () => {
+  it('keeps an approved follower’s private session visible after leaving until access is revoked', async () => {
     const sessionId = await makeSession({ createdBy: FRIEND, isPublic: false });
     await goLive(sessionId, FRIEND);
+    await approveSessionGuest(sessionId, VIEWER);
     const viewerConnection = await goLive(sessionId, VIEWER);
     expect(ids(await followedLiveSessions(VIEWER))).toEqual([sessionId]);
 
-    // The participant row survives leaving; only the live roster makes a member.
+    // Leaving clears live membership, but the host's approval still permits discovery.
     await roomManager.leaveSession(viewerConnection);
+    expect(await followedLiveSessions(VIEWER)).toEqual([
+      expect.objectContaining({ sessionId, viewerIsMember: false, reasons: ['FOLLOWING_USER'] }),
+    ]);
+
+    // Explicit revocation takes precedence over the durable participant row.
+    await db
+      .update(dbSchema.resourceGrants)
+      .set({ status: 'revoked' })
+      .where(
+        and(
+          eq(dbSchema.resourceGrants.kind, 'session'),
+          eq(dbSchema.resourceGrants.resourceId, sessionId),
+          eq(dbSchema.resourceGrants.userId, VIEWER),
+        ),
+      );
     expect(await followedLiveSessions(VIEWER)).toEqual([]);
   });
 
   it('lists a private session to a viewer on its live roster, as a member, without the current climb', async () => {
     const sessionId = await makeSession({ createdBy: STRANGER, isPublic: false });
     await goLive(sessionId, STRANGER);
+    await approveSessionGuest(sessionId, VIEWER);
     await goLive(sessionId, VIEWER);
     const current = makeQueueItem('Private Climb');
     await roomManager.updateQueueStateImmediate(sessionId, [current], current);
@@ -659,8 +682,15 @@ describe('followedLiveSessions — board privacy and ordering', () => {
     expect(boardFollower.reasons).toEqual(['FOLLOWED_BOARD']);
     expect(boardFollower.board?.name).toBe('Link Only Wall');
 
-    // Reading that board's own sheet: already holds it.
-    const [onSheet] = await liveSessionQueries.boardLiveSessions(undefined, { boardId: unlisted.id }, anonCtx());
+    // An enumerable numeric ID is not an unlisted-link capability.
+    await expect(liveSessionQueries.boardLiveSessions(undefined, { boardId: unlisted.id }, anonCtx())).rejects.toThrow(
+      'Board not found',
+    );
+    const [onSheet] = await liveSessionQueries.boardLiveSessions(
+      undefined,
+      { boardId: unlisted.id },
+      authCtx(BOARD_OWNER),
+    );
     expect(onSheet.board?.name).toBe('Link Only Wall');
   });
 
@@ -851,26 +881,29 @@ describe('followedLiveSessions — spray walls', () => {
   });
 
   it('refuses an admin-hidden spray wall as the selected board, even an unlisted one', async () => {
-    const wall = await makeSprayWall({ isUnlisted: true, hidden: true });
+    const wall = await makeSprayWall({ isUnlisted: true });
     const sessionId = await makeSession({ boardPath: wall.path });
-    await goLive(sessionId, STRANGER, wall.path);
+    await goLive(sessionId, BOARD_OWNER, wall.path);
     await addTick({ sessionId, boardId: wall.id });
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ hiddenAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, wall.uuid));
 
     expect(await followedLiveSessions(VIEWER, { boardUuid: wall.uuid })).toEqual([]);
   });
 
-  it('lists a followed climber on a hidden spray wall without naming the wall', async () => {
+  it('hides a followed climber’s session when its parent spray wall is hidden', async () => {
     await follow(VIEWER, FRIEND);
-    const wall = await makeSprayWall({ name: 'Hidden Spray Wall', hidden: true });
+    const wall = await makeSprayWall({ name: 'Hidden Spray Wall' });
     const sessionId = await makeSession({ createdBy: FRIEND, boardPath: wall.path });
     await goLive(sessionId, FRIEND, wall.path);
     await addTick({ sessionId, userId: FRIEND, boardId: wall.id });
-
-    const [session] = await followedLiveSessions(VIEWER);
-    expect(session.reasons).toEqual(['FOLLOWING_USER']);
-    expect(session.board).toBeNull();
-    expect(session.currentClimb).toBeNull();
-    expect(JSON.stringify(session)).not.toContain('Hidden Spray Wall');
+    await db
+      .update(dbSchema.sprayWalls)
+      .set({ hiddenAt: new Date() })
+      .where(eq(dbSchema.sprayWalls.boardUuid, wall.uuid));
+    expect(await followedLiveSessions(VIEWER)).toEqual([]);
   });
 });
 
@@ -957,11 +990,11 @@ describe('session privacy switch', () => {
     expect(sessionsAfter).toHaveLength(sessionsBefore.length);
   });
 
-  it('HTTP createSession defaults to public and still leaves the row to the WebSocket join', async () => {
+  it('HTTP createSession persists its public policy before the WebSocket join', async () => {
     const result = await sessionMutations.createSession(undefined, { input: createInput() }, authCtx(VIEWER));
 
     expect(result.isPublic).toBe(true);
-    expect(await readIsPublic(result.id)).toBeUndefined();
+    expect(await readIsPublic(result.id)).toBe(true);
 
     await goLive(result.id, VIEWER, result.boardPath);
     expect(await readIsPublic(result.id)).toBe(true);
@@ -981,14 +1014,15 @@ describe('session privacy switch', () => {
     expect(await readIsPublic(result.id)).toBe(false);
   });
 
-  it('a private session can still be joined by link and read by its members', async () => {
+  it('requires host approval before a private link permits joining or reading', async () => {
     const result = await sessionMutations.createSession(
       undefined,
       { input: createInput({ isPublic: false }) },
       authCtx(VIEWER),
     );
     await goLive(result.id, VIEWER, result.boardPath);
-
+    await expect(goLive(result.id, STRANGER, result.boardPath)).rejects.toThrow('Not found');
+    await approveSessionGuest(result.id, STRANGER);
     await goLive(result.id, STRANGER, result.boardPath);
     const users = await roomManager.getSessionUsers(result.id);
     expect(new Set(users.map((user) => user.userId))).toEqual(new Set([STRANGER, VIEWER]));
@@ -1050,6 +1084,15 @@ describe('session privacy switch', () => {
     const board = await makeBoard();
     const sessionId = await makeSession({ createdBy: VIEWER, boardId: board.id });
     const current = makeQueueItem('Kiosk Climb');
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: current.climb.uuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      name: current.climb.name,
+      frames: current.climb.frames,
+      isDraft: false,
+      isListed: true,
+    });
     await roomManager.updateQueueStateImmediate(sessionId, [current], current);
     const publishSpy = vi.spyOn(pubsub, 'publishBoardQueuePreview').mockImplementation(() => {});
     const lastPreviewFor = (boardId: number) =>

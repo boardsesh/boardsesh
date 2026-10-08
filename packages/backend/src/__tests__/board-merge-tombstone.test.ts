@@ -462,7 +462,7 @@ describe('boardBySlug tombstone following', () => {
     expect(board?.uuid).toBe(REUSED_ACTIVE_UUID);
   });
 
-  it('keeps private canonical boards masked from anonymous callers after raw lookup extraction', async () => {
+  it('keeps private canonical boards restricted after raw lookup extraction', async () => {
     const privateUuid = uuidv4();
     const mergedSlug = `${PREFIX}-public-merged-into-private`;
     await insertBoard({
@@ -481,9 +481,10 @@ describe('boardBySlug tombstone following', () => {
 
     expect((await resolveBoardBySlug(mergedSlug))?.uuid).toBe(privateUuid);
     expect(await boardBySlug(mergedSlug)).toBeNull();
-    const authenticated = await socialBoardQueries.boardBySlug(null, { slug: mergedSlug }, authCtx(OWNER_B));
-    expect(authenticated?.uuid).toBe(privateUuid);
-    expect(authenticated?.boardId).toBeNull();
+    expect(await socialBoardQueries.boardBySlug(null, { slug: mergedSlug }, authCtx(OWNER_B))).toBeNull();
+    const ownerBoard = await socialBoardQueries.boardBySlug(null, { slug: mergedSlug }, authCtx(OWNER_SURVIVOR));
+    expect(ownerBoard?.uuid).toBe(privateUuid);
+    expect(ownerBoard?.boardId).toBeTypeOf('number');
   });
 });
 

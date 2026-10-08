@@ -259,6 +259,7 @@ export const sessionMutations = {
 
       // Validate input
       validateInput(CreateSessionInputSchema, input, 'createSession input');
+      if (input.discoverable) requireAuthenticated(ctx);
 
       // Generate a unique session ID
       const sessionId = uuidv4();

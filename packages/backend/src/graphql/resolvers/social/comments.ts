@@ -342,9 +342,15 @@ export const socialCommentQueries = {
     )}
       AND (cp_vis."board_type" IS DISTINCT FROM 'spray' OR bc_vis."uuid" IS NOT NULL)`;
 
-    const rawRows = await executeRows<CommentRow>(
-      db,
-      sql`
+    // A dynamic feed authorizes several entity kinds in one statement. On
+    // PostgreSQL's default JIT settings, compiling those predicates took 10.9s
+    // for a three-row fixture; executing them took 4ms. Keep this transaction's
+    // bounded page read interpreted, without changing the connection's defaults.
+    const rawRows = await db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL jit = off`);
+      return executeRows<CommentRow>(
+        tx,
+        sql`
       SELECT ${distinctClause}
         c."id",
         c."uuid",
@@ -396,7 +402,8 @@ export const socialCommentQueries = {
       LIMIT ${limit + 1}
       OFFSET ${offset}
     `,
-    );
+      );
+    });
 
     const hasMore = rawRows.length > limit;
     const resultRows = hasMore ? rawRows.slice(0, limit) : rawRows;

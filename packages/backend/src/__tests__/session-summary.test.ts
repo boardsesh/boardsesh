@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { generateSessionHealthExport, generateSessionSummary } from '../graphql/resolvers/sessions/session-summary';
 
+// Summary formatting/aggregation is isolated from the separately tested SQL
+// access predicates; the mock rows below represent their authorized results.
+vi.mock('../services/privacy', () => ({
+  canAccessResource: vi.fn().mockResolvedValue(true),
+  contentVisibilityCondition: () => ({}),
+}));
+vi.mock('../graphql/resolvers/shared/activity-privacy', () => ({ tickPrivacyCondition: () => ({}) }));
+
 // Shared mock state, declared with vi.hoisted to ensure availability before mock setup
 const mockState = vi.hoisted(() => ({
   selectCallIndex: 0,
@@ -39,7 +47,15 @@ vi.mock('../db/client', () => ({
           };
         }
         if (prop === 'execute') {
-          return (..._args: unknown[]) => Promise.resolve(mockState.participantRows);
+          return (..._args: unknown[]) =>
+            Promise.resolve(
+              mockState.participantRows.map((participant) => ({
+                rawSends: participant.sends,
+                rawFlashes: participant.flashes,
+                rawAttempts: participant.attempts,
+                ...participant,
+              })),
+            );
         }
       },
     },
@@ -283,6 +299,25 @@ describe('generateSessionSummary', () => {
     expect(result!.totalSends).toBe(0);
     expect(result!.totalAttempts).toBe(0);
     expect(result!.participants).toEqual([]);
+  });
+
+  it('retains private ticks in totals without exposing a participant row', async () => {
+    mockState.sessionRows = [{ id: 'session-1', startedAt: null, endedAt: null, goal: null }];
+    mockState.participantRows = [
+      {
+        userId: 'private-user',
+        displayName: 'Hidden climber',
+        avatarUrl: null,
+        sends: 0,
+        flashes: 0,
+        attempts: 0,
+        rawSends: 3,
+        rawFlashes: 1,
+        rawAttempts: 5,
+      },
+    ];
+    const result = await generateSessionSummary('session-1');
+    expect(result).toMatchObject({ totalSends: 3, totalFlashes: 1, totalAttempts: 5, participants: [] });
   });
 
   it('returns null goal when session has no goal', async () => {
