@@ -4,9 +4,12 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { BoardCandidate } from '@boardsesh/shared-schema';
 
+const motion = vi.hoisted(() => ({ reduced: false }));
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => motion.reduced }));
+
 vi.mock('react-native', () => ({
-  Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
-    visible ? createElement('div', null, children) : null,
+  Modal: ({ visible, children, animationType }: { visible: boolean; children?: ReactNode; animationType?: string }) =>
+    visible ? createElement('div', { 'data-testid': 'modal', 'data-animation': animationType }, children) : null,
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', { 'data-testid': testID }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -54,6 +57,15 @@ const candidates = [
 ] as unknown as BoardCandidate[];
 
 describe('BoardDisambiguationSheet accessibility', () => {
+  it('uses a fade when Reduce Motion is enabled', () => {
+    motion.reduced = true;
+    const { getByTestId } = render(
+      <BoardDisambiguationSheet visible candidates={candidates} onPick={() => {}} onCancel={() => {}} />,
+    );
+    expect(getByTestId('modal').getAttribute('data-animation')).toBe('fade');
+    motion.reduced = false;
+  });
+
   it('dismisses on a backdrop press but not on a press inside the card', () => {
     const onCancel = vi.fn();
     const { getByTestId } = render(
