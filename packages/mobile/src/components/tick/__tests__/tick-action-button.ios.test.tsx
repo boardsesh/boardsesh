@@ -2,8 +2,9 @@
 import { createElement, useState, type ReactNode } from 'react';
 import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import type { ButtonProps } from '../../Button.types';
 
-const mocks = vi.hoisted(() => ({ haptic: vi.fn(), submit: vi.fn() }));
+const mocks = vi.hoisted(() => ({ haptic: vi.fn(), submit: vi.fn(), nativeButton: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: mocks.haptic }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -37,8 +38,10 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('span', { onClick: onPress, 'data-native-button': true }, title),
+  Button: (props: ButtonProps) => {
+    mocks.nativeButton(props);
+    return createElement('span', { onClick: props.onPress, 'data-native-button': true }, props.title);
+  },
 }));
 const { TickActionButton } = await import('../TickActionButton.ios');
 afterEach(() => {
@@ -78,4 +81,9 @@ it.each([{ disabled: true }, { loading: true }])('keeps blocked actions disabled
   fireEvent.click(screen.getByRole('button', { name: 'Attempt' }));
   expect(mocks.submit).not.toHaveBeenCalled();
   expect(mocks.haptic).not.toHaveBeenCalled();
+});
+
+it.each(['tonal', 'filled'] as const)('preserves the pinned height of the %s native surface', (variant) => {
+  render(<TickActionButton title="Log tick" onPress={vi.fn()} variant={variant} style={{ flex: 1, height: 48 }} />);
+  expect(mocks.nativeButton.mock.lastCall?.[0].style).toEqual({ width: '100%', height: 48 });
 });

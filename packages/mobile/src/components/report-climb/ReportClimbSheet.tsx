@@ -276,6 +276,7 @@ export function ReportClimbSheet({
             the Send action's bar ends up over it (QA-declined on #5188). Its vertical
             padding is load-bearing on Android (#4642); see the component. */}
         <TickNoteField
+          submitBehavior="newline"
           value={reason}
           onChangeText={handleChangeReason}
           placeholder={t('mobile.report.reasonPlaceholder')}

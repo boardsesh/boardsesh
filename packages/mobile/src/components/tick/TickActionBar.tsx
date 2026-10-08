@@ -10,7 +10,7 @@
 //
 // It adds NO padding of its own: Sheet/ModalSheet's footer bar already applies
 // the gutter, the top inset and the window bottom inset.
-import React, { useMemo } from 'react';
+import React, { useMemo, type ReactNode } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -45,9 +45,16 @@ type TickActionBarProps = {
   secondary?: TickAction;
   /** Rendered in the always-reserved slot above the buttons. */
   error?: string | null;
+  /** Comment stays above the actions at every sheet detent. */
+  note?: ReactNode;
 };
 
-export const TickActionBar = React.memo(function TickActionBar({ primary, secondary, error }: TickActionBarProps) {
+export const TickActionBar = React.memo(function TickActionBar({
+  primary,
+  secondary,
+  error,
+  note,
+}: TickActionBarProps) {
   const { brandColors, spacing } = useTheme();
   const { fontScale } = useWindowDimensions();
   // Memoized: `Button` is a native host, so a fresh style object every render is
@@ -56,6 +63,11 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
 
   return (
     <View>
+      {note ? (
+        <View style={styles.noteRow} testID="tick-action-note">
+          {note}
+        </View>
+      ) : null}
       {/* The live region sits on the ALWAYS-mounted slot, not on the message:
           a region that mounts with its content is announced inconsistently, and
           moving it would give up the reserved height that keeps the buttons
@@ -107,6 +119,11 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
 });
 
 const styles = StyleSheet.create({
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexShrink: 0,
+  },
   errorSlot: {
     // Reserved, always. See the note at the top of the file.
     minHeight: TICK_ERROR_SLOT_HEIGHT,

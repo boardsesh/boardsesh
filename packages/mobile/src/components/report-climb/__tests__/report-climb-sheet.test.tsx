@@ -39,7 +39,10 @@ vi.mock('../../ClimbPreviewCard', () => ({ ClimbPreviewCard: () => null }));
 vi.mock('../../grade', () => ({
   GradeSingleSelectRail: () => createElement('div', { 'data-testid': 'grade-rail' }),
 }));
-vi.mock('../../tick', () => ({ TickNoteField: () => null }));
+vi.mock('../../tick', () => ({
+  TickNoteField: ({ submitBehavior }: { submitBehavior?: string }) =>
+    createElement('textarea', { 'data-testid': 'report-reason', 'data-submit-behavior': submitBehavior }),
+}));
 vi.mock('../../../lib/graphql/hooks/use-report-climb', () => ({
   useReportClimb: () => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null }),
 }));
@@ -83,6 +86,10 @@ beforeEach(() => {
 });
 
 describe('ReportClimbSheet on your own climb (#5971)', () => {
+  it('keeps Return available for paragraphs in the report reason', () => {
+    const { getByTestId } = renderSheet();
+    expect(getByTestId('report-reason').getAttribute('data-submit-behavior')).toBe('newline');
+  });
   it('locks to grade: no Hide/Grade switch, the grade rail shows', () => {
     profileState.id = 'setter-1';
     const { queryByTestId, getByTestId } = renderSheet();

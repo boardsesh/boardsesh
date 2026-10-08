@@ -14,6 +14,8 @@ import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { glassSize } from '../../theme/layout';
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 
 // Record's defining action is the Start/End footer button, so the chrome's
 // create island is gated off — its handler is never invoked.
@@ -82,6 +84,7 @@ export function RecordTopChrome({
   const { t: tBoards } = useTranslation('boards');
   const { brandColors, systemColors, variant, radii } = useTheme();
   const insets = useSafeAreaInsets();
+  const nativeRootHeader = useNativeRootHeader();
 
   // Leaving is non-destructive, so it gets neither the red tint nor the stop
   // glyph. The accessibility label reuses the string web's queue bar already
@@ -212,7 +215,7 @@ export function RecordTopChrome({
       hitSlop={4}
       accessibilityRole="button"
       accessibilityLabel={exitLabel}
-      style={styles.glassExitAction}
+      style={[styles.glassExitAction, nativeRootHeader && styles.nativeGlassExitAction]}
     >
       <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
       <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
@@ -272,6 +275,9 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     paddingHorizontal: spacing[3],
     height: TOP_ACTION_SIZE,
+  },
+  nativeGlassExitAction: {
+    height: glassSize.inline,
   },
   // M3 text-button metrics: 40dp tall, 12dp side padding, pill corners from the
   // variant radii. `overflow: hidden` keeps the Android ripple inside those

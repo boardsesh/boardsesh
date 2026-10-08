@@ -177,7 +177,9 @@ export type PlaylistDetailViewProps = {
 
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
 const noopRefresh = () => undefined;
-const renderNoHeaderTitle = () => null;
+// A null custom title lets native-stack fall back to `title`, duplicating the
+// name drawn by the hero/collapsed header. Keep a real, empty centre view.
+const renderNoHeaderTitle = () => <View collapsable={false} accessible={false} />;
 const noopRemove = (_climbUuid: string) => {};
 
 type ResolvedPlaylistClimbRow =
@@ -301,6 +303,7 @@ export function PlaylistDetailView({
     }
     navigation.setOptions({
       headerShown: true,
+      headerLargeTitle: false,
       headerTransparent: true,
       headerBlurEffect: 'none',
       title: headerTitle,

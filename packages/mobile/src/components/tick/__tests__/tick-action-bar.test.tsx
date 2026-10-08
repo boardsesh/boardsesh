@@ -143,6 +143,15 @@ describe('TickActionBar', () => {
     expect(row.minHeight).toBe(TICK_ACTION_HEIGHT);
   });
 
+  it('keeps an optional full-width note before the reserved error and terminal actions', () => {
+    const { container } = renderBar({ note: createElement('textarea', { 'aria-label': 'Comment' }) });
+    const note = container.querySelector('[data-testid="tick-action-note"]');
+    expect(note?.querySelector('textarea')).not.toBeNull();
+    expect(note?.nextElementSibling?.getAttribute('data-testid')).toBe('tick-action-error-slot');
+    expect(note?.nextElementSibling?.nextElementSibling?.getAttribute('data-testid')).toBe('tick-action-row');
+    expect(styleOf(container, 'tick-action-note')).toMatchObject({ flexDirection: 'row', flexShrink: 0 });
+  });
+
   it('pins both buttons to one height, so the tonal and filled pills cannot measure apart', () => {
     renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
 

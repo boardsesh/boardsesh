@@ -161,7 +161,7 @@ export default function DiscoverLibrary() {
 
   // Measured top-chrome height so the scroll content clears the floating islands
   // (seeded to the safe-area top + a row, like the Climbs list).
-  const [chromeHeight, setChromeHeight] = useState(() => insets.top + 56);
+  const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + 56));
 
   const {
     data: smartCounts,
@@ -648,11 +648,11 @@ export default function DiscoverLibrary() {
           scrollIndicatorInsets={{ top: chromeHeight }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* The screen's identity, in-body under the floating chrome (the grey
-            "Discover" stack header is gone). */}
-          <Text variant="largeTitle" style={styles.screenTitle}>
-            {t('bottomTabBar.discover')}
-          </Text>
+          {nativeRootHeader ? null : (
+            <Text variant="largeTitle" style={styles.screenTitle}>
+              {t('bottomTabBar.discover')}
+            </Text>
+          )}
 
           {showSignInPrompt ? (
             <PressableSurface

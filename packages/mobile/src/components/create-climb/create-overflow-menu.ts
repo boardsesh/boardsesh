@@ -1,7 +1,7 @@
 import type { AppMenuAction } from '../AppMenu.types';
 
 /** What the climber picked. The header maps a tapped index back to one of these. */
-export type CreateOverflowAction = 'makeRoute' | 'makeBoulder' | 'newClimb';
+export type CreateOverflowAction = 'makeRoute' | 'makeBoulder' | 'toggleHoldList' | 'newClimb';
 
 export type CreateOverflowRow = AppMenuAction & { action: CreateOverflowAction };
 
@@ -11,6 +11,7 @@ export type CreateOverflowMenuState = {
   /** Whether the setter has switched this climb into route mode. */
   routeMode: boolean;
   frameCount: number;
+  holdListVisible: boolean;
 };
 
 /** Translate hook shaped like `react-i18next`'s `t`, so the builder stays pure. */
@@ -60,6 +61,12 @@ export function buildCreateOverflowMenu(state: CreateOverflowMenuState, t: Trans
       });
     }
   }
+
+  rows.push({
+    action: 'toggleHoldList',
+    label: state.holdListVisible ? t('mobile.boardAccessibility.showBoard') : t('mobile.boardAccessibility.showList'),
+    systemIcon: state.holdListVisible ? 'square.grid.3x3' : 'list.bullet',
+  });
 
   rows.push({
     action: 'newClimb',

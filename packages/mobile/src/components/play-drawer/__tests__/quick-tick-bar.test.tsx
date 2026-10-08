@@ -213,6 +213,17 @@ describe('QuickTickBar row order', () => {
     const noteRow = container.querySelector('[data-row="mobile.tick.noteLabel"]');
     expect(noteRow?.getAttribute('data-separator')).toBe('false');
   });
+
+  it('omits the body note when the sheet pins it with the actions', () => {
+    const { container, queryByTestId } = render(createElement(QuickTickBar, { form: makeForm(), showNote: false }));
+    expect(queryByTestId('tick-note-field')).toBeNull();
+    expect(rowLabels(container)).toEqual([
+      'mobile.tick.dateLabel',
+      'mobile.tick.gradeLabel',
+      'mobile.tick.starsLabel',
+      'mobile.tick.triesLabel',
+    ]);
+  });
 });
 
 describe('QuickTickBar rail rows', () => {

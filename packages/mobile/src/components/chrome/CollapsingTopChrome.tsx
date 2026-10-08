@@ -233,6 +233,8 @@ export function CollapsingTopChrome({
     return (
       <NativeRootHeader
         leftActions={leftActions}
+        leftActionsStandalone={leftActionCount === 1}
+        centerContent={centerContent}
         rightActions={
           rightActionCount > 0 ? (
             <GlassActionToolbar actionCount={rightActionCount}>
@@ -251,7 +253,6 @@ export function CollapsingTopChrome({
         }
         onHeightChange={onHeightChange}
       >
-        {centerContent}
         {children}
       </NativeRootHeader>
     );

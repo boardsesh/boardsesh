@@ -16,6 +16,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
+import type { NativeStackNavigationOptions } from 'expo-router';
 
 const mocks = vi.hoisted(() => ({
   // The climb the drawer host reports as previewed, i.e. shown without being
@@ -87,6 +88,10 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
   ensureBackgroundsCached: vi.fn(),
   imagePrefetch: vi.fn(),
+  nativeRootHeader: true,
+  nativeSearch: false,
+  renderNativeChrome: false,
+  stackOptions: [] as NativeStackNavigationOptions[],
 }));
 
 type FlashListProps<Item> = {
@@ -166,11 +171,19 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 
 vi.mock('expo-router', () => ({
-  Stack: { Screen: () => null },
+  Stack: {
+    Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
+      mocks.stackOptions.push(options);
+      return null;
+    },
+  },
   useRouter: () => ({ push: mocks.push }),
   useLocalSearchParams: () => mocks.searchParams,
   useFocusEffect: () => {},
 }));
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 100 }));
+vi.mock('../../../../src/hooks/use-native-root-header', () => ({ useNativeRootHeader: () => mocks.nativeRootHeader }));
+vi.mock('../../../../src/hooks/use-glass-capability', () => ({ useGlassCapability: () => true }));
 
 // The onboarding reveal banner + its storage pull expo-haptics / expo-secure-store
 // (expo-modules-core EventEmitter) into the graph — irrelevant to the keyboard
@@ -307,7 +320,18 @@ vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
   hasActiveFilters: () => false,
 }));
 
-vi.mock('../../../../src/components/search/ClimbTopChrome', () => ({ ClimbTopChrome: () => null }));
+vi.mock('../../../../src/components/search/ClimbTopChrome', async () => {
+  const { NativeRootHeader } = await import('../../../../src/components/chrome/NativeRootHeader');
+  return {
+    ClimbTopChrome: ({ onHeightChange }: { onHeightChange: (height: number) => void }) =>
+      mocks.renderNativeChrome
+        ? createElement(NativeRootHeader, {
+            centerContent: createElement('button', null, 'Current climb'),
+            onHeightChange,
+          })
+        : null,
+  };
+});
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
 vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
 vi.mock('../../../../src/lib/haptics', () => ({
@@ -361,7 +385,7 @@ vi.mock('../../../../src/settings', () => ({
 
 vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({
   useNativeAccessoryActive: () => false,
-  useLiquidGlassTabBar: () => false,
+  useLiquidGlassTabBar: () => mocks.nativeSearch,
 }));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
@@ -538,6 +562,69 @@ beforeEach(() => {
   mocks.activationOptions = undefined;
   mocks.isPlaceholderData = false;
   mocks.isRefetching = false;
+  mocks.nativeRootHeader = true;
+  mocks.nativeSearch = false;
+  mocks.renderNativeChrome = false;
+  mocks.stackOptions.length = 0;
+});
+
+describe('ClimbList native header ownership', () => {
+  it.each([true, false])(
+    'keeps search setup from overriding the native title or pill (native search: %s)',
+    (nativeSearch) => {
+      mocks.nativeSearch = nativeSearch;
+      mocks.renderNativeChrome = true;
+      render(<ClimbList />);
+
+      const screenOptions = mocks.stackOptions[0];
+      expect(screenOptions).not.toHaveProperty('title');
+      expect(screenOptions).not.toHaveProperty('headerLargeTitle');
+      // Either setOptions registration order must preserve the real chrome's
+      // pill policy instead of letting the search host restore a large title.
+      for (const registrationOrder of [mocks.stackOptions, [...mocks.stackOptions].reverse()]) {
+        const effectiveOptions = Object.assign({ title: 'Climbs', headerLargeTitle: true }, ...registrationOrder);
+        expect(effectiveOptions).toMatchObject({ title: 'Climbs', headerLargeTitle: false });
+        expect(typeof effectiveOptions.headerTitle).toBe('function');
+      }
+      if (nativeSearch) {
+        expect(screenOptions.headerSearchBarOptions).toMatchObject({ placeholder: 'search.placeholders.climbs' });
+      } else {
+        expect(screenOptions.headerSearchBarOptions).toBeUndefined();
+      }
+    },
+  );
+
+  it.each([true, false])('preserves the legacy search host options (native search: %s)', (nativeSearch) => {
+    mocks.nativeRootHeader = false;
+    mocks.nativeSearch = nativeSearch;
+    render(<ClimbList />);
+
+    expect(mocks.stackOptions[0]).toMatchObject({
+      headerShown: nativeSearch,
+      headerLargeTitle: false,
+      title: nativeSearch ? '' : 'mobile.nav.climbs',
+    });
+    if (nativeSearch) expect(mocks.stackOptions[0].headerBlurEffect).toBe('none');
+  });
+
+  it.each(['no-board', 'restore-error'] as const)('restores the route title when chrome leaves for %s', (fallback) => {
+    mocks.nativeSearch = true;
+    const { rerender } = render(<ClimbList />);
+    const previousHeaderOptions: NativeStackNavigationOptions = {
+      title: 'Climbs',
+      headerLargeTitle: false,
+      headerTitle: () => 'Current climb',
+    };
+    mocks.stackOptions.length = 0;
+    mocks.activeBoard = fallback === 'no-board' ? null : undefined;
+    mocks.boardStatus = fallback === 'no-board' ? 'success' : 'error';
+    rerender(<ClimbList />);
+
+    const restoredOptions = Object.assign({}, previousHeaderOptions, ...mocks.stackOptions);
+    expect(restoredOptions).toMatchObject({ title: 'Climbs', headerShown: true, headerLargeTitle: true });
+    expect(restoredOptions.headerTitle).toBeUndefined();
+    expect(mocks.stackOptions.every((options) => !Object.hasOwn(options, 'title'))).toBe(true);
+  });
 });
 
 // While a new search loads, the previous search's rows stay up as placeholder

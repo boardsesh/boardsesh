@@ -8,14 +8,16 @@ import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 // drawer's own modal, supplies the scroll body (`scrollable`), pins the action
 // bar (`footer`), and clamps its single column to the active detent via the
 // same `useSheetColumnStyle` this file used to wire by hand (#3330).
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { TickStatus } from '@boardsesh/play-view';
 import { track } from '../lib/analytics';
 import { ModalSheet } from './ModalSheet';
-import { TickActionBar, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
+import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
+import type { ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
 import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/use-quick-tick-form';
 
@@ -64,6 +66,15 @@ export function LogAscentSheet({
   consensusGradeName,
 }: LogAscentSheetProps) {
   const { t } = useTranslation('climbs');
+  const sheetRef = useRef<ManagedSheetHandle>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const handleDetentChange = useCallback((index: number) => {
+    if (index >= 0) setExpanded(index > 0);
+  }, []);
+  const handleNoteFocus = useCallback(() => {
+    if (Platform.OS !== 'android' && !expanded) sheetRef.current?.snapToIndex(CREATE_TICK_SNAP_POINTS.length - 1);
+  }, [expanded]);
 
   // Tracks whether the open tick got saved, so handleClose below can tell a
   // completed save (TickLogged already covers it) apart from a genuine
@@ -80,7 +91,10 @@ export function LogAscentSheet({
   // A fresh present (new climb, or reopening on the same one) must not
   // inherit a stale `true` left over from a previous save-then-dismiss cycle.
   useEffect(() => {
-    if (visible) savedRef.current = false;
+    if (visible) {
+      savedRef.current = false;
+      setExpanded(false);
+    }
   }, [visible]);
 
   const handleClose = useCallback(() => {
@@ -140,10 +154,12 @@ export function LogAscentSheet({
 
   return (
     <ModalSheet
+      ref={sheetRef}
       visible={visible}
       onClose={handleClose}
       onFullyDismissed={onFullyDismissed}
       snapPoints={CREATE_TICK_SNAP_POINTS}
+      onChange={handleDetentChange}
       scrollable
       surface="solid"
       footerSurface="flush"
@@ -163,6 +179,16 @@ export function LogAscentSheet({
       }
       footer={
         <TickActionBar
+          note={
+            <TickNoteField
+              value={form.comment}
+              onChangeText={form.onCommentChange}
+              placeholder={t('mobile.tick.notePlaceholder')}
+              accessibilityLabel={t('mobile.tick.noteAria')}
+              compact={Platform.OS !== 'android' && !expanded}
+              onFocus={handleNoteFocus}
+            />
+          }
           error={form.lastError}
           secondary={{
             title: t('mobile.tick.attempt'),
@@ -181,7 +207,7 @@ export function LogAscentSheet({
         />
       }
     >
-      <QuickTickBar form={form} />
+      <QuickTickBar form={form} showNote={false} />
       <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
     </ModalSheet>
   );

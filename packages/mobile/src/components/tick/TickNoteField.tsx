@@ -27,6 +27,11 @@ type TickNoteFieldProps = {
   onChangeText: (next: string) => void;
   placeholder: string;
   accessibilityLabel: string;
+  /** One visible line at the medium detent without replacing the native input. */
+  compact?: boolean;
+  onFocus?: () => void;
+  /** Reports retain Return for paragraphs; tick comments use Done. */
+  submitBehavior?: 'blurAndSubmit' | 'newline';
 };
 
 export const TickNoteField = React.memo(function TickNoteField({
@@ -34,6 +39,9 @@ export const TickNoteField = React.memo(function TickNoteField({
   onChangeText,
   placeholder,
   accessibilityLabel,
+  compact = false,
+  onFocus,
+  submitBehavior = 'blurAndSubmit',
 }: TickNoteFieldProps) {
   const { systemColors, brandColors, borderRadius, spacing, textStyles } = useTheme();
   const [focused, setFocused] = useState(false);
@@ -47,14 +55,15 @@ export const TickNoteField = React.memo(function TickNoteField({
   const handleFocus = useCallback(() => {
     focusedRef.current = true;
     setFocused(true);
+    onFocus?.();
     if (inputRef.current) scrollIntoView?.reveal(inputRef.current);
-  }, [scrollIntoView]);
+  }, [onFocus, scrollIntoView]);
   const handleBlur = useCallback(() => {
     focusedRef.current = false;
     setFocused(false);
     if (inputRef.current) scrollIntoView?.release(inputRef.current);
   }, [scrollIntoView]);
-  // A new line grows the field (up to its maxHeight), so scroll again to keep
+  // Wrapping text grows the field (up to its maxHeight), so scroll again to keep
   // its bottom edge in view. `follow`, not `reveal`: typing never moves the
   // sheet's detent.
   const handleContentSizeChange = useCallback(() => {
@@ -65,6 +74,8 @@ export const TickNoteField = React.memo(function TickNoteField({
     <BottomSheetTextInput
       ref={inputRef}
       multiline
+      returnKeyType={submitBehavior === 'newline' ? undefined : 'done'}
+      submitBehavior={submitBehavior}
       value={value}
       onChangeText={onChangeText}
       onFocus={handleFocus}
@@ -80,6 +91,7 @@ export const TickNoteField = React.memo(function TickNoteField({
       style={[
         textStyles.subheadline,
         styles.input,
+        compact ? styles.compactInput : null,
         {
           borderRadius: borderRadius.lg,
           paddingHorizontal: spacing[3],
@@ -118,11 +130,13 @@ const styles = StyleSheet.create({
     // (7 x 20 + 16 padding + 2 border = 158, 2pt spare) — +67% on the old
     // ceiling, so a long note stays one glance rather than a blind scroll.
     //
-    // The standard large detent leaves a 180pt keyboard-up body in the
-    // reference geometry: 678pt column - 336pt keyboard - 56pt header -
-    // 106pt footer. The 160pt field ceiling fits with 20pt to spare; longer
-    // notes scroll while Attempt/Send remains pinned below the sheet body.
+    // Longer comments scroll inside the field. The create sheet pins it with
+    // Attempt/Send; the edit sheet keeps it in its scrolling form body.
     maxHeight: 160,
     textAlignVertical: 'top',
+  },
+  compactInput: {
+    minHeight: 44,
+    maxHeight: 44,
   },
 });

@@ -27,7 +27,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { AccessibleHoldList } from './AccessibleHoldList';
-import { Button } from '../Button';
 import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveCreateBoard';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
@@ -180,12 +179,13 @@ export function CreateDrawer({
       supportsMultiFrame: controller.supportsMultiFrame,
       routeMode: controller.routeMode,
       frameCount: controller.frameCount,
+      holdListVisible,
     }),
     // Deliberately NOT currentFrameIndex: the menu stopped reading it when the
     // frame commands moved to the transport card, and CreateDrawerHeader is
     // memo'd — keeping it here handed the header a new object on every playback
     // tick, as often as twice a second.
-    [controller.supportsMultiFrame, controller.routeMode, controller.frameCount],
+    [controller.supportsMultiFrame, controller.routeMode, controller.frameCount, holdListVisible],
   );
 
   const handleOverflowAction = useCallback(
@@ -196,6 +196,9 @@ export function CreateDrawer({
           return;
         case 'makeBoulder':
           controller.leaveRouteMode();
+          return;
+        case 'toggleHoldList':
+          setHoldListVisible((visible) => !visible);
           return;
         case 'newClimb':
           controller.handleNewClimb();
@@ -360,11 +363,6 @@ export function CreateDrawer({
         saveState={controller.saveState}
         onSave={handleSavePress}
         climbReady={climbReady}
-      />
-      <Button
-        variant="text"
-        title={t(holdListVisible ? 'mobile.boardAccessibility.showBoard' : 'mobile.boardAccessibility.showList')}
-        onPress={() => setHoldListVisible((visible) => !visible)}
       />
       <GestureHandlerRootView style={styles.scroll}>
         {holdListVisible ? (

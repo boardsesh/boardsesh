@@ -27,9 +27,11 @@ const STAR_GLYPH_SIZE = 24;
 
 export type QuickTickBarProps = {
   form: QuickTickForm;
+  /** LogAscentSheet keeps this field in its pinned action bar. */
+  showNote?: boolean;
 };
 
-export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTickBarProps) {
+export const QuickTickBar = React.memo(function QuickTickBar({ form, showNote = true }: QuickTickBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   // Resolved through the provider, never the static palette: these sheets sit
@@ -70,8 +72,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
     // Row order is least-used at the top, most-used at the bottom, so the
     // common controls land in the thumb zone. Measured interaction rates:
     // tries 28%, stars 24%, grade 6.5%, note 1.4%, date/time <1% (#4163).
-    // Note is the exception — rarely used, but kept off the save row's edge
-    // because a text field there fat-fingers less than a picker.
+    // LogAscentSheet pins the note with its actions so medium detents show it.
     <>
       {/* Date and time on one row — two short, related values that don't each
           need a row of their own, separated by an `@`. Both fields commit
@@ -150,14 +151,16 @@ export const QuickTickBar = React.memo(function QuickTickBar({ form }: QuickTick
       {/* `alignTop`: the note is the one control that grows well past the 56pt
           row beat, and a centred label floats ~31pt below the first line of
           the climber's own text (#4642). */}
-      <TickFormRow label={tClimbs('mobile.tick.noteLabel')} alignTop showSeparator={false} testID="tick-row-note">
-        <TickNoteField
-          value={comment}
-          onChangeText={onCommentChange}
-          placeholder={tClimbs('mobile.tick.notePlaceholder')}
-          accessibilityLabel={tClimbs('mobile.tick.noteAria')}
-        />
-      </TickFormRow>
+      {showNote ? (
+        <TickFormRow label={tClimbs('mobile.tick.noteLabel')} alignTop showSeparator={false} testID="tick-row-note">
+          <TickNoteField
+            value={comment}
+            onChangeText={onCommentChange}
+            placeholder={tClimbs('mobile.tick.notePlaceholder')}
+            accessibilityLabel={tClimbs('mobile.tick.noteAria')}
+          />
+        </TickFormRow>
+      ) : null}
     </>
   );
 });

@@ -64,8 +64,13 @@ export function CollapsingLargeTitleHeader({
 
   if (nativeHeader)
     return (
-      <NativeRootHeader leftActions={leftActions} rightActions={rightActions} onHeightChange={onHeightChange}>
-        {centerContent}
+      <NativeRootHeader
+        leftActions={leftActions}
+        leftActionsStandalone={Boolean(leftActions)}
+        rightActions={rightActions}
+        centerContent={centerContent}
+        onHeightChange={onHeightChange}
+      >
         {children}
       </NativeRootHeader>
     );

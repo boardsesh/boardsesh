@@ -4,12 +4,19 @@ vi.mock('../LargeContentViewer', () => ({
   LargeContentViewer: ({ children }: { children: React.ReactNode }) => children,
 }));
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const ctrl = vi.hoisted(() => ({ fontScale: 1, variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
-type ViewMockProps = { children?: ReactNode; style?: unknown; testID?: string };
+type LayoutEvent = { nativeEvent: { layout: { width: number } } };
+const layoutHandlers = vi.hoisted(() => new Map<string, (event: LayoutEvent) => void>());
+type ViewMockProps = {
+  children?: ReactNode;
+  style?: unknown;
+  testID?: string;
+  onLayout?: (event: LayoutEvent) => void;
+};
 
 /** Flattens a style that may be an object, an array of layers, or null. */
 function flatten(style: unknown): Record<string, unknown> {
@@ -21,8 +28,10 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown }) => options.ios },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
-  View: ({ children, style, testID }: ViewMockProps) =>
-    createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style)) }, children),
+  View: ({ children, style, testID, onLayout }: ViewMockProps) => {
+    if (testID && onLayout) layoutHandlers.set(testID, onLayout);
+    return createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style)) }, children);
+  },
   StyleSheet: {
     create: (sheet: Record<string, unknown>) => sheet,
     hairlineWidth: 1,
@@ -104,10 +113,42 @@ vi.mock('../PressableSurface', () => ({
     ),
 }));
 
-import { SheetTopBar } from '../SheetTopBar';
+import { SheetTopBar, SheetTopBarLayout } from '../SheetTopBar';
 import { makeThemeMock } from '../../test/theme-mock';
 
 const styleOf = (element: Element | null) => JSON.parse(element?.getAttribute('data-style') ?? '{}');
+
+describe('SheetTopBarLayout measured centering', () => {
+  it.each([
+    { leadingWidth: 44, trailingWidth: 88 },
+    { leadingWidth: 48, trailingWidth: 128 },
+    { leadingWidth: 96, trailingWidth: 48 },
+  ])(
+    'centers editable content between $leadingWidth/$trailingWidth point flanks',
+    ({ leadingWidth, trailingWidth }) => {
+      const { getByTestId } = render(
+        createElement(SheetTopBarLayout, {
+          leading: createElement('button', null, 'Close'),
+          center: createElement('input', { value: 'A climb name', readOnly: true }),
+          trailing: createElement('button', null, 'Speichern'),
+        }),
+      );
+      act(() => {
+        layoutHandlers.get('sheet-top-bar-leading-flank')?.({ nativeEvent: { layout: { width: leadingWidth } } });
+        layoutHandlers.get('sheet-top-bar-trailing-flank')?.({ nativeEvent: { layout: { width: trailingWidth } } });
+      });
+      const leadingBalance = styleOf(getByTestId('sheet-top-bar-leading-balance'));
+      const trailingBalance = styleOf(getByTestId('sheet-top-bar-trailing-balance'));
+      expect(leadingWidth + leadingBalance.width).toBe(trailingWidth + trailingBalance.width);
+      expect(getByTestId('sheet-top-bar-title').querySelector('input')?.value).toBe('A climb name');
+      // Narrow displays give up centering space before the editable field or actions.
+      expect(leadingBalance.flexShrink).toBeGreaterThan(styleOf(getByTestId('sheet-top-bar-title')).flexShrink);
+      expect(styleOf(getByTestId('sheet-top-bar-leading-flank')).flexShrink).toBe(0);
+      expect(styleOf(getByTestId('sheet-top-bar-trailing-flank')).flexShrink).toBe(0);
+      expect(styleOf(getByTestId('sheet-top-bar-trailing-flank')).width).toBeUndefined();
+    },
+  );
+});
 
 describe('SheetTopBar', () => {
   beforeEach(() => {

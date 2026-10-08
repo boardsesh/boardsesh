@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useProfile } from '../../lib/graphql/hooks';
 import { Avatar } from '../Avatar';
-import { GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome/GlassActionToolbar';
+import { GlassToolbarAction, useToolbarActionCount, useToolbarActionSize } from '../chrome/GlassActionToolbar';
 import { useUserDrawer } from './UserDrawerProvider';
 
 const GLASS_AVATAR_SIZE = 34;
@@ -17,6 +17,8 @@ type UserAvatarToolbarActionProps = {
 export function UserAvatarToolbarAction({ variant }: UserAvatarToolbarActionProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
+  const actionSize = useToolbarActionSize();
+  const actionCount = useToolbarActionCount();
   const { openUserDrawer } = useUserDrawer();
   const profileQuery = useProfile();
   const profile = profileQuery.data;
@@ -36,7 +38,17 @@ export function UserAvatarToolbarAction({ variant }: UserAvatarToolbarActionProp
 
   return (
     <GlassToolbarAction onPress={openUserDrawer} accessibilityLabel={accessibilityLabel}>
-      <View style={[styles.glassAvatarFrame, { borderColor: systemColors.separator }]}>
+      <View
+        style={[
+          styles.glassAvatarFrame,
+          {
+            width: actionSize,
+            height: actionSize,
+            borderColor: systemColors.separator,
+            borderRightWidth: actionCount > 1 ? StyleSheet.hairlineWidth : 0,
+          },
+        ]}
+      >
         <Avatar uri={profile?.avatarUrl} name={avatarName} size={GLASS_AVATAR_SIZE} />
       </View>
     </GlassToolbarAction>
@@ -45,10 +57,7 @@ export function UserAvatarToolbarAction({ variant }: UserAvatarToolbarActionProp
 
 const styles = StyleSheet.create({
   glassAvatarFrame: {
-    width: TOP_ACTION_SIZE,
-    height: TOP_ACTION_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRightWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import { Button } from '../Button';
 import type { ButtonProps } from '../Button.types';
 import { makeButtonPressHandler } from '../Button.logic';
@@ -12,6 +13,12 @@ const ignoreNativePress = () => {};
 export function TickActionButton(props: ButtonProps) {
   const { style, title, accessibilityLabel, disabled = false, loading = false, testID } = props;
   const handlePress = makeButtonPressHandler(props);
+  // Preserve the numeric height through the touch wrapper. A percentage makes
+  // Button's SwiftUI Host measure itself, so tonal and filled surfaces differ.
+  const buttonStyle = useMemo<ViewStyle>(
+    () => ({ ...styles.surface, height: style?.height ?? '100%' }),
+    [style?.height],
+  );
   return (
     <Pressable
       testID={testID}
@@ -29,7 +36,7 @@ export function TickActionButton(props: ButtonProps) {
         importantForAccessibility="no-hide-descendants"
         style={styles.surface}
       >
-        <Button {...props} style={styles.surface} testID={undefined} onPress={ignoreNativePress} haptic={false} />
+        <Button {...props} style={buttonStyle} testID={undefined} onPress={ignoreNativePress} haptic={false} />
       </View>
     </Pressable>
   );

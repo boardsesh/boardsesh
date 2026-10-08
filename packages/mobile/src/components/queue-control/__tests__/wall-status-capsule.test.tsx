@@ -15,10 +15,16 @@ const spies = vi.hoisted(() => ({
   reduceMotion: false,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   colorScheme: 'dark' as 'dark' | 'light',
+  enterAnimation: vi.fn(() => ({})),
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement(
+      'div',
+      { 'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))) },
+      children,
+    ),
   Pressable: ({
     children,
     onPress,
@@ -56,7 +62,7 @@ vi.mock('react-native-reanimated', () => ({
   default: {
     View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-animated': 'true' }, children),
   },
-  FadeIn: { duration: () => ({}) },
+  FadeIn: { duration: spies.enterAnimation },
   useReducedMotion: () => spies.reduceMotion,
 }));
 
@@ -114,16 +120,29 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+    createElement(
+      'div',
+      {
+        'data-label-viewer': 'true',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
+}));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
     children,
     onPress,
+    feedback,
     accessibilityRole,
     accessibilityLabel,
     accessibilityHint,
   }: {
     children?: ReactNode;
     onPress?: () => void;
+    feedback?: string;
     accessibilityRole?: string;
     accessibilityLabel?: string;
     accessibilityHint?: string;
@@ -133,6 +152,7 @@ vi.mock('../../PressableSurface', () => ({
       {
         'data-pressable': 'true',
         'data-pressable-surface': 'true',
+        'data-feedback': feedback,
         'data-role': accessibilityRole,
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint,
@@ -150,6 +170,7 @@ vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color })
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 import { WallStatusCapsule } from '../WallStatusCapsule';
+import { NativeHeaderActionContext } from '../../chrome/native-header-action-context';
 
 function makeClimb(over: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb {
   return {
@@ -171,10 +192,63 @@ function makeClimb(over: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb {
 describe('WallStatusCapsule', () => {
   beforeEach(() => {
     spies.openWallPreview.mockClear();
+    spies.enterAnimation.mockClear();
     spies.announce.mockClear();
     spies.reduceMotion = false;
     spies.variant = 'liquidGlass';
     spies.colorScheme = 'dark';
+  });
+
+  it('keeps the climb name intrinsic and shrinkable inside the native header', () => {
+    const { container, getByText } = render(
+      <NativeHeaderActionContext.Provider value={true}>
+        <WallStatusCapsule climb={makeClimb()} />
+      </NativeHeaderActionContext.Provider>,
+    );
+    const nameViewer = container.querySelector('[data-label-viewer]');
+    const nameStyle = JSON.parse(nameViewer?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    const capsuleStyle = JSON.parse(container.firstElementChild?.getAttribute('data-style') ?? '{}') as Record<
+      string,
+      unknown
+    >;
+
+    expect(getByText('Wax On')).toBeTruthy();
+    expect(getByText('V5 6C')).toBeTruthy();
+    expect(nameStyle).toMatchObject({ flexShrink: 1, minWidth: 0 });
+    expect(nameStyle.flex).toBeUndefined();
+    expect(capsuleStyle).toMatchObject({ height: 44, borderRadius: 22 });
+    expect(container.querySelector('[data-pressable]')?.getAttribute('data-feedback')).toBe('none');
+    expect(container.querySelector('[data-animated]')).toBeNull();
+    expect(spies.enterAnimation).not.toHaveBeenCalled();
+  });
+
+  it('retains its native title view while the wall climb changes and opens the latest preview once', () => {
+    const { container, rerender } = render(
+      <NativeHeaderActionContext.Provider value={true}>
+        <WallStatusCapsule climb={makeClimb()} />
+      </NativeHeaderActionContext.Provider>,
+    );
+    const originalTitleView = container.firstElementChild;
+    rerender(
+      <NativeHeaderActionContext.Provider value={true}>
+        <WallStatusCapsule climb={makeClimb({ climbUuid: 'wall-2', name: 'The next long climb on the wall' })} />
+      </NativeHeaderActionContext.Provider>,
+    );
+
+    expect(container.firstElementChild).toBe(originalTitleView);
+    expect(container.textContent).toContain('The next long climb on the wall');
+    fireEvent.click(container.querySelector('[data-pressable]')!);
+    expect(spies.openWallPreview).toHaveBeenCalledOnce();
+    expect(spies.openWallPreview).toHaveBeenCalledWith({ uuid: 'wall-2', _converted: true });
+    expect(spies.enterAnimation).not.toHaveBeenCalled();
+  });
+
+  it('preserves the floating capsule entering animation outside a native header', () => {
+    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+
+    expect(container.querySelector('[data-animated]')).not.toBeNull();
+    expect(container.querySelector('[data-pressable]')?.getAttribute('data-feedback')).toBe('scale');
+    expect(spies.enterAnimation).toHaveBeenCalledWith(180);
   });
 
   it('renders without the entering animation when Reduce Motion is on', () => {
