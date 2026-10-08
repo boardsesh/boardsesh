@@ -1177,10 +1177,17 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         );
         const isSubscription = subscriptionDeclaration !== null;
         if (isSubscription) subscriptionIds.add(id);
+        // Frozen privacy settings already supply the initial state. No privacy
+        // change occurs during a capture: keep only this exact notification
+        // stream inert when unrecorded, never a changed document or variables.
+        const isFrozenPrivacyNotification =
+          operationName === 'PrivacyChanged' &&
+          operation.query === 'subscription PrivacyChanged { privacyChanged }' &&
+          Object.keys(operation.variables ?? {}).length === 0;
         if (
           isSubscription &&
           subscriptionDeclaration[1] === operationName &&
-          PASSIVE_SCREENSHOT_SUBSCRIPTIONS.has(operationName) &&
+          (PASSIVE_SCREENSHOT_SUBSCRIPTIONS.has(operationName) || isFrozenPrivacyNotification) &&
           !manifest.graphql.some((entry) => entry.operationName === operationName)
         )
           return;

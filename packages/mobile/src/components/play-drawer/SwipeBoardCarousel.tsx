@@ -299,7 +299,15 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // board-presence sheet (no carousel) already captures reliably, confirming
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
-          <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor} {...boardAccessibility}>
+          <View
+            style={[styles.boardWrapper, boardBox]}
+            {...boardSurfaceAnchor}
+            {...boardAccessibility}
+            // Android groups an accessible board and hides its nested test IDs.
+            // In captures, expose the actual onLoad-gated overlay anchor instead.
+            accessible={false}
+            importantForAccessibility="no"
+          >
             {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
             {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
               <ScreenshotSmokeMarker route="play-drawer" count={smokeLitHoldCount} />
