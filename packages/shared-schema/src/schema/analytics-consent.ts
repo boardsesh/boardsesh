@@ -20,8 +20,9 @@ export const analyticsConsentTypeDefs = /* GraphQL */ `
     source: String!
     """
     The decidedAt of the account answer this client last saw, or null when it saw
-    none. A grant based on an older answer than the account holds is not written;
-    the newer answer is returned instead. A denial is always written.
+    none. A grant must echo the exact current server stamp; a different stamp
+    returns the current answer without writing. With null, an existing grant
+    may be recorded again but an existing denial wins. A denial is always written.
     """
     basedOnDecidedAt: String
   }

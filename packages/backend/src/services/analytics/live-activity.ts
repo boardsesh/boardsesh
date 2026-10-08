@@ -90,7 +90,6 @@ interface LiveActivityPushDeliveryAttributionGapEvent {
 export function trackLiveActivityStarted(event: LiveActivityRegistrationEvent): void {
   captureBackendEvent('Live Activity Started', {
     properties: {
-      sessionId: event.sessionId,
       tokenLength: event.tokenLength,
       apnsConfigured: event.apnsConfigured,
       tokenPreviouslyRegistered: event.tokenPreviouslyRegistered,
@@ -102,7 +101,6 @@ export function trackLiveActivityStarted(event: LiveActivityRegistrationEvent): 
 export function trackLiveActivityEnded(event: LiveActivityEndEvent): void {
   captureBackendEvent('Live Activity Ended', {
     properties: {
-      sessionId: event.sessionId,
       reason: event.reason,
       tokenCount: event.tokenCount,
     },
@@ -112,7 +110,6 @@ export function trackLiveActivityEnded(event: LiveActivityEndEvent): void {
 export function trackLiveActivityEndedAttributionGap(event: LiveActivityEndAttributionGapEvent): void {
   captureBackendEvent('Live Activity Ended Attribution Gap', {
     properties: {
-      sessionId: event.sessionId,
       reason: event.reason,
       tokenCount: event.tokenCount,
     },
@@ -122,14 +119,12 @@ export function trackLiveActivityEndedAttributionGap(event: LiveActivityEndAttri
 export function trackLiveActivityWidgetNavigation(event: LiveActivityWidgetNavigationEvent): void {
   captureBackendEvent('Live Activity Widget Navigation', {
     properties: {
-      sessionId: event.sessionId,
       action: event.action,
       outcome: event.outcome,
       statusCode: event.statusCode,
       queueLength: event.queueLength,
       serverCurrentIndex: event.serverCurrentIndex,
       targetIndex: event.targetIndex,
-      boundSessionId: event.boundSessionId,
     },
   });
 }
@@ -139,7 +134,6 @@ export function trackLiveActivityWidgetNavigationAttributionGap(
 ): void {
   captureBackendEvent('Live Activity Widget Navigation Attribution Gap', {
     properties: {
-      sessionId: event.sessionId,
       action: event.action,
       outcome: event.outcome,
       statusCode: event.statusCode,
@@ -147,7 +141,6 @@ export function trackLiveActivityWidgetNavigationAttributionGap(
       queueLength: event.queueLength,
       serverCurrentIndex: event.serverCurrentIndex,
       targetIndex: event.targetIndex,
-      boundSessionId: event.boundSessionId,
     },
   });
 }
@@ -163,7 +156,6 @@ export function trackLiveActivityPushDelivery(event: LiveActivityPushDeliveryEve
 
   captureBackendEvent('Live Activity Push Delivery', {
     properties: {
-      sessionId: event.sessionId,
       event: event.event,
       source: event.source,
       tokenCount: event.tokenCount,
@@ -178,7 +170,6 @@ export function trackLiveActivityPushDelivery(event: LiveActivityPushDeliveryEve
 export function trackLiveActivityPushDeliveryAttributionGap(event: LiveActivityPushDeliveryAttributionGapEvent): void {
   captureBackendEvent('Live Activity Push Delivery Attribution Gap', {
     properties: {
-      sessionId: event.sessionId,
       event: event.event,
       source: event.source,
       reason: event.reason,

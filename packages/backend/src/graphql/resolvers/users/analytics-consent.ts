@@ -66,18 +66,19 @@ async function readLatestConsent(executor: DrizzleExecutor, userId: string): Pro
  *
  * A grant is the only answer that can be stale in a way that matters: a device
  * that last synced before the climber said "No thanks" elsewhere must not turn
- * tracking back on. So a grant is dropped when the account holds an answer the
- * client never saw, or holds a different answer while the client claims it saw
- * none. A denial is never dropped: withdrawing must always work.
+ * tracking back on. A grant must echo the exact server stamp the client saw;
+ * a made-up future stamp cannot stand in for reading the account's answer.
+ * When the client saw none, an existing grant may be recorded again, but a
+ * denial wins. A denial is never dropped: withdrawing must always work.
  *
- * Millisecond comparison is exact: {@link nextDecidedAt} stores whole
+ * The ISO echo is exact: {@link nextDecidedAt} stores whole
  * milliseconds and keeps each user's rows at least 1 ms apart, so the ISO string
  * a client echoes back names exactly one row.
  */
 export function grantIsStale(latest: ConsentEventRow | null, basedOnDecidedAt: string | null | undefined): boolean {
   if (latest === null) return false;
   if (basedOnDecidedAt === null || basedOnDecidedAt === undefined) return latest.analytics !== 'granted';
-  return latest.decidedAt.getTime() > Date.parse(basedOnDecidedAt);
+  return latest.decidedAt.toISOString() !== basedOnDecidedAt;
 }
 
 /**

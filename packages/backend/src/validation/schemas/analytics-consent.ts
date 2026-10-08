@@ -15,7 +15,10 @@ export const SetAnalyticsConsentInputSchema = z.object({
   basedOnDecidedAt: z
     .string()
     .max(64)
-    .refine((candidate) => Number.isFinite(Date.parse(candidate)), 'basedOnDecidedAt must be an ISO 8601 date')
+    .refine((candidate) => {
+      const decidedAtMs = Date.parse(candidate);
+      return Number.isFinite(decidedAtMs) && new Date(decidedAtMs).toISOString() === candidate;
+    }, 'basedOnDecidedAt must be the ISO 8601 timestamp returned by the server')
     .nullish(),
 });
 

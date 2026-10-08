@@ -147,6 +147,15 @@ describe('setAnalyticsConsent', () => {
     expect((await readConsent(userId))?.analytics).toBe('granted');
   });
 
+  it('refuses a grant using a future client timestamp instead of the account stamp', async () => {
+    const userId = await createUser();
+    const webDenial = await setConsent(userId, denyFromWeb());
+    const futureStamp = new Date(Date.parse(webDenial.decidedAt) + 60_000).toISOString();
+
+    expect(await setConsent(userId, grantFromPhone(futureStamp))).toEqual(webDenial);
+    expect(await storedRows(userId)).toHaveLength(1);
+  });
+
   it('writes a repeat grant from a device that saw none, as a record of that device agreeing', async () => {
     const userId = await createUser();
     await setConsent(userId, { ...grantFromPhone(null), source: 'web' });
@@ -187,6 +196,11 @@ describe('setAnalyticsConsent', () => {
     ['a zero version', { analytics: 'granted', version: 0, source: 'web' }],
     ['a fractional version', { analytics: 'granted', version: 1.5, source: 'web' }],
     ['a non-date basedOnDecidedAt', { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: 'later' }],
+    ['a non-ISO date', { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: 'October 2, 2026' }],
+    [
+      'a timestamp without server precision',
+      { analytics: 'granted', version: 1, source: 'web', basedOnDecidedAt: '2026-10-02T08:00:00Z' },
+    ],
   ])('rejects %s and writes nothing', async (_label, input) => {
     const userId = await createUser();
     await expect(
@@ -212,6 +226,11 @@ describe('grantIsStale', () => {
   it('is stale when the account changed after the answer the client saw', () => {
     expect(grantIsStale(denial, '2026-10-02T08:00:00.122Z')).toBe(true);
     expect(grantIsStale(grant, '2026-10-01T00:00:00.000Z')).toBe(true);
+  });
+
+  it('is stale when a client supplies a future timestamp it never received', () => {
+    expect(grantIsStale(denial, '2026-10-02T08:00:01.123Z')).toBe(true);
+    expect(grantIsStale(grant, '2026-10-02T08:00:01.123Z')).toBe(true);
   });
 
   it('is not stale when the client saw exactly the current answer', () => {

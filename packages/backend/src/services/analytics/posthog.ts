@@ -55,7 +55,18 @@ interface CaptureBackendEventOptions {
  * lower-cased. Dropped at capture so a call site that copies a payload
  * wholesale can't reintroduce one.
  */
-const PERSONAL_PROPERTY_NAMES = new Set(['userid', 'user_id', 'email', 'distinct_id', '$ip', '$user_id']);
+const PERSONAL_PROPERTY_NAMES = new Set([
+  'userid',
+  'user_id',
+  'email',
+  'distinct_id',
+  '$ip',
+  '$user_id',
+  'sessionid',
+  'session_id',
+  'boundsessionid',
+  'bound_session_id',
+]);
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 const POSTHOG_FLUSH_AT = 20;

@@ -94,6 +94,7 @@ describe('Live Activity events carry no user identity', () => {
       action: 'next',
       outcome: 'success',
       statusCode: 200,
+      boundSessionId: 'session-2',
     });
     analytics.trackLiveActivityWidgetNavigationAttributionGap({
       sessionId: 'session-1',
@@ -101,6 +102,7 @@ describe('Live Activity events carry no user identity', () => {
       outcome: 'success',
       statusCode: 200,
       reason: 'missing_user_id',
+      boundSessionId: 'session-2',
     });
     analytics.trackLiveActivityPushDelivery(pushDelivery({ failedCount: 1 }));
     analytics.trackLiveActivityPushDeliveryAttributionGap({
@@ -112,7 +114,10 @@ describe('Live Activity events carry no user identity', () => {
     for (const [, options] of posthogMocks.captureBackendEvent.mock.calls) {
       expect(options).not.toHaveProperty('distinctId');
       expect(options).not.toHaveProperty('systemDistinctId');
-      expect((options as { properties: Record<string, unknown> }).properties).not.toHaveProperty('userId');
+      const { properties } = options as { properties: Record<string, unknown> };
+      expect(properties).not.toHaveProperty('userId');
+      expect(properties).not.toHaveProperty('sessionId');
+      expect(properties).not.toHaveProperty('boundSessionId');
     }
   });
 });

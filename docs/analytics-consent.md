@@ -64,9 +64,10 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
     is whole milliseconds and at least 1 ms after the user's previous row, so
     the ISO string a client echoes back names exactly one row.
   - A **denial is always written**.
-  - A **grant is compare-and-set**: if the account holds a newer answer than
-    `basedOnDecidedAt` (or any different answer when `basedOnDecidedAt` is
-    null), nothing is written and the newer answer comes back. This stops a
+  - A **grant is compare-and-set**: `basedOnDecidedAt` must exactly equal the
+    canonical ISO millisecond stamp of the latest account answer. A null stamp
+    is accepted only when there is no answer or the current answer is already
+    granted. Otherwise nothing is written and the current answer comes back. This stops a
     device that last synced before "No thanks" elsewhere from turning tracking
     back on.
   - Writes for one user run under a transaction-scoped advisory lock, so a
@@ -81,7 +82,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | PostHog session replay | Consent | Off unless analytics is granted. |
 | EAS Observe | Consent | Dispatch only when granted. |
 | Android install-referrer attribution | Consent | `Install Attributed` is sent only after a grant. |
-| Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`: no IP address, IP headers or request bodies. The backend only ever sets a bare user id, on one GitHub-mirror event. |
+| Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |
 | First-party active users | Legitimate interest | Our own service statistic; counts leave the database, user ids never do (below). |
 | OTA health ping | Legitimate interest | Anonymous, per launch (PR C). |
@@ -91,8 +92,10 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 `captureBackendEvent` (`packages/backend/src/services/analytics/posthog.ts`)
 takes no distinct id. Every event gets its own random one,
 `backend:<event>:<uuid>`, or a fixed `system:` id for an aggregate event. Every
-event carries `$process_person_profile: false`, and property names that carry
-identity (`userId`, `email`, ...) are dropped. So these events are sent
+event carries `$process_person_profile: false`, and named identity and session properties (`userId`, `email`, `sessionId`,
+`boundSessionId`, ...) are dropped. Current callers send operational counts,
+outcomes and content identifiers, and omit participant identifiers. New callers
+must keep their operational payloads non-personal. So these events are sent
 whatever a climber's consent and still identify nobody. Live Activity events
 and `Tick Climb Not In Catalog` no longer carry a user id; count distinct
 `climbUuid` for the latter.

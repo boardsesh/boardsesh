@@ -88,7 +88,6 @@ describe('backend PostHog analytics helper', () => {
       distinctId: expect.stringMatching(/^backend:live-activity-widget-navigation:[0-9a-f-]{36}$/),
       event: 'Live Activity Widget Navigation',
       properties: {
-        sessionId: 'session-1',
         outcome: 'success',
         targetIndex: 2,
         service: 'boardsesh-backend',
@@ -172,7 +171,16 @@ describe('backend PostHog analytics helper', () => {
       vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
       const { captureBackendEvent } = await loadPosthogModule();
 
-      const leakyProperties = { userId: 'user-1', user_id: 'user-1', Email: 'a@b.c', sessionId: 'session-1' };
+      const leakyProperties = {
+        userId: 'user-1',
+        user_id: 'user-1',
+        Email: 'a@b.c',
+        sessionId: 'session-1',
+        session_id: 'session-1',
+        boundSessionId: 'session-2',
+        bound_session_id: 'session-2',
+        reason: 'unregister',
+      };
       captureBackendEvent('Live Activity Ended', { properties: leakyProperties });
       captureBackendEvent('Live Activity Ended', { properties: leakyProperties });
 
@@ -181,8 +189,14 @@ describe('backend PostHog analytics helper', () => {
         expect(properties).not.toHaveProperty('userId');
         expect(properties).not.toHaveProperty('user_id');
         expect(properties).not.toHaveProperty('Email');
-        expect(properties.sessionId).toBe('session-1');
+        expect(properties).not.toHaveProperty('sessionId');
+        expect(properties).not.toHaveProperty('session_id');
+        expect(properties).not.toHaveProperty('boundSessionId');
+        expect(properties).not.toHaveProperty('bound_session_id');
+        expect(properties.reason).toBe('unregister');
         expect(JSON.stringify(message)).not.toContain('user-1');
+        expect(JSON.stringify(message)).not.toContain('session-1');
+        expect(JSON.stringify(message)).not.toContain('session-2');
       }
       expect(loggerMock.warn).toHaveBeenCalledWith(
         "[PostHog] Dropped personal property 'userId' from backend event: Live Activity Ended",

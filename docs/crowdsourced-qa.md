@@ -293,7 +293,7 @@ Every backend log line for this feature is tagged `[qa]`.
 
 - **A verdict is missing from a PR.** You should not find this out by noticing. Every dropped
   mirror — comment or label — files a Sentry event, `GithubMirrorDropError`, tagged
-  `github_mirror.operation` / `.reason` / `.status` and scoped to the tester whose write was lost.
+  `github_mirror.operation` / `.reason` / `.status`, without the tester's account identifier.
   The event's `github_mirror` context names the `qa_verdicts` row, the PR, GitHub's request id and
   its (redacted) response body, plus the exact replay query. Same line on the backend logger under
   `[github-mirror]`.

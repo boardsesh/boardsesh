@@ -68,8 +68,8 @@ Sentry.init({
   // Off, like the web service (#2644). Sentry runs under legitimate interest
   // whatever a climber's analytics consent, so it must not collect personal
   // data by default: no IP address, no IP headers, no request bodies. The
-  // backend never calls setUser except with a bare id on one GitHub-mirror
-  // event. See docs/analytics-consent.md.
+  // backend never attaches a user identity to Sentry events.
+  // See docs/analytics-consent.md.
   sendDefaultPii: false,
   // Platform-neutral — no RAILWAY_*-style branching. See resolveSentryEnvironment.
   environment: resolveSentryEnvironment(),
