@@ -238,6 +238,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
           accentColor={getGradeColor(selectedGradeName ?? ascent?.difficultyName) ?? null}
           leading={{ kind: 'cancel', onPress: handleClose }}
           trailing={{
+            kind: 'confirm',
             label: tTick('mobile.tick.save'),
             onPress: save,
             loading: updateTick.isPending,

@@ -15,6 +15,7 @@ import {
   EDIT_TICK_SNAP_POINTS,
   TICK_ACTION_HEIGHT,
   TICK_ACTION_LABEL_HEIGHT,
+  TICK_ACTION_MAX_FONT_SCALE,
   TICK_ANGLE_ROW_HEIGHT,
   TICK_CONTROL_ORIGIN,
   TICK_GUTTER,
@@ -47,8 +48,9 @@ describe('tick sheet metrics', () => {
     }
   });
 
-  it('sizes the action bar off the app-wide hero action height', () => {
-    expect(TICK_ACTION_HEIGHT).toBe(glassSize.hero);
+  it('sizes the action bar at the standard 48pt control, not the 56pt hero', () => {
+    expect(TICK_ACTION_HEIGHT).toBe(glassSize.standard);
+    expect(TICK_ACTION_HEIGHT).toBe(48);
   });
 
   it('gives both sheets a rest detent below a shared keyboard detent', () => {
@@ -66,19 +68,26 @@ describe('tick sheet metrics', () => {
 // to hold at every text scale: a button that only sometimes carries a height
 // would flip `Host`'s `matchContents` mid-life, and nothing else sizes that axis.
 describe('tickActionHeight', () => {
-  it('is the hero height at the default text size', () => {
+  it('is the standard height at the default text size', () => {
     expect(tickActionHeight(1)).toBe(TICK_ACTION_HEIGHT);
   });
 
-  it('never goes below the hero floor, however small the text', () => {
+  it('never goes below the floor, however small the text', () => {
     expect(tickActionHeight(0.85)).toBe(TICK_ACTION_HEIGHT);
   });
 
   it('grows by the label line alone, not by the whole button', () => {
-    // A native button's padding does not scale, so doubling the text adds one
-    // more line — not another 56pt.
-    expect(tickActionHeight(2)).toBe(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT);
-    expect(tickActionHeight(3)).toBe(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT * 2);
+    // A native button's padding does not scale, so 1.2x text adds a fifth of a
+    // line, not a fifth of the button.
+    expect(tickActionHeight(1.2)).toBe(Math.round(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT * 0.2));
+  });
+
+  it('stops growing at the Dynamic Type cap the buttons are held to', () => {
+    expect(TICK_ACTION_MAX_FONT_SCALE).toBe(1.3);
+    const capped = Math.round(TICK_ACTION_HEIGHT + TICK_ACTION_LABEL_HEIGHT * (TICK_ACTION_MAX_FONT_SCALE - 1));
+    expect(tickActionHeight(1.3)).toBe(capped);
+    expect(tickActionHeight(2)).toBe(capped);
+    expect(tickActionHeight(3)).toBe(capped);
   });
 
   it('is a whole number of points at an awkward scale', () => {

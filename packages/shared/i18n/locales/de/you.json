@@ -87,8 +87,7 @@
       "all": "Alle",
       "year": "Jahr",
       "month": "Monat",
-      "week": "Woche",
-      "done": "Fertig"
+      "week": "Woche"
     },
     "logbook": {
       "empty": "Dein Routenbuch ist leer — trag deine erste Begehung ein.",

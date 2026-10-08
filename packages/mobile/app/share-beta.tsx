@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, TextInput, Pressable } from 'react-native';
+import { StyleSheet, View, TextInput } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../src/components/Text';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
+import { ChromeIconButton, useChromeIconButtonSize } from '../src/components/ChromeIconButton';
 import { ActivityIndicator } from '../src/components/ActivityIndicator';
 import { ShareBetaAscentRow } from '../src/components/share-beta/ShareBetaAscentRow';
 import { useTheme } from '../src/providers/theme-provider';
@@ -204,6 +205,8 @@ function ShareBetaScreen() {
     [isSearching, items, suggestions],
   );
   const listContentStyle = useMemo(() => ({ paddingBottom: insets.bottom + spacing[6] }), [insets.bottom]);
+  // The empty flank matches the close button, so the title stays centred.
+  const closeButtonSize = useChromeIconButtonSize();
 
   const containerStyle = [styles.container, { backgroundColor: systemColors.background, paddingTop: insets.top }];
 
@@ -230,17 +233,14 @@ function ShareBetaScreen() {
   return (
     <View style={containerStyle}>
       <View style={styles.header}>
-        <Pressable
+        <ChromeIconButton
+          testID="share-beta-close"
+          icon="close"
           onPress={() => router.back()}
-          accessibilityRole="button"
           accessibilityLabel={t('mobile.betaVideos.shareClose')}
-          hitSlop={spacing[2]}
-          style={styles.closeButton}
-        >
-          <Icon name="close" size={22} color={systemColors.secondaryLabel} />
-        </Pressable>
+        />
         <Text variant="headline">{t('mobile.betaVideos.shareTargetTitle')}</Text>
-        <View style={styles.closeButton} />
+        <View style={{ width: closeButtonSize, height: closeButtonSize }} />
       </View>
 
       <View style={[styles.linkCard, { backgroundColor: systemColors.secondaryBackground }]}>
@@ -349,7 +349,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
   },
-  closeButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   linkCard: {
     flexDirection: 'row',
     alignItems: 'center',

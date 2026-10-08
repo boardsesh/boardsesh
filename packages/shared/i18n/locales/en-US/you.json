@@ -87,8 +87,7 @@
       "all": "All",
       "year": "Year",
       "month": "Month",
-      "week": "Week",
-      "done": "Done"
+      "week": "Week"
     },
     "logbook": {
       "empty": "Your logbook's empty — log your first send.",

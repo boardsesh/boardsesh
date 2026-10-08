@@ -68,7 +68,12 @@ import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use
 import { AngleSlider } from '../play-drawer/AngleSlider';
 import { AngleBoardDiagram } from '../play-drawer/AngleBoardDiagram';
 import { useTheme } from '../../providers/theme-provider';
-import { useHeaderActions, type HeaderLeadingAction, type HeaderTrailingAction } from '../../hooks/use-header-actions';
+import {
+  ownHeaderRight,
+  useHeaderActions,
+  type HeaderLeadingAction,
+  type HeaderTrailingAction,
+} from '../../hooks/use-header-actions';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -1190,6 +1195,7 @@ export function SprayWallWizardScreen({
   let headerTrailing: HeaderTrailingAction | null = null;
   if (state.step === 'meta') {
     headerTrailing = {
+      kind: 'forward',
       label: t('sprayWizard.meta.next'),
       onPress: () => dispatch({ type: 'META_DONE' }),
       disabled: !builder.canCreate,
@@ -1197,6 +1203,7 @@ export function SprayWallWizardScreen({
     };
   } else if (state.step === 'photo') {
     headerTrailing = {
+      kind: 'forward',
       label: t('sprayWizard.photo.next'),
       onPress: () => dispatch({ type: 'PHOTO_CONFIRMED' }),
       disabled: state.photo == null,
@@ -1206,15 +1213,17 @@ export function SprayWallWizardScreen({
     // Skip while the rings are where they started, Next once one has moved. No
     // corners is a valid answer, so only a refused quad shuts the gate.
     headerTrailing = {
+      kind: 'forward',
       label: state.anchors ? t('sprayWizard.anchors.next') : t('sprayWizard.anchors.skip'),
       onPress: () => dispatch({ type: 'ANCHORS_DONE' }),
       disabled: state.anchorRejection != null,
       prominent: true,
     };
   } else if (state.step === 'upload' && state.upload.error) {
-    headerTrailing = { label: t('sprayWizard.upload.retry'), onPress: retryUpload, prominent: true };
+    headerTrailing = { kind: 'forward', label: t('sprayWizard.upload.retry'), onPress: retryUpload, prominent: true };
   } else if (state.step === 'publish' && state.publish.error) {
     headerTrailing = {
+      kind: 'forward',
       label: t('sprayWizard.publish.retry'),
       onPress: () => void publish(),
       loading: publishRunning,
@@ -1222,7 +1231,7 @@ export function SprayWallWizardScreen({
       prominent: true,
     };
   } else if (state.step === 'done' && doneExitOffered) {
-    headerTrailing = { label: t('sprayWizard.done.leave'), onPress: leaveFromDone, prominent: true };
+    headerTrailing = { kind: 'forward', label: t('sprayWizard.done.leave'), onPress: leaveFromDone, prominent: true };
   }
 
   useHeaderActions({
@@ -1235,7 +1244,7 @@ export function SprayWallWizardScreen({
   // Not on the steps whose own screen sets the right side.
   const clearHeaderRight = headerTrailing == null && !childOwnsHeader && !childOwnsTrailing;
   useLayoutEffect(() => {
-    if (clearHeaderRight) navigation.setOptions({ headerRight: undefined });
+    if (clearHeaderRight) navigation.setOptions(ownHeaderRight(undefined));
   }, [clearHeaderRight, navigation, state.step]);
 
   // The title only on the first step (and while the resume check runs). Past

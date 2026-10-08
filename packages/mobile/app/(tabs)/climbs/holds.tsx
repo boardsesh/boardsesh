@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +7,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { getLayout } from '@boardsesh/board-constants/product-sizes';
 import { countFilteredHolds, parseHoldsFilter, toggleHoldFilterType } from '@boardsesh/climb-filters';
 import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType, HoldsFilter } from '@boardsesh/shared-schema';
-import { Text } from '../../../src/components/Text';
+import { HeaderTrailingButton } from '../../../src/components/HeaderActionButtons';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
 import { InteractiveFilterBoard } from '../../../src/components/search/InteractiveFilterBoard';
 import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicker';
@@ -208,16 +208,10 @@ export default function HoldFilterScreen() {
     navigation.setOptions({
       headerRight:
         filteredCount > 0
-          ? () => (
-              <Pressable onPress={handleClearAll} hitSlop={8} accessibilityRole="button">
-                <Text variant="subheadline" color={brandColors.primary}>
-                  {t('mobile.filter.clearAll')}
-                </Text>
-              </Pressable>
-            )
+          ? () => <HeaderTrailingButton label={t('mobile.filter.clearAll')} onPress={handleClearAll} />
           : undefined,
     });
-  }, [navigation, filteredCount, handleClearAll, brandColors.primary, t]);
+  }, [navigation, filteredCount, handleClearAll, t]);
 
   if (!boardHolds || !boardName) {
     return (

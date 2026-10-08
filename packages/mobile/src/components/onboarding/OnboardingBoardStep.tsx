@@ -129,7 +129,12 @@ export function OnboardingBoardStep({
       <SheetTopBar
         title=""
         leading={onSkipUnusable ? { kind: 'cancel', label: copy.offlineSkip, onPress: onSkipUnusable } : undefined}
-        trailing={{ label: hasBoards ? copy.findAnother : copy.findFirst, onPress: onFindBoard, prominent: !hasBoards }}
+        trailing={{
+          kind: 'forward',
+          label: hasBoards ? copy.findAnother : copy.findFirst,
+          onPress: onFindBoard,
+          prominent: !hasBoards,
+        }}
       />
       <ScrollView
         contentContainerStyle={[styles.body, { paddingBottom: Math.max(insets.bottom, spacing[5]) }]}

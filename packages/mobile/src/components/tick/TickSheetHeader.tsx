@@ -5,15 +5,16 @@
 // itself so the rows below only ever speak the sheet's three hues. Replaces the
 // create sheet's empty band with an off-ladder 30pt chevron, and the edit
 // sheet's bare title Text — which had no close affordance at all.
+//
+// The close is the shared xmark (ChromeIconButton): closing a tick sheet throws
+// nothing away that the leave guard doesn't already ask about, so it reads as the
+// iOS 26 sheet close. It sits trailing because the grade bar holds the leading edge.
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
-import { PressableSurface } from '../PressableSurface';
+import { ChromeIconButton } from '../ChromeIconButton';
 import { useTheme } from '../../providers/theme-provider';
 import { TICK_GUTTER, TICK_HEADER_HEIGHT } from './tick-sheet-metrics';
-
-const CLOSE_TARGET = 44;
 
 type TickSheetHeaderProps = {
   title: string;
@@ -52,15 +53,12 @@ export const TickSheetHeader = React.memo(function TickSheetHeader({
           </Text>
         ) : null}
       </View>
-      <PressableSurface
+      <ChromeIconButton
+        testID="tick-sheet-close"
+        icon="close"
         onPress={onClose}
-        feedback="opacity"
-        accessibilityRole="button"
         accessibilityLabel={closeAccessibilityLabel}
-        style={[styles.close, { backgroundColor: systemColors.fill }]}
-      >
-        <Icon name="chevron.down" size={18} color={systemColors.secondaryLabel} />
-      </PressableSurface>
+      />
     </View>
   );
 });
@@ -80,12 +78,5 @@ const styles = StyleSheet.create({
   titles: {
     flex: 1,
     minWidth: 0,
-  },
-  close: {
-    width: CLOSE_TARGET,
-    height: CLOSE_TARGET,
-    borderRadius: CLOSE_TARGET / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

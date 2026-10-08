@@ -295,10 +295,11 @@ export function SprayWallLookStep({
 
   const selectedLabel = selectedOption ? tCommon(selectedOption.labelI18nKey) : '';
 
-  // "Use <look>" is the step's forward action, so it is the header's confirm.
+  // "Use <look>" is the step's forward action: text, not the ✓.
   // The X stays leading: from here on, leaving keeps the draft.
   useHeaderActions({
     trailing: {
+      kind: 'forward',
       label: tCommon('mobile.settings.boardLook.intro.saveNamed', { look: selectedLabel }),
       onPress: () => void handleContinue(),
       loading: saving,

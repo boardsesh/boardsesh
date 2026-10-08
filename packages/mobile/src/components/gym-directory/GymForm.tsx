@@ -111,7 +111,14 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
   // Save sits in the header, never pinned over the keyboard. The gym editor is
   // pushed on the root stack, so the native back chevron stays as leading.
   useHeaderActions({
-    trailing: { label: submitLabel, onPress: handleSubmit, disabled: !canSubmit, loading: submitting, prominent: true },
+    trailing: {
+      kind: 'confirm',
+      label: submitLabel,
+      onPress: handleSubmit,
+      disabled: !canSubmit,
+      loading: submitting,
+      prominent: true,
+    },
     // The form can be swapped for a not-found or no-access state while the
     // route stays: take Save with it.
     clearOnUnmount: true,

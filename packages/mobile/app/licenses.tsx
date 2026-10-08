@@ -129,7 +129,9 @@ export default function LicensesScreen() {
             subtitle={selected ? `${selected.version} · ${selected.license}` : undefined}
             leading={{ kind: 'close', onPress: handleClose, accessibilityLabel: t('mobile.licenses.close') }}
             trailing={
-              selected?.repository ? { label: t('mobile.licenses.viewSource'), onPress: handleViewSource } : undefined
+              selected?.repository
+                ? { kind: 'forward', label: t('mobile.licenses.viewSource'), onPress: handleViewSource }
+                : undefined
             }
           />
           <ScrollView contentContainerStyle={[styles.modalBody, { paddingBottom: windowBottomInset + spacing[6] }]}>

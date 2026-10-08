@@ -12,7 +12,6 @@ import {
   AccessibilityInfo,
   Platform,
   View,
-  Pressable,
   StyleSheet,
   useWindowDimensions,
   type LayoutChangeEvent,
@@ -85,7 +84,7 @@ import { usePushAfterPlayerDismiss } from './use-push-after-player-dismiss';
 import { ReportClimbSheet } from '../report-climb/ReportClimbSheet';
 import { BleControlSheetHost } from '../ble/BleControlSheetHost';
 import { RestTimerPillHost } from '../queue-control/RestTimerPillHost';
-import { Icon } from '../Icon';
+import { ChromeIconButton } from '../ChromeIconButton';
 import {
   usePlaylistSuggestionSource,
   useQueueData,
@@ -120,7 +119,6 @@ import { useFirstConnectPill } from './use-first-connect-pill';
 import { deriveFirstConnectPillWouldConnect } from '../../lib/onboarding/first-connect-decision';
 import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { track } from '../../lib/analytics';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 
 // Matches DrawerHostProvider's string-backed route/preview configuration and
@@ -1883,15 +1881,13 @@ export function PlayDrawer({
                         {!isPane ? (
                           <>
                             <View style={sheetStyles.indicator} />
-                            <Pressable
+                            {/* A chevron, not an xmark: the player minimises, it isn't closed. */}
+                            <ChromeIconButton
+                              icon="chevron.down"
                               onPress={handleDismiss}
-                              accessibilityRole="button"
                               accessibilityLabel={t('playView.closeAria')}
                               style={styles.closeButton}
-                              hitSlop={8}
-                            >
-                              <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
-                            </Pressable>
+                            />
                           </>
                         ) : null}
                         {/* The rest timer, mirrored across the grabber from the close
@@ -2374,12 +2370,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: spacing[2],
     zIndex: 2,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(120, 120, 128, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   boardSection: {
     flex: 1,

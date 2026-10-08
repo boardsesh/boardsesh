@@ -3,6 +3,7 @@ import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
+import { ChromeIconButton, useChromeIconButtonSize } from '../ChromeIconButton';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
@@ -54,6 +55,9 @@ export function SessionScreenHeader({
 }: SessionScreenHeaderProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
+  // The empty flank matches the minimise button, so the title stays centred.
+  const glyphButtonSize = useChromeIconButtonSize();
+  const flankSpacer = { width: glyphButtonSize, height: glyphButtonSize };
 
   const title = sessionActive ? t('mobile.session.headerActive') : t('mobile.session.headerStart');
   // Same split RecordTopChrome makes: leaving is non-destructive, so it gets
@@ -69,17 +73,15 @@ export function SessionScreenHeader({
   const row = (
     <View style={styles.row}>
       {onClose ? (
-        <Pressable
+        // A chevron, not an xmark: the session screen minimises to its pill.
+        <ChromeIconButton
+          testID="session-screen-minimize"
+          icon="chevron.down"
           onPress={onClose}
-          hitSlop={12}
-          accessibilityRole="button"
           accessibilityLabel={t('mobile.session.minimize')}
-          style={styles.iconButton}
-        >
-          <Icon name="chevron.down" size={26} color={systemColors.label} />
-        </Pressable>
+        />
       ) : (
-        <View style={styles.iconButton} />
+        <View style={flankSpacer} />
       )}
       <Text variant="title3" color={systemColors.label} style={styles.title} numberOfLines={1}>
         {title}
@@ -135,7 +137,7 @@ export function SessionScreenHeader({
           ) : null}
         </View>
       ) : (
-        <View style={styles.iconButton} />
+        <View style={flankSpacer} />
       )}
     </View>
   );
@@ -160,12 +162,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
     fontWeight: '600',
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   rightCluster: {
     flexDirection: 'row',

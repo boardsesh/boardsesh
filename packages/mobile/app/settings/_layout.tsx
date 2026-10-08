@@ -1,7 +1,6 @@
 import { Stack, router } from 'expo-router';
-import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../../src/components/Icon';
+import { HeaderLeadingButton } from '../../src/components/HeaderActionButtons';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 
 /**
@@ -51,15 +50,8 @@ export default function SettingsLayout() {
         name="index"
         options={{
           title: t('mobile.settings.title'),
-          headerLeft: ({ tintColor }) => (
-            <Pressable
-              onPress={leaveSettings}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={t('ariaLabels.back')}
-            >
-              <Icon name="back" size={22} color={tintColor} />
-            </Pressable>
+          headerLeft: () => (
+            <HeaderLeadingButton kind="back" onPress={leaveSettings} accessibilityLabel={t('ariaLabels.back')} />
           ),
         }}
       />

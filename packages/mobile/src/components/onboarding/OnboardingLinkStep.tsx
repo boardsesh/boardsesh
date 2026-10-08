@@ -97,6 +97,7 @@ export function OnboardingLinkStep({
         title=""
         leading={{ kind: 'cancel', label: t('mobile.onboarding.link.skip'), onPress: decline }}
         trailing={{
+          kind: 'forward',
           label: t('mobile.onboarding.link.continue', { boardName }),
           onPress: openDialog,
           prominent: true,

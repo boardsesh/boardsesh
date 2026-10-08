@@ -222,6 +222,20 @@ vi.mock('../../src/components/Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
 }));
 
+vi.mock('../../src/components/ChromeIconButton', () => ({
+  ChromeIconButton: ({
+    icon,
+    onPress,
+    accessibilityLabel,
+  }: {
+    icon: string;
+    onPress: () => void;
+    accessibilityLabel: string;
+  }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'data-icon': icon }),
+  useChromeIconButtonSize: () => 44,
+}));
+
 vi.mock('../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));

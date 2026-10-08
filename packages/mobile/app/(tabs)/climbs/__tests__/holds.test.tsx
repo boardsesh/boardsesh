@@ -106,6 +106,10 @@ vi.mock('react-native', () => ({
   useWindowDimensions: () => ({ width: 390, height: 844 }),
 }));
 
+vi.mock('../../../../src/components/HeaderActionButtons', () => ({
+  HeaderTrailingButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement('button', { onClick: onPress }, label),
+}));
 vi.mock('../../../../src/components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));

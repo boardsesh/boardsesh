@@ -14,8 +14,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { boardSupportsMirroring } from '@boardsesh/board-config';
 import { ModalSheet } from '../../ModalSheet';
 import { Text } from '../../Text';
-import { Icon } from '../../Icon';
-import { PressableSurface } from '../../PressableSurface';
+import { ChromeIconButton } from '../../ChromeIconButton';
 import { LogbookAngleHeader } from './LogbookAngleHeader';
 import { LogbookSession } from './LogbookSession';
 import { buildLedgerListItems, type LedgerListItem } from './ledger-list-items';
@@ -41,7 +40,6 @@ type LogbookFullSheetProps = {
 const SheetFlatList = BottomSheetFlatList as ComponentType<FlatListProps<LedgerListItem>>;
 
 const SNAP_POINTS = ['90%'];
-const CLOSE_TARGET = 44;
 
 function keyExtractor(item: LedgerListItem): string {
   return item.key;
@@ -101,15 +99,13 @@ export function LogbookFullSheet({ visible, climbUuid, boardName, layoutId, angl
           <Text variant="title3" accessibilityRole="header" style={styles.title} numberOfLines={1}>
             {t('mobile.logbook.title')}
           </Text>
-          <PressableSurface
+          {/* An xmark: the sheet only reads history, so closing loses nothing. */}
+          <ChromeIconButton
+            testID="logbook-full-sheet-close"
+            icon="close"
             onPress={onClose}
-            feedback="opacity"
-            accessibilityRole="button"
             accessibilityLabel={t('mobile.logbook.closeFullLogbook')}
-            style={[styles.close, { backgroundColor: systemColors.fill }]}
-          >
-            <Icon name="chevron.down" size={18} color={systemColors.secondaryLabel} />
-          </PressableSurface>
+          />
         </View>
       }
     >
@@ -137,13 +133,6 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontWeight: '600',
-  },
-  close: {
-    width: CLOSE_TARGET,
-    height: CLOSE_TARGET,
-    borderRadius: CLOSE_TARGET / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   list: {
     flex: 1,

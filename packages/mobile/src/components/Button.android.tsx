@@ -30,10 +30,17 @@ import {
   padding,
   size,
 } from '@expo/ui/jetpack-compose/modifiers';
-import type { ImageSourcePropType } from 'react-native';
+import { useWindowDimensions, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
-import { buttonFillAxes, buttonMatchContents, makeButtonPressHandler, pinnedButtonHeight } from './Button.logic';
+import {
+  buttonFillAxes,
+  buttonMatchContents,
+  cappedComposeLabelSize,
+  makeButtonPressHandler,
+  pinnedButtonHeight,
+} from './Button.logic';
+import { materialTextStyles } from '../theme/typography';
 import { sizeConfig, type ButtonProps } from './Button.types';
 import type { IconName } from './icon-map';
 
@@ -73,10 +80,14 @@ export function Button({
   tintColor,
   minHeight,
   role = 'default',
+  maxFontSizeMultiplier,
   testID,
   style,
 }: ButtonProps) {
   const { brandColors, colorScheme } = useTheme();
+  const { fontScale } = useWindowDimensions();
+  // A Compose button sets its label in M3 labelLarge whatever the size step.
+  const cappedLabelSize = cappedComposeLabelSize(materialTextStyles.label.fontSize, fontScale, maxFontSizeMultiplier);
   const handlePress = makeButtonPressHandler({ onPress, disabled, loading, haptic });
 
   // A Compose Button takes its accessible name from its Text content (the title),
@@ -186,7 +197,7 @@ export function Button({
           ) : iconSource ? (
             <Icon source={iconSource} size={config.iconSize} modifiers={[padding(0, 0, 8, 0)]} />
           ) : null}
-          <Text>{title}</Text>
+          <Text style={cappedLabelSize != null ? { fontSize: cappedLabelSize } : undefined}>{title}</Text>
         </Row>
       </Comp>
     </Host>

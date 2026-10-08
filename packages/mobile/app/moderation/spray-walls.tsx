@@ -1,7 +1,6 @@
 import { Stack, router } from 'expo-router';
-import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../../src/components/Icon';
+import { HeaderLeadingButton } from '../../src/components/HeaderActionButtons';
 import { SprayWallReportsScreen } from '../../src/components/moderation/SprayWallReportsScreen';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
@@ -17,15 +16,12 @@ function SprayWallReportsRoute() {
           ...screenOptions,
           title: t('sprayModeration.queueTitle'),
           headerShown: true,
-          headerLeft: ({ tintColor }) => (
-            <Pressable
+          headerLeft: () => (
+            <HeaderLeadingButton
+              kind="close"
               onPress={() => router.back()}
-              hitSlop={8}
-              accessibilityRole="button"
               accessibilityLabel={tCommon('ariaLabels.close')}
-            >
-              <Icon name="close" size={22} color={tintColor} />
-            </Pressable>
+            />
           ),
         }}
       />

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { GroupedNotification, SocialEntityType } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
+import { HeaderTrailingButton } from '../HeaderActionButtons';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -119,19 +120,13 @@ export default function NotificationsScreen() {
     navigation.setOptions({
       headerRight:
         unreadCount > 0 && groups.length > 0
-          ? () => (
-              <Pressable onPress={handleMarkAllAsRead} hitSlop={8} accessibilityRole="button">
-                <Text variant="subheadline" color={brandColors.primary}>
-                  {t('markAllRead')}
-                </Text>
-              </Pressable>
-            )
+          ? () => <HeaderTrailingButton label={t('markAllRead')} onPress={handleMarkAllAsRead} />
           : undefined,
     });
     // `groups.length` is a dep here on purpose. The perf playbook's ban on array
     // `.length` deps is about `renderItem` (it re-renders every row); this effect
     // only re-runs `setOptions` on the native header.
-  }, [navigation, unreadCount, groups.length, handleMarkAllAsRead, brandColors.primary, t]);
+  }, [navigation, unreadCount, groups.length, handleMarkAllAsRead, t]);
 
   const renderItem = useCallback(
     ({ item }: { item: GroupedNotification }) => <NotificationRow notification={item} onPress={handlePress} />,

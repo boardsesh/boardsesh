@@ -205,6 +205,7 @@ export function BoardForm({
   useHeaderActions({
     leading: isStackRoot ? { kind: 'cancel', onPress: () => router.back() } : null,
     trailing: {
+      kind: 'confirm',
       label: submitLabel,
       onPress: submit,
       disabled: !builder.canCreate || submitting,

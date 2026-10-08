@@ -314,7 +314,7 @@ export default function SettersFilterScreen() {
   // Apply it would not fit in German. The back chevron / swipe-back keeps the
   // picks as a draft (handed back on removal, see above).
   useHeaderActions({
-    trailing: { label: applyLabel, onPress: handleApply, prominent: true },
+    trailing: { kind: 'forward', label: applyLabel, onPress: handleApply, prominent: true },
   });
 
   const openSetter = useCallback(

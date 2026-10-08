@@ -91,6 +91,9 @@ export const iconMap = {
   // `checkmark` draws entirely above the baseline but reserves descender space
   // below it, so the box centres ~9% of its point size higher than the ink does.
   'check.small': { ios: 'checkmark', android: 'check', iosOpticalCenterRatio: 0.09 },
+  // The iOS 26 top-bar confirm: a ✓ in a brand circle (SheetTopBar, the native
+  // header). Same optical correction as `check.small`.
+  confirm: { ios: 'checkmark', android: 'check', iosOpticalCenterRatio: 0.09 },
   flash: { ios: 'bolt.fill', android: 'flash' },
   // What's New / changelog. Mirrors the More tab's native changelog glyph
   // (sparkles on iOS) so the same feature reads consistently across surfaces.

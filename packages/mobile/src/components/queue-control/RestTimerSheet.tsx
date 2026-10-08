@@ -23,7 +23,7 @@ import { SectionHeader } from '../SectionHeader';
 import { SegmentedControl } from '../SegmentedControl';
 import type { SegmentOption } from '../SegmentedControl.types';
 import { TickDestructiveRow } from '../tick/TickDestructiveRow';
-import { TICK_GUTTER, tickActionHeight } from '../tick/tick-sheet-metrics';
+import { TICK_ACTION_MAX_FONT_SCALE, TICK_GUTTER, tickActionHeight } from '../tick/tick-sheet-metrics';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId, useIsSharedSession } from '../../providers/queue-provider';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
@@ -227,9 +227,10 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   const waitingForFirstTick = isRunning && anchorMs === null;
 
   // Memoized: `Button` is a native host, so a fresh style object every render is
-  // a fresh prop on both of them. Same shared height and 2:1 split as
-  // TickActionBar — two different native controls left to measure themselves
-  // land about 7pt apart and the row reads crooked.
+  // a fresh prop on both of them. Same shared height, 2:1 split and Dynamic Type
+  // cap as TickActionBar (48pt, labels stop at 1.3x) — two different native
+  // controls left to measure themselves land about 7pt apart and the row reads
+  // crooked.
   const transportStyles = useMemo(() => transportButtonStyles(tickActionHeight(fontScale)), [fontScale]);
 
   const handleTogglePause = useCallback(() => {
@@ -285,6 +286,7 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
             disabled={waitingForFirstTick}
             variant="filled"
             size="large"
+            maxFontSizeMultiplier={TICK_ACTION_MAX_FONT_SCALE}
             style={transportStyles.primary}
           />
           <Button
@@ -294,6 +296,7 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
             disabled={waitingForFirstTick}
             variant="tonal"
             size="large"
+            maxFontSizeMultiplier={TICK_ACTION_MAX_FONT_SCALE}
             style={transportStyles.secondary}
           />
         </View>

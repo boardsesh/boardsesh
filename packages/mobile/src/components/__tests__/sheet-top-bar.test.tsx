@@ -37,16 +37,18 @@ type TextMockProps = {
   children?: ReactNode;
   style?: unknown;
   color?: string;
+  variant?: string;
   numberOfLines?: number;
   maxFontSizeMultiplier?: number;
 };
 vi.mock('../Text', () => ({
-  Text: ({ children, style, color, numberOfLines, maxFontSizeMultiplier }: TextMockProps) =>
+  Text: ({ children, style, color, variant, numberOfLines, maxFontSizeMultiplier }: TextMockProps) =>
     createElement(
       'span',
       {
         'data-style': JSON.stringify(flatten(style)),
         'data-color': color,
+        'data-variant': variant,
         'data-lines': numberOfLines,
         'data-max-scale': maxFontSizeMultiplier,
       },
@@ -55,7 +57,8 @@ vi.mock('../Text', () => ({
 }));
 
 vi.mock('../Icon', () => ({
-  Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
+  Icon: ({ name, size, color, weight }: { name: string; size?: number; color?: string; weight?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-size': size, 'data-color': color, 'data-weight': weight }),
 }));
 
 vi.mock('../ActivityIndicator', () => ({
@@ -68,13 +71,30 @@ type PressMockProps = {
   disabled?: boolean;
   testID?: string;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
+  style?: unknown;
 };
 vi.mock('../PressableSurface', () => ({
   // Like the real Pressable, a disabled surface does not fire onPress.
-  PressableSurface: ({ children, onPress, disabled, testID, accessibilityLabel }: PressMockProps) =>
+  PressableSurface: ({
+    children,
+    onPress,
+    disabled,
+    testID,
+    accessibilityLabel,
+    accessibilityHint,
+    style,
+  }: PressMockProps) =>
     createElement(
       'button',
-      { 'data-testid': testID, 'aria-label': accessibilityLabel, disabled, onClick: () => onPress?.() },
+      {
+        'data-testid': testID,
+        'aria-label': accessibilityLabel,
+        'data-hint': accessibilityHint,
+        'data-style': JSON.stringify(flatten(style)),
+        disabled,
+        onClick: () => onPress?.(),
+      },
       children,
     ),
 }));
@@ -240,7 +260,7 @@ describe('SheetTopBar', () => {
       createElement(SheetTopBar, {
         title: 'Eine sehr lange Überschrift für dieses Blatt, die nicht passt',
         leading: { kind: 'cancel', onPress: vi.fn() },
-        trailing: { label: 'Speichern', onPress: vi.fn(), prominent: true },
+        trailing: { kind: 'forward', label: 'Speichern', onPress: vi.fn(), prominent: true },
       }),
     );
     // The flanks hold their width; only the title column can shrink.
@@ -249,15 +269,105 @@ describe('SheetTopBar', () => {
     const titleColumn = styleOf(getByTestId('sheet-top-bar-title'));
     expect(titleColumn).toMatchObject({ flexShrink: 1, minWidth: 0 });
     expect(titleColumn.maxWidth).toBeUndefined();
-    // The action's label is whole, and capped so the 1.2x scale can't outgrow the bar.
+    // The action's label is whole, and held at 1x like a UIKit bar item, so the
+    // 1.2x scale can't outgrow the bar.
     const label = getByText('Speichern');
     expect(label.textContent).toBe('Speichern');
-    expect(label.getAttribute('data-max-scale')).toBe('1.2');
+    expect(label.getAttribute('data-max-scale')).toBe('1');
   });
 
-  it('a prominent confirm is a filled capsule on Liquid Glass and plain text on Material', () => {
+  it('sets every action label in the label variant, held at 1x on iOS and 1.2x on Material', () => {
+    const labelsOf = () =>
+      render(
+        createElement(SheetTopBar, {
+          title: 'Edit',
+          leading: { kind: 'cancel', onPress: vi.fn() },
+          trailing: { kind: 'forward', label: 'Save', onPress: vi.fn(), prominent: true },
+        }),
+      );
+    const glass = labelsOf();
+    for (const text of ['t:actions.cancel', 'Save']) {
+      expect(glass.getByText(text).getAttribute('data-variant')).toBe('label');
+      expect(glass.getByText(text).getAttribute('data-max-scale')).toBe('1');
+    }
+    glass.unmount();
+    ctrl.variant = 'material';
+    const material = labelsOf();
+    expect(material.getByText('Save').getAttribute('data-max-scale')).toBe('1.2');
+  });
+
+  it('Cancel and a plain confirm are in the label colour; only the prominent confirm takes the brand', () => {
+    const { systemColors } = makeThemeMock();
+    const { getByText } = render(
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        leading: { kind: 'cancel', onPress: vi.fn() },
+        trailing: { label: 'Skip', onPress: vi.fn() },
+      }),
+    );
+    expect(getByText('t:actions.cancel').getAttribute('data-color')).toBe(systemColors.label);
+    expect(getByText('Skip').getAttribute('data-color')).toBe(systemColors.label);
+  });
+
+  it('the prominent forward capsule is 36pt tall, a full capsule, 14pt in from each side, with 17pt-600 text', () => {
+    const { getByText } = render(
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        trailing: { kind: 'forward', label: 'Next', onPress: vi.fn(), prominent: true },
+      }),
+    );
+    expect(styleOf(getByText('Next').parentElement)).toMatchObject({
+      height: 36,
+      borderRadius: 18,
+      paddingHorizontal: 14,
+    });
+    expect(styleOf(getByText('Next'))).toMatchObject({ fontWeight: '600' });
+  });
+
+  it('a disabled capsule dims to 40% as a whole', () => {
+    const { getByText } = render(
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        trailing: { kind: 'forward', label: 'Next', onPress: vi.fn(), prominent: true, disabled: true },
+      }),
+    );
+    expect(styleOf(getByText('Next').parentElement)).toMatchObject({ opacity: 0.4 });
+  });
+
+  it('close is a 17pt label-coloured xmark in a 44pt fill circle; Material draws 24dp onSurface in 48 with no fill', () => {
+    const { systemColors } = makeThemeMock();
+    const glass = render(createElement(SheetTopBar, { title: 'Wall', leading: { kind: 'close', onPress: vi.fn() } }));
+    const glyph = glass.container.querySelector('[data-icon="close"]');
+    expect(glyph?.getAttribute('data-size')).toBe('17');
+    expect(glyph?.getAttribute('data-color')).toBe(systemColors.label);
+    expect(styleOf(glass.getByTestId('sheet-top-bar-leading'))).toMatchObject({
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: systemColors.fill,
+    });
+    glass.unmount();
+
+    ctrl.variant = 'material';
+    const materialTheme = makeThemeMock({ variant: 'material' });
+    const material = render(
+      createElement(SheetTopBar, { title: 'Wall', leading: { kind: 'close', onPress: vi.fn() } }),
+    );
+    const materialGlyph = material.container.querySelector('[data-icon="close"]');
+    expect(materialGlyph?.getAttribute('data-size')).toBe('24');
+    // A navigation icon: onSurface, which the Material theme resolves `label` to.
+    expect(materialGlyph?.getAttribute('data-color')).toBe(materialTheme.systemColors.label);
+    const materialTarget = styleOf(material.getByTestId('sheet-top-bar-leading'));
+    expect(materialTarget).toMatchObject({ width: 48, height: 48 });
+    expect(materialTarget.backgroundColor).toBeUndefined();
+  });
+
+  it('a prominent forward action is a filled capsule on Liquid Glass and plain text on Material', () => {
     const glass = render(
-      createElement(SheetTopBar, { title: 'Edit', trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }),
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        trailing: { kind: 'forward', label: 'Save', onPress: vi.fn(), prominent: true },
+      }),
     );
     const glassFill = styleOf(glass.getByText('Save').parentElement).backgroundColor;
     glass.unmount();
@@ -265,21 +375,26 @@ describe('SheetTopBar', () => {
 
     ctrl.variant = 'material';
     const material = render(
-      createElement(SheetTopBar, { title: 'Edit', trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }),
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        trailing: { kind: 'forward', label: 'Save', onPress: vi.fn(), prominent: true },
+      }),
     );
     expect(styleOf(material.getByText('Save').parentElement).backgroundColor).toBeUndefined();
-    expect(styleOf(material.getByText('Save'))).toMatchObject({ fontWeight: '600' });
+    // M3 labelLarge stays medium: brand text, no fill.
+    expect(styleOf(material.getByText('Save'))).toMatchObject({ fontWeight: '500' });
   });
 
-  it('a destructive confirm fills the capsule with the error colour, or colours the label', () => {
+  it('a destructive action is never filled: the label is in the error colour', () => {
     const { brandColors } = makeThemeMock();
     const glass = render(
       createElement(SheetTopBar, {
         title: 'End',
-        trailing: { label: 'End session', onPress: vi.fn(), prominent: true, destructive: true },
+        trailing: { kind: 'forward', label: 'End session', onPress: vi.fn(), prominent: true, destructive: true },
       }),
     );
-    expect(styleOf(glass.getByText('End session').parentElement).backgroundColor).toBe(brandColors.error);
+    expect(styleOf(glass.getByText('End session').parentElement).backgroundColor).toBeUndefined();
+    expect(glass.getByText('End session').getAttribute('data-color')).toBe(brandColors.error);
     glass.unmount();
 
     const plain = render(
@@ -292,7 +407,7 @@ describe('SheetTopBar', () => {
     const material = render(
       createElement(SheetTopBar, {
         title: 'End',
-        trailing: { label: 'End session', onPress: vi.fn(), prominent: true, destructive: true },
+        trailing: { kind: 'confirm', label: 'End session', onPress: vi.fn(), prominent: true, destructive: true },
       }),
     );
     expect(styleOf(material.getByText('End session').parentElement).backgroundColor).toBeUndefined();
@@ -330,5 +445,127 @@ describe('SheetTopBar', () => {
     expect(long.style.overflow).toBe('hidden');
     expect(long.lines).toBe('1');
     expect(long.maxScale).toBe('1.2');
+  });
+
+  it('iOS: a confirm is a ✓ in a 44pt brand circle, spoken by its label, with no visible word', () => {
+    const { brandColors } = makeThemeMock();
+    const onSave = vi.fn();
+    const { container, getByLabelText, queryByText } = render(
+      createElement(SheetTopBar, { title: 'Edit', trailing: { kind: 'confirm', label: 'Save', onPress: onSave } }),
+    );
+    const button = getByLabelText('Save');
+    const glyph = container.querySelector('[data-icon="confirm"]');
+    expect(glyph?.getAttribute('data-size')).toBe('17');
+    // Semibold, like the X beside it.
+    expect(glyph?.getAttribute('data-weight')).toBe('semibold');
+    expect(glyph?.getAttribute('data-color')).toBe(brandColors.onPrimary);
+    expect(styleOf(button)).toMatchObject({
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: brandColors.primary,
+    });
+    expect(queryByText('Save')).toBeNull();
+    fireEvent.click(button);
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('iOS: a prominent action with no kind is a confirm (the ✓), so a caller that names none still gets it', () => {
+    const { container } = render(
+      createElement(SheetTopBar, { title: 'Edit', trailing: { label: 'Save', onPress: vi.fn(), prominent: true } }),
+    );
+    expect(container.querySelector('[data-icon="confirm"]')).not.toBeNull();
+  });
+
+  it('iOS confirm: disabled dims the circle to 40%, loading swaps the glyph for a spinner; destructive is red text, no ✓', () => {
+    const { brandColors } = makeThemeMock();
+    const disabled = render(
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        trailing: { kind: 'confirm', label: 'Save', onPress: vi.fn(), disabled: true },
+      }),
+    );
+    expect(styleOf(disabled.getByLabelText('Save'))).toMatchObject({ opacity: 0.4 });
+    disabled.unmount();
+
+    const loading = render(
+      createElement(SheetTopBar, {
+        title: 'Edit',
+        trailing: { kind: 'confirm', label: 'Save', onPress: vi.fn(), loading: true },
+      }),
+    );
+    expect(loading.getByTestId('sheet-top-bar-spinner')).toBeTruthy();
+    expect(loading.container.querySelector('[data-icon="confirm"]')).toBeNull();
+    loading.unmount();
+
+    const destructive = render(
+      createElement(SheetTopBar, {
+        title: 'End',
+        trailing: { kind: 'confirm', label: 'End session', onPress: vi.fn(), destructive: true },
+      }),
+    );
+    // No red ✓: the word, in the error colour, with no fill.
+    expect(destructive.container.querySelector('[data-icon="confirm"]')).toBeNull();
+    expect(destructive.getByText('End session').getAttribute('data-color')).toBe(brandColors.error);
+    expect(styleOf(destructive.getByText('End session').parentElement).backgroundColor).toBeUndefined();
+  });
+
+  it('iOS confirm: a caller glyph (the lock) stands in for the ✓, and the hint is kept', () => {
+    const { container, getByLabelText } = render(
+      createElement(SheetTopBar, {
+        title: 'New climb',
+        trailing: { kind: 'confirm', label: 'Save', onPress: vi.fn(), icon: 'lock', accessibilityHint: 'Locked' },
+      }),
+    );
+    expect(container.querySelector('[data-icon="lock"]')?.getAttribute('data-weight')).toBe('semibold');
+    expect(container.querySelector('[data-icon="confirm"]')).toBeNull();
+    expect(getByLabelText('Save').getAttribute('data-hint')).toBe('Locked');
+  });
+
+  it('a forward action is text, and a text action shows its glyph before the label', () => {
+    const forward = render(
+      createElement(SheetTopBar, { title: 'Step', trailing: { kind: 'forward', label: 'Next', onPress: vi.fn() } }),
+    );
+    expect(forward.getByText('Next')).toBeTruthy();
+    expect(forward.container.querySelector('[data-icon="confirm"]')).toBeNull();
+    forward.unmount();
+    ctrl.variant = 'material';
+    const locked = render(
+      createElement(SheetTopBar, {
+        title: 'New',
+        trailing: { kind: 'confirm', label: 'Save', onPress: vi.fn(), icon: 'lock' },
+      }),
+    );
+    expect(locked.getByTestId('sheet-top-bar-trailing-icon')).toBeTruthy();
+    expect(locked.getByText('Save')).toBeTruthy();
+  });
+
+  it('Material: confirm and forward are both brand text, never the ✓', () => {
+    ctrl.variant = 'material';
+    const { brandColors } = makeThemeMock({ variant: 'material' });
+    for (const kind of ['confirm', 'forward'] as const) {
+      const view = render(
+        createElement(SheetTopBar, {
+          title: 'Edit',
+          trailing: { kind, label: 'Save', onPress: vi.fn(), prominent: true },
+        }),
+      );
+      expect(view.container.querySelector('[data-icon="confirm"]')).toBeNull();
+      expect(view.getByText('Save').getAttribute('data-color')).toBe(brandColors.primary);
+      expect(styleOf(view.getByText('Save'))).toMatchObject({ fontWeight: '500' });
+      view.unmount();
+    }
+  });
+
+  it('a send is prominent text (a brand capsule on iOS), never the ✓', () => {
+    const { container, getByText } = render(
+      createElement(SheetTopBar, {
+        title: 'Report',
+        trailing: { kind: 'send', label: 'Send report', onPress: vi.fn() },
+      }),
+    );
+    expect(container.querySelector('[data-icon="confirm"]')).toBeNull();
+    expect(styleOf(getByText('Send report'))).toMatchObject({ fontWeight: '600' });
+    expect(styleOf(getByText('Send report').parentElement).height).toBe(36);
   });
 });

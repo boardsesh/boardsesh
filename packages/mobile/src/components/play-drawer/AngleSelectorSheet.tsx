@@ -119,7 +119,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
         <SheetTopBar
           title={t('mobile.angleSelector.title')}
           leading={{ kind: 'close', onPress: onClose }}
-          trailing={{ label: tCommon('actions.done'), onPress: handleDone, prominent: true }}
+          trailing={{ kind: 'confirm', label: tCommon('actions.done'), onPress: handleDone, prominent: true }}
         />
         <View style={styles.container}>
           <AngleBoardDiagram

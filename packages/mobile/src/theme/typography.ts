@@ -67,6 +67,16 @@ export const textStyles = {
     fontWeight: '400',
     lineHeight: 13,
   },
+  /**
+   * Every top-bar and header button label: Cancel, Done, Save, Clear all. A bar
+   * item on iOS is body-sized (17/22); the prominent confirm sets 600 on top.
+   * See `theme/top-bar.ts` and docs/ai-design-guidelines.md, "Top-bar buttons".
+   */
+  label: {
+    fontSize: 17,
+    fontWeight: '400',
+    lineHeight: 22,
+  },
 } as const satisfies Record<string, TypeStyle>;
 
 /**
@@ -78,7 +88,7 @@ export const textStyles = {
  *
  *   largeTitle → headlineMedium · title1 → headlineSmall · title2 → titleLarge
  *   headline → titleMedium · body/callout → bodyLarge · subheadline → bodyMedium
- *   footnote → bodySmall · caption1/caption2 → labelSmall
+ *   footnote → bodySmall · caption1/caption2 → labelSmall · label → labelLarge
  */
 export const materialTextStyles = {
   largeTitle: {
@@ -135,6 +145,12 @@ export const materialTextStyles = {
     fontSize: 11,
     fontWeight: '500',
     lineHeight: 16,
+  },
+  /** M3 labelLarge, the type of every button and top app bar action. */
+  label: {
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
   },
 } as const satisfies Record<keyof typeof textStyles, TypeStyle>;
 
