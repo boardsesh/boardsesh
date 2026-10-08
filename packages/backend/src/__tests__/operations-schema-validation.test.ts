@@ -4,6 +4,7 @@ import { buildSchema, parse, validate, visit, type DocumentNode, type GraphQLSch
 import { typeDefs } from '@boardsesh/shared-schema';
 import * as publicOperations from '@boardsesh/graphql/operations';
 import * as accountOperations from '@boardsesh/graphql/operations/account';
+import * as analyticsConsentOperations from '@boardsesh/graphql/operations/analytics-consent';
 import * as proposalOperations from '@boardsesh/graphql/operations/proposals';
 import * as queueSessionOperations from '@boardsesh/graphql/operations/queue-session';
 
@@ -114,6 +115,7 @@ describe('shared-schema operations validate against the executable schema', () =
   const operationModules = [
     ['operations', publicOperations],
     ['operations/account', accountOperations],
+    ['operations/analytics-consent', analyticsConsentOperations],
     ['operations/proposals', proposalOperations],
     ['operations/queue-session', queueSessionOperations],
   ] as const;
