@@ -312,6 +312,18 @@
         "p2": "Nuestro controlador está diseñado para ser interoperable tanto con el software de este proyecto como, a discreción del usuario, con las apps oficiales del fabricante. Cualquier interoperabilidad de este tipo la inicia el usuario final con su propio hardware."
       }
     },
+    "hostedService": {
+      "title": "Servicio alojado y acceso a la API",
+      "p1": "El código de Boardsesh es de código abierto bajo la licencia Apache 2.0. Esa licencia cubre el código. No cubre el servicio alojado: las cuentas, la base de datos de bloques, la sincronización del logbook y los servidores en tiempo real a los que se conectan las apps y el sitio web de Boardsesh. Los gestionamos y los pagamos nosotros.",
+      "p2Start": "La API pública documentada en la",
+      "p2Link": "página de documentación de la API",
+      "p2End": "es para integraciones: herramientas que leen datos de bloques, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso que aplica el servicio.",
+      "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente que use las cuentas, los datos o los servidores de Boardsesh como su servicio necesita nuestro permiso por escrito, y por ahora no lo concedemos. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código está ahí precisamente para eso. La guía de configuración de desarrollo en CONTRIBUTING.md es el punto de partida hoy; la documentación oficial de autoalojamiento aún está por llegar.",
+      "p4Start": "Tampoco tienes que empezar con una base de datos vacía. Las",
+      "p4Link": "instantáneas nocturnas de los plafones",
+      "p4End": "son archivos SQLite públicos con los catálogos de bloques, nos cuesta poco servirlas y puedes usarlas con total libertad. También estamos abiertos a hablar de sincronizar datos que no sean de usuarios, como bloques y grados, con un servicio alternativo.",
+      "contact": "Preguntas sobre esta política:"
+    },
     "trademark": {
       "title": "Uso de Marcas Registradas",
       "body": "Usamos los nombres de plafones y productos (por ejemplo, «Kilter Board», «MoonBoard», «Tension Board») únicamente para describir la compatibilidad e interoperabilidad de hardware. Estos nombres son marcas registradas de sus respectivos propietarios. Este proyecto no está afiliado, respaldado ni patrocinado por Aurora Climbing, Moon Climbing ni ningún fabricante de plafones."
@@ -343,7 +355,7 @@
       "licenseLink": "CC BY 4.0",
       "copyright": ". Copyright 2024 Fonticons, Inc."
     },
-    "footer": "Este documento se proporciona con fines informativos y no constituye asesoramiento legal. Última actualización: 08-02-2026"
+    "footer": "Este documento se proporciona con fines informativos y no constituye asesoramiento legal. Última actualización: 08-10-2026"
   },
   "help": {
     "clip": {
@@ -843,6 +855,8 @@
     "overview": {
       "title": "Resumen de la API de Boardsesh",
       "intro": "Boardsesh ofrece dos APIs complementarias para interactuar con plafones de entrenamiento de escalada interactivos (Kilter, Tension):",
+      "usagePolicy": "Esta API es para integraciones. Publicar una app que use el backend de Boardsesh como su servicio requiere permiso por escrito, y por ahora no lo concedemos. Consulta nuestra",
+      "usagePolicyLink": "página legal",
       "rest": {
         "title": "API REST",
         "intro": "Usa la API REST para operaciones sin estado, como buscar bloques, obtener la configuración del plafón o autenticar usuarios. La API REST es ideal para:",

@@ -312,6 +312,18 @@
         "p2": "Unser Controller ist so gebaut, dass er sowohl mit der Software dieses Projekts als auch — nach Wahl der Nutzer*innen — mit offiziellen Hersteller-Apps zusammenspielt. Dieses Zusammenspiel geht immer von den Endnutzer*innen auf ihrer eigenen Hardware aus."
       }
     },
+    "hostedService": {
+      "title": "Gehosteter Dienst und API-Zugang",
+      "p1": "Der Code von Boardsesh ist Open Source unter der Apache-2.0-Lizenz. Diese Lizenz gilt für den Code. Sie gilt nicht für den gehosteten Dienst: die Konten, die Boulder-Datenbank, die Logbuch-Synchronisierung und die Echtzeit-Server, mit denen sich die Boardsesh-Apps und die Website verbinden. Die betreiben und bezahlen wir.",
+      "p2Start": "Die öffentliche API, die auf der",
+      "p2Link": "API-Dokumentationsseite",
+      "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder für angemeldete Kletterer*innen über deren eigenes Konto handeln, innerhalb der Ratenlimits, die der Dienst anwendet.",
+      "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, der Boardsesh-Konten, -Daten oder -Server als eigenen Dienst nutzt, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code ist genau dafür da. Das Entwicklungs-Setup in CONTRIBUTING.md ist heute der Einstieg; eine offizielle Self-Hosting-Doku kommt noch.",
+      "p4Start": "Du musst auch nicht mit einer leeren Datenbank anfangen. Die",
+      "p4Link": "nächtlichen Board-Snapshots",
+      "p4End": "sind öffentliche SQLite-Dateien der Boulder-Kataloge, für uns günstig auszuliefern, und du darfst sie gern nutzen. Wir sprechen auch gern darüber, Daten ohne Personenbezug wie Boulder und Grade mit einem anderen Dienst zu synchronisieren.",
+      "contact": "Fragen zu dieser Richtlinie:"
+    },
     "trademark": {
       "title": "Markennutzung",
       "body": "Wir verwenden Board- und Produktnamen (z. B. „Kilter Board“, „MoonBoard“, „Tension Board“) ausschließlich, um Hardware-Kompatibilität und Interoperabilität zu beschreiben. Diese Namen sind Marken der jeweiligen Inhaber. Dieses Projekt steht in keiner Verbindung zu Aurora Climbing, Moon Climbing oder einem anderen Board-Hersteller und wird von ihnen weder unterstützt noch gesponsert."
@@ -343,7 +355,7 @@
       "licenseLink": "CC BY 4.0",
       "copyright": ". Copyright 2024 Fonticons, Inc."
     },
-    "footer": "Dieses Dokument dient der Information und stellt keine Rechtsberatung dar. Zuletzt aktualisiert: 02.08.2026"
+    "footer": "Dieses Dokument dient der Information und stellt keine Rechtsberatung dar. Zuletzt aktualisiert: 08.10.2026"
   },
   "help": {
     "clip": {
@@ -843,6 +855,8 @@
     "overview": {
       "title": "Überblick über die Boardsesh-API",
       "intro": "Boardsesh bietet zwei APIs, die sich ergänzen, für den Umgang mit interaktiven Kletter-Trainingsboards (Kilter, Tension):",
+      "usagePolicy": "Diese API ist für Integrationen gedacht. Wer eine App veröffentlicht, die das Boardsesh-Backend als ihren Dienst nutzt, braucht eine schriftliche Erlaubnis, die wir derzeit nicht erteilen. Siehe unsere",
+      "usagePolicyLink": "rechtliche Seite",
       "rest": {
         "title": "REST-API",
         "intro": "Nimm die REST-API für zustandslose Vorgänge wie die Bouldersuche, das Abrufen der Board-Konfiguration und die Authentifizierung. Die REST-API passt für:",

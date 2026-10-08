@@ -312,6 +312,18 @@
         "p2": "Notre contrôleur est conçu pour être interopérable avec le logiciel de ce projet et, à la discrétion de l'utilisateur, avec les apps officielles des fabricants. Toute interopérabilité de ce type est initiée par l'utilisateur final sur son propre matériel."
       }
     },
+    "hostedService": {
+      "title": "Service hébergé et accès à l'API",
+      "p1": "Le code de Boardsesh est open source sous licence Apache 2.0. Cette licence couvre le code. Elle ne couvre pas le service hébergé : les comptes, la base de données de blocs, la synchronisation du carnet de croix et les serveurs temps réel auxquels se connectent les apps et le site Boardsesh. Nous les faisons tourner et nous les payons.",
+      "p2Start": "L'API publique documentée sur la",
+      "p2Link": "page de documentation de l'API",
+      "p2End": "est destinée aux intégrations : des outils qui lisent les données de blocs, ou qui agissent au nom d'un grimpeur connecté depuis son propre compte, dans le respect des limites de débit appliquées par le service.",
+      "p3": "Le service hébergé n'est pas un backend pour d'autres apps. Une app ou un fork distribué publiquement qui utilise les comptes, les données ou les serveurs de Boardsesh comme son service a besoin de notre autorisation écrite, et nous n'en accordons pas pour le moment. Si vous forkez Boardsesh, faites aussi tourner votre propre backend. Le code est là précisément pour ça. La configuration de développement décrite dans CONTRIBUTING.md est le point de départ aujourd'hui ; la documentation officielle d'auto-hébergement reste à venir.",
+      "p4Start": "Vous n'avez pas non plus à partir d'une base de données vide. Les",
+      "p4Link": "snapshots nocturnes des boards",
+      "p4End": "sont des fichiers SQLite publics des catalogues de blocs, peu coûteux à servir pour nous, et vous êtes libres de les utiliser. Nous sommes aussi ouverts à discuter d'une synchronisation des données non liées aux utilisateurs, comme les blocs et les cotations, vers un service alternatif.",
+      "contact": "Questions sur cette politique :"
+    },
     "trademark": {
       "title": "Usage des marques",
       "body": "Nous utilisons les noms de boards et de produits (par exemple « Kilter Board », « MoonBoard », « Tension Board ») uniquement pour décrire la compatibilité matérielle et l'interopérabilité. Ces noms sont des marques déposées de leurs propriétaires respectifs. Ce projet n'est ni affilié à, ni approuvé ou sponsorisé par Aurora Climbing, Moon Climbing ou tout autre fabricant de boards."
@@ -343,7 +355,7 @@
       "licenseLink": "CC BY 4.0",
       "copyright": ". Copyright 2024 Fonticons, Inc."
     },
-    "footer": "Ce document est fourni à titre informatif et ne constitue pas un avis juridique. Dernière mise à jour : 02-08-2026"
+    "footer": "Ce document est fourni à titre informatif et ne constitue pas un avis juridique. Dernière mise à jour : 08-10-2026"
   },
   "help": {
     "clip": {
@@ -843,6 +855,8 @@
     "overview": {
       "title": "Aperçu de l'API Boardsesh",
       "intro": "Boardsesh fournit deux API complémentaires pour interagir avec les boards d'entraînement interactives (Kilter, Tension) :",
+      "usagePolicy": "Cette API est destinée aux intégrations. Publier une app qui utilise le backend de Boardsesh comme son service demande une autorisation écrite, que nous n'accordons pas pour le moment. Voir notre",
+      "usagePolicyLink": "page légale",
       "rest": {
         "title": "API REST",
         "intro": "Utilisez l'API REST pour des opérations sans état comme la recherche de blocs, la récupération de la configuration de la board et l'authentification utilisateur. L'API REST est idéale pour :",

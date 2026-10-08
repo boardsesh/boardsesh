@@ -22,13 +22,13 @@ Boardsesh is a unified experience that works across different board types, helpi
 
 ## Open Source
 
-Boardsesh is completely open source under the Apache license. You can view the code, contribute features, report bugs, or fork it entirely to run your own instance.
+Boardsesh is completely open source under the Apache license. You can view the code, contribute features, report bugs, or fork it entirely to run your own instance, backend included.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup instructions and [ROADMAP.md](./ROADMAP.md) for what's coming next.
 
 ## API Documentation
 
-Building something cool with climbing data? We provide a public API that developers can use to access climb information and build their own integrations. [Explore the API Documentation →](https://www.boardsesh.com/docs)
+Building something cool with climbing data? We provide a public API that developers can use to access climb information and build their own integrations. [Explore the API Documentation →](https://www.boardsesh.com/docs) The API is for integrations, not for publishing another client against our hosted backend. See [LEGAL.md](./LEGAL.md#hosted-service--api-access).
 
 ## Support Boardsesh
 
