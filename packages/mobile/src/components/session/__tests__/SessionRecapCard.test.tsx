@@ -33,6 +33,12 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 type ChildrenProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
   View: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: ChildrenProps & { onPress?: () => void; accessibilityLabel?: string }) =>
+    createElement('button', { 'data-button': accessibilityLabel, onClick: onPress }, children),
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
@@ -71,7 +77,14 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { secondaryLabel: '#888', fill: '#eee', label: '#000', tertiaryLabel: '#aaa' },
+    systemColors: {
+      secondaryLabel: '#888',
+      fill: '#eee',
+      label: '#000',
+      tertiaryLabel: '#aaa',
+      secondaryBackground: '#fff',
+      accent: '#609',
+    },
     brandColors: { error: '#c00' },
   }),
 }));
@@ -81,7 +94,7 @@ vi.mock('../../../lib/session-comment-draft-store', () => draftStore);
 vi.mock('../../../lib/analytics', () => analytics);
 vi.mock('../../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },
-  spacing: { 1: 4, 2: 8, 3: 12 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { lg: 12 },
 }));
 
@@ -132,10 +145,14 @@ describe('SessionRecapCard', () => {
     expect(button(container, 'summary.addRecap')).toBeNull();
   });
 
-  it('shows the add-a-recap button when empty and editable', () => {
+  it('opens the editor through the grouped add-a-recap action', () => {
     const { container } = render(<SessionRecapCard sessionId="s1" notes={null} editable />);
     expect(button(container, 'summary.addRecap')).not.toBeNull();
     expect(textInput(container)).toBeNull();
+    expect(container.querySelector('[data-icon="plus"]')).not.toBeNull();
+    expect(container.querySelector('[data-icon="chevron.right"]')).not.toBeNull();
+    fireEvent.click(button(container, 'summary.addRecap')!);
+    expect(textInput(container)).not.toBeNull();
   });
 
   it('renders nothing when empty and not editable', () => {

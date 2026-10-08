@@ -132,11 +132,11 @@ describe('SessionScreenHeader', () => {
     expect(onEndSession).toHaveBeenCalledTimes(1);
   });
 
-  it('labels the leader exit "Stop" beside a destructive flag glyph', () => {
+  it('labels the leader exit "Stop" in red without an exit glyph', () => {
     const { container } = render(<SessionScreenHeader sessionActive onEndSession={vi.fn()} />);
     const end = container.querySelector(END);
     expect(end?.textContent).toContain('mobile.session.inStop');
-    expect(end?.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#C81E1E');
+    expect(end?.querySelector('[data-icon]')).toBeNull();
     expect(end?.querySelector('[data-text-color]')?.getAttribute('data-text-color')).toBe('#C81E1E');
   });
 
@@ -145,7 +145,8 @@ describe('SessionScreenHeader', () => {
     expect(container.querySelector(END)).toBeNull();
     const leave = container.querySelector(LEAVE);
     expect(leave?.textContent).toContain('mobile.session.inLeave');
-    expect(leave?.querySelector('[data-icon="leave.session"]')?.getAttribute('data-color')).toBe('#000');
+    expect(leave?.querySelector('[data-icon]')).toBeNull();
+    expect(leave?.querySelector('[data-text-color]')?.getAttribute('data-text-color')).toBe('#000');
   });
 
   it('renders no End control when onEndSession is absent (e.g. pre-session)', () => {

@@ -6,6 +6,9 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 
 // The preview hook is mocked; the test mutates `preview.result.items` /
 // `refreshingUuids` and rerenders to drive the view's row props.
+const header = vi.hoisted(() => ({ native: false, inBodyLargeTitle: false }));
+vi.mock('../../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => header.native }));
+
 const preview = vi.hoisted(() => ({
   result: {
     items: [] as unknown[],
@@ -34,6 +37,7 @@ const list = vi.hoisted(() => ({
     hasGestureScrollComponent: boolean;
     hasHeaderComponent: boolean;
     paddingBottom?: unknown;
+    contentInsetAdjustmentBehavior?: string;
   }>,
 }));
 
@@ -90,6 +94,7 @@ vi.mock('@shopify/flash-list', () => ({
     nestedScrollEnabled,
     keyboardShouldPersistTaps,
     contentContainerStyle,
+    contentInsetAdjustmentBehavior,
   }: {
     data?: unknown[];
     renderItem?: (info: { item: unknown; index: number }) => ReactNode;
@@ -98,6 +103,7 @@ vi.mock('@shopify/flash-list', () => ({
     nestedScrollEnabled?: boolean;
     keyboardShouldPersistTaps?: unknown;
     contentContainerStyle?: { paddingBottom?: unknown };
+    contentInsetAdjustmentBehavior?: string;
   }) => {
     list.props.push({
       nestedScrollEnabled,
@@ -106,6 +112,7 @@ vi.mock('@shopify/flash-list', () => ({
       hasGestureScrollComponent: renderScrollComponent != null,
       hasHeaderComponent: ListHeaderComponent != null,
       paddingBottom: contentContainerStyle?.paddingBottom,
+      contentInsetAdjustmentBehavior,
     });
     return createElement(
       'div',
@@ -146,7 +153,10 @@ vi.mock('../../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, features: { inBodyLargeTitle: false, filtersInTopChrome: false } }),
+  useTheme: () => ({
+    systemColors: {},
+    features: { inBodyLargeTitle: header.inBodyLargeTitle, filtersInTopChrome: false },
+  }),
 }));
 vi.mock('../../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } }),
@@ -204,6 +214,8 @@ function makeRow(uuid: string) {
 }
 
 beforeEach(() => {
+  header.native = false;
+  header.inBodyLargeTitle = false;
   rows.rendered = [];
   rows.onPress = null;
   list.props = [];
@@ -222,6 +234,22 @@ beforeEach(() => {
 });
 
 describe('PreSessionView preview rows', () => {
+  it.each([
+    [true, true, true, false],
+    [true, false, true, true],
+    [true, false, false, false],
+    [false, false, true, false],
+  ] as const)(
+    'shows one body title only for floating glass tabs (chrome %s, native %s, large title %s)',
+    (showChrome, native, inBodyLargeTitle, hasBodyTitle) => {
+      header.native = native;
+      header.inBodyLargeTitle = inBodyLargeTitle;
+      const { queryAllByText } = render(createElement(PreSessionView, { showChrome }));
+      expect(queryAllByText('mobile.session.headerStart')).toHaveLength(hasBodyTitle ? 1 : 0);
+      expect(list.props.at(-1)?.contentInsetAdjustmentBehavior).toBe(showChrome && native ? 'automatic' : 'never');
+    },
+  );
+
   it('clears the active highlight once a regeneration replaces the rows', () => {
     const view = render(createElement(PreSessionView));
 

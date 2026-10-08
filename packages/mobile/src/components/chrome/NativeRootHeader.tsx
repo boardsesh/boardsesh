@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, type NativeStackNavigationOptions } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useTheme } from '../../providers/theme-provider';
 import { useGlassCapability } from '../../hooks/use-glass-capability';
@@ -14,6 +14,7 @@ export function NativeRootHeader({
   leftActions,
   leftActionsStandalone = false,
   rightActions,
+  rightItems,
   centerContent,
   children,
   onHeightChange,
@@ -23,6 +24,8 @@ export function NativeRootHeader({
   /** A single avatar draws a circle instead of UIKit's wider shared capsule. */
   leftActionsStandalone?: boolean;
   rightActions?: ReactNode;
+  /** Native bar items take precedence over the custom trailing group. */
+  rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
   /** Interactive content in the compact native bar, beside the action groups. */
   centerContent?: ReactNode;
   children?: ReactNode;
@@ -95,6 +98,7 @@ export function NativeRootHeader({
           headerRight: rightActions
             ? () => <NativeHeaderActionContext.Provider value={true}>{rightActions}</NativeHeaderActionContext.Provider>
             : undefined,
+          unstable_headerRightItems: rightItems,
         }}
       />
       {hasControls ? (

@@ -351,10 +351,11 @@ export function PreSessionView({
           </View>
         ) : null}
 
-        {/* The screen's identity in-body under the floating chrome, collapsing
-            into the centred header capsule as it scrolls up. ScreenTitle hides
-            itself on Material (the M3 app bar owns the title). */}
-        <ScreenTitle style={styles.screenTitle}>{t('mobile.session.headerStart')}</ScreenTitle>
+        {/* Native and overlay headers already own the title. Material's app
+            bar suppresses ScreenTitle through the theme feature flag. */}
+        {showChrome && !nativeRootHeader ? (
+          <ScreenTitle style={styles.screenTitle}>{t('mobile.session.headerStart')}</ScreenTitle>
+        ) : null}
 
         {/* The chrome pill owns board identity but collapses on scroll, so this
             keeps the full config (name · size · angle) persistently visible when a
@@ -437,6 +438,8 @@ export function PreSessionView({
       selection,
       setSelection,
       showPreviewSection,
+      showChrome,
+      nativeRootHeader,
       systemColors.secondaryLabel,
       t,
       tCommon,
@@ -461,7 +464,7 @@ export function PreSessionView({
         renderScrollComponent={GestureScrollView}
         // The floating chrome owns the top inset (tab mode), so pad manually by
         // the measured chrome height; never auto-inset under the (absent) header.
-        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+        contentInsetAdjustmentBehavior={showChrome && nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{
           paddingTop: listPaddingTop,
           paddingBottom: footerHeight + footerBottom,
@@ -472,13 +475,7 @@ export function PreSessionView({
         keyboardShouldPersistTaps="handled"
       />
 
-      {showChrome ? (
-        <RecordTopChrome
-          title={t('mobile.session.headerStart')}
-          onOpenBoardSwitcher={openBoardSwitcher}
-          onHeightChange={setChromeHeight}
-        />
-      ) : null}
+      {showChrome ? <RecordTopChrome title={t('mobile.session.headerStart')} onHeightChange={setChromeHeight} /> : null}
 
       <SessionStartFab
         testID="pre-session-footer"
