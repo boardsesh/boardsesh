@@ -114,8 +114,7 @@ export function CreateDrawer({
   // and the pad below already carries the window inset, so the two add up to
   // the IME's full height with no double count. iOS does this natively
   // (automaticallyAdjustKeyboardInsets below), so it takes no pad.
-  const keyboardHeight = useKeyboardHeight();
-  const keyboardPad = Platform.OS === 'android' ? keyboardHeight : 0;
+  const keyboardPad = useKeyboardHeight(Platform.OS === 'android');
 
   // The board owns the zoom AND renders the reset control; the drawer only
   // holds a handle so it can drop the zoom when the frame or the climb changes
