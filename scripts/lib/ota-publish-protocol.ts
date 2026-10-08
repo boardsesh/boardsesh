@@ -25,6 +25,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { setTimeout as retryDelay } from 'node:timers/promises';
 
 export type OtaPlatform = 'ios' | 'android';
 
@@ -342,10 +343,14 @@ async function fetchWithRetry(
   beforeAttempt?: () => Promise<void>,
 ): Promise<Response> {
   for (let attempt = 0; attempt < 4; attempt++) {
+    let signal: AbortSignal | null | undefined;
     try {
       await beforeAttempt?.();
       // Multipart bodies are streams. Rebuild them for each local-bucket retry.
-      const response = await fetchImpl(input, typeof init === 'function' ? init() : init);
+      const requestInit = typeof init === 'function' ? init() : init;
+      signal = requestInit.signal;
+      signal?.throwIfAborted();
+      const response = await fetchImpl(input, requestInit);
       if (response.status !== 429 && response.status < 500) return response;
       if (attempt === 3) return response;
       await response.body?.cancel();
@@ -354,10 +359,11 @@ async function fetchWithRetry(
         Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
           ? Math.min(retryAfterSeconds * 1_000, 10_000)
           : 1_000 * 2 ** attempt;
-      await sleep(delayMs);
+      await retryDelay(delayMs, undefined, { signal: signal ?? undefined });
     } catch (error) {
+      signal?.throwIfAborted();
       if (attempt === 3) throw error;
-      await sleep(1_000 * 2 ** attempt);
+      await retryDelay(1_000 * 2 ** attempt, undefined, { signal: signal ?? undefined });
     }
   }
   throw new Error('OTA request retry loop exhausted.');
@@ -576,10 +582,12 @@ export function requestManifest(options: {
   appId: string;
   branch: string;
   easClientId?: string;
+  signal?: AbortSignal;
   fetchImpl: typeof fetch;
 }): Promise<Response> {
   return fetchWithRetry(options.fetchImpl, options.manifestUrl, {
     method: 'GET',
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
     headers: {
       'expo-protocol-version': '1',
       'expo-platform': options.platform,

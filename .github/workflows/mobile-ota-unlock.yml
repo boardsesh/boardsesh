@@ -19,11 +19,18 @@ name: Mobile OTA Unlock
 #
 #   gh workflow run mobile-ota-unlock.yml --ref main -f ios_runtime_version=... -f android_runtime_version=...
 #
-# so the workflow file and the scripts both come from main. Nothing does yet.
+# so the workflow file and the scripts both come from main. Publishers await the
+# exact request_id run before uploading anything.
 # See docs/mobile-ota-updates.md, "Managing xprem as code".
+run-name: ${{ inputs.request_id != '' && format('OTA unlock {0}', inputs.request_id) || 'Manual OTA unlock' }}
+
 on:
   workflow_dispatch:
     inputs:
+      request_id:
+        description: 'Automatic caller correlation id; leave empty for a manual unlock'
+        type: string
+        default: ''
       branch:
         description: 'xprem branch holding the rollout'
         type: string
@@ -80,6 +87,7 @@ jobs:
           OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           OTA_BRANCH: ${{ inputs.branch }}
+          REQUEST_ID: ${{ inputs.request_id }}
           IOS_RUNTIME_VERSION: ${{ inputs.ios_runtime_version }}
           ANDROID_RUNTIME_VERSION: ${{ inputs.android_runtime_version }}
           NODE_NO_WARNINGS: '1'
@@ -108,25 +116,34 @@ jobs:
             fi
           done
 
-          # An environment that has not been given the login yet must not fail
-          # its caller. If a rollout is live anyway, the server still refuses the
-          # caller's publish, so skipping here cannot let one through.
+          if [ -n "$REQUEST_ID" ] && ! printf '%s' "$REQUEST_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+            echo "::error::Invalid automatic unlock request id."
+            exit 1
+          fi
+
+          # An automatic caller requires a judged unlock, never a skipped one.
+          # A manual diagnostic run keeps the existing missing-login no-op.
           if [ -z "${OTA_ADMIN_EMAIL:-}" ] || [ -z "${OTA_ADMIN_PASSWORD:-}" ]; then
+            if [ -n "$REQUEST_ID" ]; then
+              echo "::error::Automatic unlock requires OTA_ADMIN_EMAIL and OTA_ADMIN_PASSWORD in ota-stable-release."
+              exit 1
+            fi
             echo "::notice::OTA_ADMIN_EMAIL or OTA_ADMIN_PASSWORD is not set in the ota-stable-release environment; skipping."
             echo "Skipped: the \`ota-stable-release\` environment has no \`OTA_ADMIN_EMAIL\` / \`OTA_ADMIN_PASSWORD\`. Nothing was read or reverted." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          # Every platform live on each named runtime version is reverted. Both
-          # are attempted even when the first fails, so one stuck platform does
-          # not leave the other rolling out; the job still ends red.
+          # Revert only the requested platform on its exact runtime. Both are
+          # attempted even when the first fails; the job still ends red.
           status=0
           : > "$RUNNER_TEMP/ota-unlock.log"
-          for runtime_version in "$IOS_RUNTIME_VERSION" "$ANDROID_RUNTIME_VERSION"; do
+          for platform in ios android; do
+            if [ "$platform" = ios ]; then runtime_version="$IOS_RUNTIME_VERSION"; else runtime_version="$ANDROID_RUNTIME_VERSION"; fi
             if [ -z "$runtime_version" ]; then continue; fi
             node --experimental-strip-types scripts/mobile-ota-rollout.ts revert \
               --branch "$OTA_BRANCH" \
               --runtime-version "$runtime_version" \
+              --platform "$platform" \
               --if-live 2>&1 | tee -a "$RUNNER_TEMP/ota-unlock.log" || status=1
           done
           {

@@ -30,6 +30,7 @@ import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useVariantValue } from '../../theme/variants';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
+import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
 
 type YouData = ReturnType<typeof useYouProfileData>;
 type ProgressTabProps = {
@@ -388,21 +389,26 @@ export const ProgressTab = memo(function ProgressTab({
     );
   }
   return (
-    <FlashList
-      ref={listRef}
-      testID="progress-tab-loaded"
-      data={items}
-      renderItem={renderItem}
-      keyExtractor={keyForProgressItem}
-      getItemType={typeForProgressItem}
-      maintainVisibleContentPosition={{ disabled: true }}
-      contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-      contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
-      scrollIndicatorInsets={{ top: topInset }}
-      refreshControl={
-        <RefreshControl refreshing={data.refreshing} onRefresh={data.refetch} tintColor={brandColors.primary} />
-      }
-    />
+    <>
+      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+        <ScreenshotSmokeMarker route="/profile" count={data.statisticsSummary.totalAscents} />
+      ) : null}
+      <FlashList
+        ref={listRef}
+        testID="progress-tab-loaded"
+        data={items}
+        renderItem={renderItem}
+        keyExtractor={keyForProgressItem}
+        getItemType={typeForProgressItem}
+        maintainVisibleContentPosition={{ disabled: true }}
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+        contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
+        scrollIndicatorInsets={{ top: topInset }}
+        refreshControl={
+          <RefreshControl refreshing={data.refreshing} onRefresh={data.refetch} tintColor={brandColors.primary} />
+        }
+      />
+    </>
   );
 });
 

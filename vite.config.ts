@@ -756,7 +756,7 @@ export default defineConfig({
       },
       'test:service-deploy-inputs': {
         command:
-          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/production-web-deploy-targets.test.mjs scripts/railway-deployment-rollback.test.mjs scripts/railway-deployment-status.test.mjs scripts/mobile-ota-schema-ready.test.mjs scripts/mobile-ota-server-ready.test.mjs',
+          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/production-web-deploy-targets.test.mjs scripts/railway-deployment-rollback.test.mjs scripts/railway-deployment-status.test.mjs scripts/mobile-ota-schema-ready.test.mjs scripts/mobile-ota-server-ready.test.mjs scripts/mobile-ota-unlock-wait.test.mjs',
         cache: false,
       },
       'check:service-deploy-inputs': {
@@ -1247,6 +1247,12 @@ export default defineConfig({
         command: 'tsx scripts/screenshot-probe-scope.ts',
         cache: false,
       },
+      // The verdict of mobile-e2e-gate.yml: reads each job's result and prints
+      // the one line and the table. See docs/mobile-e2e-gate.md.
+      'mobile:e2e-gate-verdict': {
+        command: 'tsx scripts/mobile-e2e-gate-verdict.ts',
+        cache: false,
+      },
       'mobile:publish': {
         command: 'tsx scripts/mobile-publish.ts',
         cache: false,
@@ -1280,6 +1286,14 @@ export default defineConfig({
       // no branch matches this runtimeVersion. See scripts/mobile-ota-surf-doctor.ts.
       'mobile:ota-surf-doctor': {
         command: 'tsx scripts/mobile-ota-surf-doctor.ts',
+        cache: false,
+      },
+      // Installs a release build on a booted simulator or emulator, pinned to
+      // an update branch, launches it twice and fails unless the second launch
+      // ran the update staged for the given commit. No credentials.
+      // See scripts/mobile-ota-boot-check.ts + docs/mobile-ota-updates.md.
+      'mobile:ota-boot-check': {
+        command: 'tsx scripts/mobile-ota-boot-check.ts',
         cache: false,
       },
       'mobile:ota-rollback': {
@@ -1344,6 +1358,11 @@ export default defineConfig({
       // See scripts/mobile-ota-rollout.ts + docs/mobile-ota-updates.md.
       'ota:rollout': {
         command: 'tsx scripts/mobile-ota-rollout.ts',
+        cache: false,
+      },
+
+      'ota:stable': {
+        command: 'tsx scripts/mobile-ota-stable.ts',
         cache: false,
       },
 

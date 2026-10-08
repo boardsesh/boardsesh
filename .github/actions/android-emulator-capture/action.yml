@@ -1,0 +1,266 @@
+name: Android emulator capture
+description: >
+  Resolve the dev-client APK, boot a KVM emulator and run one Maestro flow on it
+  through scripts/ci-android-screenshot-capture.sh. Shared by
+  mobile-screenshots-android.yml (the Play Store capture) and
+  mobile-e2e-gate.yml (the navigation smoke), so the two cannot drift apart on
+  how the emulator is booted or which APK the app is.
+
+# The caller must `actions/checkout` first, with full history (`fetch-depth: 0`):
+# the APK freshness check diffs native inputs against the release's commit.
+# Job-level env (EXPO_PUBLIC_*, SENTRY_DISABLE_AUTO_UPLOAD) is inherited by every
+# step here, so it stays in the workflow next to the job it belongs to.
+inputs:
+  flow:
+    description: 'Maestro flow to run (app-store | onboarding | smoke).'
+    required: false
+    default: app-store
+  android-device:
+    description: 'Device label used for the output folder.'
+    required: false
+    default: 'Pixel 2'
+  render-mode:
+    description: 'Board drawing to shoot. Empty = the app default (Aura).'
+    required: false
+    default: ''
+  boards:
+    description: 'Walls the board-backed shots sit on, "|"-separated in slot order. Empty = the app default.'
+    required: false
+    default: ''
+  fixtures:
+    description: 'replay | record | live.'
+    required: false
+    default: replay
+  frozen-now:
+    description: 'Record only: ISO instant to freeze "now" at. Empty mints one.'
+    required: false
+    default: ''
+  fixture-snapshot:
+    description: 'Replay snapshot reference URL. Empty uses the bundled fixture set.'
+    required: false
+    default: ''
+  attempts:
+    description: >
+      How many times to run the orchestrator. The store capture retries a crashed
+      cold start (3). The smoke passes 1: its orchestrator owns the single retry
+      it allows, and only for a native crash at launch.
+    required: false
+    default: '3'
+  user-email:
+    description: 'Capture account email. Leave empty on replay, which never signs in.'
+    required: false
+    default: ''
+  user-password:
+    description: 'Capture account password. Leave empty on replay.'
+    required: false
+    default: ''
+
+outputs:
+  apk-source:
+    description: 'Where the dev-client APK came from (release:rn-android-dev-N, or a local build).'
+    value: ${{ steps.apk.outputs.apk_source }}
+
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1
+      with:
+        node-version: '22.x'
+        cache: true
+
+    - name: Install Node.js dependencies
+      shell: bash
+      run: vp install --frozen-lockfile
+
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    - name: Setup Android SDK
+      # `packages: ''` is REQUIRED, not tidiness. setup-android@v3's default is
+      # `tools platform-tools`, and Google removed the obsolete `tools` package from
+      # the SDK repository, so the default now dies on `Warning: Failed to find
+      # package 'tools'` before any SDK component is installed. The next step
+      # installs what the build actually needs.
+      uses: android-actions/setup-android@v3
+      with:
+        packages: ''
+
+    - name: Accept licenses and install SDK components
+      shell: bash
+      run: |
+        yes | sdkmanager --licenses > /dev/null 2>&1 || true
+        sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+    # Only the local-build fallback below runs Gradle, so this cache only pays
+    # off on that path; the common (download) path just restores it as a cheap
+    # no-op (nothing new to save, since the fallback step doesn't run). Key
+    # mirrors the same native-input files devApkFreshness diffs, so it's
+    # invalidated exactly when the fallback build's own output would change.
+    - name: Cache Gradle (local-build fallback only)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-rn-dev-client-${{ hashFiles('packages/mobile/package.json', 'packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-rn-dev-client-
+
+    # Downloads the newest rn-android-dev-* universal dev-client APK
+    # (android-apk-dev-client.yml) — no bundled JS, so no Gradle build on the
+    # common path. It's used when the release's native tree provably matches
+    # this commit: either the release was built from an ancestor of it with no
+    # native-input change since, or the release is a newer commit (every push
+    # to main with a native-input change publishes a fresh one —
+    # android-apk-dev-client.yml still builds from main) with no native-input
+    # change between the two — see devApkFreshness. A train commit carrying a
+    # native change main has not taken yet therefore has no matching
+    # prerelease, and this step falls back to the local build below. Otherwise (or if there's
+    # no release / download fails), the script warns and falls back to a
+    # local `assembleDebug` build — that's why Java + the SDK stay installed
+    # above. Writes `apk_path` / `apk_source` outputs. Needs the caller's
+    # fetch-depth: 0 checkout for the freshness check.
+    - name: Resolve dev-client APK
+      id: apk
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: vp run mobile:android-apk
+
+    # Traceability for `apk_source` (written above but otherwise unread): a
+    # captured set can always be tied back to release:rn-android-dev-N vs a
+    # local-build fallback without digging into the step logs.
+    - name: Record APK source
+      shell: bash
+      env:
+        APK_SOURCE: ${{ steps.apk.outputs.apk_source }}
+      run: |
+        echo "APK source: $APK_SOURCE" >> "$GITHUB_STEP_SUMMARY"
+        echo "::notice::APK source: $APK_SOURCE"
+
+    # The local-build fallback (buildDevApkLocally, invoked by the Resolve step
+    # above when no fresh rn-android-dev-* release exists) leaves a multi-GB
+    # packages/mobile/android/ tree behind after copying the built APK out to
+    # ~/.cache/boardsesh/android/local-build/ — reclaim it first; the common
+    # (download) path never creates that tree, so this is a no-op there. The
+    # emulator system-image install still needs room regardless, so the big
+    # preinstalled toolchains we never use get purged too. The fallback build is
+    # what previously filled the runner and made `sdkmanager` fail with "No
+    # space left on device", aborting capture before it started. Best-effort.
+    - name: Free disk space for the emulator
+      shell: bash
+      run: |
+        set -eu
+        echo "Disk before cleanup:"; df -h /
+        rm -rf packages/mobile/android 2>/dev/null || true
+        sudo rm -rf \
+          /usr/share/dotnet \
+          /usr/local/lib/android/sdk/ndk \
+          /opt/ghc /usr/local/.ghcup \
+          /opt/hostedtoolcache/CodeQL \
+          /usr/local/share/powershell \
+          /usr/local/share/chromium 2>/dev/null || true
+        sudo docker image prune --all --force 2>/dev/null || true
+        echo "Disk after cleanup:"; df -h /
+
+    - name: Install Maestro
+      shell: bash
+      env:
+        MAESTRO_VERSION: 2.6.1
+        MAESTRO_SHA256: 3440825f514f537c6a96bcf5de995780c2a4a7f83a43208fdc95d4f1fecfad3b
+      run: |
+        set -euo pipefail
+        url="https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
+        curl -fsSL "$url" -o maestro.zip
+        echo "${MAESTRO_SHA256}  maestro.zip" | shasum -a 256 -c -
+        unzip -q maestro.zip -d "$HOME/.maestro-dist"
+        echo "$HOME/.maestro-dist/maestro/bin" >> "$GITHUB_PATH"
+
+    # The x86_64 emulator needs KVM hardware acceleration. Without granting the
+    # runner user access to /dev/kvm it falls back to software (TCG) and is so
+    # slow that adb `settings` calls take 15-35s and the emulator crashes or
+    # times out during boot/setup before our script runs — the cause of the
+    # long-standing Android capture failures (boot timeout / "Broken pipe" /
+    # adb exit 224). This udev rule is the standard android-emulator-runner setup.
+    - name: Enable KVM
+      shell: bash
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Verify candidate fixture snapshot
+      if: ${{ inputs.fixture-snapshot != '' }}
+      shell: bash
+      env:
+        FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture-snapshot }}
+        FIXTURES_MODE: ${{ inputs.fixtures }}
+      run: |
+        set -euo pipefail
+        if [ "$FIXTURES_MODE" != "replay" ]; then
+          echo "::error::fixture-snapshot is only valid for replay"
+          exit 1
+        fi
+        vp run mobile:screenshot-fixtures-fetch -- --reference-url "$FIXTURE_SNAPSHOT_URL"
+
+    - name: Run the flow on the emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      # android-emulator-runner splits `script:` by newline and runs each line
+      # as its own `sh -c`, so inline for-loops / multi-line commands break
+      # ("Syntax error: ... expecting \"done\""). The capture logic lives in a
+      # committed script invoked on one line; inputs come through env below.
+      with:
+        api-level: 36
+        target: google_apis
+        arch: x86_64
+        profile: pixel_2
+        # The dev-client loads Metro's DEV bundle (unminified, React dev mode) and
+        # the store flow cold-starts it four times. On the AVD's default RAM the
+        # third cold start tripped Android's low-memory killer (logcat: "low
+        # watermark is breached", system processes reaped, the logcat stream
+        # itself died) and expo-dev-launcher fell back to its "Development
+        # servers" screen instead of loading the bundle. ubuntu-latest has 16 GB;
+        # give the emulator room and a bigger app heap.
+        ram-size: 4096M
+        heap-size: 1024M
+        # -timezone UTC pins the guest clock's zone, so the app's local-date
+        # derivations (day dividers, the activity heatmap's today cell) land on
+        # the same calendar day here as they do from the same frozen instant on
+        # a developer's machine. The iOS side pins the same thing per launch
+        # with SIMCTL_CHILD_TZ; the local emulator gets it in
+        # scripts/lib/android-emulator.ts.
+        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none -timezone UTC
+        disable-animations: true
+        script: bash "$GITHUB_WORKSPACE/scripts/ci-android-screenshot-capture.sh"
+      env:
+        SCREENSHOT_FLOW: ${{ inputs.flow }}
+        SCREENSHOT_ANDROID_DEVICE: ${{ inputs.android-device }}
+        SCREENSHOT_APK_PATH: ${{ steps.apk.outputs.apk_path }}
+        SCREENSHOT_DEV_CLIENT: '1'
+        # These reach the running app through Metro's env, not a rebuild: the
+        # orchestrator passes them on as `--render-mode`/`--boards`, which
+        # screenshot-mode.ts reads at JS-bundle time. The capture gate compares
+        # what the app drew against what the run asked for, so a legitimate
+        # retarget needs both sides to agree.
+        SCREENSHOT_RENDER_MODE: ${{ inputs.render-mode }}
+        SCREENSHOT_BOARDS: ${{ inputs.boards }}
+        # replay | record | live. `replay` (the default) and `record` are threaded
+        # through to --fixtures by ci-android-screenshot-capture.sh; `live` passes
+        # no --fixtures flag at all, so the capture talks straight to PROD exactly
+        # as it did before fixtures existed.
+        SCREENSHOT_FIXTURES: ${{ inputs.fixtures }}
+        # Record only: threaded through to --frozen-now by
+        # ci-android-screenshot-capture.sh. Empty = the orchestrator mints one.
+        SCREENSHOT_FROZEN_NOW: ${{ inputs.frozen-now }}
+        SCREENSHOT_ATTEMPTS: ${{ inputs.attempts }}
+        # Scoped to THIS step, not the job: a replay run never signs in
+        # (the backend hands out a synthetic session for the recorded
+        # account), so it has no business seeing the credential at all — and
+        # a job-level secret is handed to every step, including the ones that
+        # push to main. The caller passes these empty on replay; the
+        # orchestrator falls back to its own defaults when they are.
+        SCREENSHOT_USER_EMAIL: ${{ inputs.user-email }}
+        SCREENSHOT_USER_PASSWORD: ${{ inputs.user-password }}

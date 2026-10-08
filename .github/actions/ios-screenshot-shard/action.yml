@@ -22,7 +22,7 @@ inputs:
     description: 'Device folder slug, e.g. "iphone-16-pro-max". Names the artifact.'
     required: true
   flow:
-    description: 'Maestro flow to run (app-store | onboarding).'
+    description: 'Maestro flow to run (app-store | onboarding | smoke).'
     required: false
     default: app-store
   render-mode:
@@ -45,6 +45,30 @@ inputs:
   app-cache-key:
     description: 'actions/cache key of the prebuilt simulator .app (from the ios-build job).'
     required: true
+  # The three inputs below exist for the mobile E2E gate's navigation smoke
+  # (mobile-e2e-gate.yml), which runs this same shard with `flow: smoke`. Their
+  # defaults are what the capture workflow has always done, so it passes none.
+  attempts:
+    description: >
+      How many fresh-boot attempts the shard gets. The capture retries once (2).
+      The smoke passes 1: its orchestrator owns the single retry it allows, and
+      only for a native crash at launch.
+    required: false
+    default: '2'
+  upload-captures:
+    description: >
+      'true' uploads the shard's screenshots, raw captures and recorded fixtures.
+      The smoke passes 'false': it takes no screenshots, so there is nothing to
+      hand on.
+    required: false
+    default: 'true'
+  debug-artifact-on:
+    description: >
+      When the capture debug artifact is collected: 'failure' (the capture
+      default), or 'always' for the smoke, whose evidence is worth keeping on a
+      green run that needed its retry.
+    required: false
+    default: failure
 
 runs:
   using: composite
@@ -135,6 +159,7 @@ runs:
         BOARDS_INPUT: ${{ inputs.boards }}
         FIXTURES_INPUT: ${{ inputs.fixtures }}
         FROZEN_NOW_INPUT: ${{ inputs.frozen-now }}
+        ATTEMPTS_INPUT: ${{ inputs.attempts }}
       run: |
         set -euo pipefail
         # Empty inputs mean "whatever the app pins" — Aura, and the store walls
@@ -162,7 +187,7 @@ runs:
             fi
           fi
         fi
-        attempts=2
+        attempts="$ATTEMPTS_INPUT"
         for attempt in $(seq 1 "$attempts"); do
           echo "::group::Capture attempt $attempt/$attempts ($SHARD_LOCALE · $SHARD_DEVICE_SLUG)"
           if vp run mobile:screenshots -- \
@@ -194,7 +219,7 @@ runs:
     # the job. The Maestro tests dir is under $HOME (actions/upload-artifact
     # doesn't expand ~), so copy it into the workspace first.
     - name: Collect capture debug artifacts
-      if: failure()
+      if: ${{ failure() || (inputs.debug-artifact-on == 'always' && !cancelled()) }}
       shell: bash
       run: |
         mkdir -p capture-debug
@@ -204,7 +229,7 @@ runs:
           > capture-debug/device-boardsesh.log 2>&1 || echo "device log capture skipped"
 
     - name: Upload capture debug artifacts
-      if: failure()
+      if: ${{ failure() || (inputs.debug-artifact-on == 'always' && !cancelled()) }}
       uses: actions/upload-artifact@v4
       with:
         # Per-shard name: upload-artifact@v4 rejects two uploads with the same
@@ -221,7 +246,7 @@ runs:
     # a failed probe from the full-matrix recovery of that same pair. Short retention — it's an
     # intermediate; the combined tree is re-uploaded by ios-finalize.
     - name: Upload shard screenshots
-      if: always()
+      if: ${{ always() && inputs.upload-captures == 'true' }}
       uses: actions/upload-artifact@v4
       with:
         name: ios-screenshots-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
@@ -230,7 +255,7 @@ runs:
         retention-days: 1
 
     - name: Upload native captures for review
-      if: always()
+      if: ${{ always() && inputs.upload-captures == 'true' }}
       uses: actions/upload-artifact@v4
       with:
         name: raw-ios-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}
@@ -239,7 +264,7 @@ runs:
         retention-days: 7
 
     - name: Upload recorded fixtures
-      if: ${{ always() && inputs.fixtures == 'record' }}
+      if: ${{ always() && inputs.upload-captures == 'true' && inputs.fixtures == 'record' }}
       uses: actions/upload-artifact@v4
       with:
         name: screenshot-fixtures-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}

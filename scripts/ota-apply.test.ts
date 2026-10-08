@@ -6,6 +6,7 @@ import {
   PREVIEW_BRANCH_PATTERN,
   ROLLOUT_PROOF_BRANCH,
   STABLE_BRANCH,
+  STABLE_CANDIDATE_BRANCH,
   STAGING_BRANCH,
   desiredOtaState,
   otaReleasePolicy,
@@ -54,6 +55,7 @@ function inSync(): OtaLiveState {
       { name: 'production', protected: true },
       { name: 'pr-beta', protected: true },
       { name: 'pr-staging', protected: true },
+      { name: STABLE_CANDIDATE_BRANCH, protected: true },
     ],
     updateRollouts: [],
   };
@@ -63,7 +65,7 @@ const summaries = (live: OtaLiveState): string[] =>
   buildOtaPlan(desiredOtaState, live).changes.map((change) => change.summary);
 
 describe('the declaration', () => {
-  it('declares the app, the channel mapping, surfing and three protected branches', () => {
+  it('declares the app, the channel mapping, surfing and four protected branches', () => {
     expect(desiredOtaState.appId).toBe(OTA_APP_ID);
     expect(desiredOtaState.channels).toMatchObject([
       { name: 'production', branch: 'production', branchSurfing: { enabled: true, pattern: 'pr-*' } },
@@ -72,8 +74,14 @@ describe('the declaration', () => {
       { name: STABLE_BRANCH, isProtected: true },
       { name: EARLY_UPDATES_BRANCH, isProtected: true },
       { name: STAGING_BRANCH, isProtected: true },
+      { name: STABLE_CANDIDATE_BRANCH, isProtected: true },
     ]);
-    expect([STABLE_BRANCH, EARLY_UPDATES_BRANCH, STAGING_BRANCH]).toEqual(['production', 'pr-beta', 'pr-staging']);
+    expect([STABLE_BRANCH, EARLY_UPDATES_BRANCH, STAGING_BRANCH, STABLE_CANDIDATE_BRANCH]).toEqual([
+      'production',
+      'pr-beta',
+      'pr-staging',
+      'pr-stable-candidate',
+    ]);
   });
 
   it('gives every declared value a reason', () => {
@@ -88,6 +96,7 @@ describe('the declaration', () => {
     expect(PREVIEW_BRANCH_PATTERN.test('pr-0')).toBe(false);
     expect(EARLY_UPDATES_BRANCH.startsWith('pr-')).toBe(true);
     expect(STAGING_BRANCH.startsWith('pr-')).toBe(true);
+    expect(STABLE_CANDIDATE_BRANCH.startsWith('pr-')).toBe(true);
   });
 
   it('declares the release policy', () => {
@@ -137,6 +146,19 @@ describe('buildOtaPlan', () => {
     expect(summaries(live)).toEqual(['Protect branch "pr-staging" against deletion.']);
   });
 
+  it('creates and protects a missing frozen candidate branch', () => {
+    const live = inSync();
+    live.branches = live.branches.filter((branch) => branch.name !== STABLE_CANDIDATE_BRANCH);
+    expect(buildOtaPlan(desiredOtaState, live).changes).toEqual([
+      { kind: 'create-branch', branch: STABLE_CANDIDATE_BRANCH, summary: 'Create branch "pr-stable-candidate".' },
+      {
+        kind: 'protect-branch',
+        branch: STABLE_CANDIDATE_BRANCH,
+        summary: 'Protect branch "pr-stable-candidate" against deletion.',
+      },
+    ]);
+  });
+
   it('corrects a wrong surfing pattern, and surfing that is off', () => {
     const wrongPattern = inSync();
     wrongPattern.channels[0].branchSurfing = { enabled: true, pattern: '*' };
@@ -175,6 +197,8 @@ describe('buildOtaPlan', () => {
       'create-branch',
       'create-branch',
       'create-branch',
+      'create-branch',
+      'protect-branch',
       'protect-branch',
       'protect-branch',
       'protect-branch',
@@ -189,9 +213,11 @@ describe('buildOtaPlan', () => {
     expect(summaries(live)).toEqual([
       'Create branch "pr-beta".',
       'Create branch "pr-staging".',
+      'Create branch "pr-stable-candidate".',
       'Protect branch "production" against deletion.',
       'Protect branch "pr-beta" against deletion.',
       'Protect branch "pr-staging" against deletion.',
+      'Protect branch "pr-stable-candidate" against deletion.',
     ]);
   });
 
@@ -287,7 +313,7 @@ describe('buildOtaPlan', () => {
     };
     const plan = buildOtaPlan(relaxed, inSync());
     expect(plan.changes).toEqual([]);
-    expect(plan.reports).toHaveLength(3);
+    expect(plan.reports).toHaveLength(4);
     expect(plan.reports[0]).toContain('Protection is never lifted from here.');
   });
 
@@ -377,7 +403,7 @@ function statefulServer(initial: {
       return { status: 204 };
     },
   };
-  for (const name of ['production', 'pr-beta', 'pr-staging']) {
+  for (const name of ['production', 'pr-beta', 'pr-staging', STABLE_CANDIDATE_BRANCH]) {
     routes[`PUT ${FAKE_APP}/branches/${name}/protection`] = () => {
       const refusal = initial.refuseProtection?.[name];
       if (refusal) return refusal;
@@ -387,7 +413,7 @@ function statefulServer(initial: {
     routes[`GET ${FAKE_APP}/branch/${name}/runtimeVersions`] = [{ runtimeVersion: RTV }];
     routes[`GET ${FAKE_APP}/branch/${name}/runtimeVersion/${RTV}/rollout`] = { active: false };
   }
-  for (const branchId of ['1', '2', '3']) {
+  for (const branchId of ['1', '2', '3', '4']) {
     routes[`POST ${FAKE_APP}/branch/${branchId}/updateChannelBranchMapping`] = () => {
       mappedBranchId = branchId;
       return { status: 204 };
@@ -401,10 +427,14 @@ function statefulServer(initial: {
   };
 }
 
-const TODAY = { branches: ['production', 'pr-staging'], protectedBranches: [], surfingPattern: 'pr-*' };
+const TODAY = {
+  branches: ['production', 'pr-staging', STABLE_CANDIDATE_BRANCH],
+  protectedBranches: [STABLE_CANDIDATE_BRANCH],
+  surfingPattern: 'pr-*',
+};
 const ALL_PROTECTED = {
-  branches: ['production', 'pr-staging', 'pr-beta'],
-  protectedBranches: ['production', 'pr-staging', 'pr-beta'],
+  branches: ['production', 'pr-staging', 'pr-beta', STABLE_CANDIDATE_BRANCH],
+  protectedBranches: ['production', 'pr-staging', 'pr-beta', STABLE_CANDIDATE_BRANCH],
   surfingPattern: 'pr-*',
 };
 const ADDITIVE_ONLY = { apply: true, only: [...ADDITIVE_CHANGE_KINDS] };
@@ -443,11 +473,13 @@ describe('ota-apply against a fake server', () => {
       branches: [
         { name: 'production', protected: false },
         { name: 'pr-staging', protected: false },
+        { name: STABLE_CANDIDATE_BRANCH, protected: true },
       ],
       updateRollouts: [],
     });
     expect(server.log()).toContain(`GET ${FAKE_APP}/branch/production/runtimeVersion/${RTV}/rollout`);
     expect(server.log()).toContain(`GET ${FAKE_APP}/branch/pr-staging/runtimeVersion/${RTV}/rollout`);
+    expect(server.log()).toContain(`GET ${FAKE_APP}/branch/${STABLE_CANDIDATE_BRANCH}/runtimeVersion/${RTV}/rollout`);
   });
 
   it('plans without writing, reports the licence, and exits 1 on drift', async () => {
@@ -500,6 +532,22 @@ describe('ota-apply against a fake server', () => {
       },
     ]);
   });
+
+  it('converges a missing candidate by creating it before protection without fleet changes', async () => {
+    const server = statefulServer({
+      ...ALL_PROTECTED,
+      branches: ALL_PROTECTED.branches.filter((branch) => branch !== STABLE_CANDIDATE_BRANCH),
+      protectedBranches: ALL_PROTECTED.protectedBranches.filter((branch) => branch !== STABLE_CANDIDATE_BRANCH),
+    });
+    expect((await run(server, ADDITIVE_ONLY)).exitCode).toBe(EXIT_IN_SYNC);
+    expect(writesOf(server)).toEqual([
+      { method: 'POST', path: `${FAKE_APP}/branches`, body: { branchName: STABLE_CANDIDATE_BRANCH } },
+      { method: 'PUT', path: `${FAKE_APP}/branches/${STABLE_CANDIDATE_BRANCH}/protection`, body: { protected: true } },
+    ]);
+    const before = server.requests.length;
+    expect((await run(server, ADDITIVE_ONLY)).exitCode).toBe(EXIT_IN_SYNC);
+    expect(server.requests.slice(before).every((request) => request.method === 'GET')).toBe(true);
+  });
 });
 
 describe('a server without the declared channel', () => {
@@ -510,11 +558,13 @@ describe('a server without the declared channel', () => {
       'GET /api/license': { valid: true, hasKey: true },
       [`GET ${FAKE_APP}/channels`]: () =>
         channel ? [{ releaseChannelId: '3', releaseChannelName: 'production', branchId: '1', ...channel }] : [],
-      [`GET ${FAKE_APP}/branches`]: ['production', 'pr-beta', 'pr-staging'].map((branchName, index) => ({
-        branchId: String(index + 1),
-        branchName,
-        protected: true,
-      })),
+      [`GET ${FAKE_APP}/branches`]: ['production', 'pr-beta', 'pr-staging', STABLE_CANDIDATE_BRANCH].map(
+        (branchName, index) => ({
+          branchId: String(index + 1),
+          branchName,
+          protected: true,
+        }),
+      ),
       // A new channel starts with surfing off: the create call cannot set it.
       [`POST ${FAKE_APP}/channels`]: (request) => {
         const { branchName } = request.body as { branchName: string };
@@ -527,7 +577,7 @@ describe('a server without the declared channel', () => {
         return { status: 204 };
       },
     };
-    for (const name of ['production', 'pr-beta', 'pr-staging']) {
+    for (const name of ['production', 'pr-beta', 'pr-staging', STABLE_CANDIDATE_BRANCH]) {
       routes[`GET ${FAKE_APP}/branch/${name}/runtimeVersions`] = [];
     }
     return fakeXprem(routes);
@@ -654,6 +704,8 @@ describe('an unattended apply (--only)', () => {
       'create-branch',
       'create-branch',
       'create-branch',
+      'create-branch',
+      'protect-branch',
       'protect-branch',
       'protect-branch',
       'protect-branch',
@@ -717,7 +769,7 @@ describe('licence', () => {
   it('recognises a licence refusal from the answer alone when the licence reads as valid', async () => {
     const server = statefulServer({
       ...ALL_PROTECTED,
-      protectedBranches: ['production', 'pr-beta'],
+      protectedBranches: ['production', 'pr-beta', STABLE_CANDIDATE_BRANCH],
       refuseProtection: { 'pr-staging': { status: 402, body: { detail: 'Enterprise license required' } } },
     });
     const { exitCode, lines } = await run(server, ADDITIVE_ONLY);
@@ -728,7 +780,7 @@ describe('licence', () => {
   it('does not dress up any other refusal as a licence problem', async () => {
     const server = statefulServer({
       ...ALL_PROTECTED,
-      protectedBranches: ['production', 'pr-beta'],
+      protectedBranches: ['production', 'pr-beta', STABLE_CANDIDATE_BRANCH],
       refuseProtection: { 'pr-staging': { status: 403, body: { detail: 'missing permission branch:protect' } } },
     });
     await expect(run(server, ADDITIVE_ONLY)).rejects.toThrow('Set protection on branch "pr-staging" failed (HTTP 403)');
@@ -816,10 +868,12 @@ describe('reading the server', () => {
         { branchId: '', branchName: 'production', protected: true },
         { branchId: '2', branchName: 'pr-staging', protected: true },
         { branchId: '3', branchName: 'pr-beta', protected: true },
+        { branchId: '4', branchName: STABLE_CANDIDATE_BRANCH, protected: true },
       ],
       [`GET ${FAKE_APP}/branch/production/runtimeVersions`]: [],
       [`GET ${FAKE_APP}/branch/pr-staging/runtimeVersions`]: [],
       [`GET ${FAKE_APP}/branch/pr-beta/runtimeVersions`]: [],
+      [`GET ${FAKE_APP}/branch/${STABLE_CANDIDATE_BRANCH}/runtimeVersions`]: [],
       [`PUT ${FAKE_APP}/channels/production/branch-surfing`]: { status: 204 },
     });
     await expect(

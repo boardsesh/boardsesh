@@ -1827,6 +1827,15 @@ function isProblemLine(line: ScreenshotBackendLogLine, mode: ScreenshotBackendMo
  * One line per distinct problem, repeats collapsed into a `×N` count, every line
  * ending in what to do about it.
  */
+/**
+ * The problem a replay reports when the app never made one GraphQL request.
+ * Exported because the smoke has to tell it apart from a real miss: an app that
+ * died before it reached home made no requests, and that silence is a
+ * consequence of the crash, not something wrong with the recorded set.
+ */
+export const NO_GRAPHQL_HIT_PROBLEM =
+  'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.';
+
 export function findScreenshotBackendProblems(logText: string, options: { mode: ScreenshotBackendMode }): string[] {
   const problemCounts = new Map<string, { problem: ScreenshotBackendProblem; count: number }>();
   // Only a GraphQL hit counts as "the app actually exercised a screen's data" —
@@ -1891,11 +1900,7 @@ export function findScreenshotBackendProblems(logText: string, options: { mode: 
     }
   }
 
-  if (options.mode === 'replay' && graphqlHitCount === 0) {
-    problems.push(
-      'no HIT graphql lines in the screenshot backend log — the app never reached the replay backend; check that EXPO_PUBLIC_BACKEND_URL reached the Metro bundle.',
-    );
-  }
+  if (options.mode === 'replay' && graphqlHitCount === 0) problems.push(NO_GRAPHQL_HIT_PROBLEM);
   return problems;
 }
 

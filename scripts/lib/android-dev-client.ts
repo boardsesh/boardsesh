@@ -109,7 +109,13 @@ export function launchDevClient(adbBinary: string, serial: string): void {
 export function launchDevClientToHome(
   adbBinary: string,
   serial: string,
-  options: { timeoutSeconds?: number; attempts?: number; logPrefix?: string } = {},
+  options: {
+    timeoutSeconds?: number;
+    attempts?: number;
+    logPrefix?: string;
+    /** Ends the wait, and the relaunches, as soon as it returns true. See waitForHomeReady. */
+    giveUpWhen?: () => boolean;
+  } = {},
 ): boolean {
   const logPrefix = options.logPrefix ?? DEFAULT_LOG_PREFIX;
   const timeoutSeconds = options.timeoutSeconds ?? 240;
@@ -120,13 +126,14 @@ export function launchDevClientToHome(
 
   let reachedHome = false;
   for (let attempt = 1; attempt <= attempts && !reachedHome; attempt += 1) {
+    if (options.giveUpWhen?.()) break;
     if (attempt > 1) {
       console.log(`${logPrefix} Not home yet; terminating and re-launching (attempt ${attempt}/${attempts})...`);
       runCapture(adbBinary, ['-s', serial, 'shell', 'am', 'force-stop', ANDROID_DEV_PACKAGE]);
     }
     console.log(`${logPrefix} Launching dev-client against Metro...`);
     launchDevClient(adbBinary, serial);
-    reachedHome = waitForHomeReady(markerBaseline, readyBaseline, timeoutSeconds);
+    reachedHome = waitForHomeReady(markerBaseline, readyBaseline, timeoutSeconds, options.giveUpWhen);
   }
 
   if (!reachedHome) {

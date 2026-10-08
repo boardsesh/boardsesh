@@ -81,18 +81,30 @@ export const SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM =
  */
 export const SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES = 30;
 
+/** Direct production/backport publishers await a bounded main-only unlock before uploading. */
+export const PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES = 25;
+
 /**
  * Minimum `timeout-minutes` a publish job needs so a fully throttled run still
  * reaches the retry wrapper's own verdict instead of being killed mid-backoff.
  * `platforms` is how many platforms one job publishes sequentially: production
  * and preview do iOS then Android in a single job, backport fans out one
- * platform per matrix job.
+ * platform per matrix job. Set `unlocksProduction` for direct production and
+ * backport jobs; staging and preview never pay that unlock allowance.
  */
-export function minimumPublishJobTimeoutMinutes(platforms: number, probesBranch = false): number {
+export function minimumPublishJobTimeoutMinutes(
+  platforms: number,
+  probesBranch = false,
+  unlocksProduction = false,
+): number {
   const perPlatform = probesBranch
     ? SELF_HOSTED_PREVIEW_WORST_CASE_MINUTES_PER_PLATFORM
     : SELF_HOSTED_PUBLISH_WORST_CASE_MINUTES_PER_PLATFORM;
-  return Math.ceil(platforms * perPlatform) + SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES;
+  return (
+    Math.ceil(platforms * perPlatform) +
+    SELF_HOSTED_PUBLISH_JOB_OVERHEAD_MINUTES +
+    (unlocksProduction ? PRODUCTION_OTA_UNLOCK_BUDGET_MINUTES : 0)
+  );
 }
 
 export type OtaPublishPlatform = 'ios' | 'android';

@@ -9,7 +9,7 @@
 # workflow invokes it on a single line.
 #
 # Inputs come from the environment (set on the workflow step):
-#   SCREENSHOT_FLOW            app-store | onboarding   (default app-store)
+#   SCREENSHOT_FLOW            app-store | onboarding | smoke   (default app-store)
 #   SCREENSHOT_ANDROID_DEVICE  output device label      (default "Pixel 2")
 #   SCREENSHOT_APK_PATH        dev-client APK to install (required, no default)
 #   SCREENSHOT_DEV_CLIENT      '1' to pass --dev-client to the orchestrator
@@ -17,6 +17,9 @@
 #   SCREENSHOT_BOARDS          "|"-separated walls      (empty = the app default)
 #   SCREENSHOT_FIXTURES        replay | record | live   (default replay = serve the committed fixture set)
 #   SCREENSHOT_FROZEN_NOW      record only: ISO instant to freeze "now" at (empty = mint one)
+#   SCREENSHOT_ATTEMPTS        how many times to run the orchestrator (default 3). The E2E
+#                              gate's smoke passes 1: the orchestrator owns its one retry
+#                              there, and only for a native crash at launch.
 set -euo pipefail
 
 flow="${SCREENSHOT_FLOW:-app-store}"
@@ -133,7 +136,7 @@ done
 # judge the final set, so a retry cannot launder a bad capture — it only covers
 # a crash. Three attempts fit the job's 75-minute ceiling: APK resolve <= 19 min
 # plus 3 x ~10 min of capture plus setup.
-attempts=3
+attempts="${SCREENSHOT_ATTEMPTS:-3}"
 for attempt in $(seq 1 "$attempts"); do
   if vp run mobile:screenshots -- \
     --platform android \

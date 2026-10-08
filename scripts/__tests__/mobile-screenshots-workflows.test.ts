@@ -670,8 +670,24 @@ describe('ios-screenshot-shard composite action', () => {
       'fixture-snapshot',
       'frozen-now',
       'app-cache-key',
+      'attempts',
+      'upload-captures',
+      'debug-artifact-on',
     ]);
     expect(action.runs.using).toBe('composite');
+  });
+
+  it('defaults the gate-only inputs to what the capture has always done', () => {
+    // mobile-e2e-gate.yml's smoke reuses this action and overrides these three.
+    // The capture workflow passes none of them, so the defaults ARE its behaviour.
+    const action = parse(readYaml(SHARD_ACTION_PATH)) as { inputs: Record<string, { default?: string }> };
+    expect(action.inputs.attempts.default).toBe('2');
+    expect(action.inputs['upload-captures'].default).toBe('true');
+    expect(action.inputs['debug-artifact-on'].default).toBe('failure');
+    const captureWorkflow = readYaml(IOS_WORKFLOW_PATH);
+    for (const gateOnlyInput of ['attempts:', 'upload-captures:', 'debug-artifact-on:']) {
+      expect(captureWorkflow).not.toContain(gateOnlyInput);
+    }
   });
 
   it('restores the prebuilt app read-only and uploads a per-shard artifact', () => {
@@ -681,7 +697,7 @@ describe('ios-screenshot-shard composite action', () => {
     expect(source).toContain('name: ios-screenshots-${{ github.job }}-${{ inputs.locale }}-${{ inputs.device-slug }}');
     // The capture body must stay byte-identical between the probe and the fan-out.
     expect(source).toContain('vp run mobile:screenshots -- \\');
-    expect(source).toContain('attempts=2');
+    expect(source).toContain('attempts="$ATTEMPTS_INPUT"');
   });
 });
 

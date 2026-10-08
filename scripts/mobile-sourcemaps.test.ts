@@ -807,6 +807,11 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
       preflightOutcome: string,
       publishIos = 'true',
       publishAndroid = 'true',
+      publishContext: {
+        unlockOutcome?: string;
+        stageForProductionDeploy?: boolean;
+        baselineOutcome?: string;
+      } = {},
     ) => {
       const step = workflow.jobs.publish.steps.find((candidate) => candidate.id === stepId);
       expect(step?.if).toBeDefined();
@@ -817,12 +822,13 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
           steps: {
             gate: { outputs: { configured: 'true' } },
             generate: { outcome: 'success' },
-            baseline: { outcome: 'success' },
+            baseline: { outcome: publishContext.baselineOutcome ?? 'success' },
+            unlock: { outcome: publishContext.unlockOutcome ?? 'success' },
             expect: { outputs: { mismatch: 'false' } },
             train_guard: { outputs: { publish_ios: publishIos, publish_android: publishAndroid } },
             sentry_uploader: { outcome: preflightOutcome },
           },
-          inputs: { stage_for_production_deploy: false },
+          inputs: { stage_for_production_deploy: publishContext.stageForProductionDeploy ?? false },
           env: { INPUT_PLATFORM: 'all' },
         },
         { timeout: 100 },
@@ -837,6 +843,29 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(evaluateCondition('sentry_uploader', 'skipped', 'false', 'false')).toBe(false);
     expect(evaluateCondition('sentry_uploader', 'skipped', 'true', 'false')).toBe(true);
     expect(evaluateCondition('sentry_uploader', 'skipped', 'false', 'true')).toBe(true);
+    for (const stepId of ['sentry_uploader', 'publish_ios', 'publish_android']) {
+      for (const unlockOutcome of ['failure', 'skipped', 'cancelled', '']) {
+        expect(
+          evaluateCondition(stepId, 'success', 'true', 'true', { unlockOutcome }),
+          `${stepId} must refuse direct publication after unlock ${unlockOutcome || 'missing'}`,
+        ).toBe(false);
+      }
+      expect(
+        evaluateCondition(stepId, 'success', 'true', 'true', {
+          stageForProductionDeploy: true,
+          unlockOutcome: 'skipped',
+        }),
+        `${stepId} must allow staging without production unlock`,
+      ).toBe(true);
+      expect(
+        evaluateCondition(stepId, 'success', 'true', 'true', {
+          stageForProductionDeploy: true,
+          unlockOutcome: 'skipped',
+          baselineOutcome: 'failure',
+        }),
+        `${stepId} must refuse staging without a captured baseline`,
+      ).toBe(false);
+    }
   });
 
   it('retains production EOAS source maps without adding export work to either preview path', () => {
