@@ -74,6 +74,29 @@ describe('public mobile store release reader', () => {
     expect(githubRequest).toHaveBeenCalledTimes(4);
   });
 
+  it('walks deployments newest id first whatever order GitHub lists them in', async () => {
+    vi.mocked(githubRequest)
+      .mockResolvedValueOnce([
+        { id: 10, payload: snapshot },
+        {
+          id: 12,
+          payload: {
+            ...snapshot,
+            latestVersion: '2.7.0',
+            firstPublicAtByMinor: { ...snapshot.firstPublicAtByMinor, '2.7': '2026-09-20T00:00:00.000Z' },
+          },
+        },
+      ])
+      .mockResolvedValueOnce([{ state: 'success' }]);
+    expect((await readMobileStoreRelease('ios', '2.5.0'))?.latestVersion).toBe('2.7.0');
+    expect(githubRequest).toHaveBeenNthCalledWith(
+      2,
+      '/repos/boardsesh/boardsesh/deployments/12/statuses?per_page=1',
+      expect.anything(),
+      'test-token',
+    );
+  });
+
   it.each([
     { ...snapshot, latestVersion: null },
     { ...snapshot, latestVersion: '2.4.0' },

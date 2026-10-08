@@ -31,10 +31,12 @@ async function fetchSnapshot(platform: MobileStorePlatform, signal: AbortSignal)
     token,
   );
   if (!Array.isArray(deployments)) return null;
-  // GitHub returns newest first. An unfinished monitor run must not replace
-  // the latest completed snapshot, but a successful withdrawal must do so.
-  for (const deployment of deployments) {
-    if (!Number.isSafeInteger(deployment.id) || deployment.id <= 0) return null;
+  if (deployments.some((deployment) => !Number.isSafeInteger(deployment.id) || deployment.id <= 0)) return null;
+  // GitHub does not document the list order, so walk newest id first. An
+  // unfinished monitor run must not replace the latest completed snapshot, but
+  // a successful withdrawal must do so.
+  const newestFirst = [...deployments].sort((left, right) => right.id - left.id);
+  for (const deployment of newestFirst) {
     const statuses = await githubRequest<DeploymentStatus[]>(
       `/repos/${repository}/deployments/${deployment.id}/statuses?per_page=1`,
       { signal },

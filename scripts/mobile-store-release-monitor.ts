@@ -199,11 +199,15 @@ export async function publishPlatform(
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Invalid repository');
   const base = `https://api.github.com/repos/${repository}/deployments`;
   const environment = `mobile-public-store-${platform}`;
-  const deployments = await request(`${base}?environment=${environment}&per_page=1`, token);
+  const deployments = await request(`${base}?environment=${environment}&per_page=10`, token);
   if (!Array.isArray(deployments)) throw new Error('Invalid deployments response');
+  // GitHub does not document the list order; the newest snapshot has the highest id.
+  const entries = deployments.map(record);
+  if (entries.some((deployment) => typeof deployment.id !== 'number')) throw new Error('Invalid deployment ID');
+  const latest = entries.sort((left, right) => (right.id as number) - (left.id as number))[0];
   let prior: StoreReleaseSnapshot | null = null;
-  if (deployments[0]) {
-    prior = parseStoreReleaseSnapshot(record(deployments[0]).payload);
+  if (latest) {
+    prior = parseStoreReleaseSnapshot(latest.payload);
     if (!prior) throw new Error(`Malformed ${environment} snapshot; repair explicitly, never reset history`);
   }
   const snapshot = nextStoreSnapshot(prior, versions, checkedAt);

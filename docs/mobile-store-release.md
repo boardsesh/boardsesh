@@ -441,6 +441,14 @@ and malformed versions fail closed. The mobile app compares the installed native
 application version, not the OTA marketing version. Development, preview, browser,
 and screenshot sessions do not show reminders.
 
+The backend reads the deployments with the Boardsesh Feedback Bot App's
+installation token (`resolveGithubToken`). Without the App configured, the
+reads are anonymous, which GitHub caps at 60 requests an hour per IP, shared
+with every other anonymous GitHub read from the same egress. Steady state is
+about 24 an hour (two platforms, two calls, every 10 minutes). When GitHub
+refuses, the field returns null for 10 minutes and logs a `warn`; the app shows
+no reminder and reports nothing.
+
 ### Monitor credential and activation
 
 1. Create a dedicated Play monitor account and set Production's

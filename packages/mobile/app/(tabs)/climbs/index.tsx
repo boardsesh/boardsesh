@@ -795,6 +795,8 @@ function ClimbListInner() {
     if (showQuickActionsTip) void markTipSeen(ONBOARDING_TIP_QUICKACTIONS_KEY);
   }, [showQuickActionsTip]);
   const featureFlagsResolved = useFeatureFlagsResolved();
+  // On builds that can show the connect step, wait for its device state. If that
+  // read fails, the card stays hidden for this launch: it fails closed.
   const firstConnectDeviceResolved = useFirstConnectSelector(({ device }) => device !== null);
   const firstConnectEligibleBuild = isNativeVersionAtLeast(
     readConnectStepBuild().nativeVersion,

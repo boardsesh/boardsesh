@@ -148,7 +148,7 @@ describe('public native store collection', () => {
     vi.stubEnv('GITHUB_REPOSITORY', 'boardsesh/boardsesh');
     vi.stubEnv('DRY_RUN', 'true');
     const first = nextStoreSnapshot(null, ['2.7.0'], '2026-09-01T12:00:00.000Z');
-    const fetchMock = vi.fn(async () => Response.json([{ payload: first }]));
+    const fetchMock = vi.fn(async () => Response.json([{ id: 1, payload: first }]));
     vi.stubGlobal('fetch', fetchMock);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     await publishPlatform('ios', ['2.8.0'], checkedAt);
@@ -157,11 +157,32 @@ describe('public native store collection', () => {
     expect(logged.firstPublicAtByMinor['2.7']).toBe(first.checkedAt);
     log.mockRestore();
   });
+  it('builds on the highest-id snapshot whatever order GitHub lists them in', async () => {
+    vi.stubEnv('GITHUB_TOKEN', 'test-token');
+    vi.stubEnv('GITHUB_REPOSITORY', 'boardsesh/boardsesh');
+    vi.stubEnv('DRY_RUN', 'true');
+    const older = nextStoreSnapshot(null, ['2.7.0'], '2026-09-01T12:00:00.000Z');
+    const newer = nextStoreSnapshot(older, ['2.8.0'], '2026-09-15T12:00:00.000Z');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json([
+          { id: 5, payload: older },
+          { id: 9, payload: newer },
+        ]),
+      ),
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await publishPlatform('ios', ['2.8.0'], checkedAt);
+    const logged = JSON.parse(log.mock.calls[0]![0].split('dry run: ')[1]);
+    expect(logged.firstPublicAtByMinor['2.8']).toBe(newer.checkedAt);
+    log.mockRestore();
+  });
   it('malformed deployment history blocks writes instead of resetting', async () => {
     vi.stubEnv('GITHUB_TOKEN', 'test-token');
     vi.stubEnv('GITHUB_REPOSITORY', 'boardsesh/boardsesh');
     vi.stubEnv('DRY_RUN', 'false');
-    const fetchMock = vi.fn(async () => Response.json([{ payload: { schemaVersion: 0 } }]));
+    const fetchMock = vi.fn(async () => Response.json([{ id: 1, payload: { schemaVersion: 0 } }]));
     vi.stubGlobal('fetch', fetchMock);
     await expect(publishPlatform('android', ['2.8.0'], checkedAt)).rejects.toThrow('Malformed');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -173,7 +194,7 @@ describe('public native store collection', () => {
     vi.stubEnv('DRY_RUN', 'false');
     const first = nextStoreSnapshot(null, ['2.7.0', '2.8.0'], '2026-09-01T12:00:00.000Z');
     const fetchMock = vi.fn(async (_url: string, options: RequestInit) => {
-      if (options.method === 'GET') return Response.json([{ payload: first }]);
+      if (options.method === 'GET') return Response.json([{ id: 1, payload: first }]);
       return Response.json({ id: 100 });
     });
     vi.stubGlobal('fetch', fetchMock);
