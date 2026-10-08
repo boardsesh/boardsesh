@@ -145,7 +145,9 @@ describe('backend PostHog analytics helper', () => {
       captureBackendEvent('Tick Climb Not In Catalog', { properties: { climbUuid: 'climb-1' } });
       captureBackendEvent('Tick Climb Not In Catalog', { properties: { climbUuid: 'climb-1' } });
 
-      const distinctIds = posthogMocks.capture.mock.calls.map(([message]) => (message as { distinctId: string }).distinctId);
+      const distinctIds = posthogMocks.capture.mock.calls.map(
+        ([message]) => (message as { distinctId: string }).distinctId,
+      );
       expect(distinctIds).toHaveLength(2);
       expect(distinctIds[0]).toMatch(/^backend:tick-climb-not-in-catalog:[0-9a-f-]{36}$/);
       expect(distinctIds[1]).not.toBe(distinctIds[0]);
@@ -185,9 +187,7 @@ describe('backend PostHog analytics helper', () => {
       expect(loggerMock.warn).toHaveBeenCalledWith(
         "[PostHog] Dropped personal property 'userId' from backend event: Live Activity Ended",
       );
-      expect(
-        loggerMock.warn.mock.calls.filter(([line]) => String(line).includes("'userId'")),
-      ).toHaveLength(1);
+      expect(loggerMock.warn.mock.calls.filter(([line]) => String(line).includes("'userId'"))).toHaveLength(1);
     });
 
     it('uses the fixed system id for an aggregate event', async () => {

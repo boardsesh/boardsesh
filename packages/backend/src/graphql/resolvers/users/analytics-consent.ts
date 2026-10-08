@@ -47,9 +47,9 @@ const consentColumns = {
 };
 
 /**
- * The account's current answer: the newest row. `id` breaks a tie between two
- * rows stamped in the same microsecond, which only the lock below can produce,
- * in write order.
+ * The account's current answer: the newest row. {@link nextDecidedAt} keeps a
+ * user's rows at least 1 ms apart, so `id` only breaks a tie for rows written
+ * some other way (a manual fix), in insert order.
  */
 async function readLatestConsent(executor: DrizzleExecutor, userId: string): Promise<ConsentEventRow | null> {
   const [latest] = await executor

@@ -19,11 +19,7 @@ vi.mock('../services/analytics/posthog', () => ({
 }));
 
 import { db } from '../db/client';
-import {
-  purgeExpiredUserActivity,
-  retentionCutoffDay,
-  snapshotActiveUsers,
-} from '../services/active-users-snapshot';
+import { purgeExpiredUserActivity, retentionCutoffDay, snapshotActiveUsers } from '../services/active-users-snapshot';
 import { activeUsersMutations } from '../graphql/resolvers/users/active-users';
 
 /**

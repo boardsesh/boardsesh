@@ -1,10 +1,6 @@
 import { createHash } from 'node:crypto';
 import { and, countDistinct, gte, lt, lte } from 'drizzle-orm';
-import type {
-  ActiveUsersPlatform,
-  ActiveUsersSnapshotResult,
-  UserActivityPurgeResult,
-} from '@boardsesh/shared-schema';
+import type { ActiveUsersPlatform, ActiveUsersSnapshotResult, UserActivityPurgeResult } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db, type Database } from '../db/client';
 import { captureBackendEvent } from './analytics/posthog';

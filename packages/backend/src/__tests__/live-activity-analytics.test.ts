@@ -84,7 +84,11 @@ describe('Live Activity events carry no user identity', () => {
       tokenRebound: false,
     });
     analytics.trackLiveActivityEnded({ sessionId: 'session-1', reason: 'unregister' });
-    analytics.trackLiveActivityEndedAttributionGap({ sessionId: 'session-1', reason: 'missing_user_id', tokenCount: 1 });
+    analytics.trackLiveActivityEndedAttributionGap({
+      sessionId: 'session-1',
+      reason: 'missing_user_id',
+      tokenCount: 1,
+    });
     analytics.trackLiveActivityWidgetNavigation({
       sessionId: 'session-1',
       action: 'next',
