@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { offlineBoardKey, offlineBoardKeyForBoard, type OfflineBoardScope } from '@boardsesh/offline-sync';
 import { getSetting, setSetting, useSetting } from './hooks';
-import type { RememberedSprayWallArchive } from './types';
+import type { OwnedSprayWallPinLedger, RememberedSprayWallArchive } from './types';
 import { isOfflineBoardCard, readOfflineBoardCards } from '../lib/boards/offline-board-card';
 
 /**
@@ -171,6 +171,7 @@ export type OfflineDownloadTrigger =
   | 'onboarding'
   | 'similar_climbs'
   | 'hold_heatmap'
+  | 'owned-wall'
   | 'unknown';
 
 const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
@@ -183,6 +184,7 @@ const KNOWN_TRIGGERS: readonly OfflineDownloadTrigger[] = [
   'onboarding',
   'similar_climbs',
   'hold_heatmap',
+  'owned-wall',
   'unknown',
 ];
 
@@ -360,4 +362,44 @@ export function clearSprayWallArchives(): void {
   const stored = getSetting(SPRAY_ARCHIVE_SETTING_KEY);
   if (stored !== null && typeof stored === 'object' && Object.keys(stored).length === 0) return;
   setSetting(SPRAY_ARCHIVE_SETTING_KEY, {});
+}
+
+// --- Spray walls pinned offline because the climber owns them --------------------
+
+const OWNED_WALL_PINS_SETTING_KEY = 'offlineOwnedSprayWallsV1';
+
+function isOwnedSprayWallPinLedger(value: unknown): value is OwnedSprayWallPinLedger {
+  if (value === null || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.userId === 'string' &&
+    Array.isArray(entry.wallUuids) &&
+    entry.wallUuids.every((wallUuid) => typeof wallUuid === 'string')
+  );
+}
+
+/** Which owned walls were already pinned, and for whom; `null` when nothing valid is stored. */
+export function getOwnedSprayWallPins(): OwnedSprayWallPinLedger | null {
+  const stored: unknown = getSetting(OWNED_WALL_PINS_SETTING_KEY);
+  return isOwnedSprayWallPinLedger(stored) ? stored : null;
+}
+
+export function setOwnedSprayWallPins(ledger: OwnedSprayWallPinLedger): void {
+  setSetting(OWNED_WALL_PINS_SETTING_KEY, ledger);
+}
+
+/** Forget one wall's pin: it was deleted. */
+export function forgetOwnedSprayWallPin(wallUuid: string): void {
+  const ledger = getOwnedSprayWallPins();
+  if (!ledger || !ledger.wallUuids.includes(wallUuid)) return;
+  setSetting(OWNED_WALL_PINS_SETTING_KEY, {
+    ...ledger,
+    wallUuids: ledger.wallUuids.filter((pinned) => pinned !== wallUuid),
+  });
+}
+
+/** Drop the pins at the account boundary (`clearPersistedUserStores`). */
+export function clearOwnedSprayWallPins(): void {
+  if (getSetting(OWNED_WALL_PINS_SETTING_KEY) === null) return;
+  setSetting(OWNED_WALL_PINS_SETTING_KEY, null);
 }

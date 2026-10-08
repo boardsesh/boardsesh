@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   offlineDownloadTriggers: {},
   offlineDownloadAllTapPending: false,
   offlineSprayWallArchiveV1: {},
+  offlineOwnedSprayWallsV1: null,
   autoOfflineBoards: false,
   offlineMode: false,
   autoConnectBle: true,

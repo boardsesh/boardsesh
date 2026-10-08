@@ -62,6 +62,7 @@ import { toBoardName } from '@boardsesh/board-config';
 import { PersistentQueueBar } from '../src/components/queue-control/persistent-queue-bar';
 import { UserDrawerProvider } from '../src/components/user-drawer/UserDrawerProvider';
 import { OfflineSyncBridge, OfflineEngineFlagSync } from '../src/components/offline-sync-bridge';
+import { OwnedSprayWallsOfflinePin } from '../src/components/owned-spray-walls-offline-pin';
 import { ConnectivityBridge } from '../src/components/connectivity-bridge';
 import { useMobileClimbActionsData } from '../src/lib/graphql/hooks';
 import { useActiveBoard } from '../src/lib/graphql/use-active-board';
@@ -943,6 +944,7 @@ function RootLayout() {
                                                                     </ThemedNavigation>
                                                                     <PersistentQueueBar />
                                                                     <OfflineSyncBridge />
+                                                                    <OwnedSprayWallsOfflinePin />
                                                                     {/* Rest timer runtime (#5378): renders nothing, and mounts
                                                             its queue/session subscriptions only once the flag is on
                                                             AND a climber has armed the timer. Sits inside

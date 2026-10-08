@@ -34,6 +34,10 @@ import {
   forgetSprayWallArchive,
   getRememberedSprayWallArchive,
   rememberSprayWallArchive,
+  clearOwnedSprayWallPins,
+  forgetOwnedSprayWallPin,
+  getOwnedSprayWallPins,
+  setOwnedSprayWallPins,
 } from '../offline-boards';
 import { resetAllSettings } from '../hooks';
 
@@ -283,5 +287,36 @@ describe('remembered spray wall archive state', () => {
     rememberSprayWallArchive('old-wall', archived);
     clearSprayWallArchives();
     expect(getRememberedSprayWallArchive('old-wall')).toBeNull();
+  });
+});
+
+describe('owned spray wall pins', () => {
+  beforeEach(() => {
+    mockStorage.clear();
+    resetAllSettings();
+  });
+
+  it('round-trips the ledger with its account', () => {
+    expect(getOwnedSprayWallPins()).toBeNull();
+    setOwnedSprayWallPins({ userId: 'user-1', wallUuids: ['wall-a', 'wall-b'] });
+    expect(getOwnedSprayWallPins()).toEqual({ userId: 'user-1', wallUuids: ['wall-a', 'wall-b'] });
+  });
+
+  it('forgets a deleted wall and nothing else', () => {
+    setOwnedSprayWallPins({ userId: 'user-1', wallUuids: ['wall-a', 'wall-b'] });
+    forgetOwnedSprayWallPin('wall-a');
+    expect(getOwnedSprayWallPins()).toEqual({ userId: 'user-1', wallUuids: ['wall-b'] });
+  });
+
+  // The next account on a shared phone pins its own walls.
+  it('clears at the account boundary', () => {
+    setOwnedSprayWallPins({ userId: 'user-1', wallUuids: ['wall-a'] });
+    clearOwnedSprayWallPins();
+    expect(getOwnedSprayWallPins()).toBeNull();
+  });
+
+  it('reads a malformed ledger as none', () => {
+    mockStorage.set('offlineOwnedSprayWallsV1', JSON.stringify({ userId: 7, wallUuids: 'wall-a' }));
+    expect(getOwnedSprayWallPins()).toBeNull();
   });
 });

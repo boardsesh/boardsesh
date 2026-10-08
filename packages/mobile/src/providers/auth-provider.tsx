@@ -50,7 +50,7 @@ import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards, clearSprayWallArchives } from '../settings';
+import { setSetting, clearOfflineBoards, clearSprayWallArchives, clearOwnedSprayWallPins } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -257,6 +257,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // loader's copy). Some of it is per account: who replaced a wall is only
       // shown to a viewer who may see the replacement.
       clearSprayWallArchives();
+      // Which owned spray walls were pinned offline, and for whom. The next
+      // account's walls are its own to pin.
+      clearOwnedSprayWallPins();
       return Promise.allSettled([
         clearUserDataExportDownloads(exportCredentialGeneration),
         clearStoredSessionId(owner),

@@ -7,6 +7,12 @@ export type RememberedSprayWallArchive = {
   replacedByWallUuid: string | null;
 };
 
+/** What `offlineOwnedSprayWallsV1` keeps: whose walls, and which ones were pinned. */
+export type OwnedSprayWallPinLedger = {
+  userId: string;
+  wallUuids: string[];
+};
+
 export type AppSettings = {
   defaultBoardUuid: string | null;
   syncEnabledBoards: string[];
@@ -43,6 +49,13 @@ export type AppSettings = {
    * offline. Only archived walls are stored, and the account boundary clears it.
    */
   offlineSprayWallArchiveV1: Record<string, RememberedSprayWallArchive>;
+  /**
+   * The spray walls this phone has already made available offline because the
+   * signed-in climber owns them (`planOwnedSprayWallPins`), with the account it
+   * did it for. A wall is pinned once: an owner who later turns it off keeps it
+   * off. `null` until the first pin; cleared at the account boundary.
+   */
+  offlineOwnedSprayWallsV1: OwnedSprayWallPinLedger | null;
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   /**

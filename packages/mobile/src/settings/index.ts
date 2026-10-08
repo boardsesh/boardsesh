@@ -36,5 +36,9 @@ export {
   rememberSprayWallArchive,
   forgetSprayWallArchive,
   clearSprayWallArchives,
+  getOwnedSprayWallPins,
+  setOwnedSprayWallPins,
+  forgetOwnedSprayWallPin,
+  clearOwnedSprayWallPins,
   type OfflineDownloadTrigger,
 } from './offline-boards';
