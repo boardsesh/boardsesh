@@ -32,7 +32,9 @@ vi.mock('react-native', () => ({
     },
   },
 }));
-vi.mock('../../../hooks/use-keyboard-height', () => ({ useKeyboardHeight: () => keyboard.height }));
+vi.mock('../../../hooks/use-keyboard-height', () => ({
+  useKeyboardHeight: (enabled = true) => (enabled ? keyboard.height : 0),
+}));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
 type ScrollMockProps = {
