@@ -228,6 +228,7 @@ describe('mobile-ota-boot-check.yml', () => {
     const android = workflow.jobs.android;
     const build = stepNamed(android, 'Build the release APK');
     expect(build.env?.BOOT_CHECK_SCRIPT).toBe('${{ github.workspace }}/.boot-check/scripts/mobile-ota-boot-check.ts');
+    expect(build.env?.BOOT_CHECK_ANDROID_PROJECT).toBe('${{ github.workspace }}/packages/mobile/android');
     expect(build.run).toContain('--init-script "$GITHUB_WORKSPACE/.boot-check/scripts/mobile-ota-boot-fixture.gradle"');
     expect(stepNamed(android, 'Compute the binary cache key').run).toContain('boot-check-android-v2-');
     const verify = stepNamed(android, 'Verify the prepared APK fixture');

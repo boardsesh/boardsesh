@@ -360,6 +360,7 @@ jobs:
         working-directory: packages/mobile/android
         env:
           BOOT_CHECK_SCRIPT: ${{ github.workspace }}/.boot-check/scripts/mobile-ota-boot-check.ts
+          BOOT_CHECK_ANDROID_PROJECT: ${{ github.workspace }}/packages/mobile/android
         run: |
           set -euo pipefail
           ./gradlew assembleRelease --init-script "$GITHUB_WORKSPACE/.boot-check/scripts/mobile-ota-boot-fixture.gradle" -PreactNativeArchitectures=x86_64 -PboardseshAbiFilters=x86_64 --no-daemon --console=plain --stacktrace

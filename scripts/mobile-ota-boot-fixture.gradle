@@ -2,6 +2,11 @@
 // Expo wires this task's generated assetDir into AGP packaging, so doLast runs
 // after manifest generation and before the unchanged release signing pipeline.
 gradle.projectsEvaluated {
+    // Gradle applies init scripts to included React Native/Expo plugin builds too.
+    // Only the explicitly selected Android app root owns fixture resources.
+    def androidProject = System.getenv('BOOT_CHECK_ANDROID_PROJECT')
+    if (androidProject == null || !new File(androidProject).isAbsolute() || !new File(androidProject).isDirectory()) throw new GradleException('Boot fixture: missing absolute Android project directory')
+    if (gradle.rootProject.projectDir.canonicalFile != new File(androidProject).canonicalFile) return
     def appProject = gradle.rootProject.findProject(':app')
     if (appProject == null) throw new GradleException('Boot fixture: missing :app project')
     def resourceTasks = appProject.tasks.matching { it.name == 'createReleaseUpdatesResources' }.toList()
