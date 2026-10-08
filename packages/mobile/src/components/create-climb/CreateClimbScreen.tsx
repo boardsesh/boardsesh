@@ -98,6 +98,12 @@ export function CreateClimbScreen({
   const [holdPopoverPoint, setHoldPopoverPoint] = useState<WindowAnchorPoint | null>(null);
   const editorRootRef = useRef<View>(null);
   const holdAnchorRevision = useRef(0);
+  useEffect(
+    () => () => {
+      holdAnchorRevision.current += 1;
+    },
+    [],
+  );
   // Read by the back handler, so opening the sheet does not re-register it.
   const holdRoleOpenRef = useRef(false);
   holdRoleOpenRef.current = longPressHoldId !== null;
