@@ -16,7 +16,7 @@ type SessionScreenHeaderProps = {
   sessionActive: boolean;
   /** When set, a share button floats at the trailing edge to invite climbers. */
   onShare?: () => void;
-  /** When set (session live), a labelled exit control (icon + "Stop" / "Leave")
+  /** When set (session live), a plain text exit control ("Stop" / "Leave")
    *  docks beside share so the overlay matches the tab chrome's trailing exit. */
   onEndSession?: () => void;
   /**
@@ -115,9 +115,7 @@ export function SessionScreenHeader({
             </PressableSurface>
           ) : null}
           {onEndSession ? (
-            // Icon + word, matching the Stop pill in RecordTopChrome — the two
-            // surfaces show the same control for the same action, so neither can
-            // be the one a climber has to guess at.
+            // Plain text matches the native session header's exit action.
             <PressableSurface
               onPress={onEndSession}
               hitSlop={12}
@@ -125,15 +123,9 @@ export function SessionScreenHeader({
               accessibilityLabel={exitLabel}
               style={styles.exitButton}
             >
-              <Icon
-                maxFontSizeMultiplier={1}
-                name={isLeaveExit ? 'leave.session' : 'flag'}
-                size={22}
-                color={exitTint}
-              />
               <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
                 <Text
-                  variant="subheadline"
+                  variant="label"
                   color={exitTint}
                   numberOfLines={1}
                   // The strip's controls are pinned to 40dp, so the label has to

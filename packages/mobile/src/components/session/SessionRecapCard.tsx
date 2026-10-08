@@ -9,6 +9,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { Icon } from '../Icon';
+import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { useUpdateSession } from '../../lib/graphql/hooks';
 import { getDraftComment, clearDraftComment } from '../../lib/session-comment-draft-store';
@@ -134,7 +135,11 @@ export function SessionRecapCard({ sessionId, notes, editable = false, onEditorF
   // Read mode with a recap: the creator can tap to edit; viewers see it read-only.
   if (hasNotes) {
     return (
-      <Card style={styles.card} onPress={editable ? startEditing : undefined}>
+      <Card
+        style={styles.card}
+        onPress={editable ? startEditing : undefined}
+        accessibilityLabel={editable ? `${t('summary.recapTitle')}: ${displayedNotes}` : undefined}
+      >
         <View style={styles.captionRow}>
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('summary.recapTitle')}
@@ -149,9 +154,19 @@ export function SessionRecapCard({ sessionId, notes, editable = false, onEditorF
   // Empty + editable: an add-a-recap affordance that opens the inline editor.
   if (editable) {
     return (
-      <View style={styles.addRow}>
-        <Button title={t('summary.addRecap')} variant="text" icon="add" onPress={startEditing} />
-      </View>
+      <PressableSurface
+        style={[styles.addRow, { backgroundColor: systemColors.secondaryBackground }]}
+        feedback="opacity"
+        onPress={startEditing}
+        accessibilityRole="button"
+        accessibilityLabel={t('summary.addRecap')}
+      >
+        <Icon name="plus" size={20} color={systemColors.accent} />
+        <Text variant="body" color={systemColors.accent} style={styles.addLabel}>
+          {t('summary.addRecap')}
+        </Text>
+        <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
+      </PressableSurface>
     );
   }
 
@@ -183,10 +198,17 @@ const createStyles = (textStyles: TypographyScale) =>
       marginTop: spacing[1],
     },
     addRow: {
-      alignItems: 'flex-start',
-      // Cancel the text Button's internal content padding so the + icon lines up
-      // with the left content edge of the sibling cards and stat tiles.
-      marginStart: -spacing[4],
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 44,
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      gap: spacing[3],
+      borderRadius: borderRadius.lg,
+      overflow: 'hidden',
+    },
+    addLabel: {
+      flex: 1,
     },
     captionRow: {
       flexDirection: 'row',

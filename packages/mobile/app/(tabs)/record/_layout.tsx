@@ -24,7 +24,7 @@ export default function RecordLayout() {
           <Stack.Screen
             name="index"
             options={{
-              title: t('mobile.session.recordTab'),
+              title: t('mobile.session.headerStart'),
               headerShown: nativeRootHeader,
               headerLargeTitle: nativeRootHeader,
               headerTransparent: nativeRootHeader,

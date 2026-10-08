@@ -1,55 +1,48 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
-import { createElement, isValidElement, type ReactNode } from 'react';
+import { createElement, type ReactNode } from 'react';
+import type { NativeStackNavigationOptions } from 'expo-router';
 
-type ChromeProps = {
+type HeaderProps = {
   title?: string;
-  canCreate?: boolean;
-  onCreate?: () => void;
-  createAccessibilityLabel?: string;
-  onOpenBoardSwitcher?: () => void;
-  boardPillAccessibilityHint?: string;
+  leftActions?: ReactNode;
+  leftActionsStandalone?: boolean;
+  rightActions?: ReactNode;
+  rightItems?: NativeStackNavigationOptions['unstable_headerRightItems'];
   onHeightChange?: (height: number) => void;
-  trailingAction?: ReactNode;
-  trailingActionCount?: number;
-  leadingAction?: ReactNode;
-  leadingActionCount?: number;
-  hideLight?: boolean;
 };
 
-// Captures every prop CollapsingTopChrome receives so the wrapper's forwarding +
-// gating contract can be asserted directly.
-const chrome = vi.hoisted(() => ({ props: null as ChromeProps | null }));
-const ctrl = vi.hoisted(() => ({ variant: 'glass' as 'glass' | 'material', nativeHeader: false }));
-vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => ctrl.nativeHeader }));
-// Captures the Material app bar's title + actions so the material branch can be
-// asserted without a real Paper render.
+const controls = vi.hoisted(() => ({
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  nativeHeader: false,
+  glassCapability: true,
+  nativeProps: null as HeaderProps | null,
+  fallbackProps: null as HeaderProps | null,
+}));
 const appbar = vi.hoisted(() => ({
   title: null as string | null,
-  actions: [] as string[],
   contentPress: null as (() => void) | null,
   contentAria: null as string | null,
   contentHint: null as string | null,
 }));
 
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => controls.nativeHeader }));
+vi.mock('../../../hooks/use-glass-capability', () => ({ useGlassCapability: () => controls.glassCapability }));
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
-vi.mock('react-native-reanimated', () => ({}));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-// `ctrl.variant` drives which branch renders: 'glass' (default) exercises the
-// CollapsingTopChrome forwarding contract; 'material' exercises the Paper app bar.
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { primary: '#6D28D9', error: '#C81E1E' },
-    systemColors: { label: '#000', secondaryBackground: '#111', separator: '#333' },
+    systemColors: { label: '#000', secondaryLabel: '#888', secondaryBackground: '#111', separator: '#333' },
     radii: { button: 20 },
-    variant: ctrl.variant,
+    variant: controls.variant,
   }),
 }));
 vi.mock('react-native-paper', () => ({
@@ -70,30 +63,27 @@ vi.mock('react-native-paper', () => ({
       appbar.contentPress = onPress ?? null;
       appbar.contentAria = accessibilityLabel ?? null;
       appbar.contentHint = accessibilityHint ?? null;
-      return createElement('div', { 'data-appbar-title': title ?? '', onClick: onPress });
+      return createElement('div', { 'data-appbar-title': title ?? '', onClick: onPress }, title);
     },
-    Action: ({ accessibilityLabel }: { accessibilityLabel?: string }) => {
-      if (accessibilityLabel) appbar.actions.push(accessibilityLabel);
-      return createElement('div', { 'data-appbar-action': accessibilityLabel ?? '' });
-    },
+    Action: ({ accessibilityLabel, onPress }: { accessibilityLabel?: string; onPress?: () => void }) =>
+      createElement('button', { 'data-action': accessibilityLabel, onClick: onPress }),
   },
 }));
 vi.mock('../../icon-map', () => ({
   iconMap: {
     'person.badge.plus': { ios: 'person.badge.plus', android: 'account-plus-outline' },
-    flag: { ios: 'flag', android: 'flag-outline' },
     edit: { ios: 'pencil', android: 'pencil-outline' },
   },
 }));
 vi.mock('../../Icon', () => ({
-  Icon: ({ name, color }: { name: string; color?: unknown }) =>
-    createElement('span', { 'data-icon': name, 'data-color': typeof color === 'string' ? color : '' }),
+  Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));
 vi.mock('../../chrome', () => ({
-  CollapsingTopChrome: (props: ChromeProps) => {
-    chrome.props = props;
-    return createElement('div', { 'data-chrome': 'true' }, props.leadingAction, props.trailingAction);
+  CollapsingLargeTitleHeader: (props: HeaderProps) => {
+    controls.fallbackProps = props;
+    return createElement('div', { 'data-fallback': 'true' }, props.leftActions, props.rightActions);
   },
+  GlassActionToolbar: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   GlassToolbarAction: ({
     children,
     onPress,
@@ -102,11 +92,23 @@ vi.mock('../../chrome', () => ({
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { onClick: onPress, 'data-action': accessibilityLabel ?? '' }, children),
+  }) => createElement('button', { onClick: onPress, 'data-action': accessibilityLabel }, children),
   TOP_ACTION_SIZE: 48,
 }));
+vi.mock('../../chrome/NativeRootHeader', () => ({
+  NativeRootHeader: (props: HeaderProps) => {
+    controls.nativeProps = props;
+    return createElement(
+      'div',
+      { 'data-native': 'true' },
+      props.leftActions,
+      props.rightItems ? null : props.rightActions,
+    );
+  },
+}));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-text-color': color }, children),
 }));
 vi.mock('../../LargeContentViewer', () => ({
   LargeContentViewer: ({
@@ -135,222 +137,185 @@ vi.mock('../../PressableSurface', () => ({
       'button',
       {
         onClick: onPress,
-        'data-pressable': accessibilityLabel ?? '',
+        'data-pressable': accessibilityLabel,
         'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
       },
       children,
     ),
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12 } }));
-vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
+vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
 vi.mock('../../user-drawer/UserAvatarToolbarAction', () => ({
-  UserAvatarToolbarAction: ({ variant }: { variant: 'glass' | 'material' }) => {
-    if (variant === 'material') {
-      appbar.actions.push('ariaLabels.userMenu');
-    }
-    return createElement('button', {
-      'data-action': variant === 'glass' ? 'ariaLabels.userMenu' : undefined,
-      'data-appbar-action': variant === 'material' ? 'ariaLabels.userMenu' : undefined,
-      'data-avatar-variant': variant,
-    });
-  },
+  UserAvatarToolbarAction: ({ variant }: { variant: string }) =>
+    createElement('button', { 'data-action': 'ariaLabels.userMenu', 'data-avatar-variant': variant }),
 }));
 
 import { RecordTopChrome } from '../RecordTopChrome';
 
-// The exit is a labelled pill in both variants, so it is found by its pressable
-// accessibility label rather than by a Paper app-bar action slot.
-const MATERIAL_STOP = '[data-pressable="mobile.session.inEndSession"]';
+function makeProps(overrides: Partial<Parameters<typeof RecordTopChrome>[0]> = {}) {
+  return { title: 'Morning session', onHeightChange: vi.fn(), ...overrides };
+}
 
-function makeProps(over: Partial<Parameters<typeof RecordTopChrome>[0]> = {}) {
-  return {
-    title: 'Morning session',
-    onOpenBoardSwitcher: vi.fn(),
-    onHeightChange: vi.fn(),
-    ...over,
-  };
+function nativeItems() {
+  return controls.nativeProps?.rightItems?.({ tintColor: '#000', canGoBack: false }) ?? [];
+}
+
+function exitSelector(exitVariant: 'end' | 'leave') {
+  return `[data-pressable="${exitVariant === 'leave' ? 'queueBar.ariaLabels.leaveSession' : 'mobile.session.inEndSession'}"]`;
 }
 
 describe('RecordTopChrome', () => {
   beforeEach(() => {
-    chrome.props = null;
-    ctrl.variant = 'glass';
-    ctrl.nativeHeader = false;
+    controls.variant = 'liquidGlass';
+    controls.nativeHeader = false;
+    controls.glassCapability = true;
+    controls.nativeProps = null;
+    controls.fallbackProps = null;
     appbar.title = null;
-    appbar.actions = [];
     appbar.contentPress = null;
     appbar.contentAria = null;
     appbar.contentHint = null;
   });
 
-  it.each([
-    [false, 48],
-    [true, 44],
-  ] as const)('matches the exit control to the native header slot (%s)', (nativeHeader, expectedHeight) => {
-    ctrl.nativeHeader = nativeHeader;
-    const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
-    const exitButton = container.querySelector('[data-pressable="mobile.session.inEndSession"]');
-    const exitStyle = JSON.parse(exitButton?.getAttribute('data-style') ?? '{}') as { height?: number };
+  it.each(['floating', 'native', 'material'] as const)(
+    'keeps the %s toolbar limited to avatar, invite, rename and exit',
+    (presentation) => {
+      controls.nativeHeader = presentation === 'native';
+      controls.variant = presentation === 'material' ? 'material' : 'liquidGlass';
+      const onShare = vi.fn();
+      const { container } = render(
+        <RecordTopChrome {...makeProps({ onShare, onEditTitle: vi.fn(), onEndSession: vi.fn() })} />,
+      );
+      expect(container.querySelector('[data-action="ariaLabels.userMenu"]')).not.toBeNull();
+      fireEvent.click(container.querySelector('[data-action="mobile.session.invite"]')!);
+      expect(onShare).toHaveBeenCalledOnce();
+      expect(
+        container.querySelectorAll(
+          '[data-icon="board"], [data-icon="boards"], [data-icon="lightbulb"], [data-icon="lightbulb.fill"], [data-icon="flag"]',
+        ),
+      ).toHaveLength(0);
+      expect(controls.nativeProps ?? controls.fallbackProps ?? {}).not.toHaveProperty('onOpenBoardSwitcher');
+    },
+  );
 
-    expect(exitStyle.height).toBe(expectedHeight);
+  it('lets the native header own the contextual title and updates it as a session starts', () => {
+    controls.nativeHeader = true;
+    const onHeightChange = vi.fn();
+    const { rerender } = render(<RecordTopChrome {...makeProps({ title: 'Start a session', onHeightChange })} />);
+    expect(controls.nativeProps).toMatchObject({
+      title: 'Start a session',
+      leftActionsStandalone: true,
+      onHeightChange,
+    });
+    expect(controls.fallbackProps).toBeNull();
+    rerender(<RecordTopChrome {...makeProps({ title: 'Evening crew', onHeightChange, onShare: vi.fn() })} />);
+    expect(controls.nativeProps).toMatchObject({ title: 'Evening crew', leftActionsStandalone: false });
+  });
+
+  it('leaves the floating title in scroll content and forwards supplementary height', () => {
+    const onHeightChange = vi.fn();
+    render(<RecordTopChrome {...makeProps({ onHeightChange, onEditTitle: vi.fn() })} />);
+    expect(controls.nativeProps).toBeNull();
+    expect(controls.fallbackProps?.onHeightChange).toBe(onHeightChange);
+    expect(controls.fallbackProps?.title).toBeUndefined();
+    expect(controls.fallbackProps?.rightActions).toBeUndefined();
+  });
+
+  it.each(['end', 'leave'] as const)(
+    'uses native plain %s and pencil items with working actions on iOS 26',
+    (exitVariant) => {
+      controls.nativeHeader = true;
+      const onEditTitle = vi.fn();
+      const onEndSession = vi.fn();
+      render(<RecordTopChrome {...makeProps({ onEditTitle, onEndSession, exitVariant })} />);
+      const [editItem, exitItem] = nativeItems();
+      expect(editItem).toMatchObject({ type: 'button', icon: { type: 'sfSymbol', name: 'pencil' }, variant: 'plain' });
+      expect(exitItem).toMatchObject({
+        type: 'button',
+        label: exitVariant === 'leave' ? 'mobile.session.inLeave' : 'mobile.session.inStop',
+        variant: 'plain',
+        labelStyle: { fontWeight: '600' },
+      });
+      if (editItem?.type !== 'button' || exitItem?.type !== 'button') throw new Error('Expected native bar buttons');
+      expect(exitItem.icon).toBeUndefined();
+      expect(exitItem.tintColor).toBe(exitVariant === 'end' ? '#C81E1E' : undefined);
+      editItem.onPress?.();
+      exitItem.onPress?.();
+      expect(onEditTitle).toHaveBeenCalledOnce();
+      expect(onEndSession).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('uses custom plain text and a separate rename action on older iOS', () => {
+    controls.nativeHeader = true;
+    controls.glassCapability = false;
+    const onEditTitle = vi.fn();
+    const onEndSession = vi.fn();
+    const { container } = render(<RecordTopChrome {...makeProps({ onEditTitle, onEndSession })} />);
+    expect(controls.nativeProps?.rightItems).toBeUndefined();
+    fireEvent.click(container.querySelector('[data-action="mobile.session.editTitleAria"]')!);
+    fireEvent.click(container.querySelector(exitSelector('end'))!);
+    expect(onEditTitle).toHaveBeenCalledOnce();
+    expect(onEndSession).toHaveBeenCalledOnce();
+    const exitStyle = JSON.parse(container.querySelector(exitSelector('end'))!.getAttribute('data-style')!) as Record<
+      string,
+      unknown
+    >;
+    expect(exitStyle).toMatchObject({ minHeight: 44, minWidth: 44 });
+    expect(exitStyle.backgroundColor).toBeUndefined();
+    expect(exitStyle.borderWidth).toBeUndefined();
+    expect(exitStyle.borderRadius).toBeUndefined();
+  });
+
+  it('removes native rename and exit items when their handlers are absent', () => {
+    controls.nativeHeader = true;
+    const { rerender } = render(<RecordTopChrome {...makeProps({ onEditTitle: vi.fn(), onEndSession: vi.fn() })} />);
+    expect(nativeItems()).toHaveLength(2);
+    rerender(<RecordTopChrome {...makeProps()} />);
+    expect(nativeItems()).toHaveLength(0);
+    expect(controls.nativeProps?.rightActions).toBeUndefined();
   });
 
   it.each([
-    ['glass', 'end'],
-    ['glass', 'leave'],
+    ['liquidGlass', 'end'],
+    ['liquidGlass', 'leave'],
     ['material', 'end'],
     ['material', 'leave'],
-  ] as const)('activates the %s %s exit once through its capped label viewer', (variant, exitVariant) => {
-    ctrl.variant = variant;
-    const onEndSession = vi.fn();
-    const { container } = render(<RecordTopChrome {...makeProps({ onEndSession, exitVariant })} />);
-    const title = exitVariant === 'leave' ? 'mobile.session.inLeave' : 'mobile.session.inStop';
-    const viewer = container.querySelector(`[data-viewer-title="${title}"]`);
-    expect(viewer).not.toBeNull();
-    expect(viewer?.closest('button')).not.toBeNull();
-    expect(viewer?.querySelector('[data-icon]')).toBeNull();
-    fireEvent.contextMenu(viewer!);
-    expect(onEndSession).toHaveBeenCalledOnce();
-  });
-
-  it('gates the create island off (canCreate=false)', () => {
-    render(<RecordTopChrome {...makeProps()} />);
-    expect(chrome.props?.canCreate).toBe(false);
-  });
-
-  it('forwards onHeightChange / onOpenBoardSwitcher (no scrolled title on glass)', () => {
-    const onHeightChange = vi.fn();
-    const onOpenBoardSwitcher = vi.fn();
-    render(<RecordTopChrome {...makeProps({ title: 'Evening sesh', onHeightChange, onOpenBoardSwitcher })} />);
-
-    // The capsule title is gone — the glass chrome no longer carries the session
-    // title; it only rides along as the (inert) create accessibility label.
-    expect(chrome.props?.title).toBeUndefined();
-    expect(chrome.props?.createAccessibilityLabel).toBe('Evening sesh');
-    expect(chrome.props?.onHeightChange).toBe(onHeightChange);
-    expect(chrome.props?.onOpenBoardSwitcher).toBe(onOpenBoardSwitcher);
-  });
-
-  it('omits both leading and trailing actions and keeps the light before a session is live', () => {
-    render(<RecordTopChrome {...makeProps()} />);
-    expect(chrome.props?.leadingAction).toBeUndefined();
-    expect(chrome.props?.trailingAction).toBeUndefined();
-    expect(chrome.props?.leadingActionCount).toBe(0);
-    expect(chrome.props?.trailingActionCount).toBe(0);
-    expect(chrome.props?.hideLight).toBe(false);
-  });
-
-  it('docks invite/share as the LEADING (left) action, calling onShare', () => {
-    const onShare = vi.fn();
-    const { container } = render(<RecordTopChrome {...makeProps({ onShare })} />);
-
-    expect(isValidElement(chrome.props?.leadingAction)).toBe(true);
-    expect(chrome.props?.leadingActionCount).toBe(1);
-    const shareButton = container.querySelector('[data-action="mobile.session.invite"]') as HTMLButtonElement | null;
-    expect(shareButton).not.toBeNull();
-    expect(shareButton?.querySelector('[data-icon="person.badge.plus"]')?.getAttribute('data-color')).toBe('#000');
-    shareButton!.click();
-    expect(onShare).toHaveBeenCalledTimes(1);
-  });
-
-  it('docks invite on the left and a labelled Stop pill on the right (no light) while a session is live', () => {
-    const onShare = vi.fn();
-    const onEndSession = vi.fn();
-    const { container } = render(<RecordTopChrome {...makeProps({ onShare, onEndSession })} />);
-
-    // Invite is the lone left slot; the Stop pill reserves two slots for its label;
-    // the light is hidden.
-    expect(chrome.props?.leadingActionCount).toBe(1);
-    expect(chrome.props?.trailingActionCount).toBe(2);
-    expect(chrome.props?.hideLight).toBe(true);
-
-    const shareButton = container.querySelector('[data-action="mobile.session.invite"]') as HTMLButtonElement | null;
-    expect(shareButton).not.toBeNull();
-    const stopButton = container.querySelector(
-      '[data-pressable="mobile.session.inEndSession"]',
-    ) as HTMLButtonElement | null;
-    expect(stopButton).not.toBeNull();
-    // The Stop control carries a visible "Stop" label, not just an icon.
-    expect(stopButton?.textContent).toContain('mobile.session.inStop');
-    stopButton!.click();
-    expect(onEndSession).toHaveBeenCalledTimes(1);
-  });
-
-  it('reserves two right slots for the Stop label (and hides the light) when only End is provided', () => {
-    render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
-    expect(chrome.props?.trailingActionCount).toBe(2);
-    expect(chrome.props?.leadingActionCount).toBe(0);
-    expect(chrome.props?.hideLight).toBe(true);
-  });
-
-  describe('material variant', () => {
-    beforeEach(() => {
-      ctrl.variant = 'material';
-    });
-
-    it('renders the Paper app bar with the session title (no CollapsingTopChrome)', () => {
-      const { container } = render(<RecordTopChrome {...makeProps({ title: 'Active session' })} />);
-      expect(container.querySelector('[data-appbar="true"]')).not.toBeNull();
-      expect(container.querySelector('[data-chrome="true"]')).toBeNull();
-      expect(appbar.title).toBe('Active session');
-    });
-
-    it('shows the share app-bar action only while a session is live (onShare set)', () => {
-      const { rerender } = render(<RecordTopChrome {...makeProps()} />);
-      expect(appbar.actions).not.toContain('mobile.session.invite');
-
-      appbar.actions = [];
-      rerender(<RecordTopChrome {...makeProps({ onShare: vi.fn() })} />);
-      expect(appbar.actions).toContain('mobile.session.invite');
-    });
-
-    it('wires onEditTitle to the title press, keeps the name as the label, and adds a pencil action', () => {
-      const onEditTitle = vi.fn();
-      render(<RecordTopChrome {...makeProps({ title: 'Active session', onEditTitle })} />);
-      expect(typeof appbar.contentPress).toBe('function');
-      // The label must carry the session name; the rename action rides the hint.
-      expect(appbar.contentAria).toBe('Active session');
-      expect(appbar.contentHint).toBe('mobile.session.editTitleAria');
-      // A visible pencil action accompanies the invisible title tap target.
-      expect(appbar.actions).toContain('mobile.session.editTitleAria');
-      appbar.contentPress?.();
-      expect(onEditTitle).toHaveBeenCalledTimes(1);
-    });
-
-    it('leaves the title non-interactive (no edit hint or pencil) when onEditTitle is absent', () => {
-      render(<RecordTopChrome {...makeProps({ title: 'Active session' })} />);
-      expect(appbar.contentPress).toBeNull();
-      expect(appbar.contentHint).toBeNull();
-      expect(appbar.actions).not.toContain('mobile.session.editTitleAria');
-    });
-
-    it('shows the End control only while a session is live (onEndSession set)', () => {
-      const { container, rerender } = render(<RecordTopChrome {...makeProps()} />);
-      expect(container.querySelector(MATERIAL_STOP)).toBeNull();
-
+  ] as const)(
+    'renders %s %s as tinted text without an exit icon and preserves label activation',
+    (variant, exitVariant) => {
+      controls.variant = variant;
       const onEndSession = vi.fn();
-      rerender(<RecordTopChrome {...makeProps({ onEndSession })} />);
-      const stopButton = container.querySelector(MATERIAL_STOP) as HTMLButtonElement | null;
-      expect(stopButton).not.toBeNull();
-      stopButton!.click();
-      expect(onEndSession).toHaveBeenCalledTimes(1);
-    });
+      const { container } = render(<RecordTopChrome {...makeProps({ onEndSession, exitVariant })} />);
+      const exitButton = container.querySelector(exitSelector(exitVariant));
+      expect(exitButton?.textContent).toBe(
+        exitVariant === 'leave' ? 'mobile.session.inLeave' : 'mobile.session.inStop',
+      );
+      expect(exitButton?.querySelector('[data-icon]')).toBeNull();
+      expect(exitButton?.querySelector('[data-text-color]')?.getAttribute('data-text-color')).toBe(
+        exitVariant === 'leave' ? '#000' : '#C81E1E',
+      );
+      fireEvent.contextMenu(exitButton!.querySelector('[data-viewer-title]')!);
+      expect(onEndSession).toHaveBeenCalledOnce();
+    },
+  );
 
-    it('renders the exit as a labelled Stop pill, not a bare icon app-bar action', () => {
-      const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
-      // The exit left the Paper action row — it is a pressable pill now.
-      expect(appbar.actions).not.toContain('mobile.session.inEndSession');
-      const stopButton = container.querySelector(MATERIAL_STOP);
-      expect(stopButton?.textContent).toContain('mobile.session.inStop');
-      // Destructive tint on the leader's Stop, same as the glass pill.
-      expect(stopButton?.querySelector('[data-icon="flag"]')?.getAttribute('data-color')).toBe('#C81E1E');
-    });
-
-    it('renders the joiner exit as a neutral labelled Leave pill', () => {
-      const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn(), exitVariant: 'leave' })} />);
-      const leaveButton = container.querySelector('[data-pressable="queueBar.ariaLabels.leaveSession"]');
-      expect(leaveButton?.textContent).toContain('mobile.session.inLeave');
-      expect(leaveButton?.querySelector('[data-icon="leave.session"]')?.getAttribute('data-color')).toBe('#000');
-    });
+  it('keeps one Material title and a working separate rename action', () => {
+    controls.variant = 'material';
+    const onEditTitle = vi.fn();
+    const { container, rerender } = render(
+      <RecordTopChrome {...makeProps({ title: 'Active session', onEditTitle })} />,
+    );
+    expect(container.querySelectorAll('[data-appbar-title]')).toHaveLength(1);
+    expect(appbar.title).toBe('Active session');
+    expect(appbar.contentAria).toBe('Active session');
+    expect(appbar.contentHint).toBe('mobile.session.editTitleAria');
+    fireEvent.click(container.querySelector('[data-action="mobile.session.editTitleAria"]')!);
+    expect(onEditTitle).toHaveBeenCalledOnce();
+    expect(controls.nativeProps).toBeNull();
+    expect(controls.fallbackProps).toBeNull();
+    rerender(<RecordTopChrome {...makeProps()} />);
+    expect(appbar.contentPress).toBeNull();
+    expect(appbar.contentHint).toBeNull();
+    expect(container.querySelector('[data-action="mobile.session.editTitleAria"]')).toBeNull();
   });
 });

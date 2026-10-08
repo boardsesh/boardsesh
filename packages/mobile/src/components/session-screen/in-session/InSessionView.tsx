@@ -47,7 +47,6 @@ import { reportHandledError } from '../../../lib/error-reporting';
 import { track } from '../../../lib/analytics';
 import { useToast } from '../../../providers/toast-provider';
 import { RecordTopChrome } from '../RecordTopChrome';
-import { useSessionBoardNavigation } from '../use-session-board-navigation';
 import { SessionTitleSheet } from '../SessionTitleSheet';
 import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
@@ -272,7 +271,6 @@ export function InSessionView({
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
-  const { openBoardSwitcher } = useSessionBoardNavigation();
   const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
   const { showToast } = useToast();
@@ -602,7 +600,7 @@ export function InSessionView({
           overlay header strip already names the screen, so it's hidden there. On
           Material the app bar owns the title, so the in-body large title is gated
           off there too. */}
-      {showChrome && features.inBodyLargeTitle ? (
+      {showChrome && !nativeRootHeader && features.inBodyLargeTitle ? (
         <PressableSurface
           onPress={canEditTitle ? openTitleSheet : undefined}
           feedback="opacity"
@@ -706,7 +704,7 @@ export function InSessionView({
       nestedScrollEnabled={showChrome}
       // The floating chrome owns the top inset (tab mode), so pad manually by the
       // measured chrome height and never auto-inset under the (absent) header.
-      contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+      contentInsetAdjustmentBehavior={showChrome && nativeRootHeader ? 'automatic' : 'never'}
       contentContainerStyle={{
         paddingHorizontal: spacing[4],
         paddingTop: listPaddingTop,
@@ -728,7 +726,6 @@ export function InSessionView({
         <RecordTopChrome
           title={sessionTitle}
           onEditTitle={canEditTitle ? openTitleSheet : undefined}
-          onOpenBoardSwitcher={openBoardSwitcher}
           onHeightChange={setChromeHeight}
           onShare={onShare}
           onEndSession={onRequestEndSession}

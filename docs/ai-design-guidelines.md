@@ -381,6 +381,16 @@ or form, because a bottom bar moves with the keyboard and the inset. The excepti
 (Attempt / Save stay in thumb reach), composers such as `CommentSheet`, and tool palettes and FABs. Full
 rules: `docs/mobile-sheets-vs-routes.md`, "Where actions go".
 
+**Session screen.** Show one contextual title: "Start a session" before starting,
+then the session name. On iOS Liquid Glass the native large title owns that text;
+omit the in-body title and expose rename through a separate pencil action. The
+Session toolbar contains session actions only (invite, rename, Stop/Leave), with
+board switching in the setup card and board/light controls on Climbs. Stop is
+plain red semibold text; Leave is neutral text. Both keep the exit confirmation.
+The summary's Add a recap action is a full-width inset row. Apple Health saving
+and saved states are readable, noninteractive statuses; Save/Retry are action
+rows. These labels wrap rather than truncate at larger text sizes.
+
 ### Content hierarchy and brand accents
 
 Boardsesh keeps the native tab bar and toolbar symbols neutral while climbing content supplies

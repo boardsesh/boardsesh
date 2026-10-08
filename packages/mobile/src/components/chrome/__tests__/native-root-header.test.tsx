@@ -159,6 +159,25 @@ describe('NativeRootHeader', () => {
     expect(lastOptions().title).toBe('');
   });
 
+  it('forwards native trailing items and clears them when custom actions return', () => {
+    const onStop = vi.fn();
+    const rightItems: NativeStackNavigationOptions['unstable_headerRightItems'] = () => [
+      { type: 'button', label: 'Stop', variant: 'plain', onPress: onStop },
+    ];
+    const { rerender } = render(<NativeRootHeader rightItems={rightItems} onHeightChange={vi.fn()} />);
+    expect(lastOptions().unstable_headerRightItems).toBe(rightItems);
+    const [stopItem] = lastOptions().unstable_headerRightItems!({ tintColor: 'theme-label', canGoBack: false });
+    if (stopItem?.type !== 'button') throw new Error('Expected a native Stop item');
+    stopItem.onPress?.();
+    expect(onStop).toHaveBeenCalledOnce();
+
+    rerender(<NativeRootHeader rightActions={<span>Custom actions</span>} onHeightChange={vi.fn()} />);
+    expect(lastOptions()).toHaveProperty('unstable_headerRightItems', undefined);
+    const customActions = lastOptions().headerRight?.({ tintColor: 'theme-label', canGoBack: false });
+    const { getByText } = render(customActions);
+    expect(getByText('Custom actions')).toBeTruthy();
+  });
+
   it('keeps the existing blur on iOS before native glass support', () => {
     controls.glassCapability = false;
     render(<NativeRootHeader onHeightChange={vi.fn()} />);
