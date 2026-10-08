@@ -137,6 +137,7 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
       title={t('detail.editSession')}
       leading={{ kind: 'cancel', onPress: onClose, accessibilityLabel: t('detail.editCancel') }}
       trailing={{
+        kind: 'confirm',
         label: t('detail.editSave'),
         onPress: handleSave,
         loading: updateSession.isPending,

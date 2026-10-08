@@ -159,6 +159,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
             title={title}
             leading={{ kind: 'cancel', onPress: onClose }}
             trailing={{
+              kind: 'send',
               label: submitLabel,
               onPress: () => {
                 void handleSubmit();

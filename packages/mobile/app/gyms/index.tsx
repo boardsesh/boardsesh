@@ -19,6 +19,7 @@ import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-a
 import { isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
+import { ChromeIconButton } from '../../src/components/ChromeIconButton';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/components/gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
@@ -45,10 +46,6 @@ import { spacing, borderRadius, shadows } from '../../src/theme/tokens';
 // absorbs the programmatic camera settle after a place search so it doesn't
 // read as a user pan.
 const MIN_MOVE_DEG = 0.04;
-
-// The floating close button is a fixed square; it's the only chrome left over the
-// map now that search lives in the panel header.
-const CLOSE_BUTTON_SIZE = 44;
 
 function movedEnough(a: Coords, b: Coords): boolean {
   const dLat = a.latitude - b.latitude;
@@ -466,15 +463,15 @@ export default function GymDiscovery() {
   // on its wrapper lets map pans land in the gaps around it.
   const closeButton = (
     <View style={[styles.closeWrap, { paddingTop: insets.top + spacing[2] }]} pointerEvents="box-none">
-      <Pressable
+      {/* Floats over the map, so it takes an opaque surface and a shadow
+          instead of the translucent fill. */}
+      <ChromeIconButton
+        testID="gyms-close-map"
+        icon="close"
         onPress={closeScreen}
-        hitSlop={8}
-        accessibilityRole="button"
         accessibilityLabel={t('mobile.gyms.closeMap')}
-        style={[styles.closeButton, shadows.sm, { backgroundColor: systemColors.secondaryBackground }]}
-      >
-        <Icon name="close" size={20} color={systemColors.label} />
-      </Pressable>
+        style={[shadows.sm, { backgroundColor: systemColors.secondaryBackground }]}
+      />
     </View>
   );
 
@@ -601,13 +598,6 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: spacing[4],
     alignItems: 'flex-start',
-  },
-  closeButton: {
-    width: CLOSE_BUTTON_SIZE,
-    height: CLOSE_BUTTON_SIZE,
-    borderRadius: borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   searchField: {
     flexDirection: 'row',

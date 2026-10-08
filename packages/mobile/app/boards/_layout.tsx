@@ -1,9 +1,8 @@
 import { Stack, router, type NativeStackNavigationOptions } from 'expo-router';
 import { SprayWizardExitButton } from '../../src/components/spray-wall/SprayWizardExitButton';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../../src/components/Icon';
+import { HeaderLeadingButton } from '../../src/components/HeaderActionButtons';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { isFirstBoardMode, isNoBoardEntry } from '../../src/lib/boards/first-board-mode';
 import { noteFirstBoardCloseTapped } from '../../src/lib/onboarding/first-board-picker-analytics';
@@ -23,9 +22,7 @@ function sprayMaintenanceOptions(): NativeStackNavigationOptions {
   if (!sprayFlowCoversScreen()) return {};
   return {
     ...sprayFlowScreenOptions(),
-    headerLeft: ({ tintColor }) => (
-      <SprayWizardExitButton returnTo={resolveBoardReturnTo(undefined)} tintColor={tintColor} />
-    ),
+    headerLeft: () => <SprayWizardExitButton returnTo={resolveBoardReturnTo(undefined)} />,
   };
 }
 
@@ -80,17 +77,14 @@ function BoardsLayout() {
             title: t('mobile.nav.boards'),
             // A modal now, not a tab: give it an explicit close button (iOS
             // swipe-to-dismiss alone isn't discoverable for a primary entry point).
-            headerLeft: ({ tintColor }) => (
-              <Pressable
+            headerLeft: () => (
+              <HeaderLeadingButton
+                kind="close"
                 onPress={
                   firstBoard ? closeFirstBoardPicker : entry === 'no_board' ? closeNoBoardPicker : () => router.back()
                 }
-                hitSlop={8}
-                accessibilityRole="button"
                 accessibilityLabel={firstBoard ? tBoards('mobile.firstBoard.notNow') : t('ariaLabels.close')}
-              >
-                <Icon name="close" size={22} color={tintColor} />
-              </Pressable>
+              />
             ),
           };
         }}
@@ -124,12 +118,11 @@ function BoardsLayout() {
               ? tBoards('sprayWizard.reset.screenTitle')
               : tBoards('sprayWizard.screenTitle'),
           headerBackButtonMenuEnabled: false,
-          headerLeft: ({ tintColor }) => {
+          headerLeft: () => {
             const { returnTo } = (route.params ?? {}) as { returnTo?: unknown };
             return (
               <SprayWizardExitButton
                 returnTo={resolveBoardReturnTo(typeof returnTo === 'string' ? returnTo : undefined)}
-                tintColor={tintColor}
               />
             );
           },

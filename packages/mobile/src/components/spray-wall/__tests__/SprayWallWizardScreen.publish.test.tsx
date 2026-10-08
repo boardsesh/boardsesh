@@ -79,6 +79,7 @@ vi.mock('expo-router', () => ({
   useFocusEffect: () => {},
 }));
 vi.mock('../../../hooks/use-header-actions', () => ({
+  ownHeaderRight: (headerRight: unknown) => ({ headerRight, unstable_headerRightItems: undefined }),
   useHeaderActions: ({
     trailing,
     trailingAccessory,

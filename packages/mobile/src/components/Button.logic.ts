@@ -83,3 +83,53 @@ export function buttonMatchContents(style: ViewStyle | undefined): { horizontal:
   const fills = buttonFillAxes(style);
   return { horizontal: !fills.width, vertical: !fills.height };
 }
+
+/**
+ * The point size of SwiftUI's `body` text at each Dynamic Type size (Apple's
+ * published table). `large` is the default.
+ */
+const BODY_POINT_SIZE_BY_DYNAMIC_TYPE = [
+  ['xSmall', 14],
+  ['small', 15],
+  ['medium', 16],
+  ['large', 17],
+  ['xLarge', 19],
+  ['xxLarge', 21],
+  ['xxxLarge', 23],
+  ['accessibility1', 28],
+  ['accessibility2', 33],
+  ['accessibility3', 40],
+  ['accessibility4', 47],
+  ['accessibility5', 53],
+] as const;
+
+export type ButtonDynamicTypeSize = (typeof BODY_POINT_SIZE_BY_DYNAMIC_TYPE)[number][0];
+
+/**
+ * The largest Dynamic Type size whose body text stays within `maxScale` of the
+ * default, for SwiftUI's `dynamicTypeSize({ max })`. 1.3 gives `xxLarge` (21pt,
+ * 1.24x): the next step, `xxxLarge`, is 23pt, 1.35x. Never below `large`, the
+ * default, so a cap can only stop growth, never shrink a label.
+ */
+export function dynamicTypeSizeCap(maxScale: number): ButtonDynamicTypeSize {
+  const defaultSize = 17;
+  let cap: ButtonDynamicTypeSize = 'large';
+  for (const [size, points] of BODY_POINT_SIZE_BY_DYNAMIC_TYPE) {
+    if (points >= defaultSize && points / defaultSize <= maxScale) cap = size;
+  }
+  return cap;
+}
+
+/**
+ * The Compose label's font size, in sp, that holds it at `maxScale` once Android
+ * multiplies sp by the OS font scale. Undefined when the OS scale is within the
+ * cap, so the label keeps the button's own type.
+ */
+export function cappedComposeLabelSize(
+  defaultSize: number,
+  fontScale: number,
+  maxScale: number | undefined,
+): number | undefined {
+  if (maxScale == null || fontScale <= maxScale) return undefined;
+  return (defaultSize * maxScale) / fontScale;
+}

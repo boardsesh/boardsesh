@@ -275,7 +275,10 @@ export function BoardLookStep({
     >
       {/* The route hides the native header (a transparentModal), so the step
           draws its own top bar. No leading action: this step has no exit. */}
-      <SheetTopBar title="" trailing={{ label: ctaLabel, onPress: () => void handleSave(), prominent: true }} />
+      <SheetTopBar
+        title=""
+        trailing={{ kind: 'forward', label: ctaLabel, onPress: () => void handleSave(), prominent: true }}
+      />
       <View style={styles.header}>
         <Text variant="title1">{t('mobile.settings.boardLook.intro.title')}</Text>
         <Text variant="subheadline" color={bodyColor} style={styles.description}>

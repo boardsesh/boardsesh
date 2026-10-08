@@ -87,8 +87,7 @@
       "all": "Todo",
       "year": "Año",
       "month": "Mes",
-      "week": "Semana",
-      "done": "Listo"
+      "week": "Semana"
     },
     "logbook": {
       "empty": "Tu historial está vacío — registra tu primer encadene.",

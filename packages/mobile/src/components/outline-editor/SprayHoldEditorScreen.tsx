@@ -32,6 +32,7 @@ import {
 } from '../search/InteractiveFilterBoard';
 import { OnboardingTipBanner } from '../onboarding/OnboardingTipBanner';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
+import { ownHeaderRight } from '../../hooks/use-header-actions';
 import { useTheme } from '../../providers/theme-provider';
 import { overlays, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
@@ -3089,20 +3090,22 @@ export function SprayHoldEditorScreen({
   pressPrimaryRef.current = pressPrimary;
   const pressHeaderPrimary = useCallback(() => pressPrimaryRef.current(), []);
   useEffect(() => {
-    navigation.setOptions({
-      headerRight: headerActionsShown
-        ? () => (
-            <SprayEditorHeaderActions
-              primaryLabel={primaryLabel}
-              primaryLoading={committing}
-              primaryDisabled={headerPrimaryDisabled}
-              onPrimary={pressHeaderPrimary}
-              onHelp={headerHelp}
-              helpDisabled={!canEdit}
-            />
-          )
-        : undefined,
-    });
+    navigation.setOptions(
+      ownHeaderRight(
+        headerActionsShown
+          ? () => (
+              <SprayEditorHeaderActions
+                primaryLabel={primaryLabel}
+                primaryLoading={committing}
+                primaryDisabled={headerPrimaryDisabled}
+                onPrimary={pressHeaderPrimary}
+                onHelp={headerHelp}
+                helpDisabled={!canEdit}
+              />
+            )
+          : undefined,
+      ),
+    );
   }, [
     navigation,
     headerActionsShown,
@@ -3116,7 +3119,7 @@ export function SprayHoldEditorScreen({
   // A layout cleanup, so it lands before the next screen's own header actions
   // (the wizard's look step sets its confirm in a layout effect). A passive one
   // would run after that and wipe it.
-  useLayoutEffect(() => () => navigation.setOptions({ headerRight: undefined }), [navigation]);
+  useLayoutEffect(() => () => navigation.setOptions(ownHeaderRight(undefined)), [navigation]);
 
   const refineBarNode =
     refineOpen && canEdit ? (

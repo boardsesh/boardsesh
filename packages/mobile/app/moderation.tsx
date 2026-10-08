@@ -19,9 +19,8 @@
 // Keeping the gate in the screen also covers any future host of it.
 
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { Pressable } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Icon } from '../src/components/Icon';
+import { HeaderLeadingButton } from '../src/components/HeaderActionButtons';
 import { ModerationFeedScreen } from '../src/components/moderation/ModerationFeedScreen';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
@@ -52,15 +51,12 @@ function ModerationRoute() {
           // Same call the boards picker makes: a modal reached from three
           // different surfaces needs a visible way out, not only the iOS
           // swipe-down.
-          headerLeft: ({ tintColor }) => (
-            <Pressable
+          headerLeft: () => (
+            <HeaderLeadingButton
+              kind="close"
               onPress={() => router.back()}
-              hitSlop={8}
-              accessibilityRole="button"
               accessibilityLabel={t('ariaLabels.close')}
-            >
-              <Icon name="close" size={22} color={tintColor} />
-            </Pressable>
+            />
           ),
         }}
       />

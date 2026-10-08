@@ -92,6 +92,7 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
       title={t('mobile.session.renameTitle')}
       leading={{ kind: 'cancel', onPress: onClose, accessibilityLabel: tCommon('comment.cancel') }}
       trailing={{
+        kind: 'confirm',
         label: t('mobile.session.renameSave'),
         onPress: handleSave,
         loading: updateSession.isPending,

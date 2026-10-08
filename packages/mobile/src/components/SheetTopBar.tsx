@@ -21,10 +21,18 @@ import { Icon } from './Icon';
 import type { IconName } from './icon-map';
 import { ActivityIndicator } from './ActivityIndicator';
 import { PressableSurface } from './PressableSurface';
+import { ChromeIconButton } from './ChromeIconButton';
+import { TopBarConfirmGlyph } from './TopBarConfirmGlyph';
+import type { IconName } from './icon-map';
+import {
+  resolveTopBarActionLook,
+  resolveTrailingKind,
+  type TopBarActionColors,
+  type TopBarTrailingKind,
+} from './top-bar-action-look';
 import { useTheme } from '../providers/theme-provider';
-import { selectByVariant } from '../theme/variants';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../theme/typography';
-import { glassSize } from '../theme/layout';
+import { topBarFor } from '../theme/top-bar';
 
 /** Every tappable thing in the bar is at least this big (HIG and M3 both say 44+). */
 export const SHEET_TOP_BAR_TARGET = 44;
@@ -32,18 +40,21 @@ export const SHEET_TOP_BAR_TARGET = 44;
 /** The bar's own height, so a sheet can budget for it. */
 export const SHEET_TOP_BAR_HEIGHT = 56;
 
-/** The size of the leading glyphs. */
-const GLYPH_SIZE = 18;
-
-/** The optional glyph before the trailing label, sized to the body text. */
+/** The glyph before a text action's label, sized to the label. */
 const TRAILING_ICON_SIZE = 15;
 
-/**
- * How the prominent confirm looks per design language. Liquid Glass: a filled
- * brand capsule. Material: brand-coloured semibold text with no fill, the
- * confirm of an M3 full-screen dialog's top app bar.
- */
-const PROMINENT_FILLED = { liquidGlass: true, material: false } as const;
+/** The theme colours a top-bar action can take. */
+function actionColors(
+  systemColors: ReturnType<typeof useTheme>['systemColors'],
+  brandColors: ReturnType<typeof useTheme>['brandColors'],
+): TopBarActionColors {
+  return {
+    label: systemColors.label,
+    primary: brandColors.primary,
+    onPrimary: brandColors.onPrimary,
+    error: brandColors.error,
+  };
+}
 
 /** What every leading action has, whatever it draws. */
 type SheetTopBarLeadingBase = {
@@ -57,7 +68,7 @@ type SheetTopBarLeadingBase = {
 /** The leading way out of a sheet or screen. */
 export type SheetTopBarLeading = SheetTopBarLeadingBase & {
   /**
-   * `close` is an xmark in a filled disc: leaving loses nothing (the iOS 26
+   * `close` is an xmark in a filled circle: leaving loses nothing (the iOS 26
    * system sheets use it). `cancel` is the word "Cancel": leaving throws away an
    * edit. `back` is a chevron, for step two onward of a multi-step sheet.
    */
@@ -81,13 +92,27 @@ export type SheetTopBarTextLeading = SheetTopBarLeadingBase & {
 };
 
 export type SheetTopBarTrailing = {
+  /** The visible word, or with the iOS ✓ only the spoken name. */
   label: string;
+  /**
+   * `confirm` saves or commits the climber's own edit (Save, Add, a Done that
+   * commits a value): on iOS 26 a ✓ in a brand circle the size of the close, on
+   * Material the word; destructive, it is red text, never a red ✓. `send` sends
+   * or reports to someone else (Submit, Report, Claim): prominent text. `forward`
+   * moves on, applies, or closes a confirmation (Next, Apply, a post-submit
+   * Done): text. Unset, a `prominent` action is a confirm and any other a
+   * forward; see `resolveTrailingKind`.
+   */
+  kind?: TopBarTrailingKind;
   onPress: () => void;
   /** Dims the action and swallows taps. */
   disabled?: boolean;
   /** A spinner stands in for the label, in the label's own space, and taps are swallowed. */
   loading?: boolean;
-  /** The sheet's confirm. See PROMINENT_FILLED for how it looks. */
+  /**
+   * The sheet's confirm: a filled brand capsule on Liquid Glass, brand text on
+   * Material. See `theme/top-bar.ts`.
+   */
   prominent?: boolean;
   /**
    * The confirm ends or throws something away ("End session"). Drawn in the
@@ -96,8 +121,9 @@ export type SheetTopBarTrailing = {
    */
   destructive?: boolean;
   /**
-   * A small glyph before the label, for a state the label alone can't carry
-   * (the create drawer's lock on a climb past its edit window).
+   * A glyph for a state the label alone can't carry (the create drawer's lock on
+   * a climb past its edit window). On the iOS confirm it replaces the ✓; on a
+   * text action it sits before the label.
    */
   icon?: IconName;
   accessibilityLabel?: string;
@@ -134,12 +160,12 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
 ) {
   const { kind, onPress, accessibilityLabel, disabled = false } = leading;
   const { t } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
-  // The trailing confirm's disabled look.
-  const disabledColor = disabled ? systemColors.tertiaryLabel : undefined;
+  const { systemColors, brandColors, variant } = useTheme();
+  const spec = topBarFor(variant);
 
   if (leading.kind === 'cancel' || leading.kind === 'text') {
     const label = leading.label ?? t('actions.cancel');
+    const look = resolveTopBarActionLook(spec, actionColors(systemColors, brandColors), { disabled, surface: 'sheet' });
     return (
       <PressableSurface
         testID="sheet-top-bar-leading"
@@ -149,13 +175,14 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
         accessibilityState={{ disabled }}
-        style={styles.textTarget}
+        style={[styles.textTarget, { minHeight: spec.iconTarget, minWidth: spec.iconTarget }]}
       >
         <Text
-          variant="body"
-          color={disabledColor ?? brandColors.primary}
+          variant="label"
+          color={look.labelColor}
           numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          maxFontSizeMultiplier={spec.labelMaxFontScale}
+          style={look.opacity < 1 ? { opacity: look.opacity } : null}
         >
           {label}
         </Text>
@@ -165,33 +192,24 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
 
   const isClose = kind === 'close';
   return (
-    <PressableSurface
+    <ChromeIconButton
       testID="sheet-top-bar-leading"
+      icon={isClose ? 'close' : 'back'}
       onPress={onPress}
       disabled={disabled}
-      feedback="opacity"
-      rippleBorderless
-      accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? t(isClose ? 'ariaLabels.close' : 'ariaLabels.back')}
-      accessibilityState={{ disabled }}
-      style={[styles.glyphTarget, isClose ? { backgroundColor: systemColors.fill } : null]}
-    >
-      <Icon
-        name={isClose ? 'close' : 'back'}
-        size={GLYPH_SIZE}
-        color={disabledColor ?? (isClose ? systemColors.secondaryLabel : brandColors.primary)}
-      />
-    </PressableSurface>
+    />
   );
 });
 
 /**
- * The trailing confirm on its own, for a bespoke header that cannot be a
- * SheetTopBar (the create drawer's editable name) but still owes the same
- * confirm look and behaviour.
+ * The trailing action on its own, for a bespoke header that cannot be a
+ * SheetTopBar (the create drawer's editable name) but still owes the same look
+ * and behaviour.
  */
 export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton({
   label,
+  kind,
   onPress,
   disabled = false,
   loading = false,
@@ -201,25 +219,58 @@ export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailing
   accessibilityLabel,
   accessibilityHint,
 }: SheetTopBarTrailing) {
-  const { systemColors, brandColors, radii, spacing, variant } = useTheme();
+  const { systemColors, brandColors, variant, spacing } = useTheme();
+  const spec = topBarFor(variant);
   const inert = disabled || loading;
   const handlePress = useCallback(() => {
     if (!inert) onPress();
   }, [inert, onPress]);
 
-  // `radii.button` is already resolved per UI variant. The capsule stays a
-  // solid brand fill, the same rule as Button's filled CTA, which never goes
-  // translucent.
-  const filled = prominent && selectByVariant(variant, PROMINENT_FILLED);
-  const accent = destructive ? brandColors.error : brandColors.primary;
-  const labelColor = filled ? brandColors.onPrimary : disabled ? systemColors.tertiaryLabel : accent;
-  const surface = filled
+  const look = resolveTopBarActionLook(spec, actionColors(systemColors, brandColors), {
+    kind: resolveTrailingKind({ kind, prominent }),
+    icon,
+    prominent,
+    destructive,
+    disabled,
+    surface: 'sheet',
+  });
+
+  if (look.glyph) {
+    return (
+      <TopBarConfirmGlyph
+        testID="sheet-top-bar-trailing"
+        spinnerTestID="sheet-top-bar-spinner"
+        glyph={look.glyph}
+        fillColor={look.fillColor}
+        glyphColor={look.labelColor}
+        glyphSize={spec.glyphSize}
+        opacity={look.opacity}
+        size={spec.iconTarget}
+        hitSlop={0}
+        loading={loading}
+        inert={inert}
+        onPress={handlePress}
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+      />
+    );
+  }
+
+  // The capsule stays a solid fill, the same rule as Button's filled CTA, which
+  // never goes translucent. Dimmed as a whole while disabled.
+  const surface = look.filled
     ? [
-        styles.prominent,
-        { backgroundColor: accent, borderRadius: radii.button, paddingHorizontal: spacing[4] },
-        disabled ? styles.dimmed : null,
+        styles.capsule,
+        {
+          backgroundColor: look.fillColor,
+          height: spec.confirmHeight,
+          borderRadius: spec.confirmHeight / 2,
+          paddingHorizontal: spec.confirmPaddingHorizontal,
+          opacity: look.opacity,
+        },
       ]
     : null;
+  const dimLabel = !look.filled && look.opacity < 1 ? { opacity: look.opacity } : null;
 
   return (
     <PressableSurface
@@ -231,28 +282,28 @@ export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailing
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: inert, busy: loading }}
-      style={styles.textTarget}
+      style={[styles.textTarget, { minHeight: spec.iconTarget, minWidth: spec.iconTarget }]}
     >
       <View style={[surface, icon ? [styles.iconRow, { gap: spacing[1] }] : null]}>
         {icon ? (
-          <View testID="sheet-top-bar-trailing-icon" style={loading ? styles.hidden : null}>
-            <Icon name={icon} size={TRAILING_ICON_SIZE} color={labelColor} />
+          <View testID="sheet-top-bar-trailing-icon" style={[dimLabel, loading ? styles.hidden : null]}>
+            <Icon name={icon} size={TRAILING_ICON_SIZE} color={look.labelColor} />
           </View>
         ) : null}
         {/* The label stays in the tree while loading, only hidden, so the slot
             keeps the label's width and nothing beside it moves. */}
         <Text
-          variant="body"
-          color={labelColor}
+          variant="label"
+          color={look.labelColor}
           numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[prominent ? styles.prominentLabel : null, loading ? styles.hidden : null]}
+          maxFontSizeMultiplier={spec.labelMaxFontScale}
+          style={[look.fontWeight ? { fontWeight: look.fontWeight } : null, dimLabel, loading ? styles.hidden : null]}
         >
           {label}
         </Text>
         {loading ? (
           <View style={styles.spinner} testID="sheet-top-bar-spinner">
-            <ActivityIndicator size="small" color={filled ? brandColors.onPrimary : undefined} />
+            <ActivityIndicator size="small" color={look.labelColor} />
           </View>
         ) : null}
       </View>
@@ -412,28 +463,15 @@ const styles = StyleSheet.create({
     height: 32,
   },
   textTarget: {
-    minHeight: SHEET_TOP_BAR_TARGET,
-    minWidth: SHEET_TOP_BAR_TARGET,
     justifyContent: 'center',
   },
-  glyphTarget: {
-    width: SHEET_TOP_BAR_TARGET,
-    height: SHEET_TOP_BAR_TARGET,
-    borderRadius: SHEET_TOP_BAR_TARGET / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  prominent: {
-    minHeight: glassSize.mini,
+  capsule: {
     justifyContent: 'center',
     alignItems: 'center',
   },
   iconRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  prominentLabel: {
-    fontWeight: '600',
   },
   hidden: {
     opacity: 0,
@@ -446,9 +484,6 @@ const styles = StyleSheet.create({
     left: 0,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  dimmed: {
-    opacity: 0.4,
   },
   errorSlot: {
     justifyContent: 'center',

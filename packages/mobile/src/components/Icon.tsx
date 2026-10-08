@@ -1,5 +1,5 @@
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SymbolWeight } from 'expo-symbols';
 import { Platform } from 'react-native';
 import { iconMap, type IconMapping, type IconName } from './icon-map';
 
@@ -7,12 +7,17 @@ type IconProps = {
   name: IconName;
   size?: number;
   color?: string | import('react-native').OpaqueColorValue;
+  /**
+   * The SF Symbol's stroke weight (iOS only). Chrome glyphs (close, back, ✓,
+   * ellipsis) draw semibold, as iOS 26's own bar buttons do.
+   */
+  weight?: SymbolWeight;
 };
 
 // iOS renders native SF Symbols (expo-symbols); Android keeps MaterialCommunityIcons.
 // Both glyph names live in icon-map.ts keyed by the same semantic IconName, so call
 // sites stay platform-agnostic.
-export function Icon({ name, size = 24, color }: IconProps) {
+export function Icon({ name, size = 24, color, weight }: IconProps) {
   const mapping: IconMapping = iconMap[name];
 
   if (Platform.OS === 'ios') {
@@ -24,7 +29,7 @@ export function Icon({ name, size = 24, color }: IconProps) {
       ? { transform: [{ translateY: size * iosOpticalCenterRatio }] }
       : undefined;
 
-    return <SymbolView name={mapping.ios} size={size} tintColor={color} style={opticalCenter} />;
+    return <SymbolView name={mapping.ios} size={size} tintColor={color} weight={weight} style={opticalCenter} />;
   }
 
   return (

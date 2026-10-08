@@ -51,3 +51,11 @@ const ANCHOR_GLYPHS: Partial<Record<IconName, string>> = {
 };
 
 export const anchorGlyphForIcon = (iconName: IconName): string => ANCHOR_GLYPHS[iconName] ?? '⋯';
+
+/**
+ * The overflow family: on Android these anchors draw the M3 overflow IconButton
+ * (`more_vert`, 24dp in a 48dp target) instead of a text glyph.
+ */
+const OVERFLOW_ANCHORS: ReadonlySet<IconName> = new Set<IconName>(['more', 'more.actions', 'more.vertical']);
+
+export const isOverflowAnchor = (iconName: IconName): boolean => OVERFLOW_ANCHORS.has(iconName);

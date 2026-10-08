@@ -65,7 +65,12 @@ vi.mock('../../../providers/theme-provider', async () => {
 });
 
 import { TickActionBar } from '../TickActionBar';
-import { TICK_ACTION_HEIGHT, TICK_ERROR_SLOT_HEIGHT, tickActionHeight } from '../tick-sheet-metrics';
+import {
+  TICK_ACTION_HEIGHT,
+  TICK_ACTION_MAX_FONT_SCALE,
+  TICK_ERROR_SLOT_HEIGHT,
+  tickActionHeight,
+} from '../tick-sheet-metrics';
 import { brandColors } from '../../../theme/colors';
 
 function renderBar(props: Partial<Parameters<typeof TickActionBar>[0]> = {}) {
@@ -161,6 +166,15 @@ describe('TickActionBar', () => {
     // The flex split is not what the text scale moves.
     expect(buttonStyle('Attempt').flex).toBe(1);
     expect(buttonStyle('Send').flex).toBe(2);
+  });
+
+  it('is 48pt tall, and caps both labels at 1.3x Dynamic Type so they fit it', () => {
+    renderBar({ secondary: { title: 'Attempt', onPress: vi.fn() } });
+    expect(buttonStyle('Send').height).toBe(48);
+    const capOf = (title: string) => buttonCalls.props.find((props) => props.title === title)?.maxFontSizeMultiplier;
+    expect(capOf('Attempt')).toBe(TICK_ACTION_MAX_FONT_SCALE);
+    expect(capOf('Send')).toBe(TICK_ACTION_MAX_FONT_SCALE);
+    expect(TICK_ACTION_MAX_FONT_SCALE).toBe(1.3);
   });
 
   it('announces a failure: these used to go through showToast, which announced', () => {

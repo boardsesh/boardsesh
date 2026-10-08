@@ -47,6 +47,13 @@ export type ButtonProps = {
    * row of 44dp controls and must not be the one under the touch floor.
    */
   minHeight?: number;
+  /**
+   * How far the label may grow with the OS text size, as a multiple of its
+   * default size (1.3 = 130%). iOS caps the SwiftUI Dynamic Type size at the
+   * largest step within it; Android scales the Compose label back to it. Unset,
+   * the label scales freely.
+   */
+  maxFontSizeMultiplier?: number;
   /** See {@link ButtonSurface}. Per-button override of the surrounding provider. */
   over?: ButtonSurface;
   /** See {@link ButtonRole}. */

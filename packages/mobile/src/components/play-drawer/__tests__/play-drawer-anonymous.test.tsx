@@ -262,6 +262,11 @@ vi.mock('../ClimberLogsSheet', () => ({ ClimberLogsSheet: () => null }));
 vi.mock('../../report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../ble/BleControlSheetHost', () => ({ BleControlSheetHost: () => null }));
 vi.mock('../../queue-control/RestTimerPillHost', () => ({ RestTimerPillHost: () => null }));
+vi.mock('../../ChromeIconButton', () => ({
+  ChromeIconButton: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel: string }) =>
+    createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
+  useChromeIconButtonSize: () => 44,
+}));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 
 // --- Hooks / providers -------------------------------------------------------

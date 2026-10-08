@@ -54,9 +54,11 @@ export function YouFilterSheet({
       androidContentSized
       scrollable
       header={
+        // A close, not a trailing Done: the filters apply as they change, so
+        // there is nothing to commit.
         <SheetTopBar
           title={t('mobile.filter.title')}
-          trailing={{ label: t('mobile.filter.done'), onPress: () => sheetRef.current?.close(), prominent: true }}
+          leading={{ kind: 'close', onPress: () => sheetRef.current?.close() }}
         />
       }
     >

@@ -69,7 +69,12 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryLabel: '#888', tertiaryLabel: '#666', separator: '#222' } }),
+  // useHeaderActions reads the variant and the brand tint for the native confirm.
+  useTheme: () => ({
+    variant: 'liquidGlass',
+    brandColors: { primary: '#6D28D9', error: '#C81E1E' },
+    systemColors: { secondaryLabel: '#888', tertiaryLabel: '#666', separator: '#222' },
+  }),
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));

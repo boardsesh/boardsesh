@@ -381,12 +381,18 @@ the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet 
 - **Leading: xmark or Cancel.** Use `close` (an xmark, as the iOS 26 system sheets do) when leaving
   loses nothing: pickers, detail and filter sheets. Use `cancel` (the word) when leaving would
   throw away an edit: forms and reports. Use `back` for step two onward of a multi-step sheet.
-- **How the confirm looks.** In a sheet, `prominent` is a filled brand capsule on Liquid Glass. On
-  Material it is brand-coloured semibold text with no fill, like the confirm in an M3 full-screen
-  dialog. In a native header it is the app's brand tint in semibold on both, the iOS bar-button
-  convention for Done; a plain action keeps the label colour, and a disabled one is tertiary
-  label. A leading action takes `disabled` too, with the same dimmed look. Native prominent bar items (`unstable_headerRightItems`) were
-  passed over: the API is unstable and iOS-only, and it has no loading state.
+- **How the confirm looks.** One spec, in `docs/ai-design-guidelines.md`, "Top-bar buttons". Name the
+  trailing action's `kind`: `confirm` when it saves or commits the climber's own edit (Save, Add, a Done
+  that commits a value), `send` when it sends or reports to someone else (Submit, Report, Claim),
+  `forward` when it moves on, applies, or closes a confirmation (Next, Apply, a post-submit Done). On
+  iOS 26 a confirm is a ✓ in a brand circle the size of the leading X; its label is the spoken name. A
+  destructive commit is red text, never a red ✓. Send and prominent forward actions are a brand capsule
+  in a sheet. On Material all of them are brand text with no fill. A Done with nothing to commit is no
+  trailing action: give the surface a leading X instead. In a native header on iOS 26,
+  `useHeaderActions` renders the trailing side as native bar items (see the guidelines for the loading
+  and accessory cases). A screen that sets `headerRight` itself with `setOptions` wraps it in
+  `ownHeaderRight()` so a native item never hides it. A leading action takes `disabled` too, with the
+  same dimmed look.
 - **Pushed or modal screens.** Call `useHeaderActions({ leading, trailing })`
   (`src/hooks/use-header-actions.ts`). It takes the same shape and sets the native stack's
   `headerLeft` / `headerRight`. On iOS 26 those render as Liquid Glass bar items, and on Material

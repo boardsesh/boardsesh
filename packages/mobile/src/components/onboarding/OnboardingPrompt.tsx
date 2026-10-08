@@ -87,7 +87,10 @@ export function OnboardingPrompt({ iconColor, bodyColor, backgroundColor, onCont
       ]}
       accessibilityViewIsModal
     >
-      <SheetTopBar title="" trailing={{ label: copy.continueLabel, onPress: handleContinue, prominent: true }} />
+      <SheetTopBar
+        title=""
+        trailing={{ kind: 'forward', label: copy.continueLabel, onPress: handleContinue, prominent: true }}
+      />
       <View style={styles.cardArea}>
         <OnboardingCard
           icon={ONBOARDING_PROMPT_CARD.icon}

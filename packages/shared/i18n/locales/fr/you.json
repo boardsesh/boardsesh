@@ -87,8 +87,7 @@
       "all": "Tout",
       "year": "Année",
       "month": "Mois",
-      "week": "Semaine",
-      "done": "Terminé"
+      "week": "Semaine"
     },
     "logbook": {
       "empty": "Ton carnet est vide — enregistre ta première croix.",
