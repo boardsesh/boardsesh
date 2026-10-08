@@ -7,6 +7,7 @@ import type { NativeStackNavigationOptions } from 'expo-router';
 const controls = vi.hoisted(() => ({
   glassCapability: true,
   headerHeight: 148,
+  focusedSegments: ['(tabs)', 'home'] as string[],
   options: [] as NativeStackNavigationOptions[],
   openUserDrawer: vi.fn(),
 }));
@@ -33,7 +34,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
 }));
 vi.mock('expo-router', () => ({
-  useSegments: () => ['(tabs)', 'home'],
+  useSegments: () => controls.focusedSegments,
   Stack: {
     Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
       controls.options.push(options);
@@ -104,22 +105,50 @@ describe('NativeRootHeader', () => {
   beforeEach(() => {
     controls.glassCapability = true;
     controls.headerHeight = 148;
+    controls.focusedSegments = ['(tabs)', 'home'];
     controls.options.length = 0;
     controls.openUserDrawer.mockClear();
   });
 
-  it('uses one UIKit collapsing title with explicit label colors and no legacy blur', () => {
+  it('preserves the route title with explicit label colors and no legacy blur', () => {
     render(<NativeRootHeader onHeightChange={vi.fn()} />);
 
     expect(lastOptions()).toMatchObject({
       headerShown: true,
       headerLargeTitle: true,
-      title: 'mobile.nav.home',
       headerTitleStyle: { color: 'theme-label' },
       headerLargeTitleStyle: { color: 'theme-label' },
     });
+    expect(lastOptions()).not.toHaveProperty('title');
     expect(lastOptions().headerTitle).toBeUndefined();
     expect(lastOptions().headerBlurEffect).toBeUndefined();
+  });
+
+  it('retains the underlying route title when the climb drawer opens and closes', () => {
+    controls.focusedSegments = ['(tabs)', 'climbs'];
+    const routeOptions: NativeStackNavigationOptions = { title: 'Climbs' };
+    const onHeightChange = vi.fn();
+    const rootHeader = <NativeRootHeader centerContent={<span>Current climb</span>} onHeightChange={onHeightChange} />;
+    const { rerender } = render(rootHeader);
+
+    for (const focusedSegments of [['play'], ['(tabs)', 'climbs']]) {
+      expect(lastOptions()).not.toHaveProperty('title');
+      expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
+      controls.focusedSegments = focusedSegments;
+      rerender(<NativeRootHeader centerContent={<span>Current climb</span>} onHeightChange={onHeightChange} />);
+    }
+    expect(lastOptions()).not.toHaveProperty('title');
+    expect({ ...routeOptions, ...lastOptions() }.title).toBe('Climbs');
+  });
+
+  it('keeps an explicit title override independent of the focused route', () => {
+    controls.focusedSegments = ['play'];
+    const { rerender } = render(<NativeRootHeader title="Climbs" onHeightChange={vi.fn()} />);
+    expect(lastOptions().title).toBe('Climbs');
+
+    controls.focusedSegments = ['(tabs)', 'climbs'];
+    rerender(<NativeRootHeader title="" onHeightChange={vi.fn()} />);
+    expect(lastOptions().title).toBe('');
   });
 
   it('keeps the existing blur on iOS before native glass support', () => {

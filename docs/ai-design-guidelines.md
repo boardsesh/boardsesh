@@ -849,7 +849,9 @@ On iOS, root screens use UIKit's collapsing large titles and automatic content
 insets. Native header controls use 44pt slots; floating controls keep their 48pt
 slots. A standalone avatar draws one circular background, while grouped bar items
 use UIKit's shared material. Home's scope selector scrolls with the feed, and the
-on-wall climb capsule stays in the navigation bar's centre slot.
+on-wall climb capsule stays in the navigation bar's centre slot. Each tab's layout
+owns its localized title; opening a transparent drawer must not rewrite that
+title from the globally focused route.
 
 The create-climb header uses the same measured flank balancing as `SheetTopBar`.
 Its editable name centres when room permits, while the ellipsis and Save share a
