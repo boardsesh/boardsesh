@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SPRAY_FULL_PHOTO_MIN_SCALE, photoSignatureLapsed, sprayFullResolutionPhoto } from '../spray-full-photo';
 
-const wall = { wallUuid: 'wall-1', versionId: 30 };
+const wall = { layoutId: 4200, wallUuid: 'wall-1', versionId: 30, photoExpiresAt: '2026-10-06T12:15:00.000Z' };
 
 describe('sprayFullResolutionPhoto', () => {
   it('hands the editor the full photo, fetched past 3x', () => {
@@ -31,6 +31,31 @@ describe('sprayFullResolutionPhoto', () => {
     const nextVersion = sprayFullResolutionPhoto({ ...wall, versionId: 31 }, 'https://private.example/full.jpg?sig=2');
     expect(resigned?.cacheKey).toBe(first?.cacheKey);
     expect(nextVersion?.cacheKey).not.toBe(first?.cacheKey);
+  });
+});
+
+describe('sprayFullResolutionPhoto keeping the file', () => {
+  // The layer asks only once the zoom passes 3x, and the request names the wall
+  // so the copy is withdrawn with it.
+  it('hands the layer a loader for the signed URL in hand', async () => {
+    const keep = vi.fn(async () => '/cache/spray-walls/4200-full-x.jpg');
+    const discard = vi.fn();
+    const photo = sprayFullResolutionPhoto(wall, 'https://private.example/full.jpg?sig=1', { keep, discard });
+    expect(keep).not.toHaveBeenCalled();
+    expect(await photo?.loadFromDisk?.()).toBe('/cache/spray-walls/4200-full-x.jpg');
+    const request = {
+      layoutId: 4200,
+      wallUuid: 'wall-1',
+      url: 'https://private.example/full.jpg?sig=1',
+      expiresAt: wall.photoExpiresAt,
+    };
+    expect(keep).toHaveBeenCalledWith(request);
+    photo?.discardFromDisk?.();
+    expect(discard).toHaveBeenCalledWith(request);
+  });
+
+  it('leaves the loader off when nothing keeps the file', () => {
+    expect(sprayFullResolutionPhoto(wall, 'https://private.example/full.jpg?sig=1')?.loadFromDisk).toBeUndefined();
   });
 });
 

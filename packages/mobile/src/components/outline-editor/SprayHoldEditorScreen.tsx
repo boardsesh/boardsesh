@@ -114,6 +114,7 @@ import {
   SPRAY_EDITOR_MAX_SCALE,
 } from './spray-photo-frame';
 import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-photo';
+import { discardSprayFullPhoto, ensureSprayFullPhotoCached } from '../../lib/spray/spray-photo-cache';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { sprayPhotoReservesBottom, useSprayEditorLayout } from './use-spray-editor-layout';
 import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
@@ -160,6 +161,9 @@ import {
   strokeExtent,
   toRingPoints,
 } from './spray-hold-tools';
+
+/** The hold editor keeps its full-resolution photo on disk between visits. */
+const KEEP_FULL_PHOTO_ON_DISK = { keep: ensureSprayFullPhotoCached, discard: discardSprayFullPhoto };
 
 /** The ring reveal's sweep down the wall, after a fresh scan. */
 const REVEAL_MS = 700;
@@ -415,7 +419,10 @@ export function SprayHoldEditorScreen({
     useSprayWallDraft(layoutId, wallUuid, versionNumber, versionId);
   // The sharper photo for deep zoom (#5911). Null on walls that have none, which
   // keep the base photo alone.
-  const fullResolutionPhoto = useMemo(() => sprayFullResolutionPhoto(wall, photoFullUrl), [wall, photoFullUrl]);
+  const fullResolutionPhoto = useMemo(
+    () => sprayFullResolutionPhoto(wall, photoFullUrl, KEEP_FULL_PHOTO_ON_DISK),
+    [wall, photoFullUrl],
+  );
   const photoExpiresAt = wall?.photoExpiresAt ?? null;
   const lastPhotoRefreshAtRef = useRef(0);
   const handleFullPhotoError = useCallback(() => {

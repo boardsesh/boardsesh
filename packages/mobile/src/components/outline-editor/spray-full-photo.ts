@@ -7,6 +7,7 @@
 // copy, and only once the climber zooms in.
 
 import type { FullResolutionPhoto } from '../search/FullResolutionPhotoLayer';
+import type { SprayFullPhotoRequest } from '../../lib/spray/spray-photo-cache';
 
 /**
  * The zoom past which the editor fetches the full-resolution photo.
@@ -32,16 +33,36 @@ const SIGNATURE_EXPIRY_MARGIN_MS = 60 * 1000;
  * The cache key names the version, not the signature. A version's photo never
  * changes, and the draft is refetched during a long sitting, so the decoded
  * image survives the new URL.
+ *
+ * `keepOnDisk` (`ensureSprayFullPhotoCached` / `discardSprayFullPhoto`) keeps the downloaded file, so the
+ * next visit, and the next draft on the same photo, decodes it instead of
+ * downloading several megabytes again. Left out, the layer loads the URL.
  */
 export function sprayFullResolutionPhoto(
-  wall: { wallUuid: string; versionId: number | string } | null,
+  wall: { layoutId: number; wallUuid: string; versionId: number | string; photoExpiresAt: string } | null,
   photoFullUrl: string | null,
+  keepOnDisk?: {
+    keep: (request: SprayFullPhotoRequest) => Promise<string | null>;
+    discard: (request: SprayFullPhotoRequest) => void;
+  },
 ): FullResolutionPhoto | null {
   if (!wall || !photoFullUrl) return null;
-  return {
+  const photo: FullResolutionPhoto = {
     uri: photoFullUrl,
     cacheKey: `spray-full/${wall.wallUuid}/v${wall.versionId}`,
     minScale: SPRAY_FULL_PHOTO_MIN_SCALE,
+  };
+  if (!keepOnDisk) return photo;
+  const request: SprayFullPhotoRequest = {
+    layoutId: wall.layoutId,
+    wallUuid: wall.wallUuid,
+    url: photoFullUrl,
+    expiresAt: wall.photoExpiresAt,
+  };
+  return {
+    ...photo,
+    loadFromDisk: () => keepOnDisk.keep(request),
+    discardFromDisk: () => keepOnDisk.discard(request),
   };
 }
 

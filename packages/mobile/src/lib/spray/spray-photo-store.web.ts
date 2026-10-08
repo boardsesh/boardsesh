@@ -21,6 +21,11 @@ export const SPRAY_PHOTO_STORE_DIR_NAME = 'spray-wall-photos';
  */
 export const SPRAY_PHOTO_STORE_AVAILABLE = false;
 
+/** Nothing is ever stored, so nothing is ever reclaimed. */
+export function sprayPhotoStoreEpoch(): number {
+  return 0;
+}
+
 export function sprayPhotoStoreFileName(photoKey: string): string {
   return photoKey.replace(/[^A-Za-z0-9._-]/g, '_');
 }
@@ -33,6 +38,7 @@ export async function storeSprayPhoto(
   _photoKey: string,
   _photoUrl: string,
   _layoutId?: number,
+  _cachedCopyPath?: string | null,
 ): Promise<string | null> {
   return null;
 }

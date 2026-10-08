@@ -4,6 +4,7 @@ const settings = vi.hoisted(() => ({
   enabled: [] as string[],
   forgetOfflineBoard: vi.fn(),
   forgetSprayWallArchive: vi.fn(),
+  forgetOwnedSprayWallPin: vi.fn(),
   setOfflineBoardEnabled: vi.fn(),
   forgetOfflineBoardScope: vi.fn(),
   forgetDownloadTrigger: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../../../settings', () => ({
     `${scope.boardType}:${scope.layoutId}:${scope.sizeId}`,
   forgetOfflineBoard: settings.forgetOfflineBoard,
   forgetSprayWallArchive: settings.forgetSprayWallArchive,
+  forgetOwnedSprayWallPin: settings.forgetOwnedSprayWallPin,
   setOfflineBoardEnabled: settings.setOfflineBoardEnabled,
   forgetOfflineBoardScope: settings.forgetOfflineBoardScope,
   forgetDownloadTrigger: settings.forgetDownloadTrigger,
@@ -37,6 +39,8 @@ describe('forgetDeletedSprayWall', () => {
     await forgetDeletedSprayWall({ uuid: 'old-wall', layoutId: 77 }, db);
     expect(settings.forgetOfflineBoard).toHaveBeenCalledWith('old-wall');
     expect(settings.forgetSprayWallArchive).toHaveBeenCalledWith('old-wall');
+    // A deleted wall is no longer the owner's to keep offline.
+    expect(settings.forgetOwnedSprayWallPin).toHaveBeenCalledWith('old-wall');
     expect(clearCaches).toHaveBeenCalledWith(77);
     expect(settings.setOfflineBoardEnabled).not.toHaveBeenCalled();
   });

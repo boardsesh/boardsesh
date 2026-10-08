@@ -63,15 +63,17 @@ function zoomTo(scaleSV: { value: number }, scale: number) {
   });
 }
 
-function setup() {
+type LayerProps = Parameters<typeof FullResolutionPhotoLayer>[0];
+
+function setup(photoUnderTest: FullResolutionPhoto = photo) {
   reaction.last = null;
   imageRenders.length = 0;
   const scaleSV = { value: 1 };
   const onError = vi.fn();
   const view = render(
     createElement(FullResolutionPhotoLayer, {
-      photo,
-      scaleSV: scaleSV as unknown as Parameters<typeof FullResolutionPhotoLayer>[0]['scaleSV'],
+      photo: photoUnderTest,
+      scaleSV: scaleSV as unknown as LayerProps['scaleSV'],
       onError,
     }),
   );
@@ -115,6 +117,68 @@ describe('FullResolutionPhotoLayer', () => {
   it('reports a photo that will not load', () => {
     const { scaleSV, onError } = setup();
     zoomTo(scaleSV, 4);
+    act(() => imageRenders.at(-1)?.onError?.());
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The editor keeps the downloaded copy (`ensureSprayFullPhotoCached`), so a
+// second visit decodes a file instead of downloading several megabytes again.
+describe('FullResolutionPhotoLayer with a kept file', () => {
+  /** A loader the test settles by hand. */
+  function deferredLoader() {
+    const settle = { resolve: (_path: string | null) => {}, reject: () => {} };
+    const loadFromDisk = vi.fn(
+      () =>
+        new Promise<string | null>((resolve, reject) => {
+          settle.resolve = resolve;
+          settle.reject = () => reject(new Error('disk'));
+        }),
+    );
+    return { loadFromDisk, settle };
+  }
+
+  it('asks for the file only once the zoom passes the switch zoom', () => {
+    const { loadFromDisk } = deferredLoader();
+    const { scaleSV } = setup({ ...photo, loadFromDisk });
+    zoomTo(scaleSV, 2);
+    expect(loadFromDisk).not.toHaveBeenCalled();
+    zoomTo(scaleSV, 4);
+    expect(loadFromDisk).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws nothing while the file is fetched, then the file', async () => {
+    const { loadFromDisk, settle } = deferredLoader();
+    const { container, scaleSV } = setup({ ...photo, loadFromDisk });
+    zoomTo(scaleSV, 4);
+    // The base shows through, as it does while a URL loads.
+    expect(container.querySelector('img')).toBeNull();
+    await act(async () => settle.resolve('/cache/spray-walls/4200-full-x.jpg'));
+    const image = container.querySelector('img');
+    expect(image?.getAttribute('data-uri')).toBe('file:///cache/spray-walls/4200-full-x.jpg');
+    expect(image?.getAttribute('data-cache-key')).toBe(photo.cacheKey);
+  });
+
+  it.each(['null', 'reject'] as const)('loads the URL when the file could not be kept (%s)', async (outcome) => {
+    const { loadFromDisk, settle } = deferredLoader();
+    const { container, scaleSV } = setup({ ...photo, loadFromDisk });
+    zoomTo(scaleSV, 4);
+    await act(async () => (outcome === 'null' ? settle.resolve(null) : settle.reject()));
+    expect(container.querySelector('img')?.getAttribute('data-uri')).toBe(photo.uri);
+  });
+
+  // A kept file that will not decode costs one download, not a sharp photo.
+  it('falls back to the URL when the kept file will not load, and only then reports', async () => {
+    const { loadFromDisk, settle } = deferredLoader();
+    const discardFromDisk = vi.fn();
+    const { container, scaleSV, onError } = setup({ ...photo, loadFromDisk, discardFromDisk });
+    zoomTo(scaleSV, 4);
+    await act(async () => settle.resolve('/cache/spray-walls/4200-full-x.jpg'));
+    act(() => imageRenders.at(-1)?.onError?.());
+    expect(onError).not.toHaveBeenCalled();
+    // The bad file goes, so the next visit downloads a good one.
+    expect(discardFromDisk).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('img')?.getAttribute('data-uri')).toBe(photo.uri);
     act(() => imageRenders.at(-1)?.onError?.());
     expect(onError).toHaveBeenCalledTimes(1);
   });

@@ -2930,7 +2930,7 @@ The device still mirrors `missing_hold_count`, `revision_number`,
 ### Device cleanup
 
 Sign-out withdraws every registered wall and clears renderer photographs in
-`{cache}/spray-walls`, durable offline photographs in
+`{cache}/spray-walls` (the hold editor's kept full-resolution copies included), durable offline photographs in
 `{document}/spray-wall-photos`, and spray PNGs in `board-thumbnails`. Catalogue
 board PNGs remain. Removing a downloaded wall or receiving its deletion
 tombstone withdraws only that layout, including all cached photo versions and
@@ -3013,7 +3013,7 @@ soft. So a photo larger than 2048 px on its long side is stored twice:
 | --- | --- | --- | --- |
 | Base | `spray-walls/<wallUuid>/<photoId>.jpg` | ≤ 2048 px (`SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION`) | the canonical frame, the hold detector, the climb view, search, offline sync, the public copy |
 | Thumbnail | `<base key>@280.jpg` | 280 px square | list rows |
-| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution |
+| Full | `spray-walls/<wallUuid>/<photoId>-full.jpg` | ≤ 4096 px (`SPRAY_WALL_PHOTO_FULL_MAX_DIMENSION`) | the hold editor, once zoomed past the base's resolution, which keeps it in its cache |
 
 - **The base keeps every number it had.** The response's `width`/`height` and
   the base object's metadata are the BASE's, so `createSprayWallVersion`, the
@@ -3041,6 +3041,19 @@ soft. So a photo larger than 2048 px on its long side is stored twice:
   `HEAD` per key per backend process, remembered after because the answer never
   changes for a key. An outage reads as null and is not remembered. No column
   records it, because the check costs less than a migration and a backfill.
+- **The phone keeps the full copy once fetched.** The first zoom past 3x
+  downloads it into the renderer cache as `<layoutId>-full-<photoId>.jpg`
+  (`ensureSprayFullPhotoCached`), named after the photo rather than the version,
+  so later visits and every draft on the same photo decode the file instead of
+  downloading several megabytes again. It lives and dies with the wall's other
+  cached files: the 14-day sweep, the Clear button, per-wall withdrawal and
+  sign-out. `FullResolutionPhotoLayer` shows nothing extra while the file lands
+  (the base is the placeholder), falls back to the signed URL when it could not be
+  kept, and to the URL again if the kept file will not decode, deleting that
+  file (`discardSprayFullPhoto`) so the next visit downloads a good one. expo-image still
+  holds it in memory only: a second copy in its shared disk cache would outlive
+  both withdrawal and sign-out. The hold editor needs the network for its draft,
+  so this copy is about not paying for the download twice, not about offline.
 
 Every stored object carries **`Cache-Control: private, no-store`**.
 `uploadToS3` defaults to `public, max-age=31536000, immutable`, which is right for
@@ -3895,6 +3908,93 @@ cache lives there and the OS may reclaim it whenever it likes, which is the one
 thing an offline copy must not do. A download that fails records a pending marker
 and rewinds that wall's cursor so the next pull re-offers the row with a live
 signature, bounded by an attempt count — the dead URL cannot be retried.
+
+**One download per photograph.** The object key is the photo's identity: every
+upload gets a fresh random photo id, nothing writes to a key twice, and a hold
+edit reuses its source's key because it reuses the picture. The `Cache-Control:
+private, no-store` on the object stops shared caches, not this: the app keys its
+own files on the object, never on the signed URL, which changes on every read.
+So the two copies of a wall's base photo never both download:
+
+- **The renderer reads the durable copy first.** For a registered wall, the
+  object key is read off its signed URL (`sprayPhotoObjectFromUrl`: a SigV4
+  presign ends its path in the key) and `tryGetSprayPhotoPathSync` returns the
+  `Paths.document` file when there is one, before it looks in `Paths.cache`. A
+  downloaded wall is never fetched into the renderer cache, and a cache sweep or
+  the OS reclaiming `Paths.cache` costs it nothing. Only through a registered
+  wall, and only for a key under that wall's own uuid; a URL that does not parse
+  is a miss, which costs a download and never the wrong picture.
+- **Downloading a wall adopts the renderer's copy.** A climber usually opens a
+  wall before switching on "Available offline", so the sink asks
+  `findCachedSprayPhotoForObjectKey` and `storeSprayPhoto` copies that file into
+  the store (staged on `.part`, moved into place) instead of downloading the same
+  bytes again. A copy that fails, because the cache file was swept between the
+  lookup and the copy, falls back to the signed URL.
+- **Then the renderer's copy goes.** Once the store holds the photo, nothing
+  asks for the cache copy again, so it is deleted (`releaseSupersededCacheCopy`),
+  unless this process already handed its path to a board surface: the native
+  renderer reads the background file again for every new overlay, so a wall on
+  screen keeps drawing from it. The next launch, which never hands it out,
+  deletes it on the first draw. `liveSprayPhotoFileNames` still protects a
+  registered wall's cache name from the sweep for the same reason.
+- **The store lookup is memoised.** It runs for every board surface and climb
+  row. The memo key carries `sprayPhotoStoreEpoch()`, which every store delete
+  moves (a tombstone, a removed download, a reset's prune, a failed download,
+  sign-out), so a reclaimed photo is never handed out from it.
+
+Which walls are on the phone offline: the walls the climber downloaded, which
+are also the only walls whose climbs are readable offline, and every wall they
+own (below). A wall that was only opened keeps its photo in the renderer cache
+for the session; with no `spray_walls` row behind it there is nothing to draw it
+on in a cold offline start, so a durable copy of its photo would buy nothing. The 280 px
+thumbnail is not kept anywhere: list rows draw from the base photo through the
+native renderer, and only the moderation queue (network only, `cachePolicy="none"`)
+loads the thumbnail itself.
+
+**Your own walls are always downloaded (owner decision, October 2026).** A wall
+the signed-in climber owns (`ownerId` is theirs; `isOwned` is a different
+question) is made available offline without the switch: photo, holds and
+climbs. `OwnedSprayWallsOfflinePin`, mounted at the root beside
+`OfflineSyncBridge`, runs `planOwnedSprayWallPins` against the whole roster
+(`fetchAllMyBoards`, every page, under the `['myBoards', 'ownedSprayWallPins']`
+key so any `myBoards` invalidation refetches it) and turns the wall on through `enableBoardsOffline`, the switch's own path
+(trigger `owned-wall`, source `owned_wall`). Publishing a wall, its first holds
+or a later hold edit, invalidates `myBoards`, so a new wall is pinned as soon as
+the refetch names it; before its first publish there is nothing to download. It is idle signed out, offline (a cached roster is no evidence of a
+change), in screenshot captures (their requests are replayed from a
+recording), wherever offline downloads are off (Expo web has a no-op twin), and
+while a sign-out is wiping (`isSigningOut()`): the leaving account's roster is
+still cached then, and a pin would re-enable its walls mid-wipe.
+
+- **Pinned once, then the owner's switch.** The pin is recorded per wall in
+  `offlineOwnedSprayWallsV1` (with the account it was made for), and a recorded
+  wall is never turned on again. So the switch still works on an owned wall: it
+  reads on, and an owner who turns it off, or removes the wall in Storage,
+  keeps it off. A locked switch was the alternative; it would have needed new
+  copy in four languages and a special case in Storage's Remove and Remove all,
+  and it would take away the one control an owner short of space has.
+- **Losing a wall takes its download.** A pinned wall still in the roster whose
+  `ownerId` now names somebody else is removed from the device through
+  `removeOfflineBoard`, Storage's own Remove, and dropped from the record. A
+  wall missing from the roster is left alone: `myBoards` leaves archived walls
+  out, and those stay downloaded so they open offline. A deleted wall goes
+  through `forgetDeletedSprayWall`, which also drops its record.
+- **One account.** The record is cleared at sign-out right after
+  `queryClient.clear()` (and with the persisted stores on a signed-out cold
+  start), never earlier: cleared while the roster is still cached, the next
+  settings write would re-pin and rewrite it, and the same climber signing back
+  in would get nothing pinned. A record naming another account reads as empty,
+  so the next climber on a shared phone pins their own walls.
+- **The cap.** The record keeps 128 walls. Over it, walls the roster no longer
+  names go first, so an owner's "keep it off" is never forgotten for a wall
+  they still have.
+- **Storage.** An owner has at most 10 live walls and 50 archived ones; a
+  wall's download is its 2048 px photo (about 1 to 2 MB) plus its climbs, so no
+  cap was added. The roster read walks every page rather than taking
+  `myBoards`' first 20, because a wall never opened sorts last and a fresh wall
+  on a busy account would otherwise never be pinned; for nearly everyone it is
+  one request of up to 50 boards, made when the roster is invalidated or after
+  ten minutes.
 
 **A wall's storage is reclaimed on four paths**, because a photograph outliving
 its row is invisible until a phone fills up: a reset prunes the generation it

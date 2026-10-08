@@ -50,7 +50,7 @@ import { clearStoredSprayPhotos } from '../lib/spray/spray-photo-store';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
 import { dropSprayWallViewerAccess, refreshSprayWallViewerAccess } from '../lib/spray/spray-wall-loader';
 import { resetSyncStatus } from '../sync/sync-status';
-import { setSetting, clearOfflineBoards, clearSprayWallArchives } from '../settings';
+import { setSetting, clearOfflineBoards, clearSprayWallArchives, clearOwnedSprayWallPins } from '../settings';
 import { getOutboxSummary, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue, reportScopeDownloadAbandonedOnSignOut } from '../offline/offline-sync-adapter';
 import { reportAbandonedDownloadsOnSignOut } from '../offline/abandoned-download-terminals';
@@ -468,6 +468,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // would otherwise paper over the cross-user leak. Doing this at the auth
       // boundary keeps the rest of the hooks simple.
       queryClient.clear();
+      // Which owned spray walls were pinned offline, and for whom. Here, after
+      // the roster cache is gone, and not with the persisted stores above: the
+      // pin (`OwnedSprayWallsOfflinePin`) stays mounted with this account's
+      // cached roster until `isAuthenticated` flips, and a record cleared
+      // earlier would be rewritten by the next settings write, re-pinning into
+      // the wipe and leaving nothing to pin on the next sign-in.
+      clearOwnedSprayWallPins();
       // The spray registry is module state, so `clear()` does not reach it, and
       // it holds one per-account answer: whether the viewer can edit each wall.
       // After the client reset above, so the re-read is the next viewer's.
@@ -529,6 +536,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();
+        // A signed-out cold start has no live roster to race, so the pin record
+        // goes with the persisted stores here.
+        clearOwnedSprayWallPins();
         const persistedStoreCleanup = clearPersistedUserStores(previousStorageOwner, exportCredentialGeneration);
         if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
         else await persistedStoreCleanup;

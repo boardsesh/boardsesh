@@ -4,6 +4,7 @@ import {
   forgetOfflineBoard,
   forgetOfflineBoardScope,
   forgetSprayWallArchive,
+  forgetOwnedSprayWallPin,
   getSetting,
   offlineBoardKey,
   setOfflineBoardEnabled,
@@ -26,6 +27,7 @@ export async function forgetDeletedSprayWall(
 ): Promise<void> {
   forgetOfflineBoard(wall.uuid);
   forgetSprayWallArchive(wall.uuid);
+  forgetOwnedSprayWallPin(wall.uuid);
   clearSprayWallPrivateCaches(wall.layoutId);
   const scope = { boardType: 'spray', layoutId: wall.layoutId, sizeId: wall.layoutId };
   const scopeKey = offlineBoardKey(scope);

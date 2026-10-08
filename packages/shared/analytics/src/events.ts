@@ -844,7 +844,8 @@ export const SHARED_EVENTS = {
   // `trigger` distinguishes DELIBERATE taps from AUTOMATIC re-enables, which is
   // the whole point for discovery work: 'toggle' | 'download-all' (the My Boards
   // / More tap) vs 'auto-download-all' | 'adopt-auto' (a setting acting on its
-  // own), plus 'adopt-confirmed' | 'retry' | 'onboarding' | 'similar_climbs' | 'hold_heatmap' | 'unknown'.
+  // own), plus 'adopt-confirmed' | 'retry' | 'onboarding' | 'similar_climbs' | 'hold_heatmap' |
+  // 'owned-wall' (a spray wall pinned because the climber owns it, also automatic) | 'unknown'.
   // 'unknown' is an explicit, expected value — the trigger is persisted per scope, but a scope enabled by
   // a build that predates this event has none.
   OfflineBoardDownloadStarted: 'Offline Board Download Started',
@@ -1034,7 +1035,7 @@ export const SHARED_EVENTS = {
   OfflineArtifactTransfer: 'Offline Artifact Transfer',
   // A board's offline switch was flipped, either way. Props: { scopeKey,
   // enabled: boolean, source: 'manage' | 'storage' | 'more' | 'adopt' | 'onboarding' | 'play_drawer'
-  // | 'hold_filter',
+  // | 'hold_filter' | 'owned_wall' (an owned spray wall pinned automatically),
   // offlineEngineEnabled }. The enable half is the entry point #4318's discovery
   // nudges are measured against.
   OfflineBoardToggled: 'Offline Board Toggled',

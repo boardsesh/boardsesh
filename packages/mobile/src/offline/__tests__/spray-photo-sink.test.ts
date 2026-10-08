@@ -20,8 +20,11 @@ vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateC
  * which `spray-photo-store.test.ts` covers against a fake disk.
  */
 
-const { stored, deleted, pruned, storeResult, reportedErrors } = vi.hoisted(() => ({
-  stored: [] as { photoKey: string; photoUrl: string }[],
+const { stored, deleted, pruned, storeResult, reportedErrors, rendererCache, released } = vi.hoisted(() => ({
+  released: [] as string[],
+  stored: [] as { photoKey: string; photoUrl: string; cachedCopyPath?: string }[],
+  // What the renderer's cache holds, by `layoutId:photoKey`.
+  rendererCache: new Map<string, string>(),
   deleted: [] as string[],
   pruned: [] as string[][],
   // `available` models the platform, not a failure: the browser twin exports
@@ -41,10 +44,12 @@ vi.mock('../../lib/spray/spray-photo-store', () => ({
   get SPRAY_PHOTO_STORE_AVAILABLE() {
     return storeResult.available;
   },
-  storeSprayPhoto: vi.fn(async (photoKey: string, photoUrl: string) => {
-    stored.push({ photoKey, photoUrl });
-    return storeResult.ok ? `/documents/spray-wall-photos/${photoKey}` : null;
-  }),
+  storeSprayPhoto: vi.fn(
+    async (photoKey: string, photoUrl: string, _layoutId?: number, cachedCopyPath?: string | null) => {
+      stored.push({ photoKey, photoUrl, ...(cachedCopyPath ? { cachedCopyPath } : {}) });
+      return storeResult.ok ? `/documents/spray-wall-photos/${photoKey}` : null;
+    },
+  ),
   deleteStoredSprayPhoto: vi.fn((photoKey: string) => {
     deleted.push(photoKey);
   }),
@@ -52,6 +57,14 @@ vi.mock('../../lib/spray/spray-photo-store', () => ({
     pruned.push([...liveKeys]);
     return 0;
   }),
+}));
+
+vi.mock('../../lib/spray/spray-photo-cache', () => ({
+  findCachedSprayPhotoForObjectKey: (layoutId: number, photoKey: string) =>
+    rendererCache.get(`${layoutId}:${photoKey}`) ?? null,
+  releaseCachedSprayPhotoForObjectKey: (layoutId: number, photoKey: string) => {
+    released.push(`${layoutId}:${photoKey}`);
+  },
 }));
 
 const { sprayWallDeletedSink, sprayWallPhotoSink } = await import('../spray-photo-sink');
@@ -92,6 +105,8 @@ beforeEach(async () => {
   storeResult.ok = true;
   storeResult.available = true;
   reportedErrors.length = 0;
+  rendererCache.clear();
+  released.length = 0;
   await setCheckpoint(db, CHECKPOINT_KEY, { updatedAt: '2026-06-01T00:00:00Z', syncSeq: '12' });
 });
 
@@ -108,6 +123,29 @@ describe('sprayWallPhotoSink', () => {
       ).toBeNull();
     },
   );
+  // Opening a wall before downloading it is the common order: the renderer
+  // already holds these exact bytes, so the store copies them instead of
+  // downloading the photo a second time.
+  it("hands the store the renderer's cached copy of the same object", async () => {
+    await insertWallRow();
+    rendererCache.set(`${LAYOUT_ID}:${PHOTO_KEY}`, '/cache/spray-walls/4-v9.jpg');
+
+    await pull([wallDocument()]);
+
+    expect(stored).toEqual([
+      { photoKey: PHOTO_KEY, photoUrl: PHOTO_URL, cachedCopyPath: '/cache/spray-walls/4-v9.jpg' },
+    ]);
+    // Stored, so the renderer's copy can go.
+    expect(released).toEqual([`${LAYOUT_ID}:${PHOTO_KEY}`]);
+  });
+
+  it("keeps the renderer's copy when the photo did not land", async () => {
+    await insertWallRow();
+    storeResult.ok = false;
+    await pull([wallDocument()]);
+    expect(released).toEqual([]);
+  });
+
   it('stores the photograph the page carried', async () => {
     await insertWallRow();
 

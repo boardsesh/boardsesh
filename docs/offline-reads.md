@@ -93,6 +93,18 @@ reference table gated at all — and its three layers are not the three above:
 
 The wall's **climbs** are wiped on the same argument. A `spray_walls` row is not the only private thing a mirrored wall leaves on disk: its `board_climbs`, `board_climb_stats` and `board_climb_grades` rows carry the climb names, descriptions, frames and grades of somebody's garage, and `searchClimbsLocal` reads board reference data with no owner stamp — deliberately, because a Kilter catalogue is a shared cache. So the selective wipe also deletes those three tables' `board_type = 'spray'` rows (`SPRAY_SCOPED_BOARD_TABLES` in `connection.ts`), together with every spray scope's markers so no cursor outlives its rows. The catalogue boards stay, which is the whole point of the selective wipe.
 
+### Which copy of a wall photograph is read
+
+A wall photo is immutable per object key (`spray-walls/<wallUuid>/<photoId>.jpg`, a fresh random id per upload, never overwritten), so the phone keys its files on the object and never on the 15-minute signed URL. Three files can hold one, and each read takes the first that exists:
+
+| Copy | Where | Who has it | Read by |
+| --- | --- | --- | --- |
+| Durable offline photo | `Paths.document/spray-wall-photos/<flattened key>` | Downloaded walls only (the walls whose climbs are in SQLite), which always include the climber's own walls | The renderer first (memoised against the store's delete epoch), online or off; the offline cold-start loader |
+| Renderer cache | `Paths.cache/spray-walls/<layoutId>-v<versionId>.jpg` | Any wall drawn this fortnight that is not downloaded; deleted once the store holds the photo and no surface in this process was handed it | The renderer, when there is no durable copy |
+| Kept full-resolution copy | `Paths.cache/spray-walls/<layoutId>-full-<photoId>.jpg` | Photos the climber zoomed past 3x in the hold editor | The hold editor only |
+
+The climber's own walls are downloaded without the switch (`OwnedSprayWallsOfflinePin`, `docs/spray-walls.md` → "Your own walls are always downloaded"); they go through the same scope, sync and teardown as a wall downloaded by hand, so nothing in the auth scoping below changes for them. The renderer finds the durable copy through the registered wall's signed URL, which ends its path in the object key, so a downloaded wall is never fetched twice; a download adopts the renderer's file when the climber opened the wall first. The auth scoping does not change: every copy is under a spray directory that sign-out deletes whole, per-wall withdrawal deletes the wall's renderer files (the full copy included), a tombstone or a removed download deletes the durable one, and the renderer only resolves a file for a wall registered under the current viewer generation. No signed wall photo goes through expo-image's own disk cache: every surface that loads one passes `cachePolicy="memory"` (moderation passes `"none"`), because that cache is shared, keyed on the signed URL unless told otherwise, LRU-evicted against a 150 MB iOS cap shared with feed photos and avatars (Glide's default disk cache on Android), and outlives sign-out. `docs/spray-walls.md` → "One download per photograph" has the reasoning.
+
 ### Revoked spray-wall downloads (#5490)
 
 The owner's deletion tombstone is owner-scoped. A gym member or a climber who

@@ -382,10 +382,12 @@ vi.mock('../../notifications', () => ({
 // react-native Flow entry, which Rolldown's collection scan can't parse under RN 0.86).
 const setSettingMock = vi.hoisted(() => vi.fn());
 const clearOfflineBoardsMock = vi.hoisted(() => vi.fn());
+const clearOwnedSprayWallPinsMock = vi.hoisted(() => vi.fn());
 vi.mock('../../settings', () => ({
   setSetting: (...args: unknown[]) => setSettingMock(...args),
   clearOfflineBoards: () => clearOfflineBoardsMock(),
   clearSprayWallArchives: () => undefined,
+  clearOwnedSprayWallPins: () => clearOwnedSprayWallPinsMock(),
 }));
 
 // The provider registers its forced-sign-out cleanup against this lib-layer hook
@@ -554,6 +556,35 @@ describe('AuthProvider.signOut', () => {
     // Active board cache was wiped — both the targeted removeQueries and the
     // subsequent clear() do this; verifying the end state is enough.
     expect(queryClient.getQueryData(['activeBoard'])).toBeUndefined();
+  });
+
+  // The owned-wall pin stays mounted with this account's cached roster until
+  // isAuthenticated flips. A record cleared before the cache would be rewritten
+  // by the pin on the next settings write, so it goes after the clear.
+  it('clears the owned-wall pin record after the roster cache is gone', async () => {
+    const queryClient = new QueryClient();
+    const clearSpy = vi.spyOn(queryClient, 'clear');
+    clearOwnedSprayWallPinsMock.mockClear();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(clearOwnedSprayWallPinsMock).toHaveBeenCalledTimes(1);
+    expect(clearSpy).toHaveBeenCalled();
+    expect(clearOwnedSprayWallPinsMock.mock.invocationCallOrder[0]).toBeGreaterThan(
+      clearSpy.mock.invocationCallOrder.at(-1)!,
+    );
+    expect(clearOwnedSprayWallPinsMock.mock.invocationCallOrder[0]).toBeGreaterThan(
+      clearOfflineBoardsMock.mock.invocationCallOrder.at(-1)!,
+    );
   });
 
   it('clears provider and user state even when durable manual sign-out fails', async () => {
