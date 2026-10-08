@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
+import { gzipSync } from 'node:zlib';
 import { initCors } from '../handlers/cors';
 import { handlePosthogProxy } from '../handlers/posthog';
 
@@ -15,6 +16,7 @@ type FakeReqOptions = {
   forwardedFor?: string;
   remoteAddress?: string;
   userAgent?: string;
+  country?: string;
 };
 
 function createFakeReq(options: FakeReqOptions): ProxyReq {
@@ -25,6 +27,7 @@ function createFakeReq(options: FakeReqOptions): ProxyReq {
   if (options.contentEncoding) headers['content-encoding'] = options.contentEncoding;
   if (options.forwardedFor) headers['x-forwarded-for'] = options.forwardedFor;
   if (options.userAgent) headers['user-agent'] = options.userAgent;
+  if (options.country) headers['cf-ipcountry'] = options.country;
 
   const req = {
     method: options.method,
@@ -275,6 +278,108 @@ describe('PostHog Proxy Handler', () => {
     const request = fetchMock.mock.calls[0][1] as RequestInit;
     expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
     expect(new TextDecoder().decode(request.body as Uint8Array)).toContain('ephemeral');
+  });
+
+  it.each([
+    { remoteAddress: '173.245.48.5', forwardedFor: undefined, country: 'AU', expected: 'AU' },
+    { remoteAddress: '2400:cb00::123', forwardedFor: undefined, country: 'AU', expected: 'AU' },
+    { remoteAddress: '::ffff:173.245.48.5', forwardedFor: undefined, country: 'AU', expected: 'AU' },
+    { remoteAddress: '10.0.0.8', forwardedFor: '203.0.113.7, 104.16.0.5', country: 'AU', expected: 'AU' },
+    { remoteAddress: 'fd00::1', forwardedFor: '203.0.113.7, 2606:4700::123', country: 'DE', expected: 'DE' },
+    { remoteAddress: '10.0.0.8', forwardedFor: '104.16.0.5, 203.0.113.7', country: 'AU', expected: 'XX' },
+    { remoteAddress: '198.51.100.4', forwardedFor: '104.16.0.5', country: 'AU', expected: 'XX' },
+    { remoteAddress: '10.0.0.8', forwardedFor: '203.0.113.7', country: 'AU', expected: 'XX' },
+    { remoteAddress: '173.245.48.5', forwardedFor: undefined, country: 'au', expected: 'XX' },
+    { remoteAddress: '173.245.48.5', forwardedFor: undefined, country: 'AU, US', expected: 'XX' },
+    { remoteAddress: '173.245.48.5', forwardedFor: undefined, country: undefined, expected: 'XX' },
+  ])('uses only an edge-verified country: $remoteAddress / $forwardedFor / $country', async (region) => {
+    fetchMock.mockResolvedValue(new Response('{"featureFlags":{}}', { status: 200 }));
+    const req = createFakeReq({
+      method: 'POST',
+      ...region,
+      body: JSON.stringify({
+        token: 'project',
+        distinct_id: 'account',
+        ip: '203.0.113.7',
+        $ip: '203.0.113.7',
+        person_properties: {
+          $os_name: 'Android',
+          $app_version: '1.2',
+          $geoip_country_code: 'AU',
+          $geoip_city_name: 'Sydney',
+          $initial_geoip_country_code: 'AU',
+          $ip: '203.0.113.7',
+        },
+      }),
+    });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/flags/', '?v=2'));
+    expect(res.status).toBe(200);
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(new TextDecoder().decode(request.body as Uint8Array))).toEqual({
+      token: 'project',
+      distinct_id: 'account',
+      geoip_disable: true,
+      person_properties: { $os_name: 'Android', $app_version: '1.2', $geoip_country_code: region.expected },
+    });
+  });
+
+  it('enriches gzipped legacy decide requests without forwarding the encoding', async () => {
+    fetchMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    const req = createFakeReq({
+      method: 'POST',
+      remoteAddress: '173.245.48.5',
+      country: 'AU',
+      bodyBytes: gzipSync('{"distinct_id":"account"}'),
+      contentEncoding: 'gzip',
+    });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/decide/'));
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(res.status).toBe(200);
+    expect(request.headers).toEqual({ 'Content-Type': 'application/json' });
+    expect(JSON.parse(new TextDecoder().decode(request.body as Uint8Array))).toEqual({
+      distinct_id: 'account',
+      geoip_disable: true,
+      person_properties: { $geoip_country_code: 'AU' },
+    });
+  });
+
+  it.each(['not json', 'null', '[]'])('rejects malformed flag JSON %s before forwarding', async (body) => {
+    const req = createFakeReq({ method: 'POST', body });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/flags/'));
+    expect(res.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('bounds decompressed flag payloads', async () => {
+    const req = createFakeReq({
+      method: 'POST',
+      contentEncoding: 'gzip',
+      bodyBytes: gzipSync(JSON.stringify({ padding: 'a'.repeat(64 * 1024) })),
+    });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/flags/'));
+    expect(res.status).toBe(413);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid gzip before forwarding flag requests', async () => {
+    const req = createFakeReq({ method: 'POST', contentEncoding: 'gzip', body: 'not gzip' });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/flags/'));
+    expect(res.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported flag compression before forwarding', async () => {
+    const req = createFakeReq({ method: 'POST', contentEncoding: 'br', body: '{}' });
+    const res = createFakeRes();
+    await handlePosthogProxy(req, res.asProxyRes, buildUrl('/api/posthog/flags/'));
+    expect(res.status).toBe(415);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('omits User-Agent when the incoming request has none (avoids sending an empty UA)', async () => {

@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import { gunzipSync } from 'node:zlib';
 import { applyCorsHeaders } from './cors';
 import { logger } from '../utils/logger';
+import { resolveFlagCountry } from '../utils/flag-country';
 
 const POSTHOG_UPSTREAM = 'https://us.i.posthog.com';
 const MAX_BODY_BYTES = 64 * 1024;
@@ -55,7 +57,7 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
     return;
   }
 
-  const body = isPublicConfigRequest ? undefined : await readBody(req, MAX_BODY_BYTES);
+  let body = isPublicConfigRequest ? undefined : await readBody(req, MAX_BODY_BYTES);
   if (body && 'tooLarge' in body) {
     res.writeHead(413, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Payload too large' }));
@@ -69,6 +71,48 @@ export async function handlePosthogProxy(req: IncomingMessage, res: ServerRespon
   const contentEncoding = req.headers['content-encoding'];
   if (typeof contentEncoding === 'string' && contentEncoding.length > 0) {
     headers['Content-Encoding'] = contentEncoding;
+  }
+  if (/^\/(flags|decide)\/?$/.test(rest) && body) {
+    // Flag evaluation is functional without consent. Supply only a coarse
+    // edge-verified country, and prohibit upstream inference from our host IP
+    // or an account's stale location. Capture/replay bodies remain byte-exact.
+    try {
+      if (contentEncoding && contentEncoding !== 'gzip' && contentEncoding !== 'identity') {
+        res.writeHead(415, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unsupported flag encoding' }));
+        return;
+      }
+      const decoded = contentEncoding === 'gzip' ? gunzipSync(body, { maxOutputLength: MAX_BODY_BYTES }) : body;
+      const payload: unknown = JSON.parse(decoded.toString('utf8'));
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid flag payload');
+      const flagPayload = payload as Record<string, unknown>;
+      const properties = flagPayload.person_properties;
+      const personProperties =
+        properties && typeof properties === 'object' && !Array.isArray(properties)
+          ? Object.fromEntries(
+              Object.entries(properties).filter(
+                ([key]) =>
+                  !key.startsWith('$geoip_') && !key.startsWith('$initial_geoip_') && key !== '$ip' && key !== 'ip',
+              ),
+            )
+          : {};
+      delete flagPayload.ip;
+      delete flagPayload.$ip;
+      body = Buffer.from(
+        JSON.stringify({
+          ...flagPayload,
+          geoip_disable: true,
+          person_properties: { ...personProperties, $geoip_country_code: resolveFlagCountry(req) },
+        }),
+      );
+      delete headers['Content-Encoding'];
+      headers['Content-Type'] = 'application/json';
+    } catch (error) {
+      const oversized = error instanceof Error && 'code' in error && error.code === 'ERR_BUFFER_TOO_LARGE';
+      res.writeHead(oversized ? 413 : 400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: oversized ? 'Payload too large' : 'Invalid flag payload' }));
+      return;
+    }
   }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
