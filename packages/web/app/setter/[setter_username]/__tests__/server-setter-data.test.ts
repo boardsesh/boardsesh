@@ -6,7 +6,7 @@ import type { BoardName } from '@boardsesh/shared-schema';
 vi.mock('server-only', () => ({}));
 // A drizzle instance with no client behind it: building and rendering a query
 // never touches the connection, and the test must not need a database.
-vi.mock('@/app/lib/db/db', () => ({ dbzRead: drizzle({} as never), executeRows: async () => [] }));
+vi.mock('@/app/lib/db/db', () => ({ dbz: drizzle({} as never), executeRows: async () => [] }));
 vi.mock('@/app/lib/server-popular-configs', () => ({ getAllBoardConfigsOrThrow: async () => [] }));
 
 const { buildSetterClimbsQuery, buildSetterProfileQuery } = await import('../server-setter-data');

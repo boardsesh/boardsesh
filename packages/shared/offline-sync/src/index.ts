@@ -142,6 +142,7 @@ export {
   HOLD_INDEX_INITIAL_CHUNK_CLIMBS,
   HOLD_INDEX_GENERATION_PREFIX,
   clearBoardTypeHoldIndex,
+  clearLayoutHoldIndex,
 } from './holds-index/hold-index';
 export type { HoldRow, HoldRowParser, EnsureHoldIndexOptions, EnsureHoldIndexResult } from './holds-index/hold-index';
 export {

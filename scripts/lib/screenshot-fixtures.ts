@@ -125,6 +125,50 @@ export function normalizeDocument(query: string): string {
   return query.replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * The pinned manufacturer-board recordings predate this nullable spray-only
+ * field. Adapt those responses in memory; never rewrite their bytes or hashes.
+ * An exact selection match keeps every other document/schema change detectable.
+ */
+export function replayCompatibleFixtureResponse(
+  requestQuery: string,
+  fixture: GraphqlFixtureFile,
+): { response: unknown } | null {
+  const operationName = resolveOperationName({ query: requestQuery });
+  if (operationName !== fixture.operationName || !['GetBoard', 'GetMyBoards'].includes(operationName ?? '')) {
+    return null;
+  }
+  const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
+  const normalized = normalizeDocument(requestQuery);
+  if (normalized.split(selection).length !== 2) return null;
+  if (normalizeDocument(normalized.replace(selection, '')) !== normalizeDocument(fixture.query)) return null;
+  if (!isRecord(fixture.response) || !isRecord(fixture.response.data)) return null;
+  const response = fixture.response;
+  const data = fixture.response.data;
+  const manufacturerBoards = new Set(['kilter', 'tension', 'moonboard', 'grasshopper', 'woods', 'decoy']);
+  const compatibleBoard = (board: unknown): board is Record<string, unknown> =>
+    isRecord(board) &&
+    typeof board.boardType === 'string' &&
+    manufacturerBoards.has(board.boardType) &&
+    (board.sprayImport === undefined || board.sprayImport === null);
+  if (operationName === 'GetBoard') {
+    if (data.board === null) return { response };
+    if (!compatibleBoard(data.board)) return null;
+    return { response: { ...response, data: { ...data, board: { ...data.board, sprayImport: null } } } };
+  }
+  if (!isRecord(data.myBoards) || !Array.isArray(data.myBoards.boards)) return null;
+  if (!data.myBoards.boards.every(compatibleBoard)) return null;
+  return {
+    response: {
+      ...response,
+      data: {
+        ...data,
+        myBoards: { ...data.myBoards, boards: data.myBoards.boards.map((board) => ({ ...board, sprayImport: null })) },
+      },
+    },
+  };
+}
+
 function toCanonicalValue(value: unknown): unknown {
   if (value === null) return null;
   if (Array.isArray(value)) {
@@ -1063,6 +1107,20 @@ export type ReplayDefaultResponse = {
  * that does not answer the current document.
  */
 export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResponse>> = {
+  PrivacySettings: {
+    response: {
+      data: {
+        privacySettings: {
+          isPrivate: false,
+          privacyRevision: 0,
+          privacyOnboardingVersion: 1,
+          defaultSessionAudience: 'public',
+          enabled: false,
+        },
+      },
+    },
+    reason: 'privacy rollout is disabled for the existing screenshot capture account',
+  },
   // query ProfileAdminFlag — packages/mobile/src/lib/graphql/operations.ts.
   // `useCatalogQuerySourceState` asks it for every board that is not
   // downloaded, so it fires on most captured screens. `useIsAdmin` reads a

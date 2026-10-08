@@ -21,6 +21,7 @@ export type ClimbSearchContext = {
  * Input type for createSession mutation
  */
 export type CreateSessionInput = {
+  audience?: 'public' | 'followers' | 'invite_only' | null;
   boardPath: string;
   latitude: number;
   longitude: number;

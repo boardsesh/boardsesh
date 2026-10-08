@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { AccountFollowButton } from './account-follow-button';
 import MuiButton from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useTranslation } from 'react-i18next';
@@ -19,7 +20,7 @@ type FollowButtonProps = {
   onToggleClick?: () => void;
 };
 
-export default function FollowButton({
+function GenericFollowButton({
   entityId,
   initialIsFollowing,
   followMutation,
@@ -66,4 +67,16 @@ export default function FollowButton({
       {getButtonLabel()}
     </MuiButton>
   );
+}
+
+export default function FollowButton(props: FollowButtonProps) {
+  if (props.entityLabel === 'user')
+    return (
+      <AccountFollowButton
+        userId={props.entityId}
+        onFollowChange={props.onFollowChange}
+        fallback={<GenericFollowButton {...props} />}
+      />
+    );
+  return <GenericFollowButton {...props} />;
 }

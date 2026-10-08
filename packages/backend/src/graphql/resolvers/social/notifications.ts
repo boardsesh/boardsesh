@@ -7,9 +7,11 @@ import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/h
 import { GroupedNotificationsInputSchema, NotificationActorsInputSchema } from '../../../validation/schemas';
 import { batchEnrichUserProfiles } from './helpers';
 import { pubsub } from '../../../pubsub/index';
-import { createAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { enrichSprayNotificationTargets } from './spray-notification-targets';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
+import { alias } from 'drizzle-orm/pg-core';
+import { notificationPrivacyCondition } from '../shared/activity-privacy';
 
 type NotificationRow = {
   uuid: string;
@@ -119,6 +121,7 @@ export const socialNotificationQueries = {
 
     // Build where clause
     const unreadFilter = unreadOnly ? sql`AND n."read_at" IS NULL` : sql``;
+    const privacyFilter = notificationPrivacyCondition(userId, alias(dbSchema.notifications, 'n'));
 
     // Single query with scalar subqueries for totalCount and unreadCount.
     // These must be computed over ALL user notifications (not filtered by unreadOnly),
@@ -146,13 +149,14 @@ export const socialNotificationQueries = {
         u."name" as "actorName",
         u."image" as "actorImage",
         c."body" as "commentBody",
-        (SELECT COUNT(*) FROM "notifications" WHERE "recipient_id" = ${userId}) as "totalCount",
-        (SELECT COUNT(*) FROM "notifications" WHERE "recipient_id" = ${userId} AND "read_at" IS NULL) as "unreadCount"
+        (SELECT COUNT(*) FROM "notifications" n WHERE "recipient_id" = ${userId} AND ${privacyFilter}) as "totalCount",
+        (SELECT COUNT(*) FROM "notifications" n WHERE "recipient_id" = ${userId} AND "read_at" IS NULL AND ${privacyFilter}) as "unreadCount"
       FROM "notifications" n
       LEFT JOIN "users" u ON n."actor_id" = u."id"
       LEFT JOIN "user_profiles" up ON n."actor_id" = up."user_id"
       LEFT JOIN "comments" c ON n."comment_id" = c."id"
       WHERE n."recipient_id" = ${userId}
+        AND ${privacyFilter}
         ${unreadFilter}
       ORDER BY n."created_at" DESC
       LIMIT ${limit}
@@ -222,6 +226,7 @@ export const socialNotificationQueries = {
         FROM "notifications" n
         LEFT JOIN "comments" c ON n."comment_id" = c."id"
         WHERE n."recipient_id" = ${userId}
+          AND ${notificationPrivacyCondition(userId, alias(dbSchema.notifications, 'n'))}
         GROUP BY n."type", n."entity_type", n."entity_id"
       ),
       paged AS (
@@ -508,7 +513,13 @@ export const socialNotificationQueries = {
     const unreadCountResult = await db
       .select({ count: count() })
       .from(dbSchema.notifications)
-      .where(and(eq(dbSchema.notifications.recipientId, userId), isNull(dbSchema.notifications.readAt)));
+      .where(
+        and(
+          eq(dbSchema.notifications.recipientId, userId),
+          isNull(dbSchema.notifications.readAt),
+          notificationPrivacyCondition(userId),
+        ),
+      );
     const unreadCount = Number(unreadCountResult[0]?.count || 0);
 
     return {
@@ -526,7 +537,13 @@ export const socialNotificationQueries = {
     const result = await db
       .select({ count: count() })
       .from(dbSchema.notifications)
-      .where(and(eq(dbSchema.notifications.recipientId, userId), isNull(dbSchema.notifications.readAt)));
+      .where(
+        and(
+          eq(dbSchema.notifications.recipientId, userId),
+          isNull(dbSchema.notifications.readAt),
+          notificationPrivacyCondition(userId),
+        ),
+      );
 
     return Number(result[0]?.count || 0);
   },
@@ -552,6 +569,7 @@ export const socialNotificationQueries = {
     // `IS NOT DISTINCT FROM` rather than `=`: `new_follower` carries a null
     // entity_type, and `= NULL` matches nothing.
     const groupPredicate = and(
+      notificationPrivacyCondition(userId),
       eq(dbSchema.notifications.recipientId, userId),
       sql`${dbSchema.notifications.type} = ${type}`,
       sql`${dbSchema.notifications.entityType} IS NOT DISTINCT FROM ${entityType ?? null}`,
@@ -683,7 +701,13 @@ export const socialNotificationMutations = {
     await db
       .update(dbSchema.notifications)
       .set({ readAt: new Date() })
-      .where(and(eq(dbSchema.notifications.recipientId, userId), isNull(dbSchema.notifications.readAt)));
+      .where(
+        and(
+          eq(dbSchema.notifications.recipientId, userId),
+          isNull(dbSchema.notifications.readAt),
+          notificationPrivacyCondition(userId),
+        ),
+      );
 
     return true;
   },
@@ -696,12 +720,25 @@ export const socialNotificationSubscriptions = {
       const userId = ctx.userId!;
 
       const asyncIterator = await lifetime.own(
-        createAsyncIterator<NotificationEvent>((push) => {
+        createPrivacyAwareIterator<NotificationEvent>((push) => {
           return pubsub.subscribeNotifications(userId, push);
         }, `notificationReceived:${userId}`),
       );
 
       for await (const event of asyncIterator) {
+        if (!event) continue;
+        const [visible] = await db
+          .select({ id: dbSchema.notifications.id })
+          .from(dbSchema.notifications)
+          .where(
+            and(
+              eq(dbSchema.notifications.uuid, event.notification.uuid),
+              eq(dbSchema.notifications.recipientId, userId),
+              notificationPrivacyCondition(userId),
+            ),
+          )
+          .limit(1);
+        if (!visible) continue;
         yield { notificationReceived: event };
       }
     }),

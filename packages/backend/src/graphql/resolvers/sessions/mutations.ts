@@ -1,3 +1,7 @@
+import { resolveSessionBoardId } from '../../../services/session-board-binding';
+import { canAccessResourceWithoutLink } from '../../../services/privacy';
+import { getPrivacySettings } from '../../../services/privacy';
+import { resourcePrivacy } from '@boardsesh/db/schema';
 import { v4 as uuidv4 } from 'uuid';
 import * as Sentry from '@sentry/node';
 import type { ConnectionContext, SessionEvent, ClimbQueueItem } from '@boardsesh/shared-schema';
@@ -262,7 +266,47 @@ export const sessionMutations = {
 
       // Absent or null means public — the pre-existing behaviour every client
       // that predates the privacy switch relies on.
-      const isPublic = input.isPublic !== false;
+      const defaults = ctx.userId ? await getPrivacySettings(ctx.userId) : null;
+      const audience =
+        input.audience ?? (input.isPublic === false ? 'invite_only' : (defaults?.defaultSessionAudience ?? 'public'));
+      const isPublic = audience === 'public';
+      if (!isPublic) requireAuthenticated(ctx);
+      const boardId = await resolveSessionBoardId(input.boardPath, ctx.userId);
+      const attachedIds = [...new Set(input.boardIds ?? [])];
+      if (attachedIds.length) {
+        const boards = await db
+          .select({ id: userBoards.id, uuid: userBoards.uuid, gymId: userBoards.gymId })
+          .from(userBoards)
+          .where(inArray(userBoards.id, attachedIds));
+        if (
+          boards.length !== attachedIds.length ||
+          (
+            await Promise.all(boards.map((board) => canAccessResourceWithoutLink('board', board.uuid, ctx.userId)))
+          ).some((allowed) => !allowed)
+        ) {
+          throw new Error('One or more board IDs do not exist');
+        }
+        if (new Set(boards.map((board) => board.gymId).filter(Boolean)).size > 1)
+          throw new Error('All boards must belong to the same gym for multi-board sessions');
+      }
+      // Persist the audience before exposing the ID or publishing a live roster.
+      await db.transaction(async (tx) => {
+        await tx.insert(sessions).values({
+          id: sessionId,
+          boardPath: input.boardPath,
+          boardId,
+          createdByUserId: ctx.userId ?? null,
+          name: input.name ?? null,
+          isPublic,
+          startedAt: new Date(),
+        });
+        if (attachedIds.length)
+          await tx.insert(sessionBoards).values(attachedIds.map((boardId) => ({ sessionId, boardId })));
+        if (ctx.userId)
+          await tx
+            .insert(resourcePrivacy)
+            .values({ kind: 'session', resourceId: sessionId, ownerId: ctx.userId, audience });
+      });
 
       if (input.discoverable) {
         // Discoverable sessions require authentication (they write to DB with userId)
@@ -281,33 +325,6 @@ export const sessionMutations = {
           input.color,
           isPublic,
         );
-
-        // If boardIds provided, create sessionBoards junction rows
-        if (input.boardIds && input.boardIds.length > 0) {
-          // Verify boards exist
-          const boards = await db
-            .select({ id: userBoards.id, gymId: userBoards.gymId })
-            .from(userBoards)
-            .where(inArray(userBoards.id, input.boardIds));
-
-          if (boards.length !== input.boardIds.length) {
-            throw new Error('One or more board IDs do not exist');
-          }
-
-          // Validate all boards share the same gym (multi-board requires same gym)
-          const gymIds = new Set(boards.map((b) => b.gymId).filter(Boolean));
-          if (gymIds.size > 1) {
-            throw new Error('All boards must belong to the same gym for multi-board sessions');
-          }
-
-          // Insert junction rows
-          await db.insert(sessionBoards).values(
-            input.boardIds.map((boardId) => ({
-              sessionId,
-              boardId,
-            })),
-          );
-        }
       }
 
       // For HTTP requests (stateless), skip joining the session in-memory.
@@ -639,7 +656,7 @@ export const sessionMutations = {
   },
 
   /**
-   * Broadcast a boardPath update (today: angle changes) to every session
+   * Broadcast an angle or authorized board switch to every session
    * participant. Any participant may call — angle is presentational and
    * doesn't drive BLE (hold positions ride on the climb, not the boardPath).
    * Idempotent: if the stored boardPath already matches, no event fires.
@@ -659,7 +676,7 @@ export const sessionMutations = {
     }
     const participantId = ctx.participantId;
 
-    const previousBoardPath = await roomManager.updateSessionBoardPathIfChanged(sessionId, boardPath);
+    const previousBoardPath = await roomManager.updateSessionBoardPathIfChanged(sessionId, boardPath, ctx.userId);
     if (previousBoardPath !== null) {
       pubsub.publishSessionEvent(sessionId, {
         __typename: 'SessionBoardPathChanged',

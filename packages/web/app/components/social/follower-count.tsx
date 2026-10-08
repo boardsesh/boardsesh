@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -12,6 +12,7 @@ import ListItemAvatar from '@mui/material/ListItemAvatar';
 import ListItemText from '@mui/material/ListItemText';
 import CircularProgress from '@mui/material/CircularProgress';
 import { PersonOutlined } from '@mui/icons-material';
+import { PRIVACY_REVOKED_EVENT } from '@/app/lib/privacy-client';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
 import FollowButton from '@/app/components/ui/follow-button';
@@ -46,16 +47,39 @@ export default function FollowerCount({ userId, followerCount, followingCount }:
   const [totalCount, setTotalCount] = useState(0);
   const { token } = useWsAuthToken();
 
+  const privacyGeneration = useRef(0);
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const withdraw = () => {
+      privacyGeneration.current += 1;
+      activeRequest.current?.abort();
+      setUsers([]);
+      setDrawerMode(null);
+    };
+    window.addEventListener(PRIVACY_REVOKED_EVENT, withdraw);
+    return () => {
+      window.removeEventListener(PRIVACY_REVOKED_EVENT, withdraw);
+      activeRequest.current?.abort();
+    };
+  }, []);
+
   const fetchUsers = useCallback(
     async (mode: 'followers' | 'following', offset = 0) => {
+      activeRequest.current?.abort();
+      const controller = new AbortController();
+      activeRequest.current = controller;
+      const requestGeneration = privacyGeneration.current;
       setLoading(true);
       try {
         const client = createGraphQLHttpClient(token);
 
         if (mode === 'followers') {
-          const response = await client.request<GetFollowersQueryResponse, GetFollowersQueryVariables>(GET_FOLLOWERS, {
-            input: { userId, limit: 20, offset },
+          const response = await client.request<GetFollowersQueryResponse, GetFollowersQueryVariables>({
+            document: GET_FOLLOWERS,
+            variables: { input: { userId, limit: 20, offset } },
+            signal: controller.signal,
           });
+          if (requestGeneration !== privacyGeneration.current) return;
           if (offset === 0) {
             setUsers(response.followers.users);
           } else {
@@ -64,9 +88,12 @@ export default function FollowerCount({ userId, followerCount, followingCount }:
           setHasMore(response.followers.hasMore);
           setTotalCount(response.followers.totalCount);
         } else {
-          const response = await client.request<GetFollowingQueryResponse, GetFollowingQueryVariables>(GET_FOLLOWING, {
-            input: { userId, limit: 20, offset },
+          const response = await client.request<GetFollowingQueryResponse, GetFollowingQueryVariables>({
+            document: GET_FOLLOWING,
+            variables: { input: { userId, limit: 20, offset } },
+            signal: controller.signal,
           });
+          if (requestGeneration !== privacyGeneration.current) return;
           if (offset === 0) {
             setUsers(response.following.users);
           } else {
@@ -76,9 +103,9 @@ export default function FollowerCount({ userId, followerCount, followingCount }:
           setTotalCount(response.following.totalCount);
         }
       } catch (error) {
-        console.error('Failed to fetch users:', error);
+        if (!controller.signal.aborted) console.error('Failed to fetch users:', error);
       } finally {
-        setLoading(false);
+        if (activeRequest.current === controller) setLoading(false);
       }
     },
     [userId, token],

@@ -457,6 +457,58 @@ describe('board-snapshot export ↔ live pull parity', () => {
     expect(c2.updated_at).toBe('2026-05-01T00:00:01.5Z');
   });
 
+  it('withholds authored climbs, FA names and grades from immutable public artifacts', async () => {
+    await db.execute(
+      sql`INSERT INTO users (id, name, email) VALUES (${USER_ID}, 'Private author', 'snapshot-private@example.test') ON CONFLICT DO NOTHING`,
+    );
+    await insertClimb({ uuid: 'imported-catalog', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertClimb({ uuid: 'authored-private', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await db.execute(sql`UPDATE board_climbs SET user_id = ${USER_ID} WHERE uuid = 'authored-private'`);
+    await insertClimb({ uuid: 'deleted-private', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await insertClimb({ uuid: 'deleted-public', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
+    await db.execute(sql`UPDATE board_climbs SET is_boardsesh_authored = true WHERE uuid = 'deleted-public'`);
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, owner_id, audience)
+      VALUES ('climb', 'deleted-private', NULL, 'only_me')`);
+    await insertStat({
+      climbUuid: 'imported-catalog',
+      angle: 40,
+      faUsername: 'Manufacturer FA',
+      updatedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertStat({
+      climbUuid: 'authored-private',
+      angle: 40,
+      faUsername: 'Private author',
+      updatedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertGrade({ climbUuid: 'authored-private', angle: 40, computedAt: '2026-05-01T00:00:00Z' });
+    await insertStat({
+      climbUuid: 'deleted-private',
+      angle: 40,
+      faUsername: 'Deleted private author',
+      updatedAt: '2026-05-01T00:00:00Z',
+    });
+    await insertGrade({ climbUuid: 'deleted-private', angle: 40, computedAt: '2026-05-01T00:00:00Z' });
+    const filePath = join(workDir, 'privacy-artifact.db');
+    const gradesFilePath = join(workDir, 'privacy-grades.db');
+    const result = await exportLayoutSnapshot({
+      sqlClient: createPool(),
+      boardType: BOARD_TYPE,
+      layoutId: LAYOUT_ID,
+      filePath,
+      gradesFilePath,
+      builtAt: BUILT_AT,
+      stabilityWindowSeconds: 0,
+    });
+    expect(readArtifactRows(filePath, 'board_climbs', CLIMB_COLUMNS).map((row) => row.uuid)).toEqual([
+      'imported-catalog',
+    ]);
+    expect(readArtifactRows(filePath, 'board_climb_stats', STATS_COLUMNS).map((row) => row.fa_username)).toEqual([
+      'Manufacturer FA',
+    ]);
+    expect(result.grades).toBeUndefined();
+  });
+
   it('records snapshot_meta watermarks equal to the max keyset cursor of the exported rows', async () => {
     await insertClimb({ uuid: 'c1', compatibleSizeIds: [5], updatedAt: '2026-05-01T00:00:00Z' });
     await insertClimb({ uuid: 'c2', compatibleSizeIds: [5], updatedAt: '2026-05-02T09:30:00Z' });

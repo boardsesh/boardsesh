@@ -1,3 +1,4 @@
+import { RequestResourceAccess } from '../../src/components/privacy/RequestResourceAccess';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -222,6 +223,7 @@ function JoinSessionScreen() {
           <Text variant="title3" style={styles.centeredTitle}>
             {t('mobileJoin.notFound')}
           </Text>
+          <RequestResourceAccess kind="session" resourceId={sessionId} />
           <Button title={t('common:actions.done')} variant="outlined" onPress={() => router.back()} />
         </View>
       </View>

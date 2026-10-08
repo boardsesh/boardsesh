@@ -12,6 +12,7 @@ import { useLocalePreference } from '../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../src/lib/open-url';
 import { useConfirmSignOut } from '../../src/hooks/use-confirm-sign-out';
+import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { useProfile, useMyBoards, useIsAdmin } from '../../src/lib/graphql/hooks';
 import { useQaMenu } from '../../src/lib/qa/use-qa-menu';
 import { useEarlyUpdatesRow } from '../../src/lib/qa/use-early-updates';
@@ -94,6 +95,7 @@ export default function MoreScreen() {
   const { t: tClimbs } = useTranslation('climbs');
   const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
+  const { data: privacySettings } = usePrivacySettings();
   // Its own query, deliberately not a field on the profile document — see
   // useIsAdmin. Fails closed, so an older backend just hides the admin rows.
   const { isAdmin } = useIsAdmin();
@@ -1114,6 +1116,16 @@ export default function MoreScreen() {
           icon: 'editProfile',
           onPress: navAction(() => router.push('/settings/edit')),
         },
+        ...(privacySettings?.enabled
+          ? [
+              {
+                kind: 'nav' as const,
+                key: 'privacy',
+                label: tSettings('privacy.title'),
+                onPress: navAction(() => router.push('/settings/privacy')),
+              },
+            ]
+          : []),
         {
           kind: 'nav',
           key: 'exportData',

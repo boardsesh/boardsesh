@@ -454,8 +454,8 @@ describe('spray-wall privacy', () => {
     expect(await ask(WALL_OWNER, 'spray', climbUuid)).toEqual(EMPTY_ANSWER);
   });
 
-  // Only spray fails closed. An Aurora tick can arrive before its climb does.
-  it('still returns a tick on another board whose climb row is missing, as an unknown climb', async () => {
+  // Missing parents cannot authorize enriched activity, including deleted authored climbs.
+  it('withholds a tick until its parent climb can be authorized', async () => {
     await insertTick({ userId: ALEX, climbUuid: 'fca-ghost-climb' });
 
     const document = `query Ghost($input: FollowingClimbAscentsInput!) {
@@ -464,7 +464,7 @@ describe('spray-wall privacy', () => {
     const { errors, answer } = await run(document, VIEWER, BOARD, 'fca-ghost-climb');
 
     expect(errors).toEqual([]);
-    expect(answer).toEqual({ items: [{ climbName: 'Unknown Climb', isNoMatch: false }] });
+    expect(answer).toEqual({ items: [] });
   });
 });
 

@@ -4,28 +4,40 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 import { sqlText } from '@boardsesh/db/test-utils';
 
-const { mockDb, eqSpy, notInArraySpy, resolveTargetMock, selectRefsMock, countRefsMock, cardCountMock } = vi.hoisted(
-  () => {
-    const mockDb = {
-      execute: vi.fn(),
-      select: vi.fn(),
-      insert: vi.fn(),
-      delete: vi.fn(),
-      update: vi.fn(),
-    };
-    return {
-      mockDb,
-      eqSpy: vi.fn(),
-      notInArraySpy: vi.fn(),
-      resolveTargetMock: vi.fn(),
-      selectRefsMock: vi.fn(),
-      countRefsMock: vi.fn(),
-      cardCountMock: vi.fn(),
-    };
-  },
-);
+const {
+  mockDb,
+  eqSpy,
+  notInArraySpy,
+  resolveTargetMock,
+  selectRefsMock,
+  countRefsMock,
+  cardCountMock,
+  activityAccessMock,
+} = vi.hoisted(() => {
+  const mockDb = {
+    execute: vi.fn(),
+    select: vi.fn(),
+    insert: vi.fn(),
+    delete: vi.fn(),
+    update: vi.fn(),
+  };
+  return {
+    mockDb,
+    eqSpy: vi.fn(),
+    notInArraySpy: vi.fn(),
+    resolveTargetMock: vi.fn(),
+    selectRefsMock: vi.fn(),
+    countRefsMock: vi.fn(),
+    cardCountMock: vi.fn(),
+    activityAccessMock: vi.fn(),
+  };
+});
 
 vi.mock('../db/client', () => ({ db: mockDb }));
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canViewUserActivity: activityAccessMock,
+}));
 
 // Recommendation helpers are exercised by their own DB-backed paths; here we mock
 // them so the logbook-playlist + counts tests don't need to stub the catalog
@@ -64,6 +76,7 @@ vi.mock('../db/queries/util/table-select', () => ({
       name: 'name',
       description: 'description',
       frames: 'frames',
+      userId: 'userId',
     },
     climbStats: {
       climbUuid: 'climbUuid',
@@ -162,6 +175,7 @@ describe('smartPlaylist resolver', () => {
     // drain between tests — clearAllMocks only resets call history, leaving
     // unused queued return values to leak into the next test.
     vi.resetAllMocks();
+    activityAccessMock.mockResolvedValue(true);
   });
 
   it('FIVE_STARS uses LIMIT/OFFSET for pagination and only returns the requested page', async () => {
@@ -304,7 +318,8 @@ describe('smartPlaylist resolver', () => {
     ]);
     mockDb.select.mockReturnValueOnce(pageChain);
     // count query
-    mockDb.select.mockReturnValueOnce(makeChain([{ count: 7 }]).chain);
+    const { chain: countChain, calls: countCalls } = makeChain([{ count: 7 }]);
+    mockDb.select.mockReturnValueOnce(countChain);
     // hydrate (called with refs array)
     mockDb.select.mockReturnValueOnce(makeChain([]).chain);
 
@@ -338,6 +353,12 @@ describe('smartPlaylist resolver', () => {
       ([col, val]) => col === dbSchema.userFavorites.boardName && val === 'kilter',
     );
     expect(boardFilters.length).toBeGreaterThanOrEqual(2);
+    for (const calls of [pageCalls, countCalls]) {
+      const rendered = sqlText(calls.where[0][0]);
+      expect(rendered).toContain('privacy_reference_climb');
+      expect(rendered).toContain('public_consent_revision');
+      expect(rendered).toContain('privacy_revision');
+    }
   });
 
   it('LIKED_CLIMBS without boardName does not filter by board (cross-board view)', async () => {
@@ -364,7 +385,7 @@ describe('smartPlaylist resolver', () => {
 
   it('throws when user does not exist', async () => {
     const ctx = makeCtx();
-    mockDb.select.mockReturnValueOnce(makeChain([]).chain);
+    activityAccessMock.mockResolvedValue(false);
 
     await expect(
       playlistQueries.smartPlaylist(
@@ -374,7 +395,7 @@ describe('smartPlaylist resolver', () => {
         },
         ctx,
       ),
-    ).rejects.toThrow('User not found');
+    ).rejects.toThrow('Playlist not found');
   });
 
   it('is callable without authentication (public)', async () => {
@@ -392,6 +413,15 @@ describe('smartPlaylist resolver', () => {
       ctx,
     );
     expect(result.meta.userId).toBe('user-123');
+  });
+
+  it('hides a private logbook from an unapproved viewer before loading metadata or climbs', async () => {
+    activityAccessMock.mockResolvedValue(false);
+    await expect(
+      playlistQueries.smartPlaylist(null, { input: { type: 'FIVE_STARS', userId: 'private-owner' } }, makeCtx()),
+    ).rejects.toThrow('Playlist not found');
+    expect(activityAccessMock).toHaveBeenCalledWith('user-123', 'private-owner');
+    expect(mockDb.select).not.toHaveBeenCalled();
   });
 
   it('RECOMMENDED_* returns an empty result for a non-owner without any user lookup', async () => {

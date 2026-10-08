@@ -1,3 +1,5 @@
+import { pubsub } from '../../../pubsub/index';
+import { setContentPrivacy, betaPrivacyEntityId } from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm/alias';
@@ -677,6 +679,7 @@ export const tickMutations = {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
+    let inferredPrivacyChanged = false;
     const mutationResult = await db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx, userId);
       const affectedTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'delete');
@@ -735,12 +738,14 @@ export const tickMutations = {
       // logical ascent's rows share one climbed_at and would otherwise reconcile the
       // same window repeatedly.
       for (const climbedAt of new Set(affectedTicks.map((tick) => tick.climbedAt))) {
-        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
       }
 
       return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0 };
     });
 
+    if (inferredPrivacyChanged) pubsub.publishPrivacyChanged();
     const { affectedTicks: deletedTicks, detachedBetaLinks } = mutationResult;
 
     const targetTick = deletedTicks.find((tick) => tick.uuid === uuid)!;
@@ -1129,6 +1134,7 @@ export const tickMutations = {
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
     // we detect that, return the original row, and skip every side effect below.
+    let inferredPrivacyChanged = false;
     const [tick] = await db.transaction(
       async (tx) => {
         // A spray climb can be hard-deleted by its setter while nobody has
@@ -1181,6 +1187,16 @@ export const tickMutations = {
           .returning();
 
         if (!createdTick) return [];
+        if (validatedInput.privacy) {
+          await setContentPrivacy(
+            tx,
+            userId,
+            'tick',
+            createdTick.uuid,
+            validatedInput.privacy.audience,
+            validatedInput.privacy.privacyRevision,
+          );
+        }
 
         if (boardAssociationBecameUnavailable) {
           // The board was valid when we resolved it above, but a concurrent
@@ -1234,12 +1250,15 @@ export const tickMutations = {
         // transaction so the tick and its assignment commit together. Inert unless
         // INFERRED_SESSIONS_ENABLED is set. A tick that already carries an explicit
         // session still goes through, because the run around it may need redrawing.
-        await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
+        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(createdTick.climbedAt));
+        inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
 
         return [createdTick];
       },
       { isolationLevel: 'read committed' },
     );
+
+    if (inferredPrivacyChanged) pubsub.publishPrivacyChanged();
 
     // Settle the catalog observation started before the board/session lookups.
     // By now it has overlapped every round-trip above, so this is a no-op wait
@@ -1369,25 +1388,39 @@ export const tickMutations = {
     }
 
     try {
-      await db
-        .insert(dbSchema.boardBetaLinks)
-        .values({
-          boardType: validated.boardType,
-          climbUuid: validated.climbUuid,
-          link: normalizedLink,
-          shortcode: getInstagramMediaId(normalizedLink),
-          videoIdentity: betaLinkIdentity(normalizedLink),
-          tickUuid: tickContext.tickUuid,
-          boardId: tickContext.boardId,
-          angle: tickContext.angle,
-          isListed: true,
-          thumbnail: betaPlan.thumbnail,
-          foreignUsername: betaPlan.foreignUsername,
-          createdAt: now,
-          createdByUserId: userId,
-        })
-        .onConflictDoNothing();
+      await db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(dbSchema.boardBetaLinks)
+          .values({
+            boardType: validated.boardType,
+            climbUuid: validated.climbUuid,
+            link: normalizedLink,
+            shortcode: getInstagramMediaId(normalizedLink),
+            videoIdentity: betaLinkIdentity(normalizedLink),
+            tickUuid: tickContext.tickUuid,
+            boardId: tickContext.boardId,
+            angle: tickContext.angle,
+            isListed: true,
+            thumbnail: betaPlan.thumbnail,
+            foreignUsername: betaPlan.foreignUsername,
+            createdAt: now,
+            createdByUserId: userId,
+          })
+          .onConflictDoNothing()
+          .returning({ link: dbSchema.boardBetaLinks.link });
+        if (inserted && validated.privacy) {
+          await setContentPrivacy(
+            tx,
+            userId,
+            'beta',
+            betaPrivacyEntityId(validated.boardType, validated.climbUuid, normalizedLink),
+            validated.privacy.audience,
+            validated.privacy.privacyRevision,
+          );
+        }
+      });
     } catch (err) {
+      if (err instanceof GraphQLError) throw err;
       logger.error('[attachBetaLink] insert failed after validation passed:', err);
       throw new GraphQLError("Couldn't save the beta link. Please try again.", {
         extensions: { code: 'BETA_LINK_INSERT_FAILED' },
@@ -1422,6 +1455,7 @@ export const tickMutations = {
     const changedFields = Object.keys(validatedInput);
     logger.info(`[updateTick] user=${userId} tick=${uuid} fields=[${changedFields.join(',')}]`);
 
+    let inferredPrivacyChanged = false;
     const mutationResult = await db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx, userId);
       const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
@@ -1467,6 +1501,18 @@ export const tickMutations = {
         .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
         .returning();
       const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
+      if (validatedInput.privacy) {
+        for (const affectedUuid of affectedUuids) {
+          await setContentPrivacy(
+            tx,
+            userId,
+            'tick',
+            affectedUuid,
+            validatedInput.privacy.audience,
+            validatedInput.privacy.privacyRevision,
+          );
+        }
+      }
 
       // Keep linked beta videos at the angle of the edited ascent.
       let movedBetaLinks = false;
@@ -1491,11 +1537,14 @@ export const tickMutations = {
         ...existingTicks.map((tick) => tick.climbedAt),
         ...updatedTicks.map((tick) => tick.climbedAt),
       ])) {
-        await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        const reconciled = await reconcileInferredSessions(tx, userId, parseClimbedAt(climbedAt));
+        inferredPrivacyChanged ||= reconciled?.privacyChanged === true;
       }
 
       return { existingTicks, updatedTicks, updatedTarget, movedBetaLinks };
     });
+
+    if (validatedInput.privacy || inferredPrivacyChanged) pubsub.publishPrivacyChanged();
 
     // Both the key the tick left and the key it joined, so an angle edit doesn't
     // strand a stale bucket. Inline first for the same reason as saveTick: the

@@ -12,7 +12,10 @@ import type Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 
+export type PrivacyChangedEvent = { invalidated: true };
+
 // Channel naming convention
+const PRIVACY_CHANNEL = 'boardsesh:privacy:global';
 const QUEUE_CHANNEL_PREFIX = 'boardsesh:queue:';
 const SESSION_CHANNEL_PREFIX = 'boardsesh:session:';
 const NOTIFICATION_CHANNEL_PREFIX = 'boardsesh:notifications:';
@@ -25,6 +28,7 @@ const BOARD_PRESENCE_CHANNEL_PREFIX = 'boardsesh:board:';
 const BOARD_QUEUE_CHANNEL_PREFIX = 'boardsesh:board-queue:';
 const CLIMB_STATS_CHANNEL_PREFIX = 'boardsesh:climb-stats-layout:';
 const EVENT_CHANNEL_PREFIXES = [
+  PRIVACY_CHANNEL,
   QUEUE_CHANNEL_PREFIX,
   SESSION_CHANNEL_PREFIX,
   NOTIFICATION_CHANNEL_PREFIX,
@@ -45,7 +49,8 @@ type RedisMessage = {
     | NewClimbCreatedEvent
     | BoardPresenceEvent
     | BoardQueuePreview
-    | ClimbStatsEvent;
+    | ClimbStatsEvent
+    | PrivacyChangedEvent;
   timestamp: number;
 };
 
@@ -69,6 +74,10 @@ function isHighFrequencySessionEvent(event: unknown): boolean {
 }
 
 export type RedisPubSubAdapter = {
+  publishPrivacyChanged(): Promise<void>;
+  subscribePrivacyChannel(): Promise<void>;
+  unsubscribePrivacyChannel(): Promise<void>;
+  onPrivacyMessage(callback: () => void): void;
   publishQueueEvent(sessionId: string, event: QueueEvent): Promise<void>;
   publishSessionEvent(sessionId: string, event: SessionEvent): Promise<void>;
   publishNotificationEvent(userId: string, event: NotificationEvent): Promise<void>;
@@ -108,6 +117,8 @@ export type RedisPubSubAdapter = {
 export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): RedisPubSubAdapter {
   const instanceId = uuidv4();
   const subscribedQueueChannels = new Set<string>();
+  let privacyMessageCallback: (() => void) | null = null;
+  let privacySubscribed = false;
   const subscribedSessionChannels = new Set<string>();
   const subscribedNotificationChannels = new Set<string>();
   const subscribedCommentChannels = new Set<string>();
@@ -157,7 +168,9 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
         return;
       }
 
-      if (channel.startsWith(QUEUE_CHANNEL_PREFIX)) {
+      if (channel === PRIVACY_CHANNEL) {
+        privacyMessageCallback?.();
+      } else if (channel.startsWith(QUEUE_CHANNEL_PREFIX)) {
         const sessionId = channel.slice(QUEUE_CHANNEL_PREFIX.length);
         if (queueMessageCallback) {
           queueMessageCallback(sessionId, parsed.event as QueueEvent);
@@ -222,6 +235,26 @@ export function createRedisPubSubAdapter(publisher: Redis, subscriber: Redis): R
   });
 
   return {
+    async publishPrivacyChanged(): Promise<void> {
+      await publisher.publish(
+        PRIVACY_CHANNEL,
+        JSON.stringify({ instanceId, event: { invalidated: true }, timestamp: Date.now() }),
+      );
+    },
+    async subscribePrivacyChannel(): Promise<void> {
+      if (privacySubscribed) return;
+      await subscriber.subscribe(PRIVACY_CHANNEL);
+      privacySubscribed = true;
+    },
+    async unsubscribePrivacyChannel(): Promise<void> {
+      if (!privacySubscribed) return;
+      await subscriber.unsubscribe(PRIVACY_CHANNEL);
+      privacySubscribed = false;
+    },
+    onPrivacyMessage(callback: () => void): void {
+      privacyMessageCallback = callback;
+    },
+
     async publishQueueEvent(sessionId: string, event: QueueEvent): Promise<void> {
       const channel = `${QUEUE_CHANNEL_PREFIX}${sessionId}`;
       const message: RedisMessage = {

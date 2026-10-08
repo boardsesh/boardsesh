@@ -2,6 +2,9 @@ import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
+import { usePublicationAudience } from '../privacy/use-publication-audience';
+import { PublicationAudiencePicker } from '../privacy/PublicationAudiencePicker';
+import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 
@@ -69,6 +72,7 @@ export function PlaylistFormSheet({
   const { t } = useTranslation('playlists');
   const { systemColors, brandColors } = useTheme();
   const isEdit = mode === 'edit';
+  const privacy = usePublicationAudience(playlist?.uuid ?? 'new-playlist', visible);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -137,8 +141,15 @@ export function PlaylistFormSheet({
       return;
     }
     setError(null);
-    onSubmit(result.values);
-  }, [mode, name, description, color, icon, isPublic, onSubmit, t]);
+    const { isPublic: legacyVisibility, ...formFields } = result.values;
+    onSubmit({
+      ...formFields,
+      ...(!privacy.enabled ? { isPublic: legacyVisibility } : {}),
+      ...(privacy.publication && !isEdit
+        ? { privacy: privacy.publication, isPublic: privacy.audience === 'public' }
+        : {}),
+    });
+  }, [mode, name, description, color, icon, isPublic, onSubmit, t, privacy.publication, privacy.audience, privacy.enabled, isEdit]);
 
   // Local validation takes precedence over a parent submit failure: a fresh
   // validation message (e.g. empty name) is the more actionable feedback, and
@@ -187,6 +198,11 @@ export function PlaylistFormSheet({
       scrollable
       header={header}
     >
+      {isEdit && playlist ? (
+        <ContentAudienceControl entityType="playlist" entityId={playlist.uuid} />
+      ) : (
+        <PublicationAudiencePicker privacy={privacy} disabled={submitting} />
+      )}
       <View style={styles.body}>
         <View style={styles.header}>
           <PlaylistPreviewSquare color={color} icon={icon} size={56} />
@@ -323,7 +339,7 @@ export function PlaylistFormSheet({
           })}
         </View>
 
-        {isEdit ? (
+        {isEdit && !privacy.enabled ? (
           <View style={styles.switchWrap}>
             <SwitchRow
               label={t('edit.fields.visibility')}

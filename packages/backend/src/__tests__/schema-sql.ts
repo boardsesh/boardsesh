@@ -52,7 +52,20 @@ const providerSyncControlsSchema = readFileSync(
   'utf8',
 );
 
+const sessionBoardsSchema = readFileSync(
+  new URL('../../../db/drizzle/0055_enhanced-sessions.sql', import.meta.url),
+  'utf8',
+)
+  .split('--> statement-breakpoint')
+  .filter((statement) => statement.includes('"session_boards"'))
+  .join('\n');
+const privacySchema = readFileSync(
+  new URL('../../../db/drizzle/0261_account_resource_privacy.sql', import.meta.url),
+  'utf8',
+);
+
 export const schemaSQL = `
+  DROP TABLE IF EXISTS resource_grants, resource_privacy, content_privacy, user_follow_requests, session_boards CASCADE;
   DROP TABLE IF EXISTS "board_session_queues" CASCADE;
   DROP TABLE IF EXISTS "session_health_kit_workouts" CASCADE;
   DROP TABLE IF EXISTS "board_session_participants" CASCADE;
@@ -2118,4 +2131,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
   );
   ${sprayWallDeletionSchema}
+  ${sessionBoardsSchema}
+  ${privacySchema}
 `;

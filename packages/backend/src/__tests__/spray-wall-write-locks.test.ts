@@ -164,7 +164,7 @@ const WRITERS: Array<{ name: string; source: string; why: string; exempt?: strin
     why: 'the draft-status and draft-purpose reads decide',
   },
   { name: 'discardSprayWallVersion', source: SPRAY_WALLS_SOURCE, why: 'the draft-status read decides' },
-  { name: 'updateSprayWall', source: SPRAY_WALLS_SOURCE, why: 'the angle rule reads current_version_id' },
+  { name: 'runUpdateSprayWall', source: SPRAY_WALLS_SOURCE, why: 'the angle rule reads current_version_id' },
   {
     name: 'setSprayWallRenderSettings',
     source: SPRAY_WALLS_SOURCE,
@@ -399,7 +399,7 @@ describe('publishDraftUnderLock refuses a wall that has been deleted', () => {
  */
 describe('the feed retraction decision is re-read under the wall lock', () => {
   it('updateSprayWall reads is_public after the lock, not before', () => {
-    const body = functionBody(SPRAY_WALLS_SOURCE, 'updateSprayWall');
+    const body = functionBody(SPRAY_WALLS_SOURCE, 'runUpdateSprayWall');
 
     const lockAt = body.indexOf('lockWallForWrite(');
     const decisionAt = body.indexOf('const losingPublic =');

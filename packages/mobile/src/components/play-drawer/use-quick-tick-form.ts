@@ -1,3 +1,5 @@
+import { hasGraphqlErrorCode } from '@boardsesh/offline-sync/error-classification';
+import { usePublicationAudience } from '../privacy/use-publication-audience';
 // The create-tick form's state, derivations and save path.
 //
 // Lifted out of QuickTickBar so the two halves of the sheet can live in
@@ -82,6 +84,7 @@ export type QuickTickFormInput = {
 };
 
 export type QuickTickForm = {
+  privacy?: ReturnType<typeof usePublicationAudience>;
   /** The climb this form is bound to. Surfaced so presentational children can
    *  tell "a new climb loaded" from "the climber changed a field" — the hosting
    *  sheet stays mounted across climbs, so no value change is a reliable signal. */
@@ -138,8 +141,10 @@ export function useQuickTickForm({
 }: QuickTickFormInput): QuickTickForm {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
+  const { t: tSettings } = useTranslation('settings');
   const { showToast } = useToast();
   const saveTick = useSaveTick(toBoardName(boardName));
+  const privacy = usePublicationAudience(climbUuid);
   // Only the (stable, memoized) startStopwatch action is used here — depend on
   // it directly so the save handler isn't recreated on every timer status /
   // deviceName change.
@@ -390,6 +395,7 @@ export function useQuickTickForm({
       saveTick.mutate(
         {
           climbUuid,
+          ...(privacy.publication ? { privacy: privacy.publication } : {}),
           angle,
           isMirror,
           status,
@@ -461,15 +467,17 @@ export function useQuickTickForm({
           onError: (error: unknown) => {
             hapticError();
             track(SHARED_EVENTS.QuickTickFailed, { climbUuid, layoutId: layoutId ?? null });
-            const message = isOfflineRef.current
-              ? tClimbs('mobile.logAscent.offlineErrorMessage')
-              : isClimbNotFound(error)
-                ? // The setter deleted it (#5960), or it never existed. The server's
-                  // own words are English-only, so say it in the climber's language.
-                  tClimbs('mobile.logAscent.climbDeletedMessage')
-                : error instanceof Error && error.message
-                  ? error.message
-                  : tClimbs('mobile.logAscent.errorMessage');
+            const message = hasGraphqlErrorCode(error, 'PRIVACY_REVISION_CONFLICT')
+              ? tSettings('privacy.revisionChanged')
+              : isOfflineRef.current
+                ? tClimbs('mobile.logAscent.offlineErrorMessage')
+                : isClimbNotFound(error)
+                  ? // The setter deleted it (#5960), or it never existed. The server's
+                    // own words are English-only, so say it in the climber's language.
+                    tClimbs('mobile.logAscent.climbDeletedMessage')
+                  : error instanceof Error && error.message
+                    ? error.message
+                    : tClimbs('mobile.logAscent.errorMessage');
             setLastError(message);
           },
         },
@@ -477,6 +485,7 @@ export function useQuickTickForm({
     },
     [
       saveTick,
+      privacy.publication,
       saveBlockedByGrade,
       climbUuid,
       boardName,
@@ -496,6 +505,7 @@ export function useQuickTickForm({
       onDismiss,
       showToast,
       tClimbs,
+      tSettings,
       resolvedGradeName,
       savedRef,
       startTimerStopwatch,
@@ -530,6 +540,7 @@ export function useQuickTickForm({
     onClimbedAtChange: handleClimbedAtChange,
     onFutureAdjusted: handleFutureAdjusted,
     onSave: handleSave,
+    privacy,
     onAttempt: handleAttempt,
   };
 }

@@ -4,8 +4,13 @@ import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import { DiscoverPlaylistsInputSchema, GetPlaylistCreatorsInputSchema } from '../../../../validation/schemas';
-import { formatPublicPlaylist } from '../helpers/enrichment';
+import { formatPublicPlaylist, playlistVisibilityCondition } from '../helpers/enrichment';
 import { escapeLikePattern } from '../../../../utils/like-pattern';
+import { contentVisibilityCondition } from '@boardsesh/db/queries';
+
+/** A public co-owner cannot disclose another owner's restricted association. */
+export const playlistCreatorVisibilityCondition = (viewerId: string | null | undefined) =>
+  contentVisibilityCondition('playlist', dbSchema.playlists.uuid, dbSchema.playlistOwnership.userId, viewerId);
 
 /** Shared select fields for public playlist queries (discover + search). */
 const PUBLIC_PLAYLIST_SELECT = {
@@ -97,7 +102,10 @@ export const discoverPlaylists = async (
   const page = input.page ?? 0;
   const pageSize = input.pageSize ?? 20;
 
-  const conditions = [eq(dbSchema.playlists.isPublic, true)];
+  const conditions = [
+    eq(dbSchema.playlists.isPublic, true),
+    playlistVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
+  ];
 
   if (input.boardType) {
     conditions.push(eq(dbSchema.playlists.boardType, input.boardType));
@@ -136,7 +144,11 @@ export const discoverPlaylists = async (
     );
   }
 
-  const whereClause = and(...conditions, eq(dbSchema.playlistOwnership.role, 'owner'));
+  const whereClause = and(
+    ...conditions,
+    eq(dbSchema.playlistOwnership.role, 'owner'),
+    playlistCreatorVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
+  );
 
   // A size band, not just a floor. The floor drops one-climb scratch lists; the
   // ceiling drops the 600-climb "favorites" dumps that are a data export with a
@@ -230,10 +242,12 @@ export const playlistCreators = async (
   validateInput(GetPlaylistCreatorsInputSchema, input, 'input');
 
   const conditions = [
+    playlistVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
     eq(dbSchema.playlists.isPublic, true),
     eq(dbSchema.playlists.boardType, input.boardType),
     or(eq(dbSchema.playlists.layoutId, input.layoutId), isNull(dbSchema.playlists.layoutId)),
     eq(dbSchema.playlistOwnership.role, 'owner'),
+    playlistCreatorVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
   ];
 
   if (input.searchQuery) {

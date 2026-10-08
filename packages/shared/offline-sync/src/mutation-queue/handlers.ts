@@ -35,6 +35,7 @@ type MutationDispatch = {
 // (this runtime package deliberately has no dependencies, so the type-only
 // check lives with the tests).
 export const UPDATE_TICK_INPUT_FIELDS = [
+  'privacy',
   'status',
   'attemptCount',
   'quality',

@@ -27,3 +27,5 @@ export * from './spray-walls/index';
 export * from './places/import';
 export * from './background-jobs';
 export * from './spray-walls/import-progress';
+
+export * from './privacy';

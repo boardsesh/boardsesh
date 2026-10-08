@@ -51,6 +51,7 @@ import {
   indexBatchItemsById,
   pseudonymiseResponse,
   redactIgnoredVariablePaths,
+  replayCompatibleFixtureResponse,
   replayDefaultResponse,
   resolveOperationName,
   sortManifestEntries,
@@ -783,10 +784,6 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       missGraphql(operationName, 'no-fixture');
       return;
     }
-    if (entry.documentHash !== key.documentHash) {
-      missGraphql(operationName, 'document-changed');
-      return;
-    }
     if (!isFixtureFileWithinDirectory(fixturesDir, entry.file)) {
       // Defense in depth: the manifest validator already refuses to load an
       // entry shaped like this, so reaching here means something wrote past
@@ -796,13 +793,20 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       return;
     }
 
-    let serializedResponse = replayResponseCache.get(entry.file);
+    const responseCacheKey = `${entry.file}\n${key.documentHash}`;
+    let serializedResponse = replayResponseCache.get(responseCacheKey);
     if (serializedResponse === undefined) {
       try {
         const fixture = JSON.parse(readFileSync(join(fixturesDir, entry.file), 'utf8')) as GraphqlFixtureFile;
-        // The recorded body verbatim, `errors` included: a screen that was
-        // recorded showing a partial error must screenshot the same way.
-        serializedResponse = JSON.stringify(fixture.response);
+        const compatibility =
+          entry.documentHash !== key.documentHash ? replayCompatibleFixtureResponse(query, fixture) : null;
+        if (entry.documentHash !== key.documentHash && !compatibility) {
+          missGraphql(operationName, 'document-changed');
+          return;
+        }
+        // Preserve recorded errors too; compatibility only supplies a known
+        // nullable field on old manufacturer-board recordings.
+        serializedResponse = JSON.stringify(compatibility?.response ?? fixture.response);
       } catch {
         // The startup check already read every fixture, so the file went
         // missing or was truncated DURING the run. Answer exactly like any
@@ -811,7 +815,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         missGraphql(operationName, 'unreadable-fixture');
         return;
       }
-      replayResponseCache.set(entry.file, serializedResponse);
+      replayResponseCache.set(responseCacheKey, serializedResponse);
     }
     hits += 1;
     emit({ event: 'hit', kind: 'graphql', operationName, hash12, composed: null, uncoveredCount: 0, uncoveredIds: [] });

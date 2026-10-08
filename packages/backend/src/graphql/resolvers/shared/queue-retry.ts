@@ -1,7 +1,9 @@
 import { roomManager, VersionConflictError } from '../../../services/room-manager';
 import type { QueueState } from '../../../services/room-manager/types';
 import { logger } from '../../../utils/logger';
-import { MAX_RETRIES } from './types';
+// A dozen simultaneous party writes can each lose a CAS round. Keep the
+// retry budget bounded, with jitter so they do not repeatedly collide together.
+const MAX_QUEUE_VERSION_RETRIES = 16;
 
 /**
  * Run a queue mutation as read-compute-compare-and-swap, retrying on a version
@@ -33,7 +35,7 @@ export async function withQueueVersionRetry<T>(
 ): Promise<T> {
   let lastConflict: VersionConflictError | undefined;
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < MAX_QUEUE_VERSION_RETRIES; attempt++) {
     const state = await roomManager.getQueueState(sessionId);
     try {
       return await runAttempt(state);
@@ -42,16 +44,17 @@ export async function withQueueVersionRetry<T>(
         throw error;
       }
       lastConflict = error;
+      await new Promise((resolve) => setTimeout(resolve, 2 + Math.floor(Math.random() * 20)));
     }
   }
 
   // Greppable: if this ever shows up in volume, the session is under genuine
-  // concurrent-write pressure and MAX_RETRIES needs revisiting.
+  // concurrent-write pressure and MAX_QUEUE_VERSION_RETRIES needs revisiting.
   logger.warn(
-    `[queue-retry] ${operation} exhausted ${MAX_RETRIES} version-conflict retries for session ${sessionId} — ` +
+    `[queue-retry] ${operation} exhausted ${MAX_QUEUE_VERSION_RETRIES} version-conflict retries for session ${sessionId} — ` +
       `concurrent queue mutations are contending (#3906)`,
   );
   // Always set by the loop above (it only falls through after a conflict), but
-  // typed as optional — don't let a future MAX_RETRIES <= 0 throw `undefined`.
+  // typed as optional — don't let a future MAX_QUEUE_VERSION_RETRIES <= 0 throw `undefined`.
   throw lastConflict ?? new VersionConflictError(sessionId, -1);
 }

@@ -40,6 +40,7 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: LATEST_SCHEMA_VERSION,
+    privacyVersion: 1,
     tables: {
       board_climbs: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 5 },
       board_climb_stats: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '7', rowCount: 3 },
@@ -123,6 +124,7 @@ function withGradesArtifact(
       contentEncoding: 'gzip',
       builtAt: entry.builtAt,
       schemaVersion,
+      privacyVersion: 1,
       tables: {
         board_climb_grades: {
           watermarkUpdatedAt: '2026-05-01T00:00:00Z',
@@ -778,6 +780,7 @@ describe('runExport — board_climb_grades artifacts', () => {
         contentEncoding: 'gzip',
         builtAt: '2026-06-01T00:00:00.000Z',
         schemaVersion: LATEST_SCHEMA_VERSION,
+        privacyVersion: 1,
         tables: {
           board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '9', rowCount: 4 },
         },

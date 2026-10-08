@@ -1828,6 +1828,13 @@
       "when": 1791410924096,
       "tag": "0260_gym_claim_ownership_decisions",
       "breakpoints": true
+    },
+    {
+      "idx": 261,
+      "version": "7",
+      "when": 1791454934848,
+      "tag": "0261_account_resource_privacy",
+      "breakpoints": true
     }
   ]
 }

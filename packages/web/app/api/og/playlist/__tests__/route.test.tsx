@@ -129,7 +129,7 @@ describe('api/og/playlist route', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(response.headers.get('Cache-Control')).toContain('immutable');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(textContent).toContain('AV');
     expect(textContent).toContain('A very long playlist name that...');
     expect(textContent).toContain(

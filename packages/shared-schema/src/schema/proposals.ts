@@ -31,7 +31,7 @@ export const proposalsTypeDefs = /* GraphQL */ `
     climbUuid: String!
     boardType: String!
     angle: Int
-    proposerId: ID!
+    proposerId: ID
     proposerDisplayName: String
     proposerAvatarUrl: String
     type: ProposalType!

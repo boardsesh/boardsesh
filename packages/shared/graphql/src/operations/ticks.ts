@@ -576,6 +576,7 @@ export type DeleteTickVariables = {
 };
 
 export type UpdateTickInput = {
+  privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   status?: 'flash' | 'send' | 'attempt';
   attemptCount?: number;
   quality?: number | null;

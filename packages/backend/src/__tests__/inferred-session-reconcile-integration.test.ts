@@ -112,6 +112,7 @@ const reconcileAt = (epochMs: number) =>
 
 async function cleanup() {
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+  await db.delete(dbSchema.userProfiles).where(eq(dbSchema.userProfiles.userId, USER_ID));
   await db.execute(sql`DELETE FROM votes WHERE entity_type = 'session'`);
   await db.execute(sql`DELETE FROM comments WHERE entity_type = 'session' AND user_id = ${USER_ID}`);
   await db.execute(sql`DELETE FROM board_sessions WHERE created_by_user_id = ${USER_ID}`);
@@ -206,6 +207,67 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(sessions.find((session) => session.id === survivingTick.sessionId)?.startedAt?.getTime()).toBe(
       operation === 'delete' ? touchedAt + 20 * MINUTE : touchedAt,
     );
+  });
+
+  it('inherits the account audience for a newly inferred session', async () => {
+    await db
+      .insert(dbSchema.userProfiles)
+      .values({ userId: USER_ID, isPrivate: true, defaultSessionAudience: 'followers' });
+    await insertTick(BASE);
+    await reconcileAt(BASE);
+    const [session] = await sessionsForUser();
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
+    expect(privacy.audience).toBe('followers');
+  });
+
+  it('preserves restricted source privacy when a bridge merges sessions', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await reconcileAt(BASE);
+    await reconcileAt(BASE + 10 * HOUR);
+    const [morning] = await sessionsForUser();
+    await db
+      .update(dbSchema.resourcePrivacy)
+      .set({ audience: 'only_me' })
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, morning.id)));
+    await insertTick(BASE + 5 * HOUR);
+    await reconcileAt(BASE + 5 * HOUR);
+    const [merged] = await sessionsForUser();
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, merged.id)));
+    expect(privacy.audience).toBe('only_me');
+    expect(await ticksForUser()).toHaveLength(3);
+  });
+
+  it('copies the source audience when editing a tick splits its session', async () => {
+    await insertTick(BASE);
+    const moved = await insertTick(BASE + 30 * MINUTE);
+    await reconcileAt(BASE);
+    const [original] = await sessionsForUser();
+    await db
+      .update(dbSchema.resourcePrivacy)
+      .set({ audience: 'only_me' })
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, original.id)));
+    await db
+      .update(dbSchema.boardseshTicks)
+      .set({ climbedAt: iso(BASE + 24 * HOUR) })
+      .where(eq(dbSchema.boardseshTicks.id, BigInt(moved)));
+    await reconcileAt(BASE + 24 * HOUR);
+    const sessions = await sessionsForUser();
+    expect(sessions).toHaveLength(2);
+    for (const session of sessions) {
+      const [privacy] = await db
+        .select()
+        .from(dbSchema.resourcePrivacy)
+        .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
+      expect(privacy.audience).toBe('only_me');
+    }
+    expect(await ticksForUser()).toHaveLength(2);
   });
 
   it('creates one session per run and assigns every tick', async () => {

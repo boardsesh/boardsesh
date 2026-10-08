@@ -30,6 +30,8 @@ import {
   findUnpseudonymisedPersonFields,
   isPseudonymDisplayName,
   normalizeDocument,
+  replayCompatibleFixtureResponse,
+  type GraphqlFixtureFile,
   pseudonymDisplayName,
   pseudonymHandle,
   pseudonymiseResponse,
@@ -125,6 +127,45 @@ describe('normalizeDocument', () => {
     const compact = 'query Foo($id: ID!) { climb(id: $id) { uuid name } }';
     const reflowed = `query Foo($id: ID!) {\n\tclimb(id: $id) {\n\t\tuuid\n\t\tname\n\t}\n}`;
     expect(normalizeDocument(reflowed)).toBe(normalizeDocument(compact));
+  });
+});
+
+describe('legacy manufacturer-board replay compatibility', () => {
+  const selection = 'sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid }';
+  const legacy = 'query GetBoard { board { uuid boardType } }';
+  const current = `query GetBoard { board { ${selection} uuid boardType } }`;
+  const fixture = (board: unknown): GraphqlFixtureFile => ({
+    formatVersion: 1,
+    operationName: 'GetBoard',
+    documentHash: 'original-hash',
+    variablesHash: 'variables',
+    query: legacy,
+    variables: {},
+    response: { data: { board } },
+    status: 200,
+    recordedAt: '2026-01-01T00:00:00Z',
+    upstream: 'https://example.test',
+  });
+  it('supplies only known-null spray status without mutating the recording', () => {
+    const recorded = fixture({ uuid: 'board', boardType: 'kilter' });
+    const bytes = JSON.stringify(recorded);
+    expect(replayCompatibleFixtureResponse(current, recorded)).toEqual({
+      response: { data: { board: { uuid: 'board', boardType: 'kilter', sprayImport: null } } },
+    });
+    expect(JSON.stringify(recorded)).toBe(bytes);
+  });
+  it.each([{ boardType: 'spray' }, { uuid: 'unknown' }, { boardType: 'kilter', sprayImport: { stage: 'detecting' } }])(
+    'refuses to invent spray state for %j',
+    (board) => {
+      expect(replayCompatibleFixtureResponse(current, fixture(board))).toBeNull();
+    },
+  );
+  it('keeps unrelated fields and spray subfields subject to document drift checks', () => {
+    const recorded = fixture({ boardType: 'kilter' });
+    expect(
+      replayCompatibleFixtureResponse(current.replace('uuid boardType', 'uuid boardType name'), recorded),
+    ).toBeNull();
+    expect(replayCompatibleFixtureResponse(current.replace('versionId', 'newField'), recorded)).toBeNull();
   });
 });
 

@@ -1,3 +1,6 @@
+import { tickPrivacyCondition } from '../shared/activity-privacy';
+import { redactBoardClimbs, redactBoardStats, redactBoardHolder } from '../../../services/board-session-privacy';
+import { canViewActivityIdentity } from '../../../services/privacy';
 import { and, asc, desc, eq, inArray, lt, max, or, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import type {
@@ -33,9 +36,9 @@ export const boardPresenceQueries = {
   boardRecentHistory: async (_: unknown, { boardId }: { boardId: number }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, 60, 'boardRecentHistory');
     const board = await requireActiveBoardWithVisibilityById(boardId);
-    assertAnonReadableBoard(board, ctx.userId);
+    await assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
-    return readMergedRecentHistory(boardId);
+    return redactBoardClimbs(await readMergedRecentHistory(boardId), boardId, ctx.userId);
   },
   boardHistoryPage: async (
     _: unknown,
@@ -44,9 +47,10 @@ export const boardPresenceQueries = {
   ) => {
     await applyRateLimit(ctx, 60, 'boardHistoryPage');
     const board = await requireActiveBoardWithVisibilityById(boardId);
-    assertAnonReadableBoard(board, ctx.userId);
+    await assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
-    return readBoardHistoryPage(boardId, limit ?? 50, before);
+    const page = await readBoardHistoryPage(boardId, limit ?? 50, before);
+    return { ...page, entries: await redactBoardClimbs(page.entries, boardId, ctx.userId) };
   },
   /**
    * Backfill the recent "now on the wall" history for a board from the Redis
@@ -69,11 +73,11 @@ export const boardPresenceQueries = {
     // public / system-shared boards), instead of two round-trips for the same
     // row on every anonymous request.
     const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
-    assertAnonReadableBoard(visibilityBoard, ctx.userId);
+    await assertAnonReadableBoard(visibilityBoard, ctx.userId);
     // The anon gate above waves every authenticated caller through; a spray wall is
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
     await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
-    return pubsub.getRecentBoardClimbs(String(boardId));
+    return redactBoardClimbs(await pubsub.getRecentBoardClimbs(String(boardId)), boardId, ctx.userId);
   },
 
   /**
@@ -109,7 +113,7 @@ export const boardPresenceQueries = {
     // system-shared boards' history), instead of two round-trips for the same
     // row on every anonymous request.
     const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
-    assertAnonReadableBoard(visibilityBoard, ctx.userId);
+    await assertAnonReadableBoard(visibilityBoard, ctx.userId);
     // The anon gate above waves every authenticated caller through; a spray wall is
     // somebody's home and needs the wall's own rule. See assertSprayBoardIsReadable.
     await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
@@ -160,21 +164,25 @@ export const boardPresenceQueries = {
       .orderBy(desc(dbSchema.boardClimbEvents.seq))
       .limit(cappedLimit);
 
-    return rows.map((row) => ({
-      climbUuid: row.climbUuid,
-      queueItemUuid: null,
-      name: row.name,
-      grade: row.grade,
-      gradeColor: null,
-      frames: row.frames,
-      angle: row.angle,
-      setter: row.setter,
-      sentByDisplayName: row.profileDisplayName ?? row.senderName ?? null,
-      sentByAvatarUrl: row.profileAvatarUrl ?? row.senderImage ?? null,
-      sentByUserId: row.sentByUserId ?? null,
-      sentAt: row.confirmedAt,
-      seq: Number(row.seq),
-    }));
+    return redactBoardClimbs(
+      rows.map((row) => ({
+        climbUuid: row.climbUuid,
+        queueItemUuid: null,
+        name: row.name,
+        grade: row.grade,
+        gradeColor: null,
+        frames: row.frames,
+        angle: row.angle,
+        setter: row.setter,
+        sentByDisplayName: row.profileDisplayName ?? row.senderName ?? null,
+        sentByAvatarUrl: row.profileAvatarUrl ?? row.senderImage ?? null,
+        sentByUserId: row.sentByUserId ?? null,
+        sentAt: row.confirmedAt,
+        seq: Number(row.seq),
+      })),
+      boardId,
+      ctx.userId,
+    );
   },
 
   /**
@@ -195,7 +203,7 @@ export const boardPresenceQueries = {
   ): Promise<BoardClimbRecentSender[]> => {
     await applyRateLimit(ctx, 60, 'boardClimbRecentSenders');
     const board = await requireActiveBoardWithVisibilityById(boardId);
-    assertAnonReadableBoard(board, ctx.userId);
+    await assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
     // `boardType` comes from the bound board row, not the client: whether a
     // negative tilt exists at all is a property of the hardware, so the angle
@@ -255,6 +263,7 @@ export const boardPresenceQueries = {
           ),
           eq(dbSchema.boardseshTicks.angle, validated.angle),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
+          tickPrivacyCondition(ctx.userId),
           tickOnCurrentHoldsSql(dbSchema.boardseshTicks.climbRevision, canonicalHoldsEpoch),
         ),
       )
@@ -268,7 +277,13 @@ export const boardPresenceQueries = {
       .orderBy(desc(latestSentAt), asc(dbSchema.boardseshTicks.userId))
       .limit(RECENT_CLIMB_SENDERS_FETCH_LIMIT);
 
-    return toRecentSenders(rows);
+    return Promise.all(
+      toRecentSenders(rows).map(async (sender) =>
+        !sender.userId || (await canViewActivityIdentity(sender.userId, ctx.userId))
+          ? sender
+          : { ...sender, userId: null, displayName: null, avatarUrl: null },
+      ),
+    );
   },
 
   /**
@@ -303,11 +318,11 @@ export const boardPresenceQueries = {
     // same row on every anonymous request.
     const board = await requireActiveBoardWithVisibilityById(boardId);
     // Anonymous viewers only read public / system-shared boards' stats.
-    assertAnonReadableBoard(board, ctx.userId);
+    await assertAnonReadableBoard(board, ctx.userId);
     await assertSprayBoardIsReadable(board, ctx.userId);
 
     const cached = await getCachedBoardPresenceStats(boardId);
-    if (cached) return cached;
+    if (cached) return redactBoardStats(cached, ctx.userId);
 
     const stats = await computeBoardPresenceStats(boardId, board.boardType);
     // NX (only-if-absent): this fire-and-forget write races the debounced
@@ -315,7 +330,7 @@ export const boardPresenceQueries = {
     // and this SET — NX keeps that one instead of rolling the cache back;
     // on a true miss it populates the key as before.
     setCachedBoardPresenceStats(boardId, stats, { onlyIfAbsent: true });
-    return stats;
+    return redactBoardStats(stats, ctx.userId);
   },
 
   /**
@@ -339,6 +354,6 @@ export const boardPresenceQueries = {
     // A spray wall's holder is its climbers' identity, so it also takes the
     // wall's own rule, like every other presence read here (hidden = owner only).
     await requireReadablePresenceBoard(boardId, ctx.userId);
-    return resolveBoardHolder(boardId);
+    return redactBoardHolder(await resolveBoardHolder(boardId), boardId, ctx.userId);
   },
 };

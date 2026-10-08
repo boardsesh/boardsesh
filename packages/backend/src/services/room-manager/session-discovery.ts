@@ -1,7 +1,17 @@
+import { GraphQLError } from 'graphql';
+import { resolveSessionBoardId } from '../session-board-binding';
+import { notifyResourcePrivacyChanged } from '../board-session-privacy';
+import { pubsub } from '../../pubsub';
+import {
+  canViewActivityIdentity,
+  requireResourceAccess,
+  resourceAccessCondition,
+  sessionBoardLocationCondition,
+} from '../privacy';
 import { db } from '../../db/client';
 import { sessions, type Session } from '../../db/schema';
-import { userBoards } from '@boardsesh/db/schema/app';
-import { eq, and, gt, gte, lt, lte, ne, isNull, sql } from 'drizzle-orm';
+import { sessionBoards } from '@boardsesh/db/schema/app';
+import { eq, and, gt, gte, lt, lte, ne, isNull, sql, getTableColumns } from 'drizzle-orm';
 import { haversineDistance, getBoundingBox, DEFAULT_SEARCH_RADIUS_METERS } from '../../utils/geo';
 import type { DiscoverableSession, LiveSession, RoomManagerDeps } from './types';
 import { logger } from '../../utils/logger';
@@ -42,46 +52,44 @@ export async function getSessionById(sessionId: string): Promise<LiveSession | n
   return result[0] ? toLiveSession(result[0]) : null;
 }
 
-/**
- * Update the session's stored boardPath. Returns the previous value when
- * the update actually mutated state, or `null` when the row was already
- * at `boardPath` (idempotent no-op). Throws when the session row doesn't
- * exist — distinguishing "not found" from "unchanged" lets the caller
- * publish `SessionBoardPathChanged` strictly on real transitions instead
- * of overloading `null` across both meanings.
- *
- * **Not atomic.** Two queries: SELECT the existing boardPath, then UPDATE
- * if it differs. Two concurrent callers can both read the same prior
- * value and both publish `SessionBoardPathChanged`. We accept this because
- * the event is idempotent on the client (`router.replace` to the same URL
- * is a no-op) and the realistic write pressure is one angle-selector tap
- * at a time per device. If a future caller can't tolerate double-publish,
- * tighten to a single-statement CTE
- * (`UPDATE sessions SET boardPath = $2, ... FROM (SELECT boardPath AS prev FROM sessions WHERE id = $1) sub WHERE id = $1 AND sub.prev <> $2 RETURNING sub.prev`)
- * or use Redis-backed CAS the same way `setSessionBoardSerialAndReturnPrevious`
- * does. The concurrent double-publish path is pinned in
- * `wall-confirm-and-board-serial.test.ts`'s `setSessionBoardPath` block.
- */
-export async function updateSessionBoardPathIfChanged(sessionId: string, boardPath: string): Promise<string | null> {
-  // Read-then-write — simpler than a CTE and matches the
-  // setSessionBoardSerialAndReturnPrevious shape elsewhere. See the outer
-  // JSDoc for the non-atomicity contract this consciously accepts.
-  const existing = await db
-    .select({ boardPath: sessions.boardPath })
-    .from(sessions)
-    .where(eq(sessions.id, sessionId))
-    .limit(1);
-  if (existing.length === 0) {
-    // Resolvers should reach the helper only after `requireSessionMember`,
-    // which already throws when the row is missing. Reaching this branch
-    // means a race between leave/sweep and the boardPath write — surface
-    // it explicitly rather than returning `null` (the "unchanged" signal).
-    throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
+/** Change the path and its durable privacy parents in the same transaction. */
+export async function updateSessionBoardPathIfChanged(
+  sessionId: string,
+  boardPath: string,
+  viewerId?: string | null,
+): Promise<string | null> {
+  const boardId = await resolveSessionBoardId(boardPath, viewerId);
+  const transition = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ boardPath: sessions.boardPath, boardId: sessions.boardId })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .for('update');
+    if (!existing) throw new Error(`updateSessionBoardPathIfChanged: session ${sessionId} not found`);
+    await requireResourceAccess('session', sessionId, viewerId);
+    const previousPathBoardId = await resolveSessionBoardId(existing.boardPath ?? '', viewerId);
+    if (existing.boardPath === boardPath && existing.boardId === boardId) return null;
+    // Prior wall activity stays capped when the party moves to another wall.
+    const parents = [
+      ...new Set([existing.boardId, previousPathBoardId, boardId].filter((id): id is number => id !== null)),
+    ];
+    if (parents.length)
+      await tx
+        .insert(sessionBoards)
+        .values(parents.map((parentId) => ({ sessionId, boardId: parentId })))
+        .onConflictDoNothing();
+    await tx.update(sessions).set({ boardPath, boardId, lastActivity: new Date() }).where(eq(sessions.id, sessionId));
+    return {
+      previous: existing.boardPath,
+      parentChanged: existing.boardId !== boardId || previousPathBoardId !== boardId,
+    };
+  });
+  if (!transition) return null;
+  if (transition.parentChanged) {
+    await pubsub.publishPrivacyChanged();
+    await notifyResourcePrivacyChanged('session', sessionId);
   }
-  const previous = existing[0].boardPath;
-  if (previous === boardPath) return null;
-  await db.update(sessions).set({ boardPath, lastActivity: new Date() }).where(eq(sessions.id, sessionId));
-  return previous;
+  return transition.previous;
 }
 
 /**
@@ -101,19 +109,7 @@ export async function createDiscoverableSession(
 ): Promise<Session> {
   const now = new Date();
 
-  // Auto-resolve boardId from slug paths (e.g., "/b/my-home-wall")
-  let boardId: number | null = null;
-  const slugMatch = boardPath.match(/^\/b\/([^/]+)/);
-  if (slugMatch) {
-    const boardRows = await db
-      .select({ id: userBoards.id })
-      .from(userBoards)
-      .where(and(eq(userBoards.slug, slugMatch[1]), isNull(userBoards.deletedAt)))
-      .limit(1);
-    if (boardRows[0]) {
-      boardId = boardRows[0].id;
-    }
-  }
+  const boardId = await resolveSessionBoardId(boardPath, userId);
 
   const result = await db
     .insert(sessions)
@@ -150,9 +146,15 @@ export async function createDiscoverableSession(
         boardId,
         isPublic,
       },
+      setWhere: and(
+        eq(sessions.createdByUserId, userId),
+        eq(sessions.boardPath, boardPath),
+        sql`${sessions.boardId} IS NOT DISTINCT FROM ${boardId}`,
+      ),
     })
     .returning();
 
+  if (!result[0]) throw new GraphQLError('Session not found', { extensions: { code: 'NOT_FOUND' } });
   return result[0];
 }
 
@@ -165,6 +167,7 @@ export async function findNearbySessions(
   latitude: number,
   longitude: number,
   radiusMeters: number = DEFAULT_SEARCH_RADIUS_METERS,
+  viewerId?: string,
 ): Promise<DiscoverableSession[]> {
   const box = getBoundingBox(latitude, longitude, radiusMeters);
 
@@ -174,6 +177,8 @@ export async function findNearbySessions(
     .where(
       and(
         eq(sessions.discoverable, true),
+        resourceAccessCondition('session', sessions.id, viewerId),
+        sessionBoardLocationCondition(sessions.id, viewerId),
         ne(sessions.status, 'ended'),
         gte(sessions.latitude, box.minLat),
         lte(sessions.latitude, box.maxLat),
@@ -210,12 +215,16 @@ export async function findNearbySessions(
       id: session.id,
       name: session.name,
       boardPath: session.boardPath,
-      latitude: session.latitude,
-      longitude: session.longitude,
+      latitude: 0,
+      longitude: 0,
       createdAt: session.createdAt,
-      createdByUserId: session.createdByUserId,
+      createdByUserId:
+        session.createdByUserId &&
+        (await canViewActivityIdentity(session.createdByUserId, viewerId, { sessionId: session.id }))
+          ? session.createdByUserId
+          : null,
       participantCount,
-      distance,
+      distance: Math.ceil(distance / 1000) * 1000,
       isActive: true,
       goal: session.goal || null,
       isPublic: session.isPublic,
@@ -234,12 +243,23 @@ export async function getUserSessions(userId: string): Promise<LiveSession[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
   const result = await db
-    .select()
+    .select({ ...getTableColumns(sessions), locationVisible: sessionBoardLocationCondition(sessions.id, userId) })
     .from(sessions)
-    .where(and(eq(sessions.createdByUserId, userId), gt(sessions.createdAt, sevenDaysAgo), isLiveSessionRow))
+    .where(
+      and(
+        eq(sessions.createdByUserId, userId),
+        gt(sessions.createdAt, sevenDaysAgo),
+        isLiveSessionRow,
+        resourceAccessCondition('session', sessions.id, userId),
+      ),
+    )
     .orderBy(sessions.lastActivity);
 
-  return result.map(toLiveSession).filter((session): session is LiveSession => session !== null);
+  return result
+    .map(({ locationVisible, ...session }) =>
+      toLiveSession(locationVisible ? session : { ...session, latitude: null, longitude: null }),
+    )
+    .filter((session): session is LiveSession => session !== null);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { sessionFeedQueries } from '../graphql/resolvers/social/session-feed';
@@ -138,6 +138,13 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     });
   });
 
+  // The shared backend harness clears sessions before each case.
+  beforeEach(async () => {
+    await insertSession(SESSION_ON_A, boardAId);
+    await insertSession(SESSION_ON_B, boardBId);
+    await insertSession(SESSION_NULL_BOARD, null);
+  });
+
   afterAll(async () => {
     await cleanup();
   });
@@ -171,13 +178,8 @@ describe('sessionGroupedFeed — exact board_id scoping (real DB)', () => {
     expect(sessionIds).toContain(SESSION_NULL_BOARD);
   });
 
-  it('is unscoped when the boardUuid does not resolve to a board', async () => {
-    const result = await callFeed({ boardUuid: 'sf-board-scope-nonexistent', limit: 50 });
-    const sessionIds = result.sessions.map((s) => s.sessionId);
-
-    // Unknown uuid behaves as today: no board filter, no error.
-    expect(sessionIds).toContain(SESSION_ON_A);
-    expect(sessionIds).toContain(SESSION_ON_B);
-    expect(sessionIds).toContain(SESSION_NULL_BOARD);
+  it('returns an empty feed when the requested board does not exist', async () => {
+    const result = await callFeed({ boardUuid: 'unknown-uuid', limit: 50 });
+    expect(result.sessions).toEqual([]);
   });
 });

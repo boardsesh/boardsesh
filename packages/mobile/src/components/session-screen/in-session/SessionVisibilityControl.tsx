@@ -1,3 +1,5 @@
+import { usePrivacySettings } from '../../../lib/graphql/hooks/use-privacy';
+import { ResourcePrivacyControl } from '../../privacy/ResourcePrivacyControl';
 import { memo } from 'react';
 import { useSessionOwnerUserId, useSessionPreview } from '../../../lib/graphql/hooks';
 import { SessionVisibilityRow } from '../SessionVisibilityRow';
@@ -25,6 +27,7 @@ export const SessionVisibilityControl = memo(function SessionVisibilityControl({
   selfUserId,
   startedOnThisDevice,
 }: SessionVisibilityControlProps) {
+  const { data: privacySettings } = usePrivacySettings();
   const { data: ownerUserId } = useSessionOwnerUserId(sessionId ?? undefined);
   const { data: sessionPreview } = useSessionPreview(sessionId ?? undefined);
   const { isPublic, setIsPublic } = useSessionVisibilityToggle({
@@ -36,5 +39,6 @@ export const SessionVisibilityControl = memo(function SessionVisibilityControl({
   if (!sessionId || isPublic === null) return null;
   if (!isKnownSessionCreator({ startedOnThisDevice, ownerUserId, selfUserId })) return null;
 
+  if (privacySettings?.enabled) return <ResourcePrivacyControl kind="session" resourceId={sessionId} />;
   return <SessionVisibilityRow isPublic={isPublic} onChange={setIsPublic} />;
 });

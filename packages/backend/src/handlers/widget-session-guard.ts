@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { roomManager } from '../services/room-manager';
 import { db } from '../db/client';
 import { boardSessionParticipants } from '../db/schema';
+import { canAccessResource } from '../services/privacy';
 import type { LiveSession } from '../services/room-manager/types';
 
 // The durable session row is returned on the `ok` path so callers that need
@@ -43,6 +44,10 @@ export async function verifyWidgetSession(sessionId: string, userId: string | nu
   if (!session || session.status === 'ended' || session.endedAt != null) {
     // 410 mirrors the widget handlers' existing "token stale; re-register" path.
     return { ok: false, status: 410, error: 'Session has ended; re-register' };
+  }
+
+  if (!(await canAccessResource('session', sessionId, userId))) {
+    return { ok: false, status: 403, error: 'Session access is no longer available' };
   }
 
   if (userId) {

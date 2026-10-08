@@ -49,7 +49,7 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
   """
   type BoardClimbRecentSender {
     "Boardsesh user id, for linking the avatar to their profile"
-    userId: ID!
+    userId: ID
     "Profile display name, falling back to the auth-account name"
     displayName: String
     "Profile avatar URL, falling back to the auth-account image"
@@ -149,7 +149,7 @@ export const boardPresenceTypeDefs = /* GraphQL */ `
     "Grade name (e.g. V6 / 7A+)"
     grade: String!
     "Boardsesh user id of the climber"
-    sentByUserId: String!
+    sentByUserId: String
     "Display name of the climber"
     sentByDisplayName: String
     "Avatar URL of the climber"

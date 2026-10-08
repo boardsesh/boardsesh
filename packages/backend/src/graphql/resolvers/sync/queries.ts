@@ -1,3 +1,5 @@
+import { privateSafeFirstAscentName } from '@boardsesh/db/queries';
+import { contentVisibilityCondition } from '../../../services/privacy';
 import { sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
@@ -230,6 +232,7 @@ function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: nu
 async function runScopedBoardRefSyncPage(params: {
   table: SQL;
   climbUuidColumn: SQL;
+  viewerUserId?: string;
   selectList: SQL;
   updatedAtColumn: SQL;
   seqColumn: SQL;
@@ -246,7 +249,10 @@ async function runScopedBoardRefSyncPage(params: {
   // (layout, size) via a correlated EXISTS on board_climbs, reusing the same
   // shared conditions syncClimbs uses (bc.-qualified here). No scope → plain
   // board_type filter.
-  const scopeConditions = boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`);
+  const scopeConditions = [
+    ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId, sql`bc.`),
+    contentVisibilityCondition('climb', sql`bc.uuid`, sql`bc.user_id`, params.viewerUserId),
+  ];
   let scope: SQL = sql`board_type = ${boardType}`;
   if (scopeConditions.length > 0) {
     const sub = sql.join(
@@ -548,7 +554,7 @@ export const syncQueries = {
         characteristics, hold_fingerprint, missing_hold_count, retired_by_reset, revision_number, holds_revision_number,
         updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
-      scope: boardClimbsScope(validBoardType, lid, sid),
+      scope: sql`(${boardClimbsScope(validBoardType, lid, sid)}) AND ${contentVisibilityCondition('climb', sql`board_climbs.uuid`, sql`board_climbs.user_id`, ctx.userId)}`,
       updatedAtColumn: sql`updated_at`,
       seqColumn: sql`sync_seq`,
       cursor,
@@ -596,10 +602,11 @@ export const syncQueries = {
     }
 
     return runScopedBoardRefSyncPage({
+      viewerUserId: ctx.userId,
       table: sql`board_climb_stats`,
       climbUuidColumn: sql`board_climb_stats.climb_uuid`,
       selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
-        ascensionist_count, difficulty_average, quality_average, fa_username, fa_at, updated_at, sync_seq`,
+        ascensionist_count, difficulty_average, quality_average, ${privateSafeFirstAscentName({ boardType: sql`board_climb_stats.board_type`, climbUuid: sql`board_climb_stats.climb_uuid`, angle: sql`board_climb_stats.angle`, username: sql`board_climb_stats.fa_username` }, ctx.userId)} AS fa_username, fa_at, updated_at, sync_seq`,
       updatedAtColumn: sql`board_climb_stats.updated_at`,
       seqColumn: sql`board_climb_stats.sync_seq`,
       boardType: validBoardType,
@@ -652,6 +659,7 @@ export const syncQueries = {
     }
 
     return runScopedBoardRefSyncPage({
+      viewerUserId: ctx.userId,
       table: sql`board_climb_grades`,
       climbUuidColumn: sql`board_climb_grades.climb_uuid`,
       selectList: sql`board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,

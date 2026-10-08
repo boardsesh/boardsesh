@@ -1,3 +1,4 @@
+import { contentVisibilityCondition } from '../../../services/privacy';
 import { and, eq, getTableName, sql, type SQL } from 'drizzle-orm';
 import { QueryBuilder } from 'drizzle-orm/pg-core';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
@@ -73,6 +74,7 @@ function followedClimbsSelect(viewerId: string) {
     createdAt: boardClimbs.createdAt,
   };
   const published = and(
+    contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerId),
     eq(boardClimbs.isListed, true),
     eq(boardClimbs.isDraft, false),
     eq(boardClimbs.isHidden, false),

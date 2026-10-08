@@ -23,6 +23,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test'
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
+const privacyAccess = vi.hoisted(() => ({ allowed: true }));
+vi.mock('../services/privacy', () => ({
+  canAccessResource: async () => privacyAccess.allowed,
+  canViewActivityIdentity: async () => true,
+  requireResourceAccess: async () => {
+    if (!privacyAccess.allowed) throw new Error('Not found');
+  },
+}));
+
 // Local, same-instance WS connection tracking (module-level `connections` map
 // in graphql/context.ts). Tests populate this to simulate a same-instance WS
 // connection whose context already has `sessionId` set.
@@ -90,6 +99,7 @@ async function expectRejection(promise: Promise<void>): Promise<unknown> {
 }
 
 beforeEach(() => {
+  privacyAccess.allowed = true;
   vi.clearAllMocks();
   localContexts.clear();
   distributedState.enabled = false;
@@ -224,5 +234,21 @@ describe('isDurableSessionMember', () => {
   it('returns false when no participant row exists', async () => {
     dbMock.limit.mockResolvedValueOnce([]);
     await expect(isDurableSessionMember('user-1', 'session-1')).resolves.toBe(false);
+  });
+});
+
+describe('session audience revocation', () => {
+  it('rejects revoked access before consulting durable participation or live membership', async () => {
+    privacyAccess.allowed = false;
+    localContexts.set('ws-existing', { sessionId: 'session-1' });
+    dbMock.limit.mockResolvedValue([{ sessionId: 'session-1' }]);
+    await expect(
+      requireSessionMember(
+        makeCtx({ connectionId: 'ws-existing', userId: 'revoked-user', isAuthenticated: true }),
+        'session-1',
+      ),
+    ).rejects.toThrow('Not found');
+    expect(dbMock.limit).not.toHaveBeenCalled();
+    expect(getContextMock).not.toHaveBeenCalled();
   });
 });

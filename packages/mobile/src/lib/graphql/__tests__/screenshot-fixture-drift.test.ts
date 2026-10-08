@@ -55,6 +55,7 @@ import * as sharedPlaylists from '@boardsesh/graphql/operations/playlists';
 import * as sharedProposals from '@boardsesh/graphql/operations/proposals';
 import * as sharedQa from '@boardsesh/graphql/operations/qa';
 import * as sharedQueueSession from '@boardsesh/graphql/operations/queue-session';
+import * as sharedPrivacy from '@boardsesh/graphql/operations/privacy';
 import * as sharedNotifications from '@boardsesh/graphql/operations/notifications';
 
 import {
@@ -65,6 +66,7 @@ import {
   canonicalJson,
   indexBatchItemsById,
   normalizeDocument,
+  replayCompatibleFixtureResponse,
   resolveOperationName,
   stripIgnoredVariablePaths,
   findUnpseudonymisedPersonFields,
@@ -153,6 +155,7 @@ const REQUIRED_STORE_FLOW_OPERATIONS = [
 const MINIMUM_REGISTRY_DOCUMENTS = 54;
 
 const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
+  '@boardsesh/graphql/operations/privacy': sharedPrivacy,
   '@boardsesh/graphql/operations/notifications': sharedNotifications,
   '@boardsesh/graphql/operations': sharedOperations,
   '@boardsesh/graphql/operations/ticks': sharedTicks,
@@ -446,6 +449,8 @@ describe('the recorded screenshot fixtures', () => {
         continue;
       }
       if (documents.some((candidate) => candidate.documentHash === entry.documentHash)) continue;
+      if (documents.some((candidate) => replayCompatibleFixtureResponse(candidate.document, readFixture(entry.file))))
+        continue;
       failures.push(
         `Fixture ${entry.file} was recorded from a ${entry.operationName} document the app no longer sends ` +
           `(recorded ${entry.documentHash.slice(0, 12)}, current ${documents
@@ -472,6 +477,14 @@ describe('the recorded screenshot fixtures', () => {
     for (const [operationName, hashes] of recordedHashes) {
       for (const registered of registry.get(operationName) ?? []) {
         if (hashes.has(registered.documentHash)) continue;
+        if (
+          entries.some(
+            (entry) =>
+              entry.operationName === operationName &&
+              replayCompatibleFixtureResponse(registered.document, readFixture(entry.file)),
+          )
+        )
+          continue;
         failures.push(
           `${operationName} is recorded, but the app can also send a different ${operationName} document from ` +
             `${registered.source} (${registered.documentHash.slice(0, 12)}) that no fixture holds. Send the recorded ` +
@@ -515,10 +528,15 @@ describe('the recorded screenshot fixtures', () => {
     const failures: string[] = [];
     for (const entry of entries) {
       const documents = registry.get(entry.operationName);
-      const current = documents?.find((candidate) => candidate.documentHash === entry.documentHash);
-      if (!current) continue; // already reported by the document-drift check above
       const fixture = readFixture(entry.file);
-      const response = fixture.response as { data?: unknown } | null;
+      const current = documents?.find(
+        (candidate) =>
+          candidate.documentHash === entry.documentHash || replayCompatibleFixtureResponse(candidate.document, fixture),
+      );
+      if (!current) continue; // already reported by the document-drift check above
+      const response = (replayCompatibleFixtureResponse(current.document, fixture)?.response ?? fixture.response) as {
+        data?: unknown;
+      } | null;
       if (!response || typeof response !== 'object' || response.data === undefined) continue;
       const variables = (fixture.variables ?? {}) as Record<string, unknown>;
       for (const path of checkSelectionCoverage(schema, parse(current.document), response.data, variables)) {

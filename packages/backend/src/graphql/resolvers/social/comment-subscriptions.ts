@@ -1,8 +1,9 @@
 import type { ConnectionContext, CommentEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
-import { createAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { SocialEntityTypeSchema } from '../../../validation/schemas';
+import { canReadDeletedComment, canReadSocialEntity } from '../shared/activity-privacy';
 
 // Derive the allow-list from the shared Zod enum so it can never drift from
 // SocialEntityType. A hand-rolled list here previously dropped 'session' and
@@ -20,7 +21,7 @@ export const socialCommentSubscriptions = {
       lifetime,
       _: unknown,
       { entityType, entityId }: { entityType: string; entityId: string },
-      _ctx: ConnectionContext,
+      ctx: ConnectionContext,
     ) {
       // Validate inputs to prevent channel injection
       if (!VALID_ENTITY_TYPES.has(entityType)) {
@@ -31,14 +32,26 @@ export const socialCommentSubscriptions = {
       }
 
       const entityKey = `${entityType}:${entityId}`;
+      const viewerId = ctx.isAuthenticated ? ctx.userId : null;
+      if (!(await canReadSocialEntity(entityType, entityId, viewerId))) return;
 
       const asyncIterator = await lifetime.own(
-        createAsyncIterator<CommentEvent>((push) => {
+        createPrivacyAwareIterator<CommentEvent>((push) => {
           return pubsub.subscribeComments(entityKey, push);
         }, `commentUpdates:${entityKey}`),
       );
 
       for await (const event of asyncIterator) {
+        if (!(await canReadSocialEntity(entityType, entityId, viewerId))) return;
+        if (!event) continue;
+        if ('comment' in event && !(await canReadSocialEntity('comment', event.comment.uuid, viewerId))) continue;
+        if (
+          event.__typename === 'CommentDeleted' &&
+          (!event.authorUserId ||
+            event.parentCommentId === undefined ||
+            !(await canReadDeletedComment(event.commentUuid, event.authorUserId, event.parentCommentId, viewerId)))
+        )
+          continue;
         yield { commentUpdates: event };
       }
     }),

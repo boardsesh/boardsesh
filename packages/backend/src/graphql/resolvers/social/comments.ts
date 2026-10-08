@@ -1,3 +1,4 @@
+import { setContentPrivacy } from '../../../services/privacy';
 import { eq, and, isNull, count, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
@@ -20,6 +21,7 @@ import { lockReferencedClimb } from '../climbs/spray-climb-lock';
 import { publishSocialEvent } from '../../../events/index';
 import { pubsub } from '../../../pubsub/index';
 import crypto from 'crypto';
+import { canReadSocialEntity, socialEntityPrivacyCondition, commentPrivacyCondition } from '../shared/activity-privacy';
 
 type CommentRow = {
   id: number;
@@ -91,6 +93,10 @@ export const socialCommentQueries = {
 
     const authenticatedUserId = ctx.isAuthenticated ? ctx.userId : null;
 
+    if (!(await canReadSocialEntity(entityType, entityId, authenticatedUserId))) {
+      return { comments: [], totalCount: 0, hasMore: false };
+    }
+
     // A climb comment thread is keyed on the climb uuid alone, so holding the
     // uuid was the whole of the claim. On a spray wall it is not: the wall
     // decides. The empty page, never an error — a different shape would say
@@ -111,7 +117,7 @@ export const socialCommentQueries = {
       const [parentComment] = await db
         .select({ id: dbSchema.comments.id })
         .from(dbSchema.comments)
-        .where(eq(dbSchema.comments.uuid, parentCommentUuid))
+        .where(and(eq(dbSchema.comments.uuid, parentCommentUuid), commentPrivacyCondition(ctx?.userId)))
         .limit(1);
 
       if (!parentComment) {
@@ -156,6 +162,7 @@ export const socialCommentQueries = {
         and(
           eq(dbSchema.comments.entityType, entityType),
           eq(dbSchema.comments.entityId, entityId),
+          commentPrivacyCondition(authenticatedUserId),
           resolvedParentId !== null
             ? eq(dbSchema.comments.parentCommentId, resolvedParentId)
             : isNull(dbSchema.comments.parentCommentId),
@@ -195,6 +202,7 @@ export const socialCommentQueries = {
         SELECT r."parent_comment_id", COUNT(*) as cnt
         FROM "comments" r
         WHERE r."parent_comment_id" IS NOT NULL AND r."deleted_at" IS NULL
+          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r."uuid"`, userId: sql`r."user_id"`, parentCommentId: sql`r."parent_comment_id"` })}
           AND r."entity_type" = ${entityType} AND r."entity_id" = ${entityId}
         GROUP BY r."parent_comment_id"
       ) reply_cnt ON reply_cnt."parent_comment_id" = c."id"
@@ -207,6 +215,7 @@ export const socialCommentQueries = {
       WHERE c."entity_type" = ${entityType}
         AND c."entity_id" = ${entityId}
         AND ${parentCommentFilter}
+        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"` })}
       ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
@@ -363,10 +372,11 @@ export const socialCommentQueries = {
       LEFT JOIN (
         -- Global feed spans all entities, so reply counts are computed globally.
         -- The join naturally scopes to only matching parent IDs.
-        SELECT "parent_comment_id", COUNT(*) as cnt
-        FROM "comments"
-        WHERE "parent_comment_id" IS NOT NULL AND "deleted_at" IS NULL
-        GROUP BY "parent_comment_id"
+        SELECT r."parent_comment_id", COUNT(*) as cnt
+        FROM "comments" r
+        WHERE r."parent_comment_id" IS NOT NULL AND r."deleted_at" IS NULL
+          AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`r.uuid`, userId: sql`r.user_id`, parentCommentId: sql`r.parent_comment_id` })}
+        GROUP BY r."parent_comment_id"
       ) reply_cnt ON reply_cnt."parent_comment_id" = c."id"
       LEFT JOIN "vote_counts" vc ON vc."entity_type" = 'comment' AND vc."entity_id" = c."uuid"
       ${
@@ -377,6 +387,8 @@ export const socialCommentQueries = {
       ${boardFilterJoin}
       ${sprayProposalJoin}
       WHERE c."deleted_at" IS NULL
+        AND ${commentPrivacyCondition(authenticatedUserId, { uuid: sql`c."uuid"`, userId: sql`c."user_id"`, parentCommentId: sql`c."parent_comment_id"` })}
+        AND ${socialEntityPrivacyCondition(sql`c."entity_type"`, sql`c."entity_id"`, authenticatedUserId)}
         ${boardFilterWhere}
         ${sprayCommentVisibility}
         ${sprayProposalCommentVisibility}
@@ -510,6 +522,7 @@ export const socialCommentMutations = {
     const userId = ctx.userId!;
 
     await validateEntityExists(entityType, entityId, userId);
+    if (!(await canReadSocialEntity(entityType, entityId, userId))) throw new Error('Content not available');
 
     let parentCommentId: number | null = null;
     if (parentCommentUuid) {
@@ -521,7 +534,7 @@ export const socialCommentMutations = {
           deletedAt: dbSchema.comments.deletedAt,
         })
         .from(dbSchema.comments)
-        .where(eq(dbSchema.comments.uuid, parentCommentUuid))
+        .where(and(eq(dbSchema.comments.uuid, parentCommentUuid), commentPrivacyCondition(ctx?.userId)))
         .limit(1);
 
       if (!parent) {
@@ -541,13 +554,21 @@ export const socialCommentMutations = {
     // can be hard-deleted by its setter (`deleteClimb`, #5960). Holding the climb
     // until the insert commits stops a comment landing after the delete's sweep,
     // where it would be orphaned and could notify about a climb that is gone.
-    const commentResult =
-      entityType === 'climb'
-        ? await db.transaction(async (tx) => {
-            await lockReferencedClimb(tx, entityId);
-            return insertComment({ ...commentParams, executor: tx });
-          })
-        : await insertComment(commentParams);
+    const commentResult = await db.transaction(async (tx) => {
+      if (entityType === 'climb') await lockReferencedClimb(tx, entityId);
+      const inserted = await insertComment({ ...commentParams, executor: tx });
+      if (validated.privacy) {
+        await setContentPrivacy(
+          tx,
+          userId,
+          'comment',
+          inserted.uuid,
+          validated.privacy.audience,
+          validated.privacy.privacyRevision,
+        );
+      }
+      return inserted;
+    });
 
     // Live comment update via PubSub (synchronous for real-time)
     publishCommentAddedLive(entityType, entityId, commentResult);
@@ -589,11 +610,26 @@ export const socialCommentMutations = {
     }
 
     const now = new Date();
-    const [updated] = await db
-      .update(dbSchema.comments)
-      .set({ body, updatedAt: now })
-      .where(eq(dbSchema.comments.uuid, commentUuid))
-      .returning();
+    const [updated] = await db.transaction(async (tx) => {
+      const updatedComments = await tx
+        .update(dbSchema.comments)
+        .set({ body, updatedAt: now })
+        .where(eq(dbSchema.comments.uuid, commentUuid))
+        .returning();
+      if (validated.privacy) {
+        await setContentPrivacy(
+          tx,
+          userId,
+          'comment',
+          commentUuid,
+          validated.privacy.audience,
+          validated.privacy.privacyRevision,
+        );
+      }
+      return updatedComments;
+    });
+
+    if (validated.privacy) pubsub.publishPrivacyChanged();
 
     // Fetch enriched data for the response
     const [user] = await db
@@ -615,7 +651,13 @@ export const socialCommentMutations = {
     const replyResult = await db
       .select({ count: count() })
       .from(dbSchema.comments)
-      .where(and(eq(dbSchema.comments.parentCommentId, comment.id), isNull(dbSchema.comments.deletedAt)));
+      .where(
+        and(
+          eq(dbSchema.comments.parentCommentId, comment.id),
+          isNull(dbSchema.comments.deletedAt),
+          commentPrivacyCondition(userId),
+        ),
+      );
     const replyCount = Number(replyResult[0]?.count || 0);
 
     // User's own vote
@@ -716,6 +758,8 @@ export const socialCommentMutations = {
     const entityKey = `${comment.entityType}:${comment.entityId}`;
     pubsub.publishCommentEvent(entityKey, {
       __typename: 'CommentDeleted',
+      authorUserId: userId,
+      parentCommentId: comment.parentCommentId,
       commentUuid,
       entityType: comment.entityType,
       entityId: comment.entityId,

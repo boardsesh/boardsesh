@@ -24,6 +24,9 @@ type BoardPresenceStatsRow = {
   topGrade: string | null;
   lastSentAt: string | Date | null;
   hardestSendClimbUuid: string | null;
+  tickUuid: string | null;
+  sessionId: string | null;
+  climbOwnerId: string | null;
   name: string | null;
   grade: string | null;
   sentByUserId: string | null;
@@ -98,6 +101,9 @@ function toHardestSend(row: BoardPresenceStatsRow | undefined): BoardPresenceHar
   if (!sentAt) return null;
   return {
     climbUuid: row.hardestSendClimbUuid,
+    tickUuid: row.tickUuid,
+    sessionId: row.sessionId,
+    climbOwnerId: row.climbOwnerId,
     name: row.name,
     grade: row.grade,
     sentByUserId: row.sentByUserId,
@@ -116,6 +122,8 @@ export async function computeBoardPresenceStats(boardId: number, boardType: stri
     WITH tick_difficulties AS (
       SELECT
         t.id,
+        t.uuid,
+        t.session_id,
         t.user_id,
         t.board_type,
         t.climb_uuid,
@@ -153,6 +161,8 @@ export async function computeBoardPresenceStats(boardId: number, boardType: stri
     hardest_send AS (
       SELECT
         id,
+        uuid,
+        session_id,
         user_id,
         board_type,
         canonical_climb_uuid,
@@ -171,6 +181,9 @@ export async function computeBoardPresenceStats(boardId: number, boardType: stri
       COALESCE(top_grade_name.boulder_name, top_grade.difficulty::text) AS "topGrade",
       stats.last_sent_at AS "lastSentAt",
       hardest_send.canonical_climb_uuid AS "hardestSendClimbUuid",
+      hardest_send.uuid AS "tickUuid",
+      hardest_send.session_id AS "sessionId",
+      c.user_id AS "climbOwnerId",
       c.name AS "name",
       COALESCE(hardest_send_grade.boulder_name, hardest_send.difficulty::text) AS "grade",
       hardest_send.user_id AS "sentByUserId",

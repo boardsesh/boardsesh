@@ -6,6 +6,8 @@ import { getWorkerDatabaseUrl, setupWorkerDatabase } from './worker-db';
 // stability window (rows younger than N seconds are deferred to the next pull)
 // would hide every fixture. Must be set before sync/queries.ts is imported.
 process.env.SYNC_STABILITY_WINDOW_SECONDS = '0';
+// Stable test-only key for opaque authenticated session participant IDs.
+process.env.NEXTAUTH_SECRET ??= 'boardsesh-test-session-identity-secret';
 import { beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';

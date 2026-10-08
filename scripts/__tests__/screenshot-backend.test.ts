@@ -238,6 +238,36 @@ describe('screenshot backend', () => {
     rmSync(fixturesDir, { recursive: true, force: true });
   });
 
+  it('replays the known nullable spray field without changing old recording bytes or hiding other drift', async () => {
+    const oldQuery = 'query GetBoard { board { uuid boardType } }';
+    const newQuery =
+      'query GetBoard { board { sprayImport { wallUuid versionId detectionId stage queuePosition retryAt resetOfWallUuid } uuid boardType } }';
+    const responseBody = { data: { board: { uuid: 'catalog-board', boardType: 'kilter' } } };
+    await start({ mode: 'record', fresh: true });
+    upstream.nextGraphqlResponse = { status: 200, body: responseBody };
+    await postGraphql({ operationName: 'GetBoard', query: oldQuery, variables: {} });
+    await stop();
+    const entry = readScreenshotFixtureManifest(fixturesDir)!.graphql[0];
+    const before = readFileSync(join(fixturesDir, entry.file), 'utf8');
+    await start({ mode: 'replay' });
+    expect(await (await postGraphql({ operationName: 'GetBoard', query: oldQuery, variables: {} })).json()).toEqual(
+      responseBody,
+    );
+    expect(await (await postGraphql({ operationName: 'GetBoard', query: newQuery, variables: {} })).json()).toEqual({
+      data: { board: { ...responseBody.data.board, sprayImport: null } },
+    });
+    expect(await (await postGraphql({ operationName: 'GetBoard', query: oldQuery, variables: {} })).json()).toEqual(
+      responseBody,
+    );
+    await postGraphql({
+      operationName: 'GetBoard',
+      query: newQuery.replace('uuid boardType', 'uuid boardType name'),
+      variables: {},
+    });
+    expect(hasLine('reason=document-changed')).toBe(true);
+    expect(readFileSync(join(fixturesDir, entry.file), 'utf8')).toBe(before);
+  });
+
   describe('record mode', () => {
     it('records a graphql response, an auth proxy and a redirected asset without persisting a token', async () => {
       await start({ mode: 'record', fresh: true });

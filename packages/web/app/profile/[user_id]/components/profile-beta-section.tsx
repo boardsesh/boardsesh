@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -29,12 +30,17 @@ type UserBetaResponse = {
 
 export default function ProfileBetaSection({ userId, initialBeta }: ProfileBetaSectionProps) {
   const { t } = useTranslation('profile');
+  const { token } = useWsAuthToken();
 
   const { data: rows = [] } = useQuery<RecentBetaLinkRow[]>({
     queryKey: ['userBetaLinks', userId],
-    queryFn: async () => {
-      const client = createGraphQLHttpClient();
-      const result = await client.request<UserBetaResponse>(GET_USER_BETA_LINKS, { userId, limit: USER_BETA_LIMIT });
+    queryFn: async ({ signal }) => {
+      const client = createGraphQLHttpClient(token);
+      const result = await client.request<UserBetaResponse>({
+        document: GET_USER_BETA_LINKS,
+        variables: { userId, limit: USER_BETA_LIMIT },
+        signal,
+      });
       return result.userBetaLinks;
     },
     initialData: initialBeta,

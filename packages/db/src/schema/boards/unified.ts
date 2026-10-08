@@ -342,6 +342,9 @@ export const boardClimbs = pgTable(
     syncError: text('sync_error'),
     // Boardsesh user who created this climb locally (null for Aurora-synced climbs)
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    // Account deletion clears userId. Preserve origin so retained public app
+    // climbs never enter immutable vendor snapshots or trust cached FA names.
+    isBoardseshAuthored: boolean('is_boardsesh_authored').default(false).notNull(),
     // Denormalized: which hold sets does this climb require? (from climb_holds → placements)
     requiredSetIds: integer('required_set_ids').array(),
     // Denormalized: which product_size IDs can display this climb? (from edge comparison)

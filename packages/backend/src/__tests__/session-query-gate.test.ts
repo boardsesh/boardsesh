@@ -43,6 +43,15 @@ vi.mock('../pubsub/index', () => ({
   pubsub: { getEventsSince: (...args: unknown[]) => eventsSinceMock(...args) },
 }));
 
+const privacyAccess = vi.hoisted(() => ({ allowed: true }));
+vi.mock('../services/privacy', () => ({
+  canAccessResource: async () => privacyAccess.allowed,
+  canViewActivityIdentity: async () => true,
+  requireResourceAccess: async () => {
+    if (!privacyAccess.allowed) throw new Error('Not found');
+  },
+}));
+
 // Local, same-instance WS connection tracking (module-level `connections` map
 // in graphql/context.ts). Tests populate this directly to simulate a
 // same-instance WS connection whose context already has `sessionId` set.
@@ -120,6 +129,7 @@ const sampleQueueState = {
 };
 
 beforeEach(() => {
+  privacyAccess.allowed = true;
   vi.clearAllMocks();
   localContexts.clear();
   distributedState.enabled = false;
@@ -431,5 +441,18 @@ describe('eventsReplay membership check is unaffected by the query gate', () => 
     await assertion;
 
     expect(eventsSinceMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('session invite approval boundary', () => {
+  it('hides roster and metadata from a pending or revoked invite holder', async () => {
+    privacyAccess.allowed = false;
+    const result = await sessionQueries.session(
+      undefined,
+      { sessionId: 'session-1' },
+      makeCtx({ userId: 'pending-user', isAuthenticated: true }),
+    );
+    expect(result).toBeNull();
+    expect(getSessionUsersMock).not.toHaveBeenCalled();
   });
 });

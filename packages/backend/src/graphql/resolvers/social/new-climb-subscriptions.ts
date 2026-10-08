@@ -1,3 +1,4 @@
+import { contentVisibilityCondition } from '../../../services/privacy';
 import { and, eq, desc, sql } from 'drizzle-orm';
 import type {
   ConnectionContext,
@@ -83,6 +84,7 @@ export const newClimbSubscriptionResolvers = {
             // through. Pre-existing for all eight catalogue boards.
             eq(dbSchema.boardClimbs.isDraft, false),
             eq(dbSchema.boardClimbs.isListed, true),
+            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, ctx.userId),
           ),
         )
         .orderBy(desc(dbSchema.boardClimbs.createdAt))
@@ -101,6 +103,7 @@ export const newClimbSubscriptionResolvers = {
             eq(dbSchema.boardClimbs.isHidden, false),
             eq(dbSchema.boardClimbs.isDraft, false),
             eq(dbSchema.boardClimbs.isListed, true),
+            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, ctx.userId),
           ),
         );
 

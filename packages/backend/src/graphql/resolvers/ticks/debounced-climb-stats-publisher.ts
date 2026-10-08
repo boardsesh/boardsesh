@@ -1,3 +1,4 @@
+import { privateSafeFirstAscentName } from '@boardsesh/db/queries';
 import { randomUUID } from 'crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -116,7 +117,15 @@ export function queueClimbStatsRecompute(boardType: string, climbUuid: string, a
             qualityAverage: dbSchema.boardClimbStats.qualityAverage,
             difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
             displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,
-            faUsername: dbSchema.boardClimbStats.faUsername,
+            faUsername: privateSafeFirstAscentName(
+              {
+                boardType: dbSchema.boardClimbStats.boardType,
+                climbUuid: dbSchema.boardClimbStats.climbUuid,
+                angle: dbSchema.boardClimbStats.angle,
+                username: dbSchema.boardClimbStats.faUsername,
+              },
+              null,
+            ),
             faAt: dbSchema.boardClimbStats.faAt,
             // Preserve the bigint exactly across the JS boundary.
             syncSeq: sql<string>`${dbSchema.boardClimbStats.syncSeq}::text`,

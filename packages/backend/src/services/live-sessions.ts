@@ -1,3 +1,4 @@
+import { canAccessResource, canViewActivityIdentity, resourceAccessCondition } from './privacy';
 import { and, desc, eq, exists, gt, inArray, isNotNull, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import type {
   LiveSession,
@@ -542,13 +543,8 @@ function recentParticipantRowExists(userCondition: SQL, now: Date): SQL {
  * viewer created it or joined it inside the candidate window; the live roster
  * confirms the latter afterwards.
  */
-function visibilityPrefilter(viewerId: string | null, now: Date): SQL {
-  if (!viewerId) return eq(boardSessions.isPublic, true);
-  return anyOf(
-    eq(boardSessions.isPublic, true),
-    eq(boardSessions.createdByUserId, viewerId),
-    recentParticipantRowExists(eq(dbSchema.boardSessionParticipants.userId, viewerId), now),
-  );
+function visibilityPrefilter(viewerId: string | null, _now: Date): SQL {
+  return resourceAccessCondition('session', boardSessions.id, viewerId);
 }
 
 /**
@@ -817,14 +813,19 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
       : live;
   if (shortlist.length === 0) return [];
 
-  const rosters = await Promise.all(shortlist.map((candidate) => loadRoster(candidate.id)));
+  const sessionAccess = await Promise.all(
+    shortlist.map((candidate) => canAccessResource('session', candidate.id, viewerId)),
+  );
+  const rosters = await Promise.all(
+    shortlist.map((candidate, index) => (sessionAccess[index] ? loadRoster(candidate.id) : Promise.resolve([]))),
+  );
   const withRosters = shortlist.flatMap((candidate, index) => {
     const roster = rosters[index];
     const viewerIsMember =
       viewerId !== null &&
       (candidate.createdByUserId === viewerId || roster.some((member) => member.userId === viewerId));
     // Visibility: a private session is pruned for everyone not in it.
-    if (!candidate.isPublic && !viewerIsMember) return [];
+    if (!sessionAccess[index]) return [];
     return [{ candidate, roster, viewerIsMember }];
   });
   if (withRosters.length === 0) return [];
@@ -900,14 +901,30 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         return true;
       });
       const followedSet = new Set(followedParticipantIds);
+      const visibleMembers = new Set(
+        (
+          await Promise.all(
+            members.map(async (member) =>
+              (await canViewActivityIdentity(member.userId, viewerId, { sessionId: candidate.id }))
+                ? member.userId
+                : null,
+            ),
+          )
+        ).filter((userId): userId is string => userId !== null),
+      );
       const participants = [
         ...members.filter((member) => followedSet.has(member.userId)),
         ...members.filter((member) => !followedSet.has(member.userId)),
       ]
+        .filter((member) => visibleMembers.has(member.userId))
         .slice(0, LIVE_SESSION_ROSTER_CAP)
         .map((member) => toUser(member.userId, member));
 
-      const creatorId = candidate.createdByUserId;
+      const creatorId =
+        candidate.createdByUserId &&
+        (await canViewActivityIdentity(candidate.createdByUserId, viewerId, { sessionId: candidate.id }))
+          ? candidate.createdByUserId
+          : null;
       const [board, currentClimb] = await Promise.all([
         toVisibleBoard(boardRow, viewerId, heldBoardIds),
         // Public sessions only, and only when the board type is known and is
@@ -935,10 +952,10 @@ async function buildLiveSessions(params: BuildLiveSessionsParams): Promise<LiveS
         // The live roster is deduped by participant, so its length is the
         // display head-count (anonymous connections included).
         participantCount: roster.length,
-        followedParticipantIds,
+        followedParticipantIds: followedParticipantIds.filter((userId) => visibleMembers.has(userId)),
         viewerIsMember: entry.viewerIsMember,
         isPublic: candidate.isPublic,
-        board,
+        board: board && (await canAccessResource('board', board.uuid, viewerId)) ? board : null,
         boardType,
         angle: parsedPath.angle ?? boardRow?.angle ?? null,
         sendCount: stats?.sendCount ?? 0,

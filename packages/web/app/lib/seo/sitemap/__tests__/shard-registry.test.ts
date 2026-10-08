@@ -5,6 +5,7 @@ import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { buildGymEntries } from '../gym-entries';
 
 vi.mock('server-only', () => ({}));
+vi.mock('../privacy-filter', () => ({ filterPublicSitemapItems: async (items: unknown) => items }));
 
 const KILTER_CONFIG: PopularBoardConfig = {
   boardType: 'kilter',

@@ -52,6 +52,12 @@ const {
   recordOfflineReadUnavailable: vi.fn(),
 }));
 
+const catalog = vi.hoisted(() => ({ epoch: 0, allowed: true }));
+vi.mock('../../../offline/catalog-access', () => ({
+  canReadPrivateCatalog: vi.fn(async () => catalog.allowed),
+  captureCatalogReadEpoch: () => catalog.epoch,
+  isCatalogReadCurrent: (epoch: number) => epoch === catalog.epoch,
+}));
 vi.mock('../../../db', () => ({ getDatabaseHandle }));
 vi.mock('../../../db/queries/board-download-status', () => ({
   isBoardDownloadedLocally,
@@ -177,6 +183,8 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  catalog.epoch = 0;
+  catalog.allowed = true;
   vi.clearAllMocks();
   connectivity.snapshot = { effectiveOffline: false, reason: null };
   setOfflineEngineEnabled(true);
@@ -1573,5 +1581,26 @@ describe('offlineAwareRequest — HOLD_HEATMAP_QUERY (local-only)', () => {
     expect(recordOfflineReadUnavailable).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'filter_unsupported', surface: 'hold_heatmap' }),
     );
+  });
+});
+
+describe('withdrawn downloaded catalogue reads', () => {
+  it('discards a local result that finishes after privacy revalidation', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    searchClimbsLocal.mockImplementationOnce(async () => {
+      catalog.epoch += 1;
+      return { climbs: [{ uuid: 'withdrawn' }], hasMore: false };
+    });
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result.searchClimbs.climbs).toEqual([]);
+  });
+  it('does not rescue a failed request with a different account catalogue', async () => {
+    setOnline(true);
+    catalog.allowed = false;
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    request.mockRejectedValueOnce(new Error('network unavailable'));
+    await expect(offlineAwareRequest(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow('network unavailable');
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
   });
 });

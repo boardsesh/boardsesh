@@ -297,11 +297,11 @@ describe('export-board-snapshots under the batch login', () => {
         await owner`DELETE FROM background_job_runs WHERE id IN ${owner([running.id, waitingScan.id, staleRetry.id])}`;
       }
 
-      // Nothing beyond the list: no account links, no catalogue writes.
-      await expect(restricted`SELECT created_by_user_id FROM board_beta_links LIMIT 1`).rejects.toThrow(
-        'permission denied',
-      );
-      await expect(restricted`SELECT tick_uuid FROM board_beta_links LIMIT 1`).rejects.toThrow('permission denied');
+      // Origin reads enforce public-only output; catalogue writes remain denied.
+      // Origin columns are needed to exclude personal beta from public artifacts.
+      await expect(
+        restricted`SELECT created_by_user_id, tick_uuid, board_id FROM board_beta_links LIMIT 1`,
+      ).resolves.toBeDefined();
       await expect(restricted`UPDATE board_layouts SET name = name WHERE false`).rejects.toThrow('permission denied');
       await expect(restricted`DELETE FROM board_climb_stats WHERE false`).rejects.toThrow('permission denied');
     } finally {

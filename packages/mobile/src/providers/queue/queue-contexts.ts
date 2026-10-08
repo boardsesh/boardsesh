@@ -20,6 +20,7 @@ export type QueueReorderSource = 'drag' | 'play-next';
 export type WidgetNavigationOptions = { sendMutation?: boolean };
 
 export type StartSessionConfig = {
+  audience?: 'public' | 'followers' | 'invite_only';
   name?: string;
   goal?: string;
   color?: string;

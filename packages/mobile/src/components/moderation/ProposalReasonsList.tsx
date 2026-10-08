@@ -26,7 +26,7 @@ import { formatRelativeTime } from '../../lib/format-relative-time';
 type ProposalReasonsListProps = {
   proposalUuid: string;
   /** Who opened the proposal — their first comment is the quoted reason. */
-  proposerId: string;
+  proposerId: string | null;
   /** The proposal's own reason, already rendered above this list. */
   reason?: string | null;
   /** The card's expander. False keeps the query unfired. */

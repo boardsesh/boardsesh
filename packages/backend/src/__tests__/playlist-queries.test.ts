@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { sqlText } from '@boardsesh/db/test-utils';
 import { playlistQueries, getPlaylistFollowStats } from '../graphql/resolvers/playlists/queries';
 
 const { mockDb } = vi.hoisted(() => {
@@ -173,13 +174,16 @@ describe('playlistClimbs resolver', () => {
   it('should throw for private playlist when not authenticated', async () => {
     const ctx = makeCtx({ isAuthenticated: false, userId: undefined });
 
-    // Playlist exists but is private
-    const playlistChain = createMockChain([{ id: BigInt(1), isPublic: false }]);
+    // Authorization is part of the lookup WHERE, so an inaccessible row is absent.
+    const playlistChain = createMockChain([]);
     mockDb.select.mockReturnValueOnce(playlistChain);
 
     await expect(playlistQueries.playlistClimbs(null, { input: { playlistId: 'private-pl' } }, ctx)).rejects.toThrow(
       'Playlist not found or access denied',
     );
+    const predicate = vi.mocked(playlistChain.where as (condition: unknown) => unknown).mock.calls[0][0];
+    expect(sqlText(predicate)).toContain('public_consent_revision');
+    expect(sqlText(predicate)).toContain('is_private');
   });
 
   it('should return climbs in all-boards mode when boardName is omitted', async () => {

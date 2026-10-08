@@ -740,6 +740,27 @@ describe('activityFeed hides fanned-out rows for hidden climbs', () => {
   beforeEach(async () => {
     await resetFixtures();
 
+    // Materialized rows must have live parent entities for current authorization.
+    await db.insert(dbSchema.boardSessions).values({
+      id: SESSION_WITHOUT_CLIMB,
+      boardPath: 'kilter/1/1/1/40',
+      createdByUserId: FEED_ACTOR,
+      isPublic: true,
+    });
+    await db.insert(dbSchema.boardseshTicks).values(
+      [
+        { uuid: TICK_ON_REPORTED_CLIMB, climbUuid: CLIMB_UUID },
+        { uuid: TICK_ON_MISSING_CLIMB, climbUuid: 'rc-feed-climb-that-does-not-exist' },
+      ].map((tick) => ({
+        ...tick,
+        userId: FEED_ACTOR,
+        boardType: BOARD_TYPE,
+        angle: ANGLE,
+        status: 'send' as const,
+        climbedAt: '2026-03-01T10:00:00Z',
+      })),
+    );
+
     await insertFeedItem({
       entityId: TICK_ON_REPORTED_CLIMB,
       entityType: 'tick',
@@ -764,21 +785,20 @@ describe('activityFeed hides fanned-out rows for hidden climbs', () => {
   });
 
   it('drops the row while the climb is hidden and brings it back on unhide', async () => {
-    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_MISSING_CLIMB, TICK_ON_REPORTED_CLIMB]);
+    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_REPORTED_CLIMB]);
 
     await setReportedClimbHidden(true);
 
-    // Only the hidden climb's row goes. A row whose climbUuid matches no climb
-    // and a row with no climbUuid at all both still read through — `->>` on a
-    // missing key is NULL, which must not swallow the whole feed.
-    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_MISSING_CLIMB]);
+    // A missing climb cannot authorize its denormalized name/frames. Sessions
+    // without climb metadata remain visible when their own audience allows it.
+    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB]);
 
     // Filtered, not purged: the row is still on disk waiting for the unhide.
     expect(await countStoredFeedRows()).toBe(3);
 
     await setReportedClimbHidden(false);
 
-    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_MISSING_CLIMB, TICK_ON_REPORTED_CLIMB]);
+    expect(await readFeedEntityIds()).toEqual([SESSION_WITHOUT_CLIMB, TICK_ON_REPORTED_CLIMB]);
     expect(await countStoredFeedRows()).toBe(3);
   });
 });

@@ -3,6 +3,9 @@
 // board_id (userBoards.id), resolved from the BLE serial.
 
 export type BoardPresenceClimb = {
+  /** Internal provenance retained in Redis; never exposed by GraphQL. */
+  sessionId?: string | null;
+  identityPolicyVersion?: number;
   /** Missing on older servers means a native Boardsesh display. */
   source?: 'boardsesh' | 'kilter' | null;
   climbUuid: string;
@@ -26,7 +29,7 @@ export type BoardPresenceClimb = {
 
 /** One distinct climber who recently sent the displayed climb on this wall. */
 export type BoardClimbRecentSender = {
-  userId: string;
+  userId: string | null;
   displayName?: string | null;
   avatarUrl?: string | null;
   /** ISO 8601 timestamp of this climber's latest successful tick for the climb. */
@@ -80,10 +83,14 @@ export type BoardPresenceEvent =
   | BoardHistoryUpdated;
 
 export type BoardPresenceHardestSend = {
+  /** Internal provenance for viewer-specific identity and content projection. */
+  tickUuid?: string | null;
+  sessionId?: string | null;
+  climbOwnerId?: string | null;
   climbUuid: string;
   name?: string | null;
   grade: string;
-  sentByUserId: string;
+  sentByUserId: string | null;
   sentByDisplayName?: string | null;
   sentByAvatarUrl?: string | null;
   sentAt: string;

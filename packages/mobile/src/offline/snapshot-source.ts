@@ -39,6 +39,7 @@ import {
   type SnapshotGradesArtifact,
   type SnapshotManifestEntry,
   type SnapshotSource,
+  parseSnapshotManifest,
 } from '@boardsesh/offline-sync';
 import { SNAPSHOT_BASE_URL } from '../lib/env';
 import { SNAPSHOT_DIR_NAME } from './snapshot-paths';
@@ -400,7 +401,19 @@ async function fetchManifest(): Promise<unknown> {
     const response = await fetch(MANIFEST_URL, { cache: 'no-store', signal: controller.signal });
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`snapshot manifest fetch failed with HTTP ${response.status}`);
-    return await response.json();
+    const manifest = parseSnapshotManifest(await response.json());
+    if (!manifest) return null;
+    // Never install a pre-privacy artifact, including a cached file with an
+    // unchanged URL. Missing safe artifacts use authenticated paged sync.
+    return {
+      ...manifest,
+      entries: manifest.entries
+        .filter((entry) => entry.privacyVersion === 1)
+        .map((entry) => ({
+          ...entry,
+          grades: entry.grades?.privacyVersion === 1 ? entry.grades : undefined,
+        })),
+    };
   } finally {
     clearTimeout(timeout);
   }

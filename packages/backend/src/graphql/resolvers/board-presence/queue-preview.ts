@@ -1,9 +1,10 @@
+import { GraphQLError } from 'graphql';
 import type { ConnectionContext, BoardQueuePreview } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
-import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
-import { requireReadablePresenceBoard } from './shared';
+import { requireReadablePresenceBoard, isBoardAnonReadable } from './shared';
 import { sprayStreamGate } from '../climbs/spray-read-access';
 import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
 
@@ -78,7 +79,7 @@ export const boardQueuePreviewSubscriptions = {
       const boardKey = String(boardId);
 
       const asyncIterable = await lifetime.own(
-        createEagerAsyncIterator<BoardQueuePreview>(
+        createPrivacyAwareIterator<BoardQueuePreview>(
           (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
           `boardQueuePreview:${boardId}`,
         ),
@@ -97,7 +98,21 @@ export const boardQueuePreviewSubscriptions = {
         }
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
+          // An already-open stream closes quietly when access is revoked.
+          try {
+            await requireReadablePresenceBoard(boardId, ctx.userId);
+          } catch (error) {
+            if (error instanceof GraphQLError && ['NOT_FOUND', 'FORBIDDEN'].includes(String(error.extensions.code)))
+              return;
+            throw error;
+          }
+          if (!(await isBoardAnonReadable(boardId))) return;
           if (gate && !(await gate())) return;
+          if (result.value === null) {
+            const refreshed = await getBoardQueuePreviewSnapshot(boardId);
+            if (refreshed) yield { boardQueuePreview: refreshed };
+            continue;
+          }
           yield { boardQueuePreview: result.value };
         }
       } finally {

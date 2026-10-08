@@ -1,3 +1,12 @@
+import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
+import {
+  canAccessResource,
+  canAccessResourceWithoutLink,
+  canViewActivityIdentity,
+  canViewResourceLocation,
+  resourceAccessCondition,
+  resourceLocationCondition,
+} from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, ne, and, count, isNull, isNotNull, sql, ilike, or, asc, desc, inArray, like } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
@@ -41,6 +50,7 @@ import {
 import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { isSprayBoardType, sprayBoardRowIsReadable } from '../climbs/spray-read-access';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
+import { pubsub } from '../../../pubsub';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { getPopularConfigs } from '../../../services/popular-board-configs';
@@ -459,6 +469,7 @@ async function enrichBoard(
           eq(dbSchema.comments.entityType, 'board'),
           eq(dbSchema.comments.entityId, board.uuid),
           isNull(dbSchema.comments.deletedAt),
+          commentPrivacyCondition(authenticatedUserId),
         ),
       ),
 
@@ -505,6 +516,10 @@ async function enrichBoard(
       : Promise.resolve([]),
   ]);
 
+  const [showLocation, showOwner] = await Promise.all([
+    canViewResourceLocation(board.uuid, authenticatedUserId),
+    canViewActivityIdentity(board.ownerId, authenticatedUserId),
+  ]);
   const ownerInfo = ownerResult[0];
   const tickStats = tickStatsResult[0];
   const followerStats = followerStatsResult[0];
@@ -524,18 +539,18 @@ async function enrichBoard(
     sprayImport,
     uuid: board.uuid,
     slug: board.slug,
-    ownerId: board.ownerId,
-    ownerDisplayName: ownerInfo?.displayName || ownerInfo?.name || undefined,
-    ownerAvatarUrl: ownerInfo?.avatarUrl || ownerInfo?.image || undefined,
+    ownerId: showOwner ? board.ownerId : null,
+    ownerDisplayName: showOwner ? ownerInfo?.displayName || ownerInfo?.name || undefined : undefined,
+    ownerAvatarUrl: showOwner ? ownerInfo?.avatarUrl || ownerInfo?.image || undefined : undefined,
     boardType: board.boardType,
     layoutId: Number(board.layoutId),
     sizeId: Number(board.sizeId),
     setIds: board.setIds,
     name: board.name,
     description: board.description,
-    locationName: board.locationName,
-    latitude: board.latitude,
-    longitude: board.longitude,
+    locationName: showLocation ? (board.locationName ?? null) : null,
+    latitude: showLocation ? (board.latitude ?? null) : null,
+    longitude: showLocation ? (board.longitude ?? null) : null,
     isPublic: board.isPublic,
     isUnlisted: board.isUnlisted,
     hideLocation: board.hideLocation,
@@ -554,13 +569,13 @@ async function enrichBoard(
     followerCount: Number(followerStats?.count || 0),
     commentCount: Number(commentStats?.count || 0),
     isFollowedByMe,
-    gymId: board.gymId ?? null,
+    gymId: showLocation ? (board.gymId ?? null) : null,
     boardId: boardPresenceChannelId(board, canEdit),
-    gymUuid: gymInfo?.uuid ?? null,
-    gymName: gymInfo?.name ?? null,
-    distanceMeters: distanceMeters ?? null,
-    serialNumber: board.serialNumber ?? null,
-    timerName: board.timerName ?? null,
+    gymUuid: showLocation ? (gymInfo?.uuid ?? null) : null,
+    gymName: showLocation ? (gymInfo?.name ?? null) : null,
+    distanceMeters: showLocation ? (distanceMeters ?? null) : null,
+    serialNumber: canEdit ? (board.serialNumber ?? null) : null,
+    timerName: canEdit ? (board.timerName ?? null) : null,
     canEdit,
     isPinnedByMe: pinResult.length > 0,
   };
@@ -576,6 +591,10 @@ export async function enrichBoards(
   boards: Array<{ board: typeof dbSchema.userBoards.$inferSelect; distanceMeters?: number | null }>,
   authenticatedUserId?: string,
 ) {
+  const access = await Promise.all(
+    boards.map(({ board }) => canAccessResource('board', board.uuid, authenticatedUserId)),
+  );
+  boards = boards.filter((_, index) => access[index]);
   if (boards.length === 0) return [];
 
   const boardIds = boards.map((b) => b.board.id);
@@ -646,6 +665,7 @@ export async function enrichBoards(
           eq(dbSchema.comments.entityType, 'board'),
           inArray(dbSchema.comments.entityId, boardUuids),
           isNull(dbSchema.comments.deletedAt),
+          commentPrivacyCondition(authenticatedUserId),
         ),
       )
       .groupBy(dbSchema.comments.entityId),
@@ -750,60 +770,66 @@ export async function enrichBoards(
     (await readSprayWallImportProgress(db, editableSprayWallUuids)).map((progress) => [progress.wallUuid, progress]),
   );
 
-  return boards.map(({ board, distanceMeters }) => {
-    const owner = ownerMap.get(board.ownerId);
-    const ticks = tickMap.get(board.id);
-    const gym = board.gymId ? gymMap.get(board.gymId) : undefined;
-    const canEdit = authenticatedUserId
-      ? board.ownerId === authenticatedUserId ||
-        (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
-        (board.gymId != null && editableGymIds.has(board.gymId))
-      : false;
+  return Promise.all(
+    boards.map(async ({ board, distanceMeters }) => {
+      const [showLocation, showOwner] = await Promise.all([
+        canViewResourceLocation(board.uuid, authenticatedUserId),
+        canViewActivityIdentity(board.ownerId, authenticatedUserId),
+      ]);
+      const owner = ownerMap.get(board.ownerId);
+      const ticks = tickMap.get(board.id);
+      const gym = board.gymId ? gymMap.get(board.gymId) : undefined;
+      const canEdit = authenticatedUserId
+        ? board.ownerId === authenticatedUserId ||
+          (rolesGrantAdminOrLeader(viewerRoles, board.boardType) && boardIsRoleEditable(board)) ||
+          (board.gymId != null && editableGymIds.has(board.gymId))
+        : false;
 
-    return {
-      sprayImport: canEdit ? (sprayImportByWall.get(board.uuid) ?? null) : null,
-      uuid: board.uuid,
-      slug: board.slug,
-      ownerId: board.ownerId,
-      ownerDisplayName: owner?.displayName || owner?.name || undefined,
-      ownerAvatarUrl: owner?.avatarUrl || owner?.image || undefined,
-      boardType: board.boardType,
-      layoutId: Number(board.layoutId),
-      sizeId: Number(board.sizeId),
-      setIds: board.setIds,
-      name: board.name,
-      description: board.description,
-      locationName: board.locationName,
-      latitude: board.latitude,
-      longitude: board.longitude,
-      isPublic: board.isPublic,
-      isUnlisted: board.isUnlisted,
-      hideLocation: board.hideLocation,
-      isOwned: board.isOwned,
-      angle: Number(board.angle),
-      isAngleAdjustable: board.isAngleAdjustable,
-      hasLeds: board.hasLeds,
-      createdAt: board.createdAt.toISOString(),
-      layoutName: null,
-      sizeName: null,
-      sizeDescription: null,
-      setNames: null,
-      totalAscents: Number(ticks?.totalAscents || 0),
-      uniqueClimbers: Number(ticks?.uniqueClimbers || 0),
-      followerCount: followerMap.get(board.uuid) || 0,
-      commentCount: commentMap.get(board.uuid) || 0,
-      isFollowedByMe: followedSet.has(board.uuid),
-      gymId: board.gymId ?? null,
-      boardId: boardPresenceChannelId(board, canEdit),
-      gymUuid: gym?.uuid ?? null,
-      gymName: gym?.name ?? null,
-      distanceMeters: distanceMeters ?? null,
-      serialNumber: board.serialNumber ?? null,
-      timerName: board.timerName ?? null,
-      canEdit,
-      isPinnedByMe: pinnedSet.has(board.uuid),
-    };
-  });
+      return {
+        sprayImport: canEdit ? (sprayImportByWall.get(board.uuid) ?? null) : null,
+        uuid: board.uuid,
+        slug: board.slug,
+        ownerId: showOwner ? board.ownerId : null,
+        ownerDisplayName: showOwner ? owner?.displayName || owner?.name || undefined : undefined,
+        ownerAvatarUrl: showOwner ? owner?.avatarUrl || owner?.image || undefined : undefined,
+        boardType: board.boardType,
+        layoutId: Number(board.layoutId),
+        sizeId: Number(board.sizeId),
+        setIds: board.setIds,
+        name: board.name,
+        description: board.description,
+        locationName: showLocation ? (board.locationName ?? null) : null,
+        latitude: showLocation ? (board.latitude ?? null) : null,
+        longitude: showLocation ? (board.longitude ?? null) : null,
+        isPublic: board.isPublic,
+        isUnlisted: board.isUnlisted,
+        hideLocation: board.hideLocation,
+        isOwned: board.isOwned,
+        angle: Number(board.angle),
+        isAngleAdjustable: board.isAngleAdjustable,
+        hasLeds: board.hasLeds,
+        createdAt: board.createdAt.toISOString(),
+        layoutName: null,
+        sizeName: null,
+        sizeDescription: null,
+        setNames: null,
+        totalAscents: Number(ticks?.totalAscents || 0),
+        uniqueClimbers: Number(ticks?.uniqueClimbers || 0),
+        followerCount: followerMap.get(board.uuid) || 0,
+        commentCount: commentMap.get(board.uuid) || 0,
+        isFollowedByMe: followedSet.has(board.uuid),
+        gymId: showLocation ? (board.gymId ?? null) : null,
+        boardId: boardPresenceChannelId(board, canEdit),
+        gymUuid: showLocation ? (gym?.uuid ?? null) : null,
+        gymName: showLocation ? (gym?.name ?? null) : null,
+        distanceMeters: showLocation ? (distanceMeters ?? null) : null,
+        serialNumber: canEdit ? (board.serialNumber ?? null) : null,
+        timerName: canEdit ? (board.timerName ?? null) : null,
+        canEdit,
+        isPinnedByMe: pinnedSet.has(board.uuid),
+      };
+    }),
+  );
 }
 
 // ============================================
@@ -857,6 +883,7 @@ export const socialBoardQueries = {
     } else if (!viewerId && !isRowAnonReadable(canonical)) {
       return null;
     }
+    if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
     return enrichBoard(canonical, viewerId);
   },
 
@@ -887,6 +914,7 @@ export const socialBoardQueries = {
     if (!canonical) return null;
     if (isSprayBoardType(canonical.boardType) && typeof wallUuid === 'string' && wallUuid === canonical.uuid) {
       if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'capability'))) return null;
+      if (!(await canAccessResource('board', canonical.uuid, viewerId))) return null;
       return enrichBoard(canonical, viewerId);
     }
     // Same anonymous mask as the active path and `board(boardUuid)`: following a
@@ -895,6 +923,7 @@ export const socialBoardQueries = {
     // A spray wall's slug is derived from the wall's NAME, so it is a guess and
     // not a capability: no unlisted exemption here, unlike `board(boardUuid)`.
     if (!(await sprayBoardRowIsReadable(canonical, viewerId, 'enumerable'))) return null;
+    if (!(await canAccessResourceWithoutLink('board', canonical.uuid, viewerId))) return null;
     return enrichBoard(canonical, viewerId);
   },
 
@@ -1030,7 +1059,7 @@ export const socialBoardQueries = {
       return boards.map((board) => {
         return {
           uuid: board.uuid,
-          slug: board.slug,
+          slug: board.isPublic && !board.isUnlisted ? board.slug : '',
           ownerId: '',
           ownerDisplayName: null,
           ownerAvatarUrl: null,
@@ -1038,9 +1067,9 @@ export const socialBoardQueries = {
           layoutId: Number(board.layoutId),
           sizeId: Number(board.sizeId),
           setIds: board.setIds,
-          name: board.isPublic ? board.name : board.boardType,
-          description: board.isPublic ? board.description : null,
-          locationName: board.isPublic ? board.locationName : null,
+          name: board.isPublic && !board.isUnlisted ? board.name : board.boardType,
+          description: board.isPublic && !board.isUnlisted ? board.description : null,
+          locationName: board.isPublic && !board.isUnlisted && !board.hideLocation ? board.locationName : null,
           latitude: null,
           longitude: null,
           isPublic: board.isPublic,
@@ -1067,7 +1096,7 @@ export const socialBoardQueries = {
           gymName: null,
           distanceMeters: null,
           serialNumber: board.serialNumber ?? null,
-          timerName: board.timerName ?? null,
+          timerName: null,
           canEdit: false,
           // Anonymous caller: no identity, so nothing can be pinned.
           isPinnedByMe: false,
@@ -1281,6 +1310,7 @@ export const socialBoardQueries = {
       // Build shared WHERE conditions
       const conditions = [
         eq(dbSchema.userBoards.isPublic, true),
+        resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
         eq(dbSchema.userBoards.isUnlisted, false),
         isNull(dbSchema.userBoards.deletedAt),
         // A wall can carry `is_public` before it has a published photo — the flag
@@ -1289,16 +1319,7 @@ export const socialBoardQueries = {
         listableSprayWallCondition(ctx.isAuthenticated ? ctx.userId : undefined),
         sql`${locationCol} IS NOT NULL`,
         sql`ST_DWithin(${locationCol}, ${userPoint}, ${radiusMeters})`,
-        // Hide boards with hideLocation=true unless the board owner follows the searching user
-        sql`(${dbSchema.userBoards.hideLocation} = false${
-          ctx.isAuthenticated
-            ? sql` OR EXISTS (
-                SELECT 1 FROM user_follows
-                WHERE follower_id = ${dbSchema.userBoards.ownerId}
-                AND following_id = ${ctx.userId}
-              )`
-            : sql``
-        })`,
+        resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
       ];
 
       if (boardType) {
@@ -1318,7 +1339,10 @@ export const socialBoardQueries = {
         conditions.push(
           or(
             ilike(dbSchema.userBoards.name, `%${escapedQuery}%`),
-            ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
+            and(
+              resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
+              ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
+            ),
           )!,
         );
       }
@@ -1355,6 +1379,7 @@ export const socialBoardQueries = {
     // Text-only search path (no proximity)
     const conditions = [
       eq(dbSchema.userBoards.isPublic, true),
+      resourceAccessCondition('board', dbSchema.userBoards.uuid, ctx.userId),
       eq(dbSchema.userBoards.isUnlisted, false),
       isNull(dbSchema.userBoards.deletedAt),
       // Same rule as the proximity path above: a public wall with nothing
@@ -1384,7 +1409,10 @@ export const socialBoardQueries = {
       conditions.push(
         or(
           ilike(dbSchema.userBoards.name, `%${escapedQuery}%`),
-          ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
+          and(
+            resourceLocationCondition(dbSchema.userBoards.uuid, ctx.userId),
+            ilike(dbSchema.userBoards.locationName, `%${escapedQuery}%`),
+          ),
         )!,
       );
     }
@@ -1508,6 +1536,7 @@ export const socialBoardQueries = {
 
     const conditions = [
       eq(dbSchema.boardseshTicks.boardId, board.id),
+      tickPrivacyCondition(ctx.userId),
       or(eq(dbSchema.boardseshTicks.status, 'flash'), eq(dbSchema.boardseshTicks.status, 'send'))!,
     ];
 
@@ -1579,20 +1608,23 @@ export const socialBoardQueries = {
       }
     }
 
-    const enrichedEntries = entries.map((entry, idx) => {
-      const userInfo = userMap.get(entry.userId);
-      return {
-        userId: entry.userId,
-        userDisplayName: userInfo?.displayName,
-        userAvatarUrl: userInfo?.avatarUrl,
-        rank: offset + idx + 1,
-        totalSends: Number(entry.totalSends),
-        totalFlashes: Number(entry.totalFlashes),
-        hardestGrade: entry.hardestGrade ? Number(entry.hardestGrade) : null,
-        hardestGradeName: null, // TODO: resolve grade name from board-specific grade tables
-        totalSessions: Number(entry.totalSessions),
-      };
-    });
+    const enrichedEntries = await Promise.all(
+      entries.map(async (entry, idx) => {
+        const showIdentity = await canViewActivityIdentity(entry.userId, ctx.userId, { boardId: boardUuid });
+        const userInfo = userMap.get(entry.userId);
+        return {
+          userId: showIdentity ? entry.userId : null,
+          userDisplayName: showIdentity ? userInfo?.displayName : undefined,
+          userAvatarUrl: showIdentity ? userInfo?.avatarUrl : undefined,
+          rank: offset + idx + 1,
+          totalSends: Number(entry.totalSends),
+          totalFlashes: Number(entry.totalFlashes),
+          hardestGrade: entry.hardestGrade ? Number(entry.hardestGrade) : null,
+          hardestGradeName: null, // TODO: resolve grade name from board-specific grade tables
+          totalSessions: Number(entry.totalSessions),
+        };
+      }),
+    );
 
     return {
       boardUuid,
@@ -1949,6 +1981,12 @@ export const socialBoardMutations = {
     let board: typeof dbSchema.userBoards.$inferSelect;
     let mintedGymId: number | null = null;
 
+    const audience =
+      validatedInput.audience ??
+      (validatedInput.isPublic ? (validatedInput.isUnlisted ? 'unlisted' : 'public') : 'only_me');
+    const locationAudience =
+      validatedInput.locationAudience ?? (validatedInput.hideLocation === false ? 'public' : 'only_me');
+    const privacyValues = { kind: 'board' as const, resourceId: uuid, ownerId: userId, audience, locationAudience };
     const boardValues = {
       uuid,
       slug,
@@ -1962,9 +2000,9 @@ export const socialBoardMutations = {
       locationName: incomingLocation.locationName,
       latitude: incomingLocation.latitude,
       longitude: incomingLocation.longitude,
-      isPublic: validatedInput.isPublic ?? true,
-      isUnlisted: validatedInput.isUnlisted ?? false,
-      hideLocation: validatedInput.hideLocation ?? false,
+      isPublic: audience === 'public' || audience === 'unlisted',
+      isUnlisted: audience === 'unlisted',
+      hideLocation: locationAudience !== 'public',
       isOwned: validatedInput.isOwned ?? true,
       angle: validatedInput.angle ?? 40,
       isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
@@ -1986,6 +2024,7 @@ export const socialBoardMutations = {
             .insert(dbSchema.userBoards)
             .values({ ...boardValues, gymId: linkedGymId })
             .returning();
+          await tx.insert(dbSchema.resourcePrivacy).values(privacyValues);
           return insertedBoard;
         });
       } catch (error) {
@@ -2009,7 +2048,7 @@ export const socialBoardMutations = {
               slug: gymSlug,
               ownerId: userId,
               name: gymName,
-              isPublic: validatedInput.isPublic ?? true,
+              isPublic: validatedInput.isPublic ?? false,
               latitude: incomingLocation.latitude,
               longitude: incomingLocation.longitude,
             })
@@ -2020,6 +2059,7 @@ export const socialBoardMutations = {
             .values({ ...boardValues, gymId: newGym.id })
             .returning();
 
+          await tx.insert(dbSchema.resourcePrivacy).values(privacyValues);
           return { newGym, newBoard };
         });
         mintedGymId = result.newGym.id;
@@ -2097,6 +2137,9 @@ export const socialBoardMutations = {
     // Owner, community admin/leader (for this board type), or the linked gym's
     // owner/admin may edit. Community moderators can fix outdated catalog boards.
     await requireBoardEditAccess(ctx, board);
+    if (board.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
+      throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+    }
 
     if (!isBoardAngleSupported(board.boardType, validatedInput.angle)) {
       throw new GraphQLError(BOARD_ANGLE_VALIDATION_MESSAGE, {
@@ -2153,6 +2196,14 @@ export const socialBoardMutations = {
     // Only a CHANGE is refused: the edit screen sends the board's current flags
     // back unchanged with every rename, and failing those would make a wall
     // unrenameable.
+    if (
+      ((validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
+        (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted) ||
+        (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)) &&
+      board.ownerId !== userId
+    ) {
+      throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
+    }
     const changingVisibility =
       (validatedInput.isPublic !== undefined && validatedInput.isPublic !== board.isPublic) ||
       (validatedInput.isUnlisted !== undefined && validatedInput.isUnlisted !== board.isUnlisted);
@@ -2328,6 +2379,10 @@ export const socialBoardMutations = {
           throw new Error('Board not found');
         }
 
+        if (lockedBoard.ownerId !== userId && !(await canAccessResource('board', board.uuid, userId))) {
+          throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
+        }
+
         const lockedLayoutId = Number(lockedBoard.layoutId);
         const lockedSizeId = Number(lockedBoard.sizeId);
         const resultingSerial =
@@ -2355,6 +2410,29 @@ export const socialBoardMutations = {
             board.ownerId,
             board.id,
           );
+        }
+        if (
+          changingVisibility ||
+          (validatedInput.hideLocation !== undefined && validatedInput.hideLocation !== board.hideLocation)
+        ) {
+          if (lockedBoard.ownerId !== userId)
+            throw new GraphQLError('Only the owner can change board privacy', { extensions: { code: 'FORBIDDEN' } });
+          const privacyUpdates: Partial<typeof dbSchema.resourcePrivacy.$inferInsert> = { updatedAt: new Date() };
+          if (changingVisibility)
+            privacyUpdates.audience =
+              (validatedInput.isUnlisted ?? board.isUnlisted)
+                ? 'unlisted'
+                : (validatedInput.isPublic ?? board.isPublic)
+                  ? 'public'
+                  : 'invite_only';
+          if (validatedInput.hideLocation !== undefined)
+            privacyUpdates.locationAudience = validatedInput.hideLocation ? 'only_me' : 'public';
+          await tx
+            .update(dbSchema.resourcePrivacy)
+            .set({ ...privacyUpdates, revision: sql`${dbSchema.resourcePrivacy.revision} + 1` })
+            .where(
+              and(eq(dbSchema.resourcePrivacy.kind, 'board'), eq(dbSchema.resourcePrivacy.resourceId, board.uuid)),
+            );
         }
         return tx.update(dbSchema.userBoards).set(updateValues).where(eq(dbSchema.userBoards.id, board.id)).returning();
       });
@@ -2392,6 +2470,7 @@ export const socialBoardMutations = {
     }
 
     // Update PostGIS location column (guarded — see syncLocationGeography)
+    pubsub.publishPrivacyChanged();
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
       await syncLocationGeography({
         table: 'user_boards',

@@ -433,6 +433,8 @@ export const authOptions: NextAuthOptions = {
           .insert(schema.userProfiles)
           .values({
             userId: user.id,
+            isPrivate: true,
+            defaultSessionAudience: 'followers',
           })
           .onConflictDoNothing();
       }

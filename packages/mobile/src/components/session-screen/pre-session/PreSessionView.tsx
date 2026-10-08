@@ -1,4 +1,6 @@
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
+import { usePrivacySettings } from '../../../lib/graphql/hooks/use-privacy';
+import { AudiencePicker, SESSION_AUDIENCES } from '../../privacy/AudiencePicker';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -152,6 +154,15 @@ export function PreSessionView({
   // "Show this session live". Public by default and not remembered between
   // sessions: every Start opens on, and turning it off is a per-session choice.
   const [isPublic, setIsPublic] = useState(true);
+  const { data: privacySettings } = usePrivacySettings();
+  const [sessionAudience, setSessionAudience] = useState<'public' | 'followers' | 'invite_only' | null>(null);
+  const effectiveSessionAudience =
+    sessionAudience ??
+    (privacySettings?.defaultSessionAudience === 'invite_only'
+      ? 'invite_only'
+      : privacySettings?.defaultSessionAudience === 'followers'
+        ? 'followers'
+        : 'public');
   const handleVisibilityChange = useCallback(
     (next: boolean) => {
       // Start has already read the choice; a flip now would change nothing.
@@ -240,7 +251,11 @@ export function PreSessionView({
     setIsStarting(true);
     onStartingChange?.(true);
     try {
-      const newSessionId = await startSession({ isPublic });
+      const newSessionId = await startSession(
+        privacySettings?.enabled
+          ? { audience: effectiveSessionAudience, isPublic: effectiveSessionAudience === 'public' }
+          : { isPublic },
+      );
       if (!newSessionId) {
         // startSession already toasted on failure; just bail.
         return;
@@ -280,6 +295,8 @@ export function PreSessionView({
     plannedCount,
     startSession,
     isPublic,
+    privacySettings?.enabled,
+    effectiveSessionAudience,
     appendQueueItems,
     browseClimbs,
     showToast,
@@ -363,7 +380,18 @@ export function PreSessionView({
         {/* Whether the session you're about to start shows up live for your
             crew and climbers on this board. Sent with Start. */}
         <View style={styles.cardInset}>
-          <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStartPending} />
+          {privacySettings?.enabled ? (
+            <AudiencePicker
+              resource
+              confirmPublic={privacySettings.isPrivate}
+              audience={effectiveSessionAudience}
+              options={SESSION_AUDIENCES}
+              onChange={setSessionAudience}
+              disabled={isStartPending}
+            />
+          ) : (
+            <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStartPending} />
+          )}
         </View>
 
         <GeneratorPickerCard
@@ -402,6 +430,8 @@ export function PreSessionView({
       retryBoard,
       handleVisibilityChange,
       isPublic,
+      privacySettings?.enabled,
+      effectiveSessionAudience,
       isStartPending,
       previewStateMessage,
       selection,

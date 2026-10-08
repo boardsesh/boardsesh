@@ -5,7 +5,7 @@ import type { SprayWallImportProgress } from '../spray-detection';
 export type UserBoard = {
   uuid: string;
   slug: string;
-  ownerId: string;
+  ownerId: string | null;
   ownerDisplayName?: string;
   ownerAvatarUrl?: string;
   boardType: string;
@@ -66,7 +66,7 @@ export type UserBoardConnection = {
 };
 
 export type BoardLeaderboardEntry = {
-  userId: string;
+  userId: string | null;
   userDisplayName?: string;
   userAvatarUrl?: string;
   rank: number;

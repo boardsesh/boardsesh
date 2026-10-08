@@ -506,6 +506,28 @@ describe('getBootstrapMetadataByScope', () => {
 // ---------------------------------------------------------------------------
 
 describe('bootstrapScopeFromSnapshot', () => {
+  it('replays authenticated rows omitted by privacy-safe public artifacts from epoch', async () => {
+    const filePath = join(workDir, 'privacy-artifact.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'public-catalog', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'public-catalog', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: SCOPE_KILTER_5,
+      scopeKey: 'kilter:1:5',
+      filePath,
+      replayFromEpoch: true,
+    });
+    const epoch = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(epoch);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(epoch);
+  });
+
   it('imports the size-matched climbs + their stats and stamps both checkpoints at the watermarks', async () => {
     const filePath = join(workDir, 'artifact.db');
     buildArtifact({

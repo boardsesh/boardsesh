@@ -12,14 +12,7 @@ import {
   type SerialPlanDb,
 } from '@boardsesh/db/queries';
 
-/**
- * The Discover cards' recommendation counts (C6). The catalog half is the same
- * for everyone on a board config and is cached; the viewer's sends are counted
- * live and subtracted. Catalog minus sent equals the NOT EXISTS count exactly
- * (16 of 16 config x type cases on the replica), so only the staleness of the
- * catalog half changes.
- */
-const { state, fakeTx, redisStore, redisState, getMock, setMock } = vi.hoisted(() => {
+const { state, fakeTx } = vi.hoisted(() => {
   const state = {
     render: (_statement: unknown): string => '',
     executed: [] as string[],
@@ -32,30 +25,11 @@ const { state, fakeTx, redisStore, redisState, getMock, setMock } = vi.hoisted((
       return Promise.resolve(state.rowsFor(rendered));
     },
   };
-  return {
-    state,
-    fakeTx,
-    redisStore: new Map<string, string>(),
-    redisState: { connected: true },
-    getMock: vi.fn(),
-    setMock: vi.fn(),
-  };
+  return { state, fakeTx };
 });
 
 vi.mock('../db/client', () => ({ db: fakeTx, dbRead: fakeTx }));
-vi.mock('../redis/client', () => ({
-  redisClientManager: {
-    isRedisConnected: () => redisState.connected,
-    getClients: () => ({ publisher: { get: getMock, set: setMock } }),
-  },
-}));
-
-import {
-  countRecommendationCardClimbs,
-  recommendationCountCacheKey,
-  RECOMMENDATION_COUNT_CACHE_TTL_SECONDS,
-} from '../graphql/resolvers/playlists/helpers/recommendation-refs';
-import { resetSingleFlightForTests } from '../utils/single-flight';
+import { countRecommendationCardClimbs } from '../graphql/resolvers/playlists/helpers/recommendation-refs';
 
 const dialect = new PgDialect();
 state.render = (statement: unknown) => dialect.sqlToQuery(statement as SQL).sql;
@@ -64,7 +38,6 @@ const render = (statement: SQL) => dialect.sqlToQuery(statement).sql;
 const TARGET: BoardTarget = { boardType: 'kilter', layoutId: 1, sizeId: 10, angle: 40, setIds: [20, 1] };
 const tx = fakeTx as unknown as SerialPlanDb;
 
-const isOverlap = (renderedSql: string) => /\) sent/.test(renderedSql);
 const isGradeBand = (renderedSql: string) => /max_difficulty/.test(renderedSql);
 
 function paramsFor(type: RecommendationType, overrides: Partial<RecommendationQueryParams> = {}) {
@@ -82,91 +55,36 @@ function paramsFor(type: RecommendationType, overrides: Partial<RecommendationQu
 
 beforeEach(() => {
   state.executed.length = 0;
-  state.rowsFor = (renderedSql) => (isOverlap(renderedSql) ? [{ count: 13 }] : [{ count: 284 }]);
-  redisStore.clear();
-  redisState.connected = true;
-  getMock.mockReset();
-  getMock.mockImplementation(async (key: string) => redisStore.get(key) ?? null);
-  setMock.mockReset();
-  setMock.mockImplementation(async (key: string, value: string) => {
-    redisStore.set(key, value);
-    return 'OK';
-  });
-  resetSingleFlightForTests();
+  state.rowsFor = () => [{ count: 284 }];
 });
 
 describe('countRecommendationCardClimbs', () => {
-  it('on a miss counts the catalog without the viewer, caches it, and subtracts their sends', async () => {
-    const count = await countRecommendationCardClimbs('RECOMMENDED_CROWD_FAVORITES', TARGET, 'user-1', tx);
-
-    expect(count).toBe(284 - 13);
-    const [catalog, overlap] = state.executed;
-    expect(catalog).not.toContain('boardsesh_ticks');
-    expect(overlap).toContain('boardsesh_ticks');
-    expect(setMock).toHaveBeenCalledWith(
-      'rec-count:v1:RECOMMENDED_CROWD_FAVORITES:kilter:1:10:1,20:40',
-      '284',
-      'EX',
-      RECOMMENDATION_COUNT_CACHE_TTL_SECONDS,
-    );
-    expect(RECOMMENDATION_COUNT_CACHE_TTL_SECONDS).toBe(6 * 60 * 60);
-  });
-
-  it('on a hit runs only the viewer overlap', async () => {
-    redisStore.set('rec-count:v1:RECOMMENDED_CROWD_FAVORITES:kilter:1:10:1,20:40', '300');
-
-    const count = await countRecommendationCardClimbs('RECOMMENDED_CROWD_FAVORITES', TARGET, 'user-1', tx);
-
-    expect(count).toBe(300 - 13);
-    expect(state.executed).toHaveLength(1);
-    expect(isOverlap(state.executed[0])).toBe(true);
-  });
-
-  it('falls through to both queries when Redis is down', async () => {
-    getMock.mockRejectedValue(new Error('ECONNREFUSED'));
-    setMock.mockRejectedValue(new Error('ECONNREFUSED'));
-
-    expect(await countRecommendationCardClimbs('RECOMMENDED_HIDDEN_GEMS', TARGET, 'user-1', tx)).toBe(271);
+  it('re-reads current authorization on every request after revocation', async () => {
+    expect(await countRecommendationCardClimbs('RECOMMENDED_CROWD_FAVORITES', TARGET, 'user-1', tx)).toBe(284);
+    state.rowsFor = () => [{ count: 5 }];
+    expect(await countRecommendationCardClimbs('RECOMMENDED_CROWD_FAVORITES', TARGET, 'user-1', tx)).toBe(5);
     expect(state.executed).toHaveLength(2);
+    expect(
+      state.executed.every(
+        (statement) => statement.includes('content_privacy') && statement.includes('privacy_revision'),
+      ),
+    ).toBe(true);
   });
-
-  it('skips the overlap when the catalog is empty, and never goes below zero', async () => {
-    state.rowsFor = (renderedSql) => (isOverlap(renderedSql) ? [{ count: 5 }] : [{ count: 0 }]);
-    expect(await countRecommendationCardClimbs('RECOMMENDED_FRESH', TARGET, 'user-1', tx)).toBe(0);
-    expect(state.executed).toHaveLength(1);
-
-    // A stale catalog half that is smaller than the live overlap clamps to 0.
-    redisStore.set('rec-count:v1:RECOMMENDED_CROWD_FAVORITES:kilter:1:10:1,20:40', '3');
-    expect(await countRecommendationCardClimbs('RECOMMENDED_CROWD_FAVORITES', TARGET, 'user-1', tx)).toBe(0);
+  it('uses the same privacy filter for list, count and sent overlap', () => {
+    for (const query of [
+      buildRecommendationRefsSql(paramsFor('RECOMMENDED_FRESH'), 0, 10),
+      buildRecommendationCountSql(paramsFor('RECOMMENDED_FRESH')),
+      buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_FRESH'), 'user-1'),
+    ]) {
+      expect(render(query)).toContain('privacy_content.public_consent_revision = privacy_profile.privacy_revision');
+      expect(dialect.sqlToQuery(query).params).toContain('user-1');
+    }
   });
-
-  it('keys AT_LEVEL on the resolved grade band', async () => {
-    state.rowsFor = (renderedSql) => {
-      if (isGradeBand(renderedSql)) return [{ board_type: 'kilter', max_difficulty: 20 }];
-      return isOverlap(renderedSql) ? [{ count: 1 }] : [{ count: 50 }];
-    };
-
-    await countRecommendationCardClimbs('RECOMMENDED_AT_LEVEL', TARGET, 'user-1', tx);
-
-    expect(setMock.mock.calls[0][0]).toMatch(/^rec-count:v1:RECOMMENDED_AT_LEVEL:kilter:1:10:1,20:40:\d+-\d+$/);
-  });
-});
-
-describe('recommendationCountCacheKey', () => {
-  it('sorts sets and folds the two no-set shapes together', () => {
-    expect(recommendationCountCacheKey(paramsFor('RECOMMENDED_FRESH'))).toBe(
-      'rec-count:v1:RECOMMENDED_FRESH:kilter:1:10:1,20:40',
-    );
-    const noSets = (setIds: number[] | null) =>
-      recommendationCountCacheKey(paramsFor('RECOMMENDED_FRESH', { target: { ...TARGET, setIds } }));
-    expect(noSets(null)).toBe(noSets([]));
-    expect(noSets(null)).toBe('rec-count:v1:RECOMMENDED_FRESH:kilter:1:10:all:40');
-  });
-
-  it('does not depend on the viewer', () => {
-    expect(recommendationCountCacheKey(paramsFor('RECOMMENDED_CROWD_FAVORITES', { excludeUserId: 'a' }))).toBe(
-      recommendationCountCacheKey(paramsFor('RECOMMENDED_CROWD_FAVORITES', { excludeUserId: 'b' })),
-    );
+  it('resolves the personal grade band before its authorized count', async () => {
+    state.rowsFor = (statement) =>
+      isGradeBand(statement) ? [{ board_type: 'kilter', max_difficulty: 20 }] : [{ count: 50 }];
+    expect(await countRecommendationCardClimbs('RECOMMENDED_AT_LEVEL', TARGET, 'user-1', tx)).toBe(50);
+    expect(state.executed).toHaveLength(2);
   });
 });
 
@@ -213,7 +131,7 @@ describe('recommendation count SQL', () => {
     const overlap = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_FRESH'), 'user-1'));
     expect(overlap).toContain('COALESCE(sent.latest_sent_revision, 0) >= bc.holds_revision_number');
     // board_climbs is joined once, for the catalogue filter; the epoch rides on it.
-    expect(overlap.match(/board_climbs/g)).toHaveLength(1);
+    expect(overlap).toContain('JOIN board_climbs bc');
     // Grouped and joined on the board type as well as the uuid.
     expect(overlap).toContain('GROUP BY t.board_type, t.climb_uuid');
     expect(overlap).toContain('JOIN board_climbs bc ON bc.board_type = sent.board_type AND bc.uuid = sent.climb_uuid');

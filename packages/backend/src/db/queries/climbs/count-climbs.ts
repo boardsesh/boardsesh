@@ -1,5 +1,5 @@
 import { sql, and } from 'drizzle-orm';
-import { dbRead } from '../../client';
+import { db } from '../../client';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '@boardsesh/db/schema';
 import {
   boardClimbStatsAtSetAngle,
@@ -76,7 +76,7 @@ export const countClimbs = async (
   // (getClimbStatsConditions) can reference it as a Boardsesh-grade fallback for
   // a climb with no board_climb_stats row at this angle.
   try {
-    return await withSerialPlan(dbRead, async (tx) => {
+    return await withSerialPlan(db, async (tx) => {
       const base = tx
         .select({ count: sql<number>`count(*)` })
         .from(boardClimbs)

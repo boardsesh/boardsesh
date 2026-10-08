@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -150,7 +150,33 @@ export const sessionEditMutations = {
       if (hasName) updates.name = nextName;
       if (hasNotes) updates.notes = nextNotes;
       if (hasIsPublic) updates.isPublic = nextIsPublic;
-      await db.update(dbSchema.boardSessions).set(updates).where(eq(dbSchema.boardSessions.id, validated.sessionId));
+      await db.transaction(async (transaction) => {
+        const [locked] = await transaction
+          .select({ ownerId: dbSchema.boardSessions.createdByUserId, isPublic: dbSchema.boardSessions.isPublic })
+          .from(dbSchema.boardSessions)
+          .where(eq(dbSchema.boardSessions.id, validated.sessionId))
+          .for('update');
+        if (!locked || locked.ownerId !== userId) throw new Error('Only the session creator can update this session');
+        if (hasIsPublic && nextIsPublic !== locked.isPublic) {
+          await transaction
+            .update(dbSchema.resourcePrivacy)
+            .set({
+              audience: nextIsPublic ? 'public' : 'invite_only',
+              revision: sql`${dbSchema.resourcePrivacy.revision} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(dbSchema.resourcePrivacy.kind, 'session'),
+                eq(dbSchema.resourcePrivacy.resourceId, validated.sessionId),
+              ),
+            );
+        }
+        await transaction
+          .update(dbSchema.boardSessions)
+          .set(updates)
+          .where(eq(dbSchema.boardSessions.id, validated.sessionId));
+      });
     }
 
     // Kiosks showing this session's queue must follow a visibility flip: the
@@ -159,6 +185,7 @@ export const sessionEditMutations = {
     // binding AND the durable board_id fallback — so each kiosk ends up on
     // whatever the preview gates now allow. Best-effort: a failed kiosk update
     // must not fail the edit the creator asked for.
+    if (hasIsPublic) pubsub.publishPrivacyChanged();
     if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
       await republishBoardQueuePreviewsForSession(validated.sessionId, session.boardId).catch((error: unknown) => {
         // error, not warn: after a flip to private, a failed republish leaves

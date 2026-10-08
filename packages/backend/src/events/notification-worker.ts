@@ -29,6 +29,8 @@ import {
 } from './feed-fanout';
 import { resolveClimbNoMatch } from '../graphql/resolvers/shared/helpers';
 import crypto from 'crypto';
+import { canViewContent, canViewUserActivity } from '../services/privacy';
+import { canReadSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
 
 /**
  * Whether the proposal behind this event is a `hide`.
@@ -394,6 +396,15 @@ export class NotificationWorker {
   ): Promise<void> {
     // Guard: don't notify yourself
     if (recipientId === actorId) return;
+
+    if (type !== 'new_follower') {
+      const canSeeActor = commentUuid
+        ? await canReadSocialEntity('comment', commentUuid, recipientId)
+        : entityType
+          ? await canViewContent(recipientId, entityType, entityId, actorId)
+          : await canViewUserActivity(recipientId, actorId);
+      if (!canSeeActor || (entityType && !(await canReadSocialEntity(entityType, entityId, recipientId)))) return;
+    }
 
     const uuid = crypto.randomUUID();
 

@@ -1,3 +1,5 @@
+import { redactQueueEvent } from '../../../services/privacy-queue-events';
+import { canAccessResource } from '../../../services/privacy';
 import type {
   ConnectionContext,
   EventsReplayResponse,
@@ -23,6 +25,7 @@ export const sessionQueries = {
   session: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
     // Validate session ID
     validateInput(SessionIdSchema, sessionId, 'sessionId');
+    if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
 
     // Dormant-session short circuit runs first, before any membership check:
     // an empty live roster means null regardless of who's asking. Mobile
@@ -86,7 +89,7 @@ export const sessionQueries = {
     const queueState = await roomManager.getQueueState(sessionId);
 
     return {
-      events,
+      events: await Promise.all(events.map((event) => redactQueueEvent(event, ctx.userId, sessionId))),
       currentSequence: queueState.sequence,
     };
   },
@@ -98,6 +101,7 @@ export const sessionQueries = {
   nearbySessions: async (
     _: unknown,
     { latitude, longitude, radiusMeters }: { latitude: number; longitude: number; radiusMeters?: number },
+    ctx: ConnectionContext,
   ): Promise<DiscoverableSession[]> => {
     // Validate GPS coordinates
     validateInput(LatitudeSchema, latitude, 'latitude');
@@ -105,7 +109,7 @@ export const sessionQueries = {
     if (radiusMeters !== undefined) {
       validateInput(RadiusMetersSchema, radiusMeters, 'radiusMeters');
     }
-    return roomManager.findNearbySessions(latitude, longitude, radiusMeters || undefined);
+    return roomManager.findNearbySessions(latitude, longitude, radiusMeters || undefined, ctx.userId);
   },
 
   /**
@@ -160,6 +164,7 @@ export const sessionQueries = {
   sessionSummary: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
+    if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
     return generateSessionSummary(sessionId, ctx.userId ?? null);
   },
 

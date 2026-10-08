@@ -1,9 +1,11 @@
+import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { eq, and, or, ilike, sql, count, desc, asc } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyRateLimit, validateInput } from '../shared/helpers';
 import { SearchUsersInputSchema } from '../../../validation/schemas';
+import { userActivityVisibilityCondition } from '../../../services/privacy';
 
 export const socialSearchQueries = {
   /**
@@ -26,9 +28,10 @@ export const socialSearchQueries = {
     const searchPattern = `%${escapedQuery}%`;
     const prefixPattern = `${escapedQuery}%`;
 
-    const searchConditions = or(
-      ilike(dbSchema.userProfiles.displayName, searchPattern),
-      ilike(dbSchema.users.name, searchPattern),
+    const activityVisible = userActivityVisibilityCondition(dbSchema.users.id, ctx.isAuthenticated ? ctx.userId : null);
+    const searchConditions = and(
+      boardType ? activityVisible : undefined,
+      or(ilike(dbSchema.userProfiles.displayName, searchPattern), ilike(dbSchema.users.name, searchPattern)),
     );
 
     // Count total matches
@@ -68,9 +71,9 @@ export const socialSearchQueries = {
       image: dbSchema.users.image,
       displayName: dbSchema.userProfiles.displayName,
       avatarUrl: dbSchema.userProfiles.avatarUrl,
-      followerCount: sql<number>`(select count(*)::int from user_follows where following_id = ${dbSchema.users.id})`,
-      followingCount: sql<number>`(select count(*)::int from user_follows where follower_id = ${dbSchema.users.id})`,
-      recentAscentCount: sql<number>`(select count(*)::int from boardsesh_ticks where user_id = ${dbSchema.users.id} and created_at > ${thirtyDaysAgoIso})`,
+      followerCount: sql<number>`CASE WHEN ${activityVisible} THEN (select count(*)::int from user_follows where following_id = ${dbSchema.users.id}) ELSE 0 END`,
+      followingCount: sql<number>`CASE WHEN ${activityVisible} THEN (select count(*)::int from user_follows where follower_id = ${dbSchema.users.id}) ELSE 0 END`,
+      recentAscentCount: sql<number>`CASE WHEN ${activityVisible} THEN (select count(*)::int from boardsesh_ticks where user_id = ${dbSchema.users.id} and created_at > ${thirtyDaysAgoIso} and ${tickPrivacyCondition(ctx.isAuthenticated ? ctx.userId : null)}) ELSE 0 END`,
       isFollowedByMe:
         ctx.isAuthenticated && ctx.userId
           ? sql<boolean>`exists(select 1 from user_follows where follower_id = ${ctx.userId} and following_id = ${dbSchema.users.id})`
@@ -83,7 +86,7 @@ export const socialSearchQueries = {
         sql`case when ${dbSchema.userProfiles.displayName} ilike ${prefixPattern} or ${dbSchema.users.name} ilike ${prefixPattern} then 0 else 1 end`,
       ),
       desc(
-        sql`(select count(*)::int from boardsesh_ticks where user_id = ${dbSchema.users.id} and created_at > ${thirtyDaysAgoIso})`,
+        sql`CASE WHEN ${activityVisible} THEN (select count(*)::int from boardsesh_ticks where user_id = ${dbSchema.users.id} and created_at > ${thirtyDaysAgoIso} and ${tickPrivacyCondition(ctx.isAuthenticated ? ctx.userId : null)}) ELSE 0 END`,
       ),
     ];
 

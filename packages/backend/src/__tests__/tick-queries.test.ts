@@ -384,17 +384,15 @@ describe('tickQueries — behavior fixes', () => {
       expect((await feedRenderBoard(climbUuid))?.renderBoard?.sizeId).toBe(7);
     });
 
-    it('still resolves the board geometry for a viewer who cannot see its name', async () => {
+    it('withholds identifiable activity on a private board from outsiders', async () => {
       const climbUuid = `${CLIMB_PREFIX}rb-private`;
       await insertClimbWithFit(climbUuid, 'Private Board', [7, 10]);
       const boardId = await insertOwnedBoard({ name: 'Secret Garage', sizeId: 10, isPublic: false });
       await insertTick({ uuid: 'rb-5', climbUuid, climbedAt: '2026-06-21T10:00:00', status: 'send', boardId });
 
-      // The board's NAME stays gated; its size does not — it is wall geometry,
-      // and hiding it would send other viewers back to the wrong-size render.
+      // The private parent caps the tick, even when the climb is public.
       const asPublic = await feedRenderBoard(climbUuid);
-      expect(asPublic?.boardDisplayName).toBeNull();
-      expect(asPublic?.renderBoard?.sizeId).toBe(10);
+      expect(asPublic).toBeUndefined();
     });
   });
 
@@ -1452,7 +1450,7 @@ describe('tickQueries — behavior fixes', () => {
         input: {},
       })) as { groups: Array<{ climbUuid: string; items: BoardItem[] }> };
       const publicGroup = asPublic.groups.find((group) => group.climbUuid === climbUuid);
-      expect(publicGroup?.items[0]?.boardDisplayName).toBeNull();
+      expect(publicGroup).toBeUndefined();
     });
 
     it('enriches group items with hasBetaVideo under ownership semantics', async () => {

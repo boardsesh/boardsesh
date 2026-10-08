@@ -1,5 +1,39 @@
 import { sql, type SQL } from 'drizzle-orm';
 
+/** The board alias is `ub` at every spray read. Explicit resource settings
+ * replace legacy gym access, and revocation applies even to existing viewers. */
+function sprayResourceVisibility(viewer: string | null, wallUuid?: string | null): SQL {
+  const capability = wallUuid == null ? sql`false` : sql`ub.uuid = ${wallUuid}::text`;
+  return sql`(
+    ub.owner_id = ${viewer}::text OR (
+      NOT EXISTS (SELECT 1 FROM resource_grants revoked
+        WHERE revoked.kind = 'board' AND revoked.resource_id = ub.uuid
+          AND revoked.user_id = ${viewer}::text AND revoked.status = 'revoked')
+      AND (
+        EXISTS (SELECT 1 FROM resource_privacy privacy
+          WHERE privacy.kind = 'board' AND privacy.resource_id = ub.uuid AND (
+            privacy.audience = 'public'
+            OR (privacy.audience = 'unlisted' AND ${capability})
+            OR (privacy.audience <> 'only_me' AND (
+              EXISTS (SELECT 1 FROM resource_grants granted
+                WHERE granted.kind = 'board' AND granted.resource_id = ub.uuid
+                  AND granted.user_id = ${viewer}::text AND granted.status = 'approved')
+              OR ((privacy.audience = 'followers' OR privacy.inherit_followers)
+                AND EXISTS (SELECT 1 FROM user_follows followed
+                  WHERE followed.follower_id = ${viewer}::text AND followed.following_id = ub.owner_id))
+            ))
+          ))
+        OR (NOT EXISTS (SELECT 1 FROM resource_privacy privacy
+              WHERE privacy.kind = 'board' AND privacy.resource_id = ub.uuid)
+          AND ((ub.is_public AND NOT ub.is_unlisted)
+            OR (ub.is_unlisted AND ${capability})
+            OR EXISTS (SELECT 1 FROM gym_members gm
+              WHERE gm.gym_id = ub.gym_id AND gm.user_id = ${viewer}::text)))
+      )
+    )
+  )`;
+}
+
 /**
  * The one predicate that keeps a private spray wall's climbs out of every read.
  *
@@ -87,11 +121,6 @@ export function sprayClimbVisibilityCondition(
   wallUuid?: string | null,
 ): SQL {
   const viewer = userId ?? null;
-  // PostgreSQL checks column privileges before evaluating boolean branches.
-  // Default readers, including restricted export workers, must not reference
-  // is_unlisted unless this call actually supplies a wall capability.
-  // This optional fragment owns its leading OR; absent capabilities add no branch.
-  const unlistedCapability = wallUuid == null ? sql`` : sql`OR (ub.is_unlisted AND ub.uuid = ${wallUuid}::text)`;
   return sql`(
     ${columns.boardType} IS DISTINCT FROM 'spray'
     OR EXISTS (
@@ -102,20 +131,7 @@ export function sprayClimbVisibilityCondition(
         AND sw.deleted_at IS NULL
         AND ub.deleted_at IS NULL
         AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
-        AND (
-          ub.is_public
-          ${unlistedCapability}
-          OR (
-            ${viewer}::text IS NOT NULL
-            AND (
-              ub.owner_id = ${viewer}::text
-              OR EXISTS (
-                SELECT 1 FROM gym_members gm
-                WHERE gm.gym_id = ub.gym_id AND gm.user_id = ${viewer}::text
-              )
-            )
-          )
-        )
+        AND ${sprayResourceVisibility(viewer, wallUuid)}
     )
   )`;
 }
@@ -150,19 +166,7 @@ export function sprayReferenceVisibilityCondition(
           AND sw.deleted_at IS NULL
           AND ub.deleted_at IS NULL
           AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
-          AND (
-            ub.is_public
-            OR (
-              ${viewer}::text IS NOT NULL
-              AND (
-                ub.owner_id = ${viewer}::text
-                OR EXISTS (
-                  SELECT 1 FROM gym_members gm
-                  WHERE gm.gym_id = ub.gym_id AND gm.user_id = ${viewer}::text
-                )
-              )
-            )
-          )
+          AND ${sprayResourceVisibility(viewer)}
       )
   )`;
 }
@@ -231,18 +235,6 @@ export function sprayLayoutVisibilitySql(layoutId: number, userId: string | null
       AND sw.deleted_at IS NULL
       AND ub.deleted_at IS NULL
       AND (sw.hidden_at IS NULL OR (${viewer}::text IS NOT NULL AND ub.owner_id = ${viewer}::text))
-      AND (
-        ub.is_public
-        OR (
-          ${viewer}::text IS NOT NULL
-          AND (
-            ub.owner_id = ${viewer}::text
-            OR EXISTS (
-              SELECT 1 FROM gym_members gm
-              WHERE gm.gym_id = ub.gym_id AND gm.user_id = ${viewer}::text
-            )
-          )
-        )
-      )
+      AND ${sprayResourceVisibility(viewer)}
   ) AS visible`;
 }

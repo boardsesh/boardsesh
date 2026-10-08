@@ -1,4 +1,4 @@
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { type Climb, type BoardName } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -177,6 +177,7 @@ export async function hydrateClimbsByRefs(refs: ClimbRef[], options?: HydrateCli
     .where(
       and(
         inArray(tables.climbs.uuid, uuids),
+        contentVisibilityCondition('climb', tables.climbs.uuid, tables.climbs.userId, options?.viewerUserId),
         // The smart-playlist logbook types hydrate straight from a user's ticks, so
         // without this a private spray wall's climbs arrive with name, frames and
         // setter. A no-op on the other eight board types.

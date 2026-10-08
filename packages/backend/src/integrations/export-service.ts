@@ -382,7 +382,9 @@ export async function autoSyncSessionToIntegrations(
   if (!summary.participants || summary.participants.length === 0) return;
   if (!summary.startedAt || !summary.endedAt) return;
 
-  const participantUserIds = summary.participants.map((entry) => entry.userId).filter(Boolean);
+  const participantUserIds = summary.participants
+    .map((entry) => entry.userId)
+    .filter((userId): userId is string => userId !== null);
   if (participantUserIds.length === 0) return;
 
   const credentialRows = await db

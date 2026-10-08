@@ -6,9 +6,7 @@ import { GET } from '../route';
 
 /**
  * Sentinels stand in for the drizzle handles `@/app/lib/db/db` exports.
- * Asserting on identity (not just "was called") is what actually pins the
- * replica seam: `executeRows` accepts any drizzle instance, so a regression
- * back to `dbz` (primary) would still "work" and only this test would catch it.
+ * Authorization must use the primary: a replica can retain a withdrawn climb.
  */
 const setterRouteState = vi.hoisted(() => ({
   getSetterOgSummaryMock: vi.fn(),
@@ -118,7 +116,7 @@ describe('api/og/setter route', () => {
     setterRouteState.capturedElement = null;
   });
 
-  it('reads the tick-aggregate query off the replica seam (dbzRead), not the primary', async () => {
+  it('authorizes the aggregate query against current primary privacy settings', async () => {
     setterRouteState.getSetterOgSummaryMock.mockResolvedValue({
       displayName: 'Alex',
       avatarUrl: null,
@@ -130,8 +128,8 @@ describe('api/og/setter route', () => {
     expect(response.status).toBe(200);
     expect(setterRouteState.executeRowsMock).toHaveBeenCalledTimes(1);
     const [dbArg] = setterRouteState.executeRowsMock.mock.calls[0];
-    expect(dbArg).toBe(setterRouteState.dbzReadSentinel);
-    expect(dbArg).not.toBe(setterRouteState.dbzSentinel);
+    expect(dbArg).toBe(setterRouteState.dbzSentinel);
+    expect(dbArg).not.toBe(setterRouteState.dbzReadSentinel);
   });
 
   it('bounds the whole DB phase (summary + grade aggregate) under a single og-setter read deadline', async () => {

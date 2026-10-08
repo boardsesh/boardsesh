@@ -21,17 +21,6 @@ type PageProps = {
   params: Promise<{ user_id: string }>;
 };
 
-/**
- * Public profiles stay **indexable**, deliberately: the repo's SEO rules name
- * "public profile" as a search surface, `user_profiles` carries no privacy flag,
- * and the page `notFound()`s for real when the row is missing. What changes here
- * is that the two accidental-index paths close — a profile that 404s and a
- * profile whose data fetch threw are both `noindex, follow` now, where the catch
- * branch used to emit a canonical and no robots at all.
- *
- * Profiles are not sitemapped: they stay link-discovered, so a profile only
- * enters the index once something on the site links to it.
- */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { user_id } = await params;
   // `locale` is load-bearing: without it /es, /fr and /de profiles canonicalise
@@ -109,11 +98,13 @@ export default async function ProfilePage({ params }: PageProps) {
     <I18nProvider locale={locale} namespaces={['profile', 'feed']}>
       {/* Success path only — the notFound() above and the metadata catch branch
           are both `noindex, follow`, and neither reaches here. */}
-      <ProfileJsonLd
-        userId={user_id}
-        displayName={initialProfile.profile?.displayName || initialProfile.name || null}
-        locale={locale}
-      />
+      {!initialProfile.isPrivate && (
+        <ProfileJsonLd
+          userId={user_id}
+          displayName={initialProfile.profile?.displayName || initialProfile.name || null}
+          locale={locale}
+        />
+      )}
       <ProfilePageContent
         userId={user_id}
         initialProfile={initialProfile}

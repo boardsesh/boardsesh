@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { SessionFeedItem } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -169,6 +169,9 @@ describe('sessionGroupedFeed — per-viewer scoping in party sessions (real DB)'
       climbedAt: '2026-03-01 10:30:00', // after the viewer's last tick
     });
   });
+
+  // The shared backend harness clears sessions before each case.
+  beforeEach(insertSession);
 
   afterAll(async () => {
     await cleanup();

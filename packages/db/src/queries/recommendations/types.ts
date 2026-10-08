@@ -41,6 +41,8 @@ export type RecommendationQueryParams = {
   gradeBand: { minDifficultyId: number; maxDifficultyId: number } | null;
   /** Exclude climbs this user has already sent (flash/send) at the angle. */
   excludeUserId: string | null;
+  /** Current reader; independent from whether their existing sends are excluded. */
+  viewerUserId?: string | null;
   /** How far back published_at counts as "fresh" (days). */
   freshWindowDays: number;
 };

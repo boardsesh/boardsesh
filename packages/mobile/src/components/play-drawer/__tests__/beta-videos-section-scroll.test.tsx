@@ -23,6 +23,7 @@ import type { BetaLink } from '@boardsesh/shared-schema';
 // react-native ScrollView isn't in RNGH's gesture tree and Android's outer scroll
 // swallows its horizontal pans. Two distinct stubs let us assert which module the
 // strip came from, so a refactor back to the RN ScrollView fails here.
+vi.mock('../../privacy/ContentAudienceControl', () => ({ ContentAudienceControl: () => null }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),

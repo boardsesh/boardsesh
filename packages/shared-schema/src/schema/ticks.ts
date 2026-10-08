@@ -87,6 +87,7 @@ export const ticksTypeDefs = /* GraphQL */ `
   Input for recording a climb attempt.
   """
   input SaveTickInput {
+    privacy: PrivacyPublicationInput
     "Optional client-generated UUID for offline idempotent replay"
     uuid: ID
     "Board type"
@@ -134,6 +135,7 @@ export const ticksTypeDefs = /* GraphQL */ `
   All fields are optional — only provided fields are updated.
   """
   input UpdateTickInput {
+    privacy: PrivacyPublicationInput
     "Result of the attempt"
     status: TickStatus
     "Number of attempts"
@@ -178,6 +180,7 @@ export const ticksTypeDefs = /* GraphQL */ `
   Input for attaching an Instagram or TikTok video as beta for a climb.
   """
   input AttachBetaLinkInput {
+    privacy: PrivacyPublicationInput
     "Board type"
     boardType: String!
     "Climb UUID"

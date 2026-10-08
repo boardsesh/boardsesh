@@ -3,6 +3,9 @@ import { InlineSheetError } from '../InlineSheetError';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
+import { usePublicationAudience } from '../privacy/use-publication-audience';
+import { PublicationAudiencePicker } from '../privacy/PublicationAudiencePicker';
+import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { type RefObject, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -47,6 +50,7 @@ export function CommentSheet({
   const { systemColors, brandColors } = useTheme();
   const { submitError, setSubmitError } = useScopedSheetError(`${entityType}:${entityId ?? ''}`, !!entityId);
   const [draft, setDraft] = useState('');
+  const privacy = usePublicationAudience(entityId ?? '', !!entityId);
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
   const addComment = useAddComment();
@@ -61,7 +65,7 @@ export function CommentSheet({
     // the composer and surface an inline error above the native sheet. The send
     // button is disabled while the mutation is pending, so no double-send.
     addComment.mutate(
-      { entityType, entityId, body },
+      { entityType, entityId, body, ...(privacy.publication ? { privacy: privacy.publication } : {}) },
       {
         onSuccess: () => setDraft(''),
         onError: () => setSubmitError(t('mobile.comments.sendError')),
@@ -78,6 +82,7 @@ export function CommentSheet({
       footer={
         canComment ? (
           <View>
+            <PublicationAudiencePicker privacy={privacy} disabled={addComment.isPending} />
             <View style={styles.composer}>
               <BottomSheetTextInput
                 style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
@@ -142,6 +147,7 @@ export function CommentSheet({
                 </Text>
               </View>
               <Text variant="subheadline">{comment.body}</Text>
+              <ContentAudienceControl entityType="comment" entityId={comment.uuid} />
             </View>
           </View>
         ))

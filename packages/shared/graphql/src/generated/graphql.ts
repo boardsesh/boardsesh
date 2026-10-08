@@ -140,6 +140,7 @@ export type AddCommentInput = {
   entityType: SocialEntityType;
   /** Parent comment UUID for replies */
   parentCommentUuid?: InputMaybe<Scalars['String']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
 };
 
 /** Input for adding a climb to favorites (idempotent, sync-safe). */
@@ -419,6 +420,7 @@ export type AttachBetaLinkInput = {
   climbUuid: Scalars['String']['input'];
   /** Instagram or TikTok video URL */
   link: Scalars['String']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Optional tick UUID this beta video belongs to */
   tickUuid?: InputMaybe<Scalars['ID']['input']>;
 };
@@ -563,7 +565,7 @@ export type BoardClimbRecentSender = {
   /** ISO 8601 timestamp of this climber's latest successful tick for the climb */
   lastSentAt: Scalars['String']['output'];
   /** Boardsesh user id, for linking the avatar to their profile */
-  userId: Scalars['ID']['output'];
+  userId?: Maybe<Scalars['ID']['output']>;
 };
 
 /** Event: a climb was set (lit) on the wall. */
@@ -708,7 +710,7 @@ export type BoardLeaderboardEntry = {
   /** Display name */
   userDisplayName?: Maybe<Scalars['String']['output']>;
   /** User ID */
-  userId: Scalars['ID']['output'];
+  userId?: Maybe<Scalars['ID']['output']>;
 };
 
 /** Input for board leaderboard query. */
@@ -782,7 +784,7 @@ export type BoardPresenceHardestSend = {
   /** Display name of the climber */
   sentByDisplayName?: Maybe<Scalars['String']['output']>;
   /** Boardsesh user id of the climber */
-  sentByUserId: Scalars['String']['output'];
+  sentByUserId?: Maybe<Scalars['String']['output']>;
 };
 
 /**
@@ -1841,6 +1843,7 @@ export type CreateBoardInput = {
   allowDuplicateSerial?: InputMaybe<Scalars['Boolean']['input']>;
   /** Default angle for this board (default 40) */
   angle?: InputMaybe<Scalars['Int']['input']>;
+  audience?: InputMaybe<PrivacyResourceAudience>;
   /** Board type */
   boardType: Scalars['String']['input'];
   /** Optional description */
@@ -1863,6 +1866,7 @@ export type CreateBoardInput = {
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
+  locationAudience?: InputMaybe<PrivacyLocationAudience>;
   /** Location name */
   locationName?: InputMaybe<Scalars['String']['input']>;
   /** GPS longitude */
@@ -1934,6 +1938,7 @@ export type CreatePlaylistInput = {
   layoutId: Scalars['Int']['input'];
   /** Playlist name */
   name: Scalars['String']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Optional client-generated UUID for offline idempotent replay */
   uuid?: InputMaybe<Scalars['ID']['input']>;
 };
@@ -1949,6 +1954,7 @@ export type CreateProposalInput = {
 
 /** Input for creating a new climbing session. */
 export type CreateSessionInput = {
+  audience?: InputMaybe<PrivacyResourceAudience>;
   /** Board entity IDs for multi-board sessions */
   boardIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Board configuration path (e.g., 'kilter/1/1/1,2/40') */
@@ -3922,6 +3928,8 @@ export type Mutation = {
    * Optional position parameter for inserting at specific index.
    */
   addQueueItem: ClimbQueueItem;
+  approveFollowRequest: Scalars['Boolean']['output'];
+  approveResourceAccess: Scalars['Boolean']['output'];
   /**
    * Attach an Instagram or TikTok video as beta for a climb. Idempotent on
    * (boardType, climbUuid, link).
@@ -3935,6 +3943,7 @@ export type Mutation = {
    */
   attachBoardToGym: Scalars['Boolean']['output'];
   authorizeControllerForSession: Scalars['Boolean']['output'];
+  cancelFollowRequest: Scalars['Boolean']['output'];
   /**
    * Confirm which board a (non-unique) serial routes to after the user picks
    * from a disambiguation prompt. Remembers the choice per user so the prompt
@@ -4019,6 +4028,7 @@ export type Mutation = {
    * anchors were tapped. There are no user-entered wall dimensions. Owner only.
    */
   createSprayWallVersion: SprayWallVersion;
+  declineFollowRequest: Scalars['Boolean']['output'];
   /**
    * Delete the current user's account.
    * Deletes draft climbs, optionally removes setter name from published climbs,
@@ -4122,6 +4132,7 @@ export type Mutation = {
   grantGymWriteAccess: Scalars['Boolean']['output'];
   /** Grant a community role to a user (admin only). */
   grantRole: CommunityRoleAssignment;
+  inviteResourceMember: Scalars['Boolean']['output'];
   /**
    * Join an existing session or create it if it doesn't exist.
    * Returns the session with current state.
@@ -4239,6 +4250,7 @@ export type Mutation = {
    * no-op) so the offline mutation queue can safely retry. Always returns true.
    */
   removeFavorite: Scalars['Boolean']['output'];
+  removeFollower: Scalars['Boolean']['output'];
   /** Remove a member from a gym. */
   removeGymMember: Scalars['Boolean']['output'];
   /** Remove a climb from the queue by its queue item UUID. */
@@ -4303,6 +4315,7 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  requestFollow: PrivacyRelationship;
   /**
    * Request ownership of a gym. With a matching work email at the gym's website
    * domain, a verification email is sent and clicking it transfers ownership.
@@ -4316,6 +4329,7 @@ export type Mutation = {
    * Rate limited to 5 requests a minute.
    */
   requestProviderSync: ProviderSyncRequest;
+  requestResourceAccess: Scalars['Boolean']['output'];
   requestSprayWallDetection: SprayWallDetection;
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
   requestUserDataExport: UserDataExportStatus;
@@ -4386,6 +4400,7 @@ export type Mutation = {
    * never a gym admin or plain member. Same authorization as grantGymWriteAccess.
    */
   revokeGymWriteAccess: Scalars['Boolean']['output'];
+  revokeResourceAccess: Scalars['Boolean']['output'];
   /** Revoke a community role from a user (admin only). */
   revokeRole: Scalars['Boolean']['output'];
   /**
@@ -4403,6 +4418,7 @@ export type Mutation = {
   setClimbFromLedPositions: ClimbMatchResult;
   /** Set a community setting (admin/leader only). */
   setCommunitySettings: CommunitySetting;
+  setContentAudience: Scalars['Boolean']['output'];
   /**
    * Set the currently displayed climb.
    * Optionally adds it to the queue if not already present.
@@ -4553,11 +4569,13 @@ export type Mutation = {
   updatePlaylist: Playlist;
   /** Update only lastAccessedAt for a playlist (does not update updatedAt). */
   updatePlaylistLastAccessed: Scalars['Boolean']['output'];
+  updatePrivacySettings: PrivacySettings;
   /**
    * Update current user's profile.
    * Requires authentication.
    */
   updateProfile: UserProfile;
+  updateResourcePrivacy: ResourcePrivacySettings;
   /**
    * Update a session's title and/or recap notes. Creator only. Works on both
    * active and ended sessions. Publishes SessionNameChanged to live
@@ -4622,6 +4640,18 @@ export type MutationAddQueueItemArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationApproveFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationApproveResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationAttachBetaLinkArgs = {
   input: AttachBetaLinkInput;
 };
@@ -4635,6 +4665,11 @@ export type MutationAttachBoardToGymArgs = {
 export type MutationAuthorizeControllerForSessionArgs = {
   controllerId: Scalars['ID']['input'];
   sessionId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCancelFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4707,6 +4742,11 @@ export type MutationCreateSprayWallArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateSprayWallVersionArgs = {
   input: CreateSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeclineFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4849,6 +4889,13 @@ export type MutationGrantRoleArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationInviteResourceMemberArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationJoinSessionArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   boardPath: Scalars['String']['input'];
@@ -4973,6 +5020,11 @@ export type MutationRemoveFavoriteArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRemoveFollowerArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveGymMemberArgs = {
   input: RemoveGymMemberInput;
 };
@@ -5033,6 +5085,11 @@ export type MutationReportSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestFollowArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRequestGymClaimArgs = {
   input: RequestGymClaimInput;
 };
@@ -5040,6 +5097,12 @@ export type MutationRequestGymClaimArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestProviderSyncArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5111,6 +5174,13 @@ export type MutationRevokeGymWriteAccessArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRevokeResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRevokeRoleArgs = {
   input: RevokeRoleInput;
 };
@@ -5150,6 +5220,11 @@ export type MutationSetClimbFromLedPositionsArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetCommunitySettingsArgs = {
   input: SetCommunitySettingInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetContentAudienceArgs = {
+  input: SetContentAudienceInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5321,8 +5396,18 @@ export type MutationUpdatePlaylistLastAccessedArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpdatePrivacySettingsArgs = {
+  input: UpdatePrivacySettingsInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUpdateProfileArgs = {
   input: UpdateProfileInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateResourcePrivacyArgs = {
+  input: UpdateResourcePrivacyInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5852,6 +5937,65 @@ export type PopularBoardConfigsInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type PrivacyAudience = 'followers' | 'only_me' | 'public';
+
+export type PrivacyContentAudience = {
+  __typename?: 'PrivacyContentAudience';
+  audience: PrivacyAudience;
+  canEdit: Scalars['Boolean']['output'];
+  isExplicit: Scalars['Boolean']['output'];
+};
+
+export type PrivacyContentType = 'beta' | 'climb' | 'comment' | 'playlist' | 'session' | 'tick';
+
+export type PrivacyFollowRequest = {
+  __typename?: 'PrivacyFollowRequest';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  displayName?: Maybe<Scalars['String']['output']>;
+  recipientId: Scalars['ID']['output'];
+  requesterId: Scalars['ID']['output'];
+};
+
+export type PrivacyGrantStatus = 'approved' | 'pending' | 'revoked';
+
+export type PrivacyLocationAudience = 'followers' | 'members' | 'only_me' | 'public';
+
+export type PrivacyPublicationInput = {
+  audience: PrivacyAudience;
+  privacyRevision: Scalars['Int']['input'];
+};
+
+export type PrivacyRelationship = {
+  __typename?: 'PrivacyRelationship';
+  isFollowing: Scalars['Boolean']['output'];
+  isPrivate: Scalars['Boolean']['output'];
+  requestPending: Scalars['Boolean']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+export type PrivacyResourceAudience = 'followers' | 'invite_only' | 'only_me' | 'public' | 'unlisted';
+
+export type PrivacyResourceGrant = {
+  __typename?: 'PrivacyResourceGrant';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  invitedBy?: Maybe<Scalars['ID']['output']>;
+  status: PrivacyGrantStatus;
+  userId: Scalars['ID']['output'];
+};
+
+export type PrivacyResourceKind = 'board' | 'session';
+
+export type PrivacySettings = {
+  __typename?: 'PrivacySettings';
+  defaultSessionAudience: PrivacyResourceAudience;
+  enabled: Scalars['Boolean']['output'];
+  isPrivate: Scalars['Boolean']['output'];
+  privacyOnboardingVersion: Scalars['Int']['output'];
+  privacyRevision: Scalars['Int']['output'];
+};
+
 /** Aggregated profile statistics across all boards. */
 export type ProfileStats = {
   __typename?: 'ProfileStats';
@@ -5887,7 +6031,7 @@ export type Proposal = {
   proposedValue: Scalars['String']['output'];
   proposerAvatarUrl?: Maybe<Scalars['String']['output']>;
   proposerDisplayName?: Maybe<Scalars['String']['output']>;
-  proposerId: Scalars['ID']['output'];
+  proposerId?: Maybe<Scalars['ID']['output']>;
   reason?: Maybe<Scalars['String']['output']>;
   requiredUpvotes: Scalars['Int']['output'];
   resolvedAt?: Maybe<Scalars['String']['output']>;
@@ -5953,6 +6097,7 @@ export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
   /** Avatar URL */
   avatarUrl?: Maybe<Scalars['String']['output']>;
+  canViewActivity: Scalars['Boolean']['output'];
   /** Display name */
   displayName?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
@@ -5965,6 +6110,7 @@ export type PublicUserProfile = {
   instagramUrl?: Maybe<Scalars['String']['output']>;
   /** Whether the current user follows this user */
   isFollowedByMe: Scalars['Boolean']['output'];
+  isPrivate: Scalars['Boolean']['output'];
 };
 
 export type PublishSprayWallVersionInput = {
@@ -6276,6 +6422,7 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
+  contentAudience: PrivacyContentAudience;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -6436,6 +6583,7 @@ export type Query = {
    * board). Read-only; the editor renders both and offers a revert.
    */
   holdOutlines: BoardHoldOutlines;
+  incomingFollowRequests: Array<PrivacyFollowRequest>;
   /**
    * Resolve scraped Instagram posts against Boardsesh: which beta videos are
    * missing, already linked, ambiguous, or unmatched. Read-only — the client
@@ -6535,6 +6683,8 @@ export type Query = {
   playlistsForClimbs: Array<ClimbPlaylistMembership>;
   /** Get popular board configurations ranked by climb count. */
   popularBoardConfigs: PopularBoardConfigConnection;
+  privacyRelationship: PrivacyRelationship;
+  privacySettings: PrivacySettings;
   /**
    * Get the currently authenticated user's profile.
    * Returns null if not authenticated.
@@ -6588,6 +6738,8 @@ export type Query = {
    * @deprecated Remix after a reset was retired. Always null.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  resourceAccessRequests: Array<PrivacyResourceGrant>;
+  resourcePrivacy?: Maybe<ResourcePrivacySettings>;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -7080,6 +7232,12 @@ export type QueryCommunitySettingsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryContentAudienceArgs = {
+  entityId: Scalars['ID']['input'];
+  entityType: PrivacyContentType;
+};
+
+/** Root query type for all read operations. */
 export type QueryCrewFeedArgs = {
   input?: InputMaybe<CrewFeedInput>;
 };
@@ -7315,6 +7473,11 @@ export type QueryPopularBoardConfigsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryPrivacyRelationshipArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryProposeSprayWallResetArgs = {
   input: ProposeSprayWallResetInput;
 };
@@ -7341,6 +7504,18 @@ export type QueryRecentBetaLinksArgs = {
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
   sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryResourceAccessRequestsArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryResourcePrivacyArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8042,6 +8217,17 @@ export type ResolvedBoard = {
   sizeId: Scalars['Int']['output'];
 };
 
+export type ResourcePrivacySettings = {
+  __typename?: 'ResourcePrivacySettings';
+  audience: PrivacyResourceAudience;
+  inheritFollowers: Scalars['Boolean']['output'];
+  kind: PrivacyResourceKind;
+  locationAudience: PrivacyLocationAudience;
+  ownerId?: Maybe<Scalars['ID']['output']>;
+  resourceId: Scalars['ID']['output'];
+  revision: Scalars['Int']['output'];
+};
+
 /** Input for an admin reviewing a pending gym claim. */
 export type ReviewGymClaimInput = {
   /** Claim ID to review */
@@ -8090,6 +8276,7 @@ export type SaveClimbInput = {
   name: Scalars['String']['input'];
   /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /**
    * Accepted and ignored. Remix after a reset was retired, and no lineage is written.
    * @deprecated Remix after a reset was retired. Accepted and ignored.
@@ -8135,6 +8322,7 @@ export type SaveMoonBoardClimbInput = {
   /** MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default. */
   method?: InputMaybe<MoonBoardMethod>;
   name: Scalars['String']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
 };
@@ -8167,6 +8355,7 @@ export type SaveTickInput = {
   isMirror: Scalars['Boolean']['input'];
   /** Layout ID for board resolution */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
   /** Session ID if in a session */
@@ -8660,7 +8849,7 @@ export type SessionParticipant = {
   /** Total sends (flash + send) */
   sends: Scalars['Int']['output'];
   /** User ID */
-  userId: Scalars['String']['output'];
+  userId?: Maybe<Scalars['String']['output']>;
 };
 
 /**
@@ -8784,6 +8973,13 @@ export type SetCommunitySettingInput = {
   scope: Scalars['String']['input'];
   scopeKey: Scalars['String']['input'];
   value: Scalars['String']['input'];
+};
+
+export type SetContentAudienceInput = {
+  audience: PrivacyAudience;
+  entityId: Scalars['ID']['input'];
+  entityType: PrivacyContentType;
+  privacyRevision: Scalars['Int']['input'];
 };
 
 export type SetSprayWallHiddenInput = {
@@ -9892,6 +10088,7 @@ export type Subscription = {
    * Requires authentication.
    */
   notificationReceived: NotificationEvent;
+  privacyChanged: Scalars['Boolean']['output'];
   /** Subscribe to queue changes (items added/removed/reordered, current climb changes). */
   queueUpdates: QueueEvent;
   /** Subscribe to real-time session events (membership, lifecycle, and live stats). */
@@ -10209,6 +10406,7 @@ export type UpdateClimbInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /** Matching disallowed. Null or omitted preserves the stored value, so an old client cannot clear it. When set it wins over the legacy 'No match' description prefix in the same call. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size. */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -10254,6 +10452,7 @@ export type UpdateCommentInput = {
   body: Scalars['String']['input'];
   /** UUID of the comment to update */
   commentUuid: Scalars['ID']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
 };
 
 /** Input for updating a gym. */
@@ -10325,6 +10524,13 @@ export type UpdatePlaylistInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /** Playlist ID to update */
   playlistId: Scalars['ID']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
+};
+
+export type UpdatePrivacySettingsInput = {
+  defaultSessionAudience?: InputMaybe<PrivacyResourceAudience>;
+  isPrivate?: InputMaybe<Scalars['Boolean']['input']>;
+  privacyOnboardingVersion?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Input for updating user profile. */
@@ -10333,6 +10539,14 @@ export type UpdateProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   /** New display name */
   displayName?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateResourcePrivacyInput = {
+  audience: PrivacyResourceAudience;
+  inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
+  kind: PrivacyResourceKind;
+  locationAudience?: InputMaybe<PrivacyLocationAudience>;
+  resourceId: Scalars['ID']['input'];
 };
 
 /**
@@ -10409,6 +10623,7 @@ export type UpdateTickInput = {
   difficulty?: InputMaybe<Scalars['Int']['input']>;
   /** Whether this is a benchmark ascent */
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** User's quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
   /** Result of the attempt */
@@ -10494,7 +10709,7 @@ export type UserBoard = {
   /** Owner display name */
   ownerDisplayName?: Maybe<Scalars['String']['output']>;
   /** Owner user ID */
-  ownerId: Scalars['ID']['output'];
+  ownerId?: Maybe<Scalars['ID']['output']>;
   /** Controller box serial number */
   serialNumber?: Maybe<Scalars['String']['output']>;
   /** Comma-separated set IDs */
@@ -13025,6 +13240,219 @@ export type GetMySmartPlaylistCountsQuery = {
   mySmartPlaylistCounts: Array<{ __typename?: 'SmartPlaylistCount'; type: SmartPlaylistType; count: number }>;
 };
 
+export type PrivacySettingsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type PrivacySettingsQuery = {
+  __typename?: 'Query';
+  privacySettings: {
+    __typename?: 'PrivacySettings';
+    isPrivate: boolean;
+    privacyRevision: number;
+    privacyOnboardingVersion: number;
+    defaultSessionAudience: PrivacyResourceAudience;
+    enabled: boolean;
+  };
+};
+
+export type UpdatePrivacySettingsMutationVariables = Exact<{
+  input: UpdatePrivacySettingsInput;
+}>;
+
+export type UpdatePrivacySettingsMutation = {
+  __typename?: 'Mutation';
+  updatePrivacySettings: {
+    __typename?: 'PrivacySettings';
+    isPrivate: boolean;
+    privacyRevision: number;
+    privacyOnboardingVersion: number;
+    defaultSessionAudience: PrivacyResourceAudience;
+    enabled: boolean;
+  };
+};
+
+export type IncomingFollowRequestsQueryVariables = Exact<{ [key: string]: never }>;
+
+export type IncomingFollowRequestsQuery = {
+  __typename?: 'Query';
+  incomingFollowRequests: Array<{
+    __typename?: 'PrivacyFollowRequest';
+    requesterId: string;
+    recipientId: string;
+    createdAt: string;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }>;
+};
+
+export type PrivacyRelationshipQueryVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type PrivacyRelationshipQuery = {
+  __typename?: 'Query';
+  privacyRelationship: {
+    __typename?: 'PrivacyRelationship';
+    userId: string;
+    isPrivate: boolean;
+    isFollowing: boolean;
+    requestPending: boolean;
+  };
+};
+
+export type RequestFollowMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type RequestFollowMutation = {
+  __typename?: 'Mutation';
+  requestFollow: {
+    __typename?: 'PrivacyRelationship';
+    userId: string;
+    isPrivate: boolean;
+    isFollowing: boolean;
+    requestPending: boolean;
+  };
+};
+
+export type CancelFollowRequestMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type CancelFollowRequestMutation = { __typename?: 'Mutation'; cancelFollowRequest: boolean };
+
+export type ApproveFollowRequestMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type ApproveFollowRequestMutation = { __typename?: 'Mutation'; approveFollowRequest: boolean };
+
+export type DeclineFollowRequestMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type DeclineFollowRequestMutation = { __typename?: 'Mutation'; declineFollowRequest: boolean };
+
+export type RemoveFollowerMutationVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type RemoveFollowerMutation = { __typename?: 'Mutation'; removeFollower: boolean };
+
+export type SetContentAudienceMutationVariables = Exact<{
+  input: SetContentAudienceInput;
+}>;
+
+export type SetContentAudienceMutation = { __typename?: 'Mutation'; setContentAudience: boolean };
+
+export type ContentAudienceQueryVariables = Exact<{
+  entityType: PrivacyContentType;
+  entityId: Scalars['ID']['input'];
+}>;
+
+export type ContentAudienceQuery = {
+  __typename?: 'Query';
+  contentAudience: {
+    __typename?: 'PrivacyContentAudience';
+    audience: PrivacyAudience;
+    isExplicit: boolean;
+    canEdit: boolean;
+  };
+};
+
+export type ResourcePrivacyQueryVariables = Exact<{
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+}>;
+
+export type ResourcePrivacyQuery = {
+  __typename?: 'Query';
+  resourcePrivacy?: {
+    __typename?: 'ResourcePrivacySettings';
+    kind: PrivacyResourceKind;
+    resourceId: string;
+    ownerId?: string | null;
+    audience: PrivacyResourceAudience;
+    locationAudience: PrivacyLocationAudience;
+    inheritFollowers: boolean;
+    revision: number;
+  } | null;
+};
+
+export type UpdateResourcePrivacyMutationVariables = Exact<{
+  input: UpdateResourcePrivacyInput;
+}>;
+
+export type UpdateResourcePrivacyMutation = {
+  __typename?: 'Mutation';
+  updateResourcePrivacy: {
+    __typename?: 'ResourcePrivacySettings';
+    kind: PrivacyResourceKind;
+    resourceId: string;
+    ownerId?: string | null;
+    audience: PrivacyResourceAudience;
+    locationAudience: PrivacyLocationAudience;
+    inheritFollowers: boolean;
+    revision: number;
+  };
+};
+
+export type ResourceAccessRequestsQueryVariables = Exact<{
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+}>;
+
+export type ResourceAccessRequestsQuery = {
+  __typename?: 'Query';
+  resourceAccessRequests: Array<{
+    __typename?: 'PrivacyResourceGrant';
+    userId: string;
+    status: PrivacyGrantStatus;
+    invitedBy?: string | null;
+    displayName?: string | null;
+    avatarUrl?: string | null;
+  }>;
+};
+
+export type ApproveResourceAccessMutationVariables = Exact<{
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+}>;
+
+export type ApproveResourceAccessMutation = { __typename?: 'Mutation'; approveResourceAccess: boolean };
+
+export type RevokeResourceAccessMutationVariables = Exact<{
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+}>;
+
+export type RevokeResourceAccessMutation = { __typename?: 'Mutation'; revokeResourceAccess: boolean };
+
+export type RequestResourceAccessMutationVariables = Exact<{
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+}>;
+
+export type RequestResourceAccessMutation = { __typename?: 'Mutation'; requestResourceAccess: boolean };
+
+export type InviteResourceMemberMutationVariables = Exact<{
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+}>;
+
+export type InviteResourceMemberMutation = { __typename?: 'Mutation'; inviteResourceMember: boolean };
+
+export type ProfilePrivacyQueryVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type ProfilePrivacyQuery = {
+  __typename?: 'Query';
+  publicProfile?: { __typename?: 'PublicUserProfile'; isPrivate: boolean; canViewActivity: boolean } | null;
+};
+
 export type GetClimbProposalsQueryVariables = Exact<{
   input: GetClimbProposalsInput;
 }>;
@@ -13041,7 +13469,7 @@ export type GetClimbProposalsQuery = {
       climbUuid: string;
       boardType: string;
       angle?: number | null;
-      proposerId: string;
+      proposerId?: string | null;
       proposerDisplayName?: string | null;
       proposerAvatarUrl?: string | null;
       type: ProposalType;
@@ -13143,7 +13571,7 @@ export type BrowseProposalsQuery = {
       climbUuid: string;
       boardType: string;
       angle?: number | null;
-      proposerId: string;
+      proposerId?: string | null;
       proposerDisplayName?: string | null;
       proposerAvatarUrl?: string | null;
       type: ProposalType;
@@ -13203,7 +13631,7 @@ export type CreateProposalMutation = {
     climbUuid: string;
     boardType: string;
     angle?: number | null;
-    proposerId: string;
+    proposerId?: string | null;
     proposerDisplayName?: string | null;
     proposerAvatarUrl?: string | null;
     type: ProposalType;
@@ -13244,7 +13672,7 @@ export type VoteOnProposalMutation = {
     climbUuid: string;
     boardType: string;
     angle?: number | null;
-    proposerId: string;
+    proposerId?: string | null;
     proposerDisplayName?: string | null;
     proposerAvatarUrl?: string | null;
     type: ProposalType;
@@ -13328,7 +13756,7 @@ export type ReportClimbMutation = {
       climbUuid: string;
       boardType: string;
       angle?: number | null;
-      proposerId: string;
+      proposerId?: string | null;
       proposerDisplayName?: string | null;
       proposerAvatarUrl?: string | null;
       type: ProposalType;
@@ -13496,7 +13924,7 @@ export type ResolveProposalFeedMutation = {
     climbUuid: string;
     boardType: string;
     angle?: number | null;
-    proposerId: string;
+    proposerId?: string | null;
     proposerDisplayName?: string | null;
     proposerAvatarUrl?: string | null;
     type: ProposalType;
@@ -13631,7 +14059,7 @@ export type SessionSummaryFieldsFragment = {
   } | null;
   participants: Array<{
     __typename?: 'SessionParticipant';
-    userId: string;
+    userId?: string | null;
     displayName?: string | null;
     avatarUrl?: string | null;
     sends: number;
@@ -13678,7 +14106,7 @@ export type EndSessionMutation = {
     } | null;
     participants: Array<{
       __typename?: 'SessionParticipant';
-      userId: string;
+      userId?: string | null;
       displayName?: string | null;
       avatarUrl?: string | null;
       sends: number;
@@ -13739,7 +14167,7 @@ export type GetSessionSummaryQuery = {
     } | null;
     participants: Array<{
       __typename?: 'SessionParticipant';
-      userId: string;
+      userId?: string | null;
       displayName?: string | null;
       avatarUrl?: string | null;
       sends: number;
@@ -20381,6 +20809,832 @@ export const GetMySmartPlaylistCountsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetMySmartPlaylistCountsQuery, GetMySmartPlaylistCountsQueryVariables>;
+export const PrivacySettingsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'PrivacySettings' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'privacySettings' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'privacyRevision' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'privacyOnboardingVersion' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'defaultSessionAudience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'enabled' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PrivacySettingsQuery, PrivacySettingsQueryVariables>;
+export const UpdatePrivacySettingsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdatePrivacySettings' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdatePrivacySettingsInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updatePrivacySettings' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'privacyRevision' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'privacyOnboardingVersion' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'defaultSessionAudience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'enabled' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdatePrivacySettingsMutation, UpdatePrivacySettingsMutationVariables>;
+export const IncomingFollowRequestsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'IncomingFollowRequests' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'incomingFollowRequests' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'requesterId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'recipientId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'createdAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<IncomingFollowRequestsQuery, IncomingFollowRequestsQueryVariables>;
+export const PrivacyRelationshipDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'PrivacyRelationship' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'privacyRelationship' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFollowing' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requestPending' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<PrivacyRelationshipQuery, PrivacyRelationshipQueryVariables>;
+export const RequestFollowDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RequestFollow' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'requestFollow' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isFollowing' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'requestPending' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RequestFollowMutation, RequestFollowMutationVariables>;
+export const CancelFollowRequestDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CancelFollowRequest' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'cancelFollowRequest' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CancelFollowRequestMutation, CancelFollowRequestMutationVariables>;
+export const ApproveFollowRequestDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ApproveFollowRequest' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'approveFollowRequest' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ApproveFollowRequestMutation, ApproveFollowRequestMutationVariables>;
+export const DeclineFollowRequestDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeclineFollowRequest' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'declineFollowRequest' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeclineFollowRequestMutation, DeclineFollowRequestMutationVariables>;
+export const RemoveFollowerDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RemoveFollower' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'removeFollower' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RemoveFollowerMutation, RemoveFollowerMutationVariables>;
+export const SetContentAudienceDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetContentAudience' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetContentAudienceInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setContentAudience' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetContentAudienceMutation, SetContentAudienceMutationVariables>;
+export const ContentAudienceDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ContentAudience' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'entityType' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyContentType' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'entityId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'contentAudience' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'entityType' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'entityType' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'entityId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'entityId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'isExplicit' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'canEdit' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ContentAudienceQuery, ContentAudienceQueryVariables>;
+export const ResourcePrivacyDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ResourcePrivacy' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyResourceKind' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resourcePrivacy' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'kind' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'resourceId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resourceId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'ownerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResourcePrivacyQuery, ResourcePrivacyQueryVariables>;
+export const UpdateResourcePrivacyDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateResourcePrivacy' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateResourcePrivacyInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateResourcePrivacy' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resourceId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'ownerId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'audience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'locationAudience' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'inheritFollowers' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'revision' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateResourcePrivacyMutation, UpdateResourcePrivacyMutationVariables>;
+export const ResourceAccessRequestsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ResourceAccessRequests' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyResourceKind' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'resourceAccessRequests' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'kind' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'resourceId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'userId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'status' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'invitedBy' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'displayName' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'avatarUrl' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ResourceAccessRequestsQuery, ResourceAccessRequestsQueryVariables>;
+export const ApproveResourceAccessDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'ApproveResourceAccess' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyResourceKind' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'approveResourceAccess' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'kind' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'resourceId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ApproveResourceAccessMutation, ApproveResourceAccessMutationVariables>;
+export const RevokeResourceAccessDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RevokeResourceAccess' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyResourceKind' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'revokeResourceAccess' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'kind' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'resourceId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RevokeResourceAccessMutation, RevokeResourceAccessMutationVariables>;
+export const RequestResourceAccessDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'RequestResourceAccess' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyResourceKind' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'requestResourceAccess' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'kind' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'resourceId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RequestResourceAccessMutation, RequestResourceAccessMutationVariables>;
+export const InviteResourceMemberDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'InviteResourceMember' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'PrivacyResourceKind' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'inviteResourceMember' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'kind' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'kind' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'resourceId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'resourceId' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<InviteResourceMemberMutation, InviteResourceMemberMutationVariables>;
+export const ProfilePrivacyDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'ProfilePrivacy' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'publicProfile' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'isPrivate' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'canViewActivity' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<ProfilePrivacyQuery, ProfilePrivacyQueryVariables>;
 export const GetClimbProposalsDocument = {
   kind: 'Document',
   definitions: [

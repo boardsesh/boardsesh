@@ -236,6 +236,9 @@ importers:
       '@boardsesh/pr-body':
         specifier: workspace:*
         version: link:../shared/pr-body
+      '@boardsesh/privacy':
+        specifier: workspace:*
+        version: link:../shared/privacy
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue
@@ -1472,6 +1475,12 @@ importers:
         version: 7.0.2
 
   packages/shared/pr-body:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/privacy:
     devDependencies:
       typescript:
         specifier: ~7.0.2

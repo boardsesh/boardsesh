@@ -1,3 +1,4 @@
+import { PrivacyPublicationInputSchema } from './privacy-publication';
 import { z } from 'zod';
 import { BULK_VOTE_SUMMARY_CHUNK_SIZE } from '@boardsesh/shared-schema';
 
@@ -29,6 +30,7 @@ export const TimePeriodSchema = z.enum(['hour', 'day', 'week', 'month', 'year', 
  * Add comment input validation schema
  */
 export const AddCommentInputSchema = z.object({
+  privacy: PrivacyPublicationInputSchema.optional(),
   entityType: SocialEntityTypeSchema,
   entityId: z.string().min(1, 'Entity ID cannot be empty').max(200, 'Entity ID too long'),
   parentCommentUuid: z.string().uuid('Invalid UUID format').optional(),
@@ -39,6 +41,7 @@ export const AddCommentInputSchema = z.object({
  * Update comment input validation schema
  */
 export const UpdateCommentInputSchema = z.object({
+  privacy: PrivacyPublicationInputSchema.optional(),
   commentUuid: z.string().uuid('Invalid UUID format'),
   body: z.string().min(1, 'Comment body cannot be empty').max(2000, 'Comment body too long'),
 });

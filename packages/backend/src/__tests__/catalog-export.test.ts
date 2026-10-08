@@ -90,6 +90,36 @@ describe('board catalogue export', () => {
     await resetCatalogTables();
   });
 
+  it('excludes account-deletion tombstones and retained app climbs from public catalogue artifacts', async () => {
+    await seedMinimalCatalog();
+    await db.execute(sql`INSERT INTO board_climbs (uuid, board_type, layout_id, is_boardsesh_authored)
+      VALUES ('deleted-public-app-climb', 'kilter', 1, true)`);
+    await db.execute(sql`INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source)
+      VALUES ('kilter', 'deleted-app-alias', 'deleted-public-app-climb', 'backfill')`);
+    await db.execute(sql`INSERT INTO board_beta_links (board_type, climb_uuid, link, foreign_username)
+      VALUES ('kilter', 'climb-1', 'https://example.test/deleted-private-beta', 'Private name')`);
+    await db.execute(sql`INSERT INTO content_privacy (entity_type, entity_id, audience)
+      VALUES ('beta', 'kilter:climb-1:https://example.test/deleted-private-beta', 'only_me')`);
+    const workDir = mkdtempSync(join(tmpdir(), 'catalog-privacy-'));
+    const filePath = join(workDir, 'catalog.db');
+    try {
+      await buildCatalogArtifact({ sqlClient: createPool(), filePath, builtAt: BUILT_AT });
+      const artifact = new DatabaseSync(filePath, { readOnly: true });
+      try {
+        expect(artifact.prepare('SELECT link FROM board_beta_links').all()).toEqual([
+          { link: 'https://instagram.test/p/abc' },
+        ]);
+        expect(artifact.prepare('SELECT alias_uuid FROM board_climb_aliases').all()).toEqual([
+          { alias_uuid: 'climb-1' },
+        ]);
+      } finally {
+        artifact.close();
+      }
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
+
   it('parses its flags and rejects an unsafe key prefix', () => {
     expect(parseArgs([])).toEqual({ dryRun: false, keyPrefix: 'board-snapshots/v1-catalog' });
     expect(parseArgs(['--dry-run', '--key-prefix', 'board-snapshots/staging'])).toEqual({

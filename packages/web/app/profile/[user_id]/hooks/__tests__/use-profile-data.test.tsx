@@ -10,6 +10,8 @@ import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { GET_USER_CLIMB_PERCENTILE, GET_USER_PROFILE_STATS, GET_USER_TICKS } from '@boardsesh/graphql/operations';
 import { useProfileData } from '../use-profile-data';
 
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: 'viewer-token' }) }));
+
 vi.mock('next-auth/react', () => ({
   useSession: vi.fn(),
 }));
@@ -159,7 +161,8 @@ describe('useProfileData', () => {
       }),
     } as Response);
 
-    mockRequest.mockImplementation(async (query: unknown, variables?: Record<string, unknown>) => {
+    mockRequest.mockImplementation(async (request: { document: unknown; variables?: Record<string, unknown> }) => {
+      const { document: query, variables } = request;
       if (query === GET_USER_TICKS && variables?.boardType === 'kilter') {
         return {
           userTicks: [
@@ -206,7 +209,7 @@ describe('useProfileData', () => {
       expect(result.current.loadingProfileStats).toBe(false);
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/internal/profile/user-1');
+    expect(fetch).toHaveBeenCalledWith('/api/internal/profile/user-1', { signal: expect.any(AbortSignal) });
     expect(result.current.profile?.name).toBe('Fetched User');
     expect(result.current.statisticsSummary.totalAscents).toBe(1);
     expect(result.current.hardestSend).toMatchObject({ label: 'V6', status: 'send' });
@@ -443,7 +446,8 @@ describe('useProfileData', () => {
 
   it('logs ticks/stats/percentile query failures to the console', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mockRequest.mockImplementation(async (query: unknown) => {
+    mockRequest.mockImplementation(async (request: { document: unknown }) => {
+      const query = request.document;
       if (query === GET_USER_TICKS) throw new Error('ticks boom');
       if (query === GET_USER_PROFILE_STATS) throw new Error('stats boom');
       if (query === GET_USER_CLIMB_PERCENTILE) throw new Error('percentile boom');

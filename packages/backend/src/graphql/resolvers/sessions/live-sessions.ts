@@ -46,7 +46,7 @@ export const liveSessionQueries = {
   ): Promise<LiveSession[]> => {
     await applyRateLimit(ctx, 60, 'boardLiveSessions');
     const visibilityBoard = await requireActiveBoardWithVisibilityById(boardId);
-    assertAnonReadableBoard(visibilityBoard, ctx.userId);
+    await assertAnonReadableBoard(visibilityBoard, ctx.userId);
     await assertSprayBoardIsReadable(visibilityBoard, ctx.userId);
     return findBoardLiveSessions(boardId, ctx.userId ?? null);
   },

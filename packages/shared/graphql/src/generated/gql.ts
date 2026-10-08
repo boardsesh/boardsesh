@@ -104,6 +104,25 @@ type Documents = {
   '\n  mutation UnfollowPlaylist($input: FollowPlaylistInput!) {\n    unfollowPlaylist(input: $input)\n  }\n': typeof types.UnfollowPlaylistDocument;
   '\n  query GetSmartPlaylist($input: GetSmartPlaylistInput!) {\n    smartPlaylist(input: $input) {\n      meta {\n        type\n        userId\n        userName\n        userAvatar\n        climbCount\n      }\n      climbs {\n        uuid\n        layoutId\n        boardType\n        setter_username\n        name\n        description\n        frames\n        framesCount\n        framesPace\n        angle\n        ascensionist_count\n        difficulty\n        quality_average\n        stars\n        difficulty_error\n        benchmark_difficulty\n        boardseshDifficulty\n        boardseshConfidence\n        compatibleSizeIds\n        characteristics\n        is_no_match\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetSmartPlaylistDocument;
   '\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n': typeof types.GetMySmartPlaylistCountsDocument;
+  '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n': typeof types.PrivacySettingsDocument;
+  '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n': typeof types.UpdatePrivacySettingsDocument;
+  '\n  query IncomingFollowRequests {\n    incomingFollowRequests {\n      requesterId\n      recipientId\n      createdAt\n      displayName\n      avatarUrl\n    }\n  }\n': typeof types.IncomingFollowRequestsDocument;
+  '\n  query PrivacyRelationship($userId: ID!) {\n    privacyRelationship(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n': typeof types.PrivacyRelationshipDocument;
+  '\n  mutation RequestFollow($userId: ID!) {\n    requestFollow(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n': typeof types.RequestFollowDocument;
+  '\n  mutation CancelFollowRequest($userId: ID!) {\n    cancelFollowRequest(userId: $userId)\n  }\n': typeof types.CancelFollowRequestDocument;
+  '\n  mutation ApproveFollowRequest($userId: ID!) {\n    approveFollowRequest(userId: $userId)\n  }\n': typeof types.ApproveFollowRequestDocument;
+  '\n  mutation DeclineFollowRequest($userId: ID!) {\n    declineFollowRequest(userId: $userId)\n  }\n': typeof types.DeclineFollowRequestDocument;
+  '\n  mutation RemoveFollower($userId: ID!) {\n    removeFollower(userId: $userId)\n  }\n': typeof types.RemoveFollowerDocument;
+  '\n  mutation SetContentAudience($input: SetContentAudienceInput!) {\n    setContentAudience(input: $input)\n  }\n': typeof types.SetContentAudienceDocument;
+  '\n  query ContentAudience($entityType: PrivacyContentType!, $entityId: ID!) {\n    contentAudience(entityType: $entityType, entityId: $entityId) {\n      audience\n      isExplicit\n      canEdit\n    }\n  }\n': typeof types.ContentAudienceDocument;
+  '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n': typeof types.ResourcePrivacyDocument;
+  '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n': typeof types.UpdateResourcePrivacyDocument;
+  '\n  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourceAccessRequests(kind: $kind, resourceId: $resourceId) {\n      userId\n      status\n      invitedBy\n      displayName\n      avatarUrl\n    }\n  }\n': typeof types.ResourceAccessRequestsDocument;
+  '\n  mutation ApproveResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    approveResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.ApproveResourceAccessDocument;
+  '\n  mutation RevokeResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    revokeResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.RevokeResourceAccessDocument;
+  '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n': typeof types.RequestResourceAccessDocument;
+  '\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n': typeof types.InviteResourceMemberDocument;
+  '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n': typeof types.ProfilePrivacyDocument;
   '\n  query GetClimbProposals($input: GetClimbProposalsInput!) {\n    climbProposals(input: $input) {\n      proposals {\n        uuid\n        climbUuid\n        boardType\n        angle\n        proposerId\n        proposerDisplayName\n        proposerAvatarUrl\n        type\n        proposedValue\n        currentValue\n        status\n        reason\n        resolvedAt\n        resolvedBy\n        createdAt\n        weightedUpvotes\n        weightedDownvotes\n        requiredUpvotes\n        userVote\n        climbName\n        frames\n        layoutId\n        climbSetterUsername\n        climbDifficulty\n        climbQualityAverage\n        climbAscensionistCount\n        climbDifficultyError\n        climbBenchmarkDifficulty\n        climbIsNoMatch\n        upvoterCount\n        commentCount\n        climbIsHidden\n      }\n      totalCount\n      hasMore\n    }\n  }\n': typeof types.GetClimbProposalsDocument;
   '\n  query GetClimbCommunityStatus($climbUuid: String!, $boardType: String!, $angle: Int!) {\n    climbCommunityStatus(climbUuid: $climbUuid, boardType: $boardType, angle: $angle) {\n      climbUuid\n      boardType\n      angle\n      communityGrade\n      isBenchmark\n      isClassic\n      isFrozen\n      freezeReason\n      openProposalCount\n      outlierAnalysis {\n        isOutlier\n        currentGrade\n        neighborAverage\n        neighborCount\n        gradeDifference\n      }\n      updatedAt\n    }\n  }\n': typeof types.GetClimbCommunityStatusDocument;
   '\n  query GetBulkClimbCommunityStatus($climbUuids: [String!]!, $boardType: String!, $angle: Int!) {\n    bulkClimbCommunityStatus(climbUuids: $climbUuids, boardType: $boardType, angle: $angle) {\n      climbUuid\n      boardType\n      angle\n      communityGrade\n      isBenchmark\n      isClassic\n      isFrozen\n      freezeReason\n      openProposalCount\n      updatedAt\n    }\n  }\n': typeof types.GetBulkClimbCommunityStatusDocument;
@@ -349,6 +368,44 @@ const documents: Documents = {
     types.GetSmartPlaylistDocument,
   '\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n':
     types.GetMySmartPlaylistCountsDocument,
+  '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n':
+    types.PrivacySettingsDocument,
+  '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n':
+    types.UpdatePrivacySettingsDocument,
+  '\n  query IncomingFollowRequests {\n    incomingFollowRequests {\n      requesterId\n      recipientId\n      createdAt\n      displayName\n      avatarUrl\n    }\n  }\n':
+    types.IncomingFollowRequestsDocument,
+  '\n  query PrivacyRelationship($userId: ID!) {\n    privacyRelationship(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n':
+    types.PrivacyRelationshipDocument,
+  '\n  mutation RequestFollow($userId: ID!) {\n    requestFollow(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n':
+    types.RequestFollowDocument,
+  '\n  mutation CancelFollowRequest($userId: ID!) {\n    cancelFollowRequest(userId: $userId)\n  }\n':
+    types.CancelFollowRequestDocument,
+  '\n  mutation ApproveFollowRequest($userId: ID!) {\n    approveFollowRequest(userId: $userId)\n  }\n':
+    types.ApproveFollowRequestDocument,
+  '\n  mutation DeclineFollowRequest($userId: ID!) {\n    declineFollowRequest(userId: $userId)\n  }\n':
+    types.DeclineFollowRequestDocument,
+  '\n  mutation RemoveFollower($userId: ID!) {\n    removeFollower(userId: $userId)\n  }\n':
+    types.RemoveFollowerDocument,
+  '\n  mutation SetContentAudience($input: SetContentAudienceInput!) {\n    setContentAudience(input: $input)\n  }\n':
+    types.SetContentAudienceDocument,
+  '\n  query ContentAudience($entityType: PrivacyContentType!, $entityId: ID!) {\n    contentAudience(entityType: $entityType, entityId: $entityId) {\n      audience\n      isExplicit\n      canEdit\n    }\n  }\n':
+    types.ContentAudienceDocument,
+  '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n':
+    types.ResourcePrivacyDocument,
+  '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n':
+    types.UpdateResourcePrivacyDocument,
+  '\n  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourceAccessRequests(kind: $kind, resourceId: $resourceId) {\n      userId\n      status\n      invitedBy\n      displayName\n      avatarUrl\n    }\n  }\n':
+    types.ResourceAccessRequestsDocument,
+  '\n  mutation ApproveResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    approveResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n':
+    types.ApproveResourceAccessDocument,
+  '\n  mutation RevokeResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    revokeResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n':
+    types.RevokeResourceAccessDocument,
+  '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n':
+    types.RequestResourceAccessDocument,
+  '\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n':
+    types.InviteResourceMemberDocument,
+  '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n':
+    types.ProfilePrivacyDocument,
   '\n  query GetClimbProposals($input: GetClimbProposalsInput!) {\n    climbProposals(input: $input) {\n      proposals {\n        uuid\n        climbUuid\n        boardType\n        angle\n        proposerId\n        proposerDisplayName\n        proposerAvatarUrl\n        type\n        proposedValue\n        currentValue\n        status\n        reason\n        resolvedAt\n        resolvedBy\n        createdAt\n        weightedUpvotes\n        weightedDownvotes\n        requiredUpvotes\n        userVote\n        climbName\n        frames\n        layoutId\n        climbSetterUsername\n        climbDifficulty\n        climbQualityAverage\n        climbAscensionistCount\n        climbDifficultyError\n        climbBenchmarkDifficulty\n        climbIsNoMatch\n        upvoterCount\n        commentCount\n        climbIsHidden\n      }\n      totalCount\n      hasMore\n    }\n  }\n':
     types.GetClimbProposalsDocument,
   '\n  query GetClimbCommunityStatus($climbUuid: String!, $boardType: String!, $angle: Int!) {\n    climbCommunityStatus(climbUuid: $climbUuid, boardType: $boardType, angle: $angle) {\n      climbUuid\n      boardType\n      angle\n      communityGrade\n      isBenchmark\n      isClassic\n      isFrozen\n      freezeReason\n      openProposalCount\n      outlierAnalysis {\n        isOutlier\n        currentGrade\n        neighborAverage\n        neighborCount\n        gradeDifference\n      }\n      updatedAt\n    }\n  }\n':
@@ -1029,6 +1086,120 @@ export function graphql(
 export function graphql(
   source: '\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n',
 ): (typeof documents)['\n  query GetMySmartPlaylistCounts {\n    mySmartPlaylistCounts {\n      type\n      count\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n',
+): (typeof documents)['\n  query PrivacySettings {\n    privacySettings {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdatePrivacySettings($input: UpdatePrivacySettingsInput!) {\n    updatePrivacySettings(input: $input) {\n      isPrivate\n      privacyRevision\n      privacyOnboardingVersion\n      defaultSessionAudience\n      enabled\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query IncomingFollowRequests {\n    incomingFollowRequests {\n      requesterId\n      recipientId\n      createdAt\n      displayName\n      avatarUrl\n    }\n  }\n',
+): (typeof documents)['\n  query IncomingFollowRequests {\n    incomingFollowRequests {\n      requesterId\n      recipientId\n      createdAt\n      displayName\n      avatarUrl\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query PrivacyRelationship($userId: ID!) {\n    privacyRelationship(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n',
+): (typeof documents)['\n  query PrivacyRelationship($userId: ID!) {\n    privacyRelationship(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RequestFollow($userId: ID!) {\n    requestFollow(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n',
+): (typeof documents)['\n  mutation RequestFollow($userId: ID!) {\n    requestFollow(userId: $userId) {\n      userId\n      isPrivate\n      isFollowing\n      requestPending\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation CancelFollowRequest($userId: ID!) {\n    cancelFollowRequest(userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation CancelFollowRequest($userId: ID!) {\n    cancelFollowRequest(userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation ApproveFollowRequest($userId: ID!) {\n    approveFollowRequest(userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation ApproveFollowRequest($userId: ID!) {\n    approveFollowRequest(userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DeclineFollowRequest($userId: ID!) {\n    declineFollowRequest(userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation DeclineFollowRequest($userId: ID!) {\n    declineFollowRequest(userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RemoveFollower($userId: ID!) {\n    removeFollower(userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation RemoveFollower($userId: ID!) {\n    removeFollower(userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation SetContentAudience($input: SetContentAudienceInput!) {\n    setContentAudience(input: $input)\n  }\n',
+): (typeof documents)['\n  mutation SetContentAudience($input: SetContentAudienceInput!) {\n    setContentAudience(input: $input)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query ContentAudience($entityType: PrivacyContentType!, $entityId: ID!) {\n    contentAudience(entityType: $entityType, entityId: $entityId) {\n      audience\n      isExplicit\n      canEdit\n    }\n  }\n',
+): (typeof documents)['\n  query ContentAudience($entityType: PrivacyContentType!, $entityId: ID!) {\n    contentAudience(entityType: $entityType, entityId: $entityId) {\n      audience\n      isExplicit\n      canEdit\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n',
+): (typeof documents)['\n  query ResourcePrivacy($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourcePrivacy(kind: $kind, resourceId: $resourceId) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateResourcePrivacy($input: UpdateResourcePrivacyInput!) {\n    updateResourcePrivacy(input: $input) {\n      kind\n      resourceId\n      ownerId\n      audience\n      locationAudience\n      inheritFollowers\n      revision\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourceAccessRequests(kind: $kind, resourceId: $resourceId) {\n      userId\n      status\n      invitedBy\n      displayName\n      avatarUrl\n    }\n  }\n',
+): (typeof documents)['\n  query ResourceAccessRequests($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    resourceAccessRequests(kind: $kind, resourceId: $resourceId) {\n      userId\n      status\n      invitedBy\n      displayName\n      avatarUrl\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation ApproveResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    approveResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation ApproveResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    approveResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RevokeResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    revokeResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation RevokeResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    revokeResourceAccess(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n',
+): (typeof documents)['\n  mutation RequestResourceAccess($kind: PrivacyResourceKind!, $resourceId: ID!) {\n    requestResourceAccess(kind: $kind, resourceId: $resourceId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n',
+): (typeof documents)['\n  mutation InviteResourceMember($kind: PrivacyResourceKind!, $resourceId: ID!, $userId: ID!) {\n    inviteResourceMember(kind: $kind, resourceId: $resourceId, userId: $userId)\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n',
+): (typeof documents)['\n  query ProfilePrivacy($userId: ID!) {\n    publicProfile(userId: $userId) {\n      isPrivate\n      canViewActivity\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

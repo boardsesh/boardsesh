@@ -1,3 +1,4 @@
+import { PrivacyPublicationInputSchema } from './privacy-publication';
 import { z } from 'zod';
 import { isValidPlaylistColor } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema } from './primitives';
@@ -17,6 +18,7 @@ export const PlaylistColorSchema = z
 export const PlaylistIconSchema = z.string().max(50, 'Icon name too long').optional();
 
 export const CreatePlaylistInputSchema = z.object({
+  privacy: PrivacyPublicationInputSchema.optional(),
   uuid: z.string().uuid('Invalid UUID format').optional(),
   boardType: BoardNameSchema,
   layoutId: z.number().int().positive(),
@@ -27,6 +29,7 @@ export const CreatePlaylistInputSchema = z.object({
 });
 
 export const UpdatePlaylistInputSchema = z.object({
+  privacy: PrivacyPublicationInputSchema.optional(),
   playlistId: z.string().min(1),
   name: PlaylistNameSchema.optional(),
   description: PlaylistDescriptionSchema,

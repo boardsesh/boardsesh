@@ -1,4 +1,8 @@
 import { GraphQLError } from 'graphql';
+import { resolveSessionBoardId } from '../session-board-binding';
+import { getPrivacySettings, requireResourceAccess } from '../privacy';
+import { resourcePrivacy } from '@boardsesh/db/schema';
+import { sessionParticipantId } from '../board-session-privacy';
 import type { ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
 import { db } from '../../db/client';
 import { sessions, boardSessionParticipants } from '../../db/schema';
@@ -84,7 +88,6 @@ export async function joinSession(
     redisStore,
     distributedState,
     sessionGraceTimers,
-    pendingJoinPersists,
   } = deps;
   const {
     getQueueState: getQueueStateFn,
@@ -108,6 +111,7 @@ export async function joinSession(
   // state is mutated or the current session is left, so a failed join here
   // never disturbs a session the client is already in.
   const existingSession = await getSessionById(sessionId);
+  if (existingSession) await requireResourceAccess('session', sessionId, client.userId);
   if (existingSession && (existingSession.status === 'ended' || existingSession.endedAt !== null)) {
     const endedError = new GraphQLError('This session has ended', {
       extensions: { code: 'SESSION_ENDED' },
@@ -117,6 +121,14 @@ export async function joinSession(
     markErrorReported(endedError);
     logger.info(`[RoomManager] Rejecting JOIN_SESSION for ended session ${sessionId}`);
     throw endedError;
+  }
+
+  // Establish the policy before exposing any presence. Concurrent UUID joins
+  // must re-read the winner's policy before they can join its roster.
+  let createdSession = false;
+  if (!existingSession) {
+    createdSession = await ensureSessionRecordExists(sessionId, boardPath, client.userId, sessionName, isPublic);
+    await requireResourceAccess('session', sessionId, client.userId);
   }
 
   // SECURITY: Never trust a client-supplied participantId. SessionUser.id is
@@ -130,7 +142,7 @@ export async function joinSession(
   // identity. The `participantId` parameter is accepted for API stability but
   // intentionally ignored.
   void participantId;
-  const resolvedParticipantId = client.userId || connectionId;
+  const resolvedParticipantId = client.userId ? sessionParticipantId(sessionId, client.userId) : connectionId;
 
   // Leave current session if in one
   if (client.sessionId) {
@@ -161,7 +173,8 @@ export async function joinSession(
   // Create or get session in memory - with lazy restore
   if (!sessionsMap.has(sessionId)) {
     if (redisStore) {
-      isNewSession = await restoreSessionWithLock(sessionId, sessionsMap, redisStore, getSessionById);
+      const restoredNewSession = await restoreSessionWithLock(sessionId, sessionsMap, redisStore, getSessionById);
+      isNewSession = createdSession || restoredNewSession;
       if (isNewSession) {
         logger.info(
           `[RoomManager] Creating new session ${sessionId} with ${initialQueue?.length || 0} initial queue items`,
@@ -206,24 +219,6 @@ export async function joinSession(
     isLeader,
     sessionParticipants,
   );
-
-  // Ensure new sessions exist in Postgres before any queue state persists.
-  // Existing sessions stay Redis-only for join/leave activity.
-  if (isNewSession) {
-    const previous = pendingJoinPersists.get(sessionId) ?? Promise.resolve();
-    const chained = previous.then(() =>
-      ensureSessionRecordExists(sessionId, boardPath, client.userId, sessionName, isPublic),
-    );
-
-    pendingJoinPersists.set(sessionId, chained);
-    try {
-      await chained;
-    } finally {
-      if (pendingJoinPersists.get(sessionId) === chained) {
-        pendingJoinPersists.delete(sessionId);
-      }
-    }
-  }
 
   // Record the authenticated user as a permanent participant in this session.
   // Used by the push-token resolver to authorize Live Activity registrations.
@@ -1066,23 +1061,37 @@ export async function ensureSessionRecordExists(
   boardPath: string,
   userId: string | null,
   sessionName?: string,
-  isPublic: boolean = true,
-): Promise<void> {
+  isPublic?: boolean,
+): Promise<boolean> {
   const now = new Date();
-  await db
-    .insert(sessions)
-    .values({
-      id: sessionId,
-      boardPath,
-      createdAt: now,
-      lastActivity: now,
-      latitude: null,
-      longitude: null,
-      discoverable: false,
-      createdByUserId: userId,
-      name: sessionName || null,
-      startedAt: now,
-      isPublic,
-    })
-    .onConflictDoNothing();
+  const boardId = await resolveSessionBoardId(boardPath, userId);
+  const audience =
+    isPublic === false ? 'invite_only' : userId ? (await getPrivacySettings(userId)).defaultSessionAudience : 'public';
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(sessions)
+      .values({
+        id: sessionId,
+        boardPath,
+        boardId,
+        createdAt: now,
+        lastActivity: now,
+        latitude: null,
+        longitude: null,
+        discoverable: false,
+        createdByUserId: userId,
+        name: sessionName || null,
+        startedAt: now,
+        isPublic: audience === 'public',
+      })
+      .onConflictDoNothing()
+      .returning({ id: sessions.id });
+    if (inserted.length && userId) {
+      await tx
+        .insert(resourcePrivacy)
+        .values({ kind: 'session', resourceId: sessionId, ownerId: userId, audience })
+        .onConflictDoNothing();
+    }
+    return inserted.length > 0;
+  });
 }

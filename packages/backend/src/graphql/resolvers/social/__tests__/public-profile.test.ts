@@ -10,9 +10,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
-const { limitMock, batchEnrichMock } = vi.hoisted(() => ({
+const { limitMock, batchEnrichMock, activityAccessMock, privacySettingsMock } = vi.hoisted(() => ({
   limitMock: vi.fn(),
   batchEnrichMock: vi.fn(),
+  activityAccessMock: vi.fn(),
+  privacySettingsMock: vi.fn(),
+}));
+vi.mock('../../../../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../services/privacy')>()),
+  canViewUserActivity: activityAccessMock,
+  getPrivacySettings: privacySettingsMock,
 }));
 
 vi.mock('../../../../db/client', () => ({
@@ -47,6 +54,8 @@ describe('publicProfile resolver — instagramUrl', () => {
   beforeEach(() => {
     limitMock.mockReset();
     batchEnrichMock.mockReset();
+    activityAccessMock.mockReset().mockResolvedValue(true);
+    privacySettingsMock.mockReset().mockResolvedValue({ isPrivate: false });
     batchEnrichMock.mockResolvedValue(
       new Map([['user-1', { followerCount: 3, followingCount: 5, isFollowedByMe: true }]]),
     );
@@ -84,6 +93,30 @@ describe('publicProfile resolver — instagramUrl', () => {
     const result = await socialFollowQueries.publicProfile({}, { userId: 'user-1' }, ctx);
 
     expect(result?.instagramUrl).toBeNull();
+  });
+
+  it('keeps a private follow-request stub without links or activity counts', async () => {
+    limitMock.mockResolvedValue([
+      {
+        id: 'user-1',
+        displayName: 'Alex',
+        avatarUrl: 'https://cdn.example/avatar.png',
+        instagramUrl: 'https://instagram.com/alex',
+      },
+    ]);
+    activityAccessMock.mockResolvedValue(false);
+    privacySettingsMock.mockResolvedValue({ isPrivate: true });
+    const result = await socialFollowQueries.publicProfile({}, { userId: 'user-1' }, ctx);
+    expect(result).toMatchObject({
+      id: 'user-1',
+      displayName: 'Alex',
+      avatarUrl: 'https://cdn.example/avatar.png',
+      instagramUrl: null,
+      followerCount: 0,
+      followingCount: 0,
+      isPrivate: true,
+      canViewActivity: false,
+    });
   });
 
   it('returns null for a user that does not exist', async () => {

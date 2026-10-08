@@ -99,13 +99,13 @@ describe('followPlaylist mutation', () => {
   it('should throw if playlist is private', async () => {
     const ctx = makeCtx();
 
-    // select() → playlist found but not public
-    const selectChain = createMockChain([{ uuid: 'playlist-1', isPublic: false }]);
+    // The current audience is applied inside the lookup, before returning a row.
+    const selectChain = createMockChain([]);
     mockDb.select.mockReturnValueOnce(selectChain);
 
     await expect(
       playlistMutations.followPlaylist(null, { input: { playlistUuid: 'playlist-1' } }, ctx),
-    ).rejects.toThrow('Cannot follow a private playlist');
+    ).rejects.toThrow('Playlist not found or access denied');
   });
 
   it('should insert follow and return true', async () => {

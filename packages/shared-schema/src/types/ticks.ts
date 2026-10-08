@@ -60,6 +60,7 @@ export type Tick = {
 };
 
 export type SaveTickInput = {
+  privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   uuid?: string;
   boardType: string;
   climbUuid: string;
@@ -99,6 +100,7 @@ export type GetTicksInput = {
 };
 
 export type AttachBetaLinkInput = {
+  privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   boardType: string;
   climbUuid: string;
   link: string;

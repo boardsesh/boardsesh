@@ -64,7 +64,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     "URL slug for this board"
     slug: String!
     "Owner user ID"
-    ownerId: ID!
+    ownerId: ID
     "Owner display name"
     ownerDisplayName: String
     "Owner avatar URL"
@@ -184,7 +184,7 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   """
   type BoardLeaderboardEntry {
     "User ID"
-    userId: ID!
+    userId: ID
     "Display name"
     userDisplayName: String
     "Avatar URL"
@@ -223,6 +223,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
   Input for creating a board.
   """
   input CreateBoardInput {
+    audience: PrivacyResourceAudience
+    locationAudience: PrivacyLocationAudience
     "Board type"
     boardType: String!
     "Layout ID"

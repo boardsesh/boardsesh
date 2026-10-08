@@ -161,6 +161,7 @@ describe('findExactDuplicateMatch', () => {
   it('returns the existing climb when the DB query yields a row', async () => {
     mockDb.execute.mockResolvedValueOnce([
       {
+        can_view_details: true,
         uuid: 'existing-uuid',
         name: 'Veiny Ahh Dih',
         setter_username: 'asherwang777',
@@ -179,6 +180,26 @@ describe('findExactDuplicateMatch', () => {
       setterUsername: 'asherwang777',
       angle: 30,
     });
+  });
+
+  it('still blocks a duplicate without disclosing a private matching climb', async () => {
+    mockDb.execute.mockResolvedValueOnce([
+      {
+        uuid: 'private-uuid',
+        name: 'Private route',
+        setter_username: 'Private setter',
+        angle: 40,
+        can_view_details: false,
+      },
+    ]);
+    const match = await findExactDuplicateMatch({
+      boardType: 'kilter',
+      layoutId: 1,
+      signature: '1117:STARTING',
+      ruleSignature: '',
+      viewerUserId: 'stranger',
+    });
+    expect(match).toEqual({ uuid: null, name: null, setterUsername: null, angle: null });
   });
 
   it('returns null when no rows match the signature', async () => {

@@ -57,6 +57,8 @@ export type SnapshotTableStats = {
  * checkpoints past rows it never imported.
  */
 export type SnapshotGradesArtifact = {
+  /** Authored climbs and mutable personal attribution are excluded. */
+  privacyVersion?: 1;
   // S3 object key, e.g. `board-snapshots/v1-gzip/kilter/1/<iso>-grades.db`.
   key: string;
   url: string;
@@ -69,6 +71,8 @@ export type SnapshotGradesArtifact = {
 };
 
 export type SnapshotManifestEntry = {
+  /** Authored climbs and mutable personal attribution are excluded. */
+  privacyVersion?: 1;
   boardType: string;
   layoutId: number;
   // S3 object key of the artifact, e.g. `board-snapshots/v1/kilter/8/<iso>.db`.

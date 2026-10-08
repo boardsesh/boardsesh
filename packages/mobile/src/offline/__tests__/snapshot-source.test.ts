@@ -447,6 +447,22 @@ function seedRetainedArtifact(uri: string, builtAt: string, sizeBytes = 1_000): 
 }
 
 describe('fetchManifest', () => {
+  it('excludes old public artifacts and accepts only privacy-safe manifest entries', async () => {
+    const protectedEntry = { ...ENTRY, privacyVersion: 1 };
+    const manifestBody = {
+      formatVersion: 1,
+      generatedAt: '2026-06-01T00:00:00.000Z',
+      entries: [ENTRY, protectedEntry],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(manifestBody)),
+    );
+    const result = await mobileSnapshotSource.fetchManifest();
+    expect(result).toEqual({ ...manifestBody, entries: [protectedEntry] });
+    vi.unstubAllGlobals();
+  });
+
   it('fetches the manifest URL with cache: no-store and returns the parsed JSON on 200', async () => {
     const manifestBody = { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries: [] };
     const fetchMock = vi.fn(async () => jsonResponse(manifestBody));

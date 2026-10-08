@@ -1,3 +1,6 @@
+import { tickPrivacyCondition } from '../shared/activity-privacy';
+import { alias } from 'drizzle-orm/pg-core';
+import { canAccessResource, contentVisibilityCondition } from '../../../services/privacy';
 import { db } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -33,6 +36,7 @@ export async function generateSessionSummary(
     return null;
   }
 
+  if (!(await canAccessResource('session', sessionId, viewerUserId))) return null;
   const session = sessionRows[0];
 
   // Run aggregation queries in parallel
@@ -128,6 +132,7 @@ export async function generateSessionSummary(
           eq(dbSchema.boardseshTicks.sessionId, sessionId),
           inArray(dbSchema.boardseshTicks.status, ['flash', 'send']),
           isNotNull(dbSchema.boardseshTicks.difficulty),
+          contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
           // The hardest-send rows carry the climb's name and frames, and the
           // summary is keyed on a session id alone — session access is not wall
           // access. A no-op on the other eight board types. The viewer is the
@@ -150,9 +155,12 @@ export async function generateSessionSummary(
       SELECT t.user_id AS "userId",
              COALESCE(up.display_name, u.name) AS "displayName",
              up.avatar_url AS "avatarUrl",
-             COUNT(*) FILTER (WHERE t.status IN ('flash', 'send'))::int AS sends,
-             COUNT(*) FILTER (WHERE t.status = 'flash')::int AS flashes,
-             COUNT(*)::int AS attempts
+             COUNT(*) FILTER (WHERE t.status IN ('flash', 'send'))::int AS "rawSends",
+             COUNT(*) FILTER (WHERE t.status = 'flash')::int AS "rawFlashes",
+             COUNT(*)::int AS "rawAttempts",
+             COUNT(*) FILTER (WHERE t.status IN ('flash', 'send') AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))})::int AS sends,
+             COUNT(*) FILTER (WHERE t.status = 'flash' AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))})::int AS flashes,
+             COUNT(*) FILTER (WHERE ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))})::int AS attempts
       FROM boardsesh_ticks t
       LEFT JOIN users u ON u.id = t.user_id
       LEFT JOIN user_profiles up ON up.user_id = t.user_id
@@ -169,6 +177,9 @@ export async function generateSessionSummary(
     sends: number;
     flashes: number;
     attempts: number;
+    rawSends: number;
+    rawFlashes: number;
+    rawAttempts: number;
   }>(participantRows);
 
   // Build grade distribution (filter out null grades using type guard). Matches
@@ -208,20 +219,14 @@ export async function generateSessionSummary(
     };
   }
 
-  // Build participants
-  const participants = participantCastRows.map((r) => ({
-    userId: r.userId,
-    displayName: r.displayName,
-    avatarUrl: r.avatarUrl,
-    sends: r.sends,
-    flashes: r.flashes,
-    attempts: r.attempts,
-  }));
-
-  // Calculate totals
-  const totalSends = participants.reduce((sum, p) => sum + p.sends, 0);
-  const totalFlashes = participants.reduce((sum, p) => sum + p.flashes, 0);
-  const totalAttempts = participants.reduce((sum, p) => sum + p.attempts, 0);
+  // Individual rows contain only activity visible to this viewer. The totals
+  // deliberately include every tick, independently of account/item privacy.
+  const participants = participantCastRows
+    .filter((participant) => participant.attempts > 0)
+    .map(({ rawSends: _sends, rawFlashes: _flashes, rawAttempts: _attempts, ...participant }) => participant);
+  const totalSends = participantCastRows.reduce((sum, participant) => sum + participant.rawSends, 0);
+  const totalFlashes = participantCastRows.reduce((sum, participant) => sum + participant.rawFlashes, 0);
+  const totalAttempts = participantCastRows.reduce((sum, participant) => sum + participant.rawAttempts, 0);
 
   // Calculate duration. A null startedAt is unusual — sessions get one on
   // creation — but it's persisted as nullable so we have to handle it. Log

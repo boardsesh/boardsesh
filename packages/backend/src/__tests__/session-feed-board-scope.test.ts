@@ -201,22 +201,10 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
     expect(sqlToText(participantsQuery)).not.toContain('t.board_type =');
   });
 
-  it('does not filter by board when the boardUuid does not resolve to a board', async () => {
-    // board lookup returns no row → unscoped feed, no error.
-    boardScopeTestState.selectQueue.push(
-      [],
-      [{ id: 'party-1', name: 'Lunch Laps', goal: null, createdByUserId: 'user-1' }],
-    );
-    primeFeedExecuteMocks();
-
-    const result = await sessionGroupedFeed(null, {
-      input: { boardUuid: 'unknown-uuid', limit: 20 },
-    });
-
-    const mainQueryText = sqlToText(boardScopeTestState.executeMock.mock.calls[0][0]);
-    expect(mainQueryText).not.toContain('t.board_id =');
-    expect(mainQueryText).not.toContain('t.board_type =');
-    expect(result.sessions).toHaveLength(1);
+  it('returns an empty feed when the requested board is missing or inaccessible', async () => {
+    const result = await sessionGroupedFeed(null, { input: { boardUuid: 'unknown-uuid', limit: 20 } });
+    expect(result.sessions).toEqual([]);
+    expect(boardScopeTestState.executeMock).not.toHaveBeenCalled();
   });
 
   it('is unscoped when no boardUuid is provided', async () => {
@@ -234,3 +222,11 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
     expect(boardScopeTestState.selectMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// These fixture rows are public; policy semantics have their own real-DB matrix.
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canAccessResource: vi.fn(async (_kind: string, resourceId: string) => resourceId !== 'unknown-uuid'),
+  canViewActivityIdentity: vi.fn(async () => true),
+  canViewContent: vi.fn(async () => true),
+}));

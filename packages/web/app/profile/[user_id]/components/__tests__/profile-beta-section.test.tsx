@@ -9,6 +9,8 @@ import type { BetaLink } from '@/app/lib/api-wrappers/sync-api-types';
 const mockRequest = vi.fn();
 const boardseshBetaListSpy = vi.fn();
 
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: 'viewer-token' }) }));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,

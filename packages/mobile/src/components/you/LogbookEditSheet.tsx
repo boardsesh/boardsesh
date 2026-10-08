@@ -1,3 +1,4 @@
+import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { type RefObject, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -250,6 +251,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
         />
       }
     >
+      {ascent ? <ContentAudienceControl entityType="tick" entityId={ascent.uuid} /> : null}
       <TickFormRow label={tTick('mobile.tick.statusLabel')}>
         <SegmentedControl
           options={statusOptions}

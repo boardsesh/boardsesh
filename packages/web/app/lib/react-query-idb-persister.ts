@@ -14,10 +14,12 @@ export const PERSIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const getDB = createIndexedDBStore(DB_NAME, STORE_NAME);
 
 export function createIdbPersister(): Persister {
+  let privacyGeneration = 0;
   return {
     persistClient: async (client: PersistedClient) => {
+      const writeGeneration = privacyGeneration;
       const db = await getDB();
-      if (!db) return;
+      if (!db || writeGeneration !== privacyGeneration) return;
       try {
         await db.put(STORE_NAME, client, CLIENT_KEY);
       } catch (error) {
@@ -36,6 +38,7 @@ export function createIdbPersister(): Persister {
       }
     },
     removeClient: async () => {
+      privacyGeneration += 1;
       const db = await getDB();
       if (!db) return;
       try {

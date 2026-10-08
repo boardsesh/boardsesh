@@ -427,7 +427,7 @@ describe('setSessionBoardPath mutation', () => {
     const result = await sessionMutations.setSessionBoardPath(undefined, { boardPath: newPath }, ctx);
 
     expect(result).toMatchObject({ id: 'session-1', boardPath: newPath });
-    expect(roomManagerMock.updateSessionBoardPathIfChanged).toHaveBeenCalledWith('session-1', newPath);
+    expect(roomManagerMock.updateSessionBoardPathIfChanged).toHaveBeenCalledWith('session-1', newPath, undefined);
     expect(pubsubMock.publishSessionEvent).toHaveBeenCalledWith('session-1', {
       __typename: 'SessionBoardPathChanged',
       boardPath: newPath,
@@ -442,7 +442,7 @@ describe('setSessionBoardPath mutation', () => {
 
     await sessionMutations.setSessionBoardPath(undefined, { boardPath: newPath }, ctx);
 
-    expect(roomManagerMock.updateSessionBoardPathIfChanged).toHaveBeenCalledWith('session-1', newPath);
+    expect(roomManagerMock.updateSessionBoardPathIfChanged).toHaveBeenCalledWith('session-1', newPath, undefined);
     expect(pubsubMock.publishSessionEvent).not.toHaveBeenCalled();
   });
 

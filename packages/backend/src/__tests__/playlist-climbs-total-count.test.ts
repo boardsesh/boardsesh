@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
+import { users, userProfiles, playlistOwnership } from '@boardsesh/db/schema';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 
 // Seeds use raw `sql` rather than `db.insert(...)` because the integration test
@@ -80,6 +81,12 @@ describe('playlistClimbs — totalCount respects query filters (real DB, #4000)'
              (2, ${LAYOUT_MISMATCH_PLAYLIST_UUID}, 'kilter', 1, 'Layout mismatch set', true),
              (3, ${ORPHANED_REF_PLAYLIST_UUID}, 'kilter', 1, 'Orphaned ref set', true)
     `);
+    await db
+      .insert(users)
+      .values({ id: 'total-count-owner', name: 'Playlist owner', email: 'total-count-owner@test.invalid' });
+    await db
+      .insert(playlistOwnership)
+      .values([1n, 2n, 3n].map((playlistId) => ({ playlistId, userId: 'total-count-owner', role: 'owner' as const })));
     await db.execute(sql`
       INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
       VALUES (1, 'cb-kilter-1', 40, 0), (1, 'cb-kilter-2', 40, 1), (1, 'cb-tension-1', 40, 2),
@@ -135,5 +142,21 @@ describe('playlistClimbs — totalCount respects query filters (real DB, #4000)'
     // into `climbs`, so it must not inflate totalCount either.
     expect(result.climbs.map((climb) => climb.uuid)).toEqual(['or-real']);
     expect(result.totalCount).toBe(1);
+  });
+
+  it('does not disclose a private co-owner through another owner’s public playlist', async () => {
+    await db
+      .insert(users)
+      .values({ id: 'private-co-owner', name: 'Private co-owner', email: 'private-co-owner@test.invalid' });
+    await db.insert(userProfiles).values({ userId: 'private-co-owner', isPrivate: true });
+    await db.insert(playlistOwnership).values({ playlistId: 1n, userId: 'private-co-owner', role: 'owner' });
+    const creators = await playlistQueries.playlistCreators(
+      null,
+      { input: { boardType: 'kilter', layoutId: 1 } },
+      makeCtx(),
+    );
+    expect(creators).toEqual([expect.objectContaining({ userId: 'total-count-owner' })]);
+    const results = await playlistQueries.searchPlaylists(null, { input: { query: 'Cross-board' } }, makeCtx());
+    expect(results.playlists).toEqual([expect.objectContaining({ creatorId: 'total-count-owner' })]);
   });
 });

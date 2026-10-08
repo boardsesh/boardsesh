@@ -1,4 +1,5 @@
-import { eq, and, inArray } from 'drizzle-orm';
+import { canReadSocialEntity, socialEntityPrivacyCondition } from '../shared/activity-privacy';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { ConnectionContext, SocialEntityType } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
@@ -15,6 +16,8 @@ async function getVoteSummary(
   entityId: string,
   authenticatedUserId: string | null | undefined,
 ) {
+  if (!(await canReadSocialEntity(entityType, entityId, authenticatedUserId)))
+    return { entityType, entityId, upvotes: 0, downvotes: 0, voteScore: 0, userVote: 0 };
   // Single query to vote_counts table instead of 3 separate COUNT queries
   const [counts] = await db
     .select({
@@ -82,7 +85,13 @@ export const socialVoteQueries = {
         downvotes: dbSchema.voteCounts.downvotes,
       })
       .from(dbSchema.voteCounts)
-      .where(and(eq(dbSchema.voteCounts.entityType, entityType), inArray(dbSchema.voteCounts.entityId, entityIds)));
+      .where(
+        and(
+          eq(dbSchema.voteCounts.entityType, entityType),
+          inArray(dbSchema.voteCounts.entityId, entityIds),
+          socialEntityPrivacyCondition(sql`${entityType}`, dbSchema.voteCounts.entityId, authenticatedUserId),
+        ),
+      );
 
     const votesMap = new Map<string, { upvotes: number; downvotes: number }>();
     for (const row of countResults) {
@@ -105,6 +114,7 @@ export const socialVoteQueries = {
           and(
             eq(dbSchema.votes.entityType, entityType),
             inArray(dbSchema.votes.entityId, entityIds),
+            socialEntityPrivacyCondition(sql`${entityType}`, dbSchema.votes.entityId, authenticatedUserId),
             eq(dbSchema.votes.userId, authenticatedUserId),
           ),
         );

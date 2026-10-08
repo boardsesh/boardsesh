@@ -615,8 +615,12 @@ class RoomManager {
    * Used by the `setSessionBoardPath` mutation to gate the
    * `SessionBoardPathChanged` event.
    */
-  async updateSessionBoardPathIfChanged(sessionId: string, boardPath: string): Promise<string | null> {
-    return updateSessionBoardPathIfChangedFn(sessionId, boardPath);
+  async updateSessionBoardPathIfChanged(
+    sessionId: string,
+    boardPath: string,
+    viewerId?: string | null,
+  ): Promise<string | null> {
+    return updateSessionBoardPathIfChangedFn(sessionId, boardPath, viewerId);
   }
 
   async createDiscoverableSession(
@@ -645,8 +649,13 @@ class RoomManager {
     );
   }
 
-  async findNearbySessions(latitude: number, longitude: number, radiusMeters?: number): Promise<DiscoverableSession[]> {
-    return findNearbySessionsFn(this.deps(), latitude, longitude, radiusMeters);
+  async findNearbySessions(
+    latitude: number,
+    longitude: number,
+    radiusMeters?: number,
+    viewerId?: string,
+  ): Promise<DiscoverableSession[]> {
+    return findNearbySessionsFn(this.deps(), latitude, longitude, radiusMeters, viewerId);
   }
 
   /**

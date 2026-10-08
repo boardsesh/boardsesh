@@ -234,3 +234,11 @@ describe('sessionGroupedFeed user filtering', () => {
     expect(result.sessions[0].sessionId).toBe('party-1');
   });
 });
+
+// These fixture rows are public; policy semantics have their own real-DB matrix.
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canAccessResource: vi.fn(async (_kind: string, resourceId: string) => resourceId !== 'unknown-uuid'),
+  canViewActivityIdentity: vi.fn(async () => true),
+  canViewContent: vi.fn(async () => true),
+}));

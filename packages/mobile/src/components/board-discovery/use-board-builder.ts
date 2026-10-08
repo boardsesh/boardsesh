@@ -1,3 +1,4 @@
+import type { PrivacyResourceAudience, PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardName, CreateBoardInput, UpdateBoardInput } from '@boardsesh/shared-schema';
 import {
@@ -104,11 +105,13 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // can't clobber edits. Create / Popular omit them, so the home-board defaults apply.
   const [name, setName] = useState(seed?.name ?? '');
 
-  // "More options" / advanced. Owned + public default to the home-board case.
+  // New home boards start private with their exact location hidden.
   const [isOwned, setIsOwned] = useState(seed?.isOwned ?? true);
-  const [isPublic, setIsPublic] = useState(seed?.isPublic ?? true);
+  const [isPublic, setIsPublic] = useState(seed?.isPublic ?? false);
   const [isUnlisted, setIsUnlisted] = useState(seed?.isUnlisted ?? false);
-  const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? false);
+  const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? true);
+  const [privacyAudience, setPrivacyAudience] = useState<PrivacyResourceAudience | undefined>();
+  const [privacyLocationAudience, setPrivacyLocationAudience] = useState<PrivacyLocationAudience | undefined>();
   // Most home boards with a kicker tilt are adjustable; default on.
   const [isAngleAdjustable, setIsAngleAdjustable] = useState(seed?.isAngleAdjustable ?? true);
   // Nearly every Kilter/Tension wall ships with a light kit; default on so the
@@ -273,6 +276,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       name: name.trim() || fallbackName?.trim() || cleanLayoutName(rawLayoutName, boardName),
       angle,
       isOwned,
+      ...(privacyAudience ? { audience: privacyAudience } : {}),
+      ...(privacyLocationAudience ? { locationAudience: privacyLocationAudience } : {}),
       isPublic,
       isUnlisted,
       hideLocation,
@@ -353,6 +358,10 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     sizeId,
     setIds,
     angle,
+    privacyAudience,
+    setPrivacyAudience,
+    privacyLocationAudience,
+    setPrivacyLocationAudience,
     // meta
     name,
     isOwned,

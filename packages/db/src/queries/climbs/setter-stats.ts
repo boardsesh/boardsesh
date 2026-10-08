@@ -1,3 +1,4 @@
+import { contentVisibilityCondition } from '../privacy';
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { and, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
@@ -34,7 +35,7 @@ export type SetterStat = {
  * `ClimbSearchParams` rather than redeclared, so the picker's opt-in cannot drift
  * from the list's: it is the same field, with the same "omitted means off".
  */
-export type SetterStatsOptions = Pick<ClimbSearchParams, 'crossAngleStats'>;
+export type SetterStatsOptions = Pick<ClimbSearchParams, 'crossAngleStats'> & { viewerUserId?: string | null };
 
 /**
  * Aggregate setter usernames with their climb counts for a board configuration.
@@ -161,6 +162,7 @@ export const getSetterStats = async (
   }
 
   const whereConditions = [
+    contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, options.viewerUserId),
     ...(followedAuthors ? [followedAuthors] : []),
     eq(boardClimbs.boardType, params.board_name),
     eq(boardClimbs.layoutId, params.layout_id),

@@ -1,3 +1,4 @@
+import { useProfilePrivacy } from '../../../src/lib/graphql/hooks/use-privacy';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
@@ -30,12 +31,14 @@ export default function PublicProfileScreen() {
   const currentUserId = currentProfile?.id;
   const isSelf = !!currentUserId && currentUserId === userId;
 
+  const { t: tSettings } = useTranslation('settings');
   const publicProfile = usePublicProfile(userId);
+  const profilePrivacy = useProfilePrivacy(userId);
   const youData = useYouProfileData(userId);
 
   const [activeSection, setActiveSection] = useState<ProfileSection>('progress');
 
-  const profile = publicProfile.data;
+  const profile = publicProfile.data ? { ...publicProfile.data, ...profilePrivacy.data } : publicProfile.data;
   const displayName = profile?.displayName || t('mobile.unknownName');
 
   // Drive the native stack header (back chevron + title). Set once the name
@@ -124,6 +127,15 @@ export default function PublicProfileScreen() {
         <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateBody}>
           {t('mobile.profile.notFoundBody')}
         </Text>
+      </View>
+    );
+  }
+
+  if (profile.canViewActivity === false) {
+    return (
+      <View style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
+        <PublicProfileHeaderBlock profile={profile} instagramUrl={null} currentUserId={currentUserId} />
+        <Text style={styles.stateBody}>{tSettings('privacy.privateProfile')}</Text>
       </View>
     );
   }

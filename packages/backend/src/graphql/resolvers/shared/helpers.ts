@@ -1,3 +1,4 @@
+import { canAccessResource, requireResourceAccess } from '../../../services/privacy';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { GraphQLError } from 'graphql';
 import { checkRateLimit, RateLimitError } from '../../../utils/rate-limiter';
@@ -265,6 +266,7 @@ export async function requireSessionMember(
   maxRetries = SESSION_MEMBER_RETRY_CONFIG.maxRetries,
   initialDelayMs = SESSION_MEMBER_RETRY_CONFIG.initialDelayMs,
 ): Promise<void> {
+  await requireResourceAccess('session', sessionId, ctx.userId);
   // Durable membership fast-path (authenticated WS connections only). See the
   // JSDoc above for why this short-circuits the retry loop.
   if (ctx.transport !== 'http' && ctx.userId && (await isDurableSessionMember(ctx.userId, sessionId))) {
@@ -375,6 +377,7 @@ export async function requireSessionMember(
  * error).
  */
 export async function isSessionMember(ctx: ConnectionContext, sessionId: string): Promise<boolean> {
+  if (!(await canAccessResource('session', sessionId, ctx.userId))) return false;
   // HTTP requests are stateless — never in the local context map, never in
   // distributed state — so the connection-based checks can't match; skip
   // straight to the durable record.

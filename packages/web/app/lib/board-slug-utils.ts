@@ -104,9 +104,8 @@ async function fetchBoardBySlug(slug: string, wallUuid: string | undefined): Pro
     headers.Authorization = `Bearer ${authToken}`;
   }
 
-  // Authenticated responses can contain private boards, so they must never
-  // enter the shared data cache. Anonymous responses remain safely reusable.
-  const cacheOptions = authToken ? { cache: 'no-store' as const } : { next: { revalidate: 300 } };
+  // A public board can become private between requests, including anonymous reads.
+  const cacheOptions = { cache: 'no-store' as const };
 
   // An abort lands in the same bucket as a rejected fetch: it throws, so
   // `/b/{slug}` answers 5xx (retried by crawlers, never CDN-cached) instead of

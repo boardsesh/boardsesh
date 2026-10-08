@@ -19,10 +19,15 @@ vi.mock('../../../../pubsub/index', () => ({
   pubsub: { subscribeComments: vi.fn() },
 }));
 
-// createAsyncIterator resolves to an iterable that completes immediately, so a
+vi.mock('../../shared/activity-privacy', () => ({
+  canReadSocialEntity: vi.fn().mockResolvedValue(true),
+  canReadDeletedComment: vi.fn().mockResolvedValue(true),
+}));
+
+// createPrivacyAwareIterator resolves to an iterable that completes immediately, so a
 // subscription whose entityType passes validation finishes on the first next().
-vi.mock('../../shared/async-iterators', () => ({
-  createAsyncIterator: vi.fn(async () => ({
+vi.mock('../../shared/privacy-iterator', () => ({
+  createPrivacyAwareIterator: vi.fn(async () => ({
     return: async () => ({ value: undefined, done: true }),
     [Symbol.asyncIterator]() {
       return { next: async () => ({ value: undefined, done: true }) };
@@ -31,7 +36,7 @@ vi.mock('../../shared/async-iterators', () => ({
 }));
 
 import { socialCommentSubscriptions } from '../comment-subscriptions';
-import { createAsyncIterator } from '../../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../../shared/privacy-iterator';
 import { SocialEntityTypeSchema } from '../../../../validation/schemas';
 
 function startSubscription(entityType: string, entityId: string) {
@@ -57,7 +62,7 @@ describe('commentUpdates subscription — entityType validation', () => {
       // Passing validation lets the generator reach the (mocked, empty)
       // iterator and complete without throwing "Invalid entity type".
       await expect(subscription.next()).resolves.toEqual({ value: undefined, done: true });
-      expect(vi.mocked(createAsyncIterator)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(createPrivacyAwareIterator)).toHaveBeenCalledTimes(1);
       vi.clearAllMocks();
     }
   });
@@ -65,7 +70,7 @@ describe('commentUpdates subscription — entityType validation', () => {
   it('rejects an entityType outside the schema and never opens a channel', async () => {
     const subscription = startSubscription('user', 'entity-123');
     await expect(subscription.next()).rejects.toThrow('Invalid entity type: user');
-    expect(vi.mocked(createAsyncIterator)).not.toHaveBeenCalled();
+    expect(vi.mocked(createPrivacyAwareIterator)).not.toHaveBeenCalled();
   });
 
   it('rejects an empty or over-long entityId before opening a channel', async () => {
@@ -75,6 +80,6 @@ describe('commentUpdates subscription — entityType validation', () => {
     const tooLong = startSubscription('session', 'x'.repeat(257));
     await expect(tooLong.next()).rejects.toThrow('Invalid entity ID');
 
-    expect(vi.mocked(createAsyncIterator)).not.toHaveBeenCalled();
+    expect(vi.mocked(createPrivacyAwareIterator)).not.toHaveBeenCalled();
   });
 });

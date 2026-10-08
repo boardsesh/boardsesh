@@ -3,6 +3,7 @@ import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { roomManager, VersionConflictError } from '../services/room-manager';
 import { db } from '../db/client';
+import { sessionParticipantId } from '../services/board-session-privacy';
 import { sessions, sessionQueues, boardSessionParticipants } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
@@ -430,13 +431,13 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       await roomManager.registerClient('member-conn', 'Member', 'member-participant-id');
       const member = await roomManager.joinSession('member-conn', sessionId, boardPath, 'Member');
 
-      expect(leader.participantId).toBe('leader-participant-id');
-      expect(member.participantId).toBe('member-participant-id');
+      expect(leader.participantId).toBe(sessionParticipantId(sessionId, 'leader-participant-id'));
+      expect(member.participantId).toBe(sessionParticipantId(sessionId, 'member-participant-id'));
 
       const disconnectResult = await roomManager.disconnectClient('leader-conn');
 
       expect(disconnectResult?.newLeaderId).toBe('member-conn');
-      expect(disconnectResult?.newLeaderParticipantId).toBe('member-participant-id');
+      expect(disconnectResult?.newLeaderParticipantId).toBe(sessionParticipantId(sessionId, 'member-participant-id'));
     });
 
     it('returns stable participant leader IDs when a leader explicitly leaves', async () => {
@@ -451,7 +452,7 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       const leaveResult = await roomManager.leaveSession('leader-conn');
 
       expect(leaveResult?.newLeaderId).toBe('member-conn');
-      expect(leaveResult?.newLeaderParticipantId).toBe('member-participant-id');
+      expect(leaveResult?.newLeaderParticipantId).toBe(sessionParticipantId(sessionId, 'member-participant-id'));
     });
 
     it('evicts a participant who disconnects and never reconnects after the grace period', async () => {

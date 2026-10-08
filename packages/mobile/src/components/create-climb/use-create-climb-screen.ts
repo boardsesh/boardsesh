@@ -1,3 +1,5 @@
+import { useContentAudience } from '../../lib/graphql/hooks/use-resource-privacy';
+import { usePublicationAudience } from '../privacy/use-publication-audience';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { randomUUID } from 'expo-crypto';
 import { useRouter } from 'expo-router';
@@ -292,6 +294,12 @@ export function useCreateClimbScreen({
   const { showToast } = useToast();
   const queryClient = useQueryClient();
 
+  const { data: savedAudience } = useContentAudience('climb', editClimbUuid);
+  const privacy = usePublicationAudience(
+    editClimbUuid ?? 'new-climb',
+    true,
+    editClimbUuid ? { audience: savedAudience?.audience } : undefined,
+  );
   const isForking = !!forkFrames;
   const isEditing = !!editClimbUuid;
   const boardCapabilities = getBoardCapabilities(board.boardName);
@@ -1565,6 +1573,7 @@ export function useCreateClimbScreen({
     try {
       if (canUpdate && savedClimb) {
         const result = await updateClimb({
+          ...(privacy.publication ? { privacy: privacy.publication } : {}),
           uuid: savedClimb.uuid,
           boardType: board.boardName,
           name: name.trim(),
@@ -1606,6 +1615,7 @@ export function useCreateClimbScreen({
         syncSavedToQueue(nextSavedClimb, frames);
       } else {
         const result = await saveClimb({
+          ...(privacy.publication ? { privacy: privacy.publication } : {}),
           layout_id: board.layoutId,
           size_id: board.sizeId,
           name: name.trim(),
@@ -1736,6 +1746,7 @@ export function useCreateClimbScreen({
     publishedFramesPace,
     updateClimb,
     saveClimb,
+    privacy.publication,
     board,
     description,
     noMatch,
@@ -1818,6 +1829,7 @@ export function useCreateClimbScreen({
   }, [showToast, t]);
 
   return {
+    privacy,
     // editor state
     litUpHoldsMap,
     currentFramesString,

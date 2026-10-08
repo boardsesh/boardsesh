@@ -1,3 +1,4 @@
+import { duplicateDisclosureCondition, projectDuplicateIdentity } from './duplicate-privacy';
 import { sql, type SQL } from 'drizzle-orm';
 import type {
   MoonBoardClimbDuplicateCandidateInput,
@@ -20,6 +21,7 @@ type NormalizedMoonBoardHold = {
 type DuplicateCandidate = Pick<MoonBoardClimbDuplicateCandidateInput, 'clientKey' | 'holds'>;
 
 type DuplicateLookupRow = {
+  can_view_details: boolean;
   uuid: string;
   name: string | null;
   ascensionist_count: number;
@@ -27,6 +29,7 @@ type DuplicateLookupRow = {
 };
 
 type LegacyDuplicateLookupRow = {
+  can_view_details: boolean;
   uuid: string;
   name: string | null;
   frames: string | null;
@@ -128,6 +131,7 @@ export function buildMoonBoardClimbHoldRows(climbUuid: string, holds: MoonBoardH
 }
 
 type DuplicateMatchRow = {
+  canViewDetails: boolean;
   uuid: string;
   name: string | null;
   ascensionistCount: number;
@@ -152,6 +156,7 @@ export async function findMoonBoardDuplicateMatches(
   layoutId: number,
   angle: number,
   climbs: DuplicateCandidate[],
+  viewerUserId?: string | null,
 ): Promise<MoonBoardClimbDuplicateMatch[]> {
   if (climbs.length === 0) return [];
 
@@ -175,6 +180,7 @@ export async function findMoonBoardDuplicateMatches(
       db,
       sql`
       SELECT
+        ${duplicateDisclosureCondition(viewerUserId)} AS can_view_details,
         ${dbSchema.boardClimbs.uuid} AS uuid,
         ${dbSchema.boardClimbs.name} AS name,
         COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) AS ascensionist_count,
@@ -209,6 +215,7 @@ export async function findMoonBoardDuplicateMatches(
 
     for (const row of exactMatchRows) {
       const next = {
+        canViewDetails: row.can_view_details,
         uuid: row.uuid,
         name: row.name,
         ascensionistCount: Number(row.ascensionist_count || 0),
@@ -223,6 +230,7 @@ export async function findMoonBoardDuplicateMatches(
       db,
       sql`
       SELECT
+        ${duplicateDisclosureCondition(viewerUserId)} AS can_view_details,
         ${dbSchema.boardClimbs.uuid} AS uuid,
         ${dbSchema.boardClimbs.name} AS name,
         ${dbSchema.boardClimbs.frames} AS frames,
@@ -252,6 +260,7 @@ export async function findMoonBoardDuplicateMatches(
       if (!signature || !uniqueSignatures.includes(signature)) continue;
 
       const next = {
+        canViewDetails: row.can_view_details,
         uuid: row.uuid,
         name: row.name,
         ascensionistCount: Number(row.ascensionist_count || 0),
@@ -265,11 +274,12 @@ export async function findMoonBoardDuplicateMatches(
 
   return candidateSignatures.map(({ clientKey, signature }) => {
     const match = bestMatchBySignature.get(signature);
+    const identity = match ? projectDuplicateIdentity(match) : null;
     return {
       clientKey,
       exists: !!match,
-      existingClimbUuid: match?.uuid ?? null,
-      existingClimbName: match?.name ?? null,
+      existingClimbUuid: identity?.uuid ?? null,
+      existingClimbName: identity?.name ?? null,
     };
   });
 }
@@ -278,7 +288,8 @@ export async function findMoonBoardDuplicateMatch(
   layoutId: number,
   angle: number,
   holds: MoonBoardHoldsInput,
+  viewerUserId?: string | null,
 ): Promise<MoonBoardClimbDuplicateMatch | null> {
-  const [match] = await findMoonBoardDuplicateMatches(layoutId, angle, [{ clientKey: 'save', holds }]);
+  const [match] = await findMoonBoardDuplicateMatches(layoutId, angle, [{ clientKey: 'save', holds }], viewerUserId);
   return match?.exists ? match : null;
 }

@@ -1,3 +1,4 @@
+import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 // Bottom-sheet wrapper around the create-tick form. Used by every ticking entry
 // point — the play drawer's tick button, the persistent queue bar, the climb
 // detail screen — so the form, dismissal model (handle + pan-down + native
@@ -181,6 +182,7 @@ export function LogAscentSheet({
       }
     >
       <QuickTickBar form={form} />
+      <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
     </ModalSheet>
   );
 }

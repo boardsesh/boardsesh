@@ -76,7 +76,7 @@ function makeChain(rows: Record<string, unknown>[], onWhere?: (clause: unknown) 
 }
 
 vi.mock('../db/client', () => {
-  const select = vi.fn(() => ({
+  const select = vi.fn((projection?: Record<string, unknown>) => ({
     from: (table: unknown) => {
       if (table === dbSchema.boardBetaLinks) {
         betaLinkTestState.betaLinkSelectCallCount.value += 1;
@@ -95,7 +95,11 @@ vi.mock('../db/client', () => {
         ]);
       }
       if (table === dbSchema.boardseshTicks) {
-        return makeChain(betaLinkTestState.tickRows);
+        return makeChain(
+          projection && Object.keys(projection).length === 1 && 'uuid' in projection
+            ? betaLinkTestState.tickRows.map((row) => ({ uuid: (row.tick as { uuid: string }).uuid }))
+            : betaLinkTestState.tickRows,
+        );
       }
       if (table === dbSchema.voteCounts) {
         // Both the per-tick batch (entityType='tick') and the session-level
@@ -377,3 +381,11 @@ describe('sessionDetail per-tick betaLinks (tick-scoped to the crew)', () => {
     expect(byUuid.get('tick-ungraded')?.boardseshConfidence).toBeNull();
   });
 });
+
+// These fixture rows are public; policy semantics have their own real-DB matrix.
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canAccessResource: vi.fn(async (_kind: string, resourceId: string) => resourceId !== 'unknown-uuid'),
+  canViewActivityIdentity: vi.fn(async () => true),
+  canViewContent: vi.fn(async () => true),
+}));

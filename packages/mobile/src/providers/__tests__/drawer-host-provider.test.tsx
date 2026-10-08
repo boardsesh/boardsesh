@@ -779,6 +779,7 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
       photoExpiresAt: '2099-01-01T00:00:00.000Z',
       holds: [],
     });
+    if (!sprayWall.ownerId) throw new Error('Expected the fixture to have an owner');
     viewerProfile.current = { id: sprayWall.ownerId };
   });
 

@@ -1,3 +1,4 @@
+import { userActivityVisibilityCondition } from '../../../services/privacy';
 import { eq, and, inArray, count } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -25,7 +26,12 @@ export async function batchEnrichUserProfiles(
       count: count(),
     })
     .from(dbSchema.userFollows)
-    .where(inArray(dbSchema.userFollows.followingId, userIds))
+    .where(
+      and(
+        inArray(dbSchema.userFollows.followingId, userIds),
+        userActivityVisibilityCondition(dbSchema.userFollows.followingId, authenticatedUserId),
+      ),
+    )
     .groupBy(dbSchema.userFollows.followingId);
 
   // Batch: following counts (how many people each user follows)
@@ -35,7 +41,12 @@ export async function batchEnrichUserProfiles(
       count: count(),
     })
     .from(dbSchema.userFollows)
-    .where(inArray(dbSchema.userFollows.followerId, userIds))
+    .where(
+      and(
+        inArray(dbSchema.userFollows.followerId, userIds),
+        userActivityVisibilityCondition(dbSchema.userFollows.followerId, authenticatedUserId),
+      ),
+    )
     .groupBy(dbSchema.userFollows.followerId);
 
   // Batch: isFollowedByMe

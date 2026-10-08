@@ -1,3 +1,5 @@
+import { redactSessionUsers, redactQueueItem } from '../../../services/board-session-privacy';
+import { canViewActivityIdentity } from '../../../services/privacy';
 import type { ConnectionContext, ClimbQueueItem, SessionUser } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
 import type { Session as SessionDbRow } from '../../../db/schema';
@@ -96,14 +98,16 @@ export async function buildSessionPayload(
     // consistent with the `goal` / `color` fields a few lines below.
     name: inputs.name !== undefined ? inputs.name : sessionData?.name || null,
     boardPath: inputs.boardPath !== undefined ? inputs.boardPath : sessionData?.boardPath || '',
-    users,
+    users: await redactSessionUsers(users, ctx.userId, sessionId),
     queueState: queueState
       ? {
           sequence: queueState.sequence,
           stateHash: queueState.stateHash,
           stateHashOrdered: queueState.stateHashOrdered ?? null,
-          queue: queueState.queue,
-          currentClimbQueueItem: queueState.currentClimbQueueItem,
+          queue: await Promise.all(queueState.queue.map((item) => redactQueueItem(item, ctx.userId, sessionId))),
+          currentClimbQueueItem: queueState.currentClimbQueueItem
+            ? await redactQueueItem(queueState.currentClimbQueueItem, ctx.userId, sessionId)
+            : null,
         }
       : null,
     isLeader: inputs.isLeader !== undefined ? inputs.isLeader : leaderConnectionId === ctx.connectionId,
@@ -127,6 +131,13 @@ export async function buildSessionPayload(
     // empty-string-means-absent convention to honour here the way `name` /
     // `goal` have one.
     createdByUserId:
-      inputs.createdByUserId !== undefined ? inputs.createdByUserId : (sessionData?.createdByUserId ?? null),
+      (inputs.createdByUserId ?? sessionData?.createdByUserId) &&
+      (await canViewActivityIdentity((inputs.createdByUserId ?? sessionData?.createdByUserId)!, ctx.userId, {
+        sessionId,
+      }))
+        ? inputs.createdByUserId !== undefined
+          ? inputs.createdByUserId
+          : (sessionData?.createdByUserId ?? null)
+        : null,
   };
 }

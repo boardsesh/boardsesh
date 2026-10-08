@@ -1,3 +1,4 @@
+import { PrivacyPublicationInputSchema } from './privacy-publication';
 import { z } from 'zod';
 import { BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@boardsesh/shared-schema';
 import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
@@ -47,6 +48,7 @@ export const TickStatusSchema = z.enum(['flash', 'send', 'attempt'], {
  */
 export const SaveTickInputSchema = z
   .object({
+    privacy: PrivacyPublicationInputSchema.optional(),
     uuid: z.string().uuid('Invalid UUID format').optional(),
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
@@ -110,6 +112,7 @@ export const GetTicksInputSchema = z.object({
  */
 export const AttachBetaLinkInputSchema = z
   .object({
+    privacy: PrivacyPublicationInputSchema.optional(),
     boardType: BoardNameSchema,
     climbUuid: ExternalUUIDSchema,
     link: z.string().max(500).regex(BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE),
@@ -196,6 +199,7 @@ export const AscentFeedInputSchema = z.object({
  */
 export const UpdateTickInputSchema = z
   .object({
+    privacy: PrivacyPublicationInputSchema.optional(),
     status: z.enum(['flash', 'send', 'attempt']).optional(),
     attemptCount: z.number().int().min(1).max(999).optional(),
     quality: z.number().int().min(1).max(5).optional().nullable(),

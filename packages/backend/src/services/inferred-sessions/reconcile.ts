@@ -1,4 +1,5 @@
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { intersectInferredPrivacy, loadInferredPrivacy, writeInferredPrivacy, type InferredPrivacy } from './privacy';
+import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import * as dbSchema from '@boardsesh/db/schema';
 import {
@@ -29,10 +30,32 @@ export type PlannedReconciliation = {
   result: ReconcileResult;
   /** Ids in `result.runs` that belong to explicit sessions rather than inferred ones. */
   explicitSessionIds: Set<string>;
+  originalAssignments: Map<number, string | null>;
 };
 
 /** Move a merged-away session's social rows onto the survivor, then drop the session. */
-async function applyMerge(tx: ReconciliationTransaction, merge: SessionMerge): Promise<void> {
+async function applyMerge(
+  tx: ReconciliationTransaction,
+  merge: SessionMerge,
+  sourcePrivacy: InferredPrivacy | undefined,
+): Promise<void> {
+  if (!sourcePrivacy || sourcePrivacy.audience !== 'public') {
+    // A private parent can be absorbed into an explicit public session. Preserve
+    // each comment author's protection even when the new parent has a wider audience.
+    const comments = await tx
+      .select({ uuid: dbSchema.comments.uuid, userId: dbSchema.comments.userId })
+      .from(dbSchema.comments)
+      .where(and(eq(dbSchema.comments.entityType, 'session'), eq(dbSchema.comments.entityId, merge.loserId)))
+      .for('update');
+    for (const comment of comments)
+      await tx
+        .insert(dbSchema.contentPrivacy)
+        .values({ entityType: 'comment', entityId: comment.uuid, ownerId: comment.userId, audience: 'only_me' })
+        .onConflictDoUpdate({
+          target: [dbSchema.contentPrivacy.entityType, dbSchema.contentPrivacy.entityId],
+          set: { audience: 'only_me', publicConsentRevision: null, updatedAt: new Date() },
+        });
+  }
   // Re-point BEFORE deleting. v1 deleted emptied sessions outright, orphaning their
   // votes and comments — `entity_id` is untyped text with no foreign key, so nothing
   // caught it and migration 0120 had to sweep the debris up afterwards.
@@ -121,7 +144,7 @@ export async function planReconciliation(
       }
     }
   }
-  return { result, explicitSessionIds: new Set(existingExplicit.map((session) => session.id)) };
+  return { result, explicitSessionIds: new Set(existingExplicit.map((session) => session.id)), originalAssignments };
 }
 
 /**
@@ -142,12 +165,13 @@ export async function reconcileInferredSessions(
   userId: string,
   touchedAt: Date,
   options: { preserveExistingSessions?: boolean; rejectTruncatedWindow?: boolean } = {},
-): Promise<ReconcileResult | null> {
+): Promise<(ReconcileResult & { privacyChanged: boolean }) | null> {
   const planned = await planReconciliation(tx, userId, touchedAt, {
     rejectTruncatedWindow: options.rejectTruncatedWindow,
   });
   if (!planned) return null;
   const { result } = planned;
+  let privacyChanged = result.merges.length > 0 || result.emptiedSessionIds.length > 0;
 
   // Backfills must leave existing sessions and their social history for a separate,
   // reviewed repair. The normal reconciler below can delete emptied social rows.
@@ -155,12 +179,42 @@ export async function reconcileInferredSessions(
     throw new Error('Reconciliation requires removing existing sessions; inspect this user before retrying');
   }
 
+  const sourceIds = [
+    ...new Set(
+      [...planned.originalAssignments.values(), ...result.runs.map((run) => run.sessionId)].filter(
+        (id): id is string => id !== null,
+      ),
+    ),
+  ];
+  const sourcePrivacy = await loadInferredPrivacy(tx, sourceIds);
+  const [profile] = await tx
+    .select({ isPrivate: dbSchema.userProfiles.isPrivate, audience: dbSchema.userProfiles.defaultSessionAudience })
+    .from(dbSchema.userProfiles)
+    .where(eq(dbSchema.userProfiles.userId, userId))
+    .limit(1);
+  const defaultPrivacy: InferredPrivacy = {
+    audience: profile?.audience ?? (profile?.isPrivate ? 'followers' : 'public'),
+    inheritFollowers: false,
+    grants: new Map(),
+  };
+
   for (const merge of result.merges) {
-    await applyMerge(tx, merge);
+    await applyMerge(tx, merge, sourcePrivacy.get(merge.loserId));
   }
 
   for (const runResult of result.runs) {
     let sessionId = runResult.sessionId;
+    const sourceIdsForRun = [
+      ...new Set(
+        [runResult.sessionId, ...runResult.tickIds.map((id) => planned.originalAssignments.get(id))].filter(
+          (id): id is string => !!id,
+        ),
+      ),
+    ];
+    const policies = sourceIdsForRun
+      .map((id) => sourcePrivacy.get(id))
+      .filter((policy): policy is InferredPrivacy => !!policy);
+    const privacy = policies.length ? intersectInferredPrivacy(policies) : defaultPrivacy;
 
     if (sessionId === null) {
       sessionId = uuidv4();
@@ -178,7 +232,7 @@ export async function reconcileInferredSessions(
         endedAt: new Date(runResult.lastTickAt),
         lastActivity: new Date(runResult.lastTickAt),
         isPermanent: false,
-        isPublic: true,
+        isPublic: privacy.audience === 'public',
         anchorTickId: runResult.anchorTickId,
       });
     } else {
@@ -193,6 +247,40 @@ export async function reconcileInferredSessions(
         .where(and(eq(dbSchema.boardSessions.id, sessionId), eq(dbSchema.boardSessions.origin, 'inferred')));
     }
 
+    if (!planned.explicitSessionIds.has(sessionId)) {
+      await writeInferredPrivacy(tx, sessionId, userId, privacy);
+    } else {
+      // Absorption into a different explicit container must not widen a tick.
+      // A session invite set cannot be encoded as an account item audience;
+      // keep those moved ticks owner-only until their author republishes them.
+      const restrictedTickIds = runResult.tickIds.filter((tickId) => {
+        const previous = planned.originalAssignments.get(tickId);
+        return previous && previous !== sessionId && sourcePrivacy.get(previous)?.audience !== 'public';
+      });
+      if (restrictedTickIds.length) {
+        const ticks = await tx
+          .select({ uuid: dbSchema.boardseshTicks.uuid })
+          .from(dbSchema.boardseshTicks)
+          .where(inArray(dbSchema.boardseshTicks.id, restrictedTickIds.map(BigInt)));
+        for (const tick of ticks)
+          await tx
+            .insert(dbSchema.contentPrivacy)
+            .values({ entityType: 'tick', entityId: tick.uuid, ownerId: userId, audience: 'only_me' })
+            .onConflictDoUpdate({
+              target: [dbSchema.contentPrivacy.entityType, dbSchema.contentPrivacy.entityId],
+              set: { audience: 'only_me' },
+            });
+      }
+    }
+
+    if (
+      runResult.tickIds.some((tickId) => {
+        const original = planned.originalAssignments.get(tickId);
+        return original != null && original !== sessionId;
+      })
+    )
+      privacyChanged = true;
+
     await tx
       .update(dbSchema.boardseshTicks)
       .set({ sessionId })
@@ -202,33 +290,45 @@ export async function reconcileInferredSessions(
       .where(inArray(dbSchema.boardseshTicks.id, runResult.tickIds.map(BigInt)));
   }
 
+  // A moved tick can leave the reconciliation window while its original session
+  // still has ticks outside that window. Only remove sessions that are empty in
+  // the database after all assignments above, including their social history.
+  const emptiedSessionIds = result.emptiedSessionIds.length
+    ? (
+        await tx
+          .select({ id: dbSchema.boardSessions.id })
+          .from(dbSchema.boardSessions)
+          .where(
+            and(
+              inArray(dbSchema.boardSessions.id, result.emptiedSessionIds),
+              eq(dbSchema.boardSessions.origin, 'inferred'),
+              notExists(
+                tx
+                  .select({ id: dbSchema.boardseshTicks.id })
+                  .from(dbSchema.boardseshTicks)
+                  .where(eq(dbSchema.boardseshTicks.sessionId, dbSchema.boardSessions.id)),
+              ),
+            ),
+          )
+      ).map((session) => session.id)
+    : [];
   // Sessions an explicit session took every tick from. Their social rows have nowhere
   // sensible to go — the ticks are spread across a session that already has its own —
   // so they are dropped with the row rather than left dangling.
-  if (result.emptiedSessionIds.length > 0) {
+  if (emptiedSessionIds.length > 0) {
     for (const table of [dbSchema.votes, dbSchema.comments] as const) {
-      await tx
-        .delete(table)
-        .where(and(eq(table.entityType, 'session'), inArray(table.entityId, result.emptiedSessionIds)));
+      await tx.delete(table).where(and(eq(table.entityType, 'session'), inArray(table.entityId, emptiedSessionIds)));
     }
     await tx
       .delete(dbSchema.voteCounts)
       .where(
-        and(
-          eq(dbSchema.voteCounts.entityType, 'session'),
-          inArray(dbSchema.voteCounts.entityId, result.emptiedSessionIds),
-        ),
+        and(eq(dbSchema.voteCounts.entityType, 'session'), inArray(dbSchema.voteCounts.entityId, emptiedSessionIds)),
       );
     await tx
       .delete(dbSchema.boardSessions)
-      .where(
-        and(
-          inArray(dbSchema.boardSessions.id, result.emptiedSessionIds),
-          eq(dbSchema.boardSessions.origin, 'inferred'),
-        ),
-      );
+      .where(and(inArray(dbSchema.boardSessions.id, emptiedSessionIds), eq(dbSchema.boardSessions.origin, 'inferred')));
   }
-  return result;
+  return { ...result, emptiedSessionIds, privacyChanged };
 }
 
 /** Convenience for callers holding a `climbed_at` string rather than a Date. */

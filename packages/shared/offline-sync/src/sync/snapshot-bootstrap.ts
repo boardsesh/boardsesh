@@ -1318,6 +1318,8 @@ export async function bootstrapScopeFromSnapshot(params: {
   scope: OfflineBoardScope;
   scopeKey: string;
   filePath: string;
+  /** Privacy-safe artifacts omit authored rows; replay authorized rows from epoch. */
+  replayFromEpoch?: boolean;
   onSchemaDrift?: SchemaDriftReporter;
   /**
    * The scope's CURRENT board-table checkpoints, when it already has any (the
@@ -1445,7 +1447,9 @@ export async function bootstrapScopeFromSnapshot(params: {
       // the caller dispatches on (SnapshotSchemaStaleError vs SnapshotWipedError
       // vs a counted failure). The `.catch` covers the already-open case.
       try {
-        const stampedWatermarks: Record<SnapshotTableName, SyncCheckpoint> = watermarks;
+        const stampedWatermarks: Record<SnapshotTableName, SyncCheckpoint> = params.replayFromEpoch
+          ? { board_climbs: EPOCH_WATERMARK, board_climb_stats: EPOCH_WATERMARK }
+          : watermarks;
 
         /** One short exclusive transaction: take the lock, re-check, write, let go. */
         const runExclusive = async (body: () => Promise<void>): Promise<void> => {
@@ -1637,6 +1641,8 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
   scope: OfflineBoardScope;
   scopeKey: string;
   filePath: string;
+  /** Privacy-safe artifacts omit authored rows; replay authorized rows from epoch. */
+  replayFromEpoch?: boolean;
   onSchemaDrift?: SchemaDriftReporter;
   /** Sleep seam for the lost-lock ladder. Defaults to a real setTimeout. */
   sleep?: (ms: number) => Promise<void>;
@@ -1755,6 +1761,7 @@ export async function bootstrapScopeGradesFromSnapshot(params: {
 
         if (isSigningOut() || hasPurgeLanded(startToken, purgeKey)) throw new SnapshotWipedError();
 
+        if (params.replayFromEpoch) watermark = EPOCH_WATERMARK;
         await setCheckpoint(txn, getCheckpointKey(GRADES_TABLE, scopeKey), watermark);
         await markSchemaRefreshComplete(txn, GRADES_TABLE, scopeKey, watermark);
         // COMMIT here rather than leaving it for the wrapper, so gradesLockMs

@@ -1,8 +1,10 @@
+import { redactQueueEvent, redactQueueState } from '../../../services/privacy-queue-events';
+import { canAccessResource } from '../../../services/privacy';
 import type { ConnectionContext, QueueEvent } from '@boardsesh/shared-schema';
 import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { requireSessionMember } from '../shared/helpers';
-import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 export const queueSubscriptions = {
@@ -29,7 +31,7 @@ export const queueSubscriptions = {
       // NOTE: We await here to ensure Redis subscription is established
       // before proceeding - this is critical for multi-instance sync.
       const asyncIterator = await lifetime.own(
-        createEagerAsyncIterator<QueueEvent>((push) => {
+        createPrivacyAwareIterator<QueueEvent>((push) => {
           return pubsub.subscribeQueue(sessionId, push);
         }, `queueUpdates:${sessionId}`),
       );
@@ -38,12 +40,13 @@ export const queueSubscriptions = {
       const queueState = await roomManager.getQueueState(sessionId);
       const fullSyncSequence = queueState.sequence;
 
+      if (!(await canAccessResource('session', sessionId, ctx.userId))) return;
       // Send initial FullSync
       yield {
         queueUpdates: {
           __typename: 'FullSync',
           sequence: fullSyncSequence,
-          state: queueState,
+          state: await redactQueueState(queueState, ctx.userId, sessionId),
         } as QueueEvent,
       };
 
@@ -59,8 +62,20 @@ export const queueSubscriptions = {
       // mutation. Always forward it so peers receive playback updates issued
       // immediately after subscribing.
       for await (const event of asyncIterator) {
+        if (!(await canAccessResource('session', sessionId, ctx.userId))) return;
+        if (event === null) {
+          const freshState = await roomManager.getQueueState(sessionId);
+          yield {
+            queueUpdates: {
+              __typename: 'FullSync' as const,
+              sequence: freshState.sequence,
+              state: await redactQueueState(freshState, ctx.userId, sessionId),
+            },
+          };
+          continue;
+        }
         if (event.__typename === 'PlaybackStateChanged' || event.sequence > fullSyncSequence) {
-          yield { queueUpdates: event };
+          yield { queueUpdates: await redactQueueEvent(event, ctx.userId, sessionId) };
         }
       }
     }),

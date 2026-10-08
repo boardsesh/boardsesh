@@ -1,7 +1,10 @@
-import { eq, and, desc, sql, inArray, max, type SQL } from 'drizzle-orm';
+import { tickPrivacyCondition } from '../../shared/activity-privacy';
+import { canViewUserActivity } from '../../../../services/privacy';
+import { eq, and, desc, sql, max, type SQL } from 'drizzle-orm';
 import { type ConnectionContext, type Climb } from '@boardsesh/shared-schema';
 import {
   climbHoldsEverMovedSql,
+  climbReferenceVisibilityCondition,
   holdsEpochOrFirstSql,
   isRecommendationType,
   latestTickOnCurrentHoldsSql,
@@ -54,7 +57,10 @@ function smartBaseConditions(
   boardName: string | undefined,
   viewerUserId: string | null | undefined,
 ): SQL[] {
-  const conditions: SQL[] = [eq(dbSchema.boardseshTicks.userId, userId)];
+  const conditions: SQL[] = [
+    eq(dbSchema.boardseshTicks.userId, userId),
+    tickPrivacyCondition(viewerUserId, dbSchema.boardseshTicks),
+  ];
   if (boardName) {
     conditions.push(eq(dbSchema.boardseshTicks.boardType, boardName));
   }
@@ -185,6 +191,10 @@ async function selectSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
+      climbReferenceVisibilityCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        viewerUserId,
+      ),
       // Favourites are the other reference source — same rule, same reason.
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
@@ -263,6 +273,10 @@ async function countSmartClimbRefs(
   if (type === 'LIKED_CLIMBS') {
     const favConditions: SQL[] = [
       eq(dbSchema.userFavorites.userId, userId),
+      climbReferenceVisibilityCondition(
+        { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
+        viewerUserId,
+      ),
       // Favourites are the other reference source — same rule, same reason.
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.userFavorites.boardName, climbUuid: dbSchema.userFavorites.climbUuid },
@@ -315,9 +329,9 @@ async function fetchUserMeta(userId: string): Promise<{ userName: string; userAv
 }
 
 /**
- * Smart playlist query. Logbook types (FIVE_STARS, …) are public/shareable —
- * anyone with the URL can view a user's computed playlist. Recommendation types
- * are owner-private (see below). Uses the user's logbook (boardseshTicks) or, for
+ * Smart playlist query. Logbook types (FIVE_STARS, …) obey account and tick
+ * audiences. Recommendation types are owner-private (see below).
+ * Uses the user's logbook (boardseshTicks) or, for
  * recommendations, the catalog scored for the user's board.
  *
  * Rate limited per-IP (anonymous) or per-user (authenticated). Each call
@@ -391,6 +405,8 @@ export const smartPlaylist = async (
       return { meta: emptyMeta, climbs: [], totalCount: 0, hasMore: false };
     }
     const { target, pageRefs, totalCount } = recommendation;
+    if (!(await canViewUserActivity(ctx.isAuthenticated ? ctx.userId : null, input.userId)))
+      throw new Error('Playlist not found');
     const owner = await fetchUserMeta(input.userId);
     // Hydrate at the board's angle, not the most-ascended angle.
     const angleOverrides = new Map<string, number>(
@@ -417,7 +433,9 @@ export const smartPlaylist = async (
     };
   }
 
-  // Logbook smart playlists — public/shareable.
+  // Logbook smart playlists follow the owner's current activity audience.
+  if (!(await canViewUserActivity(ctx.isAuthenticated ? ctx.userId : null, input.userId)))
+    throw new Error('Playlist not found');
   const owner = await fetchUserMeta(input.userId);
   if (!owner) {
     throw new Error('User not found');
@@ -547,8 +565,8 @@ export const mySmartPlaylistCounts = async (
     // Recommendation cards: scoped to the user's resolved board, and left out
     // when no board can be determined. The transaction handle goes down so the
     // four counts share this connection and its guard rather than opening four
-    // more. Each card count is a cached catalog count minus the user's own
-    // sends (countRecommendationCardClimbs); the playlist page stays exact.
+    // more. Each card count checks current authorization and excludes the
+    // user's own sends, just like the playlist page.
     const target = await resolveRecommendationBoardTarget(userId, undefined, tx);
     if (target) {
       const recCounts = await Promise.all(
