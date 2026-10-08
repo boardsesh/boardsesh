@@ -75,12 +75,7 @@ export default function ForgotPasswordScreen() {
               <Text style={[styles.successText, { color: theme.systemColors.label }]}>
                 {t('forgotPassword.toasts.success')}
               </Text>
-              <Button
-                title={t('forgotPassword.back')}
-                onPress={() => router.replace('/auth/login')}
-                variant="text"
-                size="large"
-              />
+              <Button title={t('forgotPassword.back')} onPress={() => router.replace('/auth/login')} variant="text" />
             </View>
           ) : (
             <>

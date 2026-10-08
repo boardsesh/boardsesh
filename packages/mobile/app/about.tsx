@@ -15,7 +15,7 @@ import { openExternalUrl } from '../src/lib/open-url';
 import { openPartnershipsEmail, PARTNERSHIPS_EMAIL } from '../src/lib/partnerships';
 import { useTheme } from '../src/providers/theme-provider';
 import { useToast } from '../src/providers/toast-provider';
-import { borderRadius, spacing } from '../src/theme/tokens';
+import { borderRadius, cardCorners, spacing } from '../src/theme/tokens';
 import type { IconName } from '../src/components/icon-map';
 
 const GITHUB_REPO_URL = 'https://github.com/boardsesh/boardsesh';
@@ -121,7 +121,7 @@ export default function AboutScreen() {
           <Button
             title={t('mobile.about.viewOnGithub')}
             icon="github"
-            size="large"
+            size="small"
             variant="outlined"
             onPress={handleOpenGithub}
             style={styles.partnerButton}
@@ -141,13 +141,17 @@ export default function AboutScreen() {
             {t('mobile.about.partnerBody')}
           </Text>
           <Button
-            title={PARTNERSHIPS_EMAIL}
+            title={t('mobile.about.emailPartners')}
             icon="mail"
-            size="large"
+            size="small"
             variant="outlined"
             onPress={handlePartnerEmail}
             style={styles.partnerButton}
           />
+          {/* The address itself, selectable, for anyone without a mail app. */}
+          <Text variant="footnote" color={systemColors.secondaryLabel} selectable style={styles.partnerAddress}>
+            {PARTNERSHIPS_EMAIL}
+          </Text>
         </View>
 
         <PressableSurface
@@ -172,7 +176,7 @@ export default function AboutScreen() {
           <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
         </PressableSurface>
 
-        <Button title={t('mobile.about.joinDiscord')} icon="open.external" size="large" onPress={handleJoinDiscord} />
+        <Button title={t('mobile.about.joinDiscord')} icon="open.external" onPress={handleJoinDiscord} />
       </ScrollView>
     </>
   );
@@ -185,9 +189,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing[4],
     gap: spacing[6],
   },
+  // Same corner as the cards below it (one card radius per screen).
   hero: {
     alignItems: 'center',
-    borderRadius: borderRadius.xl,
+    ...cardCorners,
     paddingHorizontal: spacing[5],
     paddingVertical: spacing[8],
   },
@@ -212,7 +217,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    borderRadius: borderRadius.lg,
+    ...cardCorners,
     padding: spacing[4],
     gap: spacing[3],
   },
@@ -254,6 +259,9 @@ const styles = StyleSheet.create({
   partnerButton: {
     marginTop: spacing[4],
     alignSelf: 'flex-start',
+  },
+  partnerAddress: {
+    marginTop: spacing[2],
   },
   linkRow: {
     flexDirection: 'row',

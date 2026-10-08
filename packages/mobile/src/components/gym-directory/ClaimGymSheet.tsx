@@ -191,7 +191,6 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
               title={t('mobile.gymClaim.approved.manageCta')}
               onPress={() => void openManageGym()}
               variant="filled"
-              size="large"
             />
           ) : null}
           {manageError ? (

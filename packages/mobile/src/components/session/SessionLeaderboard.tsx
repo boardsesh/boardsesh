@@ -130,7 +130,7 @@ function HardestPill({ grade, boardType }: { grade: string; boardType: string })
   const displayGrade = formatGrade(grade, boardType) ?? grade;
   return (
     <View style={[styles.hardestPill, { backgroundColor: withAlpha(gradeColor, 0.15) }]}>
-      <Text variant="caption1" color={gradeColor} style={styles.hardestText}>
+      <Text variant="caption1" color={gradeColor} numeric style={styles.hardestText}>
         {displayGrade}
       </Text>
     </View>
@@ -141,7 +141,7 @@ function Chip({ icon, label, tint }: { icon: IconName; label: string; tint: stri
   return (
     <View style={[styles.chip, { backgroundColor: withAlpha(tint, 0.15) }]}>
       <Icon name={icon} size={11} color={tint} />
-      <Text variant="caption1" color={tint} style={styles.chipLabel}>
+      <Text variant="caption1" color={tint} numeric style={styles.chipLabel}>
         {label}
       </Text>
     </View>

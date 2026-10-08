@@ -24,7 +24,7 @@ import {
   fetchBoardBySlug,
 } from '../../src/lib/graphql/hooks';
 import { resolveBoardForSession } from '../../src/lib/board-path-to-user-board';
-import { spacing, borderRadius } from '../../src/theme/tokens';
+import { spacing, cardCorners } from '../../src/theme/tokens';
 import { holdUntilLaunchReady } from '../../src/components/launch-update/hold-until-launch-ready';
 
 /** Human board label for the confirmation card, e.g. "Kilter · 40°". */
@@ -222,7 +222,7 @@ function JoinSessionScreen() {
           <Text variant="title3" style={styles.centeredTitle}>
             {t('mobileJoin.notFound')}
           </Text>
-          <Button title={t('mobileJoin.cancel')} variant="filled" size="large" onPress={() => router.back()} />
+          <Button title={t('common:actions.done')} variant="outlined" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -237,7 +237,7 @@ function JoinSessionScreen() {
           <Text variant="title3" style={styles.centeredTitle}>
             {t('mobileJoin.ended')}
           </Text>
-          <Button title={t('mobileJoin.cancel')} variant="filled" size="large" onPress={() => router.back()} />
+          <Button title={t('common:actions.done')} variant="outlined" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -269,13 +269,7 @@ function JoinSessionScreen() {
             disabled={isJoining}
             onPress={handleJoinPress}
           />
-          <Button
-            title={t('mobileJoin.cancel')}
-            variant="text"
-            size="large"
-            disabled={isJoining}
-            onPress={() => router.back()}
-          />
+          <Button title={t('mobileJoin.cancel')} variant="text" disabled={isJoining} onPress={() => router.back()} />
         </View>
       </Card>
     </View>
@@ -302,7 +296,7 @@ const styles = StyleSheet.create({
   },
   card: {
     padding: spacing[5],
-    borderRadius: borderRadius.xl,
+    ...cardCorners,
     gap: spacing[3],
   },
   cardTitle: {

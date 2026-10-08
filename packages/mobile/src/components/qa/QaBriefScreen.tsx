@@ -118,7 +118,7 @@ export function QaBriefScreen() {
             variant="filled"
             size="large"
           />
-          <Button title={t('actions.close')} onPress={() => router.back()} variant="text" size="large" />
+          <Button title={t('actions.close')} onPress={() => router.back()} variant="text" />
         </ScrollView>
       </View>
     );
@@ -202,13 +202,12 @@ export function QaBriefScreen() {
 
         <View style={styles.actions}>
           <Button title={t('qa.brief.startLabel')} onPress={() => router.back()} variant="filled" size="large" />
-          <Button title={t('qa.brief.finishLabel')} onPress={handleFinishTesting} variant="tonal" size="large" />
+          <Button title={t('qa.brief.finishLabel')} onPress={handleFinishTesting} variant="tonal" />
           {preview?.url ? (
             <Button
               title={t('qa.brief.githubLabel')}
               onPress={() => void openExternalUrl(preview.url, 'qa-brief')}
               variant="outlined"
-              size="large"
               icon="open.external"
             />
           ) : null}
@@ -216,7 +215,6 @@ export function QaBriefScreen() {
             title={t('qa.brief.leaveLabel')}
             onPress={handleLeavePreview}
             variant="text"
-            size="large"
             disabled={!surfingAvailable}
             loading={leaving}
           />

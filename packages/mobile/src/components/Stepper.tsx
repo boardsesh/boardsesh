@@ -152,7 +152,7 @@ export function Stepper({ label, value, min, max, onChange }: StepperProps) {
           >
             <Icon name="minus" size={18} color={decrementDisabled ? systemColors.tertiaryLabel : activeGlyph} />
           </PressableSurface>
-          <Text variant="body" color={systemColors.label} style={styles.value}>
+          <Text variant="body" color={systemColors.label} numeric style={styles.value}>
             {value}
           </Text>
           <PressableSurface

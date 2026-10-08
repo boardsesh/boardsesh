@@ -14,7 +14,7 @@ import { openDiscordInvite } from '../src/lib/discord';
 import { SUPPORT_URL, SUPPORT_URL_DISPLAY, useDonationLinksAllowed } from '../src/lib/donation-links';
 import { openExternalUrl } from '../src/lib/open-url';
 import { useTheme } from '../src/providers/theme-provider';
-import { borderRadius, spacing } from '../src/theme/tokens';
+import { borderRadius, cardCorners, spacing } from '../src/theme/tokens';
 import type { IconName } from '../src/components/icon-map';
 
 function Chip({ label, icon, onPress }: { label: string; icon?: IconName; onPress: () => void }) {
@@ -123,7 +123,7 @@ export default function AcknowledgementsScreen() {
     <Button
       title={t('mobile.acknowledgements.becomeSponsor')}
       icon="favorite"
-      size="large"
+      size="medium"
       variant="outlined"
       onPress={handleSupport}
       style={styles.sponsorButton}
@@ -275,9 +275,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing[4],
     gap: spacing[6],
   },
+  // Same corner as the cards below it (one card radius per screen).
   hero: {
     alignItems: 'center',
-    borderRadius: borderRadius.xl,
+    ...cardCorners,
     paddingHorizontal: spacing[5],
     paddingVertical: spacing[6],
   },
@@ -327,7 +328,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    borderRadius: borderRadius.lg,
+    ...cardCorners,
     padding: spacing[4],
     gap: spacing[3],
   },

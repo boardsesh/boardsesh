@@ -6,6 +6,7 @@ import {
   StyleSheet,
   type GestureResponderEvent,
   type LayoutChangeEvent,
+  type TextStyle,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
@@ -29,6 +30,10 @@ import { computeBarTopLabelLayout, longestBarValue } from '../../lib/chart/bar-t
 
 const MAX_X_LABELS = 12;
 const AXIS_LABEL_SIZE = 11;
+// Axis ticks and value labels change with the data and stack in columns, so
+// they use tabular figures (HIG Typography) — the gifted-charts styles take a
+// raw TextStyle, not our Text, hence the bare fontVariant here.
+const TABULAR_FIGURES: TextStyle['fontVariant'] = ['tabular-nums'];
 const STACK_BAR_RADIUS = 3;
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.75;
@@ -246,7 +251,7 @@ function TooltipBubble({ model, totalLabel }: { model: ChartTooltipModel | undef
         <Text variant="caption2" color={systemColors.secondaryLabel}>
           {totalLabel}
         </Text>
-        <Text variant="caption2" style={styles.tooltipValue}>
+        <Text variant="caption2" numeric style={styles.tooltipValue}>
           {formatThousands(model.total)}
         </Text>
       </View>
@@ -256,7 +261,7 @@ function TooltipBubble({ model, totalLabel }: { model: ChartTooltipModel | undef
           <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.tooltipRowLabel} numberOfLines={1}>
             {row.label}
           </Text>
-          <Text variant="caption2" style={styles.tooltipValue}>
+          <Text variant="caption2" numeric style={styles.tooltipValue}>
             {formatThousands(row.value)}
           </Text>
         </View>
@@ -434,8 +439,16 @@ export const StackedBarChart = memo(function StackedBarChart({
                 yAxisThickness={0}
                 xAxisThickness={StyleSheet.hairlineWidth}
                 xAxisColor={chartColors.separator}
-                xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
-                yAxisTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+                xAxisLabelTextStyle={{
+                  color: chartColors.tertiaryLabel,
+                  fontSize: AXIS_LABEL_SIZE,
+                  fontVariant: TABULAR_FIGURES,
+                }}
+                yAxisTextStyle={{
+                  color: chartColors.tertiaryLabel,
+                  fontSize: AXIS_LABEL_SIZE,
+                  fontVariant: TABULAR_FIGURES,
+                }}
                 rulesColor={chartColors.separator}
                 rulesType="solid"
                 focusBarOnPress={interactive}
@@ -564,6 +577,7 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                         <Text
                           variant="caption2"
                           color={chartColors.secondaryLabel}
+                          numeric
                           numberOfLines={1}
                           style={[
                             styles.barTopLabel,
@@ -595,7 +609,11 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                 yAxisThickness={0}
                 xAxisThickness={StyleSheet.hairlineWidth}
                 xAxisColor={chartColors.separator}
-                xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+                xAxisLabelTextStyle={{
+                  color: chartColors.tertiaryLabel,
+                  fontSize: AXIS_LABEL_SIZE,
+                  fontVariant: TABULAR_FIGURES,
+                }}
                 focusBarOnPress={interactive}
                 highlightedBarIndex={selectedIndex == null ? -1 : [selectedIndex * 2, selectedIndex * 2 + 1]}
                 highlightEnabled={interactive && selectedIndex != null}
@@ -685,7 +703,7 @@ export const TotalAreaChart = memo(function TotalAreaChart({
                     { backgroundColor: chartColors.elevatedSurface, borderColor: chartColors.separator },
                   ]}
                 >
-                  <Text variant="caption2" color={chartColors.label} style={styles.endValueText}>
+                  <Text variant="caption2" color={chartColors.label} numeric style={styles.endValueText}>
                     {formatThousands(latestTotal)}
                   </Text>
                 </View>
@@ -722,6 +740,7 @@ export const TotalAreaChart = memo(function TotalAreaChart({
                   <Text
                     variant="caption2"
                     color={chartColors.tertiaryLabel}
+                    numeric
                     style={[styles.lineAxisLabel, { width: labelBudget }]}
                     numberOfLines={1}
                   >
@@ -757,8 +776,16 @@ export const TotalAreaChart = memo(function TotalAreaChart({
             xAxisColor={chartColors.separator}
             rulesColor={chartColors.separator}
             rulesType="solid"
-            yAxisTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
-            xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+            yAxisTextStyle={{
+              color: chartColors.tertiaryLabel,
+              fontSize: AXIS_LABEL_SIZE,
+              fontVariant: TABULAR_FIGURES,
+            }}
+            xAxisLabelTextStyle={{
+              color: chartColors.tertiaryLabel,
+              fontSize: AXIS_LABEL_SIZE,
+              fontVariant: TABULAR_FIGURES,
+            }}
             pointerConfig={{
               pointerStripColor: chartColors.separator,
               pointerStripWidth: 1,
@@ -780,7 +807,7 @@ export const TotalAreaChart = memo(function TotalAreaChart({
                   <Text variant="caption2" color={chartColors.secondaryLabel} numberOfLines={1}>
                     {items[0]?.label}
                   </Text>
-                  <Text variant="caption1" style={styles.tooltipValue}>
+                  <Text variant="caption1" numeric style={styles.tooltipValue}>
                     {formatThousands(items[0]?.value ?? 0)}
                   </Text>
                 </View>
