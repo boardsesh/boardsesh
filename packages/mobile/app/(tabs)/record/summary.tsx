@@ -27,7 +27,6 @@ import { formatSessionWhen } from '../../../src/lib/format-session-when';
 import { SaveToAppleHealthButton } from '../../../src/components/integrations/SaveToAppleHealthButton';
 import { ShareToStravaButton } from '../../../src/components/integrations/ShareToStravaButton';
 import { springs, timing } from '../../../src/theme/animations';
-import { hapticSuccess } from '../../../src/lib/haptics';
 import { STORE_REVIEW_PROMPT_DELAY_MS, maybeRequestSessionStoreReview } from '../../../src/lib/store-review';
 import { usePostSessionPrompt } from '../../../src/lib/offline-nudges/use-post-session-prompt';
 import { PostSessionOfflineNudge } from '../../../src/components/offline/PostSessionOfflineNudge';
@@ -192,10 +191,9 @@ function SessionSummaryContent({
     [summary.gradeDistribution, formatGrade],
   );
 
-  // Celebration: the featured number springs in, and a single success haptic
-  // fires on a sending day. The tiles rise in just after. Reanimated only — no
-  // confetti dependency. Mounts once (this component renders with a fixed
-  // summary), so the haptic fires exactly once.
+  // Celebration: the featured number springs in and the tiles rise in just
+  // after. Reanimated only — no confetti dependency. No haptic on mount: the
+  // screen appearing is not the climber's action (HIG "Playing haptics").
   const heroScale = useSharedValue(0.85);
   const heroOpacity = useSharedValue(0);
   const tilesOpacity = useSharedValue(0);
@@ -206,8 +204,7 @@ function SessionSummaryContent({
     heroScale.value = withSpring(1, springs.bouncy);
     tilesOpacity.value = withDelay(timing.fast, withTiming(1, { duration: timing.normal }));
     tilesTranslate.value = withDelay(timing.fast, withSpring(0, springs.gentle));
-    if (hasSends) hapticSuccess();
-  }, [hasSends, heroOpacity, heroScale, tilesOpacity, tilesTranslate]);
+  }, [heroOpacity, heroScale, tilesOpacity, tilesTranslate]);
 
   const heroAnimStyle = useAnimatedStyle(() => ({
     opacity: heroOpacity.value,

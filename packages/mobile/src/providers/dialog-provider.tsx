@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Alert, Platform, StyleSheet } from 'react-native';
+import { ActionSheetIOS, Alert, Platform, StyleSheet } from 'react-native';
 import { Button, Dialog, Portal, Text } from 'react-native-paper';
 import { useTheme } from './theme-provider';
 
@@ -32,8 +32,15 @@ export type ConfirmOptions = {
   confirmLabel: string;
   /** Label for the dismissive action (e.g. "Cancel"). */
   cancelLabel: string;
-  /** Style the confirm action as destructive (M3 error tint / iOS destructive). */
+  /** Style the confirm action as destructive (M3 error tint / iOS destructive).
+   * On iOS a destructive confirm is a confirmation dialog — an action sheet
+   * rising from the bottom — rather than a centred alert (HIG "Action sheets":
+   * confirm a destructive action the person started with an action sheet). */
   destructive?: boolean;
+  /** iPad only: the native node the confirmation dialog points at — the
+   * control the person tapped (`findNodeHandle(ref.current)`). Without one the
+   * popover is centred on screen. Ignored everywhere else. */
+  anchor?: number | null;
 };
 
 type DialogContextValue = {
@@ -51,6 +58,28 @@ type PendingChoice = ChooseOptions<string> & { id: number; resolve: (value: stri
 
 const CONFIRM_VALUE = 'confirm';
 const CANCEL_VALUE = 'cancel';
+
+/**
+ * The iOS confirmation dialog (SwiftUI's `confirmationDialog`, UIKit's action
+ * sheet) for a destructive confirm: the destructive action in red, Cancel set
+ * apart at the bottom, a tap outside the sheet resolving to Cancel. On iPad it
+ * is a popover pointing at `anchor` when the caller knows the source control.
+ */
+function showConfirmationDialog(options: ConfirmOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: options.title,
+        message: options.message,
+        options: [options.confirmLabel, options.cancelLabel],
+        destructiveButtonIndex: 0,
+        cancelButtonIndex: 1,
+        ...(options.anchor != null ? { anchor: options.anchor } : {}),
+      },
+      (buttonIndex) => resolve(buttonIndex === 0),
+    );
+  });
+}
 
 /** Map an option to the native Alert button style (cancel wins over destructive). */
 function alertButtonStyle(option: ChooseOption<string>): 'cancel' | 'destructive' | undefined {
@@ -90,6 +119,9 @@ const styles = StyleSheet.create({
  * be invisible and its promise would never resolve. The native `Alert` always sits on
  * top. iOS Material is a forced-variant edge case, so the lost M3 chrome there is an
  * acceptable trade for a prompt that actually works.
+ *
+ * A destructive `confirm` on iOS skips the Alert for a confirmation dialog (an
+ * action sheet, see `showConfirmationDialog`); `choose` stays an Alert.
  *
  * Concurrent prompts queue (one Android dialog shows at a time; the native Alert
  * queues itself). Each prompt settles exactly once, by id — a double-tap, or an
@@ -138,6 +170,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
   const confirm = useCallback(
     async (options: ConfirmOptions) => {
+      // iOS only: Android keeps the M3 dialog (or the Alert on Liquid Glass),
+      // which is Material's own pattern for a destructive confirm.
+      if (options.destructive && Platform.OS === 'ios') return showConfirmationDialog(options);
       const picked = await choose({
         title: options.title,
         message: options.message,

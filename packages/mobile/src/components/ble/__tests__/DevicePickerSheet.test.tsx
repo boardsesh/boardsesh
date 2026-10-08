@@ -77,7 +77,6 @@ vi.mock('@boardsesh/board-config', () => ({
 type ManagedSheetOptionsSeen = { open?: boolean; onClose?: () => void; onDisplaced?: () => void };
 const managedSheet = vi.hoisted(() => ({
   lastOptions: null as ManagedSheetOptionsSeen | null,
-  presentHaptic: undefined as boolean | undefined,
   settleDismiss: () => {},
   dismissAndWait: vi.fn(),
 }));
@@ -87,15 +86,13 @@ type ModalSheetMockProps = {
   visible?: boolean;
   onClose?: () => void;
   onDisplaced?: () => void;
-  presentHaptic?: boolean;
 };
 vi.mock('../../ModalSheet', () => ({
   ModalSheet: forwardRef(function ModalSheetMock(
-    { children, header, visible, onClose, onDisplaced, presentHaptic }: ModalSheetMockProps,
+    { children, header, visible, onClose, onDisplaced }: ModalSheetMockProps,
     ref: Ref<unknown>,
   ) {
     managedSheet.lastOptions = { open: visible, onClose, onDisplaced };
-    managedSheet.presentHaptic = presentHaptic;
     useImperativeHandle(ref, () => ({ dismissAndWait: managedSheet.dismissAndWait }), []);
     return createElement('div', { 'data-sheet': 'true' }, header, children);
   }),
@@ -329,11 +326,6 @@ describe('DevicePickerSheet', () => {
 
     expect(hasText(container, 'ble.locationHintTitle')).toBe(true);
     expect(hasText(container, 'ble.locationServicesHintTitle')).toBe(false);
-  });
-
-  it('opens without a haptic: a connect raises it, not a tap', () => {
-    render(<DevicePickerSheet {...makeProps()} />);
-    expect(managedSheet.presentHaptic).toBe(false);
   });
 
   it('cancels from the top bar and counts the boards found in its subtitle', () => {

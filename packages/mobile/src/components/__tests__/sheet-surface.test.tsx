@@ -101,7 +101,7 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 34, left: 0, right: 0 }),
 }));
 
-vi.mock('../../lib/haptics', () => ({ hapticMedium: vi.fn() }));
+vi.mock('../../lib/haptics', () => ({ hapticMedium: vi.fn(), hapticSelection: vi.fn() }));
 
 // The coordinator's serialization is covered by sheet-presentation-provider.test.tsx.
 vi.mock('../../providers/sheet-presentation-provider', () => ({

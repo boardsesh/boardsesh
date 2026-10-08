@@ -40,7 +40,7 @@ import { useBoardPresenceControls } from '../../providers/board-presence-provide
 import { useLocalPendingTicks } from '../../hooks/use-local-ticks';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { track } from '../../lib/analytics';
-import { hapticSuccess, hapticError } from '../../lib/haptics';
+import { hapticError } from '../../lib/haptics';
 import { getDifficultyIdForGradeName } from '../../lib/grade-label';
 
 // Read once at module load rather than allocating a fresh createInitialTickState()
@@ -431,7 +431,7 @@ export function useQuickTickForm({
               grade: resolvedGradeName ?? null,
               hasComment: comment.length > 0,
             });
-            hapticSuccess();
+            // No haptic here: the saved toast below plays the success haptic.
             // Kick off the paired gym timer's stopwatch. No-op unless a Rogue
             // timer is connected — which only happens while this user is driving
             // the wall (see RogueTimerProvider), so a passenger's tick can't

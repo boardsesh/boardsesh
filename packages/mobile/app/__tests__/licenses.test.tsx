@@ -50,6 +50,7 @@ vi.mock('@shopify/flash-list', () => ({
 }));
 
 vi.mock('expo-router', () => ({ Stack: { Screen: () => null } }));
+vi.mock('../../src/hooks/use-reduce-motion', () => ({ useReduceMotion: () => false }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) =>

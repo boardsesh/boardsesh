@@ -11,6 +11,7 @@ import { PressableSurface } from '../src/components/PressableSurface';
 import { Text } from '../src/components/Text';
 import { useBottomChromeMetrics } from '../src/hooks/use-bottom-chrome-metrics';
 import { useWindowBottomInset } from '../src/hooks/use-window-bottom-inset';
+import { useReduceMotion } from '../src/hooks/use-reduce-motion';
 import { useStackScreenOptions } from '../src/hooks/use-stack-screen-options';
 import { loadOssLicenses, type OssLicense } from '../src/lib/oss-licenses';
 import { openExternalUrl } from '../src/lib/open-url';
@@ -59,6 +60,8 @@ export default function LicensesScreen() {
   const windowBottomInset = useWindowBottomInset();
   const bottomChrome = useBottomChromeMetrics();
   const [selected, setSelected] = useState<OssLicense | null>(null);
+  // Reduce Motion swaps the slide-up for a fade (HIG "Motion").
+  const reduceMotion = useReduceMotion();
   // Lazily pull in the ~1 MB manifest only once this screen mounts.
   const [licenses, setLicenses] = useState<OssLicense[] | null>(null);
   useEffect(() => {
@@ -118,7 +121,7 @@ export default function LicensesScreen() {
 
       <Modal
         visible={selected !== null}
-        animationType="slide"
+        animationType={reduceMotion ? 'fade' : 'slide'}
         presentationStyle="pageSheet"
         onRequestClose={handleClose}
       >

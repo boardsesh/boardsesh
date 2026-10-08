@@ -1,10 +1,25 @@
 // @vitest-environment jsdom
 import { useEffect, createElement, type ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
+const native = vi.hoisted(() => ({
+  os: 'ios' as 'ios' | 'android',
+  announce: vi.fn(),
+  announceWithOptions: vi.fn() as ReturnType<typeof vi.fn> | undefined,
+}));
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: {
+    get OS() {
+      return native.os;
+    },
+  },
+  AccessibilityInfo: {
+    announceForAccessibility: (message: string) => native.announce(message),
+    get announceForAccessibilityWithOptions() {
+      return native.announceWithOptions;
+    },
+  },
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { absoluteFill: {}, create: (styles: Record<string, unknown>) => styles },
@@ -37,10 +52,8 @@ vi.mock('../../components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
-vi.mock('../../lib/haptics', () => ({
-  hapticError: vi.fn(),
-  hapticSuccess: vi.fn(),
-}));
+const haptics = vi.hoisted(() => ({ hapticError: vi.fn(), hapticSuccess: vi.fn() }));
+vi.mock('../../lib/haptics', () => haptics);
 
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -55,13 +68,21 @@ vi.mock('../../providers/theme-provider', () => ({
 
 import { ToastProvider, useToast } from '../toast-provider';
 
-function ToastLauncher() {
+function ToastLauncher({ variant = 'success' }: { variant?: 'success' | 'error' | 'info' }) {
   const { showToast } = useToast();
   useEffect(() => {
-    showToast('Saved', 'success', 1000);
-  }, [showToast]);
+    showToast('Saved', variant, 1000);
+  }, [showToast, variant]);
   return createElement('div');
 }
+
+beforeEach(() => {
+  native.os = 'ios';
+  native.announce.mockClear();
+  native.announceWithOptions = vi.fn();
+  haptics.hapticSuccess.mockClear();
+  haptics.hapticError.mockClear();
+});
 
 describe('ToastProvider', () => {
   it('can render toasts without a QueueProvider ancestor', () => {
@@ -72,5 +93,52 @@ describe('ToastProvider', () => {
     );
 
     expect(container.textContent).toContain('Saved');
+  });
+});
+
+describe('ToastProvider feedback', () => {
+  it('announces each toast to VoiceOver once on iOS, queued behind what it is reading', () => {
+    render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+    expect(native.announceWithOptions).toHaveBeenCalledTimes(1);
+    expect(native.announceWithOptions).toHaveBeenCalledWith('Saved', { queue: true });
+    expect(native.announce).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the plain announce where the queued form is missing', () => {
+    native.announceWithOptions = undefined;
+    render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+    expect(native.announce).toHaveBeenCalledTimes(1);
+    expect(native.announce).toHaveBeenCalledWith('Saved');
+  });
+
+  it('leaves Android to the live region, so TalkBack reads it once', () => {
+    native.os = 'android';
+    render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+    expect(native.announce).not.toHaveBeenCalled();
+    expect(native.announceWithOptions).not.toHaveBeenCalled();
+  });
+
+  it('owns the outcome haptic: success and error buzz once, info stays silent', () => {
+    render(
+      <ToastProvider>
+        <ToastLauncher variant="success" />
+        <ToastLauncher variant="error" />
+        <ToastLauncher variant="info" />
+      </ToastProvider>,
+    );
+    expect(haptics.hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(haptics.hapticError).toHaveBeenCalledTimes(1);
   });
 });

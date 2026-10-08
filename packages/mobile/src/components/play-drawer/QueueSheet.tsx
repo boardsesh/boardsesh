@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
@@ -10,12 +10,34 @@ import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
 import { Text } from '../Text';
 import type { QueueItemRowBoard } from '../QueueItemRow';
-import { usePlaylistSuggestionSource, useQueueData, useQueueActions } from '../../providers/queue-provider';
+import {
+  usePlaylistSuggestionSource,
+  useQueueData,
+  useQueueActions,
+  useQueueSessionId,
+} from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { hapticMedium, hapticWarning } from '../../lib/haptics';
+import { hapticWarning } from '../../lib/haptics';
+import type { QueueContentSnapshot } from '../../lib/queue-undo';
+import { UndoSnackbar } from '../UndoSnackbar';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
+
+// Long enough to notice and reach for the button; the removal is already live
+// for the crew, so it isn't held open forever.
+const QUEUE_UNDO_DURATION = 8000;
+
+/** What one Undo would put back: the queue as it was, and what was taken out. */
+type PendingQueueUndo = {
+  nonce: number;
+  kind: 'cleared' | 'removed';
+  /** The session the removal happened in; the offer dies with it. */
+  scope: string;
+  before: QueueContentSnapshot;
+  playlistSuggestionSource: PlaylistSuggestionSource | null;
+  removedUuids: ReadonlySet<string>;
+};
 
 type QueueSheetProps = {
   board: QueueItemRowBoard;
@@ -53,8 +75,17 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   const { systemColors, sheet } = useTheme();
   const sheetRef = useRef<BottomSheetModal>(null);
 
-  const { removeFromQueue, clearQueue, reorderQueue } = useQueueActions();
+  const {
+    removeFromQueue,
+    removeQueueItems,
+    clearQueue,
+    reorderQueue,
+    restoreQueueItems,
+    getQueueSnapshot,
+    setPlaylistSuggestionSource,
+  } = useQueueActions();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
+  const { undoScope } = useQueueSessionId();
   const liveQueueData = useQueueData();
 
   const [isEditMode, setIsEditMode] = useState(false);
@@ -73,6 +104,15 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // isPresented so the imperative-open path and the coordinator's re-present
   // path both read active.
   const [isActive, setIsActive] = useState(false);
+  // The Undo offered after a clear or bulk remove (HIG "Undo and redo"). Lives
+  // in the sheet, not a root portal: the native sheet would cover a portal.
+  const [pendingUndo, setPendingUndo] = useState<PendingQueueUndo | null>(null);
+  const undoNonceRef = useRef(0);
+  // Session, board and account changes retire the offer, including solo mode.
+  // Otherwise Undo would write the prior queue into the new climbing context.
+  useEffect(() => {
+    setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
+  }, [undoScope]);
 
   const snapPoints = useMemo(() => ['70%', '95%'], []);
 
@@ -92,6 +132,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
     setIsEditMode(false);
     setSelectedItems(new Set());
     setShowFullHistory(false);
+    setPendingUndo(null);
   }, []);
 
   // The modal's dismiss animation has actually SETTLED (coordinator: header
@@ -164,21 +205,59 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
     });
   }, []);
 
+  // Snapshot the LIVE queue (not the sheet's frozen copy) before a removal, so
+  // the Undo knows exactly what this climber took out.
+  const offerUndo = useCallback(
+    (kind: PendingQueueUndo['kind'], before: QueueContentSnapshot, removedUuids: ReadonlySet<string>) => {
+      undoNonceRef.current += 1;
+      setPendingUndo({
+        nonce: undoNonceRef.current,
+        kind,
+        scope: undoScope,
+        before,
+        playlistSuggestionSource,
+        removedUuids,
+      });
+    },
+    [playlistSuggestionSource, undoScope],
+  );
+
   const handleClearAll = useCallback(() => {
+    const before = getQueueSnapshot();
     hapticWarning();
     clearQueue();
     setIsEditMode(false);
     setSelectedItems(new Set());
-  }, [clearQueue]);
+    if (before.queue.length > 0) {
+      offerUndo('cleared', before, new Set(before.queue.map((item) => item.uuid)));
+    }
+  }, [clearQueue, getQueueSnapshot, offerUndo]);
 
   const handleBulkRemove = useCallback(() => {
-    hapticMedium();
-    for (const uuid of selectedItems) {
-      removeFromQueue(uuid);
-    }
+    const before = getQueueSnapshot();
+    const removedUuids = new Set(selectedItems);
+    removeQueueItems([...removedUuids]);
     setSelectedItems(new Set());
     setIsEditMode(false);
-  }, [selectedItems, removeFromQueue]);
+    offerUndo('removed', before, removedUuids);
+  }, [selectedItems, removeQueueItems, getQueueSnapshot, offerUndo]);
+
+  // The provider composes the restore when the removal lane finishes. Crew
+  // additions, removals and reorders made during that wait stay in the payload.
+  const handleUndo = useCallback(() => {
+    if (!pendingUndo || pendingUndo.scope !== undoScope) return;
+    // Merge at wire-send time, after the removal lane finishes. A peer may
+    // change the queue between this tap and then.
+    restoreQueueItems(pendingUndo.before, pendingUndo.removedUuids, pendingUndo.scope);
+    // A clear also dropped the playlist feed behind the queue; bring it back
+    // unless something else has taken its place since.
+    if (pendingUndo.kind === 'cleared' && pendingUndo.playlistSuggestionSource && !playlistSuggestionSource) {
+      setPlaylistSuggestionSource(pendingUndo.playlistSuggestionSource);
+    }
+    setPendingUndo(null);
+  }, [pendingUndo, undoScope, restoreQueueItems, playlistSuggestionSource, setPlaylistSuggestionSource]);
+
+  const handleUndoDismiss = useCallback(() => setPendingUndo(null), []);
 
   const handleRemove = useCallback(
     (uuid: string) => {
@@ -224,6 +303,24 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
         reorderQueue={reorderQueue}
         onDraggingChange={setIsDragging}
       />
+
+      {pendingUndo ? (
+        <UndoSnackbar
+          visible
+          nonce={pendingUndo.nonce}
+          message={
+            pendingUndo.kind === 'cleared'
+              ? t('mobile.queueSheet.cleared')
+              : t('mobile.queueSheet.removed', { count: pendingUndo.removedUuids.size })
+          }
+          undoLabel={t('mobile.queueSheet.undo')}
+          undoAccessibilityLabel={t('mobile.queueSheet.undoAria')}
+          onUndo={handleUndo}
+          onDismiss={handleUndoDismiss}
+          duration={QUEUE_UNDO_DURATION}
+          bottom={insets.bottom + spacing[3]}
+        />
+      ) : null}
 
       {isEditMode && selectedItems.size > 0 && (
         <View

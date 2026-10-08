@@ -17,7 +17,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { brandColors as staticBrandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { glassSize } from '../../theme/layout';
-import { hapticMedium } from '../../lib/haptics';
+import { hapticMedium, hapticSelection } from '../../lib/haptics';
 import { COUNT_BADGE_MAX_FONT_SCALE, countBadgeBox, countBadgeText } from '../count-badge-style';
 
 type PlayDrawerActionBarProps = {
@@ -200,40 +200,21 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   // The pill replaces the bulb only where the bulb would have been offered.
   const showConnectPill = connectPill && showLightbulb && !isAnonymous && !inCommitMode;
 
-  const handleSignIn = useCallback(() => {
-    hapticMedium();
-    onSignInPress?.();
-  }, [onSignInPress]);
-
-  const handlePrev = useCallback(() => {
-    hapticMedium();
-    onPrevClick();
-  }, [onPrevClick]);
-
-  const handleNext = useCallback(() => {
-    hapticMedium();
-    onNextClick();
-  }, [onNextClick]);
+  // Haptics follow HIG "Playing haptics": plain buttons (prev / next / share /
+  // sign in / angle) get none — the press itself is the feedback. The two
+  // toggles get a selection tick. Outcomes (a save, a failure) buzz through the
+  // toast that reports them, not here.
+  const handleSignIn = useCallback(() => onSignInPress?.(), [onSignInPress]);
 
   const handleMirror = useCallback(() => {
-    hapticMedium();
+    hapticSelection();
     onMirror();
   }, [onMirror]);
 
   const handleFavorite = useCallback(() => {
-    hapticMedium();
+    hapticSelection();
     onToggleFavorite();
   }, [onToggleFavorite]);
-
-  const handleAngleSelector = useCallback(() => {
-    hapticMedium();
-    onOpenAngleSelector?.();
-  }, [onOpenAngleSelector]);
-
-  const handleShare = useCallback(() => {
-    hapticMedium();
-    onShare?.();
-  }, [onShare]);
 
   return (
     <View style={drawerActionBarStyles.container}>
@@ -272,7 +253,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <ActionButton
             size="lg"
             iconName="skip.previous"
-            onPress={handlePrev}
+            onPress={onPrevClick}
             disabled={!canSwipePrevious}
             accessibilityLabel={t('playView.actionBar.previousAria')}
           />
@@ -295,7 +276,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <ActionButton
             size="lg"
             iconName="skip.next"
-            onPress={handleNext}
+            onPress={onNextClick}
             disabled={!canSwipeNext}
             accessibilityLabel={t('playView.actionBar.nextAria')}
           />
@@ -357,7 +338,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           <>
             {onOpenAngleSelector && currentAngle != null && (
               <Pressable
-                onPress={handleAngleSelector}
+                onPress={onOpenAngleSelector}
                 accessibilityRole="button"
                 accessibilityLabel={t('mobile.angleSelector.title')}
                 // A label-only mini pill (32pt); hit-slop lifts the tap target back to
@@ -402,7 +383,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 {/* Share is a pure client action and the whole point of a read-only
                 climb page, so it stays. */}
                 {onShare ? (
-                  <ShareButton size="sm" onPress={handleShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
+                  <ShareButton size="sm" onPress={onShare} accessibilityLabel={tClimbs('mobile.climbRow.share')} />
                 ) : null}
                 {/* A queue means nothing without a wall or a session, and the sheet it
                 opens is a write surface. */}
@@ -461,10 +442,6 @@ type TickButtonProps = {
 function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabel }: TickButtonProps) {
   const { dim, icon } = SIZES[size];
   const theme = useTheme();
-  const handlePress = useCallback(() => {
-    hapticMedium();
-    onPress();
-  }, [onPress]);
   const handleLongPress = useCallback(() => {
     if (!onLongPress) return;
     hapticMedium();
@@ -473,7 +450,7 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
 
   return (
     <Pressable
-      onPress={handlePress}
+      onPress={onPress}
       onLongPress={handleLongPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}

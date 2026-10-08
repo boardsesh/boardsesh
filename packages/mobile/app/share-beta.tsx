@@ -156,8 +156,7 @@ function ShareBetaScreen() {
               viaSearch: isSearching,
               hasCaption,
             });
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            // Toast is fine on success — router.back() dismisses the modal first,
+            // Toast is fine on success (and it plays the success haptic) — router.back() dismisses the modal first,
             // so it lands on the screen underneath where the toast is visible.
             showToast(t('mobile.betaVideos.attachSuccess'), 'success');
             router.back();

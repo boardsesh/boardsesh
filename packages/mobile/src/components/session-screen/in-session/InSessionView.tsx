@@ -652,7 +652,6 @@ export function InSessionView({
       <SessionAnalytics
         sends={sends}
         flashes={flashes}
-        hardestGrade={hardestGrade}
         hardestSends={hardestSends}
         startedAt={startedAt}
         gradeDistribution={gradeDistribution}

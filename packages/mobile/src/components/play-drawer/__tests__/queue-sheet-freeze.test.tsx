@@ -90,6 +90,7 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' }
 vi.mock('../../../theme/tokens', () => ({ spacing: { 3: 12, 4: 16 } }));
 
 vi.mock('../QueueSheetHeader', () => ({ QueueSheetHeader: () => null }));
+vi.mock('../../UndoSnackbar', () => ({ UndoSnackbar: () => null }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('div', null, children) }));
 
 vi.mock('../QueueList', async () => {
@@ -108,11 +109,20 @@ vi.mock('../QueueList', async () => {
 
 // Stable across renders — the real useQueueActions returns memoized callbacks;
 // fresh functions each render would churn QueueList's props and defeat the memo.
-const queueActions = vi.hoisted(() => ({ removeFromQueue: vi.fn(), clearQueue: vi.fn(), reorderQueue: vi.fn() }));
+const queueActions = vi.hoisted(() => ({
+  removeFromQueue: vi.fn(),
+  removeQueueItems: vi.fn(),
+  clearQueue: vi.fn(),
+  reorderQueue: vi.fn(),
+  setQueue: vi.fn(),
+  getQueueSnapshot: vi.fn(() => ({ queue: [], currentClimbQueueItem: null })),
+  setPlaylistSuggestionSource: vi.fn(),
+}));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => queueData.current,
   useQueueActions: () => queueActions,
   usePlaylistSuggestionSource: () => null,
+  useQueueSessionId: () => ({ sessionId: null }),
 }));
 
 import { QueueSheet, type QueueSheetHandle } from '../QueueSheet';

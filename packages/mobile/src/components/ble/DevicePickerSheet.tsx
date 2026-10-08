@@ -221,8 +221,6 @@ export function DevicePickerSheet({
       visible={visible}
       snapPoints={SNAP_POINTS}
       onClose={onDismiss}
-      // Opens by itself (a connect or the pairing flow raises it), not from a tap.
-      presentHaptic={false}
       onDisplaced={onDisplaced}
       header={
         <SheetTopBar

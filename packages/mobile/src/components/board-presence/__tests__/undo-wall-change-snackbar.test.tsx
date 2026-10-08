@@ -3,7 +3,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const ctrl = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
+const ctrl = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass', os: 'ios' as 'ios' | 'android' }));
+const announce = vi.hoisted(() => vi.fn());
 
 type ViewMockProps = { children?: ReactNode; accessibilityRole?: string };
 vi.mock('react-native', () => ({
@@ -19,6 +20,14 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel ?? '' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
+  Platform: {
+    get OS() {
+      return ctrl.os;
+    },
+  },
+  AccessibilityInfo: {
+    announceForAccessibilityWithOptions: (message: string, options: unknown) => announce(message, options),
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -130,5 +139,28 @@ describe('UndoWallChangeSnackbar', () => {
     const { container } = render(<UndoWallChangeSnackbar {...base} onUndo={onUndo} />);
     (container.querySelector('[data-label="mobile.boardPresence.undoAria"]') as HTMLElement).click();
     expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('UndoWallChangeSnackbar VoiceOver', () => {
+  it('announces once per show on iOS, again only for a new nonce', () => {
+    ctrl.os = 'ios';
+    announce.mockClear();
+    const { rerender } = render(<UndoWallChangeSnackbar {...base} />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith('mobile.boardPresence.wallChanged', { queue: true });
+    rerender(<UndoWallChangeSnackbar {...base} />);
+    expect(announce).toHaveBeenCalledTimes(1);
+    rerender(<UndoWallChangeSnackbar {...base} nonce={2} />);
+    expect(announce).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves Android to the Snackbar and stays quiet while hidden', () => {
+    announce.mockClear();
+    ctrl.os = 'android';
+    render(<UndoWallChangeSnackbar {...base} />);
+    ctrl.os = 'ios';
+    render(<UndoWallChangeSnackbar {...base} visible={false} />);
+    expect(announce).not.toHaveBeenCalled();
   });
 });

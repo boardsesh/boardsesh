@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 type ViewProps = {
@@ -12,6 +12,7 @@ type ViewProps = {
 };
 
 const responder = vi.hoisted(() => ({ claims: [] as boolean[] }));
+const motion = vi.hoisted(() => ({ reduce: false, loopStarts: 0 }));
 
 vi.mock('react-native', () => {
   const View = ({ children, testID, style, accessibilityValue, onStartShouldSetResponder }: ViewProps) => {
@@ -34,7 +35,12 @@ vi.mock('react-native', () => {
         }
       },
       timing: () => ({}),
-      loop: () => ({ start: () => {}, stop: () => {} }),
+      loop: () => ({
+        start: () => {
+          motion.loopStarts += 1;
+        },
+        stop: () => {},
+      }),
     },
   };
 });
@@ -53,12 +59,34 @@ vi.mock('../use-launch-update-gate', () => ({
   useLaunchUpdateGate: () => ({ resolved: false, showPlaceholder: gate.showPlaceholder }),
   useLaunchUpdateProgress: () => gate.progress,
 }));
+vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => motion.reduce }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { primary: '#8C4A52' } }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 4: 16 } }));
 
 import { LaunchUpdateGatePlaceholder, LaunchUpdatePlaceholder } from '../LaunchUpdatePlaceholder';
 
+beforeEach(() => {
+  motion.reduce = false;
+  motion.loopStarts = 0;
+});
+
 describe('LaunchUpdatePlaceholder', () => {
+  it('sweeps the indeterminate bar when motion is allowed', () => {
+    render(createElement(LaunchUpdatePlaceholder, { visible: true, progress: undefined }));
+
+    expect(screen.getByTestId('indeterminate')).toBeTruthy();
+    expect(motion.loopStarts).toBe(1);
+  });
+
+  it('rests the segment mid-track, with no loop, under Reduce Motion', () => {
+    motion.reduce = true;
+    render(createElement(LaunchUpdatePlaceholder, { visible: true, progress: undefined }));
+
+    expect(screen.queryByTestId('indeterminate')).toBeNull();
+    expect(screen.getByTestId('launch-update-resting-segment')).toBeTruthy();
+    expect(motion.loopStarts).toBe(0);
+  });
+
   it('renders nothing while the splash still covers the wait', () => {
     const { container } = render(createElement(LaunchUpdatePlaceholder, { visible: false, progress: undefined }));
 
