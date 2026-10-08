@@ -19,7 +19,8 @@ export type UiVariant = 'liquidGlass' | 'material';
  *
  * Note this is the *aesthetic* decision, separate from whether the device can
  * render real iOS 26 glass chrome (`useGlassCapability`): an older iPhone resolves
- * to `liquidGlass` here and degrades its surfaces/tab bar downstream.
+ * to `liquidGlass` here, keeps the native tab bar, and degrades its surfaces
+ * (and the iOS 26 accessory) downstream.
  *
  * Pure and synchronous so the first paint can pick the right variant without
  * waiting on async storage — `autoPrefersGlass` is a synchronous platform check.

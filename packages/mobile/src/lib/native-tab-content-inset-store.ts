@@ -23,7 +23,7 @@ import { useSyncExternalStore } from 'react';
  *
  * `null` means "no measurement yet" (cold start before the first focused-tab
  * layout pass, and always on paths where the probe never publishes: Material
- * variant, tablets, Android, iOS < 26). Consumers must fall back to explicit
+ * variant, tablets, Android). Consumers must fall back to explicit
  * arithmetic in that case and must ignore the value entirely off the
  * native-tab-bar path.
  */

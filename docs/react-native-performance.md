@@ -295,7 +295,14 @@ surface the previous size's bundled background paths.
 **Rule:** Board-art surfaces are the app's largest memory consumer (decoded bitmaps live in native
 heap + as GPU textures, not the JS heap) — on iOS a 4 GB device can hit the OS watchdog OOM kill in
 the foreground while browsing (#3479), and an iPad can SIGSEGV inside image decode after days of
-uptime (#3803). Four contracts keep them in check:
+uptime (#3803). Tab residency adds to this: `NativeTabs` renders every tab at launch and keeps it
+mounted. Home and Discover defer their feeds until first focus; Record mounts its session
+  screen on first focus on iOS (Android retains its eager mount). The focus latch keeps
+  queries enabled after blur so live updates keep arriving. NativeTabs now carries the
+  Liquid Glass variant on every iPhone, iOS 18 included (the 3–4 GB
+iPhone XS/XR class), so the cache cap below is what bounds board art there. Only the Material
+variant on iPhone still uses JS `Tabs` with lazy tabs and `freezeOnBlur`. Four contracts keep them
+in check:
 
 - **Cap the decoded-bitmap cache.** SDWebImage defaults `maxMemoryCost` to `0` — _unlimited_ — and
   expo-image does not override it, so an app that never calls `Image.configureCache()` runs an

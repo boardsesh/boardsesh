@@ -54,10 +54,11 @@ export type BottomChromeInputs = {
   /** Resolved UI variant; controls the JS toolbar shape/reserve. */
   uiVariant: UiVariant;
   /**
-   * Whether the native iOS 26 tab bar (`NativeTabs`) is the one on screen, as
+   * Whether the native UIKit tab bar (`NativeTabs`) is the one on screen, as
    * opposed to the JS `MaterialTabBar`. This is the *rendered tab bar*, which can
-   * differ from `uiVariant`: Liquid Glass on iOS < 26 / Android falls back to the
-   * JS bar. Drives tab-bar height + whether the bar overlays content.
+   * differ from `uiVariant`: Liquid Glass on Android and on the tablet shell keeps
+   * the JS bar, while every iPhone on Liquid Glass (iOS 18 included) gets the
+   * native one. Drives tab-bar height + whether the bar overlays content.
    */
   usesNativeTabBar: boolean;
   /** Bottom safe-area inset. */
@@ -212,8 +213,8 @@ export type BottomChromeMetrics = {
    * alone is never enough here: it excludes the 49pt bar, and anchoring to it
    * is exactly how the Start capsule ended up underneath the tab bar.
    *
-   * On the JS-tab-bar fallback (iOS < 26, non-glass-capable iPhones, iPad in a
-   * narrow split, Android forced to Liquid Glass) the floating
+   * Wherever the native accessory is absent (the native bar on iOS 18, iPad in
+   * a narrow split, Android forced to Liquid Glass) the floating
    * `PersistentQueueBar` is a JS overlay that does NOT extend the UIKit safe
    * area, so nothing reserves for it implicitly — the raw inset alone dropped
    * the Start capsule under the tray's log-ascent tick (#3967). Hence the
@@ -315,8 +316,8 @@ export function computeBottomChromeMetrics({
   // is false, so no JS bar — and no `jsQueueReserve` for a bar that isn't there.
   const jsQueueToolbarVisible = onAccessorySurface && hasCurrentClimb && !effectiveNativeAccessoryPresented;
   // The native iOS tab bar is 49pt; the JS M3 `MaterialTabBar` is taller. Key this
-  // on the *rendered* bar, not the variant — Liquid Glass on iOS < 26 / Android
-  // falls back to the JS bar. `tabBarHeight` describes the rendered bar, while
+  // on the *rendered* bar, not the variant — Liquid Glass on Android and on the
+  // tablet shell keeps the JS bar. `tabBarHeight` describes the rendered bar, while
   // `tabBarBottom` is the full clearance from the screen bottom: the opaque raw
   // inset for NativeTabs, or raw inset + JS bar height for the fallback.
   const tabBarConstant = usesNativeTabBar ? TAB_BAR_HEIGHT : MATERIAL_TAB_BAR_HEIGHT;

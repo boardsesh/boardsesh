@@ -12,7 +12,7 @@ import { nowMs } from '../../lib/clock';
 import { track } from '../../lib/analytics';
 import { useProfile } from '../../lib/graphql/hooks';
 import { useAuth } from '../../providers/auth-provider';
-import { useNativeTabBar } from '../../hooks/use-bottom-accessory';
+import { useLiquidGlassTabBar } from '../../hooks/use-bottom-accessory';
 import { useStickyAccessoryPresence } from '../../hooks/use-sticky-accessory-presence';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { spacing } from '../../theme/tokens';
@@ -31,9 +31,10 @@ type TipPhase = 'waiting' | 'showing' | 'done';
  * the first time such an account is on another tab, floating just above the
  * tab bar the way `AccessoryOnboardingTip` does.
  *
- * Never on Android, on an older iPhone, on an iPad or on the Material variant:
- * those get the JS tab bar, where Climbs is a labelled tab like the rest.
- * `useNativeTabBar()` is exactly that split.
+ * Never on Android, on an older iPhone, on an iPad or on the Material variant.
+ * An iOS 18 iPhone has the native bar too, but there Climbs is an ordinary
+ * labelled tab, and the others get the JS bar where it is labelled as well.
+ * `useLiquidGlassTabBar()` is exactly that split.
  *
  * Once per device: the seen flag is written the moment it shows, so a
  * force-quit mid-tip cannot bring it back. It stays up while the climber moves
@@ -44,15 +45,15 @@ type TipPhase = 'waiting' | 'showing' | 'done';
  */
 export function ClimbsTabReturnTip() {
   const { t } = useTranslation('common');
-  const nativeTabBar = useNativeTabBar();
+  const liquidGlassTabBar = useLiquidGlassTabBar();
   const { isAuthenticated } = useAuth();
-  const { data: profile } = useProfile({ enabled: isAuthenticated && nativeTabBar });
+  const { data: profile } = useProfile({ enabled: isAuthenticated && liquidGlassTabBar });
   const activeTab = tabsActiveSegment(useSegments());
   const hasCurrentClimb = useStickyAccessoryPresence();
   const bottomChrome = useBottomChromeMetrics();
   const [phase, setPhase] = useState<TipPhase>('waiting');
 
-  const eligible = nativeTabBar && isAuthenticated && isNewAccount(profile?.createdAt, nowMs());
+  const eligible = liquidGlassTabBar && isAuthenticated && isNewAccount(profile?.createdAt, nowMs());
   const onOtherTab = activeTab !== null && activeTab !== CLIMBS_TAB;
 
   useEffect(() => {

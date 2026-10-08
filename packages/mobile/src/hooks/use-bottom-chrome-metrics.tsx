@@ -8,7 +8,7 @@ import { useNativeTabContentInsetBottom } from '../lib/native-tab-content-inset-
 import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-store';
 import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
-import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
+import { useTabChrome } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
 import { computeBottomChromeMetrics, type BottomChromeMetrics } from './bottom-chrome-metrics';
 import { shouldThrowOnMissingProvider } from './bottom-chrome-provider-gate';
@@ -50,21 +50,17 @@ function useComputedBottomChromeMetrics(): BottomChromeMetrics {
   // detail keeps it). The player route counts too (it's a modal over the live tabs)
   // so the tab-bar metrics don't churn across its open/close — see isTabsChromeRoute.
   const insideTabs = isTabsChromeRoute(segments);
-  // The JS queue toolbar (Android / iOS < 26) only shows on a top-level tab page, plus
+  // The JS queue toolbar (Android / iOS 18 / tablets) only shows on a top-level tab page, plus
   // occluded under the player. Keep it separate from `insideTabs` so a pushed sub-route
   // still reserves tab-bar height but no longer reserves toolbar space for a bar that's
   // gone. The NATIVE accessory is wider — see `nativeAccessoryPresented` below.
   const onAccessorySurface = isAccessorySurfaceRoute(segments);
-  // The single canonical "is the native tab bar on screen?" predicate. The bottom
-  // accessory lives INSIDE that bar, so derive its mount from the SAME call plus the
-  // plain availability check — exactly what useNativeAccessoryActive() does — rather
-  // than calling useNativeTabBar() a second time. Sharing the one call (instead of
-  // re-deriving the accessory from the variant) is what guarantees the two never
-  // disagree about which bar is up; see use-bottom-accessory. It also drops the
-  // duplicate useTheme/useGlassCapability/useDeviceLayout subscriptions the second
-  // useNativeTabBar() call used to pull in.
-  const nativeTabBar = useNativeTabBar();
-  const nativeAccessoryActive = nativeTabBar && isBottomAccessoryAvailable();
+  // The single canonical answer to "which tab chrome is on screen?" — the same
+  // `useTabChrome()` the tab layout mounts from, so the accessory reserved here is
+  // exactly the accessory `_layout` mounts. On iOS 18 the native bar is up but the
+  // accessory is not (it is an iOS 26 UIKit feature), so the JS queue bar floats
+  // above the native bar and is reserved for below.
+  const { nativeTabBar, nativeAccessory: nativeAccessoryActive } = useTabChrome();
   // `onAccessorySurface`, NOT the host-mount gate — the two genuinely differ here, and
   // conflating them costs a dead gap. The host stays MOUNTED on pushed sub-routes (that
   // is #5055's fix, see `isAccessoryHostRoute`), but UIKit does not PRESENT the platter

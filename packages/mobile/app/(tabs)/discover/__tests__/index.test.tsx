@@ -22,6 +22,7 @@ type SmartCountItem = {
 };
 
 type DiscoverOptions = {
+  enabled?: boolean;
   generatedRecommendation?: boolean;
   boardType?: string;
   layoutId?: number;
@@ -65,7 +66,7 @@ const setterStats = vi.hoisted(() =>
 );
 const authState = vi.hoisted(() => ({ isAuthenticated: true, isLoading: false }));
 const connectivityState = vi.hoisted(() => ({ effectiveOffline: false, reason: null as string | null }));
-const focusState = vi.hoisted(() => ({ callback: undefined as (() => void) | undefined }));
+const focusState = vi.hoisted(() => ({ active: true, callback: undefined as (() => void) | undefined }));
 const activeBoardState = vi.hoisted(() => ({
   data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as {
     boardType: string;
@@ -131,6 +132,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
+  useIsFocused: () => focusState.active,
   router: { push: vi.fn() },
   useFocusEffect: (callback: () => void) => {
     focusState.callback = callback;
@@ -389,6 +391,7 @@ beforeEach(() => {
   authState.isAuthenticated = true;
   connectivityState.effectiveOffline = false;
   connectivityState.reason = null;
+  focusState.active = true;
   focusState.callback = undefined;
   activeBoardState.data = { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
   activeBoardState.isLoading = false;
@@ -430,6 +433,34 @@ beforeEach(() => {
   unpinPlaylist.mockReset();
   toast.showToast.mockClear();
   discoverOptions.length = 0;
+});
+
+describe('DiscoverLibrary first focus', () => {
+  it('holds reads before first focus and keeps them enabled after blur', () => {
+    focusState.active = false;
+    const { rerender, queryClient } = renderHub();
+    expect(userPlaylistsOptions.at(-1)?.token).toBeNull();
+    expect(setterStats.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(discoverOptions.at(-1)?.enabled).toBe(false);
+    focusState.active = true;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <DiscoverLibrary />
+      </QueryClientProvider>,
+    );
+    expect(userPlaylistsOptions.at(-1)?.token).toBe('token');
+    expect(setterStats.mock.calls.at(-1)?.[1]).toBe(true);
+    expect(discoverOptions.at(-1)?.enabled).toBe(true);
+    focusState.active = false;
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <DiscoverLibrary />
+      </QueryClientProvider>,
+    );
+    expect(userPlaylistsOptions.at(-1)?.token).toBe('token');
+    expect(setterStats.mock.calls.at(-1)?.[1]).toBe(true);
+    expect(discoverOptions.at(-1)?.enabled).toBe(true);
+  });
 });
 
 describe('DiscoverLibrary followed setter playlists', () => {

@@ -47,6 +47,7 @@ import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
 import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
+import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
 
 const FOR_YOU_SMART_PLAYLIST_TYPES: SmartPlaylistType[] = [
   'LIKED_CLIMBS',
@@ -123,7 +124,10 @@ export default function DiscoverLibrary() {
   const queryClient = useQueryClient();
 
   const userId = profile?.id ?? null;
-  const effectiveToken = isAuthenticated ? token : null;
+  // NativeTabs mounts every tab at launch; Discover's reads wait for its first
+  // focus (see useHasBeenFocused). A null token disables the token-gated hooks.
+  const hasBeenFocused = useHasBeenFocused();
+  const effectiveToken = isAuthenticated && hasBeenFocused ? token : null;
 
   // The board pill in the top chrome is the default filter: every section scopes
   // to the active board's boardType + layoutId (the shared hooks reset on
@@ -131,7 +135,7 @@ export default function DiscoverLibrary() {
   // not-yet-onboarded user still sees community playlists.
   const filterBoardType = activeBoard?.boardType;
   const filterLayoutId = activeBoard?.layoutId;
-  const followedSettersEnabled = isAuthenticated && !!userId && !!activeBoard && !activeBoardLoading;
+  const followedSettersEnabled = hasBeenFocused && isAuthenticated && !!userId && !!activeBoard && !activeBoardLoading;
   const followedSettersInput = useMemo(
     () => ({
       boardName: activeBoard?.boardType ?? '',
@@ -223,7 +227,7 @@ export default function DiscoverLibrary() {
     layoutId: filterLayoutId,
     pageSize: 10,
     generatedRecommendation: false,
-    enabled: !activeBoardLoading,
+    enabled: hasBeenFocused && !activeBoardLoading,
   });
 
   // Merge community popular + recent, de-duped and excluding the current user's own.

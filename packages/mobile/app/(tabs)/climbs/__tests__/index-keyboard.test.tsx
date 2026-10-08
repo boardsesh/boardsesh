@@ -335,7 +335,10 @@ vi.mock('../../../../src/settings', () => ({
   setSetting: mocks.setSetting,
 }));
 
-vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({ useNativeAccessoryActive: () => false }));
+vi.mock('../../../../src/hooks/use-bottom-accessory', () => ({
+  useNativeAccessoryActive: () => false,
+  useLiquidGlassTabBar: () => false,
+}));
 vi.mock('../../../../src/hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({
     scrollBottomPadding: 96,

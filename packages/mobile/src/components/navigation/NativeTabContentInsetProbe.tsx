@@ -13,7 +13,7 @@ import { publishNativeTabContentInsetBottom } from '../../lib/native-tab-content
  * minimize state (unlike the root provider, which only sees the home indicator).
  *
  * Renders nothing, publishes nothing off the native-tab-bar path (Material,
- * tablets, Android, iOS < 26 — `useNativeTabBar()` is the same predicate that
+ * tablets, Android — `useNativeTabBar()` is the same predicate that
  * selects the tab bar in `(tabs)/_layout`, so the two cannot disagree).
  */
 export function NativeTabContentInsetProbe() {

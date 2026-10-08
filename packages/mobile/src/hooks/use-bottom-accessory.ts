@@ -1,57 +1,69 @@
+import { useMemo } from 'react';
 import { Platform } from 'react-native';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useTheme } from '../providers/theme-provider';
 import { useGlassCapability } from './use-glass-capability';
 import { useDeviceLayout } from './use-device-layout';
+import { resolveTabChrome, type TabChrome } from './tab-chrome';
 
 /**
  * Whether the device *can* host `NativeTabs.BottomAccessory` — the pure
- * capability check. The native accessory is tied to the system Liquid Glass tab
- * bar, so it only exists on that path.
+ * capability check. The native accessory is an iOS 26 UIKit feature
+ * (`UITabBarController.bottomAccessory`), so it only exists there.
  */
 export function isBottomAccessoryAvailable(): boolean {
   return Platform.OS === 'ios' && NativeTabs?.BottomAccessory != null && isLiquidGlassAvailable();
 }
 
 /**
- * Whether the native iOS 26 Liquid Glass tab bar (`NativeTabs`) is in use right
- * now: the Liquid Glass variant on a glass-capable device. The single canonical
- * predicate for "the native tab bar renders" — everything else (Material, plus
- * Liquid Glass on iOS < 26 / Android) falls back to the JS `Tabs` + `MaterialTabBar`.
- * Drives the tab-bar choice in `_layout` and the tab-bar geometry in
- * `useBottomChromeMetrics`, so the two never disagree about which bar is on screen.
+ * Which tab chrome is on screen, resolved once from the variant, the device and
+ * the iOS version. Every consumer (the tab layout, bottom-chrome metrics, toasts,
+ * the climbs search mode, onboarding tips) reads this one answer, so a native
+ * accessory is never assumed where it does not mount. See `resolveTabChrome`.
  */
-export function useNativeTabBar(): boolean {
+export function useTabChrome(): TabChrome {
   const { variant } = useTheme();
   const glassCapable = useGlassCapability();
   const { isTablet } = useDeviceLayout();
-  // The tablet adaptive shell renders JS `Tabs` at EVERY tablet width — a rail at
-  // regular width, the Material bar in a narrow split (Slide Over / Split View /
-  // Android multi-window) — and never `NativeTabs`, so a resize across the breakpoint
-  // keeps one navigator mounted (see `_layout`). So the native tab bar — and the
-  // bottom accessory + tab-bar search role it hosts — is never on screen on a tablet.
-  // Everything that branches on this predicate (the climb-list search mode, the
-  // accessory mount, bottom-chrome geometry) must treat a tablet as "no native tab
-  // bar", or it reaches for a native accessory / search bar that has no bar to live
-  // in — and on a tablet in a narrow split that would skip the native accessory AND
-  // suppress the JS PersistentQueueBar, dropping the now-playing bar entirely.
-  // (`isTablet` subsumes the old regular-width check, since a `regular` width only
-  // ever resolves on a tablet. Android is always false below via the variant check.)
-  if (isTablet) return false;
-  return variant === 'liquidGlass' && glassCapable;
+  return useMemo(
+    () =>
+      resolveTabChrome({
+        platformOS: Platform.OS,
+        variant,
+        glassCapable,
+        isTablet,
+        accessoryAvailable: isBottomAccessoryAvailable(),
+      }),
+    [variant, glassCapable, isTablet],
+  );
 }
 
 /**
- * Whether the native bottom accessory is actually in use right now. The accessory
- * lives *inside* `NativeTabs`, so it requires the native tab bar to be on screen —
- * gating it on `useNativeTabBar()` (rather than re-deriving from the variant)
- * guarantees the two share the same `useGlassCapability()` check. If they used
- * different `expo-glass-effect` predicates and diverged, the metrics could suppress
- * the JS queue toolbar for an accessory that never actually mounts. On the Material
- * variant / non-capable devices the current climb + tick ride the floating
- * `PersistentQueueBar` instead and this returns false.
+ * Whether the native UIKit tab bar (`NativeTabs`) is the bottom bar on screen:
+ * the Liquid Glass variant on any iPhone, iOS 18 included. Everything else
+ * (Material, Android, the tablet shell) uses the JS `Tabs` + `MaterialTabBar`.
+ * Drives the tab-bar choice in `_layout` and the tab-bar geometry in
+ * `useBottomChromeMetrics`, so the two never disagree about which bar is up.
+ */
+export function useNativeTabBar(): boolean {
+  return useTabChrome().nativeTabBar;
+}
+
+/**
+ * Whether the native bar is the iOS 26 Liquid Glass bar, with the separated
+ * search tab (Climbs as a lone magnifier) and minimize-on-scroll.
+ */
+export function useLiquidGlassTabBar(): boolean {
+  return useTabChrome().liquidGlassTabBar;
+}
+
+/**
+ * Whether the native bottom accessory is actually in use right now. It lives
+ * inside the iOS 26 bar, so it needs both the Liquid Glass bar and the
+ * accessory export. Everywhere else, including the native bar on iOS 18, the
+ * current climb + tick ride the floating `PersistentQueueBar` instead.
  */
 export function useNativeAccessoryActive(): boolean {
-  return useNativeTabBar() && isBottomAccessoryAvailable();
+  return useTabChrome().nativeAccessory;
 }
