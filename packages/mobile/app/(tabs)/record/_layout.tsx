@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -13,13 +14,22 @@ import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-vis
 export default function RecordLayout() {
   const { t } = useTranslation('session');
   const screenOptions = useStackScreenOptions();
+  const nativeRootHeader = useNativeRootHeader();
 
   return (
     <BoardArtVisibilityProvider tab="record">
       <NativeTabContentInsetProbe />
       <NativeTabletContent>
         <Stack screenOptions={screenOptions}>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="index"
+            options={{
+              title: t('mobile.session.recordTab'),
+              headerShown: nativeRootHeader,
+              headerLargeTitle: nativeRootHeader,
+              headerTransparent: nativeRootHeader,
+            }}
+          />
           <Stack.Screen
             name="summary"
             options={{

@@ -58,14 +58,23 @@ export function HoldRoleSheet({
   const sheetRef = useRef<BottomSheet>(null);
   const { isPad, widthClass } = useDeviceLayout();
   const { height: windowHeight } = useWindowDimensions();
-  const presentationRef = useRef({ holdId: null as number | null, popover: false });
-  if (presentationRef.current.holdId !== holdId) {
+  const presentationRef = useRef<{ holdId: number | null; popover: boolean; point: WindowAnchorPoint | null }>({
+    holdId: null,
+    popover: false,
+    point: null,
+  });
+  if (holdId !== null && presentationRef.current.holdId !== holdId) {
     presentationRef.current = {
       holdId,
-      popover: holdId !== null && !!anchorPoint && isPad && widthClass === 'regular',
+      popover: !!anchorPoint && isPad && widthClass === 'regular',
+      point: anchorPoint ?? null,
     };
+  } else if (holdId === null) {
+    // Keep the native host and its anchor through visible=false dismissal.
+    presentationRef.current.holdId = null;
   }
   const usesPopover = presentationRef.current.popover;
+  const popoverPoint = presentationRef.current.point;
 
   useEffect(() => {
     if (usesPopover) return;
@@ -144,10 +153,10 @@ export function HoldRoleSheet({
       </View>
     </View>
   );
-  if (usesPopover && anchorPoint)
+  if (usesPopover && popoverPoint)
     return (
       <PointAnchoredPopover
-        point={anchorPoint}
+        point={popoverPoint}
         visible={holdId !== null}
         onClose={onClose}
         width={360}

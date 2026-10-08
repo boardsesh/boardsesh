@@ -15,6 +15,7 @@ vi.mock('../../../../src/components/navigation/NativeTabletContent', () => ({
   NativeTabletContent: ({ children }: { children?: ReactNode }) => children,
 }));
 
+vi.mock('../../../../src/hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {

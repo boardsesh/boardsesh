@@ -67,7 +67,7 @@ export function AngleToolbarAction() {
       </Text>
     </GlassToolbarAction>
   );
-  if (usesPopover)
+  if (popoverPresentation)
     return (
       <AnchoredPopover
         visible={visible}

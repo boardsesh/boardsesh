@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
 import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
@@ -11,6 +12,7 @@ import { useTheme } from '../../../src/providers/theme-provider';
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
+  const nativeRootHeader = useNativeRootHeader();
   const { systemColors } = useTheme();
   usePopToTopOnTabBlur('climbs');
 
@@ -23,9 +25,11 @@ export default function ClimbsLayout() {
             name="index"
             options={{
               title: t('mobile.nav.climbs'),
-              // The climb list owns its own floating glass search row, so it hides
-              // the native header (which otherwise occluded the in-body controls).
-              headerShown: false,
+              // UIKit owns the native large title, including empty/loading branches.
+              // ClimbTopChrome adds actions; Material keeps its own app bar.
+              headerShown: nativeRootHeader,
+              headerLargeTitle: nativeRootHeader,
+              headerTransparent: nativeRootHeader,
             }}
           />
           <Stack.Screen

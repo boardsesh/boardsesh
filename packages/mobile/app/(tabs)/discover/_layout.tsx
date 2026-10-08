@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +10,7 @@ import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-vis
 export default function DiscoverLayout() {
   const { t } = useTranslation('playlists');
   const screenOptions = useStackScreenOptions();
+  const nativeRootHeader = useNativeRootHeader();
   usePopToTopOnTabBlur('discover');
 
   return (
@@ -20,9 +22,11 @@ export default function DiscoverLayout() {
             name="index"
             options={{
               title: t('bottomTabBar.discover'),
-              // The library owns its own floating glass chrome + in-body large title,
-              // so it hides the native header (which otherwise occluded the controls).
-              headerShown: false,
+              // UIKit owns the native large title before the library chrome mounts.
+              // DiscoverTopChrome adds controls; Material retains its app bar.
+              headerShown: nativeRootHeader,
+              headerLargeTitle: nativeRootHeader,
+              headerTransparent: nativeRootHeader,
             }}
           />
           <Stack.Screen
