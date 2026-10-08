@@ -11,7 +11,7 @@
 // (the iOS UIKit deadlock / app freeze — see sheet-presentation-provider.tsx).
 
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
@@ -26,7 +26,12 @@ import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetKeyboardInset } from './sheet-keyboard-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
-import { SheetScrollIntoViewProvider, useProgrammaticSnap, useSheetScrollIntoViewHost } from './sheet-scroll-into-view';
+import {
+  SheetScrollIntoViewProvider,
+  keyboardDetentIndex,
+  useProgrammaticSnap,
+  useSheetScrollIntoViewHost,
+} from './sheet-scroll-into-view';
 import {
   useManagedSheet,
   type ManagedSheetHandle,
@@ -118,10 +123,6 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   ref,
 ) {
   const { systemColors, sheet, sheetSurface } = useTheme();
-  // Keyboard clearance for the chrome column below, and the bottom inset the
-  // footer / footerless body still owes (the window inset, or 0 while the
-  // keyboard covers it). See sheet-keyboard-inset.ts.
-  const { keyboardOverlap, bottomInset } = useSheetKeyboardInset(Boolean(footer || header));
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
   // Plain string, never a PlatformColor — see the `surface` prop doc.
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
@@ -151,6 +152,9 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
 
   // Track the resting detent so the iOS column bound follows drags between detents.
   const [activeIndex, setActiveIndex] = useState(0);
+  // Whether the native sheet is open, so a closed sheet never listens for the
+  // keyboard (see the keyboard block below).
+  const [isOpen, setIsOpen] = useState(false);
   const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex, contentSizedOnAndroid });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'ModalSheet');
@@ -168,6 +172,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         isOpenRef.current = true;
         if (!programmaticSnapRef.current && (presentHaptic || !isPresent)) hapticMedium();
         setActiveIndex(index);
+        setIsOpen(true);
       } else {
         isOpenRef.current = false;
         // Reset on close so a re-open of an always-mounted sheet starts at the
@@ -175,6 +180,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         // confirms the detent — erring short beats a stale taller column pushing
         // the pinned footer off-screen for a frame.
         setActiveIndex(0);
+        setIsOpen(false);
       }
       managed.onChange(index);
       onChangeRef.current?.(index);
@@ -186,6 +192,35 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // the native sheet takes exactly one in-flow child — so either one puts us in
   // the chrome column branch below.
   const hasChrome = Boolean(footer || header);
+  const lastDetentIndex = useContentFitting ? 0 : effectiveSnapPoints.length - 1;
+  // Keyboard clearance for the chrome column below, and the bottom inset the
+  // footer / footerless body still owes (the window inset, or 0 while the
+  // keyboard covers it). See sheet-keyboard-inset.ts. Listens only while there
+  // is a column to pad and the sheet is open. When the keyboard comes up the
+  // sheet rises to its keyboard detent (no haptic): at a short detent the
+  // keyboard can leave the body no room at all.
+  const activeIndexRef = useRef(activeIndex);
+  activeIndexRef.current = activeIndex;
+  const raiseToKeyboardDetent = useCallback(() => {
+    const next = keyboardDetentIndex(activeIndexRef.current, lastDetentIndex);
+    if (next != null) snapWithoutHaptic(next);
+  }, [lastDetentIndex, snapWithoutHaptic]);
+  const {
+    keyboardOverlap,
+    bottomInset,
+    columnRef,
+    onColumnLayout: measureColumnForKeyboard,
+  } = useSheetKeyboardInset({
+    enabled: hasChrome && (isOpen || visible === true),
+    onKeyboardShow: raiseToKeyboardDetent,
+  });
+  const handleColumnLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onColumnLayout?.(event);
+      measureColumnForKeyboard();
+    },
+    [onColumnLayout, measureColumnForKeyboard],
+  );
   // The sheet's single child must carry the iOS detent bound (see
   // useSheetColumnStyle): with a header or footer the chrome column below
   // is that child and the body just fills it (flex:1); without either the body
@@ -215,7 +250,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // footer once the keyboard shrinks the body (#5665). See sheet-scroll-into-view.
   const { scrollIntoView, scrollProps } = useSheetScrollIntoViewHost({
     onBodyLayout: bodyLayout,
-    lastDetentIndex: useContentFitting ? 0 : effectiveSnapPoints.length - 1,
+    lastDetentIndex,
     activeIndex,
     snapToIndex: snapWithoutHaptic,
   });
@@ -298,7 +333,8 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         <View
           testID="sheet-chrome-column"
           style={keyboardOverlap > 0 ? [columnStyle, { paddingBottom: keyboardOverlap }] : columnStyle}
-          onLayout={onColumnLayout}
+          ref={columnRef}
+          onLayout={handleColumnLayout}
         >
           {header}
           {body}

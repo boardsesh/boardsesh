@@ -61,18 +61,4 @@ describe('useKeyboardHeight', () => {
     unmount();
     expect(keyboard.removed.sort()).toEqual(['keyboardDidHide', 'keyboardDidShow']);
   });
-
-  it('subscribes to nothing and reads 0 while disabled, and lets go when switched off', () => {
-    keyboard.os = 'ios';
-    const { result, rerender } = renderHook(({ enabled }) => useKeyboardHeight(enabled), {
-      initialProps: { enabled: false },
-    });
-    expect(keyboard.listeners.size).toBe(0);
-    rerender({ enabled: true });
-    act(() => keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 336 }, duration: 250 }));
-    expect(result.current).toBe(336);
-    rerender({ enabled: false });
-    expect(result.current).toBe(0);
-    expect(keyboard.removed.sort()).toEqual(['keyboardWillChangeFrame', 'keyboardWillHide']);
-  });
 });

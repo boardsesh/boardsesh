@@ -19,7 +19,10 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 // Mutable so a test can flip the platform; reset in beforeEach. The iOS branch
 // is the one that pins a numeric column height (useSheetColumnStyle).
 const platformMock = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', Version: '26.1' as string }));
-type KeyboardListener = (event: { endCoordinates?: { height: number }; duration?: number }) => void;
+type KeyboardListener = (event: {
+  endCoordinates?: { height: number; screenY: number; width: number };
+  duration?: number;
+}) => void;
 const keyboardListeners = vi.hoisted(() => new Map<string, KeyboardListener>());
 
 // Captures what LogAscentSheet handed the form hook, so the climb/board
@@ -53,6 +56,8 @@ vi.mock('react-native', () => ({
       keyboardListeners.set(eventName, listener);
       return { remove: () => keyboardListeners.delete(eventName) };
     },
+    isVisible: () => false,
+    metrics: () => undefined,
   },
   LayoutAnimation: { configureNext: vi.fn() },
   Pressable: ({
@@ -500,20 +505,37 @@ describe('LogAscentSheet keyboard', () => {
     fireEvent.click(getByTestId('simulate-expand'));
     expect(footerPaddingBottom(container)).toBe(34);
 
-    act(() => keyboardListeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 336 }, duration: 250 }));
+    act(() =>
+      keyboardListeners.get('keyboardWillChangeFrame')?.({
+        endCoordinates: { height: 336, screenY: 508, width: 390 },
+        duration: 250,
+      }),
+    );
     expect(columnStyle(container)).toEqual({ height: 694, paddingBottom: 336 });
     expect(footerPaddingBottom(container)).toBe(0);
 
-    act(() => keyboardListeners.get('keyboardWillHide')?.({ duration: 250 }));
+    act(() =>
+      keyboardListeners.get('keyboardWillHide')?.({
+        endCoordinates: { height: 336, screenY: 844, width: 390 },
+        duration: 250,
+      }),
+    );
     expect(columnStyle(container)).toEqual({ height: 694 });
     expect(footerPaddingBottom(container)).toBe(34);
+  });
+
+  it('does not listen for the keyboard while the sheet is closed', () => {
+    renderSheet({ visible: false });
+    expect(keyboardListeners.size).toBe(0);
   });
 
   it('pads by keyboard + navigation bar on Android, where the IME height leaves the bar out', () => {
     platformMock.OS = 'android';
     const { container } = renderSheet();
 
-    act(() => keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280 } }));
+    act(() =>
+      keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
     expect(columnStyle(container)).toEqual({ maxHeight: 780, paddingBottom: 280 + 34 });
     expect(footerPaddingBottom(container)).toBe(0);
 

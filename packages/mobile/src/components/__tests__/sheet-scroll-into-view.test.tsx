@@ -106,7 +106,7 @@ vi.mock('react-native', () => ({
   },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   // The keyboard padding arrives here as a body onLayout; no keyboard events needed.
-  Keyboard: { addListener: () => ({ remove: () => {} }) },
+  Keyboard: { addListener: () => ({ remove: () => {} }), isVisible: () => false, metrics: () => undefined },
   LayoutAnimation: { configureNext: () => {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {

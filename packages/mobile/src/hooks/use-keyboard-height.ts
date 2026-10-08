@@ -22,14 +22,10 @@ import { Keyboard, LayoutAnimation, Platform, type KeyboardEvent } from 'react-n
  * Android only fires the `did*` pair. The height is read straight off the event,
  * so the listeners never re-register mid-event (same pattern as
  * ClimbReactionMenu).
- *
- * `enabled: false` subscribes to nothing and reads 0, for a caller (a sheet
- * with no header or footer) that has nothing to lift.
  */
-export function useKeyboardHeight(enabled = true): number {
+export function useKeyboardHeight(): number {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   useEffect(() => {
-    if (!enabled) return undefined;
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const animate = (event: KeyboardEvent | undefined) => {
@@ -49,8 +45,7 @@ export function useKeyboardHeight(enabled = true): number {
     return () => {
       onShow.remove();
       onHide.remove();
-      setKeyboardHeight(0);
     };
-  }, [enabled]);
-  return enabled ? keyboardHeight : 0;
+  }, []);
+  return keyboardHeight;
 }

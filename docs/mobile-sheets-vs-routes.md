@@ -173,12 +173,21 @@ content-fitting would collapse:
 from its own `onLayout` frame, which inside a native sheet is relative to the sheet's content
 view, not the window. It under-pads by the sheet's distance from the top of the screen, which left
 the log-ascent Attempt / Save bar half under the keyboard. The wrappers instead pad the chrome
-column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`, built on
-`useKeyboardHeight`): the sheet's bottom edge is the window's, so the overlap is the keyboard
-height on iOS and keyboard + window inset on Android (RN reports the IME without the nav bar).
-While the keyboard is up the footer's resting window inset is swapped out, not added, so the bar
-rests `spacing[3]` above the keyboard; on iOS the change rides the keyboard's own animation. A
-raw-sheet surface with a text field (`ClimbFilterSheet`, `EndSessionSheet`) does the same.
+column by `useSheetKeyboardInset` (`src/components/sheet-keyboard-inset.ts`):
+
+- iOS measures it: the column's bottom in window coordinates (`measureInWindow`, re-measured on
+  every keyboard event) minus the keyboard's top. On iPhone that is the keyboard height; an iPad
+  sheet UIKit lifts clear gets 0, and an undocked or split keyboard (narrower than the window) is
+  ignored.
+- Android pads by keyboard + window inset (RN reports the IME without the nav bar).
+- While the keyboard covers the sheet the footer's resting window inset is swapped out, not added,
+  so the bar rests `spacing[3]` above the keyboard. On iOS the change rides the keyboard's animation.
+- When the keyboard comes up the sheet rises to its last (keyboard) detent without the drag
+  haptic: at a short detent such as FeedbackSheet's 44% the keyboard leaves the body no room.
+- It listens only while the sheet has a header or footer and is open, and seeds from
+  `Keyboard.metrics()` when a sheet opens over a keyboard that is already up.
+
+A raw-sheet surface with a text field (`ClimbFilterSheet`) uses the same hook.
 
 `skipPartiallyExpanded` still comes for free (the shim sets it whenever `fitToContents` or a
 single detent), so the ~50% partial trap of #4723 stays closed — the sheet can only rest at its

@@ -67,7 +67,7 @@ const bottomSheetScrollViewProps = vi.hoisted(() => ({
 
 // expo-router stand-ins: a push spy and a holder for the focus callback so a test
 // can simulate the climbs screen regaining focus after a sub-route pops.
-type KeyboardListener = (event: { endCoordinates?: { height: number } }) => void;
+type KeyboardListener = (event: { endCoordinates?: { height: number; screenY: number; width: number } }) => void;
 const keyboardListeners = vi.hoisted(() => new Map<string, KeyboardListener>());
 const routerPush = vi.hoisted(() => vi.fn());
 const focusEffectHolder = vi.hoisted(() => ({ cb: null as null | (() => void) }));
@@ -137,6 +137,8 @@ vi.mock('react-native', () => ({
       keyboardListeners.set(eventName, listener);
       return { remove: () => keyboardListeners.delete(eventName) };
     },
+    isVisible: () => false,
+    metrics: () => undefined,
   },
   LayoutAnimation: { configureNext: () => {} },
   Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
@@ -506,7 +508,9 @@ describe('ClimbFilterSheet Apply waits for the native close', () => {
       JSON.parse(container.querySelector('[data-column="true"]')?.getAttribute('data-style') ?? 'null');
     expect(columnStyle()).toEqual(DETENT_COLUMN);
     // Android (this file's platform): the IME height plus the window inset, 0 here.
-    act(() => keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280 } }));
+    act(() =>
+      keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
+    );
     expect(columnStyle()).toEqual([DETENT_COLUMN, { paddingBottom: 280 }]);
     act(() => keyboardListeners.get('keyboardDidHide')?.({}));
     expect(columnStyle()).toEqual(DETENT_COLUMN);

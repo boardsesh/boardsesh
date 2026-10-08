@@ -74,7 +74,7 @@ vi.mock('react-native', () => ({
     return createElement('div', null, children);
   },
   // The keyboard stays down here; sheet-keyboard-inset.test.tsx drives it.
-  Keyboard: { addListener: () => ({ remove: () => {} }) },
+  Keyboard: { addListener: () => ({ remove: () => {} }), isVisible: () => false, metrics: () => undefined },
   LayoutAnimation: { configureNext: () => {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {

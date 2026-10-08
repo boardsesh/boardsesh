@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TextInput,
   type ViewStyle,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -330,10 +331,22 @@ export function ClimbFilterSheet({
   // (see handleApply) and the sub-picker round trip restores the scroll offset
   // through its own scroll ref, neither of which the wrapper exposes.
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
-  const { keyboardOverlap } = useSheetKeyboardInset(true);
+  // The sheet mounts only while open, and has one detent: nothing to raise.
+  const {
+    keyboardOverlap,
+    columnRef,
+    onColumnLayout: measureColumnForKeyboard,
+  } = useSheetKeyboardInset({ enabled: true });
   // Dev-only observers for #3922 — they feed a log line, never layout. This is
   // the sheet #3776 was reported against, so it is the one to capture on an SE 3.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(sheetColumnStyle, 'ClimbFilterSheet');
+  const handleColumnLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onColumnLayout?.(event);
+      measureColumnForKeyboard();
+    },
+    [onColumnLayout, measureColumnForKeyboard],
+  );
   // The scroll body ends against the bottom edge now that the footer is gone,
   // so it clears the window inset itself.
   const scrollContentStyle = useMemo(() => ({ paddingBottom: windowInsetBottom + spacing[4] }), [windowInsetBottom]);
@@ -916,7 +929,8 @@ export function ClimbFilterSheet({
       <View
         testID="climb-filter-column"
         style={keyboardOverlap > 0 ? [sheetColumnStyle, { paddingBottom: keyboardOverlap }] : sheetColumnStyle}
-        onLayout={onColumnLayout}
+        ref={columnRef}
+        onLayout={handleColumnLayout}
       >
         <SheetTopBar
           title={t('mobile.filter.title')}
