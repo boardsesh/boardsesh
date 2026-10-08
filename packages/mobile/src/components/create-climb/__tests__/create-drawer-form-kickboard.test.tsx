@@ -9,9 +9,7 @@ import { createElement, type ReactNode } from 'react';
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-}));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetTextInput: () => createElement('textarea'),
+  TextInput: () => createElement('textarea'),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({

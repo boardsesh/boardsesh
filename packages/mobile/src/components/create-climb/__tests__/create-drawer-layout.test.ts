@@ -42,9 +42,8 @@ describe('create drawer board budget', () => {
   });
 
   it('keeps the smallest phone off the board-height floor in both states', () => {
-    // Reaching the floor means the reserves are lying about what fits: the sheet
-    // then wants a taller peek than MAX_PEEK_FRACTION allows and clamps, which
-    // drops the draft-status line and part of the Save row below the fold. A
+    // Reaching the floor means the reserves are lying about what fits, which
+    // drops the draft-status line and part of the tool rows below the fold. A
     // route on an SE did exactly that before this change (it computed 187).
     for (const showRouteTransport of [false, true]) {
       expect(computeBoardMaxHeight({ ...SE, showRouteTransport })).toBeGreaterThan(MIN_BOARD_HEIGHT);

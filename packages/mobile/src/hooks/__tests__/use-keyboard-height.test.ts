@@ -61,4 +61,12 @@ describe('useKeyboardHeight', () => {
     unmount();
     expect(keyboard.removed.sort()).toEqual(['keyboardDidHide', 'keyboardDidShow']);
   });
+
+  it('registers nothing and reads 0 while disabled', () => {
+    keyboard.os = 'ios';
+    const { result } = renderHook(() => useKeyboardHeight(false));
+    expect(keyboard.listeners.size).toBe(0);
+    expect(result.current).toBe(0);
+    expect(keyboard.configureNext).not.toHaveBeenCalled();
+  });
 });

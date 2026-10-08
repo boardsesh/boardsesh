@@ -1,39 +1,20 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentRef,
-  type ComponentType,
-  type RefObject,
-} from 'react';
-import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, type ComponentRef, type ComponentType, type RefObject } from 'react';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
-// Migrated off @gorhom/bottom-sheet to Expo's native bottom sheet (#3167). The
-// native sheet draws its own scrim + drag handle, so the measured-handle peek
-// machinery is replaced by a small fixed reserve for the native grabber.
-//
-// The scroll container is RNGH's own `ScrollView`, NOT `@expo/ui`'s
-// `BottomSheetScrollView` (a bare re-export of React Native's plain
-// `ScrollView`). A plain ScrollView can't be declared a relation with an RNGH
-// gesture — Android's classic `ScrollView.onInterceptTouchEvent` can win the
-// touch stream on the very first vertical-ish move, before InteractiveCreateBoard's
-// pinch has a chance to activate and call `requestDisallowInterceptTouchEvent`.
-// That raced exactly like the board's per-hold-detector-vs-pinch race the
-// pinchRef fix (#4425/#3045) already solved, just one level further out: a
-// pinch with any vertical component got cancelled by the scroll, so only a
-// carefully horizontal-only pinch survived (issue #5107). Swapping in RNGH's
-// ScrollView + `scrollRef` lets useZoomPanGesture declare the same relation
-// PlayDrawer already uses for its own surrounding scroll — pinch simultaneous
-// with the scroll (never cancelled), zoomed-pan blocks the scroll (drags the
-// board, not the sheet) — eliminating the race instead of reacting to it.
-import BottomSheet from '@expo/ui/community/bottom-sheet';
+import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
+import { flowCoversScreen } from '../../lib/routing/flow-covers-screen';
+// The scroll container is RNGH's own `ScrollView`, not React Native's plain one.
+// A plain ScrollView can't be declared a relation with an RNGH gesture, and on
+// Android its classic `onInterceptTouchEvent` can win the touch stream on the
+// very first vertical-ish move, before InteractiveCreateBoard's pinch activates
+// (issue #5107). With RNGH's ScrollView + `scrollRef`, useZoomPanGesture
+// declares the pinch simultaneous with the scroll and makes a zoomed pan block
+// it, the same relation PlayDrawer uses for its own surrounding scroll.
 import type { BoardName, Climb, HoldStat } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing, sheetStyles } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveCreateBoard';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
@@ -70,11 +51,8 @@ type CreateDrawerProps = {
   controller: Controller;
   boardHolds: BoardHolds;
   onLongPressHold: (holdId: number) => void;
-  /** True while a stacked sub-sheet (e.g. the long-press role picker) is open —
-   *  disables the drawer's pan so a drag over the sub-sheet doesn't move it. */
-  subSheetOpen: boolean;
   onLoadDraft: (climb: Climb) => void;
-  /** Dismiss the create drawer (the header's close chevron). */
+  /** Leave the editor (the header's X). The draft is kept. */
   onClose: () => void;
   /** Open the climb that a publish collided with (the duplicate banner link). */
   onViewDuplicate: (uuid: string) => void;
@@ -84,31 +62,20 @@ type CreateDrawerProps = {
   lostHolds?: LostHoldGhostsState;
 };
 
-// The peek must never grow into the '100%' snap — at that point the two snap
-// points collapse into one, the sheet has no travel and the "drag up for the
-// form" affordance is dead. Belt and braces for a large Dynamic Type setting or
-// a locale with taller chrome.
 const NO_STATS: ReadonlyMap<number, HoldStat> = new Map<number, HoldStat>();
 
-const MAX_PEEK_FRACTION = 0.92;
-
-// The native sheet's drag grabber sits in the sheet chrome above the content;
-// reserve a small fixed amount for it in the peek snap-point (replaces the old
-// runtime-measured gorhom handle height).
-const NATIVE_HANDLE_RESERVE = spacing[6];
-
 /**
- * The create-climb drawer — one Play Drawer-style bottom sheet. Peek shows the
- * header (editable name + start/finish, Save), the board, and the two-row action bar
- * (brush chips + actions). Dragging up reveals the below-the-fold form
- * (description, toggles, connect) and the Open Drafts table.
+ * The create-climb editor: the body of the New climb route, a full-height modal
+ * task (a pageSheet on iOS, a full-screen dialog on Android). The top bar (X,
+ * editable name + start/finish, the overflow menu and Save) is pinned above the
+ * scroll; the board, the tool rows, the form (description, toggles) and the
+ * Open Drafts table scroll under it.
  */
 export function CreateDrawer({
   board,
   controller,
   boardHolds,
   onLongPressHold,
-  subSheetOpen,
   onLoadDraft,
   onClose,
   onViewDuplicate,
@@ -125,37 +92,29 @@ export function CreateDrawer({
   // CreateDrawerHeader, which already aliases its second and third namespaces.
   const { t: tSession } = useTranslation('session');
   const insets = useSafeAreaInsets();
-  // Bottom terms use the WINDOW inset: this drawer is a route inside the climbs
-  // tab, whose per-tab provider folds iOS 26 tab chrome the sheet covers into
-  // insets.bottom (see use-window-bottom-inset). insets.top stays local.
+  // Bottom terms use the WINDOW inset: this route sits inside the climbs tab,
+  // whose per-tab provider folds iOS 26 tab chrome the modal covers into
+  // insets.bottom (see use-window-bottom-inset).
   const windowInsetBottom = useWindowBottomInset();
+  // An iPhone pageSheet starts below the status bar, so the top bar needs no
+  // top inset there. The iPad full-screen cover and Android's full-screen
+  // dialog both draw under the status bar.
+  const topInset = Platform.OS === 'ios' && !flowCoversScreen() ? 0 : insets.top;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const sheetRef = useRef<BottomSheet>(null);
   // The outer RNGH ScrollView, so the board's pinch/zoomed-pan can declare a
   // relation with it (see the import comment above). Typed as RNGH's
   // GestureRef shape so useZoomPanGesture/InteractiveCreateBoard need no cast
   // at the call site — mirrors PlayDrawer's scrollGestureRef.
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const scrollGestureRef = scrollRef as unknown as RefObject<ComponentType | undefined | null>;
-  // True while InteractiveCreateBoard is zoomed or mid-pinch. The sheet's own
-  // pan/drag gesture is a native Compose gesture (Android) / SwiftUI gesture
-  // (iOS), not RNGH — nothing in the board's gesture tree can block it, so it
-  // competes directly with the board's pinch/pan and can win, sliding the
-  // sheet instead of zooming/panning the board. Disabled for the duration via
-  // enablePanDownToClose below, the same way subSheetOpen already does for the
-  // role-picker sub-sheet.
-  const [boardInteractionActive, setBoardInteractionActive] = useState(false);
-
-  // Measured above-fold height drives the peek snap-point (the native grabber is
-  // a fixed reserve now, not a measured custom handle).
-  // Measured in two pieces, with the transient banners sitting BETWEEN them and
-  // measured by neither — see the note on the JSX below.
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const [boardBlockHeight, setBoardBlockHeight] = useState(0);
-  const aboveFoldHeight = headerHeight > 0 && boardBlockHeight > 0 ? headerHeight + boardBlockHeight : 0;
-  // Live snap index, kept current via onChange so the re-snap below targets the
-  // index the user is actually at (not a one-shot reset that breaks on rotation).
-  const indexRef = useRef(0);
+  // Android never shrinks this route for the keyboard: the app is edge-to-edge
+  // (decorFitsSystemWindows false), so adjustResize does nothing and the IME
+  // draws over the scroll. Pad the scroll by the keyboard so the description
+  // can be scrolled clear of it. RN reports the IME inset MINUS the nav bar,
+  // and the pad below already carries the window inset, so the two add up to
+  // the IME's full height with no double count. iOS does this natively
+  // (automaticallyAdjustKeyboardInsets below), so it takes no pad.
+  const keyboardPad = useKeyboardHeight(Platform.OS === 'android');
 
   // The board owns the zoom AND renders the reset control; the drawer only
   // holds a handle so it can drop the zoom when the frame or the climb changes
@@ -238,7 +197,7 @@ export function CreateDrawer({
 
   // Compute the on-screen board size up front (window width minus the board
   // section margins, capped by the height budget) so the board paints on the
-  // first frame instead of waiting for an onLayout pass inside the animating sheet.
+  // first frame instead of waiting for an onLayout pass inside the presenting modal.
   const boardRender = useMemo(() => {
     const boardAspect = boardHolds.boardWidth / boardHolds.boardHeight;
     const availWidth = windowWidth - spacing[4] * 2;
@@ -362,105 +321,34 @@ export function CreateDrawer({
     );
   }, [heatmap, heatLayer.legend, systemColors.secondaryLabel, t, i18n?.language]);
 
-  const setHeightIfChanged = (setter: (updater: (prev: number) => number) => void, measured: number) => {
-    setter((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
-  };
-  const handleHeaderLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeightIfChanged(setHeaderHeight, event.nativeEvent.layout.height);
-  }, []);
-  const handleBoardBlockLayout = useCallback((event: LayoutChangeEvent) => {
-    setHeightIfChanged(setBoardBlockHeight, event.nativeEvent.layout.height);
-  }, []);
-
-  // native grabber reserve + content paddingTop + above-fold (header + board +
-  // action bar) + bottom safe area + a reveal margin so a hint of the below-fold
-  // form peeks.
-  const maxPeek = Math.round((windowHeight - insets.top) * MAX_PEEK_FRACTION);
-  const peekHeight =
-    aboveFoldHeight > 0
-      ? Math.min(NATIVE_HANDLE_RESERVE + spacing[2] + aboveFoldHeight + windowInsetBottom + spacing[3], maxPeek)
-      : 0;
-
-  // Re-snap to the current index whenever the peek height changes: the first
-  // measurement (fallback → measured peek) and any re-layout (rotation resizes
-  // the board, so peekHeight changes) settle the sheet to the right height
-  // without yanking a user who has expanded it.
-  useEffect(() => {
-    if (peekHeight === 0) return;
-    sheetRef.current?.snapToIndex(indexRef.current);
-  }, [peekHeight]);
-
-  const handleChange = useCallback((index: number) => {
-    indexRef.current = index;
-  }, []);
-
-  const snapPoints = useMemo<(number | string)[]>(
-    () => (peekHeight > 0 ? [peekHeight, '100%'] : ['80%', '100%']),
-    [peekHeight],
-  );
-
-  const backgroundStyle = { ...sheetStyles.background, backgroundColor: systemColors.secondaryBackground };
-
   return (
-    <BottomSheet
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      // `enableContentPanningGesture`/`enableHandlePanningGesture` exist on
-      // BottomSheetProps for gorhom API compatibility but are documented as
-      // having no effect on native platforms — "Native sheets handle content
-      // panning internally" (@expo/ui's own types.ts). `enablePanDownToClose`
-      // is the one prop this library version actually wires up on both
-      // platforms (Android: sheetGesturesEnabled = enablePanDownToClose;
-      // iOS: interactiveDismissDisabled = !enablePanDownToClose) — it's the
-      // real lever for disabling the sheet's own drag while a sub-sheet is
-      // open or the board is zoomed/mid-pinch, at the cost of also disabling
-      // pan-down-to-close (and, on Android, back-press/scrim-tap dismiss) for
-      // the same duration, which is the right tradeoff: an accidental swipe
-      // shouldn't discard the in-progress climb either.
-      enablePanDownToClose={!subSheetOpen && !boardInteractionActive}
-      backgroundStyle={backgroundStyle}
-      keyboardBehavior="interactive"
-      keyboardBlurBehavior="restore"
-      onChange={handleChange}
-      onClose={onClose}
-    >
+    <View style={[styles.root, { paddingTop: topInset, backgroundColor: systemColors.secondaryBackground }]}>
+      {/* Pinned above the scroll, like every modal task's top bar: the X and
+          Save never move with the content or the keyboard. */}
+      <CreateDrawerHeader
+        name={controller.name}
+        onChangeName={controller.setName}
+        startingCount={controller.startingCount}
+        finishCount={controller.finishCount}
+        focusSignal={controller.focusNameSignal}
+        onClose={onClose}
+        overflow={overflowState}
+        onSelectOverflowAction={handleOverflowAction}
+        saveState={controller.saveState}
+        onSave={handleSavePress}
+        climbReady={climbReady}
+      />
       <GestureHandlerRootView style={styles.scroll}>
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
-          contentContainerStyle={{ paddingTop: spacing[2], paddingBottom: windowInsetBottom + spacing[4] }}
+          contentContainerStyle={{ paddingBottom: windowInsetBottom + spacing[4] + keyboardPad }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
         >
-          <View onLayout={handleHeaderLayout} testID="create-drawer-measured-header">
-            <CreateDrawerHeader
-              name={controller.name}
-              onChangeName={controller.setName}
-              startingCount={controller.startingCount}
-              finishCount={controller.finishCount}
-              focusSignal={controller.focusNameSignal}
-              onClose={() => sheetRef.current?.close()}
-              overflow={overflowState}
-              onSelectOverflowAction={handleOverflowAction}
-              saveState={controller.saveState}
-              onSave={handleSavePress}
-              climbReady={climbReady}
-            />
-          </View>
-
-          {/* Transient, and deliberately measured by NEITHER block above or below.
-            The peek snap-point is derived from the measured above-fold height, so
-            anything that mounts inside a measured region moves `peekHeight` and
-            re-snaps the sheet — which collapsed an expanded drawer the instant a
-            banner appeared, hiding the very climb the banner is asking about. The
-            status row solved the same problem by reserving a constant line box;
-            these can't, because reserving ~100dp permanently for something rarely
-            on screen would cost more above-fold budget than the board can spare.
-            So they push content instead of resizing the sheet: the drawer stays
-            exactly where the climber put it. Pinned by "keeps the transient
-            banners out of the measured above-fold region" in
-            create-drawer-measured-region.test.tsx. */}
+          {/* Transient banners sit at the top of the scroll, under the pinned
+            top bar, and push the board down rather than covering it. */}
           {controller.pendingNewClimb ? (
             <InlineConfirmBanner
               title={t('mobile.create.newClimb.confirm.title')}
@@ -489,7 +377,7 @@ export function CreateDrawer({
             />
           ) : null}
 
-          <View onLayout={handleBoardBlockLayout} testID="create-drawer-measured-board-block">
+          <View testID="create-drawer-board-block">
             <View style={styles.boardSection}>
               <InteractiveCreateBoard
                 frames={controller.currentFramesString}
@@ -506,7 +394,6 @@ export function CreateDrawer({
                 renderWidth={boardRender.width}
                 renderHeight={boardRender.height}
                 controlRef={boardControlsRef}
-                onInteractionActiveChange={setBoardInteractionActive}
                 scrollRef={scrollGestureRef}
                 overlay={boardOverlay}
                 ghostTargets={lostHolds?.ghostTargets}
@@ -570,11 +457,14 @@ export function CreateDrawer({
           </View>
         </ScrollView>
       </GestureHandlerRootView>
-    </BottomSheet>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   scroll: {
     flex: 1,
   },
