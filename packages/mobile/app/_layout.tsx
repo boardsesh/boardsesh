@@ -128,6 +128,13 @@ import { reportScreenshotSmokeError } from '../src/lib/screenshot-smoke';
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
 import '../modules/memory-trim/src/index';
 
+// Disposable OTA boot-check red proof. Never merge: this deliberately throws
+// while the root module loads, before the app can draw its first screen.
+function triggerOtaBootRedProof(): void {
+  throw new Error('OTA_BOOT_RED_PROOF_REFRESH_20261009: this update must not boot.');
+}
+triggerOtaBootRedProof();
+
 markStartup('root.module.ready');
 // The root layout chunk arrived and evaluated, so the ErrorBoundary below exists
 // from here on: the shell's chunk-recovery script (index.html in public/) stands
