@@ -802,6 +802,9 @@ function ClimbListInner() {
     readConnectStepBuild().nativeVersion,
     CONNECT_STEP_MIN_NATIVE_VERSION,
   );
+  // The tip flags stay resolved across blur so the card does not pop on every
+  // refocus. Cost: a reveal tip armed while Climbs was blurred can let the card
+  // flash once before the tip lands.
   const updateCardEnabled =
     isBoardResolved &&
     revealTipResolved &&
