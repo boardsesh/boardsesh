@@ -18,6 +18,7 @@ import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'r
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Icon } from './Icon';
+import type { IconName } from './icon-map';
 import { ActivityIndicator } from './ActivityIndicator';
 import { PressableSurface } from './PressableSurface';
 import { useTheme } from '../providers/theme-provider';
@@ -33,6 +34,9 @@ export const SHEET_TOP_BAR_HEIGHT = 56;
 
 /** The size of the leading glyphs. */
 const GLYPH_SIZE = 18;
+
+/** The optional glyph before the trailing label, sized to the body text. */
+const TRAILING_ICON_SIZE = 15;
 
 /**
  * How the prominent confirm looks per design language. Liquid Glass: a filled
@@ -91,7 +95,14 @@ export type SheetTopBarTrailing = {
    * the label.
    */
   destructive?: boolean;
+  /**
+   * A small glyph before the label, for a state the label alone can't carry
+   * (the create drawer's lock on a climb past its edit window).
+   */
+  icon?: IconName;
   accessibilityLabel?: string;
+  /** Why the action is the way it is, e.g. why it is disabled. */
+  accessibilityHint?: string;
 };
 
 type SheetTopBarProps = {
@@ -174,14 +185,21 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
   );
 });
 
-const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton({
+/**
+ * The trailing confirm on its own, for a bespoke header that cannot be a
+ * SheetTopBar (the create drawer's editable name) but still owes the same
+ * confirm look and behaviour.
+ */
+export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton({
   label,
   onPress,
   disabled = false,
   loading = false,
   prominent = false,
   destructive = false,
+  icon,
   accessibilityLabel,
+  accessibilityHint,
 }: SheetTopBarTrailing) {
   const { systemColors, brandColors, radii, spacing, variant } = useTheme();
   const inert = disabled || loading;
@@ -211,10 +229,16 @@ const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailingButton(
       feedback="opacity"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: inert, busy: loading }}
       style={styles.textTarget}
     >
-      <View style={surface}>
+      <View style={[surface, icon ? [styles.iconRow, { gap: spacing[1] }] : null]}>
+        {icon ? (
+          <View testID="sheet-top-bar-trailing-icon" style={loading ? styles.hidden : null}>
+            <Icon name={icon} size={TRAILING_ICON_SIZE} color={labelColor} />
+          </View>
+        ) : null}
         {/* The label stays in the tree while loading, only hidden, so the slot
             keeps the label's width and nothing beside it moves. */}
         <Text
@@ -402,6 +426,10 @@ const styles = StyleSheet.create({
   prominent: {
     minHeight: glassSize.mini,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
   prominentLabel: {

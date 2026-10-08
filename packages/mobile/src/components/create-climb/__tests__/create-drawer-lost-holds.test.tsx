@@ -63,6 +63,7 @@ vi.mock('../../board/HeatmapDownloadLine', () => ({ HeatmapDownloadLine: () => n
 const captured = vi.hoisted(() => ({
   board: null as null | Record<string, unknown>,
   actionBar: null as null | Record<string, unknown>,
+  header: null as null | Record<string, unknown>,
 }));
 vi.mock('../InteractiveCreateBoard', () => ({
   InteractiveCreateBoard: (props: Record<string, unknown>) => {
@@ -71,7 +72,10 @@ vi.mock('../InteractiveCreateBoard', () => ({
   },
 }));
 vi.mock('../CreateDrawerHeader', () => ({
-  CreateDrawerHeader: () => createElement('div', { 'data-node': 'header' }),
+  CreateDrawerHeader: (props: Record<string, unknown>) => {
+    captured.header = props;
+    return createElement('div', { 'data-node': 'header' });
+  },
 }));
 vi.mock('../CreateDrawerActionBar', () => ({
   CreateDrawerActionBar: (props: Record<string, unknown>) => {
@@ -120,6 +124,8 @@ const controller = {
   saveState: 'ready',
   handleSave: vi.fn(),
   publishBlocked: false,
+  canSave: true,
+  canPublish: true,
   draftStatus: null,
   pendingNewClimb: false,
   publishDuplicateError: null,
@@ -149,7 +155,7 @@ describe('CreateDrawer with a remix that lost holds', () => {
 
     expect(captured.board?.ghostTargets).toEqual([ring]);
     expect(captured.board?.onGhostPress).toBe(dismissGhost);
-    expect(captured.actionBar?.publishBlocked).toBe(true);
+    expect(captured.header?.climbReady).toBe(false);
     expect(captured.actionBar?.saveBlockedLine).not.toBeNull();
   });
 
@@ -158,13 +164,13 @@ describe('CreateDrawer with a remix that lost holds', () => {
     const { rerender } = render(drawerWith({ ghosts: [ring], ghostTargets: [ring], dismissGhost }));
     rerender(drawerWith({ ghosts: [], ghostTargets: [], dismissGhost }));
 
-    expect(captured.actionBar?.publishBlocked).toBe(false);
+    expect(captured.header?.climbReady).toBe(true);
     expect(captured.actionBar?.saveBlockedLine).toBeNull();
   });
 
   it('leaves Save alone outside a remix', () => {
     render(drawerWith(undefined));
-    expect(captured.actionBar?.publishBlocked).toBe(false);
+    expect(captured.header?.climbReady).toBe(true);
     expect(captured.actionBar?.saveBlockedLine).toBeNull();
     expect(captured.board?.ghostTargets).toBeUndefined();
   });

@@ -4,8 +4,8 @@ import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { BleLightbulbButton } from '../ble/BleLightbulbButton';
 import { AppMenu } from '../AppMenu';
+import { SheetTopBarTrailingButton } from '../SheetTopBar';
 import {
   buildCreateOverflowMenu,
   type CreateOverflowAction,
@@ -14,6 +14,8 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
+import { deriveSaveButtonView } from './save-button-view';
+import type { SaveButtonState } from './use-create-climb-screen';
 
 const NAME_MAX = 80;
 
@@ -25,23 +27,29 @@ type CreateDrawerHeaderProps = {
   /** Bumped by the controller to pull focus into the name field (unnamed save). */
   focusSignal: number;
   onClose: () => void;
-  /**
-   * False on a board with no lights to connect to (a spray wall, #5960): the
-   * lightbulb here only ever starts a Bluetooth connect, so it is not drawn.
-   */
-  showLightbulb: boolean;
-  bleConnected: boolean;
-  bleConnecting: boolean;
-  onToggleBle: () => void;
   /** Editor state the overflow (⋯) menu builds its rows from. */
   overflow: CreateOverflowMenuState;
   onSelectOverflowAction: (action: CreateOverflowAction) => void;
+  saveState: SaveButtonState;
+  onSave: () => void;
+  /**
+   * False while the holds can't be saved yet: no holds on a draft, or no start
+   * or finish on a publish (or a remix's lost holds still up). The counts under
+   * the name say what is missing, so a disabled Save is never mute.
+   */
+  climbReady: boolean;
 };
 
 /**
  * Create-drawer header, mirroring the Play Drawer chrome: a close chevron on the
- * left, the always-editable climb name + start/finish counts in the centre, and
- * the BLE lightbulb on the right (connect the wall to light up the climb).
+ * left, the always-editable climb name + start/finish counts in the centre, then
+ * the overflow menu and the trailing Save. Nothing else: every extra 44pt here
+ * comes out of the name field, which a French or German Save already narrows.
+ * The lightbulb lives in the tool row for that reason.
+ *
+ * Bespoke rather than a SheetTopBar because its title is a text field. Save
+ * still uses the top bar's own trailing confirm, so it looks and behaves like
+ * every other sheet's (see docs/mobile-sheets-vs-routes.md, "Where actions go").
  */
 export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   name,
@@ -50,16 +58,13 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   finishCount,
   focusSignal,
   onClose,
-  showLightbulb,
-  bleConnected,
-  bleConnecting,
-  onToggleBle,
   overflow,
   onSelectOverflowAction,
+  saveState,
+  onSave,
+  climbReady,
 }: CreateDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
-  const { t: tSettings } = useTranslation('settings');
-  const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
   const inputRef = useRef<TextInput>(null);
 
@@ -87,6 +92,8 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
     },
     [overflowRows, onSelectOverflowAction],
   );
+
+  const save = deriveSaveButtonView(saveState, t, climbReady);
 
   return (
     <View style={styles.row}>
@@ -119,17 +126,23 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
           returnKeyType="done"
           style={[styles.nameInput, { color: systemColors.label }]}
         />
-        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitle}>
+        {/* One line whatever the locale: it shrinks before it wraps, so the
+            header's height (part of the measured peek) never changes. */}
+        <Text
+          variant="caption1"
+          color={systemColors.secondaryLabel}
+          style={styles.subtitle}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+        >
           {counts}
         </Text>
       </View>
 
       {/* Document-level commands (what kind of climb this is, start over) live in
           the nav-bar overflow, not the action bar: that bar is a tool bar you use
-          with a brush in hand, and its middle is a horizontal scroller, so a
-          command placed there can scroll off-screen. That is exactly how the bare
-          `copy` glyph went unfound twice. Left of the lightbulb, which is a
-          stateful toggle whose position climbers track across sessions. */}
+          with a brush in hand. A bare `copy` glyph in it went unfound twice. */}
       <AppMenu
         iconName="more"
         actions={overflowRows}
@@ -138,19 +151,16 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         style={styles.overflow}
       />
 
-      {showLightbulb ? (
-        <BleLightbulbButton
-          isConnected={bleConnected}
-          isScanning={bleConnecting}
-          onPress={onToggleBle}
-          accessibilityLabel={bleConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
-          scanningAccessibilityHint={tSettings('ble.scanning')}
-          writingAccessibilityHint={tSettings('ble.writing')}
-          haptic="medium"
-          size={24}
-          containerSize={44}
-        />
-      ) : null}
+      <SheetTopBarTrailingButton
+        label={save.label}
+        accessibilityLabel={save.accessibilityLabel}
+        onPress={onSave}
+        disabled={save.disabled}
+        loading={save.loading}
+        icon={save.icon ?? undefined}
+        accessibilityHint={save.accessibilityHint ?? undefined}
+        prominent
+      />
     </View>
   );
 });

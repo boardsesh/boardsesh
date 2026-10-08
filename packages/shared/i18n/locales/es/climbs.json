@@ -780,7 +780,8 @@
         "saving": "Guardando…",
         "done": "Guardado",
         "draftToast": "Borrador guardado",
-        "publishedToast": "Vía publicada"
+        "publishedToast": "Vía publicada",
+        "needsHold": "Añade una presa para guardar"
       },
       "autosave": {
         "onDevice": "Borrador guardado en este teléfono",

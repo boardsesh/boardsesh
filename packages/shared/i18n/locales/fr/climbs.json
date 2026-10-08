@@ -780,7 +780,8 @@
         "saving": "Enregistrement…",
         "done": "Enregistré",
         "draftToast": "Brouillon enregistré",
-        "publishedToast": "Voie publiée"
+        "publishedToast": "Voie publiée",
+        "needsHold": "Ajoute une prise pour enregistrer"
       },
       "autosave": {
         "onDevice": "Brouillon enregistré sur ce téléphone",

@@ -26,9 +26,6 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name?: string }) => createElement('span', { 'data-icon': name }) }));
-vi.mock('../../ble/BleLightbulbButton', () => ({
-  BleLightbulbButton: () => createElement('span', { 'data-ble': 'true' }),
-}));
 // One button per row, in the order the header handed them over — enough to fire
 // a specific POSITION, which is the thing under test.
 vi.mock('../../AppMenu', () => ({
@@ -54,6 +51,39 @@ vi.mock('../../AppMenu', () => ({
       ),
     ),
 }));
+// The trailing Save, drawn as a plain button carrying what the header handed it.
+vi.mock('../../SheetTopBar', () => ({
+  SheetTopBarTrailingButton: ({
+    label,
+    accessibilityLabel,
+    onPress,
+    disabled,
+    loading,
+    prominent,
+    icon,
+    accessibilityHint,
+  }: {
+    label: string;
+    accessibilityLabel?: string;
+    onPress: () => void;
+    disabled?: boolean;
+    loading?: boolean;
+    prominent?: boolean;
+    icon?: string;
+    accessibilityHint?: string;
+  }) =>
+    createElement('button', {
+      'data-node': 'save',
+      'data-label': accessibilityLabel,
+      'data-loading': loading ? 'true' : 'false',
+      'data-prominent': prominent ? 'true' : 'false',
+      'data-icon': icon,
+      'data-hint': accessibilityHint,
+      disabled: disabled || loading,
+      onClick: onPress,
+      children: label,
+    }),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' } }),
 }));
@@ -61,12 +91,14 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#8
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 
 import { CreateDrawerHeader } from '../CreateDrawerHeader';
+import type { SaveButtonState } from '../use-create-climb-screen';
 
 function renderHeader(
   overflow: Partial<Parameters<typeof CreateDrawerHeader>[0]['overflow']> = {},
-  { showLightbulb = true }: { showLightbulb?: boolean } = {},
+  { saveState = 'ready', climbReady = true }: { saveState?: SaveButtonState; climbReady?: boolean } = {},
 ) {
   const onSelectOverflowAction = vi.fn();
+  const onSave = vi.fn();
   const { container } = render(
     createElement(CreateDrawerHeader, {
       name: 'Test climb',
@@ -75,12 +107,11 @@ function renderHeader(
       finishCount: 0,
       focusSignal: 0,
       onClose: vi.fn(),
-      showLightbulb,
-      bleConnected: false,
-      bleConnecting: false,
-      onToggleBle: vi.fn(),
       overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, ...overflow },
       onSelectOverflowAction,
+      saveState,
+      onSave,
+      climbReady,
     }),
   );
   // Looked up by scanning rather than a CSS selector: a label may carry
@@ -88,7 +119,8 @@ function renderHeader(
   const row = (label: string) =>
     (Array.from(container.querySelectorAll('[data-row]')).find((node) => node.getAttribute('data-row') === label) ??
       null) as HTMLButtonElement | null;
-  return { container, onSelectOverflowAction, row };
+  const save = container.querySelector('[data-node="save"]') as HTMLButtonElement;
+  return { container, onSelectOverflowAction, onSave, row, save };
 }
 
 describe('CreateDrawerHeader overflow menu', () => {
@@ -141,16 +173,69 @@ describe('CreateDrawerHeader overflow menu', () => {
   });
 });
 
-// #5960: the creator's bulb only starts a Bluetooth connect, and a spray wall has
-// no lights. The drawer passes `showLightbulb={false}` there.
-describe('CreateDrawerHeader lightbulb', () => {
-  it('draws the bulb on a board with lights', () => {
+// Every extra 44pt in this bar comes out of the name field, which a French or
+// German Save already narrows. The lightbulb moved to the tool row for that.
+describe('CreateDrawerHeader contents', () => {
+  it('holds only close, the name, the overflow menu and Save', () => {
     const { container } = renderHeader();
-    expect(container.querySelector('[data-ble="true"]')).not.toBeNull();
+    const bar = container.firstElementChild as HTMLElement;
+    const parts = Array.from(bar.children).map((child) => {
+      if (child.getAttribute('data-node')) return child.getAttribute('data-node');
+      if (child.querySelector('input')) return 'name';
+      if (child.querySelector('[data-icon="chevron.down"]')) return 'close';
+      return child.tagName;
+    });
+    expect(parts).toEqual(['close', 'name', 'overflow', 'save']);
+    expect(container.querySelector('[data-ble]')).toBeNull();
+  });
+});
+
+describe('CreateDrawerHeader Save', () => {
+  it('puts Save last in the header, prominent, and fires it', () => {
+    const { container, save, onSave } = renderHeader();
+    expect(save).toBeTruthy();
+    expect(save.getAttribute('data-prominent')).toBe('true');
+    expect(save.textContent).toBe('mobile.create.save.idle');
+    // Trailing: nothing follows it in the bar.
+    const buttons = Array.from(container.querySelectorAll('button, [data-ble]'));
+    expect(buttons[buttons.length - 1]).toBe(save);
+    save.click();
+    expect(onSave).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the bulb out when the board has nothing to light', () => {
-    const { container } = renderHeader({}, { showLightbulb: false });
-    expect(container.querySelector('[data-ble="true"]')).toBeNull();
+  it('stays disabled until the climb is ready, with the counts showing what is missing', () => {
+    const notReady = renderHeader({}, { climbReady: false });
+    expect(notReady.save.disabled).toBe(true);
+    expect(notReady.container.textContent).toContain('mobile.create.counts.start');
+    notReady.save.click();
+    expect(notReady.onSave).not.toHaveBeenCalled();
+
+    const ready = renderHeader({}, { climbReady: true });
+    expect(ready.save.disabled).toBe(false);
+  });
+
+  it('shows the spinner while saving, and refuses a second press', () => {
+    const { save, onSave } = renderHeader({}, { saveState: 'saving' });
+    expect(save.getAttribute('data-loading')).toBe('true');
+    expect(save.getAttribute('data-label')).toBe('mobile.create.save.saving');
+    save.click();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps the signed-out Save live, so the tap can go to sign-in', () => {
+    const { save } = renderHeader({}, { saveState: 'login', climbReady: false });
+    expect(save.disabled).toBe(false);
+    expect(save.getAttribute('data-label')).toBe('mobile.create.save.login');
+  });
+
+  it('marks a climb past its edit window with a lock and says why', () => {
+    const { save } = renderHeader({}, { saveState: 'editLocked' });
+    expect(save.disabled).toBe(true);
+    expect(save.getAttribute('data-icon')).toBe('lock');
+    expect(save.getAttribute('data-hint')).toBe('createClimbForm.alerts.editWindowExpired');
+
+    // Not ready is plain: no lock, so the two never look alike.
+    const notReady = renderHeader({}, { climbReady: false });
+    expect(notReady.save.getAttribute('data-icon')).toBeNull();
   });
 });
