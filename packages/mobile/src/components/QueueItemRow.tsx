@@ -1,6 +1,11 @@
+import {
+  SWIPE_ACTION_REVEAL as DELETE_BUTTON_WIDTH,
+  SWIPE_REVEAL_THRESHOLD,
+  SWIPE_FULL_THRESHOLD,
+} from './swipe-action-model';
 import { memo, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Pressable, View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, runOnJS } from 'react-native-reanimated';
 import {
   Gesture,
   GestureDetector,
@@ -33,8 +38,6 @@ import { useShowcaseAnchor } from '../lib/showcase-anchor';
 // on the row (VoiceOver does not) — see lib/row-accessibility-actions.
 const LOG_ASCENT_ACTION_NAME = 'logAscent';
 
-const SWIPE_DELETE_THRESHOLD = -80;
-const DELETE_BUTTON_WIDTH = 80;
 // Width of the leading position/play/checkbox slot. Exported so the queue list's
 // suggestion rows reserve the same gutter and align their thumbnails + separator
 // with the queue rows from a single source of truth.
@@ -179,10 +182,30 @@ function QueueItemRowComponent({
     }
   }, [swipeEnabled, translateX, isSwipeOpen]);
 
-  const handleRemove = useCallback(() => {
-    hapticMedium();
-    onRemove(item.uuid);
-  }, [item.uuid, onRemove]);
+  const handleRemove = useCallback(
+    (uuid: string) => {
+      hapticMedium();
+      onRemove(uuid);
+    },
+    [onRemove],
+  );
+
+  const handleDeletePress = useCallback(() => {
+    // Commit the captured UUID now; a recycled row must never defer a different
+    // item's removal until an animation callback. The host offers scoped Undo.
+    const removedUuid = itemRef.current.uuid;
+    handleRemove(removedUuid);
+    translateX.value = 0;
+    isSwipeOpen.value = false;
+  }, [translateX, isSwipeOpen, handleRemove]);
+
+  const handleSwipeDelete = useCallback(
+    (originUuid: string) => {
+      if (originUuid === itemRef.current.uuid) handleDeletePress();
+    },
+    [handleDeletePress],
+  );
+  const itemUuid = item.uuid;
 
   const panGesture = useMemo(
     () =>
@@ -211,10 +234,19 @@ function QueueItemRowComponent({
             translateX.value = 0;
             return;
           }
-          translateX.value = Math.max(event.translationX, -DELETE_BUTTON_WIDTH - 20);
+          translateX.value = Math.max(event.translationX, -SWIPE_FULL_THRESHOLD - 40);
         })
-        .onEnd(() => {
-          if (translateX.value < SWIPE_DELETE_THRESHOLD) {
+        .onEnd((event, success) => {
+          if (success === false) {
+            translateX.value = withSpring(0);
+            isSwipeOpen.value = false;
+            return;
+          }
+          if (event.translationX <= -SWIPE_FULL_THRESHOLD) {
+            runOnJS(handleSwipeDelete)(itemUuid);
+            return;
+          }
+          if (translateX.value < -SWIPE_REVEAL_THRESHOLD) {
             translateX.value = withSpring(-DELETE_BUTTON_WIDTH, {
               damping: 20,
               stiffness: 200,
@@ -225,7 +257,7 @@ function QueueItemRowComponent({
             isSwipeOpen.value = false;
           }
         }),
-    [swipeEnabled, translateX, isSwipeOpen],
+    [swipeEnabled, translateX, isSwipeOpen, handleSwipeDelete, itemUuid],
   );
 
   const rowAnimatedStyle = useAnimatedStyle(() => ({
@@ -292,15 +324,6 @@ function QueueItemRowComponent({
     hapticSelection();
     onPress(itemRef.current);
   }, [isEditMode, onToggleSelect, onPress, translateX, isSwipeOpen]);
-
-  const handleDeletePress = useCallback(() => {
-    // Animate the row out
-    translateX.value = withTiming(-400, { duration: 200 });
-    rowOpacity.value = withTiming(0, { duration: 200 });
-    rowHeight.value = withTiming(0, { duration: 200 }, () => {
-      runOnJS(handleRemove)();
-    });
-  }, [translateX, rowOpacity, rowHeight, handleRemove]);
 
   const handleTickPress = useCallback(() => {
     hapticSelection();

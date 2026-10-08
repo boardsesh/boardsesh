@@ -9,6 +9,10 @@ import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 // without a native tree. deriveLogbookGradeDisplay and the other row-meta rules
 // (@boardsesh/logbook) are intentionally NOT mocked so the real display
 // decisions + the row's label formatting are exercised end-to-end.
+const tracker = vi.hoisted(() => ({
+  start: null as (() => void) | null,
+  end: null as ((event: { translationX: number }) => void) | null,
+}));
 const swipeable = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 const a11y = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 // Controls the app-wide "Show Boardsesh grades" toggle for the row. Default OFF
@@ -50,8 +54,8 @@ vi.mock('react-native-reanimated', () => ({
 }));
 vi.mock('react-native-gesture-handler', () => {
   // Defined inside the factory because vi.mock is hoisted above module-scope vars.
-  const gestureChain = () => {
-    const builder: Record<string, () => typeof builder> = {};
+  const gestureChain = (track = false) => {
+    const builder: Record<string, (callback?: unknown) => typeof builder> = {};
     for (const method of [
       'maxDuration',
       'maxDistance',
@@ -60,13 +64,26 @@ vi.mock('react-native-gesture-handler', () => {
       'onEnd',
       'activeOffsetY',
       'failOffsetX',
+      'failOffsetY',
+      'activeOffsetX',
+      'enabled',
     ]) {
-      builder[method] = () => builder;
+      builder[method] = (callback?: unknown) => {
+        if (track && method === 'onEnd') tracker.end = callback as typeof tracker.end;
+        if (track && method === 'onStart') tracker.start = callback as typeof tracker.start;
+        return builder;
+      };
     }
     return builder;
   };
   return {
-    Gesture: { Tap: gestureChain, LongPress: gestureChain, Pan: gestureChain, Exclusive: (...g: unknown[]) => g[0] },
+    Gesture: {
+      Tap: gestureChain,
+      LongPress: gestureChain,
+      Pan: () => gestureChain(true),
+      Simultaneous: (...gestures: unknown[]) => gestures[0],
+      Exclusive: (...g: unknown[]) => g[0],
+    },
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   };
 });
@@ -397,14 +414,15 @@ describe('LogbookRow — swipe wiring', () => {
     renderRow(item, { onEdit, onDeleteRequest });
     expect(swipeable.props).not.toBeNull();
 
-    const willOpen = swipeable.props?.onSwipeableWillOpen as (direction: 'left' | 'right') => void;
-    // ReanimatedSwipeable reports the SWIPE direction: 'left' = the RIGHT
-    // actions (Delete) opened; 'right' = the LEFT actions (Edit).
-    willOpen('left');
+    tracker.start?.();
+    tracker.end?.({ translationX: -90 });
+    expect(onDeleteRequest).not.toHaveBeenCalled();
+    tracker.start?.();
+    tracker.end?.({ translationX: -210 });
     expect(onDeleteRequest).toHaveBeenCalledWith(item, 'swipe');
     expect(onEdit).not.toHaveBeenCalled();
-
-    willOpen('right');
+    tracker.start?.();
+    tracker.end?.({ translationX: 210 });
     expect(onEdit).toHaveBeenCalledWith(item, 'swipe');
     expect(onDeleteRequest).toHaveBeenCalledTimes(1);
   });

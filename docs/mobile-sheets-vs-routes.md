@@ -729,3 +729,17 @@ notification, so it never attempts to reopen a sheet during native handoff.
 scroll body, or beside a composer. Preserve typed text and attachments on failure, and clear
 the error on retry. Root toasts appear behind native sheets and cannot explain
 why a form remains open. Logbook editing already follows this contract.
+
+
+**Row swipe actions:** climb, queue, and logbook rows share an 88-point reveal,
+a 44-point reveal threshold, and a 192-point full-swipe release threshold. A short
+swipe reveals a labelled button; a full swipe commits once and closes, including
+when Reduce Motion settles the opening animation before the JS release callback.
+Keep reaction-menu long-press and screen-reader actions available.
+
+Queue removal uses the queue's scoped live-merge Undo. Logbook deletion keeps its
+confirmation, then hides the entry and offers eight seconds to Undo before sending
+DELETE_TICK. The root LogbookDeleteProvider owns that deadline across route changes.
+An account, board, or session change cancels unsent deletions with visible feedback.
+Capture that scope before awaiting confirmation; a delayed answer cannot delete
+an old entry under a new identity. Never recreate a deleted Aurora tick for Undo.

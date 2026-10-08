@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../../../providers/logbook-delete-provider', () => ({
+  usePendingLogbookDeletes: () => new Set(),
+  useLogbookDeleteActions: () => ({ getDeleteScope: () => 'scope', scheduleDelete: vi.fn(() => true) }),
+}));
 import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

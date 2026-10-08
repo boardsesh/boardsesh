@@ -66,15 +66,30 @@ vi.mock('../QueueSheetHeader', () => ({
     ),
 }));
 vi.mock('../QueueList', () => ({
-  QueueList: ({ queue, onToggleSelect }: { queue: ClimbQueueItem[]; onToggleSelect: (uuid: string) => void }) =>
+  QueueList: ({
+    queue,
+    onToggleSelect,
+    onRemove,
+  }: {
+    queue: ClimbQueueItem[];
+    onToggleSelect: (uuid: string) => void;
+    onRemove: (uuid: string) => void;
+  }) =>
     createElement(
       'div',
       null,
-      queue.map((item) =>
+      ...queue.map((item) =>
         createElement('button', {
           key: item.uuid,
           'data-testid': `select-${item.uuid}`,
           onClick: () => onToggleSelect(item.uuid),
+        }),
+      ),
+      ...queue.map((item) =>
+        createElement('button', {
+          key: `remove-${item.uuid}`,
+          'data-testid': `remove-${item.uuid}`,
+          onClick: () => onRemove(item.uuid),
         }),
       ),
     ),
@@ -163,7 +178,10 @@ beforeEach(() => {
     const removed = new Set(uuids);
     live.current = {
       queue: live.current.queue.filter((queueItem) => !removed.has(queueItem.uuid)),
-      currentClimbQueueItem: live.current.currentClimbQueueItem,
+      currentClimbQueueItem:
+        live.current.currentClimbQueueItem && removed.has(live.current.currentClimbQueueItem.uuid)
+          ? null
+          : live.current.currentClimbQueueItem,
     };
   });
 });
@@ -215,6 +233,19 @@ describe('QueueSheet undo', () => {
     fireEvent.click(getByTestId('undo'));
     const [restoredQueue] = actions.setQueue.mock.calls[0] as [ClimbQueueItem[]];
     expect(uuidsOf(restoredQueue)).toEqual(['a', 'c']);
+  });
+
+  it('offers scoped Undo for a one-row swipe removal and keeps a peer current climb', () => {
+    const { getByTestId } = renderSheet();
+    fireEvent.click(getByTestId('remove-b'));
+    expect(actions.removeQueueItems).toHaveBeenCalledWith(['b']);
+    expect(getByTestId('undo-snackbar').getAttribute('data-message')).toBe('mobile.queueSheet.removed:1');
+    const peer = item('peer');
+    live.current = { queue: [...live.current.queue, peer], currentClimbQueueItem: peer };
+    fireEvent.click(getByTestId('undo'));
+    const [restoredQueue, restoredCurrent] = actions.setQueue.mock.calls[0] as [ClimbQueueItem[], ClimbQueueItem];
+    expect(uuidsOf(restoredQueue)).toEqual(['a', 'b', 'c', 'peer']);
+    expect(restoredCurrent.uuid).toBe('peer');
   });
 
   it('drops the offer when dismissed, so a late tap restores nothing', () => {

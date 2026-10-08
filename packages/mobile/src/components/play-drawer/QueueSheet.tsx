@@ -76,7 +76,6 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   const sheetRef = useRef<BottomSheetModal>(null);
 
   const {
-    removeFromQueue,
     removeQueueItems,
     clearQueue,
     reorderQueue,
@@ -261,9 +260,13 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   const handleRemove = useCallback(
     (uuid: string) => {
-      removeFromQueue(uuid);
+      const before = getQueueSnapshot();
+      if (!before.queue.some((item) => item.uuid === uuid)) return;
+      const removedUuids = new Set([uuid]);
+      removeQueueItems([uuid]);
+      offerUndo('removed', before, removedUuids);
     },
-    [removeFromQueue],
+    [getQueueSnapshot, removeQueueItems, offerUndo],
   );
 
   const viewOnlyMode = queue.length === 0;

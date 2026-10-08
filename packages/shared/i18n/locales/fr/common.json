@@ -961,5 +961,10 @@
     "message": "Tes modifications ne seront pas enregistrées.",
     "discard": "Abandonner les modifications",
     "keepEditing": "Continuer à modifier"
+  },
+  "undoDelete": {
+    "removed": "Entrée supprimée",
+    "undo": "Annuler",
+    "cancelled": "Suppression annulée. Ton entrée a été conservée."
   }
 }

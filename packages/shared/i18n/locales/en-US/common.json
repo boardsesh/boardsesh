@@ -961,5 +961,10 @@
     "message": "Your changes won't be saved.",
     "discard": "Discard changes",
     "keepEditing": "Keep editing"
+  },
+  "undoDelete": {
+    "removed": "Entry removed",
+    "undo": "Undo",
+    "cancelled": "Deletion cancelled. Your entry was kept."
   }
 }

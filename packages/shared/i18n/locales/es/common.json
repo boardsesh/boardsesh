@@ -961,5 +961,10 @@
     "message": "Tus cambios no se guardarán.",
     "discard": "Descartar cambios",
     "keepEditing": "Seguir editando"
+  },
+  "undoDelete": {
+    "removed": "Registro eliminado",
+    "undo": "Deshacer",
+    "cancelled": "Eliminación cancelada. Tu registro se ha conservado."
   }
 }

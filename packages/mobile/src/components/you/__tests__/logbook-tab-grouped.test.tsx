@@ -1,4 +1,19 @@
 // @vitest-environment jsdom
+vi.mock('../../../providers/logbook-delete-provider', () => ({
+  usePendingLogbookDeletes: () => new Set(),
+  useLogbookDeleteActions: () => ({
+    getDeleteScope: () => 'scope',
+    scheduleDelete: (request: { uuid: string; onSuccess?: () => void; onSettled?: () => void }) => {
+      deleteTick.mutate(request.uuid, {
+        onSuccess: () => {
+          request.onSuccess?.();
+          request.onSettled?.();
+        },
+      });
+      return true;
+    },
+  }),
+}));
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

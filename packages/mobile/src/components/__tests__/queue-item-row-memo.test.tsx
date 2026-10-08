@@ -302,6 +302,42 @@ describe('QueueItemRow React.memo', () => {
     vi.clearAllMocks();
   });
 
+  it('reveals a short swipe, commits a full release, and ignores cancelled releases', () => {
+    render(
+      <QueueItemRow
+        item={makeItem('a', 'Crimp Master')}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+      />,
+    );
+    const release = gestureCalls.panLogs[0].find((call) => call.method === 'onEnd')?.args[0] as (
+      event: { translationX: number },
+      success: boolean,
+    ) => void;
+    release({ translationX: -90 }, true);
+    expect(onRemove).not.toHaveBeenCalled();
+    release({ translationX: -220 }, false);
+    expect(onRemove).not.toHaveBeenCalled();
+    release({ translationX: -220 }, true);
+    expect(onRemove).toHaveBeenCalledExactlyOnceWith('a');
+  });
+
+  it('does not let a stale full swipe delete a recycled row', () => {
+    const props = { position: 1, board, isCurrentClimb: false, onPress, onRemove, onToggleSelect };
+    const { rerender } = render(<QueueItemRow item={makeItem('a', 'Crimp Master')} {...props} />);
+    const oldRelease = gestureCalls.panLogs[0].find((call) => call.method === 'onEnd')?.args[0] as (
+      event: { translationX: number },
+      success: boolean,
+    ) => void;
+    rerender(<QueueItemRow item={makeItem('b', 'New Climb')} {...props} />);
+    oldRelease({ translationX: -220 }, true);
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
   it('skips re-render when given referentially-equal props', () => {
     const item = makeItem('a', 'Crimp Master');
     const element = (

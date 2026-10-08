@@ -41,7 +41,7 @@ export function CommentSheet({
   const { t } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
-  const { submitError, setSubmitError } = useScopedSheetError(entityId ?? 'comment', !!entityId);
+  const { submitError, setSubmitError } = useScopedSheetError(`${entityType}:${entityId ?? ''}`, !!entityId);
   const [draft, setDraft] = useState('');
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
@@ -99,7 +99,7 @@ export function CommentSheet({
                 />
               </Pressable>
             </View>
-            <InlineSheetError message={submitError} visible={!!entityId} scope={entityId ?? 'comment'} />
+            <InlineSheetError message={submitError} visible={!!entityId} scope={`${entityType}:${entityId ?? ''}`} />
           </View>
         ) : (
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.signInPrompt}>

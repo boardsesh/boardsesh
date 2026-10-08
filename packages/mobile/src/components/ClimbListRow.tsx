@@ -1,5 +1,15 @@
+import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
+import { Text } from './Text';
+import { useFullSwipe } from './use-full-swipe';
+import {
+  SWIPE_ACTION_REVEAL as ACTION_REVEAL,
+  SWIPE_FULL_THRESHOLD as COMMIT_THRESHOLD,
+  SWIPE_REVEAL_THRESHOLD,
+  SWIPE_FRICTION,
+} from './swipe-action-model';
 import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import {
+  Pressable,
   View,
   StyleSheet,
   Platform,
@@ -19,9 +29,7 @@ import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Icon } from './Icon';
-import { track } from '../lib/analytics';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
@@ -35,13 +43,8 @@ import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../
 // (44pt target - 20pt glyph) / 2 = 12pt of empty target past the glyph's edge.
 const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
 
-// Swipe tuning. Each side reveals a panel up to ACTION_REVEAL wide; dragging
-// past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
-// to-queue) — no resting-open state, no second tap. friction=1 makes the row
-// track the finger 1:1 (snappy, like Spotify's tracklist swipe). Tunable.
-const ACTION_REVEAL = 150;
-const COMMIT_THRESHOLD = 96;
-const SWIPE_FRICTION = 1;
+// A partial swipe reveals a labelled action; releasing past COMMIT_THRESHOLD
+// commits it and closes the row. friction=1 keeps finger tracking direct.
 
 // The ⋮ button is nested inside the row's `accessible` container, so it needs both
 // its own props (TalkBack focuses it) and a labelled custom action published on the
@@ -111,9 +114,24 @@ function QueueSwipeActionInner({ translation }: { translation: SharedValue<numbe
  * translation=0 state, where the "✓" is fully transparent), so the panel looks
  * right from the first frame of a drag.
  */
-function QueueSwipeAction({ translation, active }: { translation: SharedValue<number>; active: boolean }) {
+function QueueSwipeAction({
+  translation,
+  active,
+  onPress,
+  label,
+}: {
+  translation: SharedValue<number>;
+  active: boolean;
+  onPress: () => void;
+  label: string;
+}) {
   return (
-    <View style={[styles.swipeAction, styles.queueAction]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.swipeAction, styles.queueAction]}
+    >
       {active ? (
         <QueueSwipeActionInner translation={translation} />
       ) : (
@@ -123,7 +141,10 @@ function QueueSwipeAction({ translation, active }: { translation: SharedValue<nu
           </View>
         </View>
       )}
-    </View>
+      <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -159,11 +180,33 @@ function PlaylistSwipeActionInner({ translation }: { translation: SharedValue<nu
  * fully transparent, so the resting shell deliberately renders no icon — the
  * panel matches the inner's first frame.
  */
-function PlaylistSwipeAction({ translation, active }: { translation: SharedValue<number>; active: boolean }) {
+function PlaylistSwipeAction({
+  translation,
+  active,
+  onPress,
+  label,
+}: {
+  translation: SharedValue<number>;
+  active: boolean;
+  onPress: () => void;
+  label: string;
+}) {
   return (
-    <View style={[styles.swipeAction, styles.playlistAction]}>
-      {active ? <PlaylistSwipeActionInner translation={translation} /> : null}
-    </View>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.swipeAction, styles.playlistAction]}
+    >
+      {active ? (
+        <PlaylistSwipeActionInner translation={translation} />
+      ) : (
+        <Icon name="playlist" size={24} color={iosSystemColors.white} />
+      )}
+      <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -185,7 +228,7 @@ type ClimbListRowProps = {
   angle: number;
   onPress?: (climb: Climb) => void;
   onAddToQueue?: (climb: Climb) => void;
-  onOpenPlaylist?: (climb: Climb) => void;
+  onOpenPlaylist?: (climb: Climb, anchor?: WindowAnchorPoint) => void;
   onOpenActions?: (climb: Climb) => void;
   selected?: boolean;
   unsupported?: boolean;
@@ -283,6 +326,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   onOpenPlaylistRef.current = onOpenPlaylist;
   const onOpenActionsRef = useRef(onOpenActions);
   onOpenActionsRef.current = onOpenActions;
+  const contentViewRef = useRef<View | null>(null);
   const climbRef = useRef(climb);
   climbRef.current = climb;
   const unsupportedRef = useRef(unsupported);
@@ -361,47 +405,53 @@ const ClimbListRow = React.memo(function ClimbListRow({
   }, []);
 
   const handleOpenPlaylist = useCallback(() => {
-    const openPlaylist = onOpenPlaylistRef.current;
-    if (!openPlaylist) return;
+    if (!onOpenPlaylistRef.current) return;
+    const snapshot = climbRef.current;
     hapticMedium();
-    openPlaylist(climbRef.current);
+    const open = (anchor?: WindowAnchorPoint) => {
+      if (climbRef.current.uuid === snapshot.uuid) onOpenPlaylistRef.current?.(snapshot, anchor);
+    };
+    const source = contentViewRef.current;
+    if (!source) {
+      open();
+      return;
+    }
+    source.measureInWindow((x, y, width, height) => {
+      if ([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0)
+        open({ x: x + width / 2, y: y + height / 2 });
+      else open();
+    });
   }, []);
 
-  // Snap the row shut once it has fully settled open. Runs after the action
-  // already fired on willOpen, so the user sees an instant commit and the row
-  // springs back.
-  const handleSwipeableOpened = useCallback(() => {
-    swipeableRef.current?.close();
-  }, []);
-
-  // Once the row has fully settled shut again — whether after a committed swipe
-  // (handleSwipeableOpened → close()) or a sub-threshold swipe that springs back
-  // — drop the lazy panels back to the cheap shell. translation is 0 by now, so
-  // unmounting the heavy inner is invisible, and an idle row that's been swiped
-  // once no longer keeps the animated inner mounted for the rest of its life.
-  const handleSwipeableClosed = useCallback(() => {
-    disarm();
-  }, [disarm]);
-
-  // Fired once when a horizontal drag begins (from a resting/closed row). This
-  // is the trigger that mounts the heavy animated action panels — the direction
-  // doesn't matter (we arm both sides; the non-dragged side stays occluded by
-  // the opaque row), so the panel reveal is fully animated by the time any
-  // meaningful translation is on screen.
-  const handleSwipeStartDrag = useCallback(() => {
-    arm();
-  }, [arm]);
-
-  const handleSwipeWillOpen = useCallback(
+  const closeSwipe = useCallback(() => swipeableRef.current?.close(), []);
+  const commitSwipe = useCallback(
     (direction: 'left' | 'right') => {
-      // ReanimatedSwipeable reports the SWIPE direction, not the actions side:
-      // 'right' fires when the LEFT actions (Queue) open (left-to-right swipe);
-      // 'left' fires when the RIGHT actions (Playlist) open (right-to-left).
       if (direction === 'right') handleAddToQueue();
       else handleOpenPlaylist();
     },
     [handleAddToQueue, handleOpenPlaylist],
   );
+  const fullSwipe = useFullSwipe({
+    scope: climb.uuid,
+    enabled: !!onAddToQueue || !!onOpenPlaylist,
+    onCommit: commitSwipe,
+    close: closeSwipe,
+  });
+  const handleSwipeableClosed = useCallback(() => {
+    fullSwipe.onClosed();
+    disarm();
+  }, [fullSwipe.onClosed, disarm]);
+  const handleSwipeStartDrag = useCallback(() => {
+    arm();
+  }, [arm]);
+  const pressLeadingAction = useCallback(() => {
+    handleAddToQueue();
+    closeSwipe();
+  }, [handleAddToQueue, closeSwipe]);
+  const pressTrailingAction = useCallback(() => {
+    handleOpenPlaylist();
+    closeSwipe();
+  }, [handleOpenPlaylist, closeSwipe]);
 
   // Refs so the ⋯ button's tap can `blocksExternalGesture` the row's own tap/long-press
   // — a tap on the button opens the menu without also firing the row press. The relation
@@ -435,9 +485,15 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   // Long-press wins over tap; a quick tap fires once the long-press fails.
+
   const tapGesture = useMemo(
     () => Gesture.Exclusive(longPressGesture, singleTapGesture),
     [longPressGesture, singleTapGesture],
+  );
+
+  const rowGestures = useMemo(
+    () => Gesture.Simultaneous(tapGesture, fullSwipe.gesture),
+    [tapGesture, fullSwipe.gesture],
   );
 
   // The ⋯ button's own tap. It blocks the row gestures so a tap on the button opens the
@@ -465,15 +521,25 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // while the stable identity keeps the shell→inner swap in place.
   const renderLeftActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <QueueSwipeAction translation={translation} active={dragArmedRef.current} />
+      <QueueSwipeAction
+        translation={translation}
+        active={dragArmedRef.current}
+        onPress={pressLeadingAction}
+        label={t('mobile.climbRow.addToQueue')}
+      />
     ),
-    [dragArmedRef],
+    [dragArmedRef, pressLeadingAction, t],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <PlaylistSwipeAction translation={translation} active={dragArmedRef.current} />
+      <PlaylistSwipeAction
+        translation={translation}
+        active={dragArmedRef.current}
+        onPress={pressTrailingAction}
+        label={t('actions.playlist.popover.title')}
+      />
     ),
-    [dragArmedRef],
+    [dragArmedRef, pressTrailingAction, t],
   );
 
   const rowContent = renderContent ? (
@@ -496,15 +562,15 @@ const ClimbListRow = React.memo(function ClimbListRow({
       <ReanimatedSwipeable
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
-        leftThreshold={COMMIT_THRESHOLD}
-        rightThreshold={COMMIT_THRESHOLD}
-        overshootLeft={false}
-        overshootRight={false}
+        simultaneousWithExternalGesture={fullSwipe.gesture}
+        leftThreshold={SWIPE_REVEAL_THRESHOLD}
+        rightThreshold={SWIPE_REVEAL_THRESHOLD}
+        overshootLeft
+        overshootRight
         renderLeftActions={onAddToQueue ? renderLeftActions : undefined}
         renderRightActions={onOpenPlaylist ? renderRightActions : undefined}
         onSwipeableOpenStartDrag={handleSwipeStartDrag}
-        onSwipeableWillOpen={handleSwipeWillOpen}
-        onSwipeableOpen={handleSwipeableOpened}
+        onSwipeableOpen={fullSwipe.onOpened}
         onSwipeableClose={handleSwipeableClosed}
       >
         {/* touchAction="pan-y" (web only): without it RNGH defaults the row's DOM
@@ -512,8 +578,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        <GestureDetector gesture={tapGesture} touchAction="pan-y">
+        <GestureDetector gesture={rowGestures} touchAction="pan-y">
           <View
+            ref={contentViewRef}
+            collapsable={false}
             testID={testID}
             style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
             accessible
@@ -554,7 +622,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
                   onAccessibilityAction={handleMoreButtonAccessibilityAction}
                 >
                   {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
-                      Android's dots-vertical is already vertical (no rotation). */}
+                        Android's dots-vertical is already vertical (no rotation). */}
                   <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
                     <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
                   </View>
@@ -602,6 +670,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 5,
   },
+  swipeLabel: { textAlign: 'center' },
   swipeAction: {
     width: ACTION_REVEAL,
     justifyContent: 'center',
@@ -614,13 +683,13 @@ const styles = StyleSheet.create({
   // white-on-fill contrast, so they intentionally don't vary by colour scheme.
   queueAction: {
     backgroundColor: brandColors.success,
-    alignItems: 'flex-start',
-    paddingLeft: 22,
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
   playlistAction: {
     backgroundColor: brandColors.primary,
-    alignItems: 'flex-end',
-    paddingRight: 22,
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
   // Trailing ⋮ affordance. A full 44pt tap target (no hitSlop, no negative margin —
   // those stacked into ~16pt of overlap with the grade, risking accidental opens);

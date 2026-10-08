@@ -961,5 +961,10 @@
     "message": "Deine Änderungen werden nicht gespeichert.",
     "discard": "Änderungen verwerfen",
     "keepEditing": "Weiter bearbeiten"
+  },
+  "undoDelete": {
+    "removed": "Eintrag gelöscht",
+    "undo": "Rückgängig",
+    "cancelled": "Löschen abgebrochen. Dein Eintrag bleibt erhalten."
   }
 }
