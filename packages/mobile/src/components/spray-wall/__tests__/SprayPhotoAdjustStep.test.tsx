@@ -51,7 +51,7 @@ vi.mock('../../ActivityIndicator', () => ({
 }));
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/spray/discard-local-photo', () => ({ discardLocalPhoto }));
-vi.mock('../../../lib/spray/wall-photo', () => ({ WALL_PHOTO_MAX_DIMENSION: 4096, renderRotatedPreview }));
+vi.mock('../../../lib/spray/wall-photo', () => ({ WALL_PHOTO_MAX_DIMENSION: 5712, renderRotatedPreview }));
 vi.mock('../SprayCropMarker', () => ({
   SprayCropMarker: (props: MarkerProps) => {
     marker.last = props;
@@ -67,7 +67,7 @@ vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset:
 
 const { SprayPhotoAdjustStep } = await import('../SprayPhotoAdjustStep');
 
-// A 12 MP photo: under the 4096 px cap, so the base is the original's size.
+// A 12 MP photo: under the 5712 px cap, so the base is the original's size.
 const BASE = { uri: 'file:///base.jpg', width: 4032, height: 3024 };
 const PHOTO = { ...BASE, base: BASE, original: { uri: 'file:///original.heic', longSide: 4032 }, edit: null };
 

@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
+import { crc32 } from 'node:zlib';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
 const { uploadedObjects, isS3ConfiguredMock, uploadRace } = vi.hoisted(() => ({
@@ -40,6 +41,7 @@ const {
   resetSprayWallPhotoRateLimit,
   sprayWallFullPhotoKey,
   sprayWallPhotoKey,
+  SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS,
   SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES,
 } = await import('../handlers/spray-wall-photos');
 
@@ -99,8 +101,9 @@ async function exifTaggedJpeg(): Promise<Buffer> {
  * 2500x5000 portrait — larger than both caps, and transposed, so a size read
  * before the rotate would show up in every dimension asserted below.
  */
+/** Past the 5712 px cap on its long side, so both stored sizes are resized. */
 async function largeExifTaggedJpeg(): Promise<Buffer> {
-  return sharp({ create: { width: 5000, height: 2500, channels: 3, background: '#4488cc' } })
+  return sharp({ create: { width: 6400, height: 3200, channels: 3, background: '#4488cc' } })
     .withMetadata({
       orientation: 6,
       exif: { IFD0: { ImageDescription: EXIF_MARKER, Copyright: EXIF_MARKER } },
@@ -518,10 +521,11 @@ describe('POST /api/spray-wall-photos', () => {
     expect(uploadedObjects).toHaveLength(0);
   });
 
-  it('caps the upload at 15MB', () => {
-    // Raised from 10MB for #5911: the app now sends up to 4096 px, and a busy
-    // 4096 px wall photo at JPEG 0.85 runs to 8MB or so.
-    expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(15 * 1024 * 1024);
+  it('caps the upload at 25MB', () => {
+    // 10MB before #5911, 15MB at 4096 px. The app now sends a 24 MP photo at
+    // JPEG 0.92: real wall photos measured up to 12.3MB at the most generous
+    // encoder setting, and pure noise at quality 92 is 20.4MB.
+    expect(SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES).toBe(25 * 1024 * 1024);
   });
 
   it('keeps the base at 2048 px and stores a stripped full copy of a larger photo', async () => {
@@ -540,14 +544,14 @@ describe('POST /api/spray-wall-photos', () => {
     });
     expect(await sharp(base!.body).metadata()).toMatchObject({ width: 1024, height: 2048 });
 
-    // The full copy: same orientation, capped at 4096 on its long side, and as
+    // The full copy: same orientation, capped at 5712 on its long side, and as
     // stripped as the base — it is the SHARPER picture of somebody's home.
     const fullKey = sprayWallFullPhotoKey(baseKey);
     expect(fullKey).toBe(`spray-walls/${wallUuid}/${body.photoId}-full.jpg`);
     const full = uploadedObjects.find((object) => object.key === fullKey);
     expect(full).toBeDefined();
     const fullMetadata = await sharp(full!.body).metadata();
-    expect(fullMetadata).toMatchObject({ width: 2048, height: 4096, format: 'jpeg' });
+    expect(fullMetadata).toMatchObject({ width: 2856, height: 5712, format: 'jpeg' });
     expect(fullMetadata.exif).toBeUndefined();
     expect(full!.body.includes(EXIF_MARKER)).toBe(false);
     expect(full!.bucket).toBe('private');
@@ -555,6 +559,43 @@ describe('POST /api/spray-wall-photos', () => {
 
     // Base last, so a reader that can see the photo can always see its copies.
     expect(uploadedObjects.map((object) => object.key)).toEqual([`${baseKey}@280.jpg`, fullKey, baseKey]);
+  });
+
+  it('keeps a square full copy under the pixel cap, not just the long-side cap', async () => {
+    // 5712 x 5712 would decode to 130MB, past the 100MiB Android will draw.
+    const square = await sharp({ create: { width: 6000, height: 6000, channels: 3, background: '#335577' } })
+      .jpeg()
+      .toBuffer();
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: square });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { photoId: string; width: number; height: number };
+
+    expect(body).toMatchObject({ width: 2048, height: 2048 });
+    const full = uploadedObjects.find(
+      (object) => object.key === sprayWallFullPhotoKey(sprayWallPhotoKey(wallUuid, body.photoId)),
+    );
+    expect(await sharp(full!.body).metadata()).toMatchObject({ width: 4946, height: 4946 });
+    expect((full!.options as { metadata?: Record<string, string> }).metadata).toEqual({
+      width: '4946',
+      height: '4946',
+    });
+  });
+
+  it('refuses a photo whose header claims more pixels than the input cap, before decoding it', async () => {
+    // A small real PNG with its IHDR rewritten to 20000 x 20000 (400 MP): the
+    // header is all sharp reads before the handler refuses it, so the test never
+    // allocates the gigabyte a decode would.
+    const png = await plainPng(64, 64);
+    const ihdrDataStart = 16;
+    png.writeUInt32BE(20000, ihdrDataStart);
+    png.writeUInt32BE(20000, ihdrDataStart + 4);
+    png.writeUInt32BE(crc32(png.subarray(12, ihdrDataStart + 13)), ihdrDataStart + 13);
+    expect(20000 * 20000).toBeGreaterThan(SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS);
+
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: png, mimeType: 'image/png' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'That photo could not be read. Try another one.' });
+    expect(uploadedObjects).toEqual([]);
   });
 
   it('writes no full copy when the photo already fits the base cap', async () => {

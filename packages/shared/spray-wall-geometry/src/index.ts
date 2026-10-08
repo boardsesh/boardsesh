@@ -68,3 +68,5 @@ export {
   perspectiveViewMatrix,
   photoToTileHomography,
 } from './look-preview';
+
+export { SPRAY_WALL_PHOTO_MAX_LONG_SIDE, SPRAY_WALL_PHOTO_MAX_PIXELS, sprayWallPhotoMaxLongSide } from './photo-size';

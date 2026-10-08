@@ -13,6 +13,8 @@
 // as they would be for a photo that had been framed that tightly in the camera.
 // A crop is not a warp (`docs/spray-walls.md`, "The frame").
 
+import { sprayWallPhotoMaxLongSide } from '@boardsesh/spray-wall-geometry';
+
 /** Clockwise quarter turns: 0, 90, 180 or 270 degrees. */
 export type QuarterTurns = 0 | 1 | 2 | 3;
 
@@ -219,15 +221,14 @@ export function orientedOriginalSize(base: PixelSize, originalLongSide: number):
  *
  * Decoded memory, not the upload cap, sets this: a bitmap costs 4 bytes a
  * pixel, so a 25 MP original is about 100 MB, and a rotation holds a second
- * copy while it runs, next to an output of up to 67 MB at 4096 x 4096. A 48 MP
- * capture (8064 x 6048) would be about 195 MB a copy. 25 MP covers the 12 MP
- * and 24 MP captures phones take by default (5712 x 4284 is 24.5 MP).
+ * copy while it runs, next to an output of up to 98 MB at the 24.5 MP cap. A
+ * 48 MP capture (8064 x 6048) would be about 195 MB a copy. 25 MP covers the
+ * 12 MP and 24 MP captures phones take by default (5712 x 4284 is 24.5 MP).
  *
- * Above it the render reads the compressed base. At a 4096 px cap that base
- * still has half the original's width, not the quarter it had at 2048, so
- * rotating or loosely cropping a 48 MP photo uploads exactly what reading the
- * original would have. Only a crop tighter than half of each side comes out
- * softer.
+ * Above it the render reads the compressed base. At the 5712 px cap that base
+ * keeps 71% of a 48 MP original's width, so rotating or loosely cropping one
+ * uploads exactly what reading the original would have. Only a crop tighter
+ * than 71% of each side comes out softer.
  */
 export const ORIGINAL_RENDER_MAX_PIXELS = 25_000_000;
 
@@ -260,7 +261,9 @@ export type WallPhotoRenderPlan = {
 
 /**
  * The operations that turn `sourceSize` into the edited upload, in one pass:
- * rotate, then crop, then shrink the long side to `maxDimension`.
+ * rotate, then crop, then shrink the long side to `maxDimension`, or further
+ * when the crop's shape would otherwise pass the shared pixel cap
+ * (`sprayWallPhotoMaxLongSide`: a square crop stops at 4946 px).
  *
  * One pass from the source rather than a chain of saved files, so the pixels
  * are resampled once. The resize names ONE side — the longer — exactly as
@@ -287,14 +290,15 @@ export function planWallPhotoRender(
     current = { width: rect.width, height: rect.height };
   }
   const longest = Math.max(current.width, current.height);
-  if (longest > maxDimension) {
-    const scale = maxDimension / longest;
+  const cap = Math.min(maxDimension, sprayWallPhotoMaxLongSide(current.width, current.height));
+  if (longest > cap) {
+    const scale = cap / longest;
     if (current.width >= current.height) {
-      ops.push({ type: 'resize', width: maxDimension });
-      current = { width: maxDimension, height: Math.max(1, Math.round(current.height * scale)) };
+      ops.push({ type: 'resize', width: cap });
+      current = { width: cap, height: Math.max(1, Math.round(current.height * scale)) };
     } else {
-      ops.push({ type: 'resize', height: maxDimension });
-      current = { width: Math.max(1, Math.round(current.width * scale)), height: maxDimension };
+      ops.push({ type: 'resize', height: cap });
+      current = { width: Math.max(1, Math.round(current.width * scale)), height: cap };
     }
   }
   return { ops, output: current };
