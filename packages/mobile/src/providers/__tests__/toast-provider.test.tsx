@@ -25,7 +25,8 @@ vi.mock('expo-router', () => ({
 }));
 
 vi.mock('../../hooks/use-bottom-accessory', () => ({
-  useTabChrome: () => ({ nativeTabBar: false, liquidGlassTabBar: false, nativeAccessory: false }),
+  isBottomAccessoryAvailable: () => false,
+  useNativeTabBar: () => false,
 }));
 
 vi.mock('../../components/Icon', () => ({

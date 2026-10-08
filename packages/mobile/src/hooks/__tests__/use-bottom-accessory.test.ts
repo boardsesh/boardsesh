@@ -72,6 +72,12 @@ import {
 } from '../use-bottom-accessory';
 
 describe('use-bottom-accessory', () => {
+  it('keeps native search when the glass bar has no accessory export', () => {
+    cfg.bottomAccessory = null;
+    const { result } = renderHook(() => ({ search: useLiquidGlassTabBar(), accessory: useNativeAccessoryActive() }));
+    expect(result.current).toEqual({ search: true, accessory: false });
+  });
+
   beforeEach(() => {
     cfg.platformOS = 'ios';
     cfg.reactNativeMinor = 82;

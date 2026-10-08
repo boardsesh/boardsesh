@@ -140,9 +140,10 @@ export default function TabLayout() {
   // screen, right where the accessory platter draws. Hide the platter there through
   // the native `bottomAccessoryHidden` prop instead of unmounting the host (#5055);
   // see `isAccessoryHiddenRoute`.
-  const accessoryNativeProps = isAccessoryHiddenRoute(segments)
-    ? ACCESSORY_HIDDEN_NATIVE_PROPS
-    : ACCESSORY_SHOWN_NATIVE_PROPS;
+  const accessoryNativeProps =
+    nativeAccessoryActive && isAccessoryHiddenRoute(segments)
+      ? ACCESSORY_HIDDEN_NATIVE_PROPS
+      : ACCESSORY_SHOWN_NATIVE_PROPS;
   // Kiosk stays lit: hold the screen awake while the "On the Wall" tab is the
   // focused destination (iPad-only — /wall is unreachable elsewhere). Released
   // on navigate-away and unmount so other tabs don't hold the lock.

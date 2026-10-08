@@ -23,7 +23,7 @@ import { useConnectivityBannerHeight } from '../lib/connectivity-banner-inset-st
 import { getRestTimerState, subscribeRestTimer } from '../lib/rest-timer-store';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../theme/variants';
-import { useTabChrome } from '../hooks/use-bottom-accessory';
+import { isBottomAccessoryAvailable, useNativeTabBar } from '../hooks/use-bottom-accessory';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
@@ -73,10 +73,11 @@ const getRestTimerArmedServerSnapshot = () => false;
 function useToastBottomOffset(uiVariant: UiVariant) {
   const insets = useSafeAreaInsets();
   const segments = useSegments();
-  // Use the same canonical answer that selects NativeTabs in the tab layout.
-  // The UI variant alone is insufficient: Liquid Glass keeps the JS bar on
-  // Android and tablets, and the native bar carries no accessory on iOS 18.
-  const { nativeTabBar: usesNativeTabBar, nativeAccessory: nativeBottomAccessoryActive } = useTabChrome();
+  // Use the same canonical predicate that selects NativeTabs in the tab layout.
+  // The UI variant alone is insufficient: Liquid Glass falls back to the JS bar
+  // on older iOS versions, Android, and tablets.
+  const usesNativeTabBar = useNativeTabBar();
+  const nativeBottomAccessoryAvailable = isBottomAccessoryAvailable();
   const toolbarReserve = selectByVariant(uiVariant, {
     material: MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
     liquidGlass: TOOLBAR_RESERVE,
@@ -89,10 +90,10 @@ function useToastBottomOffset(uiVariant: UiVariant) {
   // the sampling-point contract in bottom-chrome-metrics.ts. Pre-measurement
   // fallback reconstructs the bar from the root inset, but cannot include the
   // accessory (no climb state up here) — a pre-publish toast may briefly sit
-  // behind the accessory platter, transient by design. If the native tab bar is
-  // up but its BottomAccessory is not (iOS 18, or a build without the export),
-  // the JS PersistentQueueBar takes over on top-level tab routes; preserve that
-  // toolbar reserve without adding the native tab bar a second time. Pushed tab routes never render
+  // behind the accessory platter, transient by design. If a native tab bar is
+  // available but its BottomAccessory export is not, the JS PersistentQueueBar
+  // takes over on top-level tab routes; preserve that toolbar reserve without
+  // adding the native tab bar a second time. Pushed tab routes never render
   // PersistentQueueBar, so they keep only the native chrome clearance. Material
   // and the Liquid Glass JS fallback still need both explicit terms because
   // their tab/queue bars are outside every UIKit safe-area inset.
@@ -121,7 +122,7 @@ function useToastBottomOffset(uiVariant: UiVariant) {
   // on screen here.
   if (!isTabsRoute(segments)) return insets.bottom + spacing[3] + connectivityBannerHeight;
   if (usesNativeTabBar) {
-    const jsQueueReserve = !nativeBottomAccessoryActive && isTopLevelTabRoute(segments) ? toolbarReserve : 0;
+    const jsQueueReserve = !nativeBottomAccessoryAvailable && isTopLevelTabRoute(segments) ? toolbarReserve : 0;
     const nativeChromeBottom = measuredTabContentInsetBottom ?? insets.bottom + TAB_BAR_HEIGHT;
     return nativeChromeBottom + jsQueueReserve + restTimerReserve + spacing[2] + connectivityBannerHeight;
   }

@@ -74,14 +74,14 @@ describe('resolveTabChrome', () => {
   });
 
   it('never picks the native bar off iOS, even on the Liquid Glass variant', () => {
-    for (const platformOS of ['android', 'web']) {
+    for (const platformOS of ['android', 'web'] as const) {
       expect(resolveTabChrome({ ...IOS_26_IPHONE, platformOS }).nativeTabBar).toBe(false);
     }
   });
 
   it('never reports an accessory without the Liquid Glass bar, or that bar without the native bar', () => {
     const bools = [true, false];
-    for (const platformOS of ['ios', 'android'])
+    for (const platformOS of ['ios', 'android'] as const)
       for (const variant of ['liquidGlass', 'material'] as const)
         for (const glassCapable of bools)
           for (const isTablet of bools)

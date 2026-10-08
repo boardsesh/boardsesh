@@ -1,3 +1,4 @@
+import type { Platform } from 'react-native';
 import type { UiVariant } from '../theme/resolve-ui-variant';
 
 /**
@@ -7,7 +8,7 @@ import type { UiVariant } from '../theme/resolve-ui-variant';
  */
 export type TabChromeInputs = {
   /** `Platform.OS`. */
-  platformOS: string;
+  platformOS: typeof Platform.OS;
   /** Resolved UI variant ('auto' already resolved). */
   variant: UiVariant;
   /**

@@ -131,6 +131,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
+  useIsFocused: () => true,
   router: { push: vi.fn() },
   useFocusEffect: (callback: () => void) => {
     focusState.callback = callback;
