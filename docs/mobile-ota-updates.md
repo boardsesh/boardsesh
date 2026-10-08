@@ -870,6 +870,10 @@ unlock blocks the publish. Staging exports do not unlock or replace production.
 `pr-stable-candidate`, `pr-staging` and `pr-beta` are protected branches reached through the existing
 `pr-*` surfing pattern. Creating the new protected branch requires the usual `ota:apply` convergence.
 
+GitHub setup was verified on 2026-10-08: this environment selects only the `main` branch, and the
+repository activation variable was explicitly set to `false`. This is the initial cutover state;
+the proof and store-device checks below are still required before changing that variable.
+
 Relevant `main` pushes always publish to staging, wait for deployment and backend-schema readiness,
 then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
 Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
