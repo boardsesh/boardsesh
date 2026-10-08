@@ -116,6 +116,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondaryLabel: 'secondaryLabel',
       separator: 'separator',
     },
+    actionColors: { favoriteSelected: 'favoriteSelected' },
   }),
 }));
 vi.mock('../../../theme/ios-colors', () => ({
@@ -177,7 +178,7 @@ describe('PlayDrawerActionBar', () => {
     expect(container.querySelector('[data-icon="tick.outline"][data-color="#FFFFFF"]')).toBeNull();
   });
 
-  it('reads share and the angle label in secondaryLabel, and a saved heart in the theme error red', () => {
+  it('reads share and the angle label in secondaryLabel, and a saved heart in the one favourite red', () => {
     const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, isFavorited: true }));
 
     expect(container.querySelector('[data-icon="share"]')?.getAttribute('data-color')).toBe('secondaryLabel');
@@ -185,7 +186,7 @@ describe('PlayDrawerActionBar', () => {
     expect(anglePill.querySelector('span')?.getAttribute('data-color')).toBe('secondaryLabel');
     expect(
       container.querySelector(`[data-action="${ACTION_ICONS.favoriteFilled}"]`)?.getAttribute('data-icon-color'),
-    ).toBe('brandError');
+    ).toBe('favoriteSelected');
   });
 
   it('suppresses the lightbulb holder pip when the header pill owns the driver face', () => {

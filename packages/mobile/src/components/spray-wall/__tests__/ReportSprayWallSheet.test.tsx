@@ -129,6 +129,15 @@ describe('ReportSprayWallSheet', () => {
     ]);
     expect(radios.every((radio) => radio.getAttribute('aria-pressed') === 'false')).toBe(true);
   });
+  it('locks the reason group while the report is in flight', () => {
+    const screen = render(<ReportSprayWallSheet wallUuid="wall-a" wallName="Crew wall" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('sprayModeration.reasons.other'));
+    state.isPending = true;
+    screen.rerender(<ReportSprayWallSheet wallUuid="wall-a" wallName="Crew wall" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('sprayModeration.reasons.inappropriate'));
+    expect(screen.getByLabelText('sprayModeration.reasons.other').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByLabelText('sprayModeration.reasons.inappropriate').getAttribute('aria-pressed')).toBe('false');
+  });
   it('keeps the pending report disabled and announces its progress', () => {
     state.isPending = true;
     const screen = render(<ReportSprayWallSheet wallUuid="wall-a" wallName="Crew wall" onClose={vi.fn()} />);

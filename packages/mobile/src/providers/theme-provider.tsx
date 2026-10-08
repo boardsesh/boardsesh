@@ -15,6 +15,7 @@ import {
   androidFallbackColors,
   materialSurfaces,
   materialSurfaceContainers,
+  tertiaryFillFallback,
   type MaterialSurfaceContainers,
 } from '../theme/colors';
 import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
@@ -92,6 +93,12 @@ type ResolvedSystemColors = {
    * `error` role (the same `brandColors.error` the Paper theme maps).
    */
   error: string | OpaqueColorValue;
+  /**
+   * Fill for LARGE shapes (grouped cards, section backgrounds): iOS
+   * `tertiarySystemFill`, a step lighter than `fill`, which Apple reserves for
+   * small controls. Android/Material use a fainter version of the violet fill.
+   */
+  tertiaryFill: string | OpaqueColorValue;
 };
 
 type Theme = {
@@ -220,7 +227,7 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
     // hardware when the user explicitly chose Material. Drawn opaque (no glass),
     // so we don't use PlatformColor here.
     case 'material':
-      return { ...materialSurfaces[colorScheme], error: brand.error };
+      return { ...materialSurfaces[colorScheme], error: brand.error, tertiaryFill: tertiaryFillFallback[colorScheme] };
     case 'liquidGlass': {
       if (Platform.OS === 'ios' && iosSystemColors) {
         // PlatformColor values adapt automatically on iOS — return as-is,
@@ -231,8 +238,7 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
         // swaps it for the opaque static hairline so it can't still be
         // settling on the very first captured frame.
         return {
-          ...(iosSystemColors as Omit<ResolvedSystemColors, 'accent'>),
-          accent: brand.tint,
+          ...(iosSystemColors as ResolvedSystemColors),
           separator: screenshotModeStaticColor<string | OpaqueColorValue>(
             iosSystemColors.separator,
             colorScheme === 'dark' ? iosDarkColors.separator : iosLightColors.separator,
@@ -254,6 +260,7 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
         fill: fallback.fill,
         accent: fallback.accent,
         error: brand.error,
+        tertiaryFill: tertiaryFillFallback[colorScheme],
       };
     }
     // A new UiVariant must declare how its system colours resolve.
@@ -429,6 +436,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         accent: resolvedSystemColors.accent,
         brandSuccess: resolvedBrandColors.success,
         brandPrimary: resolvedBrandColors.primary,
+        error: resolvedSystemColors.error,
       }),
       chartColors: resolvedChartColors,
       heatRamp: resolveHeatRamp(colorScheme),

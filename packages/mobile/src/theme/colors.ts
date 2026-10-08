@@ -1,4 +1,4 @@
-import { Platform, PlatformColor, type OpaqueColorValue } from 'react-native';
+import { DynamicColorIOS, Platform, PlatformColor, type OpaqueColorValue } from 'react-native';
 import {
   blendOpaque,
   brandColors,
@@ -17,6 +17,18 @@ import {
  * colors from `androidFallbackColors` instead. All color access should go
  * through `useTheme().systemColors` — never consume this directly.
  */
+/**
+ * The iOS accent's four appearances. Light/dark are the brand `tint` per scheme;
+ * the Increase Contrast pair steps one notch further along the brand violet ramp
+ * (the same #4C1D95 / #C4B5FD ends the heat ramp uses).
+ */
+export const brandAccentDynamic = {
+  light: brandColors.tint,
+  dark: brandColorsDark.tint,
+  highContrastLight: '#4C1D95',
+  highContrastDark: '#C4B5FD',
+} as const;
+
 export const iosSystemColors: Record<string, OpaqueColorValue> | null =
   Platform.OS === 'ios'
     ? {
@@ -37,9 +49,13 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
         // Increase Contrast, which a static hex cannot (HIG Color: "use system
         // colors… they automatically adapt to accessibility settings").
         error: PlatformColor('systemRed'),
-        // NOTE: no `accent` here. The interactive accent is the brand violet —
-        // the same tint the @expo/ui controls use — resolved per scheme in the
-        // ThemeProvider (HIG Color: one tint for every interactive element).
+        // Large-shape fill (cards, section grounds); `fill` is for small controls.
+        tertiaryFill: PlatformColor('tertiarySystemFill'),
+        // Interactive accent: the brand violet, the same tint the @expo/ui
+        // controls use (HIG Color: one tint for every interactive element).
+        // DynamicColorIOS so it still follows dark mode AND Increase Contrast,
+        // as Apple's link colour did.
+        accent: DynamicColorIOS(brandAccentDynamic),
       }
     : null;
 
@@ -87,6 +103,16 @@ export const androidFallbackColors = {
     fill: 'rgba(199, 184, 232, 0.12)',
     accent: '#A78BFA',
   },
+} as const;
+
+/**
+ * Android / Material `tertiaryFill`: the violet `fill` at roughly half its
+ * strength, so a large card ground reads quieter than a small control's fill
+ * (the same step iOS takes from systemFill to tertiarySystemFill).
+ */
+export const tertiaryFillFallback = {
+  light: 'rgba(109, 40, 217, 0.06)',
+  dark: 'rgba(199, 184, 232, 0.07)',
 } as const;
 
 export type SystemColorKey = keyof typeof androidFallbackColors.light;

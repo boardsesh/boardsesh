@@ -24,6 +24,8 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   useColorScheme: () => useColorSchemeMock(),
   PlatformColor: (name: string) => name,
+  // Returns its appearance map so the test can read every variant, incl. Increase Contrast.
+  DynamicColorIOS: (appearances: Record<string, string>) => ({ dynamic: appearances }),
   Appearance: { setColorScheme: () => undefined },
 }));
 vi.mock('expo-glass-effect', () => ({
@@ -53,16 +55,29 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
     expect(theme.current.systemColors.secondaryLabel).toBe('secondaryLabel');
   });
 
-  it('uses the brand violet as the accent, not the system link blue', async () => {
-    const light = await renderTheme('light');
-    expect(light.current.systemColors.accent).toBe('#6D28D9');
-    expect(light.current.systemColors.accent).not.toBe('link');
+  it('uses the brand violet as the accent, adaptive to dark mode and Increase Contrast', async () => {
+    const theme = await renderTheme('light');
+    expect(theme.current.systemColors.accent).toEqual({
+      dynamic: {
+        light: '#6D28D9',
+        dark: '#A78BFA',
+        highContrastLight: '#4C1D95',
+        highContrastDark: '#C4B5FD',
+      },
+    });
+    expect(theme.current.systemColors.accent).not.toBe('link');
   });
 
-  it('lifts the accent in dark so it stays the brand tint and clears AA', async () => {
+  it('keeps the accent appearances on the brand tint of each scheme', async () => {
     const dark = await renderTheme('dark');
-    expect(dark.current.systemColors.accent).toBe('#A78BFA');
-    expect(dark.current.systemColors.accent).toBe(dark.current.brandColors.tint);
+    const accent = dark.current.systemColors.accent as unknown as { dynamic: Record<string, string> };
+    expect(accent.dynamic.dark).toBe(dark.current.brandColors.tint);
+  });
+
+  it('gives large shapes the lighter tertiarySystemFill', async () => {
+    const theme = await renderTheme('light');
+    expect(theme.current.systemColors.tertiaryFill).toBe('tertiarySystemFill');
+    expect(theme.current.systemColors.fill).toBe('systemFill');
   });
 
   it('routes errors through the adaptive systemRed', async () => {

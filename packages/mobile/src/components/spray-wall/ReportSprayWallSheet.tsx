@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SprayWallReportReason } from '@boardsesh/graphql/operations/spray-walls';
 import { ModalSheet } from '../ModalSheet';
@@ -42,6 +42,12 @@ export function ReportSprayWallSheet({
     label: labels[option],
     disabled: report.isPending,
   }));
+  const pickReason = useCallback(
+    (next: SprayWallReportReason) => {
+      if (!report.isPending) setReason(next);
+    },
+    [report.isPending],
+  );
   const submit = useCallback(() => {
     if (!reason || !canReport || effectiveOffline || inFlight.current || report.isSuccess) return;
     inFlight.current = true;
@@ -94,7 +100,16 @@ export function ReportSprayWallSheet({
         <>
           {/* The app's native RadioGroup (SwiftUI inline Picker / Compose RadioButtons)
               instead of a hand-drawn list: brand-tinted checkmark, platform picker a11y. */}
-          <RadioGroup options={reasonOptions} value={reason} onChange={setReason} />
+          {/* Locked while the report is in flight. The iOS inline Picker ignores a
+              per-option `disabled`, so the whole group stops taking touches and
+              the handler refuses a change too. */}
+          <View
+            pointerEvents={report.isPending ? 'none' : 'auto'}
+            accessibilityState={{ disabled: report.isPending }}
+            style={report.isPending ? styles.locked : undefined}
+          >
+            <RadioGroup options={reasonOptions} value={reason} onChange={pickReason} />
+          </View>
           {effectiveOffline ? (
             <Text color={systemColors.secondaryLabel}>{t('sprayModeration.reportOffline')}</Text>
           ) : null}
@@ -106,4 +121,5 @@ export function ReportSprayWallSheet({
 }
 const styles = StyleSheet.create({
   body: { padding: spacing[4], gap: spacing[3] },
+  locked: { opacity: 0.5 },
 });

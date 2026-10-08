@@ -15,6 +15,7 @@ import {
   brandColorsDark,
   materialSurfaces,
   androidFallbackColors,
+  tertiaryFillFallback,
   materialSurfaceContainers,
 } from '../theme/colors';
 import { buildPaperTheme } from '../theme/paper-theme';
@@ -46,6 +47,7 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
     ...(variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme]),
     // The provider adds the error role on top of the surface palette (M3 error here).
     error: brand.error,
+    tertiaryFill: tertiaryFillFallback[colorScheme],
   };
   // Hoisted for the same reason as the provider: `sheetSurface` is the plain-string
   // ground the @expo/ui sheet background needs, taken from the chart palette.
@@ -78,6 +80,7 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
       accent: systemColors.accent,
       brandSuccess: brand.success,
       brandPrimary: brand.primary,
+      error: systemColors.error,
     }),
     chartColors: resolvedChartColors,
     heatRamp: resolveHeatRamp(colorScheme),

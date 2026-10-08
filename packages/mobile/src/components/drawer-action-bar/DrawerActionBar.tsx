@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, type ColorValue, type ViewStyle } from 'react-native';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
@@ -28,7 +28,7 @@ type ActionButtonProps = {
   disabled?: boolean;
   active?: boolean;
   activeColor?: string;
-  iconColor?: string;
+  iconColor?: ColorValue;
   accessibilityLabel: string;
   /**
    * Why the button is unavailable. A disabled icon-only button is ~1.1:1

@@ -27,7 +27,42 @@ const PACKAGE_ROOT = join(__dirname, '..', '..');
 const SOURCE_ROOTS = [join(PACKAGE_ROOT, 'src'), join(PACKAGE_ROOT, 'app')];
 const THEME_DIR = 'src/theme/';
 
-const STATIC_COLOUR = /\biosSystemColors\.(systemGray4|systemGray|separator|systemRed)\b/g;
+const BANNED_KEYS = ['systemGray4', 'systemGray', 'separator', 'systemRed'] as const;
+const BANNED = BANNED_KEYS.join('|');
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Every name the file reaches `iosSystemColors` by: the import itself, an
+ * aliased import (`iosSystemColors as ios`) and a re-bound const
+ * (`const colors = iosSystemColors`).
+ */
+function aliasesOf(source: string): string[] {
+  const aliases = new Set(['iosSystemColors']);
+  for (const match of source.matchAll(/\biosSystemColors\s+as\s+([A-Za-z_$][\w$]*)/g)) aliases.add(match[1]);
+  for (const match of source.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*iosSystemColors\b/g)) {
+    aliases.add(match[1]);
+  }
+  return [...aliases];
+}
+
+/** Uses of a banned key: member access, bracket access, or a destructure. */
+function countStaticColourUses(source: string): number {
+  let count = 0;
+  for (const alias of aliasesOf(source)) {
+    const name = escapeRegExp(alias);
+    const member = new RegExp(`\\b${name}\\s*(?:\\?\\.|\\.)\\s*(?:${BANNED})\\b`, 'g');
+    const bracket = new RegExp(`\\b${name}\\s*\\[\\s*['"\`](?:${BANNED})['"\`]\\s*\\]`, 'g');
+    count += (source.match(member) ?? []).length + (source.match(bracket) ?? []).length;
+    const destructure = new RegExp(`\\{([^{}]*)\\}\\s*=\\s*${name}\\b`, 'g');
+    for (const match of source.matchAll(destructure)) {
+      count += (match[1].match(new RegExp(`(?:^|[\\s,])(?:${BANNED})\\b`, 'g')) ?? []).length;
+    }
+  }
+  return count;
+}
 
 /** File → [count, reason]. Shrink-only. */
 const ALLOWLIST: Record<string, [number, string]> = {
@@ -60,12 +95,26 @@ function countStaticColours(): Map<string, number> {
     for (const file of walk(root)) {
       const path = relative(PACKAGE_ROOT, file);
       if (path.startsWith(THEME_DIR)) continue;
-      const matches = readFileSync(file, 'utf8').match(STATIC_COLOUR);
-      if (matches) counts.set(path, matches.length);
+      const uses = countStaticColourUses(readFileSync(file, 'utf8'));
+      if (uses > 0) counts.set(path, uses);
     }
   }
   return counts;
 }
+
+describe('the static-colour scanner', () => {
+  it.each([
+    ['member access', 'color: iosSystemColors.systemGray', 1],
+    ['optional member access', 'iosSystemColors?.systemRed', 1],
+    ['bracket access', "iosSystemColors['systemGray4']", 1],
+    ['a destructure', 'const { systemGray, white, separator: hairline } = iosSystemColors;', 2],
+    ['an aliased import', "import { iosSystemColors as ios } from '../theme/ios-colors';\nios.systemRed", 1],
+    ['a re-bound const', 'const palette = iosSystemColors;\nconst { systemGray4 } = palette;', 1],
+    ['an allowed key', 'iosSystemColors.white; iosSystemColors.systemGreen', 0],
+  ])('counts %s', (_label, source, expected) => {
+    expect(countStaticColourUses(source)).toBe(expected);
+  });
+});
 
 describe('static iOS system colours stay inside src/theme', () => {
   const counts = countStaticColours();

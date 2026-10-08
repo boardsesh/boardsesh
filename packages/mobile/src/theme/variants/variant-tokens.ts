@@ -1,6 +1,5 @@
 import { type OpaqueColorValue } from 'react-native';
 import type { UiVariant } from '../resolve-ui-variant';
-import { iosSystemColors } from '../ios-colors';
 import { materialSurfaces, androidFallbackColors, type SystemColorKey } from '../colors';
 
 /**
@@ -23,8 +22,13 @@ export type ActionColors = {
   neutral: ColorValue;
   /** Add-to-queue, confirm. */
   success: ColorValue;
-  /** Favourite / heart. */
+  /** Favourite / heart, as an action-row glyph (monochrome on Liquid Glass). */
   favorite: ColorValue;
+  /**
+   * A heart that IS favourited (the filled state). The one red for that state on
+   * every surface and variant: `systemColors.error`.
+   */
+  favoriteSelected: ColorValue;
   /** Edit · copy · open (interactive accent). */
   accent: ColorValue;
   /** Pin / feature. */
@@ -45,6 +49,8 @@ export type ActionColorInputs = {
   brandSuccess: ColorValue;
   /** `brandColors.primary`. */
   brandPrimary: ColorValue;
+  /** `systemColors.error` — the adaptive red (iOS systemRed, M3 error). */
+  error: ColorValue;
 };
 
 export function resolveActionColors(variant: UiVariant, inputs: ActionColorInputs): ActionColors {
@@ -53,6 +59,7 @@ export function resolveActionColors(variant: UiVariant, inputs: ActionColorInput
       neutral: inputs.label,
       success: inputs.label,
       favorite: inputs.label,
+      favoriteSelected: inputs.error,
       accent: inputs.label,
       pin: inputs.label,
     };
@@ -60,9 +67,8 @@ export function resolveActionColors(variant: UiVariant, inputs: ActionColorInput
   return {
     neutral: inputs.label,
     success: inputs.brandSuccess,
-    // Static iOS red (gifted-charts / animated styles can't take PlatformColor);
-    // reads fine on Android too.
-    favorite: iosSystemColors.systemRed,
+    favorite: inputs.error,
+    favoriteSelected: inputs.error,
     accent: inputs.accent,
     pin: inputs.brandPrimary,
   };

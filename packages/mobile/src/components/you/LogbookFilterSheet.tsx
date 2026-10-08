@@ -293,7 +293,7 @@ export function LogbookFilterSheet({
             />
 
             <View style={styles.subsectionGap} />
-            <View style={[styles.groupedCard, { backgroundColor: systemColors.fill }]}>
+            <View style={[styles.groupedCard, { backgroundColor: systemColors.tertiaryFill }]}>
               <SwitchRow
                 label={t('mobile.logbook.flashOnly')}
                 value={draftFilters.flashOnly && !flashDisabled}
@@ -338,7 +338,7 @@ export function LogbookFilterSheet({
             />
 
             <View style={styles.subsectionGap} />
-            <View style={[styles.groupedCard, { backgroundColor: systemColors.fill }]}>
+            <View style={[styles.groupedCard, { backgroundColor: systemColors.tertiaryFill }]}>
               <SwitchRow
                 label={t('mobile.logbook.benchmarksOnly')}
                 value={draftFilters.benchmarkOnly}

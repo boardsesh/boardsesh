@@ -230,7 +230,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
   }, [refetch]);
 
   if (fetchGrade && isLoading) {
-    return <View style={[styles.skeleton, styles.skeletonBlock, { backgroundColor: systemColors.fill }]} />;
+    return <View style={[styles.skeleton, styles.skeletonBlock, { backgroundColor: systemColors.tertiaryFill }]} />;
   }
 
   // Nothing can reach us and no grade is cached. A tappable "Couldn't load"
