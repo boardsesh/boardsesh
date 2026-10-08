@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   type AccessibilityActionEvent,
   type AccessibilityActionInfo,
+  type AccessibilityState,
   type ColorValue,
   type StyleProp,
   StyleSheet,
@@ -34,6 +35,12 @@ type GlassIconButtonProps = {
   accessibilityHint?: string;
   /** Custom assistive-tech actions (e.g. a grade shortcut VoiceOver / Switch
    *  Control can reach, mirroring an otherwise-invisible long-press). */
+  /**
+   * Pass this only when the button really is a selection (a toggle, a filter).
+   * `active` is NOT a selection: it drives the search/close morph, so announcing
+   * "selected" for it would be wrong. Callers set the state themselves.
+   */
+  accessibilityState?: AccessibilityState;
   accessibilityActions?: ReadonlyArray<AccessibilityActionInfo>;
   onAccessibilityAction?: (event: AccessibilityActionEvent) => void;
   /** Translucent tint composited on the glass (iOS). Omit for a neutral surface. */
@@ -95,12 +102,12 @@ function GlassIconButtonMaterial({
   onLongPress,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityState,
   accessibilityActions,
   onAccessibilityAction,
   badgeCount,
   badgeBackgroundColor,
   badgeTextColor,
-  active = false,
   disabled = false,
   size = glassSize.standard,
 }: GlassIconButtonProps) {
@@ -125,7 +132,7 @@ function GlassIconButtonMaterial({
         disabled={disabled}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
-        accessibilityState={active ? { selected: true } : undefined}
+        accessibilityState={accessibilityState}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
       />
@@ -158,6 +165,7 @@ function GlassIconButtonGlass({
   onLongPress,
   accessibilityLabel,
   accessibilityHint,
+  accessibilityState,
   accessibilityActions,
   onAccessibilityAction,
   tintColor,
@@ -234,7 +242,7 @@ function GlassIconButtonGlass({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
-        accessibilityState={active ? { selected: true } : undefined}
+        accessibilityState={accessibilityState}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
         style={[styles.button, { width: size, height: size, borderRadius: size / 2 }]}

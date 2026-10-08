@@ -11,6 +11,8 @@ type PressableMockProps = {
   accessibilityHint?: string;
   accessibilityState?: { busy?: boolean; selected?: boolean };
   style?: unknown;
+  accessibilityActions?: { name: string; label: string }[];
+  onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
 
 vi.mock('react-native', () => ({
@@ -21,12 +23,18 @@ vi.mock('react-native', () => ({
     accessibilityLabel,
     accessibilityHint,
     accessibilityState,
+    accessibilityActions,
+    onAccessibilityAction,
   }: PressableMockProps) =>
     createElement(
       'button',
       {
         onClick: onPress,
         onDoubleClick: onLongPress,
+        // Screen-reader route: contextmenu fires the first published custom action.
+        onContextMenu: () =>
+          onAccessibilityAction?.({ nativeEvent: { actionName: accessibilityActions?.[0]?.name ?? '' } }),
+        'data-action-label': accessibilityActions?.map((action) => action.label).join('|'),
         'data-label': accessibilityLabel,
         'data-hint': accessibilityHint ?? '',
         'data-busy': String(accessibilityState?.busy ?? false),
@@ -148,5 +156,48 @@ describe('BleLightbulbButton write activity', () => {
     expect(button.getAttribute('data-hint')).toBe('Scanning for boards nearby');
 
     act(() => release());
+  });
+});
+
+describe('BleLightbulbButton screen-reader long-press route', () => {
+  it('publishes a custom action that runs the long-press handler', () => {
+    const onLongPress = vi.fn();
+    const store = createBleWriteActivityStore();
+    const view = render(
+      createElement(
+        BluetoothWriteActivityProvider,
+        { store },
+        createElement(BleLightbulbButton, {
+          isConnected: true,
+          isScanning: false,
+          onPress: vi.fn(),
+          onLongPress,
+          accessibilityLabel: 'Disconnect board',
+          longPressAccessibilityHint: 'Hold for controls',
+        }),
+      ),
+    );
+    const button = view.getByRole('button');
+    expect(button.getAttribute('data-action-label')).toBe('Hold for controls');
+    fireEvent.contextMenu(button);
+    expect(onLongPress).toHaveBeenCalledOnce();
+  });
+
+  it('publishes no action when there is no long-press handler', () => {
+    const store = createBleWriteActivityStore();
+    const view = render(
+      createElement(
+        BluetoothWriteActivityProvider,
+        { store },
+        createElement(BleLightbulbButton, {
+          isConnected: false,
+          isScanning: false,
+          onPress: vi.fn(),
+          accessibilityLabel: 'Connect board',
+          longPressAccessibilityHint: 'Hold for controls',
+        }),
+      ),
+    );
+    expect(view.getByRole('button').getAttribute('data-action-label')).toBeNull();
   });
 });
