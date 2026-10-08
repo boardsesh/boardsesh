@@ -34,6 +34,7 @@ import {
   serialReuseDisclosure,
 } from '../../src/lib/boards/serial-reuse';
 import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
+import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
 import { BoardDuplicatePromptSheet } from '../../src/components/board-discovery/BoardDuplicatePromptSheet';
 import { SerialReuseConfirmSheet } from '../../src/components/board-discovery/SerialReuseConfirmSheet';
@@ -146,7 +147,11 @@ export default function CreateBoard() {
     (boardName: BoardName) => presetBoardConfig(boardName, popularConfigList),
     [popularConfigList],
   );
-  const builder = useBoardBuilder(seed, presetRequested ? { preset: presetForBoard } : undefined);
+  const { data: privacySettings } = usePrivacySettings();
+  const builder = useBoardBuilder(seed, {
+    preset: presetRequested ? presetForBoard : undefined,
+    privacyEnabled: privacySettings?.enabled,
+  });
 
   // Auto-generated default name, e.g. "Marco's Kilter Original 12×12", from the
   // user's display name + config. Used as the placeholder and the create-time

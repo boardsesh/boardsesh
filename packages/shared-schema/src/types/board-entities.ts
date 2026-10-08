@@ -1,4 +1,5 @@
 import type { SprayWallImportProgress } from '../spray-detection';
+import type { PrivacyLocationAudience, PrivacyResourceAudience } from '../generated/types';
 
 // Board entity types
 
@@ -86,6 +87,8 @@ export type BoardLeaderboard = {
 };
 
 export type CreateBoardInput = {
+  audience?: PrivacyResourceAudience;
+  locationAudience?: PrivacyLocationAudience;
   boardType: string;
   layoutId: number;
   sizeId: number;

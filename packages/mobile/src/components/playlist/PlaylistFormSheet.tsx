@@ -149,7 +149,20 @@ export function PlaylistFormSheet({
         ? { privacy: privacy.publication, isPublic: privacy.audience === 'public' }
         : {}),
     });
-  }, [mode, name, description, color, icon, isPublic, onSubmit, t, privacy.publication, privacy.audience, privacy.enabled, isEdit]);
+  }, [
+    mode,
+    name,
+    description,
+    color,
+    icon,
+    isPublic,
+    onSubmit,
+    t,
+    privacy.publication,
+    privacy.audience,
+    privacy.enabled,
+    isEdit,
+  ]);
 
   // Local validation takes precedence over a parent submit failure: a fresh
   // validation message (e.g. empty name) is the more actionable feedback, and

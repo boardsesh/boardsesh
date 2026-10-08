@@ -53,6 +53,8 @@ function parseSetIds(setIds: string): number[] {
 }
 
 export type BoardBuilderOptions = {
+  /** Submit the audience shown by the server-enabled privacy controls. */
+  privacyEnabled?: boolean;
   /**
    * The setup to preselect for a board type, when the builder should open with
    * one chosen instead of waiting for a layout tap (#5654, "My own board"). It
@@ -110,7 +112,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   const [isPublic, setIsPublic] = useState(seed?.isPublic ?? false);
   const [isUnlisted, setIsUnlisted] = useState(seed?.isUnlisted ?? false);
   const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? true);
-  const [privacyAudience, setPrivacyAudience] = useState<PrivacyResourceAudience | undefined>();
+  const [selectedPrivacyAudience, setPrivacyAudience] = useState<PrivacyResourceAudience | undefined>();
+  const privacyAudience = selectedPrivacyAudience ?? (options?.privacyEnabled ? 'invite_only' : undefined);
   const [privacyLocationAudience, setPrivacyLocationAudience] = useState<PrivacyLocationAudience | undefined>();
   // Most home boards with a kicker tilt are adjustable; default on.
   const [isAngleAdjustable, setIsAngleAdjustable] = useState(seed?.isAngleAdjustable ?? true);

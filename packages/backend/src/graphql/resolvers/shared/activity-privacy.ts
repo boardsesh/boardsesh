@@ -283,7 +283,9 @@ export function commentPrivacyCondition(
 ): SQL {
   return and(
     contentVisibilityCondition('comment', comment.uuid, comment.userId, viewerId),
-    sql`NOT EXISTS (
+    // Reaching a root proves the chain is complete. An absent parent yields
+    // no unreadable rows, so checking only NOT EXISTS would expose orphans.
+    sql`(
     WITH RECURSIVE privacy_ancestors AS (
       SELECT privacy_parent_seed.id, privacy_parent_seed.uuid, privacy_parent_seed.user_id, privacy_parent_seed.parent_comment_id, 1 AS depth FROM comments privacy_parent_seed WHERE privacy_parent_seed.id = ${comment.parentCommentId}
       UNION ALL
@@ -291,9 +293,12 @@ export function commentPrivacyCondition(
       FROM comments parent JOIN privacy_ancestors child ON parent.id = child.parent_comment_id
       WHERE child.depth < 32
     )
-    SELECT 1 FROM privacy_ancestors ancestor WHERE
-      NOT ${contentVisibilityCondition('comment', sql`ancestor.uuid`, sql`ancestor.user_id`, viewerId)}
-      OR (ancestor.depth = 32 AND ancestor.parent_comment_id IS NOT NULL)
+    SELECT (${comment.parentCommentId} IS NULL OR EXISTS (
+      SELECT 1 FROM privacy_ancestors WHERE parent_comment_id IS NULL
+    )) AND NOT EXISTS (
+      SELECT 1 FROM privacy_ancestors ancestor WHERE
+        NOT ${contentVisibilityCondition('comment', sql`ancestor.uuid`, sql`ancestor.user_id`, viewerId)}
+    )
   )`,
   )!;
 }

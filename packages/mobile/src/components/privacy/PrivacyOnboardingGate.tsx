@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { router, useSegments } from 'expo-router';
+import { useSegments } from 'expo-router';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useLaunchReady } from '../../providers/launch-ready-context';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
 import { useProfile } from '../../lib/graphql/hooks';

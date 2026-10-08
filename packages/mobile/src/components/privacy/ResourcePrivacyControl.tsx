@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { AudiencePicker, BOARD_AUDIENCES, SESSION_AUDIENCES } from './AudiencePicker';

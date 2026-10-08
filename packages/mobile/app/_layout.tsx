@@ -1001,11 +1001,11 @@ function RootLayout() {
                                                             geometry can lift the FABs and list tails clear of
                                                             it. Waits on the launch-ready context like
                                                             OnboardingGate, so it never paints over the splash. */}
-                                                                    <ConnectivityBanner />
-                                                                    <OnboardingGate />
-                                                                    <PrivacyOnboardingGate />
-                                                                    <PrivacySyncBridge />
-                                                                    {/* The connect-step test's (#5654) always-mounted half:
+                                                                      <ConnectivityBanner />
+                                                                      <OnboardingGate />
+                                                                      <PrivacyOnboardingGate />
+                                                                      <PrivacySyncBridge />
+                                                                      {/* The connect-step test's (#5654) always-mounted half:
                                                             binds its store to the signed-in account, records this
                                                             phone's first connect and shows the one-time
                                                             confirmation. Renders nothing. Inside the Bluetooth

@@ -335,3 +335,96 @@ describe('SQL privacy boundaries against Postgres', () => {
     expect(aggregate.count).toBe(5);
   });
 });
+
+describe('complete comment ancestry', () => {
+  it.each([false, true])(
+    'hides surviving replies after an ancestor account disappears (nested: %s)',
+    async (nested) => {
+      const deletedAuthor = `privacy-deleted-ancestor-${nested}`;
+      await db.insert(schema.users).values({ id: deletedAuthor, email: `${deletedAuthor}@test.com` });
+      await db.insert(schema.userProfiles).values({ userId: deletedAuthor, isPrivate: true });
+      await db.insert(schema.userFollows).values({ followerId: approved, followingId: deletedAuthor });
+      const [root] = await db
+        .insert(schema.comments)
+        .values({
+          uuid: `${deletedAuthor}-root`,
+          userId: deletedAuthor,
+          entityType: 'climb',
+          entityId: climbUuid,
+          body: 'Private context',
+        })
+        .returning();
+      let replyParentId = root.id;
+      if (nested) {
+        const [middle] = await db
+          .insert(schema.comments)
+          .values({
+            uuid: `${deletedAuthor}-middle`,
+            userId: stranger,
+            entityType: 'climb',
+            entityId: climbUuid,
+            parentCommentId: root.id,
+            body: 'Public intermediate reply',
+          })
+          .returning();
+        replyParentId = middle.id;
+      }
+      const [reply] = await db
+        .insert(schema.comments)
+        .values({
+          uuid: `${deletedAuthor}-reply`,
+          userId: stranger,
+          entityType: 'climb',
+          entityId: climbUuid,
+          parentCommentId: replyParentId,
+          body: 'Public reply retaining private context',
+        })
+        .returning();
+      expect(await canReadSocialEntity('comment', reply.uuid, approved)).toBe(true);
+      expect(await canReadSocialEntity('comment', reply.uuid, stranger)).toBe(false);
+
+      // User deletion cascades to their comments, while reply parent IDs have no FK.
+      await db.delete(schema.users).where(eq(schema.users.id, deletedAuthor));
+      expect(await db.select().from(schema.comments).where(eq(schema.comments.id, root.id))).toEqual([]);
+      const [survivingReply] = await db.select().from(schema.comments).where(eq(schema.comments.id, reply.id));
+      expect(survivingReply.parentCommentId).toBe(replyParentId);
+      for (const viewerId of [null, stranger, approved]) {
+        expect(await canReadSocialEntity('comment', reply.uuid, viewerId)).toBe(false);
+        expect(await canReadDeletedComment(reply.uuid, stranger, replyParentId, viewerId)).toBe(false);
+      }
+      const feed = await socialCommentQueries.globalCommentFeed(null, { input: { limit: 50 } }, {
+        userId: null,
+        isAuthenticated: false,
+        connectionId: `privacy-orphan-${nested}`,
+      } as unknown as ConnectionContext);
+      expect(feed.comments.map((comment) => comment.uuid)).not.toContain(reply.uuid);
+    },
+  );
+
+  it('allows complete chains through 32 ancestors and rejects deeper chains and cycles', async () => {
+    let parentCommentId: number | null = null;
+    const chain = [];
+    for (let depth = 0; depth <= 33; depth += 1) {
+      const [comment]: Array<{ id: number; uuid: string }> = await db
+        .insert(schema.comments)
+        .values({
+          uuid: `privacy-ancestor-depth-${depth}`,
+          userId: stranger,
+          entityType: 'climb',
+          entityId: climbUuid,
+          parentCommentId,
+          body: 'Public chain',
+        })
+        .returning();
+      chain.push(comment);
+      parentCommentId = comment.id;
+    }
+    expect(await canReadSocialEntity('comment', chain[0].uuid, null)).toBe(true);
+    expect(await canReadSocialEntity('comment', chain[32].uuid, null)).toBe(true);
+    expect(await canReadSocialEntity('comment', chain[33].uuid, null)).toBe(false);
+
+    await db.update(schema.comments).set({ parentCommentId: chain[1].id }).where(eq(schema.comments.id, chain[0].id));
+    expect(await canReadSocialEntity('comment', chain[0].uuid, null)).toBe(false);
+    expect(await canReadSocialEntity('comment', chain[32].uuid, null)).toBe(false);
+  });
+});

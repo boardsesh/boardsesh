@@ -943,9 +943,24 @@ describe('QueueProvider local solo queue', () => {
     'ignores a delayed pre-Undo snapshot after partially failed %s removal',
     async (removal) => {
       const snapshots: Snapshot[] = [];
-      if (removal === 'first profile resolution bulk')
+      let rendered: ReturnType<typeof renderProvider>;
+      if (removal === 'first profile resolution bulk') {
         partyProfileState.current = { ...partyProfileState.current, isAuthenticated: true };
-      const rendered = await renderRestoredSession(snapshots);
+        rendered = renderProvider((snapshot) => snapshots.push(snapshot));
+        // Persisted sessions wait for a known storage owner. An explicit join
+        // can still finish while the profile loads, leaving the failed removal
+        // below with the null-identity origin this regression exercises.
+        await act(async () => {
+          await snapshots.at(-1)?.joinSession('session-1', {
+            boardPath: '/kilter/1/10/1,2/40/list',
+            userBoard: activeBoard.stored,
+          });
+        });
+        expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+        expect(partyProfileState.current.authenticatedUserId).toBeNull();
+      } else {
+        rendered = await renderRestoredSession(snapshots);
+      }
       const first = makeQueueItem('first');
       const second = makeQueueItem('second');
       const kept = makeQueueItem('kept');

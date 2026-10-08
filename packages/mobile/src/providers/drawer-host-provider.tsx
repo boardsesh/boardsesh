@@ -445,7 +445,9 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     open: openPlaylistSheet,
     close: closePlaylistSheet,
     clearIfClosed: clearPlaylistSheet,
-  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>(sanitizeClimbTarget);
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>(
+    sanitizeClimbTarget,
+  );
   const {
     data: betaVideoData,
     visible: betaVideoVisible,
