@@ -208,13 +208,13 @@ async function reportTickClimbCatalogPresence(
       `[saveTick] climb not in catalog — saving anyway (#3528): ${boardType}/${climbUuid} angle=${angle} user=${userId}`,
     );
     captureBackendEvent('Tick Climb Not In Catalog', {
-      distinctId: userId,
       // climbUuid rides along so the counter is triageable on its own. "12 hits"
       // means nothing until you know whether it's 12 climbs or one client
       // looping on one bad UUID — and that distinction is the answer #3942 needs.
-      // Not PII: a catalog identifier, and the same value the warn log carries.
+      // Count distinct climbUuid. Not PII: a catalog identifier, and the same
+      // value the warn log carries. No user id: backend events are operational
+      // telemetry and never identify a climber (docs/analytics-consent.md).
       properties: { boardType, angle, climbUuid },
-      processPersonProfile: false,
     });
   } catch (error) {
     logger.error('[saveTick] climb catalog presence check failed:', error);

@@ -1,5 +1,16 @@
 import { captureBackendEvent } from './posthog';
 
+/*
+ * Live Activity telemetry. Operational, not product analytics: it says whether
+ * APNs pushes and widget taps work, so it is sent whatever a climber's consent
+ * and carries nobody's identity. `captureBackendEvent` gives every event its own
+ * random distinct id and no person profile; nothing here passes a user id.
+ *
+ * The `... Attribution Gap` events still exist because they count a different
+ * condition (a push token registered without a user), not because the main
+ * events carry a user.
+ */
+
 type WidgetNavigationOutcome =
   | 'success'
   | 'rate_limited'
@@ -11,7 +22,6 @@ type WidgetNavigationOutcome =
   | 'error';
 
 interface LiveActivityRegistrationEvent {
-  userId: string;
   sessionId: string;
   tokenLength: number;
   apnsConfigured: boolean;
@@ -20,7 +30,6 @@ interface LiveActivityRegistrationEvent {
 }
 
 interface LiveActivityEndEvent {
-  userId: string;
   sessionId: string;
   reason: 'unregister' | 'session-ended';
   tokenCount?: number;
@@ -33,7 +42,6 @@ interface LiveActivityEndAttributionGapEvent {
 }
 
 interface LiveActivityWidgetNavigationEvent {
-  userId: string;
   sessionId: string;
   action: 'next' | 'previous';
   outcome: WidgetNavigationOutcome;
@@ -57,7 +65,6 @@ interface LiveActivityWidgetNavigationAttributionGapEvent {
 }
 
 interface LiveActivityPushDeliveryEvent {
-  userId: string;
   sessionId: string;
   event: 'update' | 'end';
   source: 'event' | 'heartbeat' | 'registration';
@@ -82,9 +89,7 @@ interface LiveActivityPushDeliveryAttributionGapEvent {
 
 export function trackLiveActivityStarted(event: LiveActivityRegistrationEvent): void {
   captureBackendEvent('Live Activity Started', {
-    distinctId: event.userId,
     properties: {
-      userId: event.userId,
       sessionId: event.sessionId,
       tokenLength: event.tokenLength,
       apnsConfigured: event.apnsConfigured,
@@ -96,9 +101,7 @@ export function trackLiveActivityStarted(event: LiveActivityRegistrationEvent): 
 
 export function trackLiveActivityEnded(event: LiveActivityEndEvent): void {
   captureBackendEvent('Live Activity Ended', {
-    distinctId: event.userId,
     properties: {
-      userId: event.userId,
       sessionId: event.sessionId,
       reason: event.reason,
       tokenCount: event.tokenCount,
@@ -108,8 +111,6 @@ export function trackLiveActivityEnded(event: LiveActivityEndEvent): void {
 
 export function trackLiveActivityEndedAttributionGap(event: LiveActivityEndAttributionGapEvent): void {
   captureBackendEvent('Live Activity Ended Attribution Gap', {
-    distinctId: `live-activity-session:${event.sessionId}`,
-    processPersonProfile: false,
     properties: {
       sessionId: event.sessionId,
       reason: event.reason,
@@ -120,9 +121,7 @@ export function trackLiveActivityEndedAttributionGap(event: LiveActivityEndAttri
 
 export function trackLiveActivityWidgetNavigation(event: LiveActivityWidgetNavigationEvent): void {
   captureBackendEvent('Live Activity Widget Navigation', {
-    distinctId: event.userId,
     properties: {
-      userId: event.userId,
       sessionId: event.sessionId,
       action: event.action,
       outcome: event.outcome,
@@ -139,8 +138,6 @@ export function trackLiveActivityWidgetNavigationAttributionGap(
   event: LiveActivityWidgetNavigationAttributionGapEvent,
 ): void {
   captureBackendEvent('Live Activity Widget Navigation Attribution Gap', {
-    distinctId: `live-activity-session:${event.sessionId}`,
-    processPersonProfile: false,
     properties: {
       sessionId: event.sessionId,
       action: event.action,
@@ -165,9 +162,7 @@ export function trackLiveActivityPushDelivery(event: LiveActivityPushDeliveryEve
   if (event.failedCount === 0 && event.staleCount === 0) return;
 
   captureBackendEvent('Live Activity Push Delivery', {
-    distinctId: event.userId,
     properties: {
-      userId: event.userId,
       sessionId: event.sessionId,
       event: event.event,
       source: event.source,
@@ -182,8 +177,6 @@ export function trackLiveActivityPushDelivery(event: LiveActivityPushDeliveryEve
 
 export function trackLiveActivityPushDeliveryAttributionGap(event: LiveActivityPushDeliveryAttributionGapEvent): void {
   captureBackendEvent('Live Activity Push Delivery Attribution Gap', {
-    distinctId: `live-activity-session:${event.sessionId}`,
-    processPersonProfile: false,
     properties: {
       sessionId: event.sessionId,
       event: event.event,

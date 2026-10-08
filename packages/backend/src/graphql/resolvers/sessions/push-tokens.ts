@@ -301,7 +301,6 @@ export const pushTokenMutations = {
     incrementApnsMetric('tokensRegistered');
     logger.info(`[APNs] Registered Live Activity token for session ${sessionId}: ${describeTokenForLog(token)}`);
     trackLiveActivityStarted({
-      userId: ctx.userId,
       sessionId,
       tokenLength: token.length,
       apnsConfigured: isApnsConfigured(),
@@ -393,7 +392,6 @@ export const pushTokenMutations = {
 
     logger.info(`[APNs] Unregistered Live Activity token for session ${sessionId}: ${describeTokenForLog(token)}`);
     trackLiveActivityEnded({
-      userId: ctx.userId,
       sessionId,
       reason: 'unregister',
     });

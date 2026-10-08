@@ -9,9 +9,8 @@ import { setupWorkerDatabase } from './worker-db';
 // Typed structurally rather than off captureBackendEvent's own signature —
 // vi.hoisted runs before imports, so the real type isn't reachable here.
 type CapturedEventOptions = {
-  distinctId: string;
   properties?: Record<string, string | number | boolean | null | undefined>;
-  processPersonProfile?: boolean;
+  systemDistinctId?: string;
 };
 const { captureBackendEventMock } = vi.hoisted(() => ({
   captureBackendEventMock: vi.fn((_eventName: string, _options: CapturedEventOptions) => true),
@@ -153,14 +152,13 @@ describe('saveTick climb-catalog check (#3528, log-only)', () => {
 
     const events = unknownCatalogEvents();
     expect(events).toHaveLength(1);
-    // distinctId is the user so the metric can count USERS, not events — one
-    // looping client must not read as a fleet-wide problem. climbUuid is what
-    // separates "12 phantom climbs" from "one client looping on one UUID", which
-    // is the distinction #3942 has to make.
-    expect(events[0][1]).toMatchObject({
-      distinctId: USER_ID,
+    // climbUuid is what separates "12 phantom climbs" from "one client looping
+    // on one UUID", which is the distinction #3942 has to make. The event names
+    // no climber (#2644): backend events are operational telemetry.
+    expect(events[0][1]).toEqual({
       properties: { boardType: BOARD, angle: 40, climbUuid: UNKNOWN_CLIMB },
     });
+    expect(JSON.stringify(events[0])).not.toContain(USER_ID);
   });
 
   // board_climbs.uuid alone is the primary key, so it is tempting to read the

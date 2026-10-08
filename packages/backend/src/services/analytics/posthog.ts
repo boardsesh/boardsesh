@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import { PostHog } from 'posthog-node';
 import { logger } from '../../utils/logger';
@@ -14,16 +15,40 @@ export type BackendAnalyticsEvent =
   | 'Live Activity Widget Navigation'
   | 'Live Activity Widget Navigation Attribution Gap'
   // Counter behind the log-only climb-existence check in saveTick (#3528).
-  // Count DISTINCT USERS, not events — one looping client would otherwise read
-  // as a fleet-wide problem. A sustained zero is the signal to turn the check
-  // into a rejection (#3942).
-  | 'Tick Climb Not In Catalog';
+  // Count DISTINCT `climbUuid`s, not events — one looping client resends the
+  // same climb and would otherwise read as a fleet-wide problem. A sustained
+  // zero is the signal to turn the check into a rejection (#3942).
+  | 'Tick Climb Not In Catalog'
+  // The daily first-party DAU/WAU/MAU counts from user_activity_days. Counts
+  // only, on one fixed system id. See docs/analytics-consent.md.
+  | 'Active Users Snapshot';
 
+/**
+ * Backend events are operational telemetry sent under legitimate interest, not
+ * product analytics, so they must not identify anyone whatever that person's
+ * consent (docs/analytics-consent.md). That is enforced here rather than at each
+ * call site:
+ *
+ * - there is no way to pass a distinct id. Every event gets its own random one
+ *   (`backend:<event>:<uuid>`), so PostHog cannot join two events into a person;
+ * - an aggregate system event may instead name a fixed `system:` id, which is
+ *   not a person either;
+ * - every event carries `$process_person_profile: false`, so PostHog creates no
+ *   person profile for it;
+ * - property names that carry identity (`userId`, `email`, ...) are dropped.
+ */
 interface CaptureBackendEventOptions {
-  distinctId: string;
   properties?: AnalyticsProperties;
-  processPersonProfile?: boolean;
+  /** A fixed id for an aggregate system event, e.g. `system:active-users`. Never a user id. */
+  systemDistinctId?: `system:${string}`;
 }
+
+/**
+ * Property names that would tie a backend event to a person. Compared
+ * lower-cased. Dropped at capture so a call site that copies a payload
+ * wholesale can't reintroduce one.
+ */
+const PERSONAL_PROPERTY_NAMES = new Set(['userid', 'user_id', 'email', 'distinct_id', '$ip', '$user_id']);
 
 const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 const POSTHOG_FLUSH_AT = 20;
@@ -34,6 +59,7 @@ let initAttempted = false;
 let missingProjectKeyLogged = false;
 let nonProductionEnvironmentLogged = false;
 const loggedQueuedEvents = new Set<BackendAnalyticsEvent>();
+const loggedDroppedProperties = new Set<string>();
 
 function readOptionalEnv(envName: string): string | null {
   const rawValue = process.env[envName];
@@ -56,17 +82,34 @@ function getProjectKeyConfig(): {
   return null;
 }
 
-function sanitizeProperties(properties: AnalyticsProperties | undefined): SanitizedAnalyticsProperties {
+function sanitizeProperties(
+  eventName: BackendAnalyticsEvent,
+  properties: AnalyticsProperties | undefined,
+): SanitizedAnalyticsProperties {
   const sanitized: SanitizedAnalyticsProperties = {};
   if (!properties) return sanitized;
 
   for (const [propertyName, propertyValue] of Object.entries(properties)) {
+    if (PERSONAL_PROPERTY_NAMES.has(propertyName.toLowerCase())) {
+      const droppedKey = `${eventName}:${propertyName}`;
+      if (!loggedDroppedProperties.has(droppedKey)) {
+        loggedDroppedProperties.add(droppedKey);
+        logger.warn(`[PostHog] Dropped personal property '${propertyName}' from backend event: ${eventName}`);
+      }
+      continue;
+    }
     if (propertyValue !== undefined) {
       sanitized[propertyName] = propertyValue;
     }
   }
 
   return sanitized;
+}
+
+/** `backend:tick-climb-not-in-catalog:<uuid>`: one id per event, never reused. */
+function eventScopedDistinctId(eventName: BackendAnalyticsEvent): string {
+  const eventSlug = eventName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `backend:${eventSlug}:${randomUUID()}`;
 }
 
 function getPosthogClient(): PostHog | null {
@@ -147,20 +190,21 @@ function getAnalyticsEnvironment(): string {
   return readOptionalEnv('POSTHOG_ENVIRONMENT') ?? resolveSentryEnvironment();
 }
 
-export function captureBackendEvent(eventName: BackendAnalyticsEvent, options: CaptureBackendEventOptions): boolean {
+export function captureBackendEvent(
+  eventName: BackendAnalyticsEvent,
+  options: CaptureBackendEventOptions = {},
+): boolean {
   const posthog = getPosthogClient();
   if (!posthog) return false;
 
-  const properties = sanitizeProperties(options.properties);
+  const properties = sanitizeProperties(eventName, options.properties);
   properties.service = 'boardsesh-backend';
   properties.environment = getAnalyticsEnvironment();
-  if (options.processPersonProfile === false) {
-    properties.$process_person_profile = false;
-  }
+  properties.$process_person_profile = false;
 
   try {
     posthog.capture({
-      distinctId: options.distinctId,
+      distinctId: options.systemDistinctId ?? eventScopedDistinctId(eventName),
       event: eventName,
       properties,
     });
@@ -184,6 +228,7 @@ export async function shutdownPosthog(): Promise<void> {
   missingProjectKeyLogged = false;
   nonProductionEnvironmentLogged = false;
   loggedQueuedEvents.clear();
+  loggedDroppedProperties.clear();
 
   try {
     await posthog.shutdown();
