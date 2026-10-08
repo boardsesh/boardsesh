@@ -317,8 +317,8 @@
       "p1": "Der Code von Boardsesh ist Open Source unter der Apache-2.0-Lizenz. Diese Lizenz gilt für den Code. Sie gilt nicht für den gehosteten Dienst: die Konten, die Boulder-Datenbank, die Logbuch-Synchronisierung und die Echtzeit-Server, mit denen sich die Boardsesh-Apps und die Website verbinden. Die betreiben und bezahlen wir.",
       "p2Start": "Die öffentliche API, die auf der",
       "p2Link": "API-Dokumentationsseite",
-      "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder für angemeldete Kletterer*innen über deren eigenes Konto handeln, innerhalb der veröffentlichten Ratenlimits.",
-      "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, der Boardsesh-Konten, -Daten oder -Server als eigenen Dienst nutzt, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code und die Self-Hosting-Doku sind genau dafür da.",
+      "p2End": "beschrieben ist, ist für Integrationen gedacht: Tools, die Boulderdaten lesen oder für angemeldete Kletterer*innen über deren eigenes Konto handeln, innerhalb der Ratenlimits, die der Dienst anwendet.",
+      "p3": "Der gehostete Dienst ist kein Backend für andere Apps. Eine öffentlich verbreitete App oder ein Fork, der Boardsesh-Konten, -Daten oder -Server als eigenen Dienst nutzt, braucht unsere schriftliche Erlaubnis, und die erteilen wir derzeit nicht. Wenn du Boardsesh forkst, betreibe auch dein eigenes Backend. Der Code ist genau dafür da. Das Entwicklungs-Setup in CONTRIBUTING.md ist heute der Einstieg; eine offizielle Self-Hosting-Doku kommt noch.",
       "contact": "Fragen zu dieser Richtlinie:"
     },
     "trademark": {

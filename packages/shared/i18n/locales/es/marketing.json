@@ -317,8 +317,8 @@
       "p1": "El código de Boardsesh es de código abierto bajo la licencia Apache 2.0. Esa licencia cubre el código. No cubre el servicio alojado: las cuentas, la base de datos de bloques, la sincronización del logbook y los servidores en tiempo real a los que se conectan las apps y el sitio web de Boardsesh. Los gestionamos y los pagamos nosotros.",
       "p2Start": "La API pública documentada en la",
       "p2Link": "página de documentación de la API",
-      "p2End": "es para integraciones: herramientas que leen datos de bloques, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso publicados.",
-      "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente que use las cuentas, los datos o los servidores de Boardsesh como su servicio necesita nuestro permiso por escrito, y por ahora no lo concedemos. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código y la documentación de autoalojamiento están ahí precisamente para eso.",
+      "p2End": "es para integraciones: herramientas que leen datos de bloques, o que actúan en nombre de un escalador con sesión iniciada desde su propia cuenta, dentro de los límites de uso que aplica el servicio.",
+      "p3": "El servicio alojado no es un backend para otras apps. Una app o fork distribuido públicamente que use las cuentas, los datos o los servidores de Boardsesh como su servicio necesita nuestro permiso por escrito, y por ahora no lo concedemos. Si haces un fork de Boardsesh, ejecuta también tu propio backend. El código está ahí precisamente para eso. La guía de configuración de desarrollo en CONTRIBUTING.md es el punto de partida hoy; la documentación oficial de autoalojamiento aún está por llegar.",
       "contact": "Preguntas sobre esta política:"
     },
     "trademark": {
@@ -352,7 +352,7 @@
       "licenseLink": "CC BY 4.0",
       "copyright": ". Copyright 2024 Fonticons, Inc."
     },
-    "footer": "Este documento se proporciona con fines informativos y no constituye asesoramiento legal. Última actualización: 10-08-2026"
+    "footer": "Este documento se proporciona con fines informativos y no constituye asesoramiento legal. Última actualización: 08-10-2026"
   },
   "help": {
     "clip": {
