@@ -129,6 +129,7 @@ describe('GymPhotoUploader removal', () => {
     const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://ws.boardsesh.com/api/gym-photos?gymUuid=gym-uuid-1');
     expect(init.method).toBe('DELETE');
+    expect(new Headers(init.headers).get('x-boardsesh-client')).toMatch(/^boardsesh-web\//);
     expect(onGymChange).toHaveBeenCalledWith(clearedGym);
   });
 

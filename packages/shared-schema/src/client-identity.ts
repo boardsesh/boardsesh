@@ -30,14 +30,19 @@ export type ClientIdentity = {
 };
 
 const CLIENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/i;
-// Version, platform and build are free-form but must not contain the grammar's
-// own delimiters (whitespace, `/`, `(`, `)`, `;`).
-const CLIENT_TOKEN_PATTERN = /^[^\s/();]+$/;
-const CLIENT_IDENTITY_PATTERN = /^([^/\s]+)\/(\S+?)(?:\s+\(([^()]*)\))?$/;
-const BUILD_SEGMENT_PATTERN = /^build\s+(\S+)$/i;
+// Version, platform and build are free-form but limited to printable ASCII
+// (0x21-0x7E: no spaces, control bytes, escape sequences, bidi overrides or
+// emoji, any of which could corrupt a log line or a dashboard) and must not
+// contain the grammar's own delimiters (`/`, `(`, `)`, `;`).
+const PRINTABLE_ASCII_PATTERN = /^[\x21-\x7e]+$/;
+const GRAMMAR_DELIMITER_PATTERN = /[/();]/;
+const CLIENT_IDENTITY_PATTERN = /^([^/\s]+)\/(\S+?)(?: +\(([^()]*)\))?$/;
+const BUILD_SEGMENT_PATTERN = /^build +(\S+)$/i;
 
 function isToken(candidate: string | undefined): candidate is string {
-  return candidate !== undefined && CLIENT_TOKEN_PATTERN.test(candidate);
+  return (
+    candidate !== undefined && PRINTABLE_ASCII_PATTERN.test(candidate) && !GRAMMAR_DELIMITER_PATTERN.test(candidate)
+  );
 }
 
 export function formatClientIdentity(identity: ClientIdentity): string {

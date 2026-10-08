@@ -3,6 +3,7 @@ import { cache } from 'react';
 import type { ParsedBoardRouteParameters, BoardName } from '@/app/lib/types';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { parseBoardAngleSegment, toBoardName } from '@boardsesh/board-config';
 
@@ -99,7 +100,7 @@ async function fetchBoardBySlug(slug: string, wallUuid: string | undefined): Pro
   const variables = wallUuid === undefined ? { slug } : { slug, wallUuid };
 
   const authToken = await getServerAuthToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...webClientIdentityHeaders() };
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }

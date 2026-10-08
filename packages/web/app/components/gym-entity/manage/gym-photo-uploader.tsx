@@ -41,6 +41,7 @@ import {
   scaleToFit,
   type GymPhotoEncodingPlan,
 } from './photo-image-utils';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 /**
  * Downscale + re-encode via canvas per the plan. The canvas is filled white
@@ -160,7 +161,7 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
 
       const response = await fetch(`${backendBaseUrl}/api/gym-photos`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
         body: formData,
       });
       if (!response.ok) {
@@ -211,7 +212,7 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
       try {
         await fetch(`${backendBaseUrl}/api/gym-photos?gymUuid=${encodeURIComponent(gym.uuid)}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
         });
       } catch (cleanupError) {
         console.error('Gym photo object cleanup failed:', cleanupError);

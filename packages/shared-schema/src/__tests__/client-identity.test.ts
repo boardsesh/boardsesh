@@ -83,6 +83,25 @@ void describe('parseClientIdentity', () => {
     }
   });
 
+  it('rejects anything outside printable ASCII in any field', () => {
+    for (const hostile of [
+      'boardsesh-web/1.0.0\u0000',
+      'boardsesh-web/1.0\u00000',
+      'boardsesh-web/1.0.0 (ios\u0000; build 45)',
+      'boardsesh-web/\u001b[31m1.0.0',
+      'boardsesh-web/1.0.0 (\u001b[31mios)',
+      'boardsesh-web/1.0.0 (ios; build \u001b[0m45)',
+      'boardsesh-web/1.0.0\u202e',
+      'boardsesh-web/1.0.0 (\u202eios)',
+      'boardsesh-web/1.0.0-\u{1F9D7}',
+      'boardsesh-web/1.0.0 (ios; build \u{1F680})',
+      'boardsesh-web\u{1F9D7}/1.0.0',
+      'boardsesh-web/1.0.0\u00a0(ios)',
+    ]) {
+      expect(parseClientIdentity(hostile), JSON.stringify(hostile)).toBeUndefined();
+    }
+  });
+
   it('returns undefined when the parentheses are not closed or opened', () => {
     expect(parseClientIdentity('boardsesh-mobile/2.6.0 (ios; build 45')).toBeUndefined();
     expect(parseClientIdentity('boardsesh-mobile/2.6.0 ios; build 45)')).toBeUndefined();

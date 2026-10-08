@@ -75,6 +75,8 @@ describe('resolveBoardBySlug', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, requestInit] = fetchMock.mock.calls[0];
     expect(new Headers(requestInit?.headers).get('Authorization')).toBeNull();
+    // SSR of /b/<slug> names www as the calling client.
+    expect(new Headers(requestInit?.headers).get('x-boardsesh-client')).toBe('boardsesh-web/0.1.0 (server)');
     expect(requestInit).toMatchObject({
       method: 'POST',
       cache: 'no-store',
@@ -100,6 +102,7 @@ describe('resolveBoardBySlug', () => {
 
     const [, requestInit] = fetchMock.mock.calls[0];
     expect(new Headers(requestInit?.headers).get('Authorization')).toBe('Bearer signed-session-token');
+    expect(new Headers(requestInit?.headers).get('x-boardsesh-client')).toBe('boardsesh-web/0.1.0 (server)');
     expect(requestInit).toMatchObject({ cache: 'no-store' });
     expect(requestInit).not.toHaveProperty('next');
   });

@@ -90,7 +90,8 @@ vi.mock('expo-web-browser', () => ({
   dismissBrowser: (...args: unknown[]) => dismissBrowserMock(...args),
 }));
 
-const { signInWithGoogleWeb, signInWithAppleWeb, signOut, signOutForGeneration } = await import('../auth');
+const { signInWithCredentials, signInWithGoogleWeb, signInWithAppleWeb, signOut, signOutForGeneration } =
+  await import('../auth');
 
 // Keep in sync with the web app's NATIVE_OAUTH_CALLBACK_SCHEME
 // (packages/web/app/lib/auth/native-oauth-config.ts) and auth.ts's
@@ -176,9 +177,28 @@ describe('signInWithGoogleWeb', () => {
     expect(removeListenerMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
       'https://backend.test/auth/native/exchange',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ transferToken: 'tok-123' }) }),
+      expect.objectContaining({
+        method: 'POST',
+        // Raw fetch, so the client identity header is added by hand.
+        headers: { 'Content-Type': 'application/json', 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' },
+        body: JSON.stringify({ transferToken: 'tok-123' }),
+      }),
     );
     expect(storeTokensMock).toHaveBeenCalledWith('jwt-1', 'refresh-1', '2026-01-01T00:00:00.000Z');
+  });
+
+  it('sends the client identity on the email and password sign-in', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(okExchange());
+
+    await expect(signInWithCredentials('climber@example.com', 'hunter2')).resolves.toEqual({ success: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://backend.test/auth/native/credentials',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' },
+      }),
+    );
   });
 
   it('keeps the Android listener alive after opened and exchanges the callback after foregrounding', async () => {

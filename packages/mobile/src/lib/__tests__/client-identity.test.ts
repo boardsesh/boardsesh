@@ -78,6 +78,11 @@ describe('Expo web client identity', () => {
     });
   });
 
+  it('exposes the same header record helper as the native fork', () => {
+    expect(web.MOBILE_CLIENT_NAME).toBe('boardsesh-mobile-web');
+    expect(web.clientIdentityHeaders()).toEqual({ 'x-boardsesh-client': 'boardsesh-mobile-web/2.6.0 (web)' });
+  });
+
   it('falls back to unknown when the app config has no version', () => {
     constants.expoConfig = null;
 
