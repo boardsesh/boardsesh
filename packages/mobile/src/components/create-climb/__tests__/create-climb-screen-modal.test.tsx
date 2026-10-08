@@ -21,7 +21,12 @@ const state = vi.hoisted(() => ({
   setParams: vi.fn(),
   notify: vi.fn(),
   backListeners: [] as Array<() => boolean>,
-  drawer: null as null | { onClose: () => void; onLoadDraft: (climb: Climb) => void },
+  drawer: null as null | {
+    onClose: () => void;
+    onLoadDraft: (climb: Climb) => void;
+    onLongPressHold: (holdId: number) => void;
+  },
+  holdRoleId: null as number | null,
   onStartedNewClimb: null as null | (() => void),
 }));
 
@@ -82,12 +87,21 @@ vi.mock('../../../lib/offline/use-catalog-query-source', () => ({
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../search/heatmap/heatmap-search-input', () => ({ heatmapSearchInput: () => ({}) }));
 vi.mock('../CreateDrawer', () => ({
-  CreateDrawer: (props: { onClose: () => void; onLoadDraft: (climb: Climb) => void }) => {
+  CreateDrawer: (props: {
+    onClose: () => void;
+    onLoadDraft: (climb: Climb) => void;
+    onLongPressHold: (holdId: number) => void;
+  }) => {
     state.drawer = props;
     return null;
   },
 }));
-vi.mock('../HoldRoleSheet', () => ({ HoldRoleSheet: () => null }));
+vi.mock('../HoldRoleSheet', () => ({
+  HoldRoleSheet: ({ holdId }: { holdId: number | null }) => {
+    state.holdRoleId = holdId;
+    return null;
+  },
+}));
 vi.mock('../use-lost-hold-ghosts', () => ({
   useLostHoldGhosts: () => ({ ghosts: [], ghostTargets: [], dismissGhost: () => {} }),
 }));
@@ -120,6 +134,7 @@ beforeEach(() => {
   state.backListeners = [];
   state.drawer = null;
   state.onStartedNewClimb = null;
+  state.holdRoleId = null;
 });
 afterEach(cleanup);
 
@@ -141,6 +156,20 @@ describe('New climb as a modal route', () => {
     expect(handled).toBe(true);
     expect(state.back).toHaveBeenCalledOnce();
     expect(state.notify).toHaveBeenCalledOnce();
+  });
+
+  it("closes the hold-role sheet on Android's back, not the editor under it", () => {
+    renderScreen();
+    act(() => state.drawer?.onLongPressHold(7));
+    expect(state.holdRoleId).toBe(7);
+    let handled = false;
+    act(() => {
+      handled = state.backListeners[0]?.() ?? false;
+    });
+    expect(handled).toBe(true);
+    expect(state.holdRoleId).toBeNull();
+    expect(state.back).not.toHaveBeenCalled();
+    expect(state.notify).not.toHaveBeenCalled();
   });
 
   it('leaves the back press alone while another screen is in front', () => {

@@ -1,17 +1,10 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentRef,
-  type ComponentType,
-  type RefObject,
-} from 'react';
-import { Keyboard, Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, type ComponentRef, type ComponentType, type RefObject } from 'react';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
+import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
+import { flowCoversScreen } from '../../lib/routing/flow-covers-screen';
 // The scroll container is RNGH's own `ScrollView`, not React Native's plain one.
 // A plain ScrollView can't be declared a relation with an RNGH gesture, and on
 // Android its classic `onInterceptTouchEvent` can win the touch stream on the
@@ -103,9 +96,10 @@ export function CreateDrawer({
   // whose per-tab provider folds iOS 26 tab chrome the modal covers into
   // insets.bottom (see use-window-bottom-inset).
   const windowInsetBottom = useWindowBottomInset();
-  // An iOS pageSheet starts below the status bar, so the top bar needs no top
-  // inset there. Android's full-screen dialog draws under the status bar.
-  const topInset = Platform.OS === 'ios' ? 0 : insets.top;
+  // An iPhone pageSheet starts below the status bar, so the top bar needs no
+  // top inset there. The iPad full-screen cover and Android's full-screen
+  // dialog both draw under the status bar.
+  const topInset = Platform.OS === 'ios' && !flowCoversScreen() ? 0 : insets.top;
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   // The outer RNGH ScrollView, so the board's pinch/zoomed-pan can declare a
   // relation with it (see the import comment above). Typed as RNGH's
@@ -113,11 +107,15 @@ export function CreateDrawer({
   // at the call site — mirrors PlayDrawer's scrollGestureRef.
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const scrollGestureRef = scrollRef as unknown as RefObject<ComponentType | undefined | null>;
-  // Android shows a modal route in a window that ignores adjustResize, so the
-  // keyboard covers the description field instead of shrinking the scroll. Pad
-  // the scroll by the keyboard so the field can be scrolled clear of it. iOS
-  // does this natively (automaticallyAdjustKeyboardInsets below).
-  const androidKeyboardHeight = useAndroidKeyboardHeight();
+  // Android never shrinks this route for the keyboard: the app is edge-to-edge
+  // (decorFitsSystemWindows false), so adjustResize does nothing and the IME
+  // draws over the scroll. Pad the scroll by the keyboard so the description
+  // can be scrolled clear of it. RN reports the IME inset MINUS the nav bar,
+  // and the pad below already carries the window inset, so the two add up to
+  // the IME's full height with no double count. iOS does this natively
+  // (automaticallyAdjustKeyboardInsets below), so it takes no pad.
+  const keyboardHeight = useKeyboardHeight();
+  const keyboardPad = Platform.OS === 'android' ? keyboardHeight : 0;
 
   // The board owns the zoom AND renders the reset control; the drawer only
   // holds a handle so it can drop the zoom when the frame or the climb changes
@@ -345,7 +343,7 @@ export function CreateDrawer({
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
-          contentContainerStyle={{ paddingBottom: windowInsetBottom + spacing[4] + androidKeyboardHeight }}
+          contentContainerStyle={{ paddingBottom: windowInsetBottom + spacing[4] + keyboardPad }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets
@@ -462,21 +460,6 @@ export function CreateDrawer({
       </GestureHandlerRootView>
     </View>
   );
-}
-
-/** The soft keyboard's height on Android while it is up, else 0. */
-function useAndroidKeyboardHeight(): number {
-  const [height, setHeight] = useState(0);
-  useEffect(() => {
-    if (Platform.OS !== 'android') return undefined;
-    const onShow = Keyboard.addListener('keyboardDidShow', (event) => setHeight(event.endCoordinates?.height ?? 0));
-    const onHide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
-    return () => {
-      onShow.remove();
-      onHide.remove();
-    };
-  }, []);
-  return height;
 }
 
 const styles = StyleSheet.create({

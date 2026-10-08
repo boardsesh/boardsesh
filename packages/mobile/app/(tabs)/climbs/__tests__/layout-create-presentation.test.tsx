@@ -8,13 +8,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // and never fullScreenModal (docs/mobile-sheets-vs-routes.md, rule 2). Swipe to
 // dismiss stays off because painting and pinching the board are drags (rule 3).
 
-const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', isPad: false }));
 const screens = vi.hoisted(() => new Map<string, Record<string, unknown>>());
 
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return platform.OS;
+    },
+    get isPad() {
+      return platform.isPad;
     },
   },
 }));
@@ -51,6 +54,7 @@ function createOptions() {
 beforeEach(() => {
   screens.clear();
   platform.OS = 'ios';
+  platform.isPad = false;
 });
 afterEach(cleanup);
 
@@ -76,7 +80,14 @@ describe('the New climb route', () => {
     expect(options.animation).toBe('slide_from_bottom');
   });
 
-  it('is never a drawer over the list, nor a full-screen cover over the tab bar', () => {
+  it('covers the whole screen on iPad, where a modal is a small page card and there are no NativeTabs', () => {
+    platform.isPad = true;
+    const options = createOptions();
+    expect(options.presentation).toBe('fullScreenModal');
+    expect(options.gestureEnabled).toBe(false);
+  });
+
+  it('is never a drawer over the list, nor a full-screen cover over the iPhone tab bar', () => {
     const { presentation } = createOptions();
     expect(presentation).not.toBe('transparentModal');
     expect(presentation).not.toBe('fullScreenModal');

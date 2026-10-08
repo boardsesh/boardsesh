@@ -6,6 +6,7 @@ import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-b
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { flowCoversScreen } from '../../../src/lib/routing/flow-covers-screen';
 
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
@@ -41,14 +42,16 @@ export default function ClimbsLayout() {
             // New climb is a focused, full-height modal task, like Mail's compose
             // or a new reminder (HIG "Modality"). iOS: a pageSheet, with the list
             // scaled behind it. Android: an M3 full-screen dialog sliding up. Not
-            // fullScreenModal: that snapshots the tab bar and doubles the iOS 26
-            // accessory (docs/mobile-sheets-vs-routes.md, rule 2).
+            // fullScreenModal on a phone: that snapshots the tab bar and doubles
+            // the iOS 26 accessory (docs/mobile-sheets-vs-routes.md, rule 2).
+            // iPad has no NativeTabs, and its `modal` is a ~540pt page card that
+            // clips the board, so there it covers the screen (flowCoversScreen).
             //
             // Swipe-down is off: painting and pinching the board are drags, and
             // a sheet's dismiss pan fights them (rule 3). The X leaves instead,
             // and leaving loses nothing because the draft is kept.
             headerShown: false,
-            presentation: 'modal',
+            presentation: flowCoversScreen() ? 'fullScreenModal' : 'modal',
             gestureEnabled: false,
             contentStyle: { backgroundColor: systemColors.secondaryBackground },
             ...(Platform.OS === 'android' ? { animation: 'slide_from_bottom' as const } : null),

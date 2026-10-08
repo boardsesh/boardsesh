@@ -1,22 +1,13 @@
-import { Platform } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
+import { flowCoversScreen } from '../routing/flow-covers-screen';
 
 /**
  * Whether the spray flows (add a wall, edit its holds, reset it) cover the
- * whole screen: on iPad only.
- *
- * As a `modal` they are a page card on iPad, a box in the middle of the screen
- * with the app dimmed around it, which is the wrong size for a pan-and-pinch
- * editor. iPad never mounts the iOS 26 NativeTabs (`app/(tabs)/_layout.tsx`
- * keeps it on JS tabs), so the `fullScreenModal` ban in
- * `docs/mobile-sheets-vs-routes.md` rule 2 does not reach it. Phones and Android
- * keep the presentation they had.
- *
- * Read on every call rather than once at load, so a test can vary the device.
- * A Mac running the iPad build reports `isPad` too, and gets a full-window cover.
+ * whole screen: on iPad only. The same rule as New climb; see
+ * `flowCoversScreen` for why.
  */
 export function sprayFlowCoversScreen(): boolean {
-  return Platform.OS === 'ios' && Platform.isPad === true;
+  return flowCoversScreen();
 }
 
 /**
