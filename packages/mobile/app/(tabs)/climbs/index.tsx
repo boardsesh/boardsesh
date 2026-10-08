@@ -806,6 +806,9 @@ function ClimbListInner() {
     isBoardResolved &&
     revealTipResolved &&
     quickActionsTipResolved &&
+    // An armed tip waits for the first climb row; hold the card until then so
+    // the tip does not push it out the moment the climbs land.
+    !(quickActionsTipArmed && isClimbsLoading) &&
     featureFlagsResolved &&
     (!firstConnectEligibleBuild || firstConnectDeviceResolved) &&
     !connectCardVisible &&
