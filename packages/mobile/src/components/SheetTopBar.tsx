@@ -18,7 +18,6 @@ import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'r
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Icon } from './Icon';
-import type { IconName } from './icon-map';
 import { ActivityIndicator } from './ActivityIndicator';
 import { PressableSurface } from './PressableSurface';
 import { ChromeIconButton } from './ChromeIconButton';
