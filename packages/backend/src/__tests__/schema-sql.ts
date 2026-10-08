@@ -51,6 +51,13 @@ const providerSyncControlsSchema = readFileSync(
   new URL('../../../db/drizzle/0244_provider_sync_controls.sql', import.meta.url),
   'utf8',
 );
+// The account consent log and the first-party active-user table, straight from
+// the generated migration so the fixture can't drift from the CHECK constraints
+// the resolvers rely on.
+const analyticsConsentSchema = readFileSync(
+  new URL('../../../db/drizzle/0261_analytics_consent_and_user_activity.sql', import.meta.url),
+  'utf8',
+);
 
 const sessionBoardsSchema = readFileSync(
   new URL('../../../db/drizzle/0055_enhanced-sessions.sql', import.meta.url),
@@ -2130,6 +2137,9 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "rejected_reason" text,
     CONSTRAINT "board_climb_ingest_skips_board_type_climb_uuid_pk" PRIMARY KEY ("board_type", "climb_uuid")
   );
+  DROP TABLE IF EXISTS user_analytics_consent_events;
+  DROP TABLE IF EXISTS user_activity_days;
+  ${analyticsConsentSchema}
   ${sprayWallDeletionSchema}
   ${sessionBoardsSchema}
   ${privacySchema}
