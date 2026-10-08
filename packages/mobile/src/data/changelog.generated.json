@@ -1,6 +1,38 @@
 {
-  "generatedAt": "2026-10-08T09:34:52.983Z",
+  "generatedAt": "2026-10-08T11:14:09.422Z",
   "entries": [
+    {
+      "prNumber": 6247,
+      "category": "fixed",
+      "title": "Buttons are sized like the rest of iOS and Android, with labels that no longer look oversized",
+      "mergedAt": "2026-10-08T11:01:37Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6247",
+      "body": "Numbers like angles and grades no longer jitter while they change"
+    },
+    {
+      "prNumber": 6246,
+      "category": "fixed",
+      "title": "Cleared the queue by mistake? Tap Undo to bring it back",
+      "mergedAt": "2026-10-08T10:49:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6246",
+      "body": "Fewer buzzes: the phone only vibrates for things you did\nVoiceOver now reads out confirmations and errors"
+    },
+    {
+      "prNumber": 6243,
+      "category": "fixed",
+      "title": "Buttons at the top of sheets and screens look the same everywhere, with a checkmark to save on iPhone",
+      "mergedAt": "2026-10-08T10:48:43Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6243",
+      "body": "Buttons and their labels are sized like the rest of iOS and Android"
+    },
+    {
+      "prNumber": 6249,
+      "category": "new",
+      "title": "iPhones on iOS 18 get the standard iOS tab bar",
+      "mergedAt": "2026-10-08T10:46:12Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6249",
+      "body": "Unvisited tabs wait to load their feeds until you open them"
+    },
     {
       "prNumber": 6244,
       "category": "fixed",
