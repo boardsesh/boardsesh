@@ -15,7 +15,7 @@ import { ClimbListRowSkeleton } from '../../../../src/components/ClimbListRowSke
 import {
   PlaylistDetailView,
   SKELETON_PLACEHOLDERS,
-  PlaylistBackFab,
+  PlaylistStateHeader,
   type PlaylistDetailEmptyState,
 } from '../../../../src/components/playlist';
 import { getHttpClient } from '../../../../src/lib/graphql/client';
@@ -131,7 +131,7 @@ export default function SmartPlaylistDetail() {
   if (!preset && !query.isLoading) {
     return (
       <View style={styles.stateContainer}>
-        <PlaylistBackFab />
+        <PlaylistStateHeader />
         <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('library.smart.notFound.title')}
@@ -146,7 +146,7 @@ export default function SmartPlaylistDetail() {
   if (query.isLoading && allClimbs.length === 0) {
     return (
       <View style={styles.skeletonContainer}>
-        <PlaylistBackFab />
+        <PlaylistStateHeader />
         <View style={styles.skeletonList}>
           {SKELETON_PLACEHOLDERS.map((key) => (
             <ClimbListRowSkeleton key={key} />
@@ -171,6 +171,7 @@ export default function SmartPlaylistDetail() {
         emptyState={emptyState}
         onAddAllToQueue={playlistActivation.addToQueue.append}
         isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
+        onRefresh={query.refetch}
       />
     </>
   );

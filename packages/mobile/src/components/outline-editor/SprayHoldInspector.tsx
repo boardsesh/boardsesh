@@ -141,24 +141,24 @@ export const SprayHoldInspector = React.memo(function SprayHoldInspector({
               title={t('sprayEditor.chips.switchOff')}
               variant="tonal"
               size="small"
-              over="surface"
+              over="glass"
               onPress={onSwitchOff}
             />
             <Button
               title={t('sprayEditor.inspector.redraw')}
               variant="tonal"
               size="small"
-              over="surface"
+              over="glass"
               onPress={onTrace}
             />
             <Button
               title={t('sprayEditor.chips.refine')}
               variant="tonal"
               size="small"
-              over="surface"
+              over="glass"
               onPress={onRefine}
             />
-            <Button title={t('sprayEditor.chips.join')} variant="tonal" size="small" over="surface" onPress={onJoin} />
+            <Button title={t('sprayEditor.chips.join')} variant="tonal" size="small" over="glass" onPress={onJoin} />
           </>
         ) : role === 'off' ? (
           <>
@@ -166,7 +166,7 @@ export const SprayHoldInspector = React.memo(function SprayHoldInspector({
               title={t('sprayEditor.chips.switchOn')}
               variant="tonal"
               size="small"
-              over="surface"
+              over="glass"
               onPress={onSwitchOn}
             />
             <Button
@@ -174,7 +174,7 @@ export const SprayHoldInspector = React.memo(function SprayHoldInspector({
               variant="tonal"
               size="small"
               role="destructive"
-              over="surface"
+              over="glass"
               onPress={onDelete}
             />
           </>
@@ -184,14 +184,14 @@ export const SprayHoldInspector = React.memo(function SprayHoldInspector({
               title={t('sprayEditor.chips.keep')}
               variant="tonal"
               size="small"
-              over="surface"
+              over="glass"
               onPress={onSwitchOn}
             />
             <Button
               title={t('sprayEditor.chips.switchOff')}
               variant="tonal"
               size="small"
-              over="surface"
+              over="glass"
               onPress={onSwitchOff}
             />
           </>

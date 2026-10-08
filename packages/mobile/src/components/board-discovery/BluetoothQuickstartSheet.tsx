@@ -17,6 +17,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
 
 type BluetoothQuickstartSheetProps = {
   /** True while the sheet is open — drives when the scan kicks off. */
@@ -249,10 +250,16 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
 
     // Scrollable: the footnote sits above every state, and the Android empty
     // scan (hint title, body and a grant button under "No boards in range")
-    // runs past a 55% sheet on a 667 pt phone at large text. Without a scroll
+    // runs past a medium sheet on a 667 pt phone at large text. Without a scroll
     // the recovery buttons at the bottom were the part that got cut off.
     return (
-      <Sheet ref={ref} snapPoints={['55%']} onClose={onClose} scrollable contentContainerStyle={styles.scrollContent}>
+      <Sheet
+        ref={ref}
+        snapPoints={MEDIUM_SNAP_POINTS}
+        onClose={onClose}
+        scrollable
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.content}>
           <Text variant="title3" style={styles.heading}>
             {t('mobile.bluetooth.title')}

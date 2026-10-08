@@ -102,7 +102,7 @@ export function Button({
   const nativeStyle = resolveIosButtonStyle({
     variant,
     overContent: effectiveOver === 'content',
-    supportsGlass,
+    supportsGlass: supportsGlass && effectiveOver !== 'glass',
   });
   // One source for the drawn style, so the label weight below can't disagree
   // with what SwiftUI paints.
@@ -119,7 +119,7 @@ export function Button({
     // outlined / tonal over board art: a solid scrim capsule.
     fillTint = overlays.scrim;
     contentColor = overlays.onScrim;
-  } else if (supportsGlass) {
+  } else if (supportsGlass && effectiveOver !== 'glass') {
     fillTint = undefined; // neutral glass; the brand reads via the label colour
     contentColor = accentColor;
   } else {

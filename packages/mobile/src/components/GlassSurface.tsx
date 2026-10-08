@@ -7,6 +7,7 @@ import type { MaterialSurfaceContainers } from '../theme/colors';
 import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
 import { shadows, type MaterialElevationLevel } from '../theme/tokens';
 import { useEffectiveSurfaceMode } from '../hooks/use-effective-surface-mode';
+import { useButtonSurface } from './Button.surface';
 
 type GlassSurfaceProps = {
   children?: ReactNode;
@@ -90,6 +91,7 @@ export function GlassSurface({
 }: GlassSurfaceProps) {
   const { systemColors, colorScheme, m3SurfaceContainers, materialElevation } = useTheme();
   const mode = useEffectiveSurfaceMode();
+  const onGlass = useButtonSurface() === 'glass';
   const isDark = colorScheme === 'dark';
 
   // The no-glass paths always start from an opaque base so the surface never
@@ -161,6 +163,17 @@ export function GlassSurface({
   // the native glass renders a rounded shape with its own clean edge (no parent
   // clip or RN border, which would seam at the cardinal points of a circle).
   if (mode === 'glass') {
+    // Inside a region that is already glass (`ButtonSurfaceProvider
+    // surface="glass"`: a glass panel, a native bar item) the container's glass
+    // is this control's glass. HIG Materials: never layer glass on glass, so
+    // keep the layout and drop the second GlassView.
+    if (onGlass) {
+      return (
+        <View style={style} pointerEvents={pointerEvents}>
+          {children}
+        </View>
+      );
+    }
     return (
       <View style={style} pointerEvents={pointerEvents}>
         <GlassView

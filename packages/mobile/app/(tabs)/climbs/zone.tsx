@@ -335,6 +335,7 @@ export default function ZoneFilterScreen() {
             onPress={handleClear}
             variant="outlined"
             size="small"
+            over="glass"
             style={styles.clearButton}
           />
         </GlassSurface>

@@ -49,7 +49,7 @@ vi.mock('../../../../src/components/SetterFollowButton', () => ({
   SetterFollowButton: ({ username }: { username: string }) => <span>follow:{username}</span>,
 }));
 vi.mock('../../../../src/components/playlist', () => ({
-  PlaylistBackFab: () => <button>Back</button>,
+  PlaylistStateHeader: () => <span data-testid="native-state-header" />,
   PlaylistDetailView: (props: {
     hero: { name: string; climbCount: number };
     renderBoard: typeof board;
@@ -116,7 +116,8 @@ describe('setter smart playlist route', () => {
     expect(mocks.search).toHaveBeenCalledWith(expect.anything(), false);
     expect(mocks.count).toHaveBeenCalledWith(expect.anything(), false);
     expect(mocks.detail).toBeNull();
-    expect(screen.getByRole('button', { name: 'Back' })).not.toBeNull();
+    // The native header (and its system back button) is still there.
+    expect(screen.getByTestId('native-state-header')).not.toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'authors.chooseBoard' }));
     expect(mocks.push).toHaveBeenCalledWith({
       pathname: '/boards',

@@ -57,6 +57,7 @@ vi.mock('../../providers/theme-provider', async () => {
 });
 
 import { Button } from '../Button.ios';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import type { ButtonVariant } from '../Button.types';
 
 function lastHostProps(): Record<string, unknown> {
@@ -137,3 +138,36 @@ describe('iOS Button host', () => {
     expect(lastHostProps().ignoreSafeArea).toBe('keyboard');
   });
 });
+
+// HIG Materials: glass never sits on glass. Inside a region that is already
+// Liquid Glass the middle tier draws a bordered capsule instead of its own glass.
+describe('iOS Button surface', () => {
+  it.each<ButtonVariant>(['tonal', 'outlined'])('%s is glass on an ordinary surface', (variant) => {
+    render(<Button title="Refine" onPress={vi.fn()} variant={variant} />);
+    expect(modifierArg('buttonStyle')).toBe('glass');
+  });
+
+  it.each<ButtonVariant>(['tonal', 'outlined'])('%s is bordered inside a glass region', (variant) => {
+    render(
+      <ButtonSurfaceProvider surface="glass">
+        <Button title="Refine" onPress={vi.fn()} variant={variant} />
+      </ButtonSurfaceProvider>,
+    );
+    expect(modifierArg('buttonStyle')).toBe('bordered');
+  });
+
+  it('honours a per-button over="glass"', () => {
+    render(<Button title="Clear" onPress={vi.fn()} variant="outlined" over="glass" />);
+    expect(modifierArg('buttonStyle')).toBe('bordered');
+  });
+
+  it('keeps the filled CTA solid inside a glass region', () => {
+    render(
+      <ButtonSurfaceProvider surface="glass">
+        <Button title="Save" onPress={vi.fn()} variant="filled" />
+      </ButtonSurfaceProvider>,
+    );
+    expect(modifierArg('buttonStyle')).toBe('borderedProminent');
+  });
+});
+
