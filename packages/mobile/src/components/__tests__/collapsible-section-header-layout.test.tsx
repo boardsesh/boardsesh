@@ -50,7 +50,7 @@ vi.mock('../Icon', () => ({
 }));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { fill: 'theme-fill', tertiaryLabel: 'theme-tertiary-label' } }),
+  useTheme: () => ({ systemColors: { tertiaryFill: 'theme-tertiary-fill', tertiaryLabel: 'theme-tertiary-label' } }),
 }));
 
 const TITLE = 'Logbook';
@@ -107,6 +107,6 @@ describe('CollapsibleSection collapsed header layout', () => {
 
     // The static #8E8E93 never adapted to dark mode; the theme roles do.
     expect(chevronColor).toBe('theme-tertiary-label');
-    expect(cardStyle.backgroundColor).toBe('theme-fill');
+    expect(cardStyle.backgroundColor).toBe('theme-tertiary-fill');
   });
 });

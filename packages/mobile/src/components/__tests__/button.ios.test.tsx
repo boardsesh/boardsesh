@@ -171,4 +171,3 @@ describe('iOS Button surface', () => {
     expect(modifierArg('buttonStyle')).toBe('borderedProminent');
   });
 });
-

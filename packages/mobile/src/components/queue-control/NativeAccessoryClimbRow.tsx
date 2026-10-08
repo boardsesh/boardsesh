@@ -111,7 +111,11 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
       >
         {/* tapClip reserves the leading slot via paddingLeft (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}
-        <LargeContentViewer style={styles.labelSlot} title={largeContentTitle(climb.name, currentFormattedGrade)} onActivate={openPlay}>
+        <LargeContentViewer
+          style={styles.labelSlot}
+          title={largeContentTitle(climb.name, currentFormattedGrade)}
+          onActivate={openPlay}
+        >
           <ClimbLabel
             climb={climb}
             labelColor={systemColors.label}

@@ -13,6 +13,7 @@ function flatten(style: unknown): Record<string, unknown> {
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown }) => options.ios },
   PlatformColor: (name: string) => name,
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
     createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style)) }, children),
   StyleSheet: { create: (sheet: Record<string, unknown>) => sheet, hairlineWidth: 1 },

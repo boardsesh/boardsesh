@@ -4,6 +4,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: <T>(styles: T): T => styles, hairlineWidth: 0.5 },
   Platform: { OS: 'ios', select: () => undefined },
   PlatformColor: (name: string) => name,
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
 }));
 vi.mock('../climb-list-thumbnail-metrics', () => ({ THUMBNAIL_WIDTH: 48 }));
 

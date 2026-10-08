@@ -155,7 +155,11 @@ export function ClimbCapsule({
         onOpen={openPlay}
         onPrepare={preparePlay}
       >
-        <LargeContentViewer style={[styles.labelSlot, { left: labelLeft, right: labelRight }]} title={largeContentTitle(currentClimb.name, grades.current)} onActivate={openPlay}>
+        <LargeContentViewer
+          style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}
+          title={largeContentTitle(currentClimb.name, grades.current)}
+          onActivate={openPlay}
+        >
           <ClimbLabel
             climb={currentClimb}
             labelColor={systemColors.label}
