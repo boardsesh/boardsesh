@@ -101,7 +101,7 @@ describe('CommentSheet submit error handling', () => {
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
-  it('keeps the draft and shows an error toast when posting fails', () => {
+  it('keeps the draft and shows a persistent inline error when posting fails', () => {
     addComment.mutate.mockImplementation((_input: unknown, options: MutateOptions) => {
       options.onError?.(new Error('network down'));
     });
@@ -114,6 +114,9 @@ describe('CommentSheet submit error handling', () => {
     expect(addComment.mutate).toHaveBeenCalledOnce();
     // Draft must survive so the user's text isn't silently lost.
     expect(input.value).toBe('nice send');
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.comments.sendError', 'error');
+    expect(document.body.textContent).toContain('mobile.comments.sendError');
+    expect(toast.showToast).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'nice send again' } });
+    expect(document.body.textContent).not.toContain('mobile.comments.sendError');
   });
 });

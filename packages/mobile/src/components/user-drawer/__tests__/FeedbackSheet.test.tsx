@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
@@ -310,7 +311,8 @@ describe('FeedbackSheet screenshots', () => {
     typeReport(getByPlaceholderText);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
 
-    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('screenshots.uploadFailed', 'error'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('screenshots.uploadFailed'));
+    expect(showToast).not.toHaveBeenCalledWith('screenshots.uploadFailed', 'error');
     expect(feedbackMutation.mutateAsync).not.toHaveBeenCalled();
     expect((getByPlaceholderText('feedbackForm.bugPlaceholder') as HTMLInputElement).value).toBe(
       'the board disconnects on start',

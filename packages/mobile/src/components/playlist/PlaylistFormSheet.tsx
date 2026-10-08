@@ -1,3 +1,4 @@
+import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
@@ -104,6 +105,21 @@ export function PlaylistFormSheet({
     wasVisibleRef.current = visible;
   }, [visible, isEdit, playlist]);
 
+  const initial = isEdit && playlist ? playlist : null;
+  const dirty =
+    name !== (initial?.name ?? '') ||
+    description !== (initial?.description ?? '') ||
+    color !== (normalizePlaylistColor(initial?.color) ?? undefined) ||
+    icon !== initial?.icon ||
+    isPublic !== (initial?.isPublic ?? false);
+  const guard = useUnsavedSheetGuard({
+    visible,
+    dirty,
+    busy: submitting,
+    onClose,
+    scope: `${mode}:${playlist?.uuid ?? ''}`,
+  });
+
   const handleSubmit = useCallback(() => {
     const result = buildPlaylistFormValues(mode, { name, description, color, icon, isPublic });
     if (!result.ok) {
@@ -143,7 +159,7 @@ export function PlaylistFormSheet({
   const header = (
     <SheetTopBar
       title={title}
-      leading={{ kind: 'cancel', onPress: onClose }}
+      leading={{ kind: 'cancel', onPress: guard.requestClose }}
       trailing={{
         kind: 'confirm',
         label: submitLabel,
@@ -158,7 +174,15 @@ export function PlaylistFormSheet({
   );
 
   return (
-    <ModalSheet visible={visible} snapPoints={['90%']} onClose={onClose} scrollable header={header}>
+    <ModalSheet
+      visible={visible}
+      snapPoints={['90%']}
+      onDisplaced={onClose}
+      onClose={guard.requestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
+      scrollable
+      header={header}
+    >
       <View style={styles.body}>
         <View style={styles.header}>
           <PlaylistPreviewSquare color={color} icon={icon} size={56} />

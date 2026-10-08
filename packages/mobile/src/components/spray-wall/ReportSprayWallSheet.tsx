@@ -1,3 +1,4 @@
+import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -61,10 +62,17 @@ export function ReportSprayWallSheet({
     );
   }, [reason, canReport, effectiveOffline, report, wallUuid]);
   const finished = report.isSuccess || !canReport;
+  const guard = useUnsavedSheetGuard({
+    visible: true,
+    dirty: reason !== null && !finished,
+    busy: report.isPending,
+    onClose,
+  });
+
   const header = (
     <SheetTopBar
       title={t('sprayModeration.reportTitle')}
-      leading={finished ? undefined : { kind: 'cancel', onPress: onClose }}
+      leading={finished ? undefined : { kind: 'cancel', onPress: guard.requestClose }}
       trailing={
         finished
           ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: true }
@@ -85,7 +93,9 @@ export function ReportSprayWallSheet({
       snapPoints={['65%', '90%']}
       androidContentSized
       scrollable
-      onClose={onClose}
+      onDisplaced={onClose}
+      onClose={guard.requestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
       contentContainerStyle={styles.body}
       header={header}
     >

@@ -954,5 +954,11 @@
       "explore": "Entdecken",
       "smallPrint": "Kleingedrucktes"
     }
+  },
+  "unsavedChanges": {
+    "title": "Änderungen verwerfen?",
+    "message": "Deine Änderungen werden nicht gespeichert.",
+    "discard": "Änderungen verwerfen",
+    "keepEditing": "Weiter bearbeiten"
   }
 }

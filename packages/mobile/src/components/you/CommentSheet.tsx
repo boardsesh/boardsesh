@@ -13,7 +13,6 @@ import { formatRelativeTime } from '../../lib/format-relative-time';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
-import { useToast } from '../../providers/toast-provider';
 import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 type CommentSheetProps = {
@@ -40,7 +39,7 @@ export function CommentSheet({
   const { t } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
-  const { showToast } = useToast();
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
@@ -49,16 +48,17 @@ export function CommentSheet({
 
   const submit = () => {
     const body = draft.trim();
-    if (!body || !entityId) return;
+    if (!body || !entityId || addComment.isPending) return;
+    setSubmitError(null);
     hapticLight();
     // Clear the draft only once the comment lands. On failure keep the text in
-    // the composer and surface a toast so it isn't silently lost. The send
+    // the composer and surface an inline error above the native sheet. The send
     // button is disabled while the mutation is pending, so no double-send.
     addComment.mutate(
       { entityType, entityId, body },
       {
         onSuccess: () => setDraft(''),
-        onError: () => showToast(t('mobile.comments.sendError'), 'error'),
+        onError: () => setSubmitError(t('mobile.comments.sendError')),
       },
     );
   };
@@ -71,27 +71,37 @@ export function CommentSheet({
       onClose={onClose}
       footer={
         canComment ? (
-          <View style={styles.composer}>
-            <BottomSheetTextInput
-              style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-              placeholder={t('mobile.comments.placeholder')}
-              placeholderTextColor={systemColors.tertiaryLabel}
-              value={draft}
-              onChangeText={setDraft}
-              multiline
-            />
-            <Pressable
-              onPress={submit}
-              disabled={draft.trim().length === 0 || addComment.isPending}
-              style={styles.send}
-              accessibilityRole="button"
-            >
-              <Icon
-                name="send"
-                size={22}
-                color={draft.trim().length > 0 ? brandColors.primary : systemColors.tertiaryLabel}
+          <View>
+            <View style={styles.composer}>
+              <BottomSheetTextInput
+                style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+                placeholder={t('mobile.comments.placeholder')}
+                placeholderTextColor={systemColors.tertiaryLabel}
+                value={draft}
+                onChangeText={(next) => {
+                  setDraft(next);
+                  setSubmitError(null);
+                }}
+                multiline
               />
-            </Pressable>
+              <Pressable
+                onPress={submit}
+                disabled={draft.trim().length === 0 || addComment.isPending}
+                style={styles.send}
+                accessibilityRole="button"
+              >
+                <Icon
+                  name="send"
+                  size={22}
+                  color={draft.trim().length > 0 ? brandColors.primary : systemColors.tertiaryLabel}
+                />
+              </Pressable>
+            </View>
+            {submitError ? (
+              <Text variant="footnote" color={systemColors.error} accessibilityLiveRegion="polite">
+                {submitError}
+              </Text>
+            ) : null}
           </View>
         ) : (
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.signInPrompt}>

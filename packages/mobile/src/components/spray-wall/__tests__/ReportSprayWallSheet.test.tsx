@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';

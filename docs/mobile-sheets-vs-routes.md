@@ -730,3 +730,16 @@ compete. Keep the lightbulb and tick controls outside the zoom source.
 - `docs/react-native-performance.md` — list/provider/gesture performance rules.
 - `docs/mobile-ota-updates.md` — JS-only vs native-change distribution (a presentation change is
   JS-only and rides OTA; a new native module needs a build).
+
+**Unsaved form dismissal:** playlist, feedback, climb/wall reports, and beta links use
+`useUnsavedSheetGuard`. The native wrapper cannot veto a gesture after UIKit starts
+dismissing, so dirty or submitting forms disable pan/backdrop dismissal. Cancel
+asks Discard changes / Keep editing while preserving the visible form; submissions
+bypass that guard after success. A late confirmation cannot dismiss a reopened
+form or a different record. Coordinator displacement remains a separate host
+notification, so it never attempts to reopen a sheet during native handoff.
+
+**Submit failures stay in their sheet:** use the `SheetTopBar` error slot, or inline
+text beside a composer. Preserve typed text and attachments on failure, and clear
+the error on retry. Root toasts appear behind native sheets and cannot explain
+why a form remains open. Logbook editing already follows this contract.

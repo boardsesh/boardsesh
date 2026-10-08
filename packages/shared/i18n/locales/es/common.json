@@ -954,5 +954,11 @@
       "explore": "Explora",
       "smallPrint": "Letra pequeña"
     }
+  },
+  "unsavedChanges": {
+    "title": "¿Descartar los cambios?",
+    "message": "Tus cambios no se guardarán.",
+    "discard": "Descartar cambios",
+    "keepEditing": "Seguir editando"
   }
 }

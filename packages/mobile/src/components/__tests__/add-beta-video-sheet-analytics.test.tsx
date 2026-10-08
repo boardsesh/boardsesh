@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +10,7 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 // the component's onSuccess (where the analytics fire) runs inline in the test.
 const attach = vi.hoisted(() => ({
   isPending: false,
-  mutate: vi.fn((_variables: unknown, callbacks: { onSuccess?: () => void }) => {
+  mutate: vi.fn((_variables: unknown, callbacks: { onSuccess?: () => void; onError?: (error: Error) => void }) => {
     callbacks.onSuccess?.();
   }),
 }));
@@ -149,6 +150,18 @@ describe('AddBetaVideoSheet attach analytics', () => {
 
     expect(attach.mutate).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed link editable and displays the error until retry', () => {
+    attach.mutate.mockImplementationOnce((_variables, callbacks) => callbacks.onError?.(new Error('offline')));
+    const screen = renderSheet();
+    typeAndSubmit('https://www.instagram.com/reel/ABC123/');
+    expect(screen.getByTestId('sheet-top-bar-error').textContent).toBe('mobile.betaVideos.attachError');
+    expect(analytics.track).not.toHaveBeenCalled();
+    act(() => captured.onChangeText?.('https://www.instagram.com/reel/XYZ456/'));
+    expect(screen.queryByTestId('sheet-top-bar-error')).toBeNull();
+    typeAndSubmit('https://www.instagram.com/reel/XYZ456/');
+    expect(attach.mutate).toHaveBeenCalledTimes(2);
   });
 
   // Regression guard for the decoupled copy/open flow: "Open Instagram" must copy

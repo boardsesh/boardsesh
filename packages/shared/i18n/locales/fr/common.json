@@ -954,5 +954,11 @@
       "explore": "Explorer",
       "smallPrint": "Petits caractères"
     }
+  },
+  "unsavedChanges": {
+    "title": "Abandonner les modifications ?",
+    "message": "Tes modifications ne seront pas enregistrées.",
+    "discard": "Abandonner les modifications",
+    "keepEditing": "Continuer à modifier"
   }
 }
