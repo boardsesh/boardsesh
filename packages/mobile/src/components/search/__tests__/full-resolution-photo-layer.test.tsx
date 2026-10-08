@@ -170,11 +170,14 @@ describe('FullResolutionPhotoLayer with a kept file', () => {
   // A kept file that will not decode costs one download, not a sharp photo.
   it('falls back to the URL when the kept file will not load, and only then reports', async () => {
     const { loadFromDisk, settle } = deferredLoader();
-    const { container, scaleSV, onError } = setup({ ...photo, loadFromDisk });
+    const discardFromDisk = vi.fn();
+    const { container, scaleSV, onError } = setup({ ...photo, loadFromDisk, discardFromDisk });
     zoomTo(scaleSV, 4);
     await act(async () => settle.resolve('/cache/spray-walls/4200-full-x.jpg'));
     act(() => imageRenders.at(-1)?.onError?.());
     expect(onError).not.toHaveBeenCalled();
+    // The bad file goes, so the next visit downloads a good one.
+    expect(discardFromDisk).toHaveBeenCalledTimes(1);
     expect(container.querySelector('img')?.getAttribute('data-uri')).toBe(photo.uri);
     act(() => imageRenders.at(-1)?.onError?.());
     expect(onError).toHaveBeenCalledTimes(1);

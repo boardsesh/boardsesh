@@ -38,16 +38,20 @@ describe('sprayFullResolutionPhoto keeping the file', () => {
   // The layer asks only once the zoom passes 3x, and the request names the wall
   // so the copy is withdrawn with it.
   it('hands the layer a loader for the signed URL in hand', async () => {
-    const keepOnDisk = vi.fn(async () => '/cache/spray-walls/4200-full-x.jpg');
-    const photo = sprayFullResolutionPhoto(wall, 'https://private.example/full.jpg?sig=1', keepOnDisk);
-    expect(keepOnDisk).not.toHaveBeenCalled();
+    const keep = vi.fn(async () => '/cache/spray-walls/4200-full-x.jpg');
+    const discard = vi.fn();
+    const photo = sprayFullResolutionPhoto(wall, 'https://private.example/full.jpg?sig=1', { keep, discard });
+    expect(keep).not.toHaveBeenCalled();
     expect(await photo?.loadFromDisk?.()).toBe('/cache/spray-walls/4200-full-x.jpg');
-    expect(keepOnDisk).toHaveBeenCalledWith({
+    const request = {
       layoutId: 4200,
       wallUuid: 'wall-1',
       url: 'https://private.example/full.jpg?sig=1',
       expiresAt: wall.photoExpiresAt,
-    });
+    };
+    expect(keep).toHaveBeenCalledWith(request);
+    photo?.discardFromDisk?.();
+    expect(discard).toHaveBeenCalledWith(request);
   });
 
   it('leaves the loader off when nothing keeps the file', () => {

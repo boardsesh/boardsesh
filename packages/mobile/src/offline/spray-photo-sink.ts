@@ -1,7 +1,7 @@
 import type { QueryClient, QueryFilters } from '@tanstack/react-query';
 import type { DocumentsPulledSink, RowsDeletedSink } from '@boardsesh/offline-sync';
 import { clearSprayWallPrivateCaches } from '../lib/spray/spray-privacy-cleanup';
-import { findCachedSprayPhotoForObjectKey } from '../lib/spray/spray-photo-cache';
+import { findCachedSprayPhotoForObjectKey, releaseCachedSprayPhotoForObjectKey } from '../lib/spray/spray-photo-cache';
 import { sprayPrivacyGeneration } from '../lib/spray/spray-privacy-generation';
 import {
   SPRAY_PHOTO_STORE_AVAILABLE,
@@ -80,6 +80,9 @@ export const sprayWallPhotoSink: DocumentsPulledSink = async ({ tableName, docum
     if (generation !== sprayPrivacyGeneration()) return;
     if (wallGeneration !== sprayPrivacyGeneration(layoutId)) continue;
     if (stored) {
+      // The renderer reads the stored copy from now on, so its own copy is
+      // dead weight unless a board on screen is still drawing it.
+      releaseCachedSprayPhotoForObjectKey(layoutId, photoKey);
       await clearSprayPhotoPending(db, layoutId, photoKey);
       continue;
     }

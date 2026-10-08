@@ -57,6 +57,12 @@ export function findCachedSprayPhotoForObjectKey(_layoutId: number, _photoKey: s
 /** Where to fetch a photo's full-resolution copy, and whose wall it is. */
 export type SprayFullPhotoRequest = { layoutId: number; wallUuid: string; url: string; expiresAt: string };
 
+/** Nothing kept, nothing to discard. */
+export function discardSprayFullPhoto(_request: SprayFullPhotoRequest): void {}
+
+/** No renderer cache in a browser. */
+export function releaseCachedSprayPhotoForObjectKey(_layoutId: number, _photoKey: string): void {}
+
 /** Nothing to keep on disk: the hold editor loads the signed URL itself. */
 export function ensureSprayFullPhotoCached(_request: SprayFullPhotoRequest): Promise<string | null> {
   return Promise.resolve(null);

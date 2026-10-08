@@ -34,14 +34,17 @@ const SIGNATURE_EXPIRY_MARGIN_MS = 60 * 1000;
  * changes, and the draft is refetched during a long sitting, so the decoded
  * image survives the new URL.
  *
- * `keepOnDisk` (`ensureSprayFullPhotoCached`) keeps the downloaded file, so the
+ * `keepOnDisk` (`ensureSprayFullPhotoCached` / `discardSprayFullPhoto`) keeps the downloaded file, so the
  * next visit, and the next draft on the same photo, decodes it instead of
  * downloading several megabytes again. Left out, the layer loads the URL.
  */
 export function sprayFullResolutionPhoto(
   wall: { layoutId: number; wallUuid: string; versionId: number | string; photoExpiresAt: string } | null,
   photoFullUrl: string | null,
-  keepOnDisk?: (request: SprayFullPhotoRequest) => Promise<string | null>,
+  keepOnDisk?: {
+    keep: (request: SprayFullPhotoRequest) => Promise<string | null>;
+    discard: (request: SprayFullPhotoRequest) => void;
+  },
 ): FullResolutionPhoto | null {
   if (!wall || !photoFullUrl) return null;
   const photo: FullResolutionPhoto = {
@@ -56,7 +59,11 @@ export function sprayFullResolutionPhoto(
     url: photoFullUrl,
     expiresAt: wall.photoExpiresAt,
   };
-  return { ...photo, loadFromDisk: () => keepOnDisk(request) };
+  return {
+    ...photo,
+    loadFromDisk: () => keepOnDisk.keep(request),
+    discardFromDisk: () => keepOnDisk.discard(request),
+  };
 }
 
 /**

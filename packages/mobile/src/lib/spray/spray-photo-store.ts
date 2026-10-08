@@ -30,6 +30,18 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 let storeGeneration = 0;
+/**
+ * Moves whenever this store deletes a photo. Readers that remember "this key is
+ * on disk" (`spray-photo-cache.ts`) fold it into their memo key, so nothing this
+ * store reclaims is handed out from a memo afterwards. A write never moves it:
+ * a memo only remembers files that exist.
+ */
+let deleteEpoch = 0;
+
+/** See `deleteEpoch`. */
+export function sprayPhotoStoreEpoch(): number {
+  return deleteEpoch;
+}
 const keyGenerations = new Map<string, number>();
 function writeGeneration(photoKey: string, layoutId?: number): string {
   return `${sprayPrivacyGeneration(layoutId)}-${storeGeneration}-${keyGenerations.get(photoKey) ?? 0}`;
@@ -209,7 +221,10 @@ async function downloadSprayPhoto(
     return destination.uri.replace(/^file:\/\//, '');
   } catch {
     deleteQuietly(partial);
-    if (generation === writeGeneration(photoKey, layoutId)) deleteQuietly(destination);
+    if (generation === writeGeneration(photoKey, layoutId)) {
+      deleteEpoch += 1;
+      deleteQuietly(destination);
+    }
     return null;
   }
 }
@@ -231,6 +246,7 @@ export function deleteStoredSprayPhoto(photoKey: string | null | undefined): voi
   // Keep the revoked epoch until sign-out advances storeGeneration. Removing it
   // here would reset the effective epoch to zero and admit an old completion.
   keyGenerations.set(photoKey, (keyGenerations.get(photoKey) ?? 0) + 1);
+  deleteEpoch += 1;
   deleteQuietly(storeFile(photoKey));
   deleteQuietly(partialFile(photoKey));
   try {
@@ -301,6 +317,7 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
         if (keepNames.has(keyName) || (generatedKeyName != null && keepNames.has(generatedKeyName))) continue;
       }
       try {
+        deleteEpoch += 1;
         entry.delete();
         deleted += 1;
       } catch {
@@ -323,6 +340,7 @@ export function pruneStoredSprayPhotos(liveKeys: Iterable<string>): number {
  */
 export function clearStoredSprayPhotos(): void {
   storeGeneration += 1;
+  deleteEpoch += 1;
   keyGenerations.clear();
   try {
     const directory = storeDirectory();

@@ -26,6 +26,8 @@ export type FullResolutionPhoto = {
    * passes `minScale`, never before. Left out, the layer loads `uri` directly.
    */
   loadFromDisk?: () => Promise<string | null>;
+  /** Delete the kept file: it would not decode. */
+  discardFromDisk?: () => void;
 };
 
 /** What `loadFromDisk` answered, for the photo named by `cacheKey`. */
@@ -58,7 +60,7 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
   // A kept file that would not decode. Set, the layer loads the URL instead, so a
   // bad file costs one download rather than a sharp photo for good.
   const [unreadableFileKey, setUnreadableFileKey] = useState<string | null>(null);
-  const { minScale, loadFromDisk, cacheKey } = photo;
+  const { minScale, loadFromDisk, discardFromDisk, cacheKey } = photo;
 
   // One crossing is all it takes, so the JS thread hears about it once: the
   // reaction only fires when the answer flips, and only the first flip to true
@@ -93,9 +95,15 @@ export const FullResolutionPhotoLayer = React.memo(function FullResolutionPhotoL
   const answer = diskAnswer?.cacheKey === cacheKey ? diskAnswer : null;
   const filePath = answer?.path && unreadableFileKey !== cacheKey ? answer.path : null;
   const handleError = useCallback(() => {
-    if (filePath) setUnreadableFileKey(cacheKey);
-    else onError?.();
-  }, [filePath, cacheKey, onError]);
+    if (!filePath) {
+      onError?.();
+      return;
+    }
+    // Deleted, so the next visit downloads a good copy rather than failing on
+    // this one again.
+    discardFromDisk?.();
+    setUnreadableFileKey(cacheKey);
+  }, [filePath, cacheKey, onError, discardFromDisk]);
 
   if (!wanted) return null;
   // Still fetching to disk: the base shows through, the same as while a URL loads.

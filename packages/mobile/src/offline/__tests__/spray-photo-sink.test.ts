@@ -20,7 +20,8 @@ vi.mock('../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateC
  * which `spray-photo-store.test.ts` covers against a fake disk.
  */
 
-const { stored, deleted, pruned, storeResult, reportedErrors, rendererCache } = vi.hoisted(() => ({
+const { stored, deleted, pruned, storeResult, reportedErrors, rendererCache, released } = vi.hoisted(() => ({
+  released: [] as string[],
   stored: [] as { photoKey: string; photoUrl: string; cachedCopyPath?: string }[],
   // What the renderer's cache holds, by `layoutId:photoKey`.
   rendererCache: new Map<string, string>(),
@@ -61,6 +62,9 @@ vi.mock('../../lib/spray/spray-photo-store', () => ({
 vi.mock('../../lib/spray/spray-photo-cache', () => ({
   findCachedSprayPhotoForObjectKey: (layoutId: number, photoKey: string) =>
     rendererCache.get(`${layoutId}:${photoKey}`) ?? null,
+  releaseCachedSprayPhotoForObjectKey: (layoutId: number, photoKey: string) => {
+    released.push(`${layoutId}:${photoKey}`);
+  },
 }));
 
 const { sprayWallDeletedSink, sprayWallPhotoSink } = await import('../spray-photo-sink');
@@ -102,6 +106,7 @@ beforeEach(async () => {
   storeResult.available = true;
   reportedErrors.length = 0;
   rendererCache.clear();
+  released.length = 0;
   await setCheckpoint(db, CHECKPOINT_KEY, { updatedAt: '2026-06-01T00:00:00Z', syncSeq: '12' });
 });
 
@@ -130,6 +135,15 @@ describe('sprayWallPhotoSink', () => {
     expect(stored).toEqual([
       { photoKey: PHOTO_KEY, photoUrl: PHOTO_URL, cachedCopyPath: '/cache/spray-walls/4-v9.jpg' },
     ]);
+    // Stored, so the renderer's copy can go.
+    expect(released).toEqual([`${LAYOUT_ID}:${PHOTO_KEY}`]);
+  });
+
+  it("keeps the renderer's copy when the photo did not land", async () => {
+    await insertWallRow();
+    storeResult.ok = false;
+    await pull([wallDocument()]);
+    expect(released).toEqual([]);
   });
 
   it('stores the photograph the page carried', async () => {

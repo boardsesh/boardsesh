@@ -102,7 +102,10 @@ const {
   liveSprayPhotoFileNames,
   ensureSprayFullPhotoCached,
   findCachedSprayPhotoForObjectKey,
+  discardSprayFullPhoto,
+  releaseCachedSprayPhotoForObjectKey,
 } = await import('../spray-photo-cache');
+const { deleteStoredSprayPhoto } = await import('../spray-photo-store');
 const { sprayPartialPhotoFileName, sprayPhotoFileName } = await import('../spray-photo-keys');
 
 const LAYOUT_ID = 4200;
@@ -416,6 +419,50 @@ describe('one copy per object key', () => {
     expect(fsState.downloads).toHaveLength(0);
   });
 
+  // Every board surface and climb row asks; a hit must not cost a stat each time.
+  it('remembers a stored hit until the store reclaims a photo', () => {
+    registerKeyedWall();
+    fsState.files.set(STORED_URI, { exists: true });
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBe(STORED_URI.replace('file://', ''));
+    // Gone behind the store's back: the memo still answers, so no stat ran.
+    fsState.files.delete(STORED_URI);
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBe(STORED_URI.replace('file://', ''));
+    // The store reclaiming any photo moves its epoch and empties the memo.
+    fsState.files.set(STORED_URI, { exists: true });
+    deleteStoredSprayPhoto(PHOTO_KEY);
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBeNull();
+  });
+
+  // The resolver reads the store first, so the cache copy is never asked for again.
+  it('deletes the renderer copy of a stored photo nobody in this process was handed', () => {
+    registerKeyedWall();
+    fsState.files.set(STORED_URI, { exists: true });
+    fsState.files.set(FINAL_URI, { exists: true });
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBe(STORED_URI.replace('file://', ''));
+    expect(fsState.files.has(FINAL_URI)).toBe(false);
+  });
+
+  // A board on screen keeps the path it was given and reads it again per overlay.
+  it('keeps the renderer copy a surface in this process may still be drawing', async () => {
+    registerKeyedWall();
+    expect(await ensureSprayPhotoCached(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
+    fsState.files.set(STORED_URI, { exists: true });
+    releaseCachedSprayPhotoForObjectKey(LAYOUT_ID, PHOTO_KEY);
+    expect(tryGetSprayPhotoPathSync(IDENTITY)).toBe(STORED_URI.replace('file://', ''));
+    expect(fsState.files.has(FINAL_URI)).toBe(true);
+  });
+
+  it('releases the renderer copy once offline sync stores it, when nothing holds it', () => {
+    registerKeyedWall();
+    fsState.files.set(FINAL_URI, { exists: true });
+    releaseCachedSprayPhotoForObjectKey(LAYOUT_ID, PHOTO_KEY);
+    expect(fsState.files.has(FINAL_URI)).toBe(false);
+    // Another object's release touches nothing.
+    fsState.files.set(FINAL_URI, { exists: true });
+    releaseCachedSprayPhotoForObjectKey(LAYOUT_ID, `spray-walls/${WALL_UUID}/other.jpg`);
+    expect(fsState.files.has(FINAL_URI)).toBe(true);
+  });
+
   it('downloads into the cache as before when the wall is not downloaded', async () => {
     registerKeyedWall();
     expect(await ensureSprayPhotoCached(IDENTITY)).toBe(FINAL_URI.replace('file://', ''));
@@ -498,6 +545,15 @@ describe('one copy per object key', () => {
       expect([...fsState.files.keys()]).toEqual([otherWall]);
       // The memo went too, so the next ask downloads again rather than
       // handing out a deleted path.
+      expect(await ensureSprayFullPhotoCached(request)).toBe(FULL_URI.replace('file://', ''));
+      expect(fsState.downloads).toHaveLength(2);
+    });
+
+    // A kept copy that will not decode must not fail every later visit.
+    it('discards a kept copy, so the next ask downloads a good one', async () => {
+      await ensureSprayFullPhotoCached(request);
+      discardSprayFullPhoto(request);
+      expect(fsState.files.has(FULL_URI)).toBe(false);
       expect(await ensureSprayFullPhotoCached(request)).toBe(FULL_URI.replace('file://', ''));
       expect(fsState.downloads).toHaveLength(2);
     });

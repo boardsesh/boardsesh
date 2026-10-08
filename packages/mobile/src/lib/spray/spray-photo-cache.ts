@@ -25,7 +25,7 @@
 
 import { Directory, File, Paths } from 'expo-file-system';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
-import { tryGetStoredSprayPhotoPathSync } from './spray-photo-store';
+import { sprayPhotoStoreEpoch, tryGetStoredSprayPhotoPathSync } from './spray-photo-store';
 import { getSprayWall, listRegisteredSprayWalls, refreshSprayWall } from './spray-wall-registry';
 import { releaseDownloadTaskAfterNativeCompletion, retainDownloadTask } from '../../offline/download-task-retention';
 import {
@@ -148,6 +148,19 @@ function registeredPhotoKey(identity: SprayPhotoIdentity): string | null {
   return photo?.size === 'base' ? photo.key : null;
 }
 
+/** Memo prefix for durable-store hits, so `resolvedPaths` never confuses them with cache names. */
+const STORED_MEMO_PREFIX = 'store:';
+/** The store epoch the `store:` memo entries were made under. */
+let storedMemoEpoch = -1;
+
+/**
+ * Cache-file names this process has handed to a consumer. A board surface keeps
+ * the path it was given (the native renderer reads the file again for every new
+ * overlay), so a cache copy named here is deleted only by a later process, which
+ * never hands it out once the durable copy exists.
+ */
+const handedOutCacheNames = new Set<string>();
+
 /**
  * The durable offline copy of the raw photo `identity` names, when this device
  * downloaded the wall (`spray-photo-store.ts`).
@@ -155,10 +168,56 @@ function registeredPhotoKey(identity: SprayPhotoIdentity): string | null {
  * Only through a REGISTERED wall: registration is what says this session may
  * draw the wall, and its signed URL is what names the object. A key that does not
  * parse is a miss, and the ordinary cache download runs as before.
+ *
+ * Memoised, because this runs for every board surface and climb row that mounts:
+ * the memo key carries the store's delete epoch, so a photo the store reclaims
+ * (a tombstone, a removed download, a reset's prune, sign-out) is never handed
+ * out from it.
  */
 function storedPhotoPath(identity: SprayPhotoIdentity): string | null {
   const photoKey = registeredPhotoKey(identity);
-  return photoKey ? tryGetStoredSprayPhotoPathSync(photoKey) : null;
+  if (!photoKey) return null;
+  const epoch = sprayPhotoStoreEpoch();
+  if (epoch !== storedMemoEpoch) {
+    for (const key of resolvedPaths.keys()) if (key.startsWith(STORED_MEMO_PREFIX)) resolvedPaths.delete(key);
+    storedMemoEpoch = epoch;
+  }
+  const memoKey = `${STORED_MEMO_PREFIX}${photoKey}`;
+  const memoised = resolvedPaths.get(memoKey);
+  if (memoised) return memoised;
+  const stored = tryGetStoredSprayPhotoPathSync(photoKey);
+  if (!stored) return null;
+  resolvedPaths.set(memoKey, stored);
+  releaseSupersededCacheCopy(identity);
+  return stored;
+}
+
+/**
+ * Delete the renderer's copy of a photo the durable store now holds: the
+ * resolver reads the store first, so nothing will ask for the copy again. Left
+ * alone when this process handed it out, because a surface on screen may still
+ * draw from it; the next launch deletes it instead.
+ */
+function releaseSupersededCacheCopy(identity: SprayPhotoIdentity): void {
+  const fileName = sprayPhotoFileName(identity);
+  if (handedOutCacheNames.has(fileName)) return;
+  resolvedPaths.delete(fileName);
+  try {
+    deleteQuietly(photoFile(identity));
+  } catch {
+    // A cache directory we cannot reach has nothing to release.
+  }
+}
+
+/**
+ * Offline sync stored `photoKey`: drop the renderer's copy of it when no
+ * surface in this process can be holding it (`releaseSupersededCacheCopy`).
+ */
+export function releaseCachedSprayPhotoForObjectKey(layoutId: number, photoKey: string): void {
+  const wall = getSprayWall(layoutId);
+  if (!wall || typeof wall.versionId !== 'number') return;
+  const identity: SprayPhotoIdentity = { layoutId, versionId: wall.versionId };
+  if (registeredPhotoKey(identity) === photoKey) releaseSupersededCacheCopy(identity);
 }
 
 /**
@@ -199,20 +258,24 @@ export function tryGetSprayPhotoPathSync(identity: SprayPhotoIdentity): string |
       return null;
     }
   }
-  const key = sprayPhotoFileName(identity);
-  const cached = resolvedPaths.get(key);
-  if (cached) return cached;
-
-  // Not memoised: the durable copy has its own reclaim paths (a tombstone, a
-  // removed download, a reset's prune) that never touch this module's memo.
+  // The durable copy first, so a downloaded wall's cache copy is never handed
+  // out again and can be released.
   const stored = storedPhotoPath(identity);
   if (stored) return stored;
+
+  const key = sprayPhotoFileName(identity);
+  const cached = resolvedPaths.get(key);
+  if (cached) {
+    if (!identity.variant) handedOutCacheNames.add(key);
+    return cached;
+  }
 
   try {
     const file = photoFile(identity);
     if (!file.exists) return null;
     const path = toPath(file.uri);
     resolvedPaths.set(key, path);
+    if (!identity.variant) handedOutCacheNames.add(key);
     return path;
   } catch {
     // An unreadable cache directory is "not yet", never a throw on the draw path.
@@ -247,9 +310,14 @@ export async function ensureSprayPhotoCached(
   const inFlight = pendingDownloads.get(key);
   if (inFlight) return inFlight;
 
-  const download = downloadSprayPhoto(identity, generation, source).finally(() => {
-    if (pendingDownloads.get(key) === download) pendingDownloads.delete(key);
-  });
+  const download = downloadSprayPhoto(identity, generation, source)
+    .then((path) => {
+      if (path && !identity.variant) handedOutCacheNames.add(sprayPhotoFileName(identity));
+      return path;
+    })
+    .finally(() => {
+      if (pendingDownloads.get(key) === download) pendingDownloads.delete(key);
+    });
   pendingDownloads.set(key, download);
   return download;
 }
@@ -347,6 +415,21 @@ export type SprayFullPhotoRequest = {
 function fullPhotoFileName(request: SprayFullPhotoRequest): string | null {
   const photo = sprayPhotoObjectFromUrl(request.url, request.wallUuid);
   return photo?.size === 'full' ? sprayFullPhotoFileName(request.layoutId, photo.photoId) : null;
+}
+
+/**
+ * Delete a kept full-resolution copy that would not decode, so the next zoom
+ * downloads a good one instead of failing on the same file every visit.
+ */
+export function discardSprayFullPhoto(request: SprayFullPhotoRequest): void {
+  const fileName = fullPhotoFileName(request);
+  if (!fileName) return;
+  resolvedPaths.delete(fileName);
+  try {
+    deleteQuietly(new File(cacheDirectory(), fileName));
+  } catch {
+    // Nothing to reach, nothing to delete.
+  }
 }
 
 /**
@@ -480,4 +563,6 @@ export function deleteCachedSprayPhotos(layoutId?: number): void {
 export function resetSprayPhotoCacheForTests(): void {
   resolvedPaths.clear();
   pendingDownloads.clear();
+  handedOutCacheNames.clear();
+  storedMemoEpoch = -1;
 }
