@@ -41,14 +41,12 @@ import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode'
 import { useClimbActions, type ClimbActionId, type ClimbActionItem } from './use-climb-actions';
 import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { fitBoardArt, computeReactionBoardMaxSize } from './board-art-fit';
-import { PRIMARY_CLIMB_ACTION_IDS } from './climb-context-menu-model';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
 
 // Log a tick / Add to playlist / Share get pulled out of the scrollable list into a
 // fixed horizontal button row at the top of the card — the most-reached actions,
-// one tap away. The rest stay in the list below. Order here is the row order, and
-// the iOS native context menu's top row uses the same three.
-const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = PRIMARY_CLIMB_ACTION_IDS;
+// one tap away. The rest stay in the list below. Order here is the row order.
+const PRIMARY_ACTION_IDS: readonly ClimbActionId[] = ['tick', 'playlist', 'share'];
 
 type ClimbReactionMenuProps = {
   climb: Climb;
@@ -82,10 +80,6 @@ type ClimbReactionMenuProps = {
   dismissSourceSheet?: DismissSurfaceAndWait;
   /** Supplied only when this menu was opened from the `/play` route. */
   dismissPlayerAndWait?: DismissSurfaceAndWait;
-  /** 'playlist' opens straight onto the playlist picker, for the iOS native context
-   *  menu's "Add to playlist". Back from the picker then closes the overlay: the
-   *  climber never saw the action list, so there is nothing to go back to. */
-  initialView?: 'menu' | 'playlist';
   /** Read once at the app root (resolved) and passed in, so the mount-time enter
    *  animation uses the real value rather than useReduceMotion's conservative default. */
   reduceMotion: boolean;
@@ -169,7 +163,6 @@ export function ClimbReactionMenu({
   onOpenQueue,
   dismissSourceSheet,
   dismissPlayerAndWait,
-  initialView = 'menu',
   reduceMotion,
   onClose,
 }: ClimbReactionMenuProps) {
@@ -183,7 +176,7 @@ export function ClimbReactionMenu({
   const progress = useSharedValue(0);
   // 'menu' shows the action list; 'playlist' swaps the card to the inline
   // playlist picker (no second sheet — that's the #3294 fix).
-  const [view, setView] = useState<'menu' | 'playlist'>(initialView);
+  const [view, setView] = useState<'menu' | 'playlist'>('menu');
 
   const finishClose = useCallback(() => onClose(), [onClose]);
 
@@ -201,10 +194,7 @@ export function ClimbReactionMenu({
     });
   }, [progress, reduceMotion, finishClose]);
 
-  const backToMenu = useCallback(() => {
-    if (initialView === 'playlist') dismiss();
-    else setView('menu');
-  }, [initialView, dismiss]);
+  const backToMenu = useCallback(() => setView('menu'), []);
   // Stable so useClimbActions' memo doesn't rebuild the action list every render.
   const openPlaylist = useCallback(() => setView('playlist'), []);
 

@@ -28,7 +28,6 @@ import {
   onNamedAccessibilityAction,
 } from '../../lib/named-accessibility-action';
 import { hapticSelection, hapticMedium } from '../../lib/haptics';
-import { ClimbContextMenu, NATIVE_CLIMB_MENU } from '../climb-actions/ClimbContextMenu';
 
 type TickStatusMeta = { icon: IconName; color: string };
 
@@ -128,10 +127,11 @@ export const SessionTickRow = memo(function SessionTickRow({
   // Long press → reaction menu. tickToClimb gives the full schema Climb the menu
   // needs (sessionTickToClimb returns only the permissive list-visual shape); the
   // board config + angle match the play-drawer open. No-ops without frames.
-  const menuClimb = useMemo(() => tickToClimb(tick), [tick]);
-  const openMenu = useCallback(() => {
+  const handleLongPress = useCallback(() => {
+    const menuClimb = tickToClimb(tick);
     const config = renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard);
     if (!menuClimb || !config) return;
+    hapticMedium();
     openClimbActions(menuClimb, {
       boardName: config.boardName,
       layoutId: config.layoutId,
@@ -139,12 +139,7 @@ export const SessionTickRow = memo(function SessionTickRow({
       setIds: config.setIds.join(','),
       angle: tick.angle,
     });
-  }, [tick, menuClimb, openClimbActions]);
-  const handleLongPress = useCallback(() => {
-    if (!menuClimb || !renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard)) return;
-    hapticMedium();
-    openMenu();
-  }, [menuClimb, tick, openMenu]);
+  }, [tick, openClimbActions]);
 
   // Offered only when the long press would open a menu (same early return as handleLongPress).
   const canOpenMenu = useMemo(
@@ -171,47 +166,43 @@ export const SessionTickRow = memo(function SessionTickRow({
   if (climb && boardConfig) {
     return (
       <View>
-        {/* iOS: the system context menu owns the long-press (the PressableSurface
-            drops its own) and lifts this row as its preview. */}
-        <ClimbContextMenu climb={menuClimb} board={boardConfig} onOpenActions={openMenu}>
-          <PressableSurface
-            onPress={handlePress}
-            onLongPress={NATIVE_CLIMB_MENU && menuClimb ? undefined : handleLongPress}
-            accessibilityActions={longPressActions}
-            onAccessibilityAction={onLongPressAction}
-            feedback="opacity"
-            opacityTo={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={tick.climbName ?? t('detail.unknownClimb')}
-            style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
-          >
-            {isMultiUser ? (
-              <PressableAvatar
-                userId={participant?.userId}
-                uri={participant?.avatarUrl}
-                name={participant?.displayName}
-                size={28}
-              />
-            ) : (
-              <View style={styles.statusSlot}>
-                <View style={[styles.statusIcon, { backgroundColor: withAlpha(tintedStatusColor, 0.15) }]}>
-                  <Icon name={meta.icon} size={14} color={tintedStatusColor} />
-                </View>
-              </View>
-            )}
-            <ClimbListItemContent
-              climb={climb}
-              boardName={boardConfig.boardName}
-              layoutId={boardConfig.layoutId}
-              sizeId={boardConfig.sizeId}
-              setIds={boardConfig.setIds.join(',')}
-              angle={tick.angle}
-              subtitleDetailParts={detailParts}
-              showAscentStatus={false}
-              primarySubtitleOverride={isMultiUser ? (participant?.displayName ?? null) : null}
+        <PressableSurface
+          onPress={handlePress}
+          onLongPress={handleLongPress}
+          accessibilityActions={longPressActions}
+          onAccessibilityAction={onLongPressAction}
+          feedback="opacity"
+          opacityTo={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={tick.climbName ?? t('detail.unknownClimb')}
+          style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
+        >
+          {isMultiUser ? (
+            <PressableAvatar
+              userId={participant?.userId}
+              uri={participant?.avatarUrl}
+              name={participant?.displayName}
+              size={28}
             />
-          </PressableSurface>
-        </ClimbContextMenu>
+          ) : (
+            <View style={styles.statusSlot}>
+              <View style={[styles.statusIcon, { backgroundColor: withAlpha(tintedStatusColor, 0.15) }]}>
+                <Icon name={meta.icon} size={14} color={tintedStatusColor} />
+              </View>
+            </View>
+          )}
+          <ClimbListItemContent
+            climb={climb}
+            boardName={boardConfig.boardName}
+            layoutId={boardConfig.layoutId}
+            sizeId={boardConfig.sizeId}
+            setIds={boardConfig.setIds.join(',')}
+            angle={tick.angle}
+            subtitleDetailParts={detailParts}
+            showAscentStatus={false}
+            primarySubtitleOverride={isMultiUser ? (participant?.displayName ?? null) : null}
+          />
+        </PressableSurface>
         <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
       </View>
     );

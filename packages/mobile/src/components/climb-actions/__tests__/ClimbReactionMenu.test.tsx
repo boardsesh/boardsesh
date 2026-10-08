@@ -363,24 +363,6 @@ describe('ClimbReactionMenu view switching', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  // The iOS native context menu's "Add to playlist" opens the overlay straight
-  // onto the picker. The climber never saw the action list there, so back
-  // closes the overlay instead of revealing a menu they didn't ask for.
-  it('opens on the picker for initialView "playlist", and back closes it', () => {
-    const { onClose, container } = renderMenu(vi.fn(), { initialView: 'playlist' });
-    expect(container.querySelector('[data-picker="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-listrow="true"]')).toBeNull();
-
-    act(() => captured.pickerOnBack?.());
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('closes from hardware back on a picker it opened onto', () => {
-    const { onClose } = renderMenu(vi.fn(), { initialView: 'playlist' });
-    act(() => captured.modalOnRequestClose?.());
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
   it('labels the tap-to-dismiss scrim as a close control, not as the climb', () => {
     const { queryByLabelText, onClose } = renderMenu();
     // The climb name would make VoiceOver/TalkBack announce a climb for a button

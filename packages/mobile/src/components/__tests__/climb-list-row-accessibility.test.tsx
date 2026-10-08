@@ -70,8 +70,6 @@ vi.mock('react-native-reanimated', () => {
   };
 });
 
-const gestures = vi.hoisted(() => ({ exclusive: vi.fn(() => ({})) }));
-
 vi.mock('react-native-gesture-handler', () => {
   // Chainable no-op gesture builder — this file only cares about the accessibility
   // channel, so nothing needs capturing off the gestures themselves.
@@ -87,7 +85,7 @@ vi.mock('react-native-gesture-handler', () => {
     Gesture: {
       Tap: () => makeBuilder(),
       LongPress: () => makeBuilder(),
-      Exclusive: gestures.exclusive,
+      Exclusive: () => ({}),
     },
   };
 });
@@ -134,23 +132,6 @@ vi.mock('../climb-list-row-styles', () => ({
 
 vi.mock('../climb-list-row-colors', () => ({
   selectedRowColors: () => ({ fill: '#eee', accent: '#6D28D9' }),
-}));
-
-// The iOS native context menu wraps the row in expo-router's Link. Here the
-// wrapper passes its children through and records what the row gave it; the
-// platform switch is flipped per test.
-const nativeMenu = vi.hoisted(() => ({
-  enabled: false,
-  props: null as null | { disabled?: boolean; onOpenActions?: () => void },
-}));
-vi.mock('../climb-actions/ClimbContextMenu', () => ({
-  ClimbContextMenu: ({ children, ...props }: { children: unknown; disabled?: boolean; onOpenActions?: () => void }) => {
-    nativeMenu.props = props;
-    return children;
-  },
-  get NATIVE_CLIMB_MENU() {
-    return nativeMenu.enabled;
-  },
 }));
 
 import { ClimbListRow } from '../ClimbListRow';
@@ -351,58 +332,5 @@ describe('ClimbListRow screen-reader activation on Android', () => {
       platform.OS = 'ios';
       vi.resetModules();
     }
-  });
-});
-
-// HIG context menus: on iOS the system context menu owns the long-press. The row
-// must drop its own long-press so one press doesn't open both, and it must keep
-// its screen-reader "More actions" route to the overlay.
-describe('ClimbListRow with the iOS native context menu', () => {
-  beforeEach(() => {
-    a11y.row = null;
-    a11y.moreButton = null;
-    nativeMenu.props = null;
-    vi.clearAllMocks();
-  });
-
-  it('hands the long-press to the native menu and keeps the accessibility action', () => {
-    nativeMenu.enabled = true;
-    try {
-      const onOpenActions = vi.fn();
-      render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={onOpenActions} />);
-
-      // Tap only: no Exclusive(longPress, tap) composition on the row.
-      expect(gestures.exclusive).not.toHaveBeenCalled();
-      expect(nativeMenu.props?.disabled).toBe(false);
-
-      // A menu pick reaches the surface's callback with this climb, and no row
-      // haptic (the system played one).
-      nativeMenu.props?.onOpenActions?.();
-      expect(onOpenActions).toHaveBeenCalledWith(climb);
-      expect(haptics.medium).not.toHaveBeenCalled();
-
-      // VoiceOver keeps its labelled route to the overlay.
-      expect(a11y.row?.accessibilityActions).toEqual([{ name: 'moreActions', label: 'mobile.climbRow.moreActions' }]);
-      a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
-      expect(onOpenActions).toHaveBeenCalledTimes(2);
-    } finally {
-      nativeMenu.enabled = false;
-    }
-  });
-
-  it('keeps its own long-press where the native menu does not apply', () => {
-    nativeMenu.enabled = true;
-    try {
-      render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={vi.fn()} unsupported />);
-      expect(nativeMenu.props?.disabled).toBe(true);
-      expect(gestures.exclusive).toHaveBeenCalled();
-    } finally {
-      nativeMenu.enabled = false;
-    }
-  });
-
-  it('composes long-press and tap off iOS', () => {
-    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={vi.fn()} />);
-    expect(gestures.exclusive).toHaveBeenCalled();
   });
 });

@@ -36,8 +36,6 @@ import { useBoardseshGradesActive } from '../../hooks/use-display-grade';
 import { resolveCrowdDifficultyId, getBoulderGradeById, clampDifficultyId } from '../../lib/boardsesh-grade-display';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { hapticSelection, hapticMedium, hapticLight, hapticSuccess } from '../../lib/haptics';
-import { tickToClimb } from '../../lib/tick-to-climb';
-import { ClimbContextMenu, NATIVE_CLIMB_MENU } from '../climb-actions/ClimbContextMenu';
 
 type LogbookRowProps = {
   ascent: AscentFeedItem;
@@ -292,30 +290,6 @@ export const LogbookRow = memo(function LogbookRow({
     openActions(ascentRef.current);
   }, []);
 
-  // A pick in the iOS native context menu, which already played the system
-  // haptic. The menu sets the picked action as the intent around this call.
-  const handleNativeMenuOpenActions = useCallback(() => {
-    onOpenActionsRef.current?.(ascentRef.current);
-  }, []);
-
-  // The climb and board the native menu gates on: the same two the host's
-  // onOpenActions builds when it opens the menu. Memoised on the ascent, so a
-  // row pays for them once per climb it shows, not per render.
-  const menuClimb = useMemo(
-    () =>
-      onOpenActions
-        ? tickToClimb({ ...ascent, difficultyName: ascent.difficultyName ?? ascent.consensusDifficultyName })
-        : null,
-    [ascent, onOpenActions],
-  );
-  const menuBoard = useMemo(() => {
-    const config = renderBoardToPlaylistConfig(ascent.boardType, ascent.layoutId, ascent.renderBoard);
-    return config ? { boardName: config.boardName, layoutId: config.layoutId } : null;
-  }, [ascent.boardType, ascent.layoutId, ascent.renderBoard]);
-  // On iOS the system context menu owns the long-press whenever it has a climb to
-  // act on; the row's own long-press would fire beside it.
-  const nativeMenuOwnsLongPress = NATIVE_CLIMB_MENU && !!menuClimb && !!menuBoard;
-
   const handleEdit = useCallback(() => {
     const edit = onEditRef.current;
     if (!edit) return;
@@ -383,11 +357,8 @@ export const LogbookRow = memo(function LogbookRow({
   // Long-press wins over tap; a quick tap fires once the long-press fails. With
   // no long-press handler the row is tap-only.
   const tapGesture = useMemo(
-    () =>
-      onOpenActions && !nativeMenuOwnsLongPress
-        ? Gesture.Exclusive(longPressGesture, singleTapGesture)
-        : singleTapGesture,
-    [onOpenActions, nativeMenuOwnsLongPress, longPressGesture, singleTapGesture],
+    () => (onOpenActions ? Gesture.Exclusive(longPressGesture, singleTapGesture) : singleTapGesture),
+    [onOpenActions, longPressGesture, singleTapGesture],
   );
 
   // Read dragArmedRef.current rather than the armed state directly so these stay
@@ -476,124 +447,116 @@ export const LogbookRow = memo(function LogbookRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        {/* iOS: the system context menu, with this row as its lifted preview. */}
-        <ClimbContextMenu
-          climb={menuClimb}
-          board={menuBoard}
-          onOpenActions={handleNativeMenuOpenActions}
-          hasEditEntry={!!onEdit}
-        >
-          <GestureDetector gesture={tapGesture} touchAction="pan-y">
-            <View
-              testID={`logbook-entry-${ascent.uuid}`}
-              accessible
-              accessibilityRole="button"
-              accessibilityLabel={accessibilityLabel}
-              accessibilityActions={accessibilityActions}
-              onAccessibilityAction={handleAccessibilityAction}
-              style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
-            >
-              {/* Status — the hero of a log entry. Shape carries the meaning. */}
-              <View style={styles.statusSlot}>
-                <Icon name={STATUS_ICON[ascent.status]} size={STATUS_GLYPH_SIZE} color={statusColor} />
-              </View>
+        <GestureDetector gesture={tapGesture} touchAction="pan-y">
+          <View
+            testID={`logbook-entry-${ascent.uuid}`}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={accessibilityLabel}
+            accessibilityActions={accessibilityActions}
+            onAccessibilityAction={handleAccessibilityAction}
+            style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
+          >
+            {/* Status — the hero of a log entry. Shape carries the meaning. */}
+            <View style={styles.statusSlot}>
+              <Icon name={STATUS_ICON[ascent.status]} size={STATUS_GLYPH_SIZE} color={statusColor} />
+            </View>
 
-              {/* Name + intrinsic attributes, then the review meta line(s). */}
-              <View style={styles.centerColumn}>
-                <View style={styles.nameRow}>
-                  <Text variant="body" numberOfLines={1} style={styles.climbName}>
-                    {ascent.climbName}
+            {/* Name + intrinsic attributes, then the review meta line(s). */}
+            <View style={styles.centerColumn}>
+              <View style={styles.nameRow}>
+                <Text variant="body" numberOfLines={1} style={styles.climbName}>
+                  {ascent.climbName}
+                </Text>
+                {/* ClimbAttributeIcons keys the © glyph on Number(value) > 0 and
+                    never renders the value itself, so the '1' fallback only
+                    forces the glyph on for a benchmark tick whose grade names
+                    are missing — isBenchmark is authoritative here (the old
+                    null fallback silently hid the glyph on those rows). */}
+                <ClimbAttributeIcons
+                  benchmarkDifficulty={
+                    ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
+                  }
+                  isNoMatch={ascent.isNoMatch}
+                />
+                {ascent.isMirror ? (
+                  <View style={styles.mirrorIcon}>
+                    <Icon name="mirror" size={12} color={systemColors.secondaryLabel} />
+                  </View>
+                ) : null}
+              </View>
+              <Text
+                testID={`logbook-board-${ascent.boardType}`}
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+                style={styles.boardIdentity}
+              >
+                {boardAngleLabel}
+              </Text>
+              {wallContext ? (
+                <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
+                  {wallContext}
+                </Text>
+              ) : null}
+              {notePreview ? (
+                <View style={styles.metaRow}>
+                  <Icon name="edit" size={11} color={systemColors.secondaryLabel} />
+                  <Text
+                    variant="caption1"
+                    color={systemColors.secondaryLabel}
+                    numberOfLines={1}
+                    style={styles.metaText}
+                  >
+                    {notePreview}
                   </Text>
-                  {/* ClimbAttributeIcons keys the © glyph on Number(value) > 0 and
-                      never renders the value itself, so the '1' fallback only
-                      forces the glyph on for a benchmark tick whose grade names
-                      are missing — isBenchmark is authoritative here (the old
-                      null fallback silently hid the glyph on those rows). */}
-                  <ClimbAttributeIcons
-                    benchmarkDifficulty={
-                      ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
-                    }
-                    isNoMatch={ascent.isNoMatch}
-                  />
-                  {ascent.isMirror ? (
-                    <View style={styles.mirrorIcon}>
-                      <Icon name="mirror" size={12} color={systemColors.secondaryLabel} />
-                    </View>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Grade column — your grade big; the crowd's as a small secondary
+                with the disagreement direction. flexShrink:0 so the title never
+                squeezes the grade. */}
+            <View style={styles.trailing}>
+              {gradeLabel || starsLabel || hasBetaVideo ? (
+                <View style={styles.iconGradeRow}>
+                  {/* Your rating + beta marker sit LEFT of the grade (review
+                      feedback: the meta line was too crowded to scan them).
+                      Camera keeps its filled brand-violet emphasis. */}
+                  {starsLabel ? (
+                    <Text variant="caption1" color={systemColors.secondaryLabel}>
+                      {starsLabel}
+                    </Text>
+                  ) : null}
+                  {hasBetaVideo ? <Icon name="video.fill" size={13} color={brand.primary} /> : null}
+                  {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
+                  {gradeLabel ? (
+                    <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
+                      {gradeLabel}
+                    </Text>
                   ) : null}
                 </View>
-                <Text
-                  testID={`logbook-board-${ascent.boardType}`}
-                  variant="footnote"
-                  color={systemColors.secondaryLabel}
-                  style={styles.boardIdentity}
-                >
-                  {boardAngleLabel}
-                </Text>
-                {wallContext ? (
-                  <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-                    {wallContext}
+              ) : null}
+              {consensusGradeLabel ? (
+                <View style={styles.iconGradeRow}>
+                  <Icon name="people" size={11} color={systemColors.secondaryLabel} />
+                  <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
+                    {consensusGradeLabel}
                   </Text>
-                ) : null}
-                {notePreview ? (
-                  <View style={styles.metaRow}>
-                    <Icon name="edit" size={11} color={systemColors.secondaryLabel} />
-                    <Text
-                      variant="caption1"
+                  {deltaDirection ? (
+                    <Icon
+                      name={deltaDirection === 'up' ? 'chevron.up' : 'chevron.down'}
+                      size={9}
                       color={systemColors.secondaryLabel}
-                      numberOfLines={1}
-                      style={styles.metaText}
-                    >
-                      {notePreview}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
-              {/* Grade column — your grade big; the crowd's as a small secondary
-                  with the disagreement direction. flexShrink:0 so the title never
-                  squeezes the grade. */}
-              <View style={styles.trailing}>
-                {gradeLabel || starsLabel || hasBetaVideo ? (
-                  <View style={styles.iconGradeRow}>
-                    {/* Your rating + beta marker sit LEFT of the grade (review
-                        feedback: the meta line was too crowded to scan them).
-                        Camera keeps its filled brand-violet emphasis. */}
-                    {starsLabel ? (
-                      <Text variant="caption1" color={systemColors.secondaryLabel}>
-                        {starsLabel}
-                      </Text>
-                    ) : null}
-                    {hasBetaVideo ? <Icon name="video.fill" size={13} color={brand.primary} /> : null}
-                    {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
-                    {gradeLabel ? (
-                      <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-                        {gradeLabel}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
-                {consensusGradeLabel ? (
-                  <View style={styles.iconGradeRow}>
-                    <Icon name="people" size={11} color={systemColors.secondaryLabel} />
-                    <Text variant="caption2" numberOfLines={1} color={systemColors.secondaryLabel}>
-                      {consensusGradeLabel}
-                    </Text>
-                    {deltaDirection ? (
-                      <Icon
-                        name={deltaDirection === 'up' ? 'chevron.up' : 'chevron.down'}
-                        size={9}
-                        color={systemColors.secondaryLabel}
-                      />
-                    ) : null}
-                  </View>
-                ) : null}
-                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.resultText}>
-                  {resultMetaText}
-                </Text>
-              </View>
+                    />
+                  ) : null}
+                </View>
+              ) : null}
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.resultText}>
+                {resultMetaText}
+              </Text>
             </View>
-          </GestureDetector>
-        </ClimbContextMenu>
+          </View>
+        </GestureDetector>
       </ReanimatedSwipeable>
       <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
     </View>

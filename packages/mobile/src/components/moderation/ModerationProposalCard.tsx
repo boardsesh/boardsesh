@@ -25,12 +25,10 @@ import { Avatar } from '../Avatar';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
-import { ClimbContextMenu, NATIVE_CLIMB_MENU } from '../climb-actions/ClimbContextMenu';
 import { ProposalReasonsList } from './ProposalReasonsList';
 import {
   extraReasonCount,
   isUnhideProposal,
-  proposalToClimb,
   proposalTypeLine,
   statusChip,
   voteProgress,
@@ -114,12 +112,6 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
     [handleLongPressClimb],
   );
 
-  // The iOS native context menu's pick: same host callback, no extra haptic (the
-  // system played one when the menu opened). The climb is the one the host builds.
-  const menuClimb = useMemo(() => proposalToClimb(proposal), [proposal]);
-  const handleNativeMenuOpenActions = useCallback(() => onLongPressClimb(proposal), [onLongPressClimb, proposal]);
-  const nativeMenuOwnsLongPress = NATIVE_CLIMB_MENU && !!menuClimb && !!boardConfig;
-
   const handleToggleReasons = useCallback(() => {
     hapticLight();
     setReasonsExpanded((expanded) => !expanded);
@@ -187,75 +179,73 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
         {/* The climb block is its own tap target: pressing it previews the climb,
             long-pressing opens the same actions menu every other climb row has.
             The rest of the card stays inert so a vote is never a mis-tap. */}
-        <ClimbContextMenu climb={menuClimb} board={boardConfig} onOpenActions={handleNativeMenuOpenActions}>
-          <PressableSurface
-            onPress={handleOpenClimb}
-            onLongPress={nativeMenuOwnsLongPress ? undefined : handleLongPressClimb}
-            accessibilityActions={longPressActions}
-            onAccessibilityAction={onLongPressAction}
-            feedback="opacity"
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.moderation.openClimb', {
-              climb: proposal.climbName ?? t('mobile.moderation.unknownClimb'),
-            })}
-            style={styles.climbPressable}
-          >
-            <View style={styles.climbRow}>
-              {boardConfig && proposal.frames ? (
-                <ClimbListThumbnail
-                  frames={proposal.frames}
-                  boardName={boardConfig.boardName}
-                  layoutId={boardConfig.layoutId}
-                  sizeId={boardConfig.sizeId}
-                  setIds={boardConfig.setIds.join(',')}
-                  size={THUMBNAIL}
-                />
-              ) : (
-                <View style={[styles.thumbnailFallback, { backgroundColor: systemColors.fill }]}>
-                  <Icon name="lightbulb" size={22} color={systemColors.secondaryLabel} />
-                </View>
-              )}
+        <PressableSurface
+          onPress={handleOpenClimb}
+          onLongPress={handleLongPressClimb}
+          accessibilityActions={longPressActions}
+          onAccessibilityAction={onLongPressAction}
+          feedback="opacity"
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.moderation.openClimb', {
+            climb: proposal.climbName ?? t('mobile.moderation.unknownClimb'),
+          })}
+          style={styles.climbPressable}
+        >
+          <View style={styles.climbRow}>
+            {boardConfig && proposal.frames ? (
+              <ClimbListThumbnail
+                frames={proposal.frames}
+                boardName={boardConfig.boardName}
+                layoutId={boardConfig.layoutId}
+                sizeId={boardConfig.sizeId}
+                setIds={boardConfig.setIds.join(',')}
+                size={THUMBNAIL}
+              />
+            ) : (
+              <View style={[styles.thumbnailFallback, { backgroundColor: systemColors.fill }]}>
+                <Icon name="lightbulb" size={22} color={systemColors.tertiaryLabel} />
+              </View>
+            )}
 
-              <View style={styles.climbDetails}>
-                <View style={styles.nameRow}>
-                  <Text variant="subheadline" numberOfLines={2} style={styles.climbName}>
-                    {proposal.climbName ?? t('mobile.moderation.unknownClimb')}
-                  </Text>
-                  {displayGrade ? (
-                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.gradeText}>
-                      {displayGrade}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
-                  {getLayoutDisplayName(proposal.boardType, proposal.layoutId)}
-                  {proposal.climbSetterUsername ? ` · ${proposal.climbSetterUsername}` : ''}
+            <View style={styles.climbDetails}>
+              <View style={styles.nameRow}>
+                <Text variant="subheadline" numberOfLines={2} style={styles.climbName}>
+                  {proposal.climbName ?? t('mobile.moderation.unknownClimb')}
                 </Text>
-
-                {chip || proposal.climbIsHidden ? (
-                  <View style={styles.chipRow}>
-                    {proposal.climbIsHidden ? (
-                      <View style={[styles.chip, { backgroundColor: systemColors.fill }]}>
-                        <Icon name="visibility.off" size={12} color={systemColors.secondaryLabel} />
-                        <Text variant="caption2" color={systemColors.secondaryLabel}>
-                          {t('mobile.moderation.hiddenChip')}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {chip ? (
-                      <View style={[styles.chip, { backgroundColor: systemColors.fill }]}>
-                        <Text variant="caption2" color={systemColors.secondaryLabel}>
-                          {t(chip.labelI18nKey)}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
+                {displayGrade ? (
+                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.gradeText}>
+                    {displayGrade}
+                  </Text>
                 ) : null}
               </View>
+
+              <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+                {getLayoutDisplayName(proposal.boardType, proposal.layoutId)}
+                {proposal.climbSetterUsername ? ` · ${proposal.climbSetterUsername}` : ''}
+              </Text>
+
+              {chip || proposal.climbIsHidden ? (
+                <View style={styles.chipRow}>
+                  {proposal.climbIsHidden ? (
+                    <View style={[styles.chip, { backgroundColor: systemColors.fill }]}>
+                      <Icon name="visibility.off" size={12} color={systemColors.secondaryLabel} />
+                      <Text variant="caption2" color={systemColors.secondaryLabel}>
+                        {t('mobile.moderation.hiddenChip')}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {chip ? (
+                    <View style={[styles.chip, { backgroundColor: systemColors.fill }]}>
+                      <Text variant="caption2" color={systemColors.secondaryLabel}>
+                        {t(chip.labelI18nKey)}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
-          </PressableSurface>
-        </ClimbContextMenu>
+          </View>
+        </PressableSurface>
 
         <Text variant="body" style={styles.typeLine}>
           {t(typeLine.textI18nKey, typeLine.params)}

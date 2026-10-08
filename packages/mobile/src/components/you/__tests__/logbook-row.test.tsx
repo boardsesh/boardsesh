@@ -138,13 +138,6 @@ vi.mock('../../../lib/haptics', () => ({
   hapticSuccess: () => {},
 }));
 
-// The iOS native context menu wraps the row in expo-router's Link; this suite
-// covers the row itself, so the wrapper passes its children through.
-vi.mock('../../climb-actions/ClimbContextMenu', () => ({
-  ClimbContextMenu: ({ children }: { children: unknown }) => children,
-  NATIVE_CLIMB_MENU: false,
-}));
-
 import { LogbookRow } from '../LogbookRow';
 
 function ascent(overrides: Partial<AscentFeedItem> = {}): AscentFeedItem {

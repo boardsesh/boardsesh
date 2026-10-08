@@ -141,13 +141,6 @@ const openClimbActions = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openClimbActions }) }));
 vi.mock('../../../lib/tick-to-climb', () => ({ tickToClimb: () => ({ uuid: 'climb-1' }) }));
 
-// The iOS native context menu wraps the row in expo-router's Link; this suite
-// covers the row itself, so the wrapper passes its children through.
-vi.mock('../../climb-actions/ClimbContextMenu', () => ({
-  ClimbContextMenu: ({ children }: { children: unknown }) => children,
-  NATIVE_CLIMB_MENU: false,
-}));
-
 import { SessionTickRow } from '../SessionTickRow';
 
 function tick(overrides: Partial<SessionDetailTick> = {}): SessionDetailTick {
