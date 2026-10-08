@@ -418,6 +418,7 @@ export function SprayWallLookStep({
           onChange={pickBackground}
           disabled={saving}
           isDraft
+          previewSource={draftState.lookPreviewSource}
         />
       </View>
     </View>

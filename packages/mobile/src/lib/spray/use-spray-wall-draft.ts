@@ -9,6 +9,7 @@ import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../graphql/client';
 import { retryConnectivityNow } from '../connectivity/connectivity-store';
 import { invalidateSprayWallRenderData, mapSprayWallRenderData } from './spray-wall-loader';
+import { lookPreviewSourceFromRenderData, type SprayLookPreviewSource } from './spray-look-preview';
 import {
   getSprayWall,
   registerSprayWall,
@@ -129,6 +130,11 @@ export type UseSprayWallDraftResult = {
    */
   photoFullUrl: string | null;
   /**
+   * The version's photo, homography, frame and holds, for the look picker's
+   * tiles drawn on the phone. Null under the same gates that null `wall`.
+   */
+  lookPreviewSource: SprayLookPreviewSource | null;
+  /**
    * Read the version again in the background, keeping what is on screen. For a
    * lapsed photo signature: unlike `retry` it does not count as loading, so the
    * editor stays put while the new URLs arrive.
@@ -228,6 +234,10 @@ export function useSprayWallDraft(
   // Only alongside a wall this hook vouches for: the same gates that null `wall`
   // must not leave another account's or a replaced row's photo reachable here.
   const photoFullUrl = wall ? (renderData?.photoFullUrl ?? null) : null;
+  const lookPreviewSource = useMemo(
+    () => (wall ? lookPreviewSourceFromRenderData(renderData, { layoutId, versionId }) : null),
+    [wall, renderData, layoutId, versionId],
+  );
 
   const { refetch } = query;
   const refreshPhotoUrls = useCallback(() => {
@@ -252,8 +262,18 @@ export function useSprayWallDraft(
   }, [queryClient, wallUuid, versionNumber, versionId, refetch]);
 
   return useMemo(
-    () => ({ isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls }),
-    [isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, refreshPhotoUrls],
+    () => ({
+      isLoading,
+      isUnavailable,
+      isStalled,
+      retry,
+      homography,
+      wall,
+      photoFullUrl,
+      lookPreviewSource,
+      refreshPhotoUrls,
+    }),
+    [isLoading, isUnavailable, isStalled, retry, homography, wall, photoFullUrl, lookPreviewSource, refreshPhotoUrls],
   );
 }
 

@@ -8,7 +8,8 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GET_SPRAY_WALL_LOOK } from '@boardsesh/graphql/operations/spray-walls';
+import { GET_SPRAY_WALL_LOOK, GET_SPRAY_WALL_RENDER_DATA } from '@boardsesh/graphql/operations/spray-walls';
+import type { SprayWallRenderData } from '@boardsesh/graphql/generated/graphql';
 import { getHttpClient } from '../../lib/graphql/client';
 import {
   isSprayWallArtNotAvailableError,
@@ -23,11 +24,18 @@ import {
 import { sprayWallBackgroundOf, type SprayWallBackground } from '../../lib/spray/spray-wall-background';
 import { useSprayWallArt } from '../../lib/spray/use-spray-wall-art';
 import { useSetSprayWallRenderSettings } from '../../lib/spray/use-create-spray-wall';
-import { requestMissingSprayArt } from '../../lib/spray/spray-wall-loader';
+import {
+  RENDER_DATA_STALE_TIME_MS,
+  requestMissingSprayArt,
+  sprayWallPublishedRenderDataQueryKey,
+} from '../../lib/spray/spray-wall-loader';
+import { sprayWallViewerGeneration } from '../../lib/spray/spray-wall-registry';
+import { lookPreviewSourceFromRenderData } from '../../lib/spray/spray-look-preview';
 import { sprayPrivacyGeneration } from '../../lib/spray/spray-privacy-generation';
 import { canPickBackground, sprayBackgroundGate } from './spray-background-gate';
 
 type SprayWallLookResponse = { sprayWall: { uuid: string; renderSettings?: unknown } | null };
+type SprayWallRenderDataResponse = { sprayWallRenderData: SprayWallRenderData | null };
 
 /**
  * `refused` carries the server's reason (`no-pins`, `keystone`, `small-frame`)
@@ -53,6 +61,22 @@ export function useSprayWallBackgroundEditor({
     retry: false,
   });
   const artQuery = useSprayWallArt(enabled ? wallUuid : null, null, layoutId);
+  // The published version's photo, pins and holds, for the tiles drawn on the
+  // phone while its art is not ready. The loader's own key and request, so a
+  // wall already on the board costs no second read.
+  const viewerGeneration = sprayWallViewerGeneration();
+  const renderDataQuery = useQuery({
+    queryKey: sprayWallPublishedRenderDataQueryKey(wallUuid, viewerGeneration),
+    queryFn: () => getHttpClient().request<SprayWallRenderDataResponse>(GET_SPRAY_WALL_RENDER_DATA, { uuid: wallUuid }),
+    enabled,
+    staleTime: RENDER_DATA_STALE_TIME_MS,
+    retry: false,
+  });
+  const renderData = renderDataQuery.data?.sprayWallRenderData;
+  const previewSource = useMemo(
+    () => lookPreviewSourceFromRenderData(renderData, { layoutId, versionId: renderData?.wall?.currentVersion?.id }),
+    [renderData, layoutId],
+  );
 
   const storedSettings = lookQuery.data?.sprayWall?.renderSettings;
   const storedBackground = sprayWallBackgroundOf(storedSettings);
@@ -110,5 +134,5 @@ export function useSprayWallBackgroundEditor({
     return { outcome: 'saved' };
   }, [changed, value, lookStatus, gate, storedSettings, setRenderSettingsAsync, layoutId, wallUuid, refetchLook]);
 
-  return { gate, art: artQuery.data, value, onChange: setPicked, changed, save };
+  return { gate, art: artQuery.data, value, onChange: setPicked, changed, save, previewSource };
 }

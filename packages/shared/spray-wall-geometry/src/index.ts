@@ -57,3 +57,14 @@ export {
   measureStretch,
   photoQuality,
 } from './photo-quality';
+export {
+  PREVIEW_MESH_MAX_DIVISIONS,
+  PREVIEW_MESH_TOLERANCE_PX,
+  type AffineMatrix,
+  type PreviewMesh,
+  type PreviewMeshTriangle,
+  affinePreviewMesh,
+  applyViewMatrix,
+  perspectiveViewMatrix,
+  photoToTileHomography,
+} from './look-preview';

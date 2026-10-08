@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { findMobileBoardArtNetworkViolations, type SourceFile } from '../mobile-board-art-network-check';
 
-function check(text: string): string[] {
-  const sourceFiles: SourceFile[] = [{ path: 'packages/mobile/src/example.tsx', text }];
+const SPRAY_MESH = 'packages/mobile/src/components/spray-wall/FlattenedSprayPhoto.tsx';
+const SVG_IMAGE_IMPORT = "import Svg, { Image as SvgImage } from 'react-native-svg';";
+const LOCAL_GUARD = '  if (!isLocalFileUri(photoUri)) return null;';
+
+function check(text: string, path = 'packages/mobile/src/example.tsx'): string[] {
+  const sourceFiles: SourceFile[] = [{ path, text }];
   return findMobileBoardArtNetworkViolations(sourceFiles).map((violation) => violation.rule);
 }
 
@@ -25,6 +29,49 @@ describe('mobile board-art network check', () => {
 
   it('flags react-native-svg image backgrounds', () => {
     expect(check("import Svg, { Image as SvgImage } from 'react-native-svg';")).toContainEqual(
+      expect.stringContaining('svg-image-background'),
+    );
+  });
+
+  it('lets the spray look mesh draw a local photo through react-native-svg', () => {
+    expect(check(`${SVG_IMAGE_IMPORT}\n${LOCAL_GUARD}\n<SvgImage href={photoUri} />`, SPRAY_MESH)).toEqual([]);
+  });
+
+  it('flags the spray look mesh without its local-file guard', () => {
+    expect(check(`${SVG_IMAGE_IMPORT}\n<SvgImage href={photoUri} />`, SPRAY_MESH)).toContainEqual(
+      expect.stringContaining('svg-image-background'),
+    );
+  });
+
+  it('flags the spray look mesh if any http(s) URL appears in it', () => {
+    expect(
+      check(`${SVG_IMAGE_IMPORT}\n${LOCAL_GUARD}\n<SvgImage href="https://example.com/a.jpg" />`, SPRAY_MESH),
+    ).toContainEqual(expect.stringContaining('svg-image-background'));
+  });
+
+  it('flags the spray look mesh when an href is anything but the guarded photoUri', () => {
+    expect(
+      check(`${SVG_IMAGE_IMPORT}\n${LOCAL_GUARD}\n<SvgImage href={source.photoUrl} />`, SPRAY_MESH),
+    ).toContainEqual(expect.stringContaining('svg-image-background'));
+    expect(
+      check(`${SVG_IMAGE_IMPORT}\n${LOCAL_GUARD}\n<SvgImage href={photoUri} />\n<SvgImage href={other} />`, SPRAY_MESH),
+    ).toContainEqual(expect.stringContaining('svg-image-background'));
+  });
+
+  it('does not count a guard that only appears in a comment', () => {
+    for (const commented of [
+      '  // if (!isLocalFileUri(photoUri)) return null;',
+      '  /* if (!isLocalFileUri(photoUri)) return null; */',
+      '  // isLocalFileUri( is checked somewhere',
+    ]) {
+      expect(check(`${SVG_IMAGE_IMPORT}\n${commented}\n<SvgImage href={photoUri} />`, SPRAY_MESH)).toContainEqual(
+        expect.stringContaining('svg-image-background'),
+      );
+    }
+  });
+
+  it('does not extend the exemption to any other file', () => {
+    expect(check(`${SVG_IMAGE_IMPORT}\n${LOCAL_GUARD}`)).toContainEqual(
       expect.stringContaining('svg-image-background'),
     );
   });
