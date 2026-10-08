@@ -439,7 +439,13 @@ describe('PlaylistDetailView', () => {
     render(<PlaylistDetailView {...makeProps()} />);
 
     const headerTitle = lastHeaderOptions().headerTitle as () => ReactNode;
-    expect(headerTitle()).toBeNull();
+    const customTitle = headerTitle();
+    // Native-stack uses the screen title whenever the custom renderer returns
+    // null. Exercise that fallback instead of only checking the callback.
+    const { container } = render(createElement('div', null, customTitle ?? (lastHeaderOptions().title as string)));
+    expect(customTitle).not.toBeNull();
+    expect(container.textContent).toBe('');
+    expect(lastHeaderOptions().headerLargeTitle).toBe(false);
   });
 
   // ── Screenshot-mode page cap ────────────────────────────────────────────────

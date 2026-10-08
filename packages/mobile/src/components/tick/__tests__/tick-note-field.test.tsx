@@ -11,7 +11,7 @@ vi.mock('../../AccessibleBottomSheetTextInput', async () => {
 // input declaring its own vertical padding — plus the arithmetic that one line
 // of `subheadline` actually fits between them.
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { flattenStyle } from '../../../../test/flatten-style';
 
@@ -21,6 +21,11 @@ type TextInputMockProps = {
   placeholder?: string;
   accessibilityLabel?: string;
   value?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  onChangeText?: (next: string) => void;
+  returnKeyType?: string;
+  submitBehavior?: string;
 };
 
 vi.mock('react-native', () => ({
@@ -32,13 +37,30 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetTextInput: ({ style, multiline, placeholder, accessibilityLabel, value }: TextInputMockProps) =>
+  BottomSheetTextInput: ({
+    style,
+    multiline,
+    placeholder,
+    accessibilityLabel,
+    value,
+    onFocus,
+    onBlur,
+    onChangeText,
+    returnKeyType,
+    submitBehavior,
+  }: TextInputMockProps) =>
     createElement('textarea', {
       'data-style': JSON.stringify(style ?? null),
       'data-multiline': multiline ? 'true' : 'false',
       'data-placeholder': placeholder,
       'data-a11y-label': accessibilityLabel,
       'data-value': value,
+      'data-return-key': returnKeyType,
+      'data-submit-behavior': submitBehavior,
+      value,
+      onFocus,
+      onBlur,
+      onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => onChangeText?.(event.currentTarget.value),
     }),
 }));
 
@@ -51,13 +73,14 @@ vi.mock('../../../providers/theme-provider', async () => {
 import { TickNoteField } from '../TickNoteField';
 import { materialTextStyles } from '../../../theme/typography';
 
-function renderField() {
+function renderField(overrides: Partial<Parameters<typeof TickNoteField>[0]> = {}) {
   return render(
     createElement(TickNoteField, {
       value: '',
       onChangeText: vi.fn(),
       placeholder: 'How did it go?',
       accessibilityLabel: 'Note',
+      ...overrides,
     }),
   );
 }
@@ -164,6 +187,51 @@ describe('TickNoteField', () => {
     expect(visibleLines).toBeGreaterThanOrEqual(7);
     expect(style.textAlignVertical).toBe('top');
     expect(container.querySelector('textarea')?.getAttribute('data-multiline')).toBe('true');
+  });
+
+  it('shows one line in compact mode with enough room above the Android padding', () => {
+    const { container } = renderField({ compact: true });
+    const style = inputStyle(container);
+    expect(style.minHeight).toBe(44);
+    expect(style.maxHeight).toBe(44);
+    const contentHeight = 44 - totalVerticalPaddingOf(style) - 2 * Number(style.borderWidth);
+    expect(contentHeight).toBeGreaterThanOrEqual(materialTextStyles.subheadline.lineHeight);
+    expect(container.querySelector('textarea')?.getAttribute('data-multiline')).toBe('true');
+  });
+
+  it('expands the same focused multiline input and retains the comment', () => {
+    const onFocus = vi.fn();
+    const onChangeText = vi.fn();
+    const props = {
+      value: 'Use the left heel',
+      onChangeText,
+      placeholder: 'How did it go?',
+      accessibilityLabel: 'Note',
+      onFocus,
+    };
+    const { container, rerender } = render(createElement(TickNoteField, { ...props, compact: true }));
+    const input = container.querySelector('textarea') as HTMLTextAreaElement;
+    act(() => input.focus());
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: 'Use the left heel\nThen match' } });
+    expect(onChangeText).toHaveBeenCalledWith('Use the left heel\nThen match');
+
+    rerender(createElement(TickNoteField, { ...props, value: 'Use the left heel\nThen match', compact: false }));
+    expect(container.querySelector('textarea')).toBe(input);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe('Use the left heel\nThen match');
+    expect(input.getAttribute('data-multiline')).toBe('true');
+    expect(inputStyle(container)).toMatchObject({ minHeight: 64, maxHeight: 160 });
+  });
+
+  it('uses Done for tick comments and keeps paragraph Return available for reports', () => {
+    const tick = renderField();
+    expect(tick.container.querySelector('textarea')?.getAttribute('data-return-key')).toBe('done');
+    expect(tick.container.querySelector('textarea')?.getAttribute('data-submit-behavior')).toBe('blurAndSubmit');
+    tick.unmount();
+    const report = renderField({ submitBehavior: 'newline' });
+    expect(report.container.querySelector('textarea')?.getAttribute('data-return-key')).toBeNull();
+    expect(report.container.querySelector('textarea')?.getAttribute('data-submit-behavior')).toBe('newline');
   });
 });
 

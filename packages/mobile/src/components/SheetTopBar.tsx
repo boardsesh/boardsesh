@@ -329,6 +329,65 @@ function useMeasuredWidth(): [number, (event: LayoutChangeEvent) => void] {
   return [width, onLayout];
 }
 
+/** Measured top-bar chassis, including editable titles such as the climb name. */
+export const SheetTopBarLayout = React.memo(function SheetTopBarLayout({
+  leading,
+  center,
+  trailing,
+  accentColor,
+}: {
+  leading?: ReactNode;
+  center: ReactNode;
+  trailing?: ReactNode;
+  accentColor?: string | null;
+}) {
+  const { systemColors, spacing, borderRadius } = useTheme();
+  const hasAccent = accentColor !== undefined;
+  const [leadingWidth, onLeadingLayout] = useMeasuredWidth();
+  const [trailingWidth, onTrailingLayout] = useMeasuredWidth();
+
+  return (
+    <View style={[styles.bar, { paddingHorizontal: spacing[4], borderBottomColor: systemColors.separator }]}>
+      <View testID="sheet-top-bar-leading-flank" style={styles.flank} onLayout={onLeadingLayout}>
+        {leading}
+      </View>
+      {hasAccent ? (
+        <View
+          testID="sheet-top-bar-accent"
+          style={[
+            styles.accent,
+            { borderRadius: borderRadius.sm, backgroundColor: accentColor ?? systemColors.separator },
+          ]}
+        />
+      ) : (
+        <View
+          testID="sheet-top-bar-leading-balance"
+          style={[styles.balance, { width: Math.max(0, trailingWidth - leadingWidth) }]}
+        />
+      )}
+      <View
+        testID="sheet-top-bar-title"
+        style={[styles.titles, hasAccent ? styles.startAligned : null, { marginHorizontal: spacing[2] }]}
+      >
+        {center}
+      </View>
+      {hasAccent ? null : (
+        <View
+          testID="sheet-top-bar-trailing-balance"
+          style={[styles.balance, { width: Math.max(0, leadingWidth - trailingWidth) }]}
+        />
+      )}
+      <View
+        testID="sheet-top-bar-trailing-flank"
+        style={[styles.flank, styles.trailingRow, { gap: spacing[2] }]}
+        onLayout={onTrailingLayout}
+      >
+        {trailing}
+      </View>
+    </View>
+  );
+});
+
 export const SheetTopBar = React.memo(function SheetTopBar({
   title,
   subtitle,
@@ -340,11 +399,9 @@ export const SheetTopBar = React.memo(function SheetTopBar({
   reserveErrorSlot = false,
   testID,
 }: SheetTopBarProps) {
-  const { systemColors, brandColors, spacing, textStyles, borderRadius } = useTheme();
+  const { systemColors, brandColors, spacing, textStyles } = useTheme();
   const hasAccent = accentColor !== undefined;
   const { fontScale } = useWindowDimensions();
-  const [leadingWidth, onLeadingLayout] = useMeasuredWidth();
-  const [trailingWidth, onTrailingLayout] = useMeasuredWidth();
 
   // One line of footnote at the capped font scale, plus padding. The error text
   // is capped to the same scale and one line, so a long or scaled error can't
@@ -355,54 +412,38 @@ export const SheetTopBar = React.memo(function SheetTopBar({
 
   return (
     <View testID={testID}>
-      <View style={[styles.bar, { paddingHorizontal: spacing[4], borderBottomColor: systemColors.separator }]}>
-        <View testID="sheet-top-bar-leading-flank" style={styles.flank} onLayout={onLeadingLayout}>
-          {leading ? <SheetTopBarLeadingButton {...leading} /> : null}
-        </View>
-        {hasAccent ? (
-          <View
-            testID="sheet-top-bar-accent"
-            style={[
-              styles.accent,
-              { borderRadius: borderRadius.sm, backgroundColor: accentColor ?? systemColors.separator },
-            ]}
-          />
-        ) : (
-          <View style={[styles.balance, { width: Math.max(0, trailingWidth - leadingWidth) }]} />
-        )}
-        <View
-          testID="sheet-top-bar-title"
-          style={[styles.titles, hasAccent ? styles.startAligned : null, { marginHorizontal: spacing[2] }]}
-        >
-          <Text
-            variant="headline"
-            numberOfLines={1}
-            accessibilityRole="header"
-            style={hasAccent ? styles.startText : styles.centredText}
-          >
-            {title}
-          </Text>
-          {subtitle ? (
+      <SheetTopBarLayout
+        leading={leading ? <SheetTopBarLeadingButton {...leading} /> : null}
+        accentColor={accentColor}
+        center={
+          <>
             <Text
-              variant="footnote"
-              color={systemColors.secondaryLabel}
+              variant="headline"
               numberOfLines={1}
+              accessibilityRole="header"
               style={hasAccent ? styles.startText : styles.centredText}
             >
-              {subtitle}
+              {title}
             </Text>
-          ) : null}
-        </View>
-        {hasAccent ? null : <View style={[styles.balance, { width: Math.max(0, leadingWidth - trailingWidth) }]} />}
-        <View
-          testID="sheet-top-bar-trailing-flank"
-          style={[styles.flank, styles.trailingRow, { gap: spacing[2] }]}
-          onLayout={onTrailingLayout}
-        >
-          {trailingAccessory}
-          {trailing ? <SheetTopBarTrailingButton {...trailing} /> : null}
-        </View>
-      </View>
+            {subtitle ? (
+              <Text
+                variant="footnote"
+                color={systemColors.secondaryLabel}
+                numberOfLines={1}
+                style={hasAccent ? styles.startText : styles.centredText}
+              >
+                {subtitle}
+              </Text>
+            ) : null}
+          </>
+        }
+        trailing={
+          <>
+            {trailingAccessory}
+            {trailing ? <SheetTopBarTrailingButton {...trailing} /> : null}
+          </>
+        }
+      />
       {showErrorSlot ? (
         <View
           testID="sheet-top-bar-error-slot"

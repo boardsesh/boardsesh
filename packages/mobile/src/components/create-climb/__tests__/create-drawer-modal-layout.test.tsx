@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
+vi.mock('../AccessibleHoldList', () => ({
+  AccessibleHoldList: ({ roles, onPaint }: { roles: unknown; onPaint: (id: number) => void }) =>
+    createElement(
+      'div',
+      { 'data-node': 'hold-list', 'data-roles': JSON.stringify(roles) },
+      createElement('button', { 'data-paint': 'list', onClick: () => onPaint(2) }),
+    ),
+}));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -14,8 +21,9 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { fireEvent, render } from '@testing-library/react';
+import { createElement, useState, type ReactNode } from 'react';
+import type { LitUpHoldsMap } from '@boardsesh/shared-schema';
 
 // New climb is a full-height modal route now, not a bottom sheet with a peek.
 // What these cases pin: the top bar (X, name, Save) is pinned ABOVE the scroll,
@@ -117,13 +125,38 @@ vi.mock('../../board/HeatmapOverlay', () => ({
 vi.mock('../../board/HeatmapLegend', () => ({ HeatmapLegend: () => null }));
 vi.mock('../../board/HeatmapDownloadLine', () => ({ HeatmapDownloadLine: () => null }));
 vi.mock('../InteractiveCreateBoard', () => ({
-  InteractiveCreateBoard: () => createElement('div', { 'data-node': 'board' }),
+  InteractiveCreateBoard: ({ litUpHoldsMap, onPaint }: { litUpHoldsMap: unknown; onPaint: (id: number) => void }) =>
+    createElement(
+      'div',
+      { 'data-node': 'board', 'data-roles': JSON.stringify(litUpHoldsMap) },
+      createElement('button', { 'data-paint': 'board', onClick: () => onPaint(1) }),
+    ),
 }));
 const header = vi.hoisted(() => ({ onClose: null as (() => void) | null }));
 vi.mock('../CreateDrawerHeader', () => ({
-  CreateDrawerHeader: ({ onClose }: { onClose: () => void }) => {
+  CreateDrawerHeader: ({
+    onClose,
+    overflow,
+    onSelectOverflowAction,
+    name,
+  }: {
+    onClose: () => void;
+    overflow: { holdListVisible: boolean };
+    onSelectOverflowAction: (action: string) => void;
+    name: string;
+  }) => {
     header.onClose = onClose;
-    return createElement('div', { 'data-node': 'header' });
+    return createElement(
+      'div',
+      { 'data-node': 'header', 'data-name': name },
+      createElement('button', {
+        'data-toggle-hold-list': true,
+        'aria-label': overflow.holdListVisible
+          ? 'mobile.boardAccessibility.showBoard'
+          : 'mobile.boardAccessibility.showList',
+        onClick: () => onSelectOverflowAction('toggleHoldList'),
+      }),
+    );
   },
 }));
 vi.mock('../CreateDrawerActionBar', () => ({
@@ -255,6 +288,49 @@ describe('CreateDrawer as a full-height modal', () => {
     renderDrawer({}, onClose);
     header.onClose?.();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('switches the editor through the overflow menu without losing the name or painted holds', () => {
+    function EditableDrawer() {
+      const [roles, setRoles] = useState<LitUpHoldsMap>({});
+      const controller = makeController({
+        name: 'Existing draft',
+        litUpHoldsMap: roles,
+        handlePaint: (id: number) =>
+          setRoles((previous) => ({
+            ...previous,
+            [id]: { state: 'HAND', color: '#0f0', displayColor: '#0f0' },
+          })),
+      });
+      return createElement(CreateDrawer, {
+        board,
+        boardHolds,
+        controller,
+        onLongPressHold: vi.fn(),
+        onLoadDraft: vi.fn(),
+        onClose: vi.fn(),
+        onViewDuplicate: vi.fn(),
+      });
+    }
+    const { container, getByLabelText } = render(createElement(EditableDrawer));
+    const node = (name: string) => container.querySelector(`[data-node="${name}"]`);
+
+    fireEvent.click(container.querySelector('[data-paint="board"]') as Element);
+    fireEvent.click(getByLabelText('mobile.boardAccessibility.showList'));
+    expect(node('board')).toBeNull();
+    expect(node('hold-list')).not.toBeNull();
+    expect(node('hold-list')?.getAttribute('data-roles')).toContain('"1":{"state":"HAND"');
+    // The header owns the only list shortcut; no full-width standalone action remains.
+    expect(getByLabelText('mobile.boardAccessibility.showBoard').closest('[data-node="header"]')).not.toBeNull();
+
+    fireEvent.click(container.querySelector('[data-paint="list"]') as Element);
+    fireEvent.click(getByLabelText('mobile.boardAccessibility.showBoard'));
+    expect(node('hold-list')).toBeNull();
+    expect(JSON.parse(node('board')?.getAttribute('data-roles') ?? '{}')).toMatchObject({
+      1: { state: 'HAND' },
+      2: { state: 'HAND' },
+    });
+    expect(node('header')?.getAttribute('data-name')).toBe('Existing draft');
   });
 
   it('puts the transient banners in the scroll, under the pinned bar', () => {

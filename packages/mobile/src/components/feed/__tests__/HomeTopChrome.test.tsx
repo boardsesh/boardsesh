@@ -4,14 +4,23 @@ import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { AppMenuAction } from '../../AppMenu';
 
-const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
+const ctrl = vi.hoisted(() => ({
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  nativeHeader: false,
+  nativeHeaderProps: undefined as { title?: string; leftActionsStandalone?: boolean; children?: ReactNode } | undefined,
+}));
 
 type ViewMockProps = {
   children?: ReactNode;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
 };
-vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
-vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => ctrl.nativeHeader }));
+vi.mock('../../chrome/NativeRootHeader', () => ({
+  NativeRootHeader: (props: typeof ctrl.nativeHeaderProps) => {
+    ctrl.nativeHeaderProps = props;
+    return createElement('div', { 'data-native-root-header': 'true' }, props?.children);
+  },
+}));
 
 vi.mock('react-native', () => ({
   View: ({ children, onLayout }: ViewMockProps) =>
@@ -107,6 +116,8 @@ const bell = (root: HTMLElement, variant: 'glass' | 'material') =>
 describe('HomeTopChrome', () => {
   beforeEach(() => {
     ctrl.variant = 'liquidGlass';
+    ctrl.nativeHeader = false;
+    ctrl.nativeHeaderProps = undefined;
     routerMock.push.mockClear();
   });
 
@@ -133,6 +144,17 @@ describe('HomeTopChrome', () => {
   });
 
   describe('Liquid Glass variant', () => {
+    it('leaves the scope picker in the feed and uses the native Home title', () => {
+      ctrl.nativeHeader = true;
+      const { container } = render(<HomeTopChrome {...makeProps()} />);
+
+      expect(container.querySelector('[data-native-root-header]')).not.toBeNull();
+      expect(container.querySelector('[data-feed-scope]')).toBeNull();
+      expect(ctrl.nativeHeaderProps).toMatchObject({ leftActionsStandalone: true });
+      expect(ctrl.nativeHeaderProps?.title).toBeUndefined();
+      expect(ctrl.nativeHeaderProps?.children).toBeUndefined();
+    });
+
     it('renders the floating glass chrome (blur + avatar/search islands + scope title)', () => {
       const { container } = render(<HomeTopChrome {...makeProps()} />);
       expect(container.querySelector('[data-blur]')).not.toBeNull();

@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 vi.mock('../../SheetTopBar', () => ({ SheetTopBar: () => null }));
-vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
-vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => ctrl.nativeHeader }));
+vi.mock('../../chrome/NativeRootHeader', () => ({
+  NativeRootHeader: ({ centerContent, children }: { centerContent?: ReactNode; children?: ReactNode }) =>
+    createElement(
+      'div',
+      null,
+      createElement('div', { 'data-native-center': 'true' }, centerContent),
+      createElement('div', { 'data-native-controls': 'true' }, children),
+    ),
+}));
 vi.mock('../../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ isPad: false, widthClass: 'compact' }),
 }));
@@ -33,6 +41,7 @@ const ctrl = vi.hoisted(() => ({
   bluetooth: null as BluetoothCtx,
   setActiveBoard: vi.fn(),
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  nativeHeader: false,
 }));
 const haptics = vi.hoisted(() => ({ light: vi.fn() }));
 
@@ -198,7 +207,33 @@ describe('CollapsingTopChrome', () => {
     ctrl.board = null;
     ctrl.bluetooth = null;
     ctrl.variant = 'liquidGlass';
+    ctrl.nativeHeader = false;
     haptics.light.mockClear();
+  });
+
+  it('keeps the current climb in the native center and only search below it', () => {
+    ctrl.nativeHeader = true;
+    const onOpenClimb = vi.fn();
+    const { container, getByRole } = render(
+      <CollapsingTopChrome
+        {...makeProps({
+          centerContent: (
+            <button aria-label="On the wall: Fugue state" onClick={onOpenClimb}>
+              Fugue state
+            </button>
+          ),
+        })}
+      >
+        <span>Search</span>
+      </CollapsingTopChrome>,
+    );
+
+    const climbButton = getByRole('button', { name: 'On the wall: Fugue state' });
+    expect(container.querySelector('[data-native-center]')?.contains(climbButton)).toBe(true);
+    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Search');
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+    fireEvent.click(climbButton);
+    expect(onOpenClimb).toHaveBeenCalledOnce();
   });
 
   it('renders the board glyph for the active board, labelled with the board', () => {

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
+const themeVariant = vi.hoisted(() => ({ current: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
 // The header owns the ⋯ menu, and the menu reports a POSITION. The row set
 // changes with editor state — Woods drops the route rows, a one-frame route has
@@ -38,14 +39,23 @@ vi.mock('../../AppMenu', () => ({
     actions,
     onSelectIndex,
     accessibilityLabel,
+    iconAppearance,
+    style,
   }: {
     actions: { label: string; disabled?: boolean }[];
     onSelectIndex: (index: number) => void;
     accessibilityLabel?: string;
+    iconAppearance?: string;
+    style?: unknown;
   }) =>
     createElement(
       'div',
-      { 'data-node': 'overflow', 'data-label': accessibilityLabel },
+      {
+        'data-node': 'overflow',
+        'data-label': accessibilityLabel,
+        'data-appearance': iconAppearance,
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
       actions.map((action, index) =>
         createElement('button', {
           key: action.label,
@@ -58,6 +68,14 @@ vi.mock('../../AppMenu', () => ({
 }));
 // The trailing Save, drawn as a plain button carrying what the header handed it.
 vi.mock('../../SheetTopBar', () => ({
+  SheetTopBarLayout: ({ leading, center, trailing }: { leading: ReactNode; center: ReactNode; trailing: ReactNode }) =>
+    createElement(
+      'div',
+      null,
+      createElement('div', { 'data-flank': 'leading' }, leading),
+      createElement('div', { 'data-node': 'name' }, center),
+      createElement('div', { 'data-flank': 'trailing' }, trailing),
+    ),
   // The X, drawn as a plain button carrying what the header handed it.
   SheetTopBarLeadingButton: ({
     kind,
@@ -110,9 +128,21 @@ vi.mock('../../SheetTopBar', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    variant: themeVariant.current,
     textStyles: { body: { fontSize: 17, lineHeight: 22, fontWeight: '400' } },
     systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' },
   }),
+}));
+vi.mock('../../chrome/GlassActionToolbar', () => ({
+  GlassActionToolbar: ({
+    children,
+    actionCount,
+    actionSize,
+  }: {
+    children: ReactNode;
+    actionCount: number;
+    actionSize: number;
+  }) => createElement('div', { 'data-group': 'true', 'data-count': actionCount, 'data-size': actionSize }, children),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 
@@ -134,7 +164,7 @@ function renderHeader(
       finishCount: 0,
       focusSignal: 0,
       onClose,
-      overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, ...overflow },
+      overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, holdListVisible: false, ...overflow },
       onSelectOverflowAction,
       saveState,
       onSave,
@@ -152,6 +182,9 @@ function renderHeader(
 }
 
 describe('CreateDrawerHeader overflow menu', () => {
+  beforeEach(() => {
+    themeVariant.current = 'liquidGlass';
+  });
   it('labels the anchor, which is the only text a glyph trigger has', () => {
     const { container } = renderHeader();
     expect(container.querySelector('[data-node="overflow"]')?.getAttribute('data-label')).toBe(
@@ -178,26 +211,39 @@ describe('CreateDrawerHeader overflow menu', () => {
 
   it('resolves the FIRST row on a board that renders fewer of them', () => {
     // With the frame commands gone, Woods is the only state whose menu is a
-    // different LENGTH — one row where every other state has two. Index 0 there
-    // is newClimb, not the makeRoute that sits at 0 everywhere else, so this is
+    // different LENGTH — two rows where every other state has three. Index 0 there
+    // is toggleHoldList, not the makeRoute that sits at 0 elsewhere, so this is
     // what guards the header's index-to-action mapping against a stale row set.
     const { onSelectOverflowAction, container } = renderHeader({ supportsMultiFrame: false });
     const rows = Array.from(container.querySelectorAll('[data-row]')) as HTMLButtonElement[];
 
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     rows[0]?.click();
+    expect(onSelectOverflowAction).toHaveBeenLastCalledWith('toggleHoldList');
+    rows[1]?.click();
     expect(onSelectOverflowAction).toHaveBeenLastCalledWith('newClimb');
   });
 
   it('marks the blocked route-to-boulder row disabled rather than dropping it', () => {
-    const { row } = renderHeader({ routeMode: true, frameCount: 4 });
+    const { row, onSelectOverflowAction } = renderHeader({ routeMode: true, frameCount: 4 });
     expect(row('mobile.create.routeMenu.makeBoulderBlocked')?.getAttribute('data-disabled')).toBe('true');
+    row('mobile.create.routeMenu.makeBoulderBlocked')?.click();
+    expect(onSelectOverflowAction).not.toHaveBeenCalled();
+    row('mobile.boardAccessibility.showList')?.click();
+    expect(onSelectOverflowAction).toHaveBeenCalledWith('toggleHoldList');
   });
 
   it('offers no route rows on a board that can only hold one frame', () => {
     const { row } = renderHeader({ supportsMultiFrame: false });
     expect(row('mobile.create.routeMenu.makeRoute')).toBeNull();
     expect(row('mobile.create.actions.newClimb')).not.toBeNull();
+  });
+
+  it('maps the way back from the list through the current menu rows', () => {
+    const { row, onSelectOverflowAction } = renderHeader({ holdListVisible: true });
+    expect(row('mobile.boardAccessibility.showList')).toBeNull();
+    row('mobile.boardAccessibility.showBoard')?.click();
+    expect(onSelectOverflowAction).toHaveBeenCalledWith('toggleHoldList');
   });
 });
 
@@ -207,13 +253,24 @@ describe('CreateDrawerHeader contents', () => {
   it('holds only close, the name, the overflow menu and Save', () => {
     const { container } = renderHeader();
     const bar = container.firstElementChild as HTMLElement;
-    const parts = Array.from(bar.children).map((child) => {
-      if (child.getAttribute('data-node')) return child.getAttribute('data-node');
-      if (child.querySelector('input')) return 'name';
-      return child.tagName;
-    });
-    expect(parts).toEqual(['close', 'name', 'overflow', 'save']);
+    expect(bar.querySelector('[data-flank="leading"] [data-node="close"]')).not.toBeNull();
+    expect(bar.querySelector('[data-node="name"] input')).not.toBeNull();
+    const group = bar.querySelector('[data-flank="trailing"] [data-group]');
+    expect(group?.getAttribute('data-size')).toBe('44');
+    expect(group?.getAttribute('data-count')).toBe('2');
+    expect(group?.querySelector('[data-node="overflow"]')?.getAttribute('data-appearance')).toBe('plain');
+    expect(group?.querySelector('[data-node="save"]')).not.toBeNull();
     expect(container.querySelector('[data-ble]')).toBeNull();
+  });
+
+  it('keeps Material menu at 48dp and Save at its natural translated width', () => {
+    themeVariant.current = 'material';
+    const { container } = renderHeader();
+    expect(container.querySelector('[data-group]')).toBeNull();
+    const menu = container.querySelector('[data-node="overflow"]');
+    expect(JSON.parse(menu?.getAttribute('data-style') ?? '{}')).toMatchObject({ width: 48, height: 48 });
+    expect(menu?.getAttribute('data-appearance')).toBeNull();
+    themeVariant.current = 'liquidGlass';
   });
 });
 

@@ -1,18 +1,20 @@
 import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, type TextInput as NativeTextInput } from 'react-native';
+import { StyleSheet, type TextInput as NativeTextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { AppMenu } from '../AppMenu';
-import { SheetTopBarLeadingButton, SheetTopBarTrailingButton } from '../SheetTopBar';
+import { SheetTopBarLayout, SheetTopBarLeadingButton, SheetTopBarTrailingButton } from '../SheetTopBar';
+import { GlassActionToolbar } from '../chrome/GlassActionToolbar';
 import {
   buildCreateOverflowMenu,
   type CreateOverflowAction,
   type CreateOverflowMenuState,
 } from './create-overflow-menu';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing } from '../../theme/tokens';
+import { topBarFor } from '../../theme/top-bar';
+import { selectByVariant } from '../../theme/variants';
 import { deriveSaveButtonView } from './save-button-view';
 import type { SaveButtonState } from './use-create-climb-screen';
 
@@ -46,9 +48,9 @@ type CreateDrawerHeaderProps = {
  * comes out of the name field, which a French or German Save already narrows.
  * The lightbulb lives in the tool row for that reason.
  *
- * Bespoke rather than a SheetTopBar because its title is a text field. The X
- * and Save are still the top bar's own leading and trailing buttons, so it looks and behaves like
- * every other sheet's (see docs/mobile-sheets-vs-routes.md, "Where actions go").
+ * Uses SheetTopBar's measured chassis with an editable title. The trailing
+ * actions share one glass toolbar, and its measured width balances the leading
+ * side so the name stays centered (see docs/mobile-sheets-vs-routes.md).
  */
 export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   name,
@@ -65,7 +67,9 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
 }: CreateDrawerHeaderProps) {
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  const { systemColors, variant } = useTheme();
+  const actionSize = topBarFor(variant).iconTarget;
+  const groupedActions = selectByVariant(variant, { liquidGlass: true, material: false });
   const inputRef = useRef<NativeTextInput>(null);
 
   useEffect(() => {
@@ -95,56 +99,16 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
 
   const save = deriveSaveButtonView(saveState, t, climbReady);
 
-  return (
-    <View style={styles.row}>
-      {/* NOT `createClimbForm.dismiss` — that key is a DIALOG cancel label, and
-          its translations say discard ("Descartar" / "Ignorer" / "Ausblenden").
-          On a close button, for a feature whose whole point is "does closing lose
-          my work?", the screen-reader user was getting a stronger wrong signal
-          than the sighted one. The work is kept; the hint says where. */}
-      <SheetTopBarLeadingButton
-        kind="close"
-        onPress={onClose}
-        accessibilityLabel={t('mobile.create.actions.close')}
-        accessibilityHint={t('mobile.create.actions.closeHint')}
-      />
-
-      <View style={styles.center}>
-        <TextInput
-          ref={inputRef}
-          value={name}
-          onChangeText={onChangeName}
-          placeholder={t('mobile.create.header.newClimb')}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          maxLength={NAME_MAX}
-          returnKeyType="done"
-          style={[styles.nameInput, { color: systemColors.label }]}
-        />
-        {/* One line whatever the locale: it shrinks before it wraps, so the
-            pinned top bar's height never changes. */}
-        <Text
-          variant="caption1"
-          color={systemColors.secondaryLabel}
-          style={styles.subtitle}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-        >
-          {counts}
-        </Text>
-      </View>
-
-      {/* Document-level commands (what kind of climb this is, start over) live in
-          the nav-bar overflow, not the action bar: that bar is a tool bar you use
-          with a brush in hand. A bare `copy` glyph in it went unfound twice. */}
+  const trailing = (
+    <>
       <AppMenu
         iconName="more"
+        iconAppearance={groupedActions ? 'plain' : undefined}
         actions={overflowRows}
         onSelectIndex={handleSelectOverflowIndex}
         accessibilityLabel={t('mobile.create.routeMenu.open')}
-        style={styles.overflow}
+        style={[styles.overflow, { width: actionSize, height: actionSize }]}
       />
-
       <SheetTopBarTrailingButton
         label={save.label}
         accessibilityLabel={save.accessibilityLabel}
@@ -155,30 +119,63 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         accessibilityHint={save.accessibilityHint ?? undefined}
         prominent
       />
-    </View>
+    </>
+  );
+
+  return (
+    <SheetTopBarLayout
+      leading={
+        <SheetTopBarLeadingButton
+          kind="close"
+          onPress={onClose}
+          accessibilityLabel={t('mobile.create.actions.close')}
+          accessibilityHint={t('mobile.create.actions.closeHint')}
+        />
+      }
+      center={
+        <>
+          <TextInput
+            ref={inputRef}
+            value={name}
+            onChangeText={onChangeName}
+            placeholder={t('mobile.create.header.newClimb')}
+            placeholderTextColor={systemColors.tertiaryLabel}
+            maxLength={NAME_MAX}
+            returnKeyType="done"
+            style={[styles.nameInput, { color: systemColors.label }]}
+          />
+          {/* One line whatever the locale: it shrinks before it wraps, so the
+            pinned top bar's height never changes. */}
+          <Text
+            variant="caption1"
+            color={systemColors.secondaryLabel}
+            style={styles.subtitle}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+          >
+            {counts}
+          </Text>
+        </>
+      }
+      trailing={
+        groupedActions ? (
+          <GlassActionToolbar actionCount={2} actionSize={actionSize}>
+            {trailing}
+          </GlassActionToolbar>
+        ) : (
+          trailing
+        )
+      }
+    />
   );
 });
 
 const createStyles = (textStyles: TypographyScale) =>
   StyleSheet.create({
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[3],
-      minHeight: 56,
-      gap: spacing[2],
-    },
     overflow: {
-      width: 44,
-      height: 44,
       alignItems: 'center',
       justifyContent: 'center',
-    },
-    center: {
-      flex: 1,
-      minWidth: 0,
-      alignItems: 'center',
     },
     nameInput: {
       fontWeight: '700',

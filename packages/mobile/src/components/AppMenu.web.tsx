@@ -51,7 +51,12 @@ export function AppMenu(props: AppMenuProps) {
       accessibilityHint={accessibilityHint}
       style={[
         styles.anchor,
-        props.iconName != null ? [styles.iconAnchor, { backgroundColor: systemColors.fill as string }] : null,
+        props.iconName != null
+          ? [
+              styles.iconAnchor,
+              props.iconAppearance !== 'plain' ? { backgroundColor: systemColors.fill as string } : null,
+            ]
+          : null,
         maxWidth != null ? { maxWidth } : null,
         style,
       ]}

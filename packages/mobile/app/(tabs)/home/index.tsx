@@ -25,6 +25,7 @@ import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard'
 import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
 import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { HomeTopChrome, TOP_ISLAND_BAND } from '../../../src/components/feed/HomeTopChrome';
+import { FeedScopeTitle } from '../../../src/components/feed/FeedScopeTitle';
 import { type AppMenuAction } from '../../../src/components/AppMenu';
 import { useBulkVoteSummaries, useSessionGroupedFeed } from '../../../src/lib/graphql/hooks';
 import { FOLLOWED_LIVE_SESSIONS_QUERY_KEY } from '../../../src/lib/graphql/query-keys';
@@ -78,10 +79,8 @@ export default function HomeTab() {
   const listRef = useRef<FlashListRef<CrewFeedItem>>(null);
   const commentSheetRef = useRef<BottomSheet | null>(null);
   const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
-  // Measured top-chrome height so the feed clears the chrome (seeded to the floating
-  // band's height — exact for Liquid Glass, corrected by the Material app bar's
-  // onLayout on the next frame).
-  const [chromeHeight, setChromeHeight] = useState(() => insets.top + TOP_ISLAND_BAND);
+  // UIKit owns its title inset. Other variants measure the floating chrome.
+  const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + TOP_ISLAND_BAND));
 
   // Feed scope. `mode` chooses the view — `crew` (people you follow) is the
   // default; `gym` is everyone on the selected board. `selectedBoard` is the
@@ -377,6 +376,16 @@ export default function HomeTab() {
   const header = useMemo(
     () => (
       <View style={styles.header}>
+        {nativeRootHeader ? (
+          <View style={styles.scopePicker}>
+            <FeedScopeTitle
+              title={scopeMenu.title}
+              actions={scopeMenu.actions}
+              onSelectIndex={scopeMenu.onSelectIndex}
+              accessibilityHint={t('mobile.home.scope.hint')}
+            />
+          </View>
+        ) : null}
         {/* Browser app on a phone only; renders nothing on native. */}
         <AppStorePrompt surface="home" />
         <LiveSessionsRail boardUuid={liveBoardUuid} enabled={scopeReady} onInvite={handleOpenInvite} />
@@ -385,7 +394,7 @@ export default function HomeTab() {
         </Text>
       </View>
     ),
-    [liveBoardUuid, scopeReady, handleOpenInvite, sessionsHeading],
+    [nativeRootHeader, scopeMenu, t, liveBoardUuid, scopeReady, handleOpenInvite, sessionsHeading],
   );
 
   if (!isAuthenticated) {
@@ -577,6 +586,11 @@ const styles = StyleSheet.create({
     // A small gap below the floating header band (the list already insets by the
     // band via contentContainerStyle).
     paddingTop: spacing[2],
+  },
+  scopePicker: {
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
   },
   feedHeading: {
     paddingHorizontal: spacing[4],

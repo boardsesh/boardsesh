@@ -13,6 +13,7 @@ const state = (overrides: Partial<CreateOverflowMenuState> = {}): CreateOverflow
   supportsMultiFrame: true,
   routeMode: false,
   frameCount: 1,
+  holdListVisible: false,
   ...overrides,
 });
 
@@ -21,12 +22,12 @@ const actionsOf = (input: CreateOverflowMenuState) =>
 
 describe('buildCreateOverflowMenu', () => {
   it('offers route mode on a boulder', () => {
-    expect(actionsOf(state())).toEqual(['makeRoute', 'newClimb']);
+    expect(actionsOf(state())).toEqual(['makeRoute', 'toggleHoldList', 'newClimb']);
   });
 
   it('offers the way back out while a route is still one frame', () => {
     const rows = buildCreateOverflowMenu(state({ routeMode: true }), translate);
-    expect(rows.map((row) => row.action)).toEqual(['makeBoulder', 'newClimb']);
+    expect(rows.map((row) => row.action)).toEqual(['makeBoulder', 'toggleHoldList', 'newClimb']);
     expect(rows[0].disabled).toBeFalsy();
     expect(rows[0].label).toBe('mobile.create.routeMenu.makeBoulder');
   });
@@ -57,7 +58,7 @@ describe('buildCreateOverflowMenu', () => {
     // An edit or a fork opens on frames that already exist; the controller seeds
     // the flag from them, but the menu must not depend on that having happened.
     const rows = buildCreateOverflowMenu(state({ routeMode: false, frameCount: 3 }), translate);
-    expect(rows.map((row) => row.action)).toEqual(['makeBoulder', 'newClimb']);
+    expect(rows.map((row) => row.action)).toEqual(['makeBoulder', 'toggleHoldList', 'newClimb']);
 
     // And the way out is blocked here for the same reason it is with the flag
     // set: the block keys off the FRAMES, not the mode. Asserting only the row
@@ -71,8 +72,25 @@ describe('buildCreateOverflowMenu', () => {
   it('offers no route rows at all on a single-frame board', () => {
     // Woods: its packet builder rejects the comma a second frame introduces, so
     // offering the mode would offer a climb that cannot reach the wall.
-    expect(actionsOf(state({ supportsMultiFrame: false }))).toEqual(['newClimb']);
-    expect(actionsOf(state({ supportsMultiFrame: false, routeMode: true, frameCount: 3 }))).toEqual(['newClimb']);
+    expect(actionsOf(state({ supportsMultiFrame: false }))).toEqual(['toggleHoldList', 'newClimb']);
+    expect(actionsOf(state({ supportsMultiFrame: false, routeMode: true, frameCount: 3 }))).toEqual([
+      'toggleHoldList',
+      'newClimb',
+    ]);
+  });
+
+  it('offers the hold list on every board and the way back while the list is open', () => {
+    for (const supportsMultiFrame of [true, false]) {
+      for (const holdListVisible of [true, false]) {
+        const rows = buildCreateOverflowMenu(state({ supportsMultiFrame, holdListVisible }), translate);
+        const toggle = rows.find((row) => row.action === 'toggleHoldList');
+        expect(toggle?.label).toBe(
+          holdListVisible ? 'mobile.boardAccessibility.showBoard' : 'mobile.boardAccessibility.showList',
+        );
+        expect(toggle?.disabled).toBeFalsy();
+        expect(rows.at(-1)?.action).toBe('newClimb');
+      }
+    }
   });
 
   it('keeps every row addressable by its own index in every state', () => {

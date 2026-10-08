@@ -1,9 +1,19 @@
 // @vitest-environment jsdom
-vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
-vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
-import { describe, it, expect, vi } from 'vitest';
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => controls.nativeHeader }));
+vi.mock('../../chrome/NativeRootHeader', () => ({
+  NativeRootHeader: ({ centerContent, children }: { centerContent?: ReactNode; children?: ReactNode }) =>
+    createElement(
+      'div',
+      null,
+      createElement('div', { 'data-native-center': 'true' }, centerContent),
+      createElement('div', { 'data-native-controls': 'true' }, children),
+    ),
+}));
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+
+const controls = vi.hoisted(() => ({ nativeHeader: false }));
 
 type ViewMockProps = {
   children?: ReactNode;
@@ -75,6 +85,23 @@ function makeProps(over: Partial<Parameters<typeof CollapsingLargeTitleHeader>[0
 }
 
 describe('CollapsingLargeTitleHeader', () => {
+  beforeEach(() => {
+    controls.nativeHeader = false;
+  });
+
+  it('passes the interactive center to the native bar separately from supplementary controls', () => {
+    controls.nativeHeader = true;
+    const { container } = render(
+      <CollapsingLargeTitleHeader {...makeProps({ centerContent: <button>On the wall</button> })}>
+        <span>Profile segments</span>
+      </CollapsingLargeTitleHeader>,
+    );
+
+    expect(container.querySelector('[data-native-center]')?.textContent).toBe('On the wall');
+    expect(container.querySelector('[data-native-controls]')?.textContent).toBe('Profile segments');
+    expect(container.querySelectorAll('button')).toHaveLength(1);
+  });
+
   it('renders the leftActions / rightActions / children slots when provided', () => {
     const { container } = render(
       <CollapsingLargeTitleHeader

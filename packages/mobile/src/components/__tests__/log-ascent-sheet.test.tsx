@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, fireEvent } from '@testing-library/react';
-import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
+import { createElement, forwardRef, useState, type ReactNode, type Ref } from 'react';
 
 // LogAscentSheet wraps `onClose` in a `handleClose` that fires
 // `Quick Tick Dismissed` unless the just-closed tick was actually saved
@@ -24,6 +24,7 @@ type KeyboardListener = (event: {
   duration?: number;
 }) => void;
 const keyboardListeners = vi.hoisted(() => new Map<string, KeyboardListener>());
+const sheetControls = vi.hoisted(() => ({ snapToIndex: vi.fn() }));
 
 // Captures what LogAscentSheet handed the form hook, so the climb/board
 // plumbing can be asserted without running the real hook (tested next door in
@@ -109,6 +110,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
           'data-testid': 'simulate-expand',
           onClick: () => onChange?.(1),
         }),
+        createElement('button', {
+          key: 'collapse',
+          'data-testid': 'simulate-collapse',
+          onClick: () => onChange?.(0),
+        }),
         children,
       ]),
   ),
@@ -128,7 +134,7 @@ vi.mock('../../providers/sheet-presentation-provider', () => ({
       if (index === -1) onClose?.();
     },
     onFullyDismissed: vi.fn(),
-    handle: { present: vi.fn(), dismiss: vi.fn(), close: vi.fn() },
+    handle: { present: vi.fn(), dismiss: vi.fn(), close: vi.fn(), snapToIndex: sheetControls.snapToIndex },
   }),
 }));
 
@@ -175,14 +181,17 @@ vi.mock('../tick', async () => {
       primary,
       secondary,
       error,
+      note,
     }: {
       primary: { title: string; onPress: () => void; accessibilityLabel?: string; disabled?: boolean };
       secondary?: { title: string; onPress: () => void; accessibilityLabel?: string };
       error?: string | null;
+      note?: ReactNode;
     }) =>
       createElement(
         'div',
         { 'data-testid': 'tick-action-bar', 'data-error': error ?? '' },
+        note,
         createElement('button', {
           key: 'primary',
           'data-testid': 'simulate-save-success',
@@ -201,6 +210,27 @@ vi.mock('../tick', async () => {
             })
           : null,
       ),
+    TickNoteField: ({
+      value,
+      onChangeText,
+      compact,
+      onFocus,
+      accessibilityLabel,
+    }: {
+      value: string;
+      onChangeText: (next: string) => void;
+      compact?: boolean;
+      onFocus?: () => void;
+      accessibilityLabel: string;
+    }) =>
+      createElement('textarea', {
+        'data-testid': 'tick-note',
+        'data-compact': String(compact),
+        'aria-label': accessibilityLabel,
+        value,
+        onFocus,
+        onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => onChangeText(event.currentTarget.value),
+      }),
   };
 });
 
@@ -216,9 +246,10 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
     savedRef?: { current: boolean };
   }) => {
     formInput.current = input;
+    const [comment, setComment] = useState('');
     return {
       tickState: { quality: null, difficulty: undefined, attemptCount: 1 },
-      comment: '',
+      comment,
       climbedAt: new Date('2025-06-01T08:00:00.000Z'),
       maximumClimbedAtDate: new Date('2025-06-01T08:00:00.000Z'),
       grades: [],
@@ -233,7 +264,7 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
       onQualitySelect: vi.fn(),
       onGradeSelect: vi.fn(),
       onTriesSelect: vi.fn(),
-      onCommentChange: vi.fn(),
+      onCommentChange: setComment,
       onClimbedAtChange: vi.fn(),
       onFutureAdjusted: vi.fn(),
       onSave: () => {
@@ -246,7 +277,8 @@ vi.mock('../play-drawer/use-quick-tick-form', () => ({
 }));
 
 vi.mock('../play-drawer/QuickTickBar', () => ({
-  QuickTickBar: () => createElement('div', { 'data-testid': 'tick-fields' }),
+  QuickTickBar: ({ showNote }: { showNote?: boolean }) =>
+    createElement('div', { 'data-testid': 'tick-fields', 'data-show-note': String(showNote) }),
 }));
 
 vi.mock('@boardsesh/analytics', () => ({
@@ -300,6 +332,7 @@ beforeEach(() => {
   platformMock.Version = '26.1';
   formInput.current = null;
   vi.mocked(track).mockClear();
+  sheetControls.snapToIndex.mockClear();
 });
 
 describe('LogAscentSheet dismiss tracking', () => {
@@ -492,6 +525,75 @@ describe('LogAscentSheet detent bound', () => {
     expect(body.querySelector('[data-testid="tick-fields"]')).toBeTruthy();
     expect(body.querySelector('[data-testid="tick-action-bar"]')).toBeNull();
     expect(getByTestId('tick-action-bar')).toBeTruthy();
+  });
+});
+
+describe('LogAscentSheet pinned comment', () => {
+  it('shows a compact comment outside the scrolling body at the medium detent', () => {
+    const { getByTestId } = renderSheet();
+    const note = getByTestId('tick-note');
+    expect(note.getAttribute('data-compact')).toBe('true');
+    expect(getByTestId('sheet-body').contains(note)).toBe(false);
+    expect(getByTestId('tick-action-bar').contains(note)).toBe(true);
+    expect(getByTestId('tick-action-bar').firstElementChild).toBe(note);
+    expect(getByTestId('tick-fields').getAttribute('data-show-note')).toBe('false');
+  });
+
+  it('keeps the typed comment and focused input while expanding and collapsing', () => {
+    const { getByTestId, onClose } = renderSheet();
+    const note = getByTestId('tick-note') as HTMLTextAreaElement;
+    act(() => note.focus());
+    fireEvent.change(note, { target: { value: 'Left heel\nThen match' } });
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(getByTestId('tick-note')).toBe(note);
+    expect(note.getAttribute('data-compact')).toBe('false');
+    expect(document.activeElement).toBe(note);
+    expect(note.value).toBe('Left heel\nThen match');
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(getByTestId('simulate-collapse'));
+    expect(getByTestId('tick-note')).toBe(note);
+    expect(note.getAttribute('data-compact')).toBe('true');
+    expect(note.value).toBe('Left heel\nThen match');
+  });
+
+  it('requests the large detent on comment focus through the managed handle', () => {
+    const { getByTestId } = renderSheet();
+    fireEvent.focus(getByTestId('tick-note'));
+    expect(sheetControls.snapToIndex).toHaveBeenCalledWith(1);
+  });
+
+  it('does not snap an already expanded or Android content-sized sheet', () => {
+    const expanded = renderSheet();
+    fireEvent.click(expanded.getByTestId('simulate-expand'));
+    fireEvent.focus(expanded.getByTestId('tick-note'));
+    expect(sheetControls.snapToIndex).not.toHaveBeenCalled();
+    expanded.unmount();
+
+    platformMock.OS = 'android';
+    const android = renderSheet();
+    expect(android.getByTestId('tick-note').getAttribute('data-compact')).toBe('false');
+    fireEvent.focus(android.getByTestId('tick-note'));
+    expect(sheetControls.snapToIndex).not.toHaveBeenCalled();
+  });
+
+  it('keeps expanded sizing while dismissing, then resets on a fresh present', () => {
+    const { getByTestId, rerender } = renderSheet();
+    fireEvent.click(getByTestId('simulate-expand'));
+    fireEvent.click(getByTestId('simulate-pandown'));
+    expect(getByTestId('tick-note').getAttribute('data-compact')).toBe('false');
+    const props = {
+      onClose: vi.fn(),
+      climbUuid: 'climb-1',
+      boardName: 'kilter',
+      angle: 40,
+      isMirror: false,
+      isBenchmark: false,
+      baseAscensionistCount: 10,
+    };
+    rerender(createElement(LogAscentSheet, { ...props, visible: false }));
+    rerender(createElement(LogAscentSheet, { ...props, visible: true }));
+    expect(getByTestId('tick-note').getAttribute('data-compact')).toBe('true');
   });
 });
 

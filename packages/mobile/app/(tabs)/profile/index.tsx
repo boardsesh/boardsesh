@@ -7,6 +7,7 @@ import { scopedRouter as router } from '../../../src/lib/routing/scoped-navigati
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useProfile, useYouProfileData } from '../../../src/lib/graphql/hooks';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { ProfileTopChrome, type ProfileTabKey } from '../../../src/components/you/ProfileTopChrome';
 import { YouFilterSheet } from '../../../src/components/you/YouFilterSheet';
 import { ProgressTab } from '../../../src/components/you/ProgressTab';
@@ -26,6 +27,7 @@ function isProfileTabKey(value: string | string[] | undefined): value is Profile
 export default function YouScreen() {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const nativeRootHeader = useNativeRootHeader();
 
   const { data: profile } = useProfile();
   const userId = profile?.id;
@@ -67,7 +69,7 @@ export default function YouScreen() {
   // The measured chrome height insets each sub-tab's scroll content; seed it to
   // the safe-area top plus the islands row + segmented control so the first paint
   // already clears the chrome before onLayout reports the real height.
-  const [chromeHeight, setChromeHeight] = useState(() => insets.top + 96);
+  const [chromeHeight, setChromeHeight] = useState(() => (nativeRootHeader ? 0 : insets.top + 96));
 
   const handleSelectTab = useCallback((key: ProfileTabKey) => {
     setActiveTab(key);

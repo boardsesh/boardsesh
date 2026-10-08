@@ -55,6 +55,7 @@ export function AppMenu(props: AppMenuProps) {
   const fillColor = systemColors.fill;
   const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
   const iconName = props.iconName;
+  const plainIcon = props.iconName != null && props.iconAppearance === 'plain';
 
   // Memoised so a re-render with stable inputs doesn't hand the native Menu a fresh
   // modifier array (avoids redundant SwiftUI diffs).
@@ -69,8 +70,7 @@ export function AppMenu(props: AppMenuProps) {
             // overflow trigger sits in the same row as the close chevron and the BLE
             // lightbulb without looking like a different control.
             frame({ width: ANCHOR_MIN_HEIGHT, height: ANCHOR_MIN_HEIGHT }),
-            backgroundOverlay({ color: fillColor }),
-            clipShape('circle'),
+            ...(!plainIcon ? [backgroundOverlay({ color: fillColor }), clipShape('circle')] : []),
             buttonStyle('plain'),
             ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
             ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
@@ -85,7 +85,7 @@ export function AppMenu(props: AppMenuProps) {
             ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
             ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
           ],
-    [iconName, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
+    [iconName, plainIcon, fillColor, maxWidth, accessibilityLabel, accessibilityHint],
   );
 
   return (

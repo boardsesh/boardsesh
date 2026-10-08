@@ -48,6 +48,8 @@ type AppMenuTextAnchorProps = AppMenuSharedProps & {
 type AppMenuIconAnchorProps = AppMenuSharedProps & {
   label?: never;
   iconName: IconName;
+  /** Shared toolbar supplies the surface; retain the full icon touch target. */
+  iconAppearance?: 'filled' | 'plain';
   /** Required here: a glyph-only anchor has no visible text for a screen reader to fall back on. */
   accessibilityLabel: string;
   /** A glyph anchor never carries a caret — the glyph itself is the affordance. */

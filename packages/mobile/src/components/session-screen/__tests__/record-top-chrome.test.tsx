@@ -21,7 +21,8 @@ type ChromeProps = {
 // Captures every prop CollapsingTopChrome receives so the wrapper's forwarding +
 // gating contract can be asserted directly.
 const chrome = vi.hoisted(() => ({ props: null as ChromeProps | null }));
-const ctrl = vi.hoisted(() => ({ variant: 'glass' as 'glass' | 'material' }));
+const ctrl = vi.hoisted(() => ({ variant: 'glass' as 'glass' | 'material', nativeHeader: false }));
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => ctrl.nativeHeader }));
 // Captures the Material app bar's title + actions so the material branch can be
 // asserted without a real Paper render.
 const appbar = vi.hoisted(() => ({
@@ -123,11 +124,22 @@ vi.mock('../../PressableSurface', () => ({
     children,
     onPress,
     accessibilityLabel,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
+    style?: unknown;
+  }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        'data-pressable': accessibilityLabel ?? '',
+        'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+      },
+      children,
+    ),
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 3: 12 } }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
@@ -163,11 +175,24 @@ describe('RecordTopChrome', () => {
   beforeEach(() => {
     chrome.props = null;
     ctrl.variant = 'glass';
+    ctrl.nativeHeader = false;
     appbar.title = null;
     appbar.actions = [];
     appbar.contentPress = null;
     appbar.contentAria = null;
     appbar.contentHint = null;
+  });
+
+  it.each([
+    [false, 48],
+    [true, 44],
+  ] as const)('matches the exit control to the native header slot (%s)', (nativeHeader, expectedHeight) => {
+    ctrl.nativeHeader = nativeHeader;
+    const { container } = render(<RecordTopChrome {...makeProps({ onEndSession: vi.fn() })} />);
+    const exitButton = container.querySelector('[data-pressable="mobile.session.inEndSession"]');
+    const exitStyle = JSON.parse(exitButton?.getAttribute('data-style') ?? '{}') as { height?: number };
+
+    expect(exitStyle.height).toBe(expectedHeight);
   });
 
   it.each([

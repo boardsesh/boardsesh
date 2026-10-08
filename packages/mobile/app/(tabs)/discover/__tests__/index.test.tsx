@@ -80,6 +80,8 @@ const setterStats = vi.hoisted(() =>
 const authState = vi.hoisted(() => ({ isAuthenticated: true, isLoading: false }));
 const connectivityState = vi.hoisted(() => ({ effectiveOffline: false, reason: null as string | null }));
 const focusState = vi.hoisted(() => ({ active: true, callback: undefined as (() => void) | undefined }));
+const rootHeaderState = vi.hoisted(() => ({ native: false }));
+vi.mock('../../../../src/hooks/use-native-root-header', () => ({ useNativeRootHeader: () => rootHeaderState.native }));
 const activeBoardState = vi.hoisted(() => ({
   data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } as {
     boardType: string;
@@ -172,8 +174,26 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children, refreshControl }: { children?: ReactNode; refreshControl?: ReactNode }) =>
-    createElement('div', null, refreshControl, children),
+  ScrollView: ({
+    children,
+    refreshControl,
+    contentInsetAdjustmentBehavior,
+    contentContainerStyle,
+  }: {
+    children?: ReactNode;
+    refreshControl?: ReactNode;
+    contentInsetAdjustmentBehavior?: string;
+    contentContainerStyle?: { paddingTop?: number };
+  }) =>
+    createElement(
+      'div',
+      {
+        'data-scroll-inset': contentInsetAdjustmentBehavior,
+        'data-scroll-padding-top': contentContainerStyle?.paddingTop,
+      },
+      refreshControl,
+      children,
+    ),
   RefreshControl: ({ refreshing, onRefresh }: { refreshing?: boolean; onRefresh?: () => void }) =>
     createElement('button', { 'data-refresh-control': String(!!refreshing), onClick: onRefresh }, 'pull-to-refresh'),
   Pressable: ({
@@ -409,6 +429,7 @@ function renderHub() {
 }
 
 beforeEach(() => {
+  rootHeaderState.native = false;
   followedSettersHook.data = [];
   followedSettersHook.isLoading = false;
   followedSettersHook.isError = false;
@@ -462,6 +483,23 @@ beforeEach(() => {
 });
 
 describe('DiscoverLibrary first focus', () => {
+  it('lets UIKit own the title and top inset from the first render', () => {
+    rootHeaderState.native = true;
+    const { container, queryByText } = renderHub();
+
+    expect(queryByText('bottomTabBar.discover')).toBeNull();
+    expect(container.querySelector('[data-scroll-inset="automatic"]')?.getAttribute('data-scroll-padding-top')).toBe(
+      '0',
+    );
+  });
+
+  it('keeps the body title and measured chrome padding without a native header', () => {
+    const { container, getByText } = renderHub();
+
+    expect(getByText('bottomTabBar.discover')).toBeTruthy();
+    expect(container.querySelector('[data-scroll-inset="never"]')?.getAttribute('data-scroll-padding-top')).toBe('56');
+  });
+
   it('holds reads before first focus and keeps them enabled after blur', () => {
     focusState.active = false;
     const { rerender, queryClient } = renderHub();

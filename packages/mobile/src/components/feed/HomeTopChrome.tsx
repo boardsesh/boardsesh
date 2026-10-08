@@ -81,8 +81,8 @@ function HomeTopChromeGlass({
   if (nativeHeader)
     return (
       <NativeRootHeader
-        title={scopeTitle}
         onHeightChange={onHeightChange}
+        leftActionsStandalone
         leftActions={
           <GlassActionToolbar actionCount={1}>
             <UserAvatarToolbarAction variant="glass" />
@@ -96,16 +96,7 @@ function HomeTopChromeGlass({
             </GlassToolbarAction>
           </GlassActionToolbar>
         }
-      >
-        <View style={styles.nativeScope}>
-          <FeedScopeTitle
-            title={scopeTitle}
-            actions={scopeActions}
-            onSelectIndex={onSelectScopeIndex}
-            accessibilityHint={scopeAccessibilityHint}
-          />
-        </View>
-      </NativeRootHeader>
+      />
     );
 
   return (
@@ -217,7 +208,6 @@ function HomeTopChromeMaterial({
 }
 
 const styles = StyleSheet.create({
-  nativeScope: { alignItems: 'flex-start', paddingHorizontal: spacing[4], paddingBottom: spacing[2] },
   // Progressive blur layer (height applied inline): spans from the top of the screen
   // down to just below the islands row, behind the islands.
   topBlur: {

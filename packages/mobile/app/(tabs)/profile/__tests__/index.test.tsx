@@ -23,6 +23,7 @@ const rendered = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
