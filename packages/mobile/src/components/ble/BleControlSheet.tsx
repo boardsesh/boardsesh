@@ -72,10 +72,9 @@ function BleControlSheet({
   }, [onDisconnect, onClose]);
 
   return (
-    // Size to content rather than a fixed snap point: with the auto-disconnect
-    // row added, a fixed '32%' clips the bottom Disconnect action on smaller
-    // screens and at larger accessibility text sizes.
-    <ModalSheet visible={visible} enableDynamicSizing onClose={onClose} enablePanDownToClose>
+    // A bounded large detent lets the scroll view reach every native Toggle and
+    // the Disconnect action at accessibility text sizes on a small iPhone.
+    <ModalSheet visible={visible} snapPoints={['90%']} scrollable onClose={onClose} enablePanDownToClose>
       <View style={styles.content}>
         {/* The app's native SwitchRow (SwiftUI Toggle / Compose Switch) instead of
             raw RN Switches, which render system green on iOS: HIG Color asks for
