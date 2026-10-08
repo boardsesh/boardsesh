@@ -8,10 +8,12 @@ import { spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { MarqueeText } from '../MarqueeText';
 import { DraftChip } from '../DraftChip';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { largeContentTitle } from './accessory-large-content-title';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -90,7 +92,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
   const { boardConfig } = useDrawerHost();
   const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  const { openGesture } = useAccessoryClimbTap();
+  const { openGesture, openPlay } = useAccessoryClimbTap();
 
   const showThumbnail = placement === 'regular' && boardConfig !== null;
   const rowHeight = placement === 'inline' ? glassSize.inline : glassSize.standard;
@@ -104,7 +106,14 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
         {/* tapClip reserves the leading slot via paddingLeft (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}
         <View style={styles.tapClip} accessibilityRole="button" accessibilityLabel={climb.name}>
-          <View style={styles.labelSlot}>
+          {/* The label is capped at CHROME_LABEL_MAX_FONT_SCALE to fit the
+              platter, so at accessibility text sizes a long press shows it
+              full size in the Large Content Viewer, as UIKit's own tab bar does. */}
+          <LargeContentViewer
+            style={styles.labelSlot}
+            title={largeContentTitle(climb.name, currentFormattedGrade)}
+            onActivate={openPlay}
+          >
             <ClimbLabel
               climb={climb}
               labelColor={systemColors.label}
@@ -112,7 +121,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
               showThumbnail={showThumbnail}
               boardConfig={boardConfig}
             />
-          </View>
+          </LargeContentViewer>
         </View>
       </GestureDetector>
       <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>

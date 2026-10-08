@@ -1,0 +1,8 @@
+{
+  "name": "@boardsesh/accessibility-ui-module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iOS accessibility settings React Native does not expose: whether Differentiate Without Color is on (and when it changes), and a view that shows its title in the Large Content Viewer when the climber uses an accessibility text size.",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

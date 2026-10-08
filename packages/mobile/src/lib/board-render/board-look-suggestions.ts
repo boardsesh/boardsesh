@@ -23,12 +23,19 @@ import { dismissBoardLookSuggestion, type BoardLookSuggestionDismissals } from '
  * feature exists to avoid, so the greyscale rule below suggests role glyphs —
  * a shape channel drawn on the phone — and nothing else.
  *
- * Two rules ship, and only two. Both work on BOTH platforms:
+ * Three rules ship. R1 and R2 work on BOTH platforms; R3 is iOS only, because
+ * Android has no setting it could read:
  *
  * | Rule | Signal                                                    | Suggests           |
  * | ---- | --------------------------------------------------------- | ------------------ |
  * | R1   | iOS "Increase Contrast" / Android "High contrast text"     | the `max-contrast` preset |
  * | R2   | Greyscale display (both platforms)                        | `roleGlyphs: true` |
+ * | R3   | iOS "Differentiate Without Color"                          | `roleGlyphs: true` |
+ *
+ * R3 is HIG Color ("don't rely on colour alone") for the Aura drawing, where
+ * role glyphs are the shape channel. The Classic drawing needs no banner: there
+ * the setting switches untouched roles to per-role marker shapes on its own
+ * (`hold-color-overrides.ts`).
  *
  * Deliberately NOT acted on:
  * - **Invert colours** — a glare/light-sensitivity preference, and iOS Smart
@@ -44,7 +51,7 @@ import { dismissBoardLookSuggestion, type BoardLookSuggestionDismissals } from '
  *   avoids an AppState-polling requirement.
  */
 
-export type BoardLookSuggestionId = 'increaseContrast' | 'grayscale';
+export type BoardLookSuggestionId = 'increaseContrast' | 'grayscale' | 'differentiateWithoutColor';
 
 export type BoardLookSuggestion = {
   id: BoardLookSuggestionId;
@@ -71,6 +78,7 @@ export type BoardLookSuggestionInputs = {
 // i18n-keep common:mobile.settings.boardLook.suggestion.grayscale.title
 // i18n-keep common:mobile.settings.boardLook.suggestion.grayscale.body
 // i18n-keep common:mobile.settings.boardLook.suggestion.grayscale.apply
+// i18n-keep common:mobile.settings.boardLook.suggestion.differentiateWithoutColor.title
 // i18n-keep common:mobile.settings.boardLook.suggestion.dismiss
 // i18n-keep common:mobile.settings.boardLook.suggestion.dismissAccessibility
 const KEY_ROOT = 'mobile.settings.boardLook.suggestion';
@@ -113,6 +121,22 @@ export function pickBoardLookSuggestion(inputs: BoardLookSuggestionInputs): Boar
   // Never offer to flip a climber who explicitly chose Classic. They answered
   // this question already.
   if (requestedBoardRenderMode(settings) !== 'aura') return null;
+
+  // R3 before R2: both offer role glyphs, and this one names the exact setting
+  // that asked for a cue other than colour. The body and button are R2's, which
+  // already say what glyphs do without naming greyscale.
+  if (
+    signals.differentiateWithoutColor === 'on' &&
+    !dismissed.differentiateWithoutColor &&
+    settings.boardsesh.roleGlyphs === false
+  ) {
+    return {
+      id: 'differentiateWithoutColor',
+      titleI18nKey: `${KEY_ROOT}.differentiateWithoutColor.title`,
+      bodyI18nKey: `${KEY_ROOT}.grayscale.body`,
+      applyI18nKey: `${KEY_ROOT}.grayscale.apply`,
+    };
+  }
 
   if (signals.grayscale === 'on' && !dismissed.grayscale && settings.boardsesh.roleGlyphs === false) {
     return {

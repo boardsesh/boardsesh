@@ -17,6 +17,7 @@ import type { OsAccessibilitySignals } from './use-os-accessibility-signals';
 const WEB_SIGNALS: OsAccessibilitySignals = Object.freeze({
   increaseContrast: 'unknown',
   grayscale: 'unknown',
+  differentiateWithoutColor: 'unknown',
   ready: true,
 });
 

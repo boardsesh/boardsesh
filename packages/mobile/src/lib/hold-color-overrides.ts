@@ -25,6 +25,19 @@ export const HOLD_COLOR_OVERRIDE_ROLES = ['STARTING', 'HAND', 'FINISH', 'FOOT'] 
 export const HOLD_MARKER_SHAPES = ['circle', 'triangle-up', 'triangle-down', 'square', 'diamond', 'octagon'] as const;
 export const DEFAULT_HOLD_COLOR_SIGNATURE = 'default';
 export const DEFAULT_HOLD_MARKER_SHAPE: HoldMarkerShape = 'circle';
+/**
+ * The per-role shapes a climber gets without asking when iOS "Differentiate
+ * Without Color" is on (HIG Color: don't rely on colour alone; WCAG 1.4.1).
+ * Hand keeps the circle because it is most of the lit holds; start points up,
+ * foot points down, finish is the one square. Any shape the climber picks in
+ * Board look > Accessibility still wins over these.
+ */
+export const ROLE_DIFFERENTIATED_HOLD_SHAPES: Readonly<Record<HoldColorOverrideRole, HoldMarkerShape>> = {
+  STARTING: 'triangle-up',
+  HAND: 'circle',
+  FINISH: 'square',
+  FOOT: 'triangle-down',
+};
 export const DEFAULT_HOLD_BRUSH_THICKNESS = 1;
 export const MIN_HOLD_BRUSH_THICKNESS = 0.5;
 export const MAX_HOLD_BRUSH_THICKNESS = 2;
@@ -46,7 +59,12 @@ const DEFAULT_HOLD_MARKER_OVERRIDES: HoldMarkerOverrides = {
 
 type HoldColorSnapshot = {
   overrides: HoldColorOverrides;
+  /** What the climber chose and what is stored. Shapes here are explicit choices only. */
   markerOverrides: HoldMarkerOverrides;
+  /**
+   * The shapes every surface draws: the climber's choices over the system
+   * default. Only non-circle entries; an absent role draws a circle.
+   */
   shapes: HoldShapeOverrides;
   brushThickness: number;
   shapeSize: number;
@@ -57,6 +75,9 @@ type HoldColorSnapshot = {
 
 let currentMarkerOverrides: HoldMarkerOverrides = DEFAULT_HOLD_MARKER_OVERRIDES;
 let hasLoaded = false;
+// Set from the OS (`hold-shape-system-default.ts`), never stored: the climber's
+// choices are, and this only fills the roles they left alone.
+let systemPrefersRoleShapes = false;
 let snapshot: HoldColorSnapshot = {
   overrides: currentMarkerOverrides.colors,
   markerOverrides: currentMarkerOverrides,
@@ -117,7 +138,10 @@ export function sanitizeHoldShapeOverrides(rawOverrides: unknown): HoldShapeOver
   const nextOverrides: HoldShapeOverrides = {};
   for (const [role, rawShape] of Object.entries(rawOverrides)) {
     if (!isHoldColorOverrideRole(role) || !isHoldMarkerShape(rawShape)) continue;
-    if (rawShape !== DEFAULT_HOLD_MARKER_SHAPE) nextOverrides[role] = rawShape;
+    // A stored circle is kept: with Differentiate Without Color on, it is the
+    // climber saying "circle" over the per-role default, and dropping it would
+    // hand that role back to the system.
+    nextOverrides[role] = rawShape;
   }
   return nextOverrides;
 }
@@ -166,7 +190,9 @@ export function buildHoldRenderOverrideSignature(overrides: HoldMarkerOverrides)
 
   for (const role of HOLD_COLOR_OVERRIDE_ROLES) {
     const shape = sanitizedOverrides.shapes[role];
-    if (shape) markerParts.push(`${role.toLowerCase()}-${shape}`);
+    // A circle draws exactly what an absent shape draws, so it must not split
+    // the render cache.
+    if (shape && shape !== DEFAULT_HOLD_MARKER_SHAPE) markerParts.push(`${role.toLowerCase()}-${shape}`);
   }
 
   if (sanitizedOverrides.brushThickness !== DEFAULT_HOLD_BRUSH_THICKNESS) {
@@ -193,6 +219,51 @@ export function hasHoldMarkerOverrides(overrides: HoldMarkerOverrides): boolean 
   return buildHoldRenderOverrideSignature(overrides) !== DEFAULT_HOLD_COLOR_SIGNATURE;
 }
 
+/**
+ * The shape a role draws when the climber has not picked one: a circle, or the
+ * per-role shape while the OS asks to differentiate without colour.
+ */
+export function getDefaultHoldRoleShape(
+  role: HoldColorOverrideRole,
+  prefersRoleShapes: boolean = systemPrefersRoleShapes,
+): HoldMarkerShape {
+  return prefersRoleShapes ? ROLE_DIFFERENTIATED_HOLD_SHAPES[role] : DEFAULT_HOLD_MARKER_SHAPE;
+}
+
+/**
+ * The shapes to draw: each stored choice, else the role's default. Circles are
+ * left out, because every reader treats an absent role as a circle and the
+ * render signature must not change for a render that looks the same.
+ */
+export function resolveEffectiveHoldShapes(
+  storedShapes: HoldShapeOverrides,
+  prefersRoleShapes: boolean,
+): HoldShapeOverrides {
+  const resolved: HoldShapeOverrides = {};
+  for (const role of HOLD_COLOR_OVERRIDE_ROLES) {
+    const shape = storedShapes[role] ?? getDefaultHoldRoleShape(role, prefersRoleShapes);
+    if (shape !== DEFAULT_HOLD_MARKER_SHAPE) resolved[role] = shape;
+  }
+  return resolved;
+}
+
+/** True when the climber has changed anything here, including an explicit circle. */
+export function hasStoredHoldMarkerChoices(overrides: HoldMarkerOverrides): boolean {
+  return Object.keys(compactHoldMarkerOverrides(overrides)).length > 0;
+}
+
+/**
+ * Tell the store whether the OS asks to differentiate without colour. Roles
+ * the climber left alone switch between circles and per-role shapes; the
+ * render signature follows, so no cached board art drawn under the other
+ * answer is reused.
+ */
+export function setSystemPrefersRoleShapes(enabled: boolean): void {
+  if (systemPrefersRoleShapes === enabled) return;
+  systemPrefersRoleShapes = enabled;
+  notify();
+}
+
 function compactHoldMarkerOverrides(overrides: HoldMarkerOverrides): Partial<HoldMarkerOverrides> {
   const sanitizedOverrides = sanitizeHoldMarkerOverrides(overrides);
   const storedOverrides: Partial<HoldMarkerOverrides> = {};
@@ -208,15 +279,18 @@ function compactHoldMarkerOverrides(overrides: HoldMarkerOverrides): Partial<Hol
 }
 
 function notify(): void {
+  const effectiveShapes = resolveEffectiveHoldShapes(currentMarkerOverrides.shapes, systemPrefersRoleShapes);
   snapshot = {
     overrides: currentMarkerOverrides.colors,
     markerOverrides: currentMarkerOverrides,
-    shapes: currentMarkerOverrides.shapes,
+    shapes: effectiveShapes,
     brushThickness: currentMarkerOverrides.brushThickness,
     shapeSize: currentMarkerOverrides.shapeSize,
     loaded: hasLoaded,
     signature: buildHoldColorOverrideSignature(currentMarkerOverrides.colors),
-    renderSignature: buildHoldRenderOverrideSignature(currentMarkerOverrides),
+    // Built from the DRAWN shapes, not the stored ones: this is the render cache
+    // key, so it has to change when the OS setting changes what is drawn.
+    renderSignature: buildHoldRenderOverrideSignature({ ...currentMarkerOverrides, shapes: effectiveShapes }),
   };
   for (const listener of listeners) listener();
 }
@@ -275,18 +349,15 @@ export async function setHoldShapeOverridePreference(
 ): Promise<void> {
   if (!hasLoaded) await loadHoldMarkerOverrides();
   const nextShapes: HoldShapeOverrides = { ...currentMarkerOverrides.shapes };
-  if (shape === DEFAULT_HOLD_MARKER_SHAPE) {
-    delete nextShapes[role];
-  } else {
-    nextShapes[role] = shape;
-  }
+  // Every selection is explicit, even when it matches today's OS default.
+  nextShapes[role] = shape;
   await setHoldMarkerOverridesPreference({ ...currentMarkerOverrides, shapes: nextShapes });
 }
 
 export async function setHoldRoleMarkerOverridePreference(
   role: HoldColorOverrideRole,
   color: string | null,
-  shape: HoldMarkerShape,
+  shape?: HoldMarkerShape,
 ): Promise<void> {
   if (!hasLoaded) await loadHoldMarkerOverrides();
 
@@ -299,11 +370,8 @@ export async function setHoldRoleMarkerOverridePreference(
   }
 
   const nextShapes: HoldShapeOverrides = { ...currentMarkerOverrides.shapes };
-  if (shape === DEFAULT_HOLD_MARKER_SHAPE) {
-    delete nextShapes[role];
-  } else {
-    nextShapes[role] = shape;
-  }
+  // An untouched picker omits shape so colour-only saves keep following the OS.
+  if (shape !== undefined) nextShapes[role] = shape;
 
   await setHoldMarkerOverridesPreference({
     ...currentMarkerOverrides,
@@ -365,7 +433,7 @@ export function useHoldColorOverrides(): {
   renderSignature: string;
   setRoleOverride: (role: HoldColorOverrideRole, color: string | null) => void;
   setRoleShapeOverride: (role: HoldColorOverrideRole, shape: HoldMarkerShape) => void;
-  setRoleMarkerOverride: (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => void;
+  setRoleMarkerOverride: (role: HoldColorOverrideRole, color: string | null, shape?: HoldMarkerShape) => void;
   setBrushThickness: (brushThickness: number) => void;
   setShapeSize: (shapeSize: number) => void;
   setOverrides: (nextOverrides: HoldColorOverrides) => void;
@@ -387,7 +455,7 @@ export function useHoldColorOverrides(): {
   }, []);
 
   const setRoleMarkerOverride = useCallback(
-    (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
+    (role: HoldColorOverrideRole, color: string | null, shape?: HoldMarkerShape) => {
       void setHoldRoleMarkerOverridePreference(role, color, shape);
     },
     [],
@@ -457,6 +525,7 @@ export function getEffectiveHoldStateColor(
   return isHoldColorOverrideRole(state) ? (overrides[state] ?? fallbackColor) : fallbackColor;
 }
 
+/** Pass the store's `shapes` (already resolved against the system default). */
 export function getEffectiveHoldRoleShape(role: HoldColorOverrideRole, overrides: HoldShapeOverrides): HoldMarkerShape {
   return overrides[role] ?? DEFAULT_HOLD_MARKER_SHAPE;
 }

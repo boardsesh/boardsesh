@@ -186,6 +186,9 @@
             "body": "Les glyphes de rôle ajoutent une forme sur chaque prise allumée : départ, main, fin et pied restent distincts sans couleur. Les LED de ta board, elles, ne changent pas.",
             "apply": "Activer les glyphes de rôle"
           },
+          "differentiateWithoutColor": {
+            "title": "« Différencier sans couleur » est activé"
+          },
           "dismiss": "Pas maintenant",
           "dismissAccessibility": "Ignorer cette suggestion"
         },

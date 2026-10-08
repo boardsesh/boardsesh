@@ -15,12 +15,14 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { Text } from '../Text';
 import { MarqueeText } from '../MarqueeText';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { DraftChip } from '../DraftChip';
 import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './AccessoryBarSurface';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { largeContentTitle } from './accessory-large-content-title';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -89,7 +91,7 @@ export function ClimbCapsule({
   const { systemColors, brandColors } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
-  const { openGesture, currentItem } = useAccessoryClimbTap();
+  const { openGesture, openPlay, currentItem } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
   const { inAppBoardConnection, bluetooth } = useBoardConnectionState();
@@ -153,7 +155,13 @@ export function ClimbCapsule({
           accessibilityRole="button"
           accessibilityLabel={currentClimb.name}
         >
-          <View style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}>
+          {/* Capped at CHROME_LABEL_MAX_FONT_SCALE; the Large Content Viewer
+              shows it full size on a long press at accessibility text sizes. */}
+          <LargeContentViewer
+            style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}
+            title={largeContentTitle(currentClimb.name, grades.current)}
+            onActivate={openPlay}
+          >
             <ClimbLabel
               climb={currentClimb}
               labelColor={systemColors.label}
@@ -162,7 +170,7 @@ export function ClimbCapsule({
               showThumbnail={showThumbnail}
               boardConfig={boardConfig}
             />
-          </View>
+          </LargeContentViewer>
         </View>
       </GestureDetector>
       {/* Leading board control — outside the tap target so it never opens the
