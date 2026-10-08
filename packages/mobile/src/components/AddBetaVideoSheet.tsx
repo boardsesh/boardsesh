@@ -1,6 +1,7 @@
 import { useScopedSheetError } from '../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from './InlineSheetError';
 import { useUnsavedSheetGuard } from '../hooks/use-unsaved-sheet-guard';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
 // "Share your beta" modal — the outbound half of the beta-video flow. It hands
 // the climber a ready-to-paste, board-aware caption (with the climb name baked
 // in so the share-back auto-match can recover the climb), copies it, opens
@@ -12,7 +13,7 @@ import { useUnsavedSheetGuard } from '../hooks/use-unsaved-sheet-guard';
 // ModalSheet coordinator presents it above the play drawer's own native modal.
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';

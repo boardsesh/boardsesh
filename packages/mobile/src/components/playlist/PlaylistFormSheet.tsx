@@ -1,9 +1,10 @@
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { ModalSheet } from '../ModalSheet';

@@ -1,11 +1,8 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
-import BottomSheet, {
-  BottomSheetView,
-  BottomSheetTextInput,
-  type BottomSheetMethods,
-} from '@expo/ui/community/bottom-sheet';
+import BottomSheet, { BottomSheetView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useTranslation } from 'react-i18next';

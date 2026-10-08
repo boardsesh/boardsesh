@@ -2,9 +2,10 @@ import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from '../InlineSheetError';
 import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { StyleSheet, View } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';

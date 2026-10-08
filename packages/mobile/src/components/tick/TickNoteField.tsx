@@ -1,3 +1,4 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 // One note field for both tick sheets. A single styled `TextInput`, never a
 // bordered wrapper `View` around a `flex: 1` input.
 //
@@ -17,7 +18,7 @@
 // test next door pins it (#4642).
 import React, { useCallback, useRef, useState } from 'react';
 import { StyleSheet, type TextInput } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTheme } from '../../providers/theme-provider';
 import { useSheetScrollIntoView } from '../sheet-scroll-into-view';
 

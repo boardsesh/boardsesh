@@ -792,6 +792,9 @@ brand violet. These native inputs require a new binary; an OTA cannot add them.
 ### Full accessibility text and board alternatives
 
 Content `Text`, native buttons, and RN inputs accept the full system text range.
+Use `AccessibleTextInput` for ordinary inputs and `AccessibleBottomSheetTextInput`
+in sheets; both share Bold Text styling, and the sheet wrapper preserves Expo
+keyboard handling and the native input ref.
 Only fixed chrome opts into an explicit cap; capped climb labels expose Large
 Content Viewer. Bold Text changes apply live and are reread on foregrounding.
 Reduce Motion and Bold Text use ref-counted external stores: one native setting

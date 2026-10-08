@@ -1,6 +1,7 @@
 import { useMemo, useRef, type ComponentType } from 'react';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
 import { type FlatListProps } from 'react-native';
-import { BottomSheetTextInput, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { ModalSheet } from './ModalSheet';

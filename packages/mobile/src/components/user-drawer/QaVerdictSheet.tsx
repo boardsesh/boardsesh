@@ -1,7 +1,8 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
 import { StyleSheet } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import * as Updates from 'expo-updates';
 import { useTranslation } from 'react-i18next';
 import type { QaVerdictKind } from '@boardsesh/shared-schema';

@@ -1,10 +1,11 @@
 import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from '../InlineSheetError';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
 import { type RefObject, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { BottomSheetTextInput, type BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { Text } from '../Text';

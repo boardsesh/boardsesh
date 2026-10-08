@@ -1,3 +1,4 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { PressableSurface } from '../PressableSurface';
 // Picks the gym a board sits in, so it lands on the map under that gym instead
@@ -11,7 +12,7 @@ import { PressableSurface } from '../PressableSurface';
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { BottomSheetFlatList, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
 import { useNearbyGyms } from '../../lib/graphql/hooks';
