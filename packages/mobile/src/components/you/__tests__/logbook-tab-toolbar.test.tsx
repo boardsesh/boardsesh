@@ -89,6 +89,22 @@ vi.mock('../../SearchHeader', () => ({
 }));
 
 // LogbookFilterSheet: capture onApply and record that it mounted (opened).
+vi.mock('../../search/FilterButton', () => ({
+  FILTER_FAB_SIZE: 48,
+  FilterButton: ({ activeFilterCount, onPress }: { activeFilterCount: number; onPress: () => void }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        'aria-label':
+          activeFilterCount > 0 ? `mobile.search.filterCountAria:${activeFilterCount}` : 'mobile.search.filters',
+        'data-testid': 'filter-button',
+        'data-active-count': activeFilterCount,
+      },
+      activeFilterCount > 0 ? activeFilterCount : null,
+    ),
+}));
+
 vi.mock('../LogbookFilterSheet', () => ({
   LogbookFilterSheet: ({
     onApply,
@@ -210,11 +226,11 @@ describe('LogbookTab toolbar', () => {
     expect(captured.feedInput).toMatchObject({ climbName: 'crimps' });
   });
 
-  it('opens the filter sheet from the amber filter button', () => {
+  it('opens the filter sheet from the accessible button beside search', () => {
     const { getByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
     expect(captured.sheetMounted).toBe(false);
 
-    fireEvent.click(getByLabelText('mobile.logbook.filter'));
+    fireEvent.click(getByLabelText('mobile.search.filters'));
     expect(captured.sheetMounted).toBe(true);
   });
 
@@ -248,7 +264,7 @@ describe('LogbookTab toolbar', () => {
 
   it('applies sheet filters/sort into the feed input', () => {
     const { getByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
-    fireEvent.click(getByLabelText('mobile.logbook.filter'));
+    fireEvent.click(getByLabelText('mobile.search.filters'));
     expect(captured.onApply).not.toBeNull();
 
     // Apply attempts-only + the Hardest preset.
@@ -263,7 +279,7 @@ describe('LogbookTab toolbar', () => {
     const { queryByTestId, queryByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
 
     expect(queryByTestId('search-header')).toBeNull();
-    expect(queryByLabelText('mobile.logbook.filter')).toBeNull();
+    expect(queryByLabelText('mobile.search.filters')).toBeNull();
     expect(captured.sheetMounted).toBe(false);
     // The feed still runs, falling back to the default Latest sort.
     expect(captured.feedInput).toMatchObject({ sortBy: 'recent', sortOrder: 'desc' });

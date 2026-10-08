@@ -1,5 +1,5 @@
 // Profile navigation stays separate from the filters in the Progress section.
-import { useCallback, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Appbar } from 'react-native-paper';
@@ -21,6 +21,8 @@ export type ProfileTopChromeProps = {
   onSelectTab: (key: ProfileTabKey) => void;
   /** Report the measured chrome height so each sub-tab can inset its top padding. */
   onHeightChange: (height: number) => void;
+  /** Controls below the tabs, included in the same measured header. */
+  children?: ReactNode;
 };
 
 export const ProfileTopChrome = createVariantComponent('ProfileTopChrome', {
@@ -42,7 +44,7 @@ function useSegmentOptions() {
   );
 }
 
-function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange }: ProfileTopChromeProps) {
+function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange, children }: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
   const { systemColors, m3 } = useTheme();
   const insets = useSafeAreaInsets();
@@ -90,11 +92,12 @@ function ProfileTopChromeMaterial({ activeTab, onSelectTab, onHeightChange }: Pr
       <View pointerEvents="box-none" style={[styles.materialTabsRow, { borderTopColor: m3.outlineVariant }]}>
         <Tabs options={tabOptions} selectedKey={activeTab} onSelect={onSelectTab} accessibilityLabel={dashboardTitle} />
       </View>
+      {children}
     </View>
   );
 }
 
-function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange }: ProfileTopChromeProps) {
+function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange, children }: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
 
   const dashboardTitle = t('metadata.dashboard.title');
@@ -131,6 +134,7 @@ function ProfileTopChromeGlass({ activeTab, onSelectTab, onHeightChange }: Profi
           />
         )}
       </View>
+      {children}
     </CollapsingLargeTitleHeader>
   );
 }

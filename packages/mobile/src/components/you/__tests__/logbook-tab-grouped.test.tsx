@@ -167,6 +167,7 @@ vi.mock('../LogbookEditSheet', () => ({
 }));
 vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
 vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
+vi.mock('../../search/FilterButton', () => ({ FILTER_FAB_SIZE: 48, FilterButton: () => null }));
 vi.mock('../../../lib/haptics', () => haptics);
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { black: '#000' } }));
 vi.mock('../../Text', () => ({ Text: () => null }));

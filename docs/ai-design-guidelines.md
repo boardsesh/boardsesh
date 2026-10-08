@@ -404,6 +404,12 @@ comparison initially shows one row before "Show all". Material keeps a neutral t
 collapsed rows. These are Boardsesh hierarchy choices, not an Apple-prescribed row count; expansion
 stays virtualized and the all-board total remains independent of progress filters.
 
+Profile's Logbook keeps its profile tabs, search/filter row, sort chips, and any expanded facet
+rail in one measured header. On Liquid Glass, the full-height results list uses the native title
+inset plus padding for these supplementary controls; Material places the results viewport below
+the entire opaque header. The filter button stays beside search, outside the horizontally scrolling
+chips. Public profiles keep their toolbar in the page's normal flow.
+
 Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
 keeps `systemColors.fill`. Do not apply a violet background to every content card.

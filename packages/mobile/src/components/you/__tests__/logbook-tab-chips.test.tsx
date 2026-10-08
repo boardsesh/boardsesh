@@ -29,12 +29,11 @@ import {
 // Captures what LogbookTab hands the (mocked) chip row + filter sheet, so the test
 // can assert the Liquid-Glass gating, the inline-search layout, and the showSort
 // hand-off without native components. The chip row exposes its onSelectPreset +
-// onOpenFilters + the committed preset; the sheet exposes its showSort prop.
+// the committed preset; the sheet exposes its showSort prop.
 const captured = vi.hoisted(() => ({
   chipMounted: false,
   chipPreset: undefined as LogbookSortPreset | null | undefined,
   onSelectPreset: null as ((preset: LogbookSortPreset) => void) | null,
-  onOpenFilters: null as (() => void) | null,
   chipFilters: undefined as LogbookFilterState | undefined,
   onToggleFacet: null as ((facet: 'grade' | 'angle' | 'show' | 'date') => void) | null,
   onUpdateFilters: null as ((partial: Partial<LogbookFilterState>) => void) | null,
@@ -106,14 +105,12 @@ vi.mock('../LogbookChipRow', () => ({
   LogbookChipRow: ({
     sortPreset,
     onSelectPreset,
-    onOpenFilters,
     filters,
     onToggleFacet,
     onUpdateFilters,
   }: {
     sortPreset: LogbookSortPreset | null;
     onSelectPreset: (preset: LogbookSortPreset) => void;
-    onOpenFilters: () => void;
     filters: LogbookFilterState;
     onToggleFacet: (facet: 'grade' | 'angle' | 'show' | 'date') => void;
     onUpdateFilters: (partial: Partial<LogbookFilterState>) => void;
@@ -121,7 +118,6 @@ vi.mock('../LogbookChipRow', () => ({
     captured.chipMounted = true;
     captured.chipPreset = sortPreset;
     captured.onSelectPreset = onSelectPreset;
-    captured.onOpenFilters = onOpenFilters;
     captured.chipFilters = filters;
     captured.onToggleFacet = onToggleFacet;
     captured.onUpdateFilters = onUpdateFilters;
@@ -132,6 +128,22 @@ vi.mock('../LogbookChipRow', () => ({
 vi.mock('../LogbookFacetRail', () => ({
   LogbookFacetRail: ({ openFacet }: { openFacet: string | null }) =>
     openFacet ? createElement('div', { 'data-testid': 'facet-rail', 'data-facet': openFacet }) : null,
+}));
+
+vi.mock('../../search/FilterButton', () => ({
+  FILTER_FAB_SIZE: 48,
+  FilterButton: ({ activeFilterCount, onPress }: { activeFilterCount: number; onPress: () => void }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        'aria-label':
+          activeFilterCount > 0 ? `mobile.search.filterCountAria:${activeFilterCount}` : 'mobile.search.filters',
+        'data-testid': 'filter-button',
+        'data-active-count': activeFilterCount,
+      },
+      activeFilterCount > 0 ? activeFilterCount : null,
+    ),
 }));
 
 vi.mock('../LogbookFilterSheet', () => ({
@@ -205,7 +217,6 @@ beforeEach(() => {
   captured.chipMounted = false;
   captured.chipPreset = undefined;
   captured.onSelectPreset = null;
-  captured.onOpenFilters = null;
   captured.chipFilters = undefined;
   captured.onToggleFacet = null;
   captured.onUpdateFilters = null;
@@ -219,25 +230,34 @@ beforeEach(() => {
 });
 
 describe('LogbookTab chip row', () => {
-  it('renders the chip row with inline search and no separate filter button on iOS Liquid Glass', () => {
-    const { getByTestId, queryByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
+  it('renders exactly one accessible filter opener beside search on iOS Liquid Glass', () => {
+    const { getByTestId, getAllByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
 
     expect(getByTestId('chip-row')).toBeTruthy();
     expect(getByTestId('search-header')).toBeTruthy();
     expect(captured.chipPreset).toBe('recent');
     expect(captured.chipFilters).toEqual(DEFAULT_LOGBOOK_FILTERS);
-    // The filter entry moved into the chip row, so no round filter button here.
-    expect(queryByLabelText('mobile.logbook.filter')).toBeNull();
+    expect(getAllByLabelText('mobile.search.filters')).toHaveLength(1);
+    expect(getByTestId('filter-button').parentElement).toBe(getByTestId('search-header').parentElement);
   });
 
-  it("opens the sheet via the chip row's onOpenFilters and hands it showSort={false}", () => {
-    render(createElement(LogbookTab, { userId: 'user-1' }));
-    expect(captured.onOpenFilters).not.toBeNull();
+  it('opens the sheet from the dedicated button and hides its Sort block on glass', () => {
+    const { getByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
 
-    act(() => captured.onOpenFilters?.());
+    fireEvent.click(getByLabelText('mobile.search.filters'));
     expect(captured.sheetMounted).toBe(true);
-    // Sort lives in the chips, so the sheet drops its Sort block.
     expect(captured.sheetShowSort).toBe(false);
+  });
+
+  it('shows an active count for filters while excluding the sort preset', () => {
+    const { getByTestId, getByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
+    act(() => captured.onSelectPreset?.('hardest'));
+    expect(getByTestId('filter-button').getAttribute('data-active-count')).toBe('0');
+
+    act(() => captured.onUpdateFilters?.({ benchmarkOnly: true, minGrade: 10 }));
+    expect(getByTestId('filter-button').getAttribute('data-active-count')).toBe('2');
+    fireEvent.click(getByLabelText('mobile.search.filterCountAria:2'));
+    expect(captured.sheetMounted).toBe(true);
   });
 
   it('does not render the chip row on Material, keeps the filter button + sheet sort', () => {
@@ -246,7 +266,7 @@ describe('LogbookTab chip row', () => {
 
     expect(queryByTestId('chip-row')).toBeNull();
 
-    fireEvent.click(getByLabelText('mobile.logbook.filter'));
+    fireEvent.click(getByLabelText('mobile.search.filters'));
     expect(captured.sheetShowSort).toBe(true);
   });
 
@@ -256,7 +276,7 @@ describe('LogbookTab chip row', () => {
 
     expect(queryByTestId('chip-row')).toBeNull();
 
-    fireEvent.click(getByLabelText('mobile.logbook.filter'));
+    fireEvent.click(getByLabelText('mobile.search.filters'));
     expect(captured.sheetShowSort).toBe(true);
   });
 
@@ -265,7 +285,7 @@ describe('LogbookTab chip row', () => {
     const { queryByTestId, queryByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
 
     expect(queryByTestId('chip-row')).toBeNull();
-    expect(queryByLabelText('mobile.logbook.filter')).toBeNull();
+    expect(queryByLabelText('mobile.search.filters')).toBeNull();
   });
 
   it('commits the selected preset live through setPreset and tracks the sort change', () => {
@@ -304,13 +324,13 @@ describe('LogbookTab chip row', () => {
   });
 
   it('closes the open facet rail when the filter sheet opens', () => {
-    const { queryByTestId } = render(createElement(LogbookTab, { userId: 'user-1' }));
+    const { queryByTestId, getByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
     act(() => captured.onToggleFacet?.('grade'));
     expect(queryByTestId('facet-rail')?.getAttribute('data-facet')).toBe('grade');
 
     // Opening the full sheet dismisses any open inline rail (no lingering rail
     // under the sheet, no over-tall toolbar after it closes).
-    act(() => captured.onOpenFilters?.());
+    fireEvent.click(getByLabelText('mobile.search.filters'));
     expect(queryByTestId('facet-rail')).toBeNull();
   });
 

@@ -159,8 +159,3 @@ export function buildLogbookFacets(
     { key: 'date', label: dateLabel, active: dateActive },
   ];
 }
-
-/** True when any facet is active — drives the Filter chip's amber. */
-export function anyFilterActive(facets: readonly LogbookFacet[]): boolean {
-  return facets.some((facet) => facet.active);
-}

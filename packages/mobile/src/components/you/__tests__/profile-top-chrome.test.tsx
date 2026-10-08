@@ -20,6 +20,8 @@ import type { ProfileTabKey, ProfileTopChromeProps } from '../ProfileTopChrome';
 const ctrl = vi.hoisted(() => ({
   fontScale: 1,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  materialMeasure: undefined as ((event: { nativeEvent: { layout: { height: number } } }) => void) | undefined,
+  glassMeasure: undefined as ((height: number) => void) | undefined,
 }));
 // Captures the props the SegmentedControl receives so the test can assert its
 // option set / selected key / which variant branch rendered it.
@@ -47,7 +49,10 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scroll-tabs': true }, children),
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, onLayout }: { children?: ReactNode; onLayout?: typeof ctrl.materialMeasure }) => {
+    if (onLayout) ctrl.materialMeasure = onLayout;
+    return createElement('div', null, children);
+  },
   StyleSheet: {
     flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
@@ -149,18 +154,22 @@ vi.mock('../../chrome', () => ({
     leftActions,
     rightActions,
     children,
+    onHeightChange,
   }: {
     leftActions?: ReactNode;
     rightActions?: ReactNode;
     children?: ReactNode;
-  }) =>
-    createElement(
+    onHeightChange: (height: number) => void;
+  }) => {
+    ctrl.glassMeasure = onHeightChange;
+    return createElement(
       'div',
       { 'data-header': 'true' },
       createElement('div', { 'data-slot': 'left' }, leftActions),
       createElement('div', { 'data-slot': 'right' }, rightActions),
       createElement('div', { 'data-slot': 'children' }, children),
-    ),
+    );
+  },
   GlassActionToolbar: ({ children }: { children?: ReactNode }) =>
     createElement('div', { 'data-toolbar': 'true' }, children),
   GlassToolbarAction: ({
@@ -194,6 +203,8 @@ describe('ProfileTopChrome', () => {
   beforeEach(() => {
     ctrl.fontScale = 1;
     ctrl.variant = 'liquidGlass';
+    ctrl.materialMeasure = undefined;
+    ctrl.glassMeasure = undefined;
     segments.entries = [];
     materialTabs.entries = [];
   });
@@ -277,6 +288,30 @@ describe('ProfileTopChrome', () => {
     });
   });
 });
+
+for (const variant of ['liquidGlass', 'material'] as const) {
+  it(`measures supplemental controls with tabs and removes them on tab switch for ${variant}`, () => {
+    ctrl.variant = variant;
+    const onHeightChange = vi.fn();
+    const props = makeProps({ activeTab: 'logbook', onHeightChange });
+    const { container, rerender } = render(
+      <ProfileTopChrome {...props}>
+        <div data-logbook-controls="true">Search and filters</div>
+      </ProfileTopChrome>,
+    );
+    const tabElement = container.querySelector('[data-segmented], [data-material-tabs]');
+    const controls = container.querySelector('[data-logbook-controls]');
+    expect(controls).not.toBeNull();
+    expect(tabElement!.compareDocumentPosition(controls!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    if (variant === 'liquidGlass') ctrl.glassMeasure?.(180);
+    else ctrl.materialMeasure?.({ nativeEvent: { layout: { height: 280 } } });
+    expect(onHeightChange).toHaveBeenLastCalledWith(variant === 'liquidGlass' ? 180 : 280);
+
+    rerender(<ProfileTopChrome {...props} activeTab="sessions" />);
+    expect(container.querySelector('[data-logbook-controls]')).toBeNull();
+  });
+}
 
 for (const variant of ['liquidGlass', 'material'] as const) {
   it(`keeps all five tabs scrollable at accessibility sizes on ${variant}`, () => {
