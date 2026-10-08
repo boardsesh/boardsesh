@@ -1,3 +1,4 @@
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -94,6 +95,9 @@ export function CreateClimbScreen({
   });
 
   const [longPressHoldId, setLongPressHoldId] = useState<number | null>(null);
+  const [holdPopoverPoint, setHoldPopoverPoint] = useState<WindowAnchorPoint | null>(null);
+  const editorRootRef = useRef<View>(null);
+  const holdAnchorRevision = useRef(0);
   // Read by the back handler, so opening the sheet does not re-register it.
   const holdRoleOpenRef = useRef(false);
   holdRoleOpenRef.current = longPressHoldId !== null;
@@ -229,8 +233,24 @@ export function CreateClimbScreen({
     return () => subscription.remove();
   }, [isFocused, handleClose]);
 
-  const handleLongPress = useCallback((holdId: number) => setLongPressHoldId(holdId), []);
-  const closeHoldRole = useCallback(() => setLongPressHoldId(null), []);
+  const handleLongPress = useCallback((holdId: number, anchor?: WindowAnchorPoint) => {
+    const revision = ++holdAnchorRevision.current;
+    if (anchor && editorRootRef.current) {
+      editorRootRef.current.measureInWindow((rootX, rootY) => {
+        if (revision !== holdAnchorRevision.current) return;
+        setHoldPopoverPoint({ x: anchor.x - rootX, y: anchor.y - rootY });
+        setLongPressHoldId(holdId);
+      });
+    } else {
+      setHoldPopoverPoint(null);
+      setLongPressHoldId(holdId);
+    }
+  }, []);
+  const closeHoldRole = useCallback(() => {
+    holdAnchorRevision.current += 1;
+    setLongPressHoldId(null);
+    setHoldPopoverPoint(null);
+  }, []);
 
   const handleLoadDraft = useCallback(
     (climb: Climb) => {
@@ -300,7 +320,7 @@ export function CreateClimbScreen({
   }
 
   return (
-    <View style={styles.container}>
+    <View ref={editorRootRef} collapsable={false} style={styles.container}>
       <CreateDrawer
         board={board}
         controller={controller}
@@ -315,6 +335,7 @@ export function CreateClimbScreen({
 
       <HoldRoleSheet
         holdId={longPressHoldId}
+        anchorPoint={holdPopoverPoint}
         boardName={board.boardName as BoardName}
         litUpHoldsMap={controller.litUpHoldsMap}
         startingCount={controller.startingCount}

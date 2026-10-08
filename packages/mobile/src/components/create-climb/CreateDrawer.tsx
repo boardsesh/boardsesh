@@ -1,3 +1,4 @@
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import {
   useCallback,
   useEffect,
@@ -58,7 +59,7 @@ type CreateDrawerProps = {
   board: CreateClimbBoard;
   controller: Controller;
   boardHolds: BoardHolds;
-  onLongPressHold: (holdId: number) => void;
+  onLongPressHold: (holdId: number, anchor?: WindowAnchorPoint) => void;
   onLoadDraft: (climb: Climb) => void;
   /** Leave the editor (the header's X). The draft is kept. */
   onClose: () => void;

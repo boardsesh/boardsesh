@@ -1,3 +1,4 @@
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import { type MutableRefObject, useCallback, useMemo, useRef } from 'react';
 import { Gesture, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, type SharedValue } from 'react-native-reanimated';
@@ -28,7 +29,7 @@ type UseRestHoldTapGestureOptions = {
    *  per-hold taps. */
   onTap?: (holdId: number) => void;
   /** Long-press handler (role sheet). Falls back to onTap when omitted. */
-  onLongPress?: (holdId: number) => void;
+  onLongPress?: (holdId: number, anchor?: WindowAnchorPoint) => void;
   /** The board's ancestor pinch. Both legs declare themselves simultaneous with
    *  it so a finger resting on the overlay can't stall pinch-to-zoom. */
   pinchRef?: MutableRefObject<GestureType | undefined>;
@@ -102,12 +103,16 @@ export function useRestHoldTapGesture({
     const holdId = resolveHoldAtPoint(boardX, boardY, current.hitTargets);
     if (holdId != null) current.onTap(holdId);
   }, []);
-  const handleLongPress = useCallback((boardX: number, boardY: number) => {
+  const handleLongPress = useCallback((boardX: number, boardY: number, windowX?: number, windowY?: number) => {
     const current = callbacksRef.current;
     const handler = current.onLongPress ?? current.onTap;
     if (!handler) return;
     const holdId = resolveHoldAtPoint(boardX, boardY, current.hitTargets);
-    if (holdId != null) handler(holdId);
+    if (holdId != null) {
+      if (windowX != null && windowY != null && Number.isFinite(windowX) && Number.isFinite(windowY))
+        handler(holdId, { x: windowX, y: windowY });
+      else handler(holdId);
+    }
   }, []);
 
   return useMemo(() => {
@@ -131,7 +136,7 @@ export function useRestHoldTapGesture({
       .onStart((event) => {
         'worklet';
         if (isPinchingSV?.value) return;
-        runOnJS(handleLongPress)(event.x, event.y);
+        runOnJS(handleLongPress)(event.x, event.y, event.absoluteX, event.absoluteY);
       });
 
     // Applied per-leg — the relation method is on the individual gestures, not

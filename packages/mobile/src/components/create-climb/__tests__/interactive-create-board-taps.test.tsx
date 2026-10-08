@@ -131,6 +131,17 @@ describe('InteractiveCreateBoard hold taps', () => {
     expect(boardImage?.childElementCount).toBe(0);
   });
 
+  it('forwards a long-pressed hold location to its native role popover at every zoom', () => {
+    const { onLongPressHold } = renderBoard();
+    const anchor = { x: 220, y: 360 };
+    for (const options of [restTapCalls.at(-1), zoomedTapCalls.at(-1)]) {
+      (options?.onLongPress as (holdId: number, point: { x: number; y: number }) => void)(20, anchor);
+    }
+    expect(onLongPressHold).toHaveBeenCalledTimes(2);
+    expect(onLongPressHold).toHaveBeenNthCalledWith(1, 20, anchor);
+    expect(onLongPressHold).toHaveBeenNthCalledWith(2, 20, anchor);
+  });
+
   it('feeds the at-rest overlay one hit circle per hold plus both hold handlers', () => {
     const { onPaint, onLongPressHold } = renderBoard();
     const restOptions = restTapCalls.at(-1);

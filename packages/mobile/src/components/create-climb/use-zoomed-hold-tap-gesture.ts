@@ -1,3 +1,4 @@
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import { type MutableRefObject, useMemo, useRef } from 'react';
 import { Gesture, type ComposedGesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, type DerivedValue, type SharedValue } from 'react-native-reanimated';
@@ -35,7 +36,7 @@ type UseZoomedHoldTapGestureOptions = {
   onTap?: (holdId: number) => void;
   /** Long-press handler (role sheet). Falls back to onTap when omitted, matching
    *  the at-rest overlay. */
-  onLongPress?: (holdId: number) => void;
+  onLongPress?: (holdId: number, anchor?: WindowAnchorPoint) => void;
   /** The board's ancestor pinch. The overlay's tap/long-press declare themselves
    *  simultaneous with it so a pinch-to-zoom-further while already zoomed isn't
    *  blocked by this overlay. */
@@ -97,12 +98,16 @@ export function useZoomedHoldTapGesture({
     const holdId = resolveHoldAtPoint(boardX, boardY, current.hitTargets);
     if (holdId != null) current.onTap(holdId);
   };
-  const handleLongPress = (boardX: number, boardY: number) => {
+  const handleLongPress = (boardX: number, boardY: number, windowX?: number, windowY?: number) => {
     const current = callbacksRef.current;
     const handler = current.onLongPress ?? current.onTap;
     if (!handler) return;
     const holdId = resolveHoldAtPoint(boardX, boardY, current.hitTargets);
-    if (holdId != null) handler(holdId);
+    if (holdId != null) {
+      if (windowX != null && windowY != null && Number.isFinite(windowX) && Number.isFinite(windowY))
+        handler(holdId, { x: windowX, y: windowY });
+      else handler(holdId);
+    }
   };
 
   return useMemo(() => {
@@ -134,7 +139,7 @@ export function useZoomedHoldTapGesture({
         const cy = containerHeightSV.value / 2;
         const boardX = (event.x - translateXSV.value - cx) / scaleSV.value + cx;
         const boardY = (event.y - translateYSV.value - cy) / scaleSV.value + cy;
-        runOnJS(handleLongPress)(boardX, boardY);
+        runOnJS(handleLongPress)(boardX, boardY, event.absoluteX, event.absoluteY);
       });
 
     // Keep a re-pinch (while already zoomed) unblocked by this overlay's

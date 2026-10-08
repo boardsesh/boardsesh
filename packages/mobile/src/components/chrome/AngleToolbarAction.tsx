@@ -36,14 +36,17 @@ export function AngleToolbarAction() {
   const angles = useBoardAngleOptions(activeBoard?.boardType as BoardName | undefined);
   const usesPopover = Platform.OS === 'ios' && isPad && widthClass === 'regular';
 
+  const [popoverPresentation, setPopoverPresentation] = useState(usesPopover);
+
   const canAdjust = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
 
   const handleOpen = useCallback(() => {
     if (!activeBoard || activeBoard.isAngleAdjustable === false || activeBoard.angle == null) return;
     hapticLight();
+    setPopoverPresentation(usesPopover);
     setSelectedAngle(activeBoard.angle);
     setVisible(true);
-  }, [activeBoard]);
+  }, [activeBoard, usesPopover]);
 
   const handleClose = useCallback(() => setVisible(false), []);
 

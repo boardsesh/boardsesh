@@ -1,3 +1,4 @@
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import React, {
   useCallback,
   useImperativeHandle,
@@ -43,7 +44,7 @@ type InteractiveCreateBoardProps = {
   holdTargets: BoardHoldTarget[];
   litUpHoldsMap: LitUpHoldsMap;
   onPaint: (holdId: number) => void;
-  onLongPressHold: (holdId: number) => void;
+  onLongPressHold: (holdId: number, anchor?: WindowAnchorPoint) => void;
   mirrored?: boolean;
   /** Exact on-screen board size, computed by the drawer up front so the board
    *  renders immediately (no onLayout round-trip while the modal animates in). */
@@ -192,8 +193,9 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     [ghostIds, onGhostPress, onPaint],
   );
   const handleLongPress = useCallback(
-    (holdId: number) => {
+    (holdId: number, anchor?: WindowAnchorPoint) => {
       if (onGhostPress && ghostIds.has(holdId)) onGhostPress(holdId);
+      else if (anchor) onLongPressHold(holdId, anchor);
       else onLongPressHold(holdId);
     },
     [ghostIds, onGhostPress, onLongPressHold],

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { useDeviceLayout } from '../../hooks/use-device-layout';
+import { PointAnchoredPopover } from '../navigation/PointAnchoredPopover';
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
@@ -17,6 +20,8 @@ import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 type HoldRoleSheetProps = {
   /** The long-pressed hold, or null when the sheet is closed. */
   holdId: number | null;
+  /** Actual hold/accessible row location inside the editor root. */
+  anchorPoint?: WindowAnchorPoint | null;
   boardName: BoardName;
   litUpHoldsMap: LitUpHoldsMap;
   startingCount: number;
@@ -33,6 +38,7 @@ type HoldRoleSheetProps = {
  */
 export function HoldRoleSheet({
   holdId,
+  anchorPoint,
   boardName,
   litUpHoldsMap,
   startingCount,
@@ -50,14 +56,25 @@ export function HoldRoleSheet({
     shapeSize,
   } = useHoldColorOverrides();
   const sheetRef = useRef<BottomSheet>(null);
+  const { isPad, widthClass } = useDeviceLayout();
+  const { height: windowHeight } = useWindowDimensions();
+  const presentationRef = useRef({ holdId: null as number | null, popover: false });
+  if (presentationRef.current.holdId !== holdId) {
+    presentationRef.current = {
+      holdId,
+      popover: holdId !== null && !!anchorPoint && isPad && widthClass === 'regular',
+    };
+  }
+  const usesPopover = presentationRef.current.popover;
 
   useEffect(() => {
+    if (usesPopover) return;
     if (holdId != null) {
       sheetRef.current?.snapToIndex(0);
     } else {
       sheetRef.current?.close();
     }
-  }, [holdId]);
+  }, [holdId, usesPopover]);
 
   const currentState: HoldState | undefined = holdId != null ? litUpHoldsMap[holdId]?.state : undefined;
 
@@ -71,62 +88,83 @@ export function HoldRoleSheet({
     onClose();
   };
 
+  const content = (
+    <View style={styles.content}>
+      <Text variant="headline" style={styles.title}>
+        {t('mobile.create.holdRole.title')}
+      </Text>
+      <View style={styles.grid}>
+        {paintRoles.map((role) => {
+          const isCurrent = currentState === role;
+          const atCap = (role === 'STARTING' && startingCount >= 2) || (role === 'FINISH' && finishCount >= 2);
+          const disabled = atCap && !isCurrent;
+          const color = brushRoleColor(boardName, role, holdColorOverrides);
+          const markerDiameter = 20 * shapeSize;
+          return (
+            <Pressable
+              key={role}
+              onPress={() => handleSelect(role)}
+              disabled={disabled}
+              accessibilityRole="button"
+              accessibilityLabel={roleLabels[role]}
+              accessibilityState={{ selected: isCurrent, disabled }}
+              style={[
+                styles.cell,
+                { backgroundColor: systemColors.fill },
+                isCurrent && { borderColor: color, borderWidth: 2 },
+                disabled && styles.cellDisabled,
+              ]}
+            >
+              <View style={styles.swatch}>
+                <HoldMarkerShapeSvg
+                  shape={getEffectiveHoldStateShape(role, holdShapeOverrides)}
+                  color={color}
+                  diameter={markerDiameter}
+                  strokeWidth={Math.max(2, 2 * brushThickness)}
+                  fillOpacity={isCurrent ? 0.32 : 0}
+                />
+              </View>
+              <Text variant="subheadline" style={styles.cellLabel}>
+                {roleLabels[role]}
+              </Text>
+            </Pressable>
+          );
+        })}
+        <Pressable
+          onPress={() => handleSelect('OFF')}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.create.holdRole.clear')}
+          style={[styles.cell, { backgroundColor: systemColors.fill }]}
+        >
+          <Icon name="eraser" size={20} color={systemColors.label} />
+          <Text variant="subheadline" style={styles.cellLabel}>
+            {t('mobile.create.holdRole.clear')}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+  if (usesPopover && anchorPoint)
+    return (
+      <PointAnchoredPopover
+        point={anchorPoint}
+        visible={holdId !== null}
+        onClose={onClose}
+        width={360}
+        content={
+          <ScrollView
+            style={{ maxHeight: Math.max(240, windowHeight - 160) }}
+            contentContainerStyle={{ paddingBottom: spacing[4] }}
+          >
+            {content}
+          </ScrollView>
+        }
+      />
+    );
+
   return (
     <Sheet ref={sheetRef} snapPoints={snapPoints} onClose={onClose} enablePanDownToClose scrollable>
-      <View style={styles.content}>
-        <Text variant="headline" style={styles.title}>
-          {t('mobile.create.holdRole.title')}
-        </Text>
-        <View style={styles.grid}>
-          {paintRoles.map((role) => {
-            const isCurrent = currentState === role;
-            const atCap = (role === 'STARTING' && startingCount >= 2) || (role === 'FINISH' && finishCount >= 2);
-            const disabled = atCap && !isCurrent;
-            const color = brushRoleColor(boardName, role, holdColorOverrides);
-            const markerDiameter = 20 * shapeSize;
-            return (
-              <Pressable
-                key={role}
-                onPress={() => handleSelect(role)}
-                disabled={disabled}
-                accessibilityRole="button"
-                accessibilityLabel={roleLabels[role]}
-                accessibilityState={{ selected: isCurrent, disabled }}
-                style={[
-                  styles.cell,
-                  { backgroundColor: systemColors.fill },
-                  isCurrent && { borderColor: color, borderWidth: 2 },
-                  disabled && styles.cellDisabled,
-                ]}
-              >
-                <View style={styles.swatch}>
-                  <HoldMarkerShapeSvg
-                    shape={getEffectiveHoldStateShape(role, holdShapeOverrides)}
-                    color={color}
-                    diameter={markerDiameter}
-                    strokeWidth={Math.max(2, 2 * brushThickness)}
-                    fillOpacity={isCurrent ? 0.32 : 0}
-                  />
-                </View>
-                <Text variant="subheadline" style={styles.cellLabel}>
-                  {roleLabels[role]}
-                </Text>
-              </Pressable>
-            );
-          })}
-          <Pressable
-            onPress={() => handleSelect('OFF')}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.create.holdRole.clear')}
-            style={[styles.cell, { backgroundColor: systemColors.fill }]}
-          >
-            <Icon name="eraser" size={20} color={systemColors.label} />
-            <Text variant="subheadline" style={styles.cellLabel}>
-              {t('mobile.create.holdRole.clear')}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+      {content}
     </Sheet>
   );
 }

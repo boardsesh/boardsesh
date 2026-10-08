@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 
+const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -31,7 +32,7 @@ vi.mock('../../launch-update/hold-until-launch-ready', () => ({
   holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
 }));
 vi.mock('react-native', () => ({
-  Platform: { OS: 'android' },
+  Platform: platform,
   Pressable: ({
     accessibilityLabel,
     children,
@@ -63,6 +64,7 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('../../HeaderActionButtons', () => ({ HeaderLeadingButton: () => null }));
 vi.mock('expo-router', () => ({
+  Stack: { Screen: () => null },
   router: routerMock,
   useSegments: () => segmentsMock.current,
 }));
@@ -229,7 +231,7 @@ vi.mock('../QaVerdictSheet', () => ({
 
 import { DISCORD_INVITE_URL } from '../../../lib/discord';
 import { UserDrawerProvider, useUserDrawer } from '../UserDrawerProvider';
-import UserDrawerScreen from '../../../../app/user-drawer';
+import UserDrawerScreen, { UserDrawerScreen as AccountMenu } from '../../../../app/user-drawer';
 
 function DrawerTrigger() {
   const { openUserDrawer } = useUserDrawer();
@@ -253,6 +255,7 @@ function Harness({ showScreen }: { showScreen: boolean }) {
 }
 
 beforeEach(() => {
+  platform.OS = 'android';
   browser.openBrowserAsync.mockClear();
   routerMock.push.mockClear();
   routerMock.dismissTo.mockClear();
@@ -591,5 +594,28 @@ describe('user-drawer crowdsourced-QA rows', () => {
     rerender(<Harness showScreen={false} />);
 
     expect(routerMock.push).toHaveBeenCalledWith('/qa/brief');
+  });
+});
+
+describe('native Account navigation', () => {
+  it('opens the native account sheet from the iOS avatar', () => {
+    platform.OS = 'ios';
+    render(<Harness showScreen={false} />);
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.push).toHaveBeenCalledWith('/account');
+  });
+  it('pushes Settings and Edit profile inside Account without dismissing the sheet', () => {
+    platform.OS = 'ios';
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    fireEvent.click(screen.getByText('Settings'));
+    expect(routerMock.push).toHaveBeenCalledWith('/account/settings');
+    fireEvent.click(screen.getByLabelText('profile.editAction'));
+    expect(routerMock.push).toHaveBeenCalledWith('/account/settings/edit');
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(reanimated.closeCallbacks).toHaveLength(0);
   });
 });
