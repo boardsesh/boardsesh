@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-08T07:14:52.893Z",
+  "generatedAt": "2026-10-08T08:31:36.543Z",
   "entries": [
+    {
+      "prNumber": 6240,
+      "category": "new",
+      "title": "Save for a new climb now sits top right, out of the tool row",
+      "mergedAt": "2026-10-08T08:29:11Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6240"
+    },
     {
       "prNumber": 6221,
       "category": "new",

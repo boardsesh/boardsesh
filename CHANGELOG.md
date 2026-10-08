@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Save for a new climb now sits top right, out of the tool row ([#6240](https://github.com/boardsesh/boardsesh/pull/6240))
 - Spray wall photos keep every pixel of a 24 MP phone shot, so holds stay crisp when you zoom right in to mark them ([#6221](https://github.com/boardsesh/boardsesh/pull/6221))
 - See every look for your spray wall before you pick one ([#6215](https://github.com/boardsesh/boardsesh/pull/6215))
   Photo, Wall only and Holds only now show as previews of your own wall, right in the add-a-wall flow
