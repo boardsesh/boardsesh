@@ -1692,6 +1692,9 @@ importers:
       '@boardsesh/climb-filters':
         specifier: workspace:*
         version: link:../shared/climb-filters
+      '@boardsesh/consent':
+        specifier: workspace:*
+        version: link:../shared/consent
       '@boardsesh/create-climb-react':
         specifier: workspace:*
         version: link:../shared/create-climb-react

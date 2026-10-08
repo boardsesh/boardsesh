@@ -96,3 +96,7 @@ describe('SiteFooter server-rendered HTML', () => {
     expect(renderToString(<SiteFooter />)).toContain('<footer');
   });
 });
+
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: true, openChoices: vi.fn() }),
+}));

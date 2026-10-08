@@ -176,3 +176,7 @@ describe('SiteFooter', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+vi.mock('@/app/components/consent/consent-provider', () => ({
+  useConsent: () => ({ granted: true, openChoices: vi.fn() }),
+}));

@@ -1167,3 +1167,16 @@ For a bad renderer deployment, roll back the web and Railway releases together;
 the compatibility path remains routed to Railway. Grey-cloud `ws` only for a
 Cloudflare proxy incident, because doing so removes edge caching from both image
 endpoints and sends their full load directly to Railway.
+
+
+### Analytics consent and shared HTML caches
+
+Consent does not vary the HTML cache key. The root layout always includes the
+banner and analytics components; a pre-paint client script parses the
+boardsesh-consent cookie and marks html[data-consent]. CSS hides an already
+answered banner. Never branch server rendering, CDN headers or cache keys on
+this cookie: opposite choices must receive identical list/climb HTML and
+resolve their SDK behavior locally. The cookie is Secure, SameSite=Lax,
+Path=/, one year, and Domain=.boardsesh.com on production so www and the Expo
+browser app share the choice. Embeds show no banner and send no product
+analytics; kiosks show no banner and use minimal operational telemetry.

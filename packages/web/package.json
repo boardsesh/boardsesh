@@ -40,6 +40,7 @@
     "@boardsesh/board-renderer-wasm": "workspace:*",
     "@boardsesh/climb-actions": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
+    "@boardsesh/consent": "workspace:*",
     "@boardsesh/create-climb-react": "workspace:*",
     "@boardsesh/crypto": "workspace:*",
     "@boardsesh/db": "workspace:*",

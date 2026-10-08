@@ -1,3 +1,4 @@
+import { CONSENT_COOKIE_NAME, serializeConsentCookieValue } from '@boardsesh/consent';
 import { chromium, devices, type FullConfig } from '@playwright/test';
 
 const BOARD_URL = '/kilter/original/12x12-square/screw_bolt/40/list';
@@ -33,6 +34,19 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     // sends Playwright's default `HeadlessChrome` UA, which the crawler
     // policy's automation default-deny refuses in a production build.
     const context = await browser.newContext({ ...devices['Desktop Chrome'], baseURL });
+    await context.addCookies([
+      {
+        name: CONSENT_COOKIE_NAME,
+        value: serializeConsentCookieValue({
+          analytics: 'denied',
+          version: 1,
+          source: 'web',
+          decidedAt: new Date().toISOString(),
+        }),
+        url: baseURL,
+        sameSite: 'Lax',
+      },
+    ]);
     const page = await context.newPage();
 
     // 1. Server reachable + board route renders climb rows

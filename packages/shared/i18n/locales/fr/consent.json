@@ -1,0 +1,17 @@
+{
+  "title": "Nous aider à améliorer Boardsesh ?",
+  "body": "Autorise les statistiques d’utilisation, les diagnostics de performance et l’enregistrement facultatif des sessions pour nous aider à comprendre ce qui fonctionne. « Non merci » les désactive. Ton choix s’applique partout où tu es connecté et tu peux le modifier à tout moment.",
+  "allow": "Autoriser",
+  "deny": "Non merci",
+  "privacyLink": "Lire notre politique de confidentialité",
+  "privacyChoices": "Choix de confidentialité",
+  "settingsTitle": "Statistiques d’utilisation",
+  "settingsBody": "Choisis si tu souhaites partager des statistiques d’utilisation et des diagnostics de performance. Tu peux continuer à grimper avec les deux choix.",
+  "enabled": "Les statistiques sont activées",
+  "disabled": "Les statistiques sont désactivées",
+  "close": "Fermer",
+  "syncError": "Ton choix est enregistré ici. Nous le synchroniserons avec ton compte quand tu seras de nouveau en ligne.",
+  "mobileTitle": "Ta confidentialité, ton choix",
+  "mobileBody": "Autorise les statistiques d’utilisation, les diagnostics de performance et l’enregistrement facultatif des sessions pour nous aider à améliorer Boardsesh. « Non merci » les désactive. Ton choix s’applique partout où tu es connecté. Tu peux le modifier dans les paramètres à tout moment.",
+  "analyticsLabel": "Partager les statistiques"
+}

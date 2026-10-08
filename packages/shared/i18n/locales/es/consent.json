@@ -1,0 +1,17 @@
+{
+  "title": "¿Nos ayudas a mejorar Boardsesh?",
+  "body": "Permite la analítica de producto, los diagnósticos de rendimiento y la grabación opcional de sesiones para ayudarnos a ver qué funciona. «No, gracias» los mantiene desactivados. Tu elección se aplica donde hayas iniciado sesión y puedes cambiarla cuando quieras.",
+  "allow": "Permitir",
+  "deny": "No, gracias",
+  "privacyLink": "Lee nuestra política de privacidad",
+  "privacyChoices": "Opciones de privacidad",
+  "settingsTitle": "Analítica",
+  "settingsBody": "Elige si quieres compartir analítica de producto y diagnósticos de rendimiento. Puedes seguir escalando con cualquiera de las opciones.",
+  "enabled": "La analítica está activada",
+  "disabled": "La analítica está desactivada",
+  "close": "Cerrar",
+  "syncError": "Tu elección está guardada aquí. La sincronizaremos con tu cuenta cuando vuelvas a tener conexión.",
+  "mobileTitle": "Tu privacidad, tu elección",
+  "mobileBody": "Permite la analítica de producto, los diagnósticos de rendimiento y la grabación opcional de sesiones para ayudarnos a mejorar Boardsesh. «No, gracias» los mantiene desactivados. Tu elección se aplica donde hayas iniciado sesión. Puedes cambiarla en Ajustes cuando quieras.",
+  "analyticsLabel": "Compartir analítica"
+}

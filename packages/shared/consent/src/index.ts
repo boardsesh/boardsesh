@@ -18,3 +18,13 @@ export {
   parseConsentCookieValue,
   serializeConsentCookieValue,
 } from './consent-cookie';
+
+export {
+  createConsentSyncCoordinator,
+  parsePendingConsentDecision,
+  type ConsentSyncInput,
+  type PendingConsentDecision,
+  type ConsentSyncSnapshot,
+  type ConsentSyncOptions,
+  type ConsentSyncCoordinator,
+} from './consent-sync';

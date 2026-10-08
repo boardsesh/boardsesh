@@ -917,7 +917,7 @@
   },
   "privacy": {
     "title": "Política de Privacidad",
-    "lastUpdatedProductAnalytics": "Última actualización: mayo de 2026",
+    "lastUpdatedProductAnalytics": "Última actualización: 8 de octubre de 2026",
     "intro1": "Boardsesh es una app de código abierto para controlar plafones de entrenamiento de escalada (Kilter, Tension, MoonBoard) por Bluetooth. Esta política explica qué datos recogemos, por qué y qué hacemos con ellos.",
     "intro2ProductAnalytics": "Resumen rápido: solo recogemos lo necesario para que la app funcione. No vendemos tus datos, no mostramos anuncios y no compartimos datos con anunciantes ni con brokers de datos.",
     "collect": {
@@ -929,7 +929,9 @@
       "locationLabel": "Ubicación.",
       "locationBody": "Si concedes permiso de ubicación, usamos tu ubicación aproximada para ayudarte a descubrir sesiones de Modo Fiesta cercanas. No rastreamos tu ubicación en segundo plano ni guardamos historial.",
       "productAnalyticsLabel": "Analítica de producto.",
-      "productAnalyticsBody": "Usamos PostHog y Vercel Analytics para entender el uso de las funciones, las visitas a páginas, el rendimiento y dónde se atasca la app. Algunos eventos de producto registrados con la sesión iniciada se asocian a tu cuenta de Boardsesh para entender qué funciones resultan útiles. No usamos estos datos para publicidad."
+      "productAnalyticsBody": "Usamos PostHog solo si permites la analítica, para el uso de funciones, las visitas a páginas, el rendimiento y la grabación opcional de sesiones de la app. La analítica con sesión iniciada puede vincularse a tu cuenta de Boardsesh. Con tu permiso, la atribución de instalaciones en Android puede incluir la referencia de instalación de Play Store y datos de campañas. No usamos estos datos para publicidad.",
+      "serviceStatsLabel": "Estadísticas propias del servicio.",
+      "serviceStatsBody": "Registramos el día de actividad y la plataforma de las cuentas con sesión iniciada en nuestra propia base de datos, independientemente del consentimiento para analítica, por interés legítimo para entender el uso del servicio. Conservamos esos registros durante 13 meses. Solo enviamos a PostHog recuentos diarios, semanales y mensuales agregados. No contamos como usuarios únicos a quienes rechazan la analítica sin iniciar sesión."
     },
     "bluetooth": {
       "title": "Bluetooth",
@@ -942,20 +944,27 @@
     },
     "thirdParty": {
       "title": "Servicios de terceros",
-      "vercelLabel": "Vercel.",
-      "vercelBody": "Usamos Vercel para alojamiento y analítica. Vercel procesa solicitudes para servir la app y recoge métricas de uso anónimas. Consulta ",
-      "vercelLink": "la política de privacidad de Vercel",
       "posthogLabel": "PostHog.",
-      "posthogBody": "Usamos PostHog para analítica de producto, incluidos eventos del lado del servidor para funciones nativas como las Live Activities de iOS. Consulta ",
+      "posthogBody": "PostHog procesa la analítica opcional de producto y la grabación de sesiones de la app en Estados Unidos. También enviamos eventos operativos mínimos sin identificadores de cuenta para la estabilidad del servicio, las pantallas de los rocódromos y el estado de las actualizaciones, además de recuentos agregados de usuarios activos. Consulta ",
       "posthogLink": "la política de privacidad de PostHog",
       "auroraLabel": "API de Aurora Climbing.",
       "auroraBody": "Si vinculas tu cuenta de Aurora Climbing (usada por los plafones Kilter y Tension), sincronizamos tus datos de escalada con los servidores de Aurora para que tu logbook sea coherente entre apps. Esta sincronización solo ocurre cuando tú la inicias. Consulta ",
       "auroraLink": "Aurora Climbing",
-      "auroraBodyEnd": " para sus prácticas de datos."
+      "auroraBodyEnd": " para sus prácticas de datos.",
+      "hostingLabel": "Railway y Cloudflare.",
+      "hostingLink": "la política de privacidad de Railway",
+      "cloudflareLink": "la política de privacidad de Cloudflare",
+      "sentryLabel": "Sentry.",
+      "sentryLink": "la política de privacidad de Sentry",
+      "expoLabel": "Expo EAS Observe.",
+      "expoLink": "la política de privacidad de Expo",
+      "hostingBody": "Usamos Railway para alojar la aplicación y la base de datos, y Cloudflare para distribuir contenido, alojar la app del navegador y almacenar archivos multimedia. Estos proveedores procesan las solicitudes necesarias para ofrecer Boardsesh. Consulta ",
+      "sentryBody": "Usamos Sentry para supervisar errores por interés legítimo y mantener Boardsesh funcionando. La recopilación predeterminada de información personal está desactivada; limitamos los informes de errores y eliminamos los campos sensibles. El servicio sigue activo si rechazas la analítica. Consulta ",
+      "expoBody": "Si permites la analítica, EAS Observe puede enviar diagnósticos de rendimiento de la app, incluido el identificador de instalación del cliente de Expo (expo.eas_client.id), cuando los diagnósticos estén activados. Consulta "
     },
     "sharing": {
       "title": "Compartir de datos",
-      "body1ProductAnalytics": "No vendemos tus datos. No mostramos anuncios. No compartimos tu información con anunciantes ni con brokers de datos. Los únicos datos que se comparten externamente son los descritos arriba (alojamiento y analítica de Vercel, analítica de producto de PostHog y sincronización con Aurora Climbing cuando lo activas tú).",
+      "body1ProductAnalytics": "No vendemos tus datos, no mostramos anuncios ni compartimos información con anunciantes o intermediarios de datos. Los proveedores descritos arriba procesan datos para alojamiento, almacenamiento, fiabilidad del servicio y analítica opcional. La sincronización con Aurora Climbing funciona cuando la activas.",
       "body2": "Otros usuarios de Boardsesh pueden ver tu nombre de usuario, tu perfil y tus problemas registrados si participas en funciones sociales como el Modo Fiesta. Esto se ve en la app y forma parte de cómo funciona el producto."
     },
     "retention": {
@@ -989,6 +998,11 @@
       "body2Start": "Boardsesh es código abierto. Puedes ver exactamente qué datos recoge la app y cómo se procesan leyendo el código fuente en ",
       "body2Link": "GitHub",
       "body2End": "."
+    },
+    "choices": {
+      "title": "Cookies y opciones de privacidad",
+      "storageBody": "El almacenamiento necesario incluye las cookies de inicio de sesión de NextAuth, tu idioma (boardsesh-locale), las preferencias del dispositivo y la cookie boardsesh-consent. La cookie de consentimiento dura un año y se comparte entre boardsesh.com y app.boardsesh.com. Permitir la analítica activa el almacenamiento de identificadores y eventos de PostHog (ph_* en la web y almacenamiento del SDK en la app). Rechazar o retirar el permiso elimina los identificadores de analítica y detiene la analítica opcional, las grabaciones, EAS Observe y los eventos de atribución de instalaciones. Las opciones de funciones siguen usando un cliente en memoria; con sesión iniciada pueden usar tu identificador de cuenta.",
+      "changeBody": "Usa Opciones de privacidad en el pie de la web o Analítica en Ajustes para cambiar tu respuesta. Guardamos tu decisión en el dispositivo y, con sesión iniciada, en tu cuenta. Un rechazo en la cuenta prevalece sobre los permisos del dispositivo; un permiso en la cuenta se aplica a dispositivos que aún no han respondido. Conservamos el historial de decisiones como prueba del consentimiento hasta que eliminas la cuenta. Los eventos anónimos y efímeros del estado de las actualizaciones y de las pantallas de los rocódromos siguen activos para mantener la fiabilidad del servicio."
     }
   },
   "preview": {

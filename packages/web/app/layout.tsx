@@ -4,6 +4,8 @@ import { headers } from 'next/headers';
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 import AppThemeProvider from './components/providers/app-theme-provider';
 import AnalyticsClient from './components/analytics-client';
+import { ConsentProvider } from './components/consent/consent-provider';
+import { CONSENT_PREPAINT_SCRIPT } from './lib/consent';
 import AnalyticsIdentity from './components/providers/analytics-identity';
 import SessionProviderWrapper from './components/providers/session-provider';
 import QueryClientProvider from './components/providers/query-client-provider';
@@ -96,19 +98,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={LOCALE_HTML_LANG[locale]} data-theme="dark" suppressHydrationWarning>
       {/* suppressHydrationWarning on both elements: browser extensions
           (Grammarly, 1Password) stamp attributes onto <html> and <body> at
-          runtime. Nothing in the app mutates either any more — the pre-paint
-          theme script went with the light scheme. */}
+          runtime. The consent pre-paint script also adds data-consent before hydration. */}
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: CONSENT_PREPAINT_SCRIPT }} />
+      </head>
       <body suppressHydrationWarning>
-        <Suspense fallback={null}>
-          <AnalyticsClient />
-        </Suspense>
         {/* QueryClientProvider sits inside SessionProviderWrapper so its
             PersistQueryClientProvider can read useSession() — do not reorder. */}
         <SessionProviderWrapper enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}>
-          {/* Reads useSession() to tell PostHog which person this browser is,
-              so it has to sit inside SessionProviderWrapper — AnalyticsClient
-              above cannot host it. Renders nothing. */}
-          <AnalyticsIdentity />
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <AppThemeProvider>
@@ -116,6 +113,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   locale={locale}
                   namespaces={[
                     'common',
+                    'consent',
                     'playlists',
                     'session',
                     'auth',
@@ -126,19 +124,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     'feed',
                   ]}
                 >
-                  <SnackbarProvider>
-                    {/* Everything below is torn down inside the retired
+                  <ConsentProvider>
+                    <Suspense fallback={null}>
+                      <AnalyticsIdentity />
+                      <AnalyticsClient />
+                    </Suspense>
+                    <SnackbarProvider>
+                      {/* Everything below is torn down inside the retired
                         Capacitor app, which gets a dead-end update screen. */}
-                    <CapacitorRetirementGate>
-                      <AuthModalProvider>
-                        <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                          <MarketingPreviewProvider initialBrowser={initialBrowser}>
-                            <SiteChrome>{children}</SiteChrome>
-                          </MarketingPreviewProvider>
-                        </FeatureFlagsProvider>
-                      </AuthModalProvider>
-                    </CapacitorRetirementGate>
-                  </SnackbarProvider>
+                      <CapacitorRetirementGate>
+                        <AuthModalProvider>
+                          <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
+                            <MarketingPreviewProvider initialBrowser={initialBrowser}>
+                              <SiteChrome>{children}</SiteChrome>
+                            </MarketingPreviewProvider>
+                          </FeatureFlagsProvider>
+                        </AuthModalProvider>
+                      </CapacitorRetirementGate>
+                    </SnackbarProvider>
+                  </ConsentProvider>
                 </I18nProvider>
               </AppThemeProvider>
             </AppRouterCacheProvider>

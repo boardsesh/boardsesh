@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useConsent } from '../consent/consent-provider';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import MuiLink from '@mui/material/Link';
@@ -47,6 +48,8 @@ const GROUP_HEADING_SX = {
  */
 export default function SiteFooter() {
   const { t } = useTranslation('common');
+  const { t: consentTranslation } = useTranslation('consent');
+  const { openChoices } = useConsent();
   const pathname = usePathnameWithoutLocale();
 
   // Kiosk TVs and iframe embeds render zero chrome.
@@ -119,6 +122,11 @@ export default function SiteFooter() {
               <Typography variant="subtitle2" component="h2" sx={GROUP_HEADING_SX}>
                 {group.heading}
               </Typography>
+              {group.id === 'small-print' && (
+                <MuiLink component="button" type="button" onClick={openChoices} variant="body2" sx={LINK_SX}>
+                  {consentTranslation('privacyChoices')}
+                </MuiLink>
+              )}
               {group.links.map(({ href, label }) => (
                 <MuiLink key={href} component={LocaleLink} href={href} variant="body2" sx={LINK_SX}>
                   {label}

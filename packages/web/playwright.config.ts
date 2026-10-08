@@ -1,8 +1,11 @@
+import { CONSENT_COOKIE_NAME, CONSENT_VERSION, serializeConsentCookieValue } from '@boardsesh/consent';
 import { defineConfig, devices } from '@playwright/test';
 
 /**
  * See https://playwright.dev/docs/test-configuration.
  */
+const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000';
+
 export default defineConfig({
   testDir: './e2e',
   /* Verifies server reachability, test-user login, and pre-warms SSR routes
@@ -55,7 +58,28 @@ export default defineConfig({
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
-    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
+    baseURL,
+    // Default tests decline optional analytics. Consent-specific tests override this state.
+    storageState: {
+      cookies: [
+        {
+          name: CONSENT_COOKIE_NAME,
+          value: serializeConsentCookieValue({
+            analytics: 'denied',
+            version: CONSENT_VERSION,
+            source: 'web',
+            decidedAt: new Date().toISOString(),
+          }),
+          domain: new URL(baseURL).hostname,
+          path: '/',
+          expires: -1,
+          httpOnly: false,
+          secure: baseURL.startsWith('https:'),
+          sameSite: 'Lax',
+        },
+      ],
+      origins: [],
+    },
 
     /* www renders one scheme, so the page no longer reads prefers-color-scheme
      * at all. This stays as belt-and-braces: it keeps the emulated OS setting
