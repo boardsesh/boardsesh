@@ -1,4 +1,5 @@
 import type { ColorValue } from 'react-native';
+import { selectByVariant } from '../theme/variants/select-by-variant';
 import type { UiVariant } from '../theme/resolve-ui-variant';
 import type { TextVariant } from '../theme/typography';
 
@@ -14,7 +15,8 @@ export function sectionHeaderText(
   variant: UiVariant,
   colors: { secondaryLabel: ColorValue; onSurfaceVariant: ColorValue },
 ): { textVariant: TextVariant; color: ColorValue; fontWeight: '600' | '500' } {
-  return variant === 'material'
-    ? { textVariant: 'subheadline', color: colors.onSurfaceVariant, fontWeight: '500' }
-    : { textVariant: 'footnote', color: colors.secondaryLabel, fontWeight: '600' };
+  return selectByVariant<{ textVariant: TextVariant; color: ColorValue; fontWeight: '600' | '500' }>(variant, {
+    material: { textVariant: 'subheadline', color: colors.onSurfaceVariant, fontWeight: '500' },
+    liquidGlass: { textVariant: 'footnote', color: colors.secondaryLabel, fontWeight: '600' },
+  });
 }
