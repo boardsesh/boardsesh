@@ -101,8 +101,8 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
     />
   );
 
-  // The header makes the Sheet wrap its body in a KeyboardAvoidingView, so the
-  // field stays above the keyboard without one of our own. `androidContentSized`
+  // The header makes the Sheet wrap its body in a column padded by the keyboard
+  // overlap, so the field stays above the keyboard without padding of our own. `androidContentSized`
   // keeps that wrapper content-fitted on Android, where a flex-1 column inside
   // a content-sized host collapses to zero height.
   return (

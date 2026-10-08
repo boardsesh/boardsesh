@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 
 // LogAscentSheet wraps `onClose` in a `handleClose` that fires
@@ -11,13 +11,16 @@ import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 // `onChange`), and a successful save (simulated through the stubbed form hook).
 //
 // The sheet chrome is ModalSheet now, so the #3330 detent bound is re-derived
-// through it: the column-bearing view is ModalSheet's KeyboardAvoidingView, and
-// the detent tests below assert its height at each snap point exactly as they
-// used to assert the hand-rolled column's.
+// through it: the column-bearing view is ModalSheet's chrome column, and the
+// detent tests below assert its height at each snap point exactly as they used
+// to assert the hand-rolled column's. The keyboard tests drive that column's and
+// the action bar's bottom padding through the mocked Keyboard events.
 
 // Mutable so a test can flip the platform; reset in beforeEach. The iOS branch
 // is the one that pins a numeric column height (useSheetColumnStyle).
 const platformMock = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android', Version: '26.1' as string }));
+type KeyboardListener = (event: { endCoordinates?: { height: number }; duration?: number }) => void;
+const keyboardListeners = vi.hoisted(() => new Map<string, KeyboardListener>());
 
 // Captures what LogAscentSheet handed the form hook, so the climb/board
 // plumbing can be asserted without running the real hook (tested next door in
@@ -45,10 +48,13 @@ vi.mock('react-native', () => ({
   // Serialised so a test can read the style a view was handed.
   View: ({ children, style, testID }: { children?: ReactNode; style?: unknown; testID?: string }) =>
     createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': testID }, children),
-  // ModalSheet's single in-flow child once a header or footer is present — the
-  // view that carries the detent bound.
-  KeyboardAvoidingView: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('div', { 'data-style': JSON.stringify(style ?? null), 'data-testid': 'sheet-column' }, children),
+  Keyboard: {
+    addListener: (eventName: string, listener: KeyboardListener) => {
+      keyboardListeners.set(eventName, listener);
+      return { remove: () => keyboardListeners.delete(eventName) };
+    },
+  },
+  LayoutAnimation: { configureNext: vi.fn() },
   Pressable: ({
     children,
     accessibilityLabel,
@@ -266,15 +272,25 @@ function renderSheet(overrides: Partial<Parameters<typeof LogAscentSheet>[0]> = 
 }
 
 // The sheet's single in-flow child — the column the scroll body and the pinned
-// action bar are laid out inside. Owned by ModalSheet now (the mocked
-// KeyboardAvoidingView), addressed by testID rather than by position.
+// action bar are laid out inside. Owned by ModalSheet now, addressed by testID
+// rather than by position. Flattened: with the keyboard up it is a style array.
+function flattenStyle(style: unknown): Record<string, number> {
+  if (Array.isArray(style)) return Object.assign({}, ...style.map(flattenStyle));
+  return (style ?? {}) as Record<string, number>;
+}
 function columnStyle(container: HTMLElement): Record<string, number> {
-  const column = container.querySelector('[data-testid="sheet-column"]');
+  const column = container.querySelector('[data-testid="sheet-chrome-column"]');
   if (!column) throw new Error('sheet column not rendered');
-  return JSON.parse(column.getAttribute('data-style') ?? 'null');
+  return flattenStyle(JSON.parse(column.getAttribute('data-style') ?? 'null'));
+}
+// The pinned footer bar ModalSheet wraps around the stubbed TickActionBar.
+function footerPaddingBottom(container: HTMLElement): number | undefined {
+  const bar = container.querySelector('[data-testid="tick-action-bar"]');
+  return flattenStyle(JSON.parse(bar?.parentElement?.getAttribute('data-style') ?? 'null')).paddingBottom;
 }
 
 beforeEach(() => {
+  keyboardListeners.clear();
   platformMock.OS = 'ios';
   platformMock.Version = '26.1';
   formInput.current = null;
@@ -471,5 +487,38 @@ describe('LogAscentSheet detent bound', () => {
     expect(body.querySelector('[data-testid="tick-fields"]')).toBeTruthy();
     expect(body.querySelector('[data-testid="tick-action-bar"]')).toBeNull();
     expect(getByTestId('tick-action-bar')).toBeTruthy();
+  });
+});
+
+// The user-reported bug: typing a note left the Attempt / Save bar half under
+// the keyboard. The column must pad by the whole keyboard and the bar must drop
+// its window inset (spacing is mocked to 0 here, so the bar's padding IS the
+// inset it still owes).
+describe('LogAscentSheet keyboard', () => {
+  it('lifts the action bar fully above the iOS keyboard, then settles back on the inset', () => {
+    const { container, getByTestId } = renderSheet();
+    fireEvent.click(getByTestId('simulate-expand'));
+    expect(footerPaddingBottom(container)).toBe(34);
+
+    act(() => keyboardListeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 336 }, duration: 250 }));
+    expect(columnStyle(container)).toEqual({ height: 694, paddingBottom: 336 });
+    expect(footerPaddingBottom(container)).toBe(0);
+
+    act(() => keyboardListeners.get('keyboardWillHide')?.({ duration: 250 }));
+    expect(columnStyle(container)).toEqual({ height: 694 });
+    expect(footerPaddingBottom(container)).toBe(34);
+  });
+
+  it('pads by keyboard + navigation bar on Android, where the IME height leaves the bar out', () => {
+    platformMock.OS = 'android';
+    const { container } = renderSheet();
+
+    act(() => keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280 } }));
+    expect(columnStyle(container)).toEqual({ maxHeight: 780, paddingBottom: 280 + 34 });
+    expect(footerPaddingBottom(container)).toBe(0);
+
+    act(() => keyboardListeners.get('keyboardDidHide')?.({}));
+    expect(columnStyle(container)).toEqual({ maxHeight: 780 });
+    expect(footerPaddingBottom(container)).toBe(34);
   });
 });

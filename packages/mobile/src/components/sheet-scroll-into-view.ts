@@ -4,13 +4,13 @@
 // The native sheet does nothing here. `@expo/ui`'s `BottomSheetTextInput` and
 // `BottomSheetScrollView` are plain RN `TextInput` / `ScrollView` re-exports
 // (`@expo/ui` 57 `src/community/bottom-sheet/index.tsx`). The sheet's
-// `KeyboardAvoidingView` pads the column by the keyboard height, so the scroll
-// body gets shorter from the bottom while its offset stays where it was. With
-// the keyboard up an iOS tick sheet shows about 162pt of body (derivation in
-// `tick/TickNoteField.tsx`). The edit sheet's note starts 352pt down, so the
-// climber typed blind. RN's own `automaticallyAdjustKeyboardInsets` does not
-// fit: it is iOS-only, adds an inset on top of the KAV padding, and scrolls to
-// the keyboard's top edge, not the footer's.
+// chrome column is padded by the keyboard overlap (`sheet-keyboard-inset.ts`),
+// so the scroll body gets shorter from the bottom while its offset stays where
+// it was. With the keyboard up an iOS tick sheet shows about 196pt of body
+// (derivation in `tick/TickNoteField.tsx`). The edit sheet's note starts 352pt
+// down, so the climber typed blind. RN's own `automaticallyAdjustKeyboardInsets`
+// does not fit: it is iOS-only, adds an inset on top of the column padding, and
+// scrolls to the keyboard's top edge, not the footer's.
 //
 // So the sheet owns the scroll. A field opts in by calling `reveal(ref)` from
 // `useSheetScrollIntoView()` when it gains focus. The sheet measures the field
@@ -50,8 +50,8 @@ type RevealGeometry = {
  *
  * Moves as little as possible: a field below the fold lands with its bottom
  * `margin` above the viewport's bottom, and a field above the fold lands at the
- * top. When the field and its margin don't fit (a long note on a short phone:
- * ~147pt of body on an iPhone 13 mini with the keyboard up), the margin goes
+ * top. When the field and its margin don't fit (a long note in a short body:
+ * ~181pt on an iPhone 13 mini with the keyboard up, less with larger text), the margin goes
  * first, then the field keeps its BOTTOM in view. That is where the climber is
  * typing; showing the top would leave the caret line under the footer.
  */

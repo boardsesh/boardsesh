@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, type ReactNode, type Ref } from 'react';
 
 // Captured across renders so tests can assert what Sheet hands the native sheet:
 // the onChange handler, the snap points, whether a footer subtree rendered, the
-// scroll body's style (the iOS detent bound), and the footer KeyboardAvoidingView's
-// behavior (must be "padding" on BOTH platforms — the Android Compose dialog
-// window does not resize for the keyboard).
+// scroll body's style (the iOS detent bound), and the chrome column's and footer's
+// bottom padding as the keyboard comes and goes (padded on BOTH platforms — the
+// Android Compose dialog window does not resize for the keyboard).
 const captures = vi.hoisted(() => ({
   onChange: null as null | ((index: number) => void),
   snapPoints: undefined as unknown,
@@ -17,9 +17,12 @@ const captures = vi.hoisted(() => ({
   scrollStyle: undefined as unknown,
   scrollContentStyle: undefined as unknown,
   viewStyle: undefined as unknown,
-  kavBehavior: undefined as string | undefined,
+  viewStyles: [] as unknown[],
+  columnStyle: undefined as unknown,
 }));
 const platform = vi.hoisted(() => ({ os: 'ios' }));
+type KeyboardListener = (event: { endCoordinates?: { height: number }; duration?: number }) => void;
+const keyboard = vi.hoisted(() => ({ listeners: new Map<string, KeyboardListener>() }));
 
 // Faithful recursive flatten (nested arrays merge left-to-right) so the tests read
 // the effective style the way React Native would, not just a one-level Object.assign.
@@ -70,14 +73,19 @@ vi.mock('react-native', () => ({
     Version: '26.1',
     select: (options: { ios?: unknown; android?: unknown }) => options.ios,
   },
-  View: ({ children, style }: ViewMockProps & { style?: unknown }) => {
+  View: ({ children, style, testID }: ViewMockProps & { style?: unknown; testID?: string }) => {
     captures.viewStyle = style;
+    captures.viewStyles.push(style);
+    if (testID === 'sheet-chrome-column') captures.columnStyle = style;
     return createElement('div', null, children);
   },
-  KeyboardAvoidingView: ({ children, behavior }: ViewMockProps & { behavior?: string }) => {
-    captures.kavBehavior = behavior;
-    return createElement('div', { 'data-kav': 'true' }, children);
+  Keyboard: {
+    addListener: (eventName: string, listener: KeyboardListener) => {
+      keyboard.listeners.set(eventName, listener);
+      return { remove: () => keyboard.listeners.delete(eventName) };
+    },
   },
+  LayoutAnimation: { configureNext: () => {} },
   // Consumed by useSheetColumnStyle to bound the sheet column to the detent on iOS.
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {
@@ -153,7 +161,9 @@ beforeEach(() => {
   captures.scrollStyle = undefined;
   captures.scrollContentStyle = undefined;
   captures.viewStyle = undefined;
-  captures.kavBehavior = undefined;
+  captures.viewStyles = [];
+  captures.columnStyle = undefined;
+  keyboard.listeners.clear();
   platform.os = 'ios';
   hapticMedium.mockClear();
 });
@@ -232,16 +242,58 @@ describe('Sheet', () => {
     expect(captures.snapPoints).toEqual(['50%', '90%']);
   });
 
-  it('lifts the footer above the keyboard with padding on both platforms', () => {
-    // The Android Compose dialog window does NOT resize for the keyboard
-    // (emulator-verified), so the KeyboardAvoidingView must pad unconditionally —
-    // a platform-gated `undefined` leaves the footer's input covered on Android.
-    render(
-      <Sheet footer={<div>save</div>}>
-        <div>body</div>
-      </Sheet>,
-    );
-    expect(captures.kavBehavior).toBe('padding');
+  describe('keyboard', () => {
+    // The footer bar is the one View with a hairline top border.
+    const footerPadding = () =>
+      captures.viewStyles
+        .map(flattenStyle)
+        .filter((style) => style.borderTopWidth !== undefined)
+        .at(-1)?.paddingBottom;
+    const columnPadding = () => flattenStyle(captures.columnStyle).paddingBottom;
+    const renderFooterSheet = () =>
+      render(
+        <Sheet scrollable footer={<div>send</div>}>
+          <div>body</div>
+        </Sheet>,
+      );
+
+    it('rests the footer on the window inset while the keyboard is down', () => {
+      renderFooterSheet();
+      expect(columnPadding()).toBeUndefined();
+      expect(footerPadding()).toBe(34 + 12);
+    });
+
+    it('pads the column by the keyboard and swaps the inset out of the footer on iOS', () => {
+      renderFooterSheet();
+      act(() =>
+        keyboard.listeners.get('keyboardWillChangeFrame')?.({ endCoordinates: { height: 336 }, duration: 250 }),
+      );
+      expect(columnPadding()).toBe(336);
+      expect(footerPadding()).toBe(12);
+      act(() => keyboard.listeners.get('keyboardWillHide')?.({ duration: 250 }));
+      expect(columnPadding()).toBeUndefined();
+      expect(footerPadding()).toBe(34 + 12);
+    });
+
+    it('leaves a chrome-less sheet off the keyboard listeners, on its resting inset', () => {
+      render(
+        <Sheet scrollable contentContainerStyle={{ paddingBottom: 8 }}>
+          <div>body</div>
+        </Sheet>,
+      );
+      expect(keyboard.listeners.size).toBe(0);
+      expect(flattenStyle(captures.scrollContentStyle).paddingBottom).toBe(8 + 34);
+    });
+
+    it('pads the column by keyboard + nav bar on Android, where the IME height excludes it', () => {
+      // The Android Compose dialog window does NOT resize for the keyboard
+      // (emulator-verified), so the column must pad on Android too.
+      platform.os = 'android';
+      renderFooterSheet();
+      act(() => keyboard.listeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280 } }));
+      expect(columnPadding()).toBe(280 + 34);
+      expect(footerPadding()).toBe(12);
+    });
   });
 
   it('bounds a footerless scrollable body to the detent height on iOS (#3330)', () => {

@@ -33,8 +33,10 @@ type NativeSheetMockProps = { children?: ReactNode; onChange?: (index: number) =
 // stars 56 + tries 60 = 352, plus the note row's 4pt `alignTop` inset.
 const NOTE_TOP = 356;
 const NOTE_HEIGHT = 64;
-// Body height at the 80% detent (595 column - 56 header - 140 footer) and with
-// the keyboard up at the 92% detent (see TickNoteField's derivation).
+// Body height at the 80% detent (595 column - 56 header - 140 footer) and a
+// tight keyboard-up body: 162 is the 92% detent's body from before the footer
+// dropped its window inset under the keyboard (TickNoteField now derives 196).
+// The smaller number is the harder case for the reveal maths.
 const BODY_AT_REST = 399;
 const BODY_KEYBOARD_UP = 162;
 const CONTENT_HEIGHT = 540;
@@ -103,7 +105,9 @@ vi.mock('react-native', () => ({
     select: (options: { ios?: unknown }) => options.ios,
   },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  // The keyboard padding arrives here as a body onLayout; no keyboard events needed.
+  Keyboard: { addListener: () => ({ remove: () => {} }) },
+  LayoutAnimation: { configureNext: () => {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,
@@ -209,8 +213,9 @@ describe('revealScrollOffset', () => {
     expect(revealScrollOffset({ ...base, viewportHeight: BODY_KEYBOARD_UP, currentOffset: 400 })).toBe(NOTE_TOP);
   });
 
-  // An iPhone 13 mini with the keyboard up: 812 - 50 - 24 = 738 x 0.92 = 679,
-  // less 336 keyboard, 56 header, 140 footer = ~147pt of body.
+  // A body too short for the 160pt note plus its margin. An iPhone 13 mini
+  // with the keyboard up shows 812 - 50 - 24 = 738 x 0.92 = 679, less 336
+  // keyboard, 56 header, 106 footer = ~181pt; larger text sizes shrink it to here.
   const SMALL_PHONE_BODY = 147;
 
   it('drops the margin first when a long note and its margin do not fit', () => {

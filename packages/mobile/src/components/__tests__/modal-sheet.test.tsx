@@ -54,7 +54,9 @@ vi.mock('react-native', () => ({
     select: (options: { ios?: unknown }) => options.ios,
   },
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
-  KeyboardAvoidingView: ({ children }: ViewMockProps) => createElement('div', null, children),
+  // The keyboard stays down here; sheet.test.tsx and log-ascent-sheet.test.tsx drive it.
+  Keyboard: { addListener: () => ({ remove: () => {} }) },
+  LayoutAnimation: { configureNext: () => {} },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: {
     create: (styles: Record<string, unknown>) => styles,

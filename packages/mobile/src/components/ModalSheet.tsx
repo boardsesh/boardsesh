@@ -11,19 +11,19 @@
 // (the iOS UIKit deadlock / app freeze — see sheet-presentation-provider.tsx).
 
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetView,
   type BottomSheetMethods,
 } from '@expo/ui/community/bottom-sheet';
-import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
+import { useSheetKeyboardInset } from './sheet-keyboard-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
 import { SheetScrollIntoViewProvider, useProgrammaticSnap, useSheetScrollIntoViewHost } from './sheet-scroll-into-view';
@@ -89,7 +89,7 @@ type ModalSheetProps = {
    * No effect on iOS / web — they keep the exact `%` detents.
    *
    * Designed for a sheet with a `header` / `footer` (the `maxHeight` lands on the
-   * KeyboardAvoidingView). A chrome-less sheet has no reason to reach for it —
+   * chrome column). A chrome-less sheet has no reason to reach for it —
    * pass `enableDynamicSizing` instead. */
   androidContentSized?: boolean;
 };
@@ -118,7 +118,10 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   ref,
 ) {
   const { systemColors, sheet, sheetSurface } = useTheme();
-  const windowInsetBottom = useWindowBottomInset();
+  // Keyboard clearance for the chrome column below, and the bottom inset the
+  // footer / footerless body still owes (the window inset, or 0 while the
+  // keyboard covers it). See sheet-keyboard-inset.ts.
+  const { keyboardOverlap, bottomInset } = useSheetKeyboardInset(Boolean(footer || header));
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
   // Plain string, never a PlatformColor — see the `surface` prop doc.
   const solidBackground = useMemo(() => ({ backgroundColor: sheetSurface }), [sheetSurface]);
@@ -181,16 +184,16 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
 
   // A fixed header or a pinned footer both need a wrapper around the body, and
   // the native sheet takes exactly one in-flow child — so either one puts us in
-  // the KeyboardAvoidingView branch below.
+  // the chrome column branch below.
   const hasChrome = Boolean(footer || header);
   // The sheet's single child must carry the iOS detent bound (see
-  // useSheetColumnStyle): with a header or footer the KeyboardAvoidingView below
+  // useSheetColumnStyle): with a header or footer the chrome column below
   // is that child and the body just fills it (flex:1); without either the body
   // itself is the child, so it carries the bound directly — otherwise an iOS
   // scrollable sheet sizes to its content and anything past the detent is
   // clipped and unreachable instead of scrolling.
   //
-  // On Android's content-fitting path the KAV takes a `maxHeight`, not `flex: 1`,
+  // On Android's content-fitting path the column takes a `maxHeight`, not `flex: 1`,
   // so the body can't `flex: 1` into it — it takes its content height at rest
   // (this is what closes the void) and `flexShrink: 1` so it shrinks and scrolls
   // once a keyboard-up long note pushes the column into that ceiling.
@@ -204,9 +207,9 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // Keyed on the FOOTER alone, not `hasChrome`: a header sits above the body and
   // leaves it against the bottom edge, so a header-only sheet still owes the
   // window inset.
-  const bodyContentContainerStyle = useSheetBodyContentStyle(Boolean(footer), contentContainerStyle, windowInsetBottom);
+  const bodyContentContainerStyle = useSheetBodyContentStyle(Boolean(footer), contentContainerStyle, bottomInset);
   // #3922: measure whichever view actually carries columnStyle — the body when
-  // there is no header or footer, the KeyboardAvoidingView below when there is.
+  // there is no header or footer, the chrome column below when there is.
   const bodyLayout = hasChrome ? undefined : onColumnLayout;
   // A focused field that opts in (the tick note) is scrolled clear of the pinned
   // footer once the keyboard shrinks the body (#5665). See sheet-scroll-into-view.
@@ -244,7 +247,10 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         {
           backgroundColor: footerSurface === 'flush' ? 'transparent' : systemColors.secondaryBackground,
           borderTopColor: systemColors.separator,
-          paddingBottom: windowInsetBottom + spacing[3],
+          // Window inset + gap at rest; just the gap while the keyboard is up,
+          // so the bar rests spacing[3] above the keyboard (the column below is
+          // padded by the overlap).
+          paddingBottom: bottomInset + spacing[3],
         },
       ]}
     >
@@ -284,14 +290,20 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         // The single flex child of the native sheet: bound to the detent height on
         // iOS (see useSheetColumnStyle) so the pinned footer can't fall off-screen
         // (#3330); flex:1 on Android's detent path; a `maxHeight` ceiling on its
-        // content-fitting path (#4720). `padding` on both platforms: the Android
-        // Compose dialog window does not resize for the keyboard, so without it
-        // the keyboard covers the footer's input (emulator-verified).
-        <KeyboardAvoidingView style={columnStyle} behavior="padding" onLayout={onColumnLayout}>
+        // content-fitting path (#4720). Padded by the keyboard overlap on both
+        // platforms: neither native sheet window resizes for the keyboard. Not a
+        // KeyboardAvoidingView: RN 0.86 measures its overlap from a
+        // parent-relative frame, which inside the sheet under-pads by the sheet's
+        // distance from the top of the screen (see sheet-keyboard-inset.ts).
+        <View
+          testID="sheet-chrome-column"
+          style={keyboardOverlap > 0 ? [columnStyle, { paddingBottom: keyboardOverlap }] : columnStyle}
+          onLayout={onColumnLayout}
+        >
           {header}
           {body}
           {footerBar}
-        </KeyboardAvoidingView>
+        </View>
       ) : (
         body
       )}

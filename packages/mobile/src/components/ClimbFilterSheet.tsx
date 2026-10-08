@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
 import {
   View,
-  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   TextInput,
@@ -12,6 +11,7 @@ import {
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
+import { useSheetKeyboardInset } from './sheet-keyboard-inset';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -330,6 +330,7 @@ export function ClimbFilterSheet({
   // (see handleApply) and the sub-picker round trip restores the scroll offset
   // through its own scroll ref, neither of which the wrapper exposes.
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
+  const { keyboardOverlap } = useSheetKeyboardInset(true);
   // Dev-only observers for #3922 — they feed a log line, never layout. This is
   // the sheet #3776 was reported against, so it is the one to capture on an SE 3.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(sheetColumnStyle, 'ClimbFilterSheet');
@@ -908,11 +909,15 @@ export function ClimbFilterSheet({
       {/* One column child bounded to the detent height (JS-computed on iOS, see
           sheetColumnStyle) — the scroll body then actually scrolls. Handed
           multiple direct children, the native sheet sizes to content and the
-          flex:1 ScrollView collapses (no scrolling). The column is a
-          KeyboardAvoidingView, as in ModalSheet: the Android Compose dialog
-          window does not resize for the keyboard, so `padding` on both
-          platforms keeps the scroll body, and the name field in it, above it. */}
-      <KeyboardAvoidingView style={sheetColumnStyle} behavior="padding" onLayout={onColumnLayout}>
+          flex:1 ScrollView collapses (no scrolling). The column is padded by
+          the keyboard overlap, as in ModalSheet: neither native sheet window
+          resizes for the keyboard, so the padding keeps the scroll body, and
+          the name field in it, above it (see sheet-keyboard-inset.ts). */}
+      <View
+        testID="climb-filter-column"
+        style={keyboardOverlap > 0 ? [sheetColumnStyle, { paddingBottom: keyboardOverlap }] : sheetColumnStyle}
+        onLayout={onColumnLayout}
+      >
         <SheetTopBar
           title={t('mobile.filter.title')}
           leading={{ kind: 'text', label: t('mobile.filter.reset'), onPress: handleReset, disabled: !anyActive }}
@@ -1379,7 +1384,7 @@ export function ClimbFilterSheet({
             </View>
           </View>
         </BottomSheetScrollView>
-      </KeyboardAvoidingView>
+      </View>
     </BottomSheetModal>
   );
 }
