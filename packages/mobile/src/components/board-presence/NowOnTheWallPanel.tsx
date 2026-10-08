@@ -1606,6 +1606,9 @@ const styles = StyleSheet.create({
   },
   historySentAgo: {
     flexShrink: 0,
+    // Pulls back half of the row's gap so "Name · 2 minutes ago" reads with
+    // the same spacing as the single-Text Kilter line.
+    marginLeft: -spacing[1],
   },
   historyGrade: {
     fontVariant: ['tabular-nums'],
