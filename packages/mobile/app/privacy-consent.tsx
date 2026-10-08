@@ -5,6 +5,7 @@ import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTranslation } from 'react-i18next';
 import { Platform } from 'react-native';
 import { useTheme } from '../src/providers/theme-provider';
+import { useTypographyStyles, type TypographyScale } from '../src/hooks/use-typography-styles';
 import { decideAnalyticsConsent } from '../src/providers/consent-provider';
 import { Button } from '../src/components/Button';
 import { useBlockBack } from '../src/components/onboarding/use-block-back';
@@ -19,6 +20,7 @@ import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until
 function PrivacyConsentScreen() {
   const { t } = useTranslation('consent');
   const { systemColors: colors } = useTheme();
+  const styles = useTypographyStyles(createStyles);
   const router = useRouter();
   const navigation = useNavigation();
   const consent = useSyncExternalStore(subscribeConsent, getConsentSnapshot, getConsentSnapshot);
@@ -80,11 +82,12 @@ function PrivacyConsentScreen() {
 
 export default holdUntilLaunchReady(PrivacyConsentScreen);
 
-const styles = StyleSheet.create({
-  backing: { flex: 1, justifyContent: 'center', padding: spacing[6] },
-  content: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: spacing[4] },
-  choiceButton: { alignSelf: 'stretch' },
-  title: { fontSize: 28, fontWeight: '700' },
-  body: { fontSize: 17, lineHeight: 25 },
-  link: { fontSize: 16, paddingVertical: spacing[3], textAlign: 'center' },
-});
+const createStyles = (typography: TypographyScale) =>
+  StyleSheet.create({
+    backing: { flex: 1, justifyContent: 'center', padding: spacing[6] },
+    content: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: spacing[4] },
+    choiceButton: { alignSelf: 'stretch' },
+    title: { ...typography.title1 },
+    body: { ...typography.body },
+    link: { ...typography.callout, paddingVertical: spacing[3], textAlign: 'center' },
+  });
