@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { UserStorageOwner } from '../user-storage-owner';
+import type { ClimbQueueItem } from '@boardsesh/queue';
 
 const storage = vi.hoisted(() => ({
   rows: new Map<string, unknown>(),
@@ -53,6 +54,36 @@ beforeEach(() => {
 });
 
 describe('browser queue snapshot write boundaries', () => {
+  it('sanitizes both legacy reads and new persisted payloads', async () => {
+    const store = await import('../queue-snapshot-store.web');
+    const item = {
+      uuid: 'slot',
+      climb: { uuid: 'private', name: 'Private name', frames: 'private holds', angle: 40 },
+      addedByUser: { id: 'author', username: 'Private author' },
+      tickedBy: ['author'],
+    } as unknown as ClimbQueueItem;
+    const legacy = { ...snapshot, queue: [item], currentClimbQueueItem: item, savedAt: 'legacy' };
+    storage.rows.set('boardsesh_local_queue_snapshot_v1:a:a-login', legacy);
+    const restored = await store.getStoredQueueSnapshot();
+    expect(restored?.queue[0]).toMatchObject({ uuid: 'slot', climb: { uuid: 'private', name: '', frames: '' } });
+    expect(restored?.queue[0].addedByUser).toBeUndefined();
+    expect(restored?.queue[0].tickedBy).toBeUndefined();
+    await store.setStoredQueueSnapshot(legacy);
+    expect(JSON.stringify([...storage.rows.values()])).not.toContain('Private');
+    expect(JSON.stringify([...storage.rows.values()])).not.toContain('private holds');
+    expect((await store.getStoredQueueSnapshot())?.currentClimbQueueItem?.uuid).toBe('slot');
+  });
+
+  it('invalidates pending saves without deleting the logical queue', async () => {
+    const store = await import('../queue-snapshot-store.web');
+    await store.setStoredQueueSnapshot(snapshot);
+    const oldGeneration = store.getQueueSnapshotGeneration();
+    store.invalidateStoredQueueSnapshot();
+    await store.setStoredQueueSnapshot(snapshot, undefined, oldGeneration);
+    expect(storage.started).toHaveBeenCalledOnce();
+    expect(await store.getStoredQueueSnapshot()).toMatchObject(snapshot);
+  });
+
   it('removes an in-flight pre-clear write before resolving clear', async () => {
     const store = await import('../queue-snapshot-store.web');
     const barrier = deferred();

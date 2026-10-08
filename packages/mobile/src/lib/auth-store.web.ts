@@ -1,3 +1,4 @@
+import { invalidatePrivacySnapshots } from './privacy/privacy-cache';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
 import { webApiUrl } from './env';
 import type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-change-types';
@@ -130,6 +131,7 @@ function notifyAuthTokenChange(token: string | null, source: AuthTokenChangeSour
 function clearInMemoryTokens(source: AuthTokenChangeSource): void {
   sessionGeneration += 1;
   backendToken = null;
+  invalidatePrivacySnapshots('credential');
   synchronization?.controller.abort(new Error('Authentication session cleared'));
   synchronization = null;
   notifyAuthTokenChange(null, source);
@@ -237,6 +239,7 @@ function rotateForConfirmedIdentity(
   confirmedSessionIdentity = identity;
   backendToken = null;
   sessionGeneration += 1;
+  invalidatePrivacySnapshots('credential');
   if (synchronization?.generation === generation) synchronization.generation = sessionGeneration;
   notifyAuthTokenChange(null, 'session');
   return { generation: sessionGeneration, changed: true };
@@ -247,6 +250,7 @@ function invalidateUnscopedAuthenticatedIdentity(generation: number): number {
   confirmedSessionIdentity = undefined;
   backendToken = null;
   sessionGeneration += 1;
+  invalidatePrivacySnapshots('credential');
   if (synchronization?.generation === generation) synchronization.generation = sessionGeneration;
   notifyAuthTokenChange(null, 'session');
   return sessionGeneration;

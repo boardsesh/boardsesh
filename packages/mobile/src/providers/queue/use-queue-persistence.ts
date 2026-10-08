@@ -1,4 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { getCurrentUserStorageOwner } from '../../lib/user-storage-owner';
+import { useEffect, useState, useCallback } from 'react';
 import type { ClimbQueueItem, PlaylistSuggestionSource, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   getStoredQueueSnapshot,
@@ -20,6 +22,9 @@ import { reportError } from '../../lib/error-reporting';
 export const SOLO_QUEUE_SAVE_DEBOUNCE_MS = 500;
 
 type UseQueuePersistenceParams = {
+  authenticatedUserId?: string | null;
+  identityReady?: boolean;
+  privacyRevocationGeneration?: number;
   dispatch: React.Dispatch<QueueAction>;
   sessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -49,11 +54,13 @@ type UseQueuePersistenceParams = {
 /**
  * Owns the solo-queue persistence lifecycle: cold-start restore (explicit
  * session first, then the local snapshot) and the debounced solo snapshot save.
- * `snapshotHydratedRef` is shared internally by both effects — set after the
- * cold-start hydrate settles, read as the save gate — so the initial empty
- * state can never clobber a stored snapshot.
+ * Hydration completion is reactive and scoped to the viewer/privacy generation,
+ * so a pending save resumes after revalidation without overwriting another owner.
  */
 export function useQueuePersistence({
+  authenticatedUserId,
+  identityReady = true,
+  privacyRevocationGeneration,
   dispatch,
   sessionIdRef,
   setSessionId,
@@ -65,6 +72,42 @@ export function useQueuePersistence({
   setPlaylistSuggestionSourceState,
   activeBoardSettled,
 }: UseQueuePersistenceParams): void {
+  const [verifiedOwner, setVerifiedOwner] = useState<{ userId: string; generation: number } | null>(null);
+  useEffect(() => {
+    if (identityReady) return;
+    let cancelled = false;
+    const generation = getPrivacyRevocationGeneration();
+    void (async () => {
+      // Keep native storage dependencies out of the queue's initial module graph.
+      // This is an attested catalogue marker, never a decoded token identity.
+      const [{ getDatabaseHandle }, { getAuthorizedCatalogViewerId }] = await Promise.all([
+        import('../../db'),
+        import('../../offline/catalog-access'),
+      ]);
+      if (cancelled || generation !== getPrivacyRevocationGeneration()) return;
+      const database = getDatabaseHandle();
+      const userId = database ? await getAuthorizedCatalogViewerId(database) : null;
+      if (!cancelled && generation === getPrivacyRevocationGeneration()) {
+        setVerifiedOwner(userId ? { userId, generation } : null);
+      }
+    })().catch(() => {
+      /* An unavailable marker leaves the saved queue untouched. */
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [identityReady, privacyRevocationGeneration]);
+  const ownerUserId =
+    authenticatedUserId ??
+    (!identityReady && verifiedOwner?.generation === getPrivacyRevocationGeneration() ? verifiedOwner.userId : null);
+  const ownerReady = identityReady || !!ownerUserId;
+  const hydrationScope = JSON.stringify([
+    ownerReady,
+    ownerUserId,
+    privacyRevocationGeneration ?? getPrivacyRevocationGeneration(),
+  ]);
+  const [hydratedScope, setHydratedScope] = useState<string | null>(null);
+
   const restoreQueueSnapshot = useCallback(
     (snapshot: {
       queue: ClimbQueueItem[];
@@ -85,13 +128,16 @@ export function useQueuePersistence({
   // only on explicit start/join) is verified and rejoined; otherwise the local
   // solo queue snapshot hydrates the reducer. The gate flag below keeps the
   // save effect from clobbering a stored snapshot with the initial empty state.
-  const snapshotHydratedRef = useRef(false);
   useEffect(() => {
+    if (!ownerReady) return;
     let cancelled = false;
+    const generation = getPrivacyRevocationGeneration();
+    const isCurrent = () => !cancelled && generation === getPrivacyRevocationGeneration();
+    const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const hydrateLocalSnapshot = async () => {
       const snapshotGeneration = getQueueSnapshotGeneration();
-      const snapshot = await getStoredQueueSnapshot();
-      if (cancelled || !snapshot || snapshotGeneration !== getQueueSnapshotGeneration()) return;
+      const snapshot = await getStoredQueueSnapshot(owner);
+      if (!isCurrent() || !snapshot || snapshotGeneration !== getQueueSnapshotGeneration()) return;
       // The user may have started acting — or a session may have appeared —
       // before the async load resolved; never clobber newer state.
       if (sessionIdRef.current !== null) return;
@@ -100,6 +146,7 @@ export function useQueuePersistence({
     };
     void getStoredSessionId()
       .then(async (storedId) => {
+        if (!isCurrent() || sessionIdRef.current !== null) return;
         if (__DEV__) {
           console.info(`[session] restored from store: ${storedId ?? '(none)'}`);
         }
@@ -127,7 +174,7 @@ export function useQueuePersistence({
           const { sessionStatus } = await getHttpClient().request<SessionStatusQueryResponse>(SESSION_STATUS, {
             sessionId: storedId,
           });
-          if (cancelled) return;
+          if (!isCurrent() || sessionIdRef.current !== null) return;
           if (sessionStatus !== 'active') {
             if (__DEV__) {
               console.info(`[session] stored session ${storedId} ended/missing; clearing`);
@@ -138,6 +185,7 @@ export function useQueuePersistence({
           }
           setSessionId(storedId);
         } catch (err) {
+          if (!isCurrent()) return;
           // graphql-request's ClientError always carries `response`; a genuine
           // network failure (fetch reject) doesn't — same structural check as
           // createSessionWithConfig's error handling above.
@@ -158,16 +206,16 @@ export function useQueuePersistence({
           if (__DEV__) {
             console.warn('[session] status check failed; restoring optimistically', err);
           }
-          if (!cancelled) setSessionId(storedId);
+          if (isCurrent() && sessionIdRef.current === null) setSessionId(storedId);
         }
       })
       .finally(() => {
-        if (!cancelled) snapshotHydratedRef.current = true;
+        if (isCurrent()) setHydratedScope(hydrationScope);
       });
     return () => {
       cancelled = true;
     };
-  }, [restoreQueueSnapshot]);
+  }, [restoreQueueSnapshot, ownerUserId, ownerReady, hydrationScope]);
 
   // Persist the SOLO queue across launches. Only while no session is active —
   // a session's queue is server-owned (the rejoin FullSync restores it) — and
@@ -175,19 +223,32 @@ export function useQueuePersistence({
   // as the clear when the user empties the queue or a session teardown resets
   // it; the debounce coalesces mutation bursts (swipes, clear-queue removals).
   useEffect(() => {
-    if (!snapshotHydratedRef.current || sessionId !== null || !activeBoardSettled) return undefined;
+    if (!ownerReady || hydratedScope !== hydrationScope || sessionId !== null || !activeBoardSettled) return undefined;
     const snapshotGeneration = getQueueSnapshotGeneration();
+    const generation = getPrivacyRevocationGeneration();
+    const owner = getCurrentUserStorageOwner() ?? (ownerUserId ? { userId: ownerUserId, authSessionId: '' } : null);
     const persistTimeout = setTimeout(() => {
+      if (generation !== getPrivacyRevocationGeneration()) return;
       void setStoredQueueSnapshot(
         {
           queue,
           currentClimbQueueItem,
           playlistSuggestionSource,
         },
-        undefined,
+        owner,
         snapshotGeneration,
       );
     }, SOLO_QUEUE_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(persistTimeout);
-  }, [queue, currentClimbQueueItem, playlistSuggestionSource, sessionId, activeBoardSettled]);
+  }, [
+    queue,
+    currentClimbQueueItem,
+    playlistSuggestionSource,
+    sessionId,
+    activeBoardSettled,
+    ownerUserId,
+    ownerReady,
+    hydrationScope,
+    hydratedScope,
+  ]);
 }

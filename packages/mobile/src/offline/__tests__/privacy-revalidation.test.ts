@@ -14,6 +14,7 @@ vi.mock('../../lib/graphql/client', () => ({
 }));
 import {
   canReadPrivateCatalog,
+  getAuthorizedCatalogViewerId,
   captureCatalogReadEpoch,
   isCatalogReadCurrent,
   CATALOG_VIEWER_KEY,
@@ -37,6 +38,22 @@ beforeEach(() => {
 });
 
 describe('downloaded catalogue privacy', () => {
+  it('requires a verified marker and rejects a credential change during its read', async () => {
+    database = createTestDatabase();
+    await runMigrations(database);
+    expect(await getAuthorizedCatalogViewerId(database)).toBeNull();
+    await revalidatePrivateCatalog(database, 'viewer', []);
+    const readMarker = database.getFirstAsync.bind(database);
+    const readSpy = vi.spyOn(database, 'getFirstAsync').mockImplementationOnce(async (query, params) => {
+      const marker = await readMarker(query, params);
+      auth.token = 'another-account';
+      auth.generation += 1;
+      return marker;
+    });
+    expect(await getAuthorizedCatalogViewerId(database)).toBeNull();
+    readSpy.mockRestore();
+  });
+
   it('removes other authors and copied FA names, preserving personal ticks and authored drafts', async () => {
     database = createTestDatabase();
     await runMigrations(database);
@@ -81,9 +98,11 @@ describe('downloaded catalogue privacy', () => {
     expect(await getCheckpoint(database, getCheckpointKey('board_climbs', scopeKey))).toBeNull();
     expect(await isScopeDownloadComplete(database, scopeKey)).toBe(false);
     expect(await canReadPrivateCatalog(database)).toBe(true);
+    expect(await getAuthorizedCatalogViewerId(database)).toBe('viewer');
     auth.token = 'another-account-token';
     auth.generation += 1;
     expect(await canReadPrivateCatalog(database)).toBe(false);
+    expect(await getAuthorizedCatalogViewerId(database)).toBeNull();
     expect(await database.getAllAsync('SELECT uuid FROM boardsesh_ticks')).toEqual([{ uuid: 'own-tick' }]);
   });
   it('rejects a stale cached profile before binding the new credential to old rows', async () => {

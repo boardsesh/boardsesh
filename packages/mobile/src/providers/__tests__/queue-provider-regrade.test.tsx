@@ -1,3 +1,4 @@
+import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
@@ -87,6 +88,7 @@ vi.mock('../../lib/session-store', () => ({
   clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 vi.mock('../../lib/queue-snapshot-store', () => ({
+  invalidateStoredQueueSnapshot: vi.fn(),
   getStoredQueueSnapshot: vi.fn(async () => null),
   getQueueSnapshotGeneration: () => 0,
   setStoredQueueSnapshot: vi.fn(async () => {}),
@@ -183,6 +185,37 @@ describe('QueueProvider angle-change re-grade of the playlist suggestion peek', 
     }
     graph.execute.mockReset();
     http.request.mockReset();
+  });
+
+  it('does not restore a playlist peek when an old grade response resolves after revocation', async () => {
+    const current = makeClimb('current', 25, 'V3');
+    const source: PlaylistSuggestionSource = {
+      playlistUuid: 'private-list',
+      activatedClimbUuid: 'current',
+      boardKey: 'kilter:1:10:1,2',
+      climbs: [current, makeClimb('private-peek', 40, 'V8')],
+    };
+    let resolveOld!: (response: { climb: Climb }) => void;
+    http.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    http.request.mockResolvedValue({ climb: null });
+    const snapshots: Snapshot[] = [];
+    render(
+      createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) })),
+    );
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    act(() => snapshots.at(-1)?.setCurrentClimb(makeItem(current), { playlistSuggestionSource: source }));
+    await waitFor(() => expect(resolveOld).toBeTruthy());
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      resolveOld({ climb: makeClimb('private-peek', 25, 'V9') });
+    });
+    expect(snapshots.at(-1)?.playlistSuggestionSource).toBeNull();
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.name).toBe('');
   });
 
   it('re-grades the next-up source climb to the live board angle and patches the source', async () => {

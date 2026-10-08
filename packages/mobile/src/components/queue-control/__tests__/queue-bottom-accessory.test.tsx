@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 import type { Climb, ClimbQueueItem } from '@boardsesh/queue';
 
@@ -45,6 +45,7 @@ vi.mock('../NativeAccessoryClimbRow', () => ({
     }),
 }));
 import { QueueBottomAccessory } from '../QueueBottomAccessory';
+import { invalidatePrivacySnapshots } from '../../../lib/privacy/privacy-cache';
 
 describe('QueueBottomAccessory', () => {
   beforeEach(() => {
@@ -104,5 +105,19 @@ describe('QueueBottomAccessory', () => {
     const row = container.querySelector('[data-native-row]');
     expect(row).not.toBeNull();
     expect(row?.getAttribute('data-climb-name')).toBe('Tea Magic');
+  });
+
+  it('withdraws its retained copy even before the provider clears the old current climb', () => {
+    const { container, rerender } = render(<QueueBottomAccessory />);
+    act(() => invalidatePrivacySnapshots());
+    expect(container.querySelector('[data-native-row]')).toBeNull();
+    cfg.currentClimbQueueItem = null;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')).toBeNull();
+    cfg.currentClimbQueueItem = {
+      climb: { uuid: 'fresh', name: 'Fresh climb', angle: 40 },
+    } as unknown as ClimbQueueItem;
+    rerender(<QueueBottomAccessory />);
+    expect(container.querySelector('[data-native-row]')?.getAttribute('data-climb-name')).toBe('Fresh climb');
   });
 });

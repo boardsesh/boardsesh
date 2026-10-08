@@ -12,6 +12,9 @@ export function createQueueSnapshotWriteLane() {
 
   return {
     getGeneration: () => generation,
+    invalidate: () => {
+      generation += 1;
+    },
     write(write: () => Promise<void>, expectedGeneration = generation): Promise<void> {
       return enqueue(async () => {
         if (expectedGeneration !== generation) return;

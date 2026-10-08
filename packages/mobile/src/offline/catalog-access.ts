@@ -52,26 +52,31 @@ export async function stampCatalogViewer(
   if (!isCatalogCredentialCurrent(credential)) throw new Error('Account changed during catalogue revalidation');
 }
 
-/** A failed cleanup or account handover cannot turn a downloaded copy into public data. */
-export async function canReadPrivateCatalog(db: SqlExecutor): Promise<boolean> {
+/** Resolve only an identity already checked by the server for this exact credential. */
+export async function getAuthorizedCatalogViewerId(db: SqlExecutor): Promise<string | null> {
   try {
     const epoch = captureCatalogReadEpoch();
-    if (!isCatalogReadCurrent(epoch)) return false;
+    if (!isCatalogReadCurrent(epoch)) return null;
     const credential = await captureCatalogCredential();
-    if (!credential) return false;
+    if (!credential) return null;
     const marker = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
       CATALOG_VIEWER_KEY,
     ]);
-    if (!marker) return false;
+    if (!marker) return null;
     const parsed = JSON.parse(marker.value) as { viewerId?: unknown; credentialDigest?: unknown };
-    return (
-      typeof parsed.viewerId === 'string' &&
+    return typeof parsed.viewerId === 'string' &&
       parsed.viewerId.length > 0 &&
       parsed.credentialDigest === credential.digest &&
       isCatalogCredentialCurrent(credential) &&
       isCatalogReadCurrent(epoch)
-    );
+      ? parsed.viewerId
+      : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** A failed cleanup or account handover cannot turn a downloaded copy into public data. */
+export async function canReadPrivateCatalog(db: SqlExecutor): Promise<boolean> {
+  return (await getAuthorizedCatalogViewerId(db)) !== null;
 }

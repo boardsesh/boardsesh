@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useProfile } from '../../lib/graphql/hooks';
 import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import { getWsClient } from '../../lib/graphql/ws-client';
-import { invalidatePrivacyQueries } from '../../lib/privacy/privacy-cache';
+import { invalidatePrivacyQueries, registerPrivacyRevalidation } from '../../lib/privacy/privacy-cache';
 import { clearSprayWallPrivateCaches } from '../../lib/spray/spray-privacy-cleanup';
 import { revalidatePrivateCatalog } from '../../offline/privacy-revalidation';
 import { getDatabaseHandle } from '../../db';
@@ -25,20 +25,23 @@ export function PrivacySyncBridge() {
   useEffect(() => {
     if (!supported || !profile?.id) return;
     const viewerId = profile.id;
-    const revokeSnapshots = () => {
-      if (viewerRef.current !== viewerId) return;
+    const unregister = registerPrivacyRevalidation(() => {
+      if (viewerRef.current !== viewerId) return Promise.resolve();
       clearSprayWallPrivateCaches();
       clearStoredSprayPhotos();
       const database = getDatabaseHandle();
       // Start synchronously so new local requests wait before reading SQLite.
-      const revalidation = database
+      return database
         ? revalidatePrivateCatalog(database, viewerId, getSetting('syncEnabledBoards'))
         : Promise.resolve();
-      void invalidatePrivacyQueries(queryClient, () => revalidation).catch((error: unknown) => {
+    });
+    const revokeSnapshots = () => {
+      if (viewerRef.current !== viewerId) return;
+      void invalidatePrivacyQueries(queryClient).catch((error: unknown) => {
         reportHandledError(error, { tags: { source: 'privacy-revocation' } });
       });
     };
-    return getWsClient().subscribe<{ privacyChanged: boolean }>(
+    const unsubscribe = getWsClient().subscribe<{ privacyChanged: boolean }>(
       { query: 'subscription PrivacyChanged { privacyChanged }' },
       {
         next: revokeSnapshots,
@@ -47,6 +50,10 @@ export function PrivacySyncBridge() {
         complete: () => {},
       },
     );
+    return () => {
+      unregister();
+      unsubscribe();
+    };
   }, [supported, profile?.id, queryClient]);
   return null;
 }

@@ -15,8 +15,10 @@ vi.mock('../../PressableSurface', async () => {
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import { QueryClient } from '@tanstack/react-query';
+import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { restoreRemovedQueueItems } from '../../../lib/queue-undo';
+import { invalidatePrivacyQueries } from '../../../lib/privacy/privacy-cache';
 
 // The queue sheet's Clear and bulk Remove each offer an Undo (HIG "Undo and
 // redo"). The Undo must restore through the queue's ordinary whole-queue
@@ -28,6 +30,7 @@ const live = vi.hoisted(() => ({
   current: { queue: [], currentClimbQueueItem: null } as Snapshot,
   sessionId: 'session-1' as string | null,
   boardAccountScope: 'kilter:account-1',
+  playlistSource: null as PlaylistSuggestionSource | null,
 }));
 
 type ViewProps = { children?: ReactNode; testID?: string; onPress?: () => void; accessibilityLabel?: string };
@@ -138,7 +141,7 @@ const actions = vi.hoisted(() => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => live.current,
   useQueueActions: () => actions,
-  usePlaylistSuggestionSource: () => null,
+  usePlaylistSuggestionSource: () => live.playlistSource,
   useQueueSessionId: () => ({ sessionId: live.sessionId, undoScope: `${live.sessionId}:${live.boardAccountScope}` }),
 }));
 
@@ -186,6 +189,7 @@ beforeEach(() => {
   live.current = { queue, currentClimbQueueItem: queue[1] };
   live.sessionId = 'session-1';
   live.boardAccountScope = 'kilter:account-1';
+  live.playlistSource = null;
   for (const mock of Object.values(actions)) mock.mockReset();
   actions.getQueueSnapshot.mockImplementation(() => live.current);
   actions.restoreQueueItems.mockImplementation((before: Snapshot, removedUuids: ReadonlySet<string>) => {
@@ -194,6 +198,7 @@ beforeEach(() => {
   });
   actions.clearQueue.mockImplementation(() => {
     live.current = { queue: [], currentClimbQueueItem: null };
+    live.playlistSource = null;
   });
   actions.removeQueueItems.mockImplementation((uuids: readonly string[]) => {
     const removed = new Set(uuids);
@@ -208,6 +213,28 @@ beforeEach(() => {
 });
 
 describe('QueueSheet undo', () => {
+  it('rejects a stale Undo callback after privacy invalidation without waiting for a render', async () => {
+    const queryClient = new QueryClient();
+    live.playlistSource = {
+      playlistUuid: 'private-playlist',
+      activatedClimbUuid: 'climb-b',
+      boardKey: 'kilter:1',
+      climbs: [item('b').climb],
+    };
+    const { getByTestId } = renderSheet();
+    fireEvent.click(getByTestId('clear'));
+    const undoButton = getByTestId('undo');
+    // The mocked provider's scope stays unchanged: only the imperative privacy
+    // generation can protect the callback captured by this rendered button.
+    await invalidatePrivacyQueries(queryClient);
+    fireEvent.click(undoButton);
+
+    expect(actions.restoreQueueItems).not.toHaveBeenCalled();
+    expect(actions.setQueue).not.toHaveBeenCalled();
+    expect(actions.setPlaylistSuggestionSource).not.toHaveBeenCalled();
+    queryClient.clear();
+  });
+
   it('offers Undo after Clear and puts the queue back through setQueue', () => {
     const { getByTestId } = renderSheet();
     fireEvent.click(getByTestId('clear'));

@@ -13,7 +13,10 @@ vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => mocks.queryClien
 vi.mock('../../../lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'viewer' } }) }));
 vi.mock('../../../lib/graphql/hooks/use-privacy', () => ({ usePrivacySettings: () => ({ data: mocks.privacy }) }));
 vi.mock('../../../lib/graphql/ws-client', () => ({ getWsClient: () => ({ subscribe: mocks.subscribe }) }));
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ invalidatePrivacyQueries: mocks.invalidate }));
+vi.mock('../../../lib/privacy/privacy-cache', () => ({
+  invalidatePrivacyQueries: mocks.invalidate,
+  registerPrivacyRevalidation: vi.fn(() => vi.fn()),
+}));
 vi.mock('../../../lib/spray/spray-privacy-cleanup', () => ({ clearSprayWallPrivateCaches: vi.fn() }));
 vi.mock('../../../lib/spray/spray-photo-store', () => ({ clearStoredSprayPhotos: vi.fn() }));
 vi.mock('../../../offline/privacy-revalidation', () => ({ revalidatePrivateCatalog: vi.fn() }));

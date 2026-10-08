@@ -1,8 +1,80 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
-import { describe, expect, it } from 'vitest';
-import { invalidatePrivacyQueries } from '../privacy-cache';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  getPrivacyRevocationGeneration,
+  invalidatePrivacyQueries,
+  subscribeToPrivacyRevocations,
+  registerPrivacyRevalidation,
+} from '../privacy-cache';
 
 describe('privacy revocation', () => {
+  it('retires captured callbacks synchronously before query cancellation finishes', async () => {
+    const queryClient = new QueryClient();
+    let finishCancellation!: () => void;
+    vi.spyOn(queryClient, 'cancelQueries').mockImplementation(
+      () => new Promise<void>((resolve) => (finishCancellation = resolve)),
+    );
+    const previousGeneration = getPrivacyRevocationGeneration();
+    const listener = vi.fn();
+    const unsubscribe = subscribeToPrivacyRevocations(listener);
+
+    const invalidation = invalidatePrivacyQueries(queryClient);
+    expect(getPrivacyRevocationGeneration()).toBe(previousGeneration + 1);
+    expect(listener).toHaveBeenCalledOnce();
+
+    unsubscribe();
+    finishCancellation();
+    await invalidation;
+    queryClient.clear();
+  });
+
+  it('starts catalog withdrawal before listeners and waits before refetching', async () => {
+    const queryClient = new QueryClient();
+    const order: string[] = [];
+    let finish!: () => void;
+    const revalidation = new Promise<void>((resolve) => (finish = resolve));
+    const unregisterOld = registerPrivacyRevalidation(async () => {
+      throw new Error('superseded');
+    });
+    const unregister = registerPrivacyRevalidation(() => {
+      order.push('catalog');
+      return revalidation;
+    });
+    unregisterOld();
+    const unsubscribe = subscribeToPrivacyRevocations(() => order.push('snapshots'));
+    vi.spyOn(queryClient, 'invalidateQueries').mockImplementation(async () => {
+      order.push('refetch');
+    });
+    try {
+      const invalidation = invalidatePrivacyQueries(queryClient);
+      expect(order).toEqual(['catalog', 'snapshots']);
+      finish();
+      await invalidation;
+      expect(order).toEqual(['catalog', 'snapshots', 'refetch']);
+    } finally {
+      unsubscribe();
+      unregister();
+      queryClient.clear();
+    }
+  });
+
+  it('withdraws snapshots even when catalog revalidation throws', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['climb', 'private'], { name: 'Private climb' });
+    const previous = getPrivacyRevocationGeneration();
+    const unregister = registerPrivacyRevalidation(() => {
+      throw new Error('offline');
+    });
+    try {
+      await expect(invalidatePrivacyQueries(queryClient)).rejects.toThrow('offline');
+      expect(getPrivacyRevocationGeneration()).toBe(previous + 1);
+      expect(queryClient.getQueryData(['climb', 'private'])).toBeUndefined();
+    } finally {
+      unregister();
+      queryClient.clear();
+    }
+  });
+
   it('removes copied identity and private board projections but preserves personal unsynced ticks', async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(['publicProfile', 'private-user'], { displayName: 'Old name' });

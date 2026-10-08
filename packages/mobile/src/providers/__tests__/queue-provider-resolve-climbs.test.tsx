@@ -1,3 +1,4 @@
+import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
@@ -87,6 +88,7 @@ vi.mock('../../lib/session-store', () => ({
   clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 vi.mock('../../lib/queue-snapshot-store', () => ({
+  invalidateStoredQueueSnapshot: vi.fn(),
   getStoredQueueSnapshot: vi.fn(async () => null),
   getQueueSnapshotGeneration: () => 0,
   setStoredQueueSnapshot: vi.fn(async () => {}),
@@ -207,6 +209,94 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     }
     graph.execute.mockReset();
     http.request.mockReset();
+  });
+
+  it('withdraws copied queue details and keeps a current-only reference across privacy changes', async () => {
+    http.request.mockResolvedValue({ climb: null });
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    const current = makeItem('current-only', { ...makeClimb('private-current', 25, 'V8'), mirrored: true });
+    const queued = { ...makeItem('slot', makeClimb('private-queued', 25, 'V5')), addedBy: 'Private climber' };
+    act(() =>
+      snapshots
+        .at(-1)
+        ?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [queued], currentClimbQueueItem: current } }),
+    );
+    const retained = snapshots.at(-1)!;
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      // A captured callback cannot restore its old payload before React renders.
+      retained.setQueue([queued], current);
+    });
+    expect(snapshots.at(-1)?.state.queue.map(({ uuid }) => uuid)).toEqual(['slot']);
+    expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('');
+    expect(snapshots.at(-1)?.state.queue[0].addedBy).toBeUndefined();
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('current-only');
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.name).toBe('');
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(true);
+  });
+
+  it('resolves a current-only reference without adding a queue slot', async () => {
+    http.request.mockResolvedValue({ climb: makeClimb('current-climb', 25, 'V5') });
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    act(() =>
+      snapshots.at(-1)?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: {
+          queue: [],
+          currentClimbQueueItem: makeItem('current-only', { ...makeThinClimb('current-climb'), mirrored: true }),
+        },
+      }),
+    );
+    await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.name).toBe('Climb current-climb'));
+    expect(snapshots.at(-1)?.state.queue).toEqual([]);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.mirrored).toBe(true);
+  });
+
+  it('rejects an older hydration response after synchronous revocation', async () => {
+    let resolveOld!: (response: { climb: Climb }) => void;
+    http.request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    http.request.mockResolvedValue({ climb: null });
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    act(() =>
+      snapshots
+        .at(-1)
+        ?.dispatch({ type: 'UPDATE_QUEUE', payload: { queue: [makeItem('slot', makeThinClimb('private'))] } }),
+    );
+    await waitFor(() => expect(resolveOld).toBeTruthy());
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      resolveOld({ climb: makeClimb('private', 25, 'V8') });
+    });
+    expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('');
+  });
+
+  it('retains history angle and leaves cross-board references thin', async () => {
+    http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => ({
+      climb: makeClimb(variables.climbUuid, variables.angle, 'V5'),
+    }));
+    const snapshots = renderProvider();
+    await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+    const history = makeItem('history', { ...makeThinClimb('past'), angle: 20 });
+    const current = makeItem('current', makeThinClimb('now'));
+    const foreign = makeItem('foreign', { ...makeThinClimb('other-board'), boardType: 'tension', layoutId: 9 });
+    act(() =>
+      snapshots.at(-1)?.dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: [history, current, foreign], currentClimbQueueItem: current },
+      }),
+    );
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue[0].climb.name).toBe('Climb past'));
+    expect(snapshots.at(-1)?.state.queue[0].climb.angle).toBe(20);
+    expect(snapshots.at(-1)?.state.queue[2].climb.name).toBe('');
+    expect(http.request.mock.calls.some((call) => call[1].climbUuid === 'other-board')).toBe(false);
   });
 
   it('re-fetches an unresolved queue climb by uuid and hydrates it in place', async () => {

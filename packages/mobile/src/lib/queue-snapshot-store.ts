@@ -5,8 +5,8 @@
 // server; joins replace the local queue with the server snapshot).
 //
 // Backed by **unsecure** AsyncStorage via preference-store, not SecureStore:
-// a queue of climbs is non-secret and routinely larger than SecureStore's
-// 2 KB per-value limit.
+// only opaque climb references and queue order belong here. Climb details and
+// attribution must be fetched again under the current viewer's access.
 //
 // Schema migration note: `getPreference` silently returns null when JSON.parse
 // fails, but a stale value whose shape no longer matches `LocalQueueSnapshot`
@@ -14,21 +14,12 @@
 // when the shape changes so stale values are ignored rather than misread.
 
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { BOARD_FEED_SUGGESTION_SOURCE_ID } from './playlists/board-feed-suggestion-source';
+import { sanitizeQueueSnapshot } from './queue-privacy';
 import { getPreference, setPreference, removePreference } from './preference-store';
 import { createQueueSnapshotWriteLane } from './queue-snapshot-write-lane';
 import type { UserStorageOwner } from './user-storage-owner';
 
 const QUEUE_SNAPSHOT_KEY = 'boardsesh_local_queue_snapshot_v1';
-
-/**
- * `playlistSuggestionSource.climbs` can hold an entire ordered board list
- * (the activation refresh pages the whole playlist). Android's AsyncStorage
- * caps a single entry around 2 MB, so the persisted source keeps a window of
- * climbs around the activated one. Degraded restore = the queue comes back,
- * swiping through the rest of the playlist doesn't.
- */
-const MAX_PERSISTED_SUGGESTION_CLIMBS = 100;
 
 export type LocalQueueSnapshot = {
   queue: ClimbQueueItem[];
@@ -36,55 +27,34 @@ export type LocalQueueSnapshot = {
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   /** ISO 8601 write timestamp, for debugging stale restores. */
   savedAt: string;
+  /** Native snapshots predate account scoping; legacy references can be adopted. */
+  ownerUserId?: string | null;
 };
 
-function capSuggestionSource(source: PlaylistSuggestionSource | null): PlaylistSuggestionSource | null {
-  if (!source || source.climbs.length <= MAX_PERSISTED_SUGGESTION_CLIMBS) return source;
-  const activatedIndex = source.climbs.findIndex((climb) => climb.uuid === source.activatedClimbUuid);
-  const windowStart = Math.max(0, (activatedIndex === -1 ? 0 : activatedIndex) - MAX_PERSISTED_SUGGESTION_CLIMBS / 2);
-  return { ...source, climbs: source.climbs.slice(windowStart, windowStart + MAX_PERSISTED_SUGGESTION_CLIMBS) };
-}
-
-/**
- * Drop a persisted board-feed track on the way in.
- *
- * Up to 2.5.0 a board switch replaced the climber's own list with the board's
- * unfiltered popular-by-ascents feed, and that replacement was persisted. It is
- * exactly the track that served climbs the climber had filtered out (issue
- * #5403), so restoring one after the upgrade would reinstall the bug for the
- * people who hit it. The queue itself is untouched — this is one bad field, not
- * a reason to bump `QUEUE_SNAPSHOT_KEY` and throw away everyone's solo queue.
- *
- * Board-feed sources the fixed build writes are harmless (they carry the
- * climber's own masked list), so dropping them costs a restored climber their
- * swipe track once, not their queue.
- */
-function dropBoardFeedSource(snapshot: LocalQueueSnapshot | null): LocalQueueSnapshot | null {
-  if (!snapshot?.playlistSuggestionSource) return snapshot;
-  if (snapshot.playlistSuggestionSource.playlistUuid !== BOARD_FEED_SUGGESTION_SOURCE_ID) return snapshot;
-  return { ...snapshot, playlistSuggestionSource: null };
-}
-
-export async function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<LocalQueueSnapshot | null> {
-  return dropBoardFeedSource(await getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY));
+export async function getStoredQueueSnapshot(owner?: UserStorageOwner | null): Promise<LocalQueueSnapshot | null> {
+  const snapshot = await getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY);
+  if (!snapshot) return null;
+  if (snapshot.ownerUserId && snapshot.ownerUserId !== owner?.userId) return null;
+  // An unowned legacy queue keeps its references, never its copied content.
+  return sanitizeQueueSnapshot(snapshot);
 }
 
 const snapshotWriteLane = createQueueSnapshotWriteLane();
 
 export const getQueueSnapshotGeneration = snapshotWriteLane.getGeneration;
+export const invalidateStoredQueueSnapshot = snapshotWriteLane.invalidate;
 
 export function setStoredQueueSnapshot(
   snapshot: Omit<LocalQueueSnapshot, 'savedAt'>,
-  _owner?: UserStorageOwner | null,
+  owner?: UserStorageOwner | null,
   expectedGeneration = getQueueSnapshotGeneration(),
 ): Promise<void> {
-  return snapshotWriteLane.write(async () => {
-    await setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
-      ...snapshot,
-      playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
-      savedAt: new Date().toISOString(),
-    });
-  }, expectedGeneration);
+  const references: LocalQueueSnapshot = {
+    ...sanitizeQueueSnapshot(snapshot),
+    ownerUserId: owner?.userId ?? null,
+    savedAt: new Date().toISOString(),
+  };
+  return snapshotWriteLane.write(() => setPreference(QUEUE_SNAPSHOT_KEY, references), expectedGeneration);
 }
 
 export function clearStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<void> {

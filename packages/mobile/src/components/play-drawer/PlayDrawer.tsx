@@ -8,6 +8,9 @@ import {
   type ComponentType,
   type RefObject,
 } from 'react';
+import { usePrivacyCredentialScope, usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
+import { sanitizeClimbTarget } from '../../lib/queue-privacy';
+import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
 import {
   AccessibilityInfo,
   Platform,
@@ -332,6 +335,7 @@ export function PlayDrawer({
   const isSheetOpen = true;
   // Measured viewport of the scroll container; drives first-screen sizing so the
   // below-fold (Beta Videos) peek lands.
+  const composerCredentialScope = usePrivacyCredentialScope();
   const [sheetViewportHeight, setSheetViewportHeight] = useState(0);
   const handleViewportLayout = useCallback((event: LayoutChangeEvent) => {
     const measured = event.nativeEvent.layout.height;
@@ -340,12 +344,11 @@ export function PlayDrawer({
   // Seeded from the open target rather than left null: the effect that applies
   // the target runs after the first commit, so a pane that already has its climb
   // would otherwise paint one frame of the "Pick a climb" placeholder first.
-  const [drawerPreviewItem, setDrawerPreviewItem] = useState<ClimbQueueItem | null>(() =>
+  const [drawerPreviewItem, setDrawerPreviewItem] = usePrivacyScopedState<ClimbQueueItem | null>(() =>
     initialDrawerPreviewItem(openTarget),
   );
-  const [drawerPreviewSuggestionSource, setDrawerPreviewSuggestionSource] = useState<PlaylistSuggestionSource | null>(
-    null,
-  );
+  const [drawerPreviewSuggestionSource, setDrawerPreviewSuggestionSource] =
+    usePrivacyScopedState<PlaylistSuggestionSource | null>(null);
   // Only crew-captured tracks expire with the latch; explicit previews stay private.
   // True when the preview is the live wall climb (accessory bar) — the displayed
   // climb IS the one physically lit, which is what the "On the wall" pill states.
@@ -378,17 +381,22 @@ export function PlayDrawer({
   // The climb whose full climber-logs list is open. Keyed on the uuid (like
   // `mirrorFlip`) so moving to another climb closes the sheet without an effect.
   const [climberLogsClimbUuid, setClimberLogsClimbUuid] = useState<string | null>(null);
-  // Pinned climb/board the reaction menu opened the beta sheet for; null falls back
-  // to the live displayedClimb (the "+" button path). See #3505.
-  const [betaVideoTarget, setBetaVideoTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
-  // Pinned climb/board the reaction menu opened the tick sheet for; null falls back
-  // to the live displayedClimb (the FAB path). Mirrors betaVideoTarget so a party-
-  // session queue/angle change mid-menu can't retarget the sheet.
-  const [tickTarget, setTickTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
-  // Pinned climb/board the reaction menu opened the report sheet for; null falls
-  // back to the live displayedClimb (the Android actions-sheet path). Mirrors
-  // betaVideoTarget for the same reason.
-  const [reportTarget, setReportTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
+  // Composer targets stay pinned while the climber types. Privacy changes blank
+  // copied metadata without changing the target UUID or unmounting the draft.
+  const [betaVideoTarget, setBetaVideoTarget] = usePrivacyScopedState<{
+    climb: Climb;
+    boardConfig: BoardConfig;
+  }>(null, sanitizeClimbTarget);
+  // Keep the same target for a tick opened from the menu or FAB.
+  const [tickTarget, setTickTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(
+    null,
+    sanitizeClimbTarget,
+  );
+  // Reports preserve the typed reason while their target metadata is withdrawn.
+  const [reportTarget, setReportTarget] = usePrivacyScopedState<{ climb: Climb; boardConfig: BoardConfig }>(
+    null,
+    sanitizeClimbTarget,
+  );
   const [reportClimbOpen, setReportClimbOpen] = useState(false);
   const {
     requested: belowFoldContentRequested,
@@ -482,11 +490,14 @@ export function PlayDrawer({
   // capture reads it without making it a callback dep.
   const peekClimbRef = useRef<Climb | null>(null);
   const [isSwipeCommitting, setIsSwipeCommitting] = useState(false);
-  const [frozenPeekClimb, setFrozenPeekClimb] = useState<Climb | null>(null);
-  const handleSwipeAnimatingChange = useCallback((animating: boolean) => {
-    if (animating) setFrozenPeekClimb(peekClimbRef.current);
-    setIsSwipeCommitting(animating);
-  }, []);
+  const [frozenPeekClimb, setFrozenPeekClimb] = usePrivacyScopedState<Climb | null>(null);
+  const handleSwipeAnimatingChange = useCallback(
+    (animating: boolean) => {
+      if (animating) setFrozenPeekClimb(peekClimbRef.current);
+      setIsSwipeCommitting(animating);
+    },
+    [setFrozenPeekClimb],
+  );
   useAnimatedReaction(
     () => swipeIsAnimating.value,
     (animating, previous) => {
@@ -1171,7 +1182,7 @@ export function PlayDrawer({
     // `wallPillState` nor `displayedClimbUuid` on exit, which would strand the
     // explainer (and its focus trap) open with its action already spent.
     setWallCallout('none');
-  }, [markLatchExit]);
+  }, [markLatchExit, setDrawerPreviewItem, setDrawerPreviewSuggestionSource]);
 
   // The SELECTED board's angle moved (the angle pill / sheet — `activeAngle`, not
   // the render board's, which follows the displayed climb).
@@ -1215,7 +1226,7 @@ export function PlayDrawer({
     if (browseByDefaultRef.current) return;
     setDrawerPreviewItem(null);
     setDrawerPreviewSuggestionSource(null);
-  }, [activeAngle]);
+  }, [activeAngle, setDrawerPreviewItem, setDrawerPreviewSuggestionSource]);
 
   // Re-anchor the pinned preview at the live angle. Only fetches while the
   // preview's baked-in grade actually belongs to a different angle, and the patch
@@ -1233,7 +1244,7 @@ export function PlayDrawer({
     // (one that landed after the climber swiped on) or an item already at this
     // angle, so this never churns the preview.
     setDrawerPreviewItem((current) => reanchorPreviewAtAngle(current, angle, previewClimbAtAngle));
-  }, [previewClimbAtAngle, angle]);
+  }, [previewClimbAtAngle, angle, setDrawerPreviewItem]);
 
   const { showToast } = useToast();
 
@@ -1331,7 +1342,7 @@ export function PlayDrawer({
         setCurrentClimb(climbToQueueItem(selectedClimb), { playlistSuggestionSource: null });
       }
     },
-    [currentClimbQueueItem, setCurrentClimb, browseByDefault],
+    [currentClimbQueueItem, setCurrentClimb, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
   );
 
   // Apply the host's open target. A new target is a fresh object with a bumped
@@ -1379,6 +1390,7 @@ export function PlayDrawer({
     previousClimb,
     lightOnSwipe,
     browseByDefault,
+    setDrawerPreviewItem,
   ]);
 
   const handleNext = useCallback(() => {
@@ -1412,6 +1424,7 @@ export function PlayDrawer({
     nextClimb,
     lightOnSwipe,
     browseByDefault,
+    setDrawerPreviewItem,
   ]);
 
   // Commit the browse latch: the previewed climb becomes the current queue item,
@@ -1482,6 +1495,8 @@ export function PlayDrawer({
   }, [
     drawerPreviewItem,
     drawerPreviewSuggestionSource,
+    setDrawerPreviewItem,
+    setDrawerPreviewSuggestionSource,
     setCurrentClimb,
     markLatchExit,
     busyWallConfirmArmed,
@@ -1583,44 +1598,54 @@ export function PlayDrawer({
     setBleControlVisible(true);
   }, [bluetooth]);
 
-  // Beta Videos "+" button: null target → the sheet tracks the live displayedClimb.
+  // Pin the current target before opening the beta composer.
   const handleOpenAddBetaVideo = useCallback(() => {
-    setBetaVideoTarget(null);
+    if (!displayedClimb) return;
+    setBetaVideoTarget({ climb: displayedClimb, boardConfig: { boardName, layoutId, sizeId, setIds, angle } });
     setAddBetaVideoOpen(true);
-  }, []);
+  }, [displayedClimb, boardName, layoutId, sizeId, setIds, angle, setBetaVideoTarget]);
 
   // Reaction-menu beta: pin the climb/board the menu was opened for so a party-session
   // queue/angle change mid-menu can't retarget the sheet (#3505).
-  const handleOpenAddBetaVideoForClimb = useCallback((targetClimb: Climb, targetBoardConfig: BoardConfig) => {
-    setBetaVideoTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
-    setAddBetaVideoOpen(true);
-  }, []);
+  const handleOpenAddBetaVideoForClimb = useCallback(
+    (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+      setBetaVideoTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
+      setAddBetaVideoOpen(true);
+    },
+    [setBetaVideoTarget],
+  );
 
   // Reaction-menu tick: open the drawer's OWN in-tree tick sheet (it stacks above
   // the `/play` modal) instead of the root LogAscent sheet, which mounts behind
   // `/play` — presenting it dismisses `/play` and the tick sheet closes on its own.
   // Pin the climb/board the menu was opened for so a mid-menu queue change can't
   // retarget it. QuickTickOpened is tracked by useClimbActions (source climb_actions).
-  const handleOpenTickForClimb = useCallback((targetClimb: Climb, targetBoardConfig: BoardConfig) => {
-    resetZoomRef.current?.();
-    setTickTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
-    setIsTickBarActive(true);
-  }, []);
+  const handleOpenTickForClimb = useCallback(
+    (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+      resetZoomRef.current?.();
+      setTickTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
+      setIsTickBarActive(true);
+    },
+    [setTickTarget],
+  );
 
-  // Android actions-sheet report: null target → the sheet tracks the live
-  // displayedClimb, same as the beta "+" path.
+  // The Android actions-sheet report pins the same target as the reaction menu.
   const handleOpenReportClimb = useCallback(() => {
-    setReportTarget(null);
+    if (!displayedClimb) return;
+    setReportTarget({ climb: displayedClimb, boardConfig: { boardName, layoutId, sizeId, setIds, angle } });
     setReportClimbOpen(true);
-  }, []);
+  }, [displayedClimb, boardName, layoutId, sizeId, setIds, angle, setReportTarget]);
 
   // Reaction-menu report: open the drawer's OWN in-tree sheet (it stacks above
   // the `/play` modal) instead of the root one, and pin the climb/board the menu
   // was opened for so a party-session queue/angle change can't retarget it (#3505).
-  const handleOpenReportClimbForClimb = useCallback((targetClimb: Climb, targetBoardConfig: BoardConfig) => {
-    setReportTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
-    setReportClimbOpen(true);
-  }, []);
+  const handleOpenReportClimbForClimb = useCallback(
+    (targetClimb: Climb, targetBoardConfig: BoardConfig) => {
+      setReportTarget({ climb: targetClimb, boardConfig: targetBoardConfig });
+      setReportClimbOpen(true);
+    },
+    [setReportTarget],
+  );
 
   // Same rule as handleCloseAddBetaVideo: leave reportTarget alone while the
   // sheet animates out, the next open overwrites it.
@@ -1630,7 +1655,7 @@ export function PlayDrawer({
 
   // Don't clear betaVideoTarget here: the sheet is still animating out and reads
   // from it, so nulling it mid-dismiss would swap the shown climb for a frame. The
-  // next open overwrites it (the "+" path to null, the reaction path to its snapshot).
+  // next open overwrites it with the newly selected target.
   const handleCloseAddBetaVideo = useCallback(() => {
     setAddBetaVideoOpen(false);
   }, []);
@@ -1717,10 +1742,11 @@ export function PlayDrawer({
   const handleTickFabPress = useCallback(() => {
     resetZoomRef.current?.();
     trackTickOpened();
-    // Null target → the in-tree tick sheet tracks the live displayedClimb.
-    setTickTarget(null);
+    if (!displayedClimb) return;
+    // Keep the draft tied to its target even if the live queue or privacy changes.
+    setTickTarget({ climb: displayedClimb, boardConfig: { boardName, layoutId, sizeId, setIds, angle } });
     setIsTickBarActive(true);
-  }, [trackTickOpened]);
+  }, [trackTickOpened, displayedClimb, boardName, layoutId, sizeId, setIds, angle, setTickTarget]);
 
   // Long-press opens the same QuickTickBar as a short press; LogAscentSheet
   // has been retired in favour of a single ticking surface (see PR #2366).
@@ -1736,6 +1762,7 @@ export function PlayDrawer({
 
   const handleSimilarClimbPress = useCallback(
     async (similarClimb: Climb) => {
+      const privacyGeneration = getPrivacyRevocationGeneration();
       const queueItem = climbToQueueItem(similarClimb);
       // A signed-out reader swaps what the drawer is showing and writes nothing:
       // no queue entry they cannot carry anywhere, and no `setCurrentClimb`,
@@ -1761,6 +1788,7 @@ export function PlayDrawer({
       // the climb they were already looking at, not activate the one they just
       // declined to queue.
       if ((await addToQueue(queueItem)) === 'cancelled') return;
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
       // Tapping a similar climb activates it (commit), so it's never a preview —
       // clear any preview that was showing.
       setDrawerPreviewItem(null);
@@ -1770,7 +1798,7 @@ export function PlayDrawer({
       setIsTickBarActive(false);
       setCurrentClimb(queueItem, { playlistSuggestionSource: null });
     },
-    [addToQueue, setCurrentClimb, viewer, browseByDefault],
+    [addToQueue, setCurrentClimb, viewer, browseByDefault, setDrawerPreviewItem, setDrawerPreviewSuggestionSource],
   );
 
   // The first screen is sized so the action bar stays visible and the Logbook
@@ -2226,6 +2254,7 @@ export function PlayDrawer({
           video" row or the Beta Videos section "+" button. Mounted on first open. */}
       {mountAddBetaVideo && (
         <AddBetaVideoSheet
+          key={composerCredentialScope}
           visible={addBetaVideoOpen}
           climb={betaVideoTarget?.climb ?? displayedClimb ?? null}
           boardName={(betaVideoTarget?.boardConfig.boardName ?? boardName) as BoardName}
@@ -2267,6 +2296,7 @@ export function PlayDrawer({
           resets its own form on each fresh open rather than on unmount. */}
       {mountReportClimb && (
         <ReportClimbSheet
+          key={composerCredentialScope}
           visible={reportClimbOpen}
           climb={reportTarget?.climb ?? displayedClimb ?? null}
           boardName={(reportTarget?.boardConfig.boardName ?? boardName) as BoardName}
@@ -2300,13 +2330,14 @@ export function PlayDrawer({
           logging. Presents over the player route. The displayedClimb guard stays;
           the host is mounted on first open. */}
       {mountLogAscent &&
-        displayedClimb &&
+        (tickTarget?.climb ?? displayedClimb) &&
         (() => {
-          // The reaction-menu path pins its own climb/board snapshot; the FAB path
-          // leaves tickTarget null and tracks the live displayedClimb + active board.
+          // Both openers pin the target, preserving unsaved input while copied metadata is withdrawn.
           const tickClimb = tickTarget?.climb ?? displayedClimb;
+          if (!tickClimb) return null;
           return (
             <LogAscentSheet
+              key={composerCredentialScope}
               visible={isTickBarActive}
               onClose={handleTickBarDismiss}
               climbUuid={tickClimb.uuid}
