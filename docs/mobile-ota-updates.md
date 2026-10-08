@@ -889,11 +889,24 @@ their existing publish routes, with the trusted unlock before a production write
 | Minute 37 hourly | Recheck health and apply at most one timed step. Delays do not skip soak periods. |
 
 Each of 5%, 10%, 25% and 50% must soak for at least four hours. Completion additionally needs at
-least 20 hours overall, eight hours at 50%, the 22:00 UTC hour and healthy evidence on **both** platforms.
+least 20 hours overall, eight hours at 50%, the 22:00 UTC hour and healthy evidence on every changed platform.
 Insufficient samples with valid counts may progress through 50%, then hold. Missing or malformed
-health data holds progression. An unhealthy platform reverts both owned canaries, except the partial-finish
+health data holds progression. An unhealthy platform reverts the owned canaries, except the partial-finish
 case below. There is only one active production canary; staging and beta continue independently.
-Start and step clocks begin after both platform writes are confirmed, so a partial write never shortens a soak.
+Start and step clocks begin after every changed platform write is confirmed, so a partial write never shortens a soak.
+
+An unchanged platform must match one coherent production manifest: its captured native update UUID,
+launch bundle hash, asset hashes and Expo client configuration must match the frozen candidate.
+The controller records that UUID separately from the rollout IDs it owns. If both platforms are
+unchanged, it records the candidate as completed without rollout writes. If only one changes, only
+that platform needs rollout health and soak evidence; both platforms still require frozen native QA.
+The unchanged manifest is rechecked before each transition. An external change holds completion and
+reverts any owned sibling canary while preserving the external update.
+
+Upload leases and unchanged-platform attestations are checkpointed before bundle uploads or
+finalization. A retained receipt can recover a cancelled start, after validation against the frozen
+candidate and captured baselines. Normal active phases restore the candidate bytes for those checks;
+abort and revert can release owned canaries without that archive.
 
 Preparation and tick artifacts retain candidate bytes, receipts, owned update IDs and checkpoints for
 30 days. The source `mobile-ota-stage` artifact has its separate seven-day retention. Discovery accepts
