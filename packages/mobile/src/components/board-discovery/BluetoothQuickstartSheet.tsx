@@ -154,6 +154,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
             {boards.map((board) => (
               <Pressable
                 key={board.uuid}
+                accessibilityRole="button"
                 onPress={() => onSelect(board)}
                 style={[styles.row, { borderColor: systemColors.separator }]}
               >

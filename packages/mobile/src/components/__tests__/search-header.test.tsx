@@ -35,11 +35,18 @@ vi.mock('react-native', () => ({
     children,
     onPress,
     accessibilityLabel,
+    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+    style?: { width?: number; height?: number };
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, 'aria-label': accessibilityLabel, 'data-w': style?.width, 'data-h': style?.height },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
 }));
 
@@ -169,5 +176,17 @@ describe('SearchHeader', () => {
     expect(document.activeElement).toBe(input);
     act(() => ref.current?.blur());
     expect(document.activeElement).not.toBe(input);
+  });
+
+  it('clear button has a translated label and a 44pt hit target', () => {
+    ctrl.variant = 'liquidGlass';
+    const { getByPlaceholderText, getByRole } = render(
+      <SearchHeader placeholder="Search climbs" onChangeText={() => {}} onFocus={() => {}} onBlur={() => {}} />,
+    );
+    fireEvent.change(getByPlaceholderText('Search climbs'), { target: { value: 'x' } });
+    const clear = getByRole('button');
+    expect(clear.getAttribute('aria-label')).toBe('mobile.a11y.clearSearch');
+    expect(clear.getAttribute('data-w')).toBe('44');
+    expect(clear.getAttribute('data-h')).toBe('44');
   });
 });

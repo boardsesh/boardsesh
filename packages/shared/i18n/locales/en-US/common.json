@@ -10,6 +10,10 @@
       "viewProfile": "View {{name}}'s profile",
       "thisClimber": "this climber"
     },
+    "a11y": {
+      "clearSearch": "Clear search",
+      "moreActions": "More actions"
+    },
     "settings": {
       "title": "Settings",
       "library": "Library",

@@ -1,4 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
+import {
+  LONG_PRESS_ACTION_NAME,
+  namedAccessibilityActions,
+  onNamedAccessibilityAction,
+} from '../../lib/named-accessibility-action';
 import { Platform, Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -119,6 +124,20 @@ export function BleLightbulbButton({
       }
     : undefined;
 
+  const longPressActions = useMemo(
+    () =>
+      onLongPress && longPressAccessibilityHint
+        ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, longPressAccessibilityHint)
+        : undefined,
+    [onLongPress, longPressAccessibilityHint],
+  );
+  const onLongPressAction = useMemo(
+    () => (handleLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress) : undefined),
+    // handleLongPress is rebuilt every render; its only input is onLongPress.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onLongPress],
+  );
+
   const visualState = getBleLightbulbVisualState({
     isConnected,
     connectedColor: brandColors.warning,
@@ -130,6 +149,8 @@ export function BleLightbulbButton({
     <AnimatedPressable
       onPress={handlePress}
       onLongPress={handleLongPress}
+      accessibilityActions={longPressActions}
+      onAccessibilityAction={onLongPressAction}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={getBleLightbulbAccessibilityHint(

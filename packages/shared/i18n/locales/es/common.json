@@ -284,6 +284,10 @@
       "viewProfile": "Ver el perfil de {{name}}",
       "thisClimber": "este escalador"
     },
+    "a11y": {
+      "clearSearch": "Borrar la búsqueda",
+      "moreActions": "Más acciones"
+    },
     "settings": {
       "title": "Ajustes",
       "library": "Biblioteca",

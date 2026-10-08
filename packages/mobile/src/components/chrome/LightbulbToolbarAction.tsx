@@ -1,4 +1,9 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import {
+  LONG_PRESS_ACTION_NAME,
+  namedAccessibilityActions,
+  onNamedAccessibilityAction,
+} from '../../lib/named-accessibility-action';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
@@ -33,6 +38,16 @@ export function LightbulbToolbarAction() {
     onPress();
   }, [onPress]);
 
+  const longPressActions = useMemo(
+    () =>
+      localConnected ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, tSettings('ble.holdForControls')) : undefined,
+    [localConnected, tSettings],
+  );
+  const onLongPressAction = useMemo(
+    () => (onLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, onLongPress) : undefined),
+    [onLongPress],
+  );
+
   if (!bluetooth) return null;
 
   // On a wall with no light kit there is no Bluetooth link to describe, so the
@@ -57,6 +72,8 @@ export function LightbulbToolbarAction() {
       // Short press connects/disconnects; long press (connected) opens the
       // controls sheet — same as the drawer + accessory-bar lightbulbs.
       onLongPress={localConnected ? onLongPress : undefined}
+      accessibilityActions={longPressActions}
+      onAccessibilityAction={onLongPressAction}
       // The label reflects what tapping ACTUALLY does, not the fill — the bulb
       // can read lit because a peer holds the wall. Keyed on the resolved press
       // action rather than this device's link: while a session peer drives the

@@ -100,6 +100,7 @@ function GlassIconButtonMaterial({
   badgeCount,
   badgeBackgroundColor,
   badgeTextColor,
+  active = false,
   disabled = false,
   size = glassSize.standard,
 }: GlassIconButtonProps) {
@@ -124,6 +125,7 @@ function GlassIconButtonMaterial({
         disabled={disabled}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
+        accessibilityState={active ? { selected: true } : undefined}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
       />
@@ -232,6 +234,7 @@ function GlassIconButtonGlass({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
+        accessibilityState={active ? { selected: true } : undefined}
         accessibilityActions={accessibilityActions}
         onAccessibilityAction={onAccessibilityAction}
         style={[styles.button, { width: size, height: size, borderRadius: size / 2 }]}

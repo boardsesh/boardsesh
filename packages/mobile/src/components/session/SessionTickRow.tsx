@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/shared-schema';
@@ -22,6 +22,11 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
 import { sessionTickToClimb } from '../../lib/session-tick-mapping';
 import { tickToClimb } from '../../lib/tick-to-climb';
+import {
+  LONG_PRESS_ACTION_NAME,
+  namedAccessibilityActions,
+  onNamedAccessibilityAction,
+} from '../../lib/named-accessibility-action';
 import { hapticSelection, hapticMedium } from '../../lib/haptics';
 
 type TickStatusMeta = { icon: IconName; color: string };
@@ -133,6 +138,15 @@ export const SessionTickRow = memo(function SessionTickRow({
     });
   }, [tick, openClimbActions]);
 
+  const longPressActions = useMemo(
+    () => namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('playView.actionBar.climbActionsAria')),
+    [t],
+  );
+  const onLongPressAction = useMemo(
+    () => onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress),
+    [handleLongPress],
+  );
+
   const climb = sessionTickToClimb(tick);
   // The layout-default fallback memoises internally (static board metadata), so
   // this per-row call is O(1) after the first lookup for the board.
@@ -144,6 +158,8 @@ export const SessionTickRow = memo(function SessionTickRow({
         <PressableSurface
           onPress={handlePress}
           onLongPress={handleLongPress}
+          accessibilityActions={longPressActions}
+          onAccessibilityAction={onLongPressAction}
           feedback="opacity"
           opacityTo={0.7}
           accessibilityRole="button"

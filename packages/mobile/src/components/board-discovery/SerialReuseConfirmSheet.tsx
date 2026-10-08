@@ -57,9 +57,16 @@ export function SerialReuseConfirmSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel}>
+      <View style={styles.backdrop}>
+        {/* Sibling, not parent: a tappable ancestor hides the card's buttons from VoiceOver. */}
         <Pressable
-          onPress={(event) => event.stopPropagation()}
+          accessible={false}
+          importantForAccessibility="no"
+          style={StyleSheet.absoluteFill}
+          onPress={onCancel}
+        />
+        <View
+          accessibilityViewIsModal
           style={[
             styles.card,
             { backgroundColor: systemColors.secondaryBackground, paddingBottom: windowInsetBottom + spacing[4] },
@@ -109,8 +116,8 @@ export function SerialReuseConfirmSheet({
             variant="text"
             style={styles.fullWidth}
           />
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }

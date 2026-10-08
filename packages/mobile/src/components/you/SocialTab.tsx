@@ -265,6 +265,7 @@ function SocialStatCard({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${value} ${label}`}
+      accessibilityState={{ selected: active }}
       style={({ pressed }) => [
         styles.statCard,
         {
@@ -275,6 +276,12 @@ function SocialStatCard({
       ]}
     >
       <Icon name={icon} size={20} color={color} />
+      {/* Not colour alone (HIG Color and Contrast / WCAG 1.4.1): the active card also carries a glyph. */}
+      {active ? (
+        <View style={styles.activeCheck} pointerEvents="none">
+          <Icon name="check.small" size={16} color={color} />
+        </View>
+      ) : null}
       <Text variant="title3" style={styles.statValue}>
         {getCachedNumberFormat(undefined).format(value)}
       </Text>
@@ -316,6 +323,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing[4],
     gap: spacing[1],
+  },
+  activeCheck: {
+    position: 'absolute',
+    top: spacing[2],
+    right: spacing[2],
   },
   statValue: {
     fontWeight: '700',
