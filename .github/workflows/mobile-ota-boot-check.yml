@@ -1,0 +1,427 @@
+name: Mobile OTA Boot Check
+
+# Proves that the update a branch serves for one commit boots on a release build
+# of the app: the published bytes, loaded by the native updater, on a simulator
+# and an emulator. See docs/mobile-ota-updates.md ("Boot check").
+#
+# Per platform:
+#   1. Find the commit's stage receipt (runtime version + bundle hash).
+#   2. Restore a release binary built from that commit's native tree, or build it.
+#   3. scripts/mobile-ota-boot-check.ts: install fresh, launch twice, read what
+#      expo-updates recorded, fail unless the second launch ran that update.
+#
+# It publishes nothing and holds no secret. It reads a public manifest and this
+# repository's own artifacts, so it takes no OTA publish lock and may run beside
+# any publish.
+#
+# The pull_request trigger is the check testing itself: a PR that edits the
+# script or this file runs it against the newest staged update.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit whose staged update is under test. Empty means the newest staged commit.
+        type: string
+        required: false
+        default: ''
+      branch:
+        description: Update branch the binary is pinned to.
+        type: string
+        required: false
+        default: pr-staging
+      receipt_json:
+        description: >-
+          A receipt written by hand, for a branch with no stage receipt (a PR preview):
+          {"commitHash":"<sha>","platforms":{"ios":{"runtimeVersion":"…","updateId":"…"},"android":{…}}}.
+          `ref` must be the same commit.
+        type: string
+        required: false
+        default: ''
+    outputs:
+      passed:
+        description: "'true' when both platforms booted the update."
+        value: ${{ jobs.verdict.outputs.passed }}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit whose staged update is under test. Empty means the newest staged commit.
+        type: string
+        required: false
+        default: ''
+      branch:
+        description: Update branch the binary is pinned to.
+        type: string
+        required: false
+        default: pr-staging
+      receipt_json:
+        description: Hand-written receipt for a branch with no stage receipt. See the workflow file.
+        type: string
+        required: false
+        default: ''
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-ota-boot-check.yml'
+      - 'scripts/mobile-ota-boot-check.ts'
+      - 'scripts/lib/ota-boot-check.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ota-boot-check-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  UPDATE_BRANCH: ${{ inputs.branch || 'pr-staging' }}
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+  # What the embedded bundle is built with. No PostHog key and no Sentry DSN: the
+  # bundle built into the gate's binary reports nothing. The update under test
+  # carries the production keys, which is why its telemetry hosts are sinkholed
+  # before anything launches.
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_USE_RN_FETCH: '1'
+  # The Sentry build phases upload source maps and fail without a token.
+  SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+  # Keep in step with TELEMETRY_HOSTS in scripts/lib/ota-boot-check.ts; a test compares them.
+  TELEMETRY_HOSTS: us.i.posthog.com us-assets.i.posthog.com o4510644927660032.ingest.us.sentry.io
+
+jobs:
+  # Which commit, and what was staged for it. The receipt is the one the stage
+  # job archived beside the export it published; reading it needs no more than
+  # this repository's own token.
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      commit: ${{ steps.receipt.outputs.commit }}
+      receipt: ${{ steps.receipt.outputs.receipt }}
+      ios_runtime: ${{ steps.receipt.outputs.ios_runtime }}
+      android_runtime: ${{ steps.receipt.outputs.android_runtime }}
+    steps:
+      - name: Find the receipt for the commit under test
+        id: receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+          RECEIPT_JSON: ${{ inputs.receipt_json }}
+        run: |
+          set -euo pipefail
+          if [ -n "$RECEIPT_JSON" ]; then
+            printf '%s' "$RECEIPT_JSON" > receipt.json
+            echo "Using the receipt passed in."
+          else
+            if [ -n "$REF" ] && ! printf '%s' "$REF" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::ref must be a full 40-character commit SHA, got '$REF'."
+              exit 1
+            fi
+            # Newest first. An empty ref takes the newest staged commit.
+            artifact_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=mobile-ota-stage&per_page=100" \
+              --jq "[.artifacts[] | select(.expired | not) | select(\"$REF\" == \"\" or .workflow_run.head_sha == \"$REF\")][0].id // empty")"
+            if [ -z "$artifact_id" ]; then
+              echo "::error::No unexpired mobile-ota-stage artifact for ${REF:-any commit}. The stage receipt is kept 7 days; pass receipt_json, or stage the commit again."
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > stage.zip
+            unzip -p stage.zip receipt.json > receipt.json
+          fi
+          # Only the fields the check reads leave this job: a commit subject does not belong in an output.
+          receipt="$(jq -c '{commitHash, platforms: (.platforms | map_values({runtimeVersion, bundleSha256, updateId} | with_entries(select(.value != null))))}' receipt.json)"
+          commit="$(jq -r '.commitHash' <<<"$receipt")"
+          if [ -n "$REF" ] && [ "$commit" != "$REF" ]; then
+            echo "::error::The receipt is for $commit, not for ref $REF."
+            exit 1
+          fi
+          printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'
+          {
+            echo "commit=$commit"
+            echo "receipt=$receipt"
+            echo "ios_runtime=$(jq -r '.platforms.ios.runtimeVersion' <<<"$receipt")"
+            echo "android_runtime=$(jq -r '.platforms.android.runtimeVersion' <<<"$receipt")"
+          } >> "$GITHUB_OUTPUT"
+          echo "Boot check for commit \`$commit\` on \`$UPDATE_BRANCH\`." >> "$GITHUB_STEP_SUMMARY"
+
+  ios:
+    needs: resolve
+    runs-on: macos-26
+    # Warm: about 6 minutes. Cold adds a Release simulator build.
+    timeout-minutes: 90
+    outputs:
+      passed: ${{ steps.check.outputs.passed }}
+    env:
+      # The binary takes the update's runtime version the way a store build takes
+      # its own: as a literal, from this variable.
+      EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ needs.resolve.outputs.ios_runtime }}
+    steps:
+      # The native tree and the embedded bundle come from the commit under test,
+      # so the binary is one a phone could hold when this update reaches it.
+      - name: Check out the commit under test
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+
+      # The check itself comes from this workflow's commit, which may be newer.
+      - name: Check out the boot check
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: .boot-check
+          sparse-checkout: scripts
+
+      - name: Compute the binary cache key
+        id: key
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-boot-check-ios-v1-${{ needs.resolve.outputs.ios_runtime }}-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the release simulator app
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: boot-check-binary
+          key: ${{ steps.key.outputs.key }}
+
+      # The check needs Node and nothing else; the toolchain is only for a build.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.cache.outputs.cache-hit == 'true'
+        with:
+          node-version: '22.x'
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: vp install --frozen-lockfile
+
+      - name: Write .env for the embedded bundle
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
+          EOF
+
+      - name: Build the release simulator app
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          # Leaves out the screenshot build's dev-menu plugin, so the native
+          # project is the product's.
+          BOARDSESH_PROFILE_BUILD: '1'
+        run: vp run mobile:build-sim-app -- --configuration Release --app-out boot-check-binary --clean
+
+      - name: Save the release simulator app
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: boot-check-binary
+          key: ${{ steps.key.outputs.key }}
+
+      # The simulator resolves names through the host, so the host's own table
+      # is the one to edit. The script refuses to launch if this did not take.
+      - name: Sinkhole the update's telemetry hosts
+        run: |
+          for host in $TELEMETRY_HOSTS; do echo "0.0.0.0 $host" | sudo tee -a /etc/hosts > /dev/null; done
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder || true
+
+      - name: Boot a simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          udid="$(xcrun simctl create 'OTA boot check' 'iPhone 16 Pro Max')"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: Boot the update
+        id: check
+        env:
+          RECEIPT: ${{ needs.resolve.outputs.receipt }}
+        run: |
+          printf '%s' "$RECEIPT" > "$RUNNER_TEMP/receipt.json"
+          node --experimental-strip-types .boot-check/scripts/mobile-ota-boot-check.ts \
+            --platform ios \
+            --app-path boot-check-binary/Boardsesh.app \
+            --branch "$UPDATE_BRANCH" \
+            --expect-commit "${{ needs.resolve.outputs.commit }}" \
+            --receipt "$RUNNER_TEMP/receipt.json" \
+            --device "${{ steps.simulator.outputs.udid }}" \
+            --evidence-dir boot-check-evidence
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: boot-check-evidence-ios
+          path: boot-check-evidence/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  android:
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Warm: about 10 minutes. Cold adds an x86_64 release Gradle build.
+    timeout-minutes: 90
+    outputs:
+      passed: ${{ steps.verdict.outputs.passed }}
+    env:
+      EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ needs.resolve.outputs.android_runtime }}
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+
+      - name: Check out the boot check
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: .boot-check
+          sparse-checkout: scripts
+
+      # The branch is part of the key: an APK's manifest is compiled, so the
+      # branch header is baked before Gradle runs and cannot be changed after.
+      - name: Compute the binary cache key
+        id: key
+        run: echo "key=${{ runner.os }}-boot-check-android-v1-${{ env.UPDATE_BRANCH }}-${{ needs.resolve.outputs.android_runtime }}-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', '.github/actions/android-rn-setup/**') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the release APK
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: boot-check-binary
+          key: ${{ steps.key.outputs.key }}
+
+      # Dependencies, JDK, SDK and `expo prebuild`, from the commit under test.
+      - name: Generate the Android project
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/android-rn-setup
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.cache.outputs.cache-hit == 'true'
+        with:
+          node-version: '22.x'
+
+      - name: Pin the generated project to the branch
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: >-
+          node --experimental-strip-types .boot-check/scripts/mobile-ota-boot-check.ts
+          pin-android-project --branch "$UPDATE_BRANCH" --android-dir packages/mobile/android
+
+      # x86_64 only: it is the one ABI the KVM emulator runs. Signed with the
+      # debug key, the fallback in plugins/with-android-release-signing.js.
+      - name: Build the release APK
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: packages/mobile/android
+        run: |
+          set -euo pipefail
+          ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -PboardseshAbiFilters=x86_64 --no-daemon --console=plain --stacktrace
+          mkdir -p "$GITHUB_WORKSPACE/boot-check-binary"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/boot-check-binary/app-release.apk"
+
+      - name: Save the release APK
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: boot-check-binary
+          key: ${{ steps.key.outputs.key }}
+
+      - name: Free disk space for the emulator
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost || true
+          rm -rf packages/mobile/android ~/.gradle/caches || true
+          df -h /
+
+      # Without KVM the emulator falls back to software and is too slow to boot.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The emulator forwards DNS to the host's resolver, which reads this
+      # table. The script asks the device itself and refuses to launch if a
+      # telemetry host still resolves.
+      - name: Sinkhole the update's telemetry hosts
+        run: |
+          for host in $TELEMETRY_HOSTS; do echo "0.0.0.0 $host" | sudo tee -a /etc/hosts > /dev/null; done
+          sudo resolvectl flush-caches || true
+          command -v sqlite3 || sudo apt-get install -y --no-install-recommends sqlite3
+
+      - name: Write the receipt
+        env:
+          RECEIPT: ${{ needs.resolve.outputs.receipt }}
+        run: printf '%s' "$RECEIPT" > "$RUNNER_TEMP/receipt.json"
+
+      # `google_apis`, not `google_play`: the check reads the app's private
+      # update database, which needs `adb root`.
+      - name: Boot the update
+        id: check
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: node --experimental-strip-types .boot-check/scripts/mobile-ota-boot-check.ts --platform android --app-path boot-check-binary/app-release.apk --branch "$UPDATE_BRANCH" --expect-commit "${{ needs.resolve.outputs.commit }}" --receipt "$RUNNER_TEMP/receipt.json" --evidence-dir boot-check-evidence
+
+      # The emulator action does not pass a script's step outputs through.
+      - name: Read the verdict
+        id: verdict
+        if: always()
+        run: |
+          if [ -f boot-check-evidence/android-verdict ]; then
+            echo "passed=$(cat boot-check-evidence/android-verdict)" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: boot-check-evidence-android
+          path: boot-check-evidence/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  verdict:
+    needs: [resolve, ios, android]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      passed: ${{ steps.verdict.outputs.passed }}
+    steps:
+      - name: Require both platforms
+        id: verdict
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          IOS_PASSED: ${{ needs.ios.outputs.passed }}
+          ANDROID_PASSED: ${{ needs.android.outputs.passed }}
+        run: |
+          if [ "$RESOLVE_RESULT" = "success" ] && [ "$IOS_RESULT" = "success" ] && [ "$ANDROID_RESULT" = "success" ] && [ "$IOS_PASSED" = "true" ] && [ "$ANDROID_PASSED" = "true" ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Boot check failed. resolve: '$RESOLVE_RESULT', ios: '$IOS_RESULT' (passed: '${IOS_PASSED:-not run}'), android: '$ANDROID_RESULT' (passed: '${ANDROID_PASSED:-not run}')."
+          exit 1
