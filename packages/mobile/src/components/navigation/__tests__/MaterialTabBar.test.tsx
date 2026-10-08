@@ -63,8 +63,6 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole,
     accessibilityState,
     accessibilityLabel,
-    accessibilityActions,
-    onAccessibilityAction,
     style,
   }: {
     children?: ReactNode;
@@ -73,8 +71,6 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityRole?: string;
     accessibilityState?: { selected?: boolean };
     accessibilityLabel?: string;
-    accessibilityActions?: { name: string; label: string }[];
-    onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
     style?: unknown;
   }) =>
     createElement(
@@ -84,9 +80,6 @@ vi.mock('../../PressableSurface', () => ({
         // jsdom has no long-press event; map to contextmenu so fireEvent.contextMenu() triggers it
         onContextMenu: onLongPress,
         role: accessibilityRole,
-        'data-action-label': accessibilityActions?.map((action) => action.label).join('|'),
-        onDoubleClick: () =>
-          onAccessibilityAction?.({ nativeEvent: { actionName: accessibilityActions?.[0]?.name ?? '' } }),
         'aria-selected': accessibilityState?.selected,
         'aria-label': accessibilityLabel,
         'data-style': JSON.stringify(style),
@@ -411,17 +404,6 @@ describe('MaterialTabBar', () => {
       };
       const { getByRole } = render(<MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />);
       expect(getByRole('tab').getAttribute('aria-label')).toBe('boards');
-    });
-  });
-
-  describe('screen-reader long-press route', () => {
-    it('publishes a custom action that emits the same tabLongPress as a long press', () => {
-      const props = makeProps({});
-      const { getAllByRole } = render(createElement(MaterialTabBar, props as never));
-      const tab = getAllByRole('tab')[1];
-      expect(tab.getAttribute('data-action-label')).toBe('mobile.a11y.moreActions');
-      fireEvent.doubleClick(tab);
-      expect(props.navigation.emit).toHaveBeenCalledWith({ type: 'tabLongPress', target: 'route-b' });
     });
   });
 });

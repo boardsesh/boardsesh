@@ -125,7 +125,7 @@ describe('BleLightbulbButton write activity', () => {
     expect(view.container.querySelector('[data-spinner="true"]')).toBeNull();
     expect(view.container.querySelector('[data-icon="lightbulb.fill"]')).toBeTruthy();
     expect(button.getAttribute('data-busy')).toBe('false');
-    expect(button.getAttribute('data-hint')).toBe('Hold for controls');
+    expect(button.getAttribute('data-hint')).toBe('');
   });
 
   it('keeps the scanning pulse/icon and hint ahead of write feedback', () => {
@@ -178,7 +178,8 @@ describe('BleLightbulbButton screen-reader long-press route', () => {
       ),
     );
     const button = view.getByRole('button');
-    expect(button.getAttribute('data-action-label')).toBe('Hold for controls');
+    expect(button.getAttribute('data-action-label')).toBe('ble.boardControls');
+    expect(button.getAttribute('data-hint')).toBe('');
     fireEvent.contextMenu(button);
     expect(onLongPress).toHaveBeenCalledOnce();
   });
@@ -198,6 +199,9 @@ describe('BleLightbulbButton screen-reader long-press route', () => {
         }),
       ),
     );
-    expect(view.getByRole('button').getAttribute('data-action-label')).toBeNull();
+    const button = view.getByRole('button');
+    expect(button.getAttribute('data-action-label')).toBeNull();
+    // No handler, no action: the hint is still the (only) way the long press is described.
+    expect(button.getAttribute('data-hint')).toBe('Hold for controls');
   });
 });

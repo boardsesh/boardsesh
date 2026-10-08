@@ -1,5 +1,4 @@
-import { useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useCallback } from 'react';
 import { type LayoutChangeEvent, Platform, StyleSheet, View } from 'react-native';
 import type { BottomTabBarProps } from 'expo-router/tabs';
 import { Text } from '../Text';
@@ -10,11 +9,6 @@ import { brandColors as staticBrandColors } from '../../theme/colors';
 import { material } from '../../theme/tokens';
 import { MATERIAL_TAB_BAR_HEIGHT } from '../../theme/layout';
 import { isLiveTabBadge } from './tab-badge';
-import {
-  LONG_PRESS_ACTION_NAME,
-  namedAccessibilityActions,
-  onNamedAccessibilityAction,
-} from '../../lib/named-accessibility-action';
 
 /**
  * Material 3 bottom navigation bar — the JS tab bar for the Material UI variant
@@ -27,11 +21,6 @@ import {
  */
 export function MaterialTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const { systemColors, brandColors, m3 } = useTheme();
-  const { t } = useTranslation('common');
-  const longPressActions = useMemo(
-    () => namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('mobile.a11y.moreActions')),
-    [t],
-  );
   // M3 navigation bar roles: the focused destination's icon sits on a
   // secondaryContainer active-indicator circle (onSecondaryContainer glyph), its
   // label lifts to onSurface, and inactive destinations use onSurfaceVariant for
@@ -91,8 +80,6 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
             key={route.key}
             onPress={onPress}
             onLongPress={onLongPress}
-            accessibilityActions={longPressActions}
-            onAccessibilityAction={onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, onLongPress)}
             feedback="none"
             rippleColor={brandColors.primary}
             rippleBorderless

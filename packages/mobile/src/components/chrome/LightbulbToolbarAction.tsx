@@ -38,14 +38,17 @@ export function LightbulbToolbarAction() {
     onPress();
   }, [onPress]);
 
+  // Offered only where the long press itself is wired (connected, handler present).
+  const canOpenControls = localConnected && !!onLongPress;
   const longPressActions = useMemo(
     () =>
-      localConnected ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, tSettings('ble.holdForControls')) : undefined,
-    [localConnected, tSettings],
+      canOpenControls ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, tSettings('ble.boardControls')) : undefined,
+    [canOpenControls, tSettings],
   );
   const onLongPressAction = useMemo(
-    () => (onLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, onLongPress) : undefined),
-    [onLongPress],
+    () =>
+      canOpenControls && onLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, onLongPress) : undefined,
+    [canOpenControls, onLongPress],
   );
 
   if (!bluetooth) return null;

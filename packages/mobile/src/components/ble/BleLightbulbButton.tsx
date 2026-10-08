@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   LONG_PRESS_ACTION_NAME,
   namedAccessibilityActions,
@@ -78,6 +79,7 @@ export function BleLightbulbButton({
   containerSize = 44,
 }: BleLightbulbButtonProps) {
   const { systemColors, brandColors } = useTheme();
+  const { t: tSettings } = useTranslation('settings');
   const isWriting = useBluetoothWriteInProgress();
   const pulseOpacity = useSharedValue(1);
   const warningPulse = useSharedValue(0);
@@ -125,11 +127,8 @@ export function BleLightbulbButton({
     : undefined;
 
   const longPressActions = useMemo(
-    () =>
-      onLongPress && longPressAccessibilityHint
-        ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, longPressAccessibilityHint)
-        : undefined,
-    [onLongPress, longPressAccessibilityHint],
+    () => (onLongPress ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, tSettings('ble.boardControls')) : undefined),
+    [onLongPress, tSettings],
   );
   const onLongPressAction = useMemo(
     () => (handleLongPress ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress) : undefined),
@@ -158,7 +157,8 @@ export function BleLightbulbButton({
         isWriting,
         scanningAccessibilityHint,
         writingAccessibilityHint,
-        longPressAccessibilityHint,
+        // The custom action already names the long-press route; a hint would read it twice.
+        onLongPress ? undefined : longPressAccessibilityHint,
       )}
       accessibilityState={{ selected: accessibilitySelected ?? isConnected, busy: displayMode !== 'idle' }}
       hitSlop={8}

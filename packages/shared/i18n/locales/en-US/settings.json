@@ -493,6 +493,7 @@
     },
     "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",
+    "boardControls": "Board controls",
     "sendFailedTitle": "Couldn't light board",
     "connectionFailedTitle": "Couldn't connect",
     "permissionRequired": "Bluetooth permission required",

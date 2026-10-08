@@ -493,6 +493,7 @@
     },
     "turnOff": "Éteindre la board",
     "holdForControls": "Maintenir pour les commandes",
+    "boardControls": "Commandes de la board",
     "sendFailedTitle": "Impossible d'allumer la board",
     "connectionFailedTitle": "Connexion impossible",
     "permissionRequired": "Autorisation Bluetooth requise",

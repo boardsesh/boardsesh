@@ -38,12 +38,14 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
       <View style={styles.backdrop}>
         {/* Sibling, not parent: a tappable ancestor hides the card's buttons from VoiceOver. */}
         <Pressable
+          testID="disambiguation-backdrop"
           accessible={false}
           importantForAccessibility="no"
           style={StyleSheet.absoluteFill}
           onPress={onCancel}
         />
         <View
+          testID="disambiguation-card"
           accessibilityViewIsModal
           style={[
             styles.card,

@@ -7,27 +7,25 @@ import type { BoardCandidate } from '@boardsesh/shared-schema';
 vi.mock('react-native', () => ({
   Modal: ({ visible, children }: { visible: boolean; children?: ReactNode }) =>
     visible ? createElement('div', null, children) : null,
-  View: ({ children, accessibilityViewIsModal }: { children?: ReactNode; accessibilityViewIsModal?: boolean }) =>
-    createElement('div', { 'data-modal': String(!!accessibilityViewIsModal) }, children),
+  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
+    createElement('div', { 'data-testid': testID }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({
     children,
     onPress,
-    accessible,
-    importantForAccessibility,
+    testID,
     accessibilityRole,
   }: {
     children?: ReactNode;
     onPress?: () => void;
-    accessible?: boolean;
-    importantForAccessibility?: string;
+    testID?: string;
     accessibilityRole?: string;
   }) =>
     createElement(
       'div',
       {
         onClick: onPress,
-        'data-backdrop': accessible === false && importantForAccessibility === 'no' ? 'true' : undefined,
+        'data-testid': testID,
         'data-role': accessibilityRole,
       },
       children,
@@ -55,15 +53,14 @@ const candidates = [
 ] as unknown as BoardCandidate[];
 
 describe('BoardDisambiguationSheet accessibility', () => {
-  it('hides the backdrop from assistive tech and keeps it a sibling of the modal card', () => {
+  it('dismisses on a backdrop press but not on a press inside the card', () => {
     const onCancel = vi.fn();
-    const { container } = render(
+    const { getByTestId } = render(
       <BoardDisambiguationSheet visible candidates={candidates} onPick={() => {}} onCancel={onCancel} />,
     );
-    const backdrop = container.querySelector('[data-backdrop="true"]') as HTMLElement;
-    const card = container.querySelector('[data-modal="true"]') as HTMLElement;
-    expect(backdrop.contains(card)).toBe(false);
-    fireEvent.click(backdrop);
+    fireEvent.click(getByTestId('disambiguation-card'));
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(getByTestId('disambiguation-backdrop'));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 

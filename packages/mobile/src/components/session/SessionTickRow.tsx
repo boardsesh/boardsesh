@@ -138,13 +138,21 @@ export const SessionTickRow = memo(function SessionTickRow({
     });
   }, [tick, openClimbActions]);
 
+  // Offered only when the long press would open a menu (same early return as handleLongPress).
+  const canOpenMenu = useMemo(
+    () => !!tickToClimb(tick) && !!renderBoardToPlaylistConfig(tick.boardType, tick.layoutId, tick.renderBoard),
+    [tick],
+  );
   const longPressActions = useMemo(
-    () => namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('playView.actionBar.climbActionsAria')),
-    [t],
+    () =>
+      canOpenMenu
+        ? namedAccessibilityActions(LONG_PRESS_ACTION_NAME, t('playView.actionBar.climbActionsAria'))
+        : undefined,
+    [canOpenMenu, t],
   );
   const onLongPressAction = useMemo(
-    () => onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress),
-    [handleLongPress],
+    () => (canOpenMenu ? onNamedAccessibilityAction(LONG_PRESS_ACTION_NAME, handleLongPress) : undefined),
+    [canOpenMenu, handleLongPress],
   );
 
   const climb = sessionTickToClimb(tick);
