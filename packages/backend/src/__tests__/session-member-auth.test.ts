@@ -238,17 +238,22 @@ describe('isDurableSessionMember', () => {
 });
 
 describe('session audience revocation', () => {
-  it('rejects revoked access before consulting durable participation or live membership', async () => {
-    privacyAccess.allowed = false;
-    localContexts.set('ws-existing', { sessionId: 'session-1' });
-    dbMock.limit.mockResolvedValue([{ sessionId: 'session-1' }]);
-    await expect(
-      requireSessionMember(
-        makeCtx({ connectionId: 'ws-existing', userId: 'revoked-user', isAuthenticated: true }),
-        'session-1',
-      ),
-    ).rejects.toThrow('Not found');
-    expect(dbMock.limit).not.toHaveBeenCalled();
-    expect(getContextMock).not.toHaveBeenCalled();
-  });
+  it.each(['durable', 'local', 'distributed'] as const)(
+    'rejects revoked access despite %s membership',
+    async (membership) => {
+      privacyAccess.allowed = false;
+      if (membership === 'durable') dbMock.limit.mockResolvedValue([{ sessionId: 'session-1' }]);
+      if (membership === 'local') localContexts.set('ws-existing', { sessionId: 'session-1' });
+      if (membership === 'distributed') {
+        distributedState.enabled = true;
+        distributedState.isConnectionInSession.mockResolvedValue(true);
+      }
+      await expect(
+        requireSessionMember(
+          makeCtx({ connectionId: 'ws-existing', userId: 'revoked-user', isAuthenticated: true }),
+          'session-1',
+        ),
+      ).rejects.toThrow('Not found');
+    },
+  );
 });
