@@ -11,3 +11,7 @@ export const CLIENT_PLATFORM_CONNECTION_PARAM = 'clientPlatform';
 
 export const CLIENT_PLATFORMS = ['web', 'ios', 'android'] as const;
 export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
+
+export function isClientPlatform(candidate: string): candidate is ClientPlatform {
+  return candidate === 'web' || candidate === 'ios' || candidate === 'android';
+}

@@ -278,7 +278,10 @@ export function applyCorsHeaders(req: IncomingMessage, res: ServerResponse): boo
   // Content-Encoding is needed for the PostHog batch endpoint — posthog-js
   // gzips the payload when CompressionStream is available, and the browser
   // lists "content-encoding" in the preflight's Access-Control-Request-Headers.
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Encoding');
+  // X-Boardsesh-Platform labels a request web/ios/android for the first-party
+  // active-user count (CLIENT_PLATFORM_HEADER, #2644); without it here a
+  // browser that sends it would fail its preflight.
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);

@@ -72,7 +72,7 @@ Sentry.init({
   // relative) only, which is exactly what we want. Adding 'ws.boardsesh.com' to
   // reach the backend would be wrong *today* — packages/backend/src/handlers/cors.ts
   // answers preflights with
-  //     Access-Control-Allow-Headers: 'Content-Type, Authorization, Content-Encoding'
+  //     Access-Control-Allow-Headers: 'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform'
   // and nothing else. The moment the browser SDK decides a cross-origin request
   // is a propagation target it puts `sentry-trace, baggage` into that request's
   // Access-Control-Request-Headers, the preflight fails against that allowlist,

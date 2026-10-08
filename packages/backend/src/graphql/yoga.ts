@@ -8,7 +8,7 @@ import { validateToken } from '../middleware/auth';
 import { authenticateCronBearer } from '../middleware/cron-auth';
 import type { AuthResult } from '../middleware/auth';
 import { resolveWebSocketClientIp } from '../websocket/client-ip';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { CLIENT_PLATFORM_HEADER, type ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
 import { isLocalDevelopment, isTestEnvironment } from '@boardsesh/db/client/config';
@@ -16,6 +16,7 @@ import { logger } from '../utils/logger';
 import { wasErrorReported } from '../utils/sentry-dedupe';
 import { maskDatabaseError } from './mask-error';
 import { responseCompressionPlugin } from './response-compression';
+import { recordUserActivity, resolveActivityPlatform } from '../services/user-activity';
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
   if (!authHeader) return null;
@@ -74,6 +75,12 @@ export async function buildHttpConnectionContext({
 
   const isCronAuthenticated = authenticateCronBearer(authHeader);
   const authResult = isCronAuthenticated ? null : await authenticateHttpBearer(authHeader);
+
+  // First-party active-user count (#2644). Fire-and-forget: never on the
+  // request's critical path, and it never throws.
+  if (authResult) {
+    void recordUserActivity(authResult.userId, resolveActivityPlatform(request.headers.get(CLIENT_PLATFORM_HEADER)));
+  }
 
   return {
     connectionId: `http-${uuidv4()}`,
