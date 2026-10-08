@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- iPhones on iOS 18 get the standard iOS tab bar ([#6249](https://github.com/boardsesh/boardsesh/pull/6249))
+  Unvisited tabs wait to load their feeds until you open them
 - Save for a new climb now sits top right, out of the tool row ([#6240](https://github.com/boardsesh/boardsesh/pull/6240))
 - Spray wall photos keep every pixel of a 24 MP phone shot, so holds stay crisp when you zoom right in to mark them ([#6221](https://github.com/boardsesh/boardsesh/pull/6221))
 - See every look for your spray wall before you pick one ([#6215](https://github.com/boardsesh/boardsesh/pull/6215))
@@ -20,6 +22,13 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Buttons are sized like the rest of iOS and Android, with labels that no longer look oversized ([#6247](https://github.com/boardsesh/boardsesh/pull/6247))
+  Numbers like angles and grades no longer jitter while they change
+- Cleared the queue by mistake? Tap Undo to bring it back ([#6246](https://github.com/boardsesh/boardsesh/pull/6246))
+  Fewer buzzes: the phone only vibrates for things you did
+  VoiceOver now reads out confirmations and errors
+- Buttons at the top of sheets and screens look the same everywhere, with a checkmark to save on iPhone ([#6243](https://github.com/boardsesh/boardsesh/pull/6243))
+  Buttons and their labels are sized like the rest of iOS and Android
 - VoiceOver and TalkBack can now reach every button, including hidden long-press actions ([#6244](https://github.com/boardsesh/boardsesh/pull/6244))
 - The Log ascent buttons and sheet fields now stay fully above the keyboard ([#6241](https://github.com/boardsesh/boardsesh/pull/6241))
 - Filter, angle and board pickers keep their buttons at the top and no longer leave a gap at the bottom ([#6220](https://github.com/boardsesh/boardsesh/pull/6220))
