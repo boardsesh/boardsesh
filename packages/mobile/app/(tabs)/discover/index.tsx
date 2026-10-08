@@ -43,7 +43,6 @@ import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { iconMap } from '../../../src/components/icon-map';
 import { selectByVariant } from '../../../src/theme/variants';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
 import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
@@ -105,7 +104,7 @@ function playlistKey(playlist: { uuid: string }): string {
 
 export default function DiscoverLibrary() {
   const { t } = useTranslation('playlists');
-  const { brandColors, variant } = useTheme();
+  const { brandColors, systemColors, variant } = useTheme();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const bottomChrome = useBottomChromeMetrics();
   // The screen sits ABOVE the in-flow Material tab bar, so the FAB's `bottom` is
@@ -612,8 +611,12 @@ export default function DiscoverLibrary() {
         </Text>
 
         {showSignInPrompt ? (
-          <Pressable style={styles.signInBanner} onPress={() => router.push('/auth/login')} accessibilityRole="button">
-            <Icon name="person" size={26} color={iosSystemColors.systemGray} />
+          <Pressable
+            style={[styles.signInBanner, { borderColor: systemColors.separator }]}
+            onPress={() => router.push('/auth/login')}
+            accessibilityRole="button"
+          >
+            <Icon name="person" size={26} color={systemColors.secondaryLabel} />
             <View style={styles.signInText}>
               <Text variant="subheadline" style={styles.signInTitle}>
                 {t('library.signInBanner.title')}
@@ -719,7 +722,7 @@ export default function DiscoverLibrary() {
             Offer a retry instead of falsely claiming the library is empty. */}
         {showLoadError ? (
           <View style={styles.emptyContainer}>
-            <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+            <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
             <Text variant="headline" style={styles.emptyTitle}>
               {t('library.errors.loadTitle')}
             </Text>
@@ -755,7 +758,7 @@ export default function DiscoverLibrary() {
         forYouCards.length === 0 &&
         communityItems.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Icon name="playlist" size={48} color={iosSystemColors.systemGray4} />
+            <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
             <Text variant="headline" style={styles.emptyTitle}>
               {t('library.empty.title')}
             </Text>
@@ -860,7 +863,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
   },
   signInText: {
     flex: 1,

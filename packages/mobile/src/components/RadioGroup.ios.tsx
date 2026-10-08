@@ -48,7 +48,7 @@ export function RadioGroup<T extends string>({ options, value, onChange }: Radio
       ]}
     >
       <Picker
-        selection={value}
+        selection={value ?? undefined}
         onSelectionChange={(selected) => {
           // @expo/ui types the selection as the untyped Picker tag; our tags are
           // always the string option values, so guard rather than blind-cast.

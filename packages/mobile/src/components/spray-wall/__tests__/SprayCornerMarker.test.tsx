@@ -26,7 +26,8 @@ vi.mock('react-native-svg', () => ({
   Path: () => createElement('path'),
 }));
 vi.mock('../../../theme/tokens', () => ({ borderRadius: { lg: 12 } }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF' } }));
+vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ brandColors: { error: '#C81E1E' } }) }));
 
 vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');

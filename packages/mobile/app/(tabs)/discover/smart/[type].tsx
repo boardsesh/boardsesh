@@ -26,7 +26,7 @@ import { smartPlaylistByType } from '../../../../src/lib/smart-playlists';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';
-import { iosSystemColors } from '../../../../src/theme/ios-colors';
+import { useTheme } from '../../../../src/providers/theme-provider';
 
 type SmartParams = {
   type: string;
@@ -35,6 +35,7 @@ type SmartParams = {
 export default function SmartPlaylistDetail() {
   const { type } = useLocalSearchParams<SmartParams>();
   const { t } = useTranslation('playlists');
+  const { systemColors } = useTheme();
   const { data: profile } = useProfile();
   const { isLoading: tokenLoading } = useAuthToken();
   // "Is anyone else here" — one boolean off a dedicated selector context, so the
@@ -132,7 +133,7 @@ export default function SmartPlaylistDetail() {
     return (
       <View style={styles.stateContainer}>
         <PlaylistBackFab />
-        <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('library.smart.notFound.title')}
         </Text>

@@ -152,7 +152,7 @@ export function EditProfileScreen() {
           }}
           disabled={isSaving}
         />
-        <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.avatarHint}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.avatarHint}>
           {t('profile.avatar.hintMobile')}
         </Text>
       </View>

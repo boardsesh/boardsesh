@@ -109,7 +109,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {tSettings('ble.blockedTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {bluetoothBlockedBody(tSettings)}
               </Text>
               {canOpenAppSettings() && (
@@ -189,7 +189,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationHintTitle')}
                 </Text>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationHintBody')}
                 </Text>
                 <Button
@@ -205,7 +205,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationServicesHintTitle')}
                 </Text>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationServicesHintBody')}
                 </Text>
                 <Button
@@ -218,7 +218,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
               </>
             ) : (
               // The zero-result state used to end here, with nothing to try next.
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {t('settings:ble.troubleshootTips')}
               </Text>
             )}

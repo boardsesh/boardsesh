@@ -1397,7 +1397,7 @@ export function SprayWallWizardScreen({
             {resumeError ? null : <ActivityIndicator />}
             <Text
               variant="subheadline"
-              color={resumeError ? iosSystemColors.systemRed : systemColors.secondaryLabel}
+              color={resumeError ? systemColors.error : systemColors.secondaryLabel}
               accessibilityLiveRegion="polite"
             >
               {resumeError ??
@@ -1440,7 +1440,7 @@ export function SprayWallWizardScreen({
               />
             </View>
             <AngleSlider angles={sprayAngles} value={builder.angle} onChange={builder.setAngle} />
-            <Text variant="caption1" color={systemColors.tertiaryLabel}>
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
               {t('sprayWizard.meta.angleHint')}
             </Text>
 
@@ -1453,7 +1453,7 @@ export function SprayWallWizardScreen({
                 number a gym with a lot of bays can reach, and meeting it as a
                 refusal on the publish step — with a photo already uploaded — is
                 the worst moment to learn it. */}
-            <Text variant="caption1" color={systemColors.tertiaryLabel}>
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
               {t('sprayCaps.wallsHint', { max: SPRAY_CAP_VALUES.walls })}
             </Text>
           </>
@@ -1536,7 +1536,7 @@ export function SprayWallWizardScreen({
           <>
             <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
             {state.upload.error ? (
-              <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
                 {state.upload.error}
               </Text>
             ) : (
@@ -1565,7 +1565,7 @@ export function SprayWallWizardScreen({
           <>
             <Text variant="title3">{t('sprayWizard.publish.title')}</Text>
             {state.publish.error ? (
-              <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
                 {state.publish.error}
               </Text>
             ) : (

@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { hapticSelection } from '../../lib/haptics';
 
@@ -32,7 +31,8 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
   onClearAll,
 }: QueueSheetHeaderProps) {
   const { t } = useTranslation('session');
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
+  const headerButtonStyle = [styles.headerButton, { backgroundColor: systemColors.fill }];
 
   const handleToggleHistory = useCallback(() => {
     hapticSelection();
@@ -54,7 +54,7 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             accessibilityLabel={t('queueDrawer.clear')}
             hitSlop={8}
           >
-            <Text variant="body" color={iosSystemColors.systemRed}>
+            <Text variant="body" color={systemColors.error}>
               {t('queueDrawer.clear')}
             </Text>
           </Pressable>
@@ -70,9 +70,9 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             accessibilityRole="button"
             accessibilityLabel={t('mobile.queueSheet.doneEditing')}
             hitSlop={8}
-            style={styles.headerButton}
+            style={headerButtonStyle}
           >
-            <Icon name="close" size={18} color={iosSystemColors.systemGray} />
+            <Icon name="close" size={18} color={systemColors.secondaryLabel} />
           </Pressable>
         </View>
       </View>
@@ -88,19 +88,19 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           accessibilityLabel={t('mobile.queueSheet.toggleHistory')}
           hitSlop={8}
           style={[
-            styles.headerButton,
+            headerButtonStyle,
             showHistory && styles.headerButtonActive,
             showHistory && { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` },
           ]}
         >
-          <Icon name="history" size={22} color={showHistory ? brandColors.primary : iosSystemColors.systemGray} />
+          <Icon name="history" size={22} color={showHistory ? brandColors.primary : systemColors.secondaryLabel} />
         </Pressable>
       </View>
 
       <View style={styles.centerSection}>
         <Text variant="headline">{t('queueDrawer.title')}</Text>
         {queueCount > 0 && (
-          <Text variant="caption1" color={iosSystemColors.systemGray}>
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('mobile.queue.climbCount', { count: queueCount })}
           </Text>
         )}
@@ -113,9 +113,9 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
             accessibilityRole="button"
             accessibilityLabel={t('mobile.queueSheet.editQueue')}
             hitSlop={8}
-            style={styles.headerButton}
+            style={headerButtonStyle}
           >
-            <Icon name="edit" size={20} color={iosSystemColors.systemGray} />
+            <Icon name="edit" size={20} color={systemColors.secondaryLabel} />
           </Pressable>
         )}
 
@@ -124,9 +124,9 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
           accessibilityRole="button"
           accessibilityLabel={t('playView.closeAria')}
           hitSlop={8}
-          style={styles.headerButton}
+          style={headerButtonStyle}
         >
-          <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
+          <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
         </Pressable>
       </View>
     </View>
@@ -164,7 +164,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 22,
-    backgroundColor: `${iosSystemColors.systemGray}1F`,
   },
   headerButtonActive: {
     borderWidth: 1,

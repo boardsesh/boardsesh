@@ -32,7 +32,6 @@ import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { useTheme } from '../../src/providers/theme-provider';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 import { sprayResetWizardHref } from '../../src/lib/spray/spray-routes';
 import { confirmSprayWallReset } from '../../src/lib/spray/confirm-spray-wall-reset';
@@ -66,7 +65,7 @@ export default function EditBoard() {
   if (!board || !boardName) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="error" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="error" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.edit.notFound')}
         </Text>
@@ -86,7 +85,7 @@ export default function EditBoard() {
   if (!board.canEdit) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="lock" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="lock" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.edit.noAccess')}
         </Text>

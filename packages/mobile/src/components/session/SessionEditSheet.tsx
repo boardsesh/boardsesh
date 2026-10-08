@@ -174,7 +174,7 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
           multiline
           style={[styles.input, styles.multiline, { backgroundColor: systemColors.fill, color: systemColors.label }]}
         />
-        <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.counter}>
+        <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.counter}>
           {t('summary.commentHelper', { count: recap.length, max: SESSION_NOTES_MAX_LENGTH })}
         </Text>
 

@@ -31,7 +31,15 @@ vi.mock('../../../lib/ble/rogue-timer-ble', () => ({
 type ChildrenProps = { children?: ReactNode };
 type PressableProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
-  View: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  // Exposes the resolved background colour so the RSSI bars can be asserted.
+  View: ({ children, style }: ChildrenProps & { style?: unknown }) => {
+    const styleEntries = (Array.isArray(style) ? style : [style]) as Array<{ backgroundColor?: string } | undefined>;
+    const backgroundColor = styleEntries.reduce<string | undefined>(
+      (resolved, entry) => entry?.backgroundColor ?? resolved,
+      undefined,
+    );
+    return createElement('div', backgroundColor ? { 'data-bg': backgroundColor } : {}, children);
+  },
   Pressable: ({ children, onPress, accessibilityLabel }: PressableProps) =>
     createElement('button', { onClick: onPress, 'data-row': accessibilityLabel }, children),
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
@@ -69,14 +77,14 @@ vi.mock('../../SheetTopBar', () => ({
     ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: { primary: '#000' } }),
+  useTheme: () => ({ systemColors: { error: 'theme-error', fill: 'theme-fill' }, brandColors: { primary: '#000' } }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: new Proxy({}, { get: () => 0 }),
   borderRadius: new Proxy({}, { get: () => 0 }),
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: {} }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGreen: '#34c759', systemYellow: '#ffcc00' } }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ChildrenProps) => createElement('span', {}, children) }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
@@ -139,5 +147,13 @@ describe('TimerPairingSheet', () => {
     const cancel = container.querySelector('[data-leading="cancel"]') as HTMLButtonElement;
     act(() => cancel.click());
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws a weak timer signal in the theme error role', () => {
+    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+    act(() => scan.state.onUpdate?.([device('weak', 'Rogue Far Timer', -90)]));
+
+    expect(container.querySelectorAll('[data-bg="theme-error"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-bg="theme-fill"]').length).toBeGreaterThanOrEqual(2);
   });
 });

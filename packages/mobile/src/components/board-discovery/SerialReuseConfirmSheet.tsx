@@ -94,7 +94,7 @@ export function SerialReuseConfirmSheet({
                 </Text>
               ) : null}
               {board.ownerDisplayName ? (
-                <Text variant="footnote" color={systemColors.tertiaryLabel}>
+                <Text variant="footnote" color={systemColors.secondaryLabel}>
                   {board.ownerDisplayName}
                 </Text>
               ) : null}

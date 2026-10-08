@@ -15,7 +15,6 @@ import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useDrainAllPages } from '../../../src/hooks/use-drain-all-pages';
 import { sortAndFilterPlaylists } from '../../../src/lib/sort-filter-playlists';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 
 /**
@@ -96,7 +95,7 @@ export default function AllPlaylistsScreen() {
   if (!isAuthenticated && !authLoading) {
     return (
       <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="person" size={48} color={iosSystemColors.systemGray4} />
+        <Icon name="person" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('library.signInBanner.title')}
         </Text>
@@ -115,7 +114,7 @@ export default function AllPlaylistsScreen() {
   if (hasError && !isLoading && playlists.length === 0) {
     return (
       <View style={[styles.flex, styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('library.errors.loadTitle')}
         </Text>
@@ -148,7 +147,7 @@ export default function AllPlaylistsScreen() {
             value={query}
             onChangeText={setQuery}
             placeholder={t('library.allPlaylists.searchPlaceholder')}
-            placeholderTextColor={iosSystemColors.systemGray}
+            placeholderTextColor={systemColors.tertiaryLabel}
             style={[styles.searchInput, { color: systemColors.label }]}
             autoCapitalize="none"
             autoCorrect={false}
@@ -183,7 +182,7 @@ export default function AllPlaylistsScreen() {
           keyboardDismissMode="on-drag"
           ListEmptyComponent={
             <View style={[styles.centered, styles.emptyBlock]}>
-              <Icon name="playlist" size={48} color={iosSystemColors.systemGray4} />
+              <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
               <Text variant="headline" style={styles.stateTitle}>
                 {playlists.length === 0
                   ? t('library.empty.title')

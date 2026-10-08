@@ -23,7 +23,8 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
+    createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: () => onPress?.() }, children),
   StyleSheet: { create: (styles: unknown) => styles },
@@ -42,8 +43,14 @@ vi.mock('../Text', () => ({
   Text: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
     createElement('span', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
 }));
-vi.mock('../Icon', () => ({ Icon: () => createElement('i', null) }));
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { fill: 'theme-fill', tertiaryLabel: 'theme-tertiary-label' } }),
+}));
 
 const TITLE = 'Logbook';
 const LONG_SUMMARY = '40° · not tried yet · sent at 3 angles · tried at 45°';
@@ -61,7 +68,14 @@ async function renderHeader() {
     if (!node) throw new Error(`No <span> rendered for ${JSON.stringify(text)}`);
     return JSON.parse(node.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
   };
-  return { title: styleOf(TITLE), summary: styleOf(LONG_SUMMARY) };
+  const chevron = container.querySelector('i[data-icon="chevron.down"]');
+  const card = container.firstElementChild;
+  return {
+    title: styleOf(TITLE),
+    summary: styleOf(LONG_SUMMARY),
+    chevronColor: chevron?.getAttribute('data-color'),
+    cardStyle: JSON.parse(card?.getAttribute('data-style') ?? '{}') as Record<string, unknown>,
+  };
 }
 
 describe('CollapsibleSection collapsed header layout', () => {
@@ -85,5 +99,13 @@ describe('CollapsibleSection collapsed header layout', () => {
     expect(summary.flexBasis).toBe(0);
     expect(summary.flexGrow).toBe(1);
     expect(summary.flexShrink).toBe(1);
+  });
+
+  it('paints the card and chevron from the scheme-aware theme roles', async () => {
+    const { chevronColor, cardStyle } = await renderHeader();
+
+    // The static #8E8E93 never adapted to dark mode; the theme roles do.
+    expect(chevronColor).toBe('theme-tertiary-label');
+    expect(cardStyle.backgroundColor).toBe('theme-fill');
   });
 });

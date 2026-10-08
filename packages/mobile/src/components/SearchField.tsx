@@ -1,7 +1,6 @@
 import { forwardRef, type ComponentType } from 'react';
 import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { Icon } from './Icon';
-import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 
@@ -49,7 +48,7 @@ export const SearchField = forwardRef<TextInput, SearchFieldProps>(function Sear
         onChangeText={onChangeText}
         onSubmitEditing={onSubmitEditing}
         placeholder={placeholder}
-        placeholderTextColor={iosSystemColors.systemGray}
+        placeholderTextColor={systemColors.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"

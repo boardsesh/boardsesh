@@ -163,6 +163,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     systemColors: { fill: '#eee', label: '#111', secondaryLabel: '#666', separator: '#ccc' },
     brandColors: { primary: '#6D28D9', accent: '#FFB000', onPrimary: '#fff' },
+    chartColors: { separator: '#ccc' },
   }),
 }));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));

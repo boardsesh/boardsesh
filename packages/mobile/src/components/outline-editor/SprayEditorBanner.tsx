@@ -4,7 +4,6 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { GlassSurface } from '../GlassSurface';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type SprayEditorBannerProps = {
@@ -39,7 +38,7 @@ export const SprayEditorBanner = React.memo(function SprayEditorBanner({
       <View style={styles.line}>
         <Text
           variant="subheadline"
-          color={tone === 'error' ? iosSystemColors.systemRed : systemColors.label}
+          color={tone === 'error' ? systemColors.error : systemColors.label}
           accessibilityLiveRegion="polite"
           style={styles.message}
         >

@@ -112,8 +112,13 @@ vi.mock('../../offline/OfflineNudgeCard', () => ({
 vi.mock('../../../hooks/use-display-grade', () => ({
   useDisplayGrade: () => ({ resolveGrade: () => ({ label: 'V4', color: '#333' }) }),
 }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ brandColors: { primary: '#000' } }) }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#888', white: '#fff' } }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({
+    brandColors: { primary: '#000' },
+    systemColors: { secondaryLabel: '#3C3C4399', fill: '#7878801F' },
+  }),
+}));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 16: 64 },
   borderRadius: { md: 8, full: 999 },

@@ -471,7 +471,6 @@
       "timeoutLabel": "Trennen nach",
       "toggleTitle": "Automatisch trennen",
       "toggleSubtitle": "Trennen nach {{timeout}} ohne Aktivität",
-      "toggleAccessibility": "Automatisches Trennen umschalten",
       "timeoutOptions": {
         "10": "10 Sekunden",
         "15": "15 Sekunden",

@@ -151,7 +151,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
       ) : null}
 
       <View style={styles.legend}>
-        <Text variant="caption2" color={chartColors.tertiaryLabel}>
+        <Text variant="caption2" color={chartColors.secondaryLabel}>
           {t('stats.calendarLess')}
         </Text>
         <View style={[styles.legendSwatches, { gap: CELL_GAP }]}>
@@ -166,7 +166,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
             <View key={INTENSITY_STEPS[stepIndex]} style={[styles.swatch, { backgroundColor: fill }]} />
           ))}
         </View>
-        <Text variant="caption2" color={chartColors.tertiaryLabel}>
+        <Text variant="caption2" color={chartColors.secondaryLabel}>
           {t('stats.calendarMore')}
         </Text>
       </View>

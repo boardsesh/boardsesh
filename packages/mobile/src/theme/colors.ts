@@ -33,9 +33,13 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
         tertiaryLabel: PlatformColor('tertiaryLabel'),
         separator: PlatformColor('separator'),
         fill: PlatformColor('systemFill'),
-        // Interactive-accent (links, active tab, edit·copy·open affordances).
-        // PlatformColor('link') is Apple's link blue and adapts to dark natively.
-        accent: PlatformColor('link'),
+        // Error / destructive foreground. systemRed adapts to dark mode AND to
+        // Increase Contrast, which a static hex cannot (HIG Color: "use system
+        // colors… they automatically adapt to accessibility settings").
+        error: PlatformColor('systemRed'),
+        // NOTE: no `accent` here. The interactive accent is the brand violet —
+        // the same tint the @expo/ui controls use — resolved per scheme in the
+        // ThemeProvider (HIG Color: one tint for every interactive element).
       }
     : null;
 

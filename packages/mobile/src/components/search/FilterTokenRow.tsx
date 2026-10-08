@@ -10,7 +10,6 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { FilterToken } from '../../lib/filter-tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { hapticSelection } from '../../lib/haptics';
 import { useTheme } from '../../providers/theme-provider';
@@ -36,7 +35,7 @@ function TokenPill({ token }: { token: FilterToken }) {
       <Text variant="caption1" numberOfLines={1} style={styles.pillLabel}>
         {token.label}
       </Text>
-      <Icon name="close" size={14} color={iosSystemColors.systemGray} />
+      <Icon name="close" size={14} color={systemColors.secondaryLabel} />
     </Pressable>
   );
 }

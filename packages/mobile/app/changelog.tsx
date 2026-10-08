@@ -99,7 +99,7 @@ const ChangelogEntryRow = memo(function ChangelogEntryRow({ entry, onPress }: Ch
     <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
       <View style={styles.cardHeader}>
         <CategoryChip category={entry.category} />
-        <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.cardDate}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.cardDate}>
           {formatRelativeTime(entry.mergedAt)}
         </Text>
         {pressable ? <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} /> : null}
@@ -152,7 +152,7 @@ const NativeReleaseRow = memo(function NativeReleaseRow({ release }: { release: 
         <Text variant="footnote" color={brandColors.primary} style={styles.nativeTitle}>
           {t('mobile.changelog.nativeRelease.title')}
         </Text>
-        <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.nativeDate}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.nativeDate}>
           {formatRelativeTime(release.date)}
         </Text>
       </View>

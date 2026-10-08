@@ -235,7 +235,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   }, [onShare]);
 
   return (
-    <View style={drawerActionBarStyles.container}>
+    <View style={[drawerActionBarStyles.container, { borderTopColor: theme.systemColors.separator }]}>
       <View style={drawerActionBarStyles.rowPrimary}>
         {/* Mirror, or the heart where a board can't mirror. An anonymous reader
             gets neither fallback — a favourite needs an account — so the slot
@@ -260,7 +260,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               size="lg"
               iconName={isFavorited ? 'favorite.fill' : 'favorite'}
               onPress={handleFavorite}
-              iconColor={isFavorited ? iosSystemColors.systemRed : undefined}
+              iconColor={isFavorited ? theme.brandColors.error : undefined}
               accessibilityLabel={
                 isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
               }
@@ -362,9 +362,13 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 // A label-only mini pill (32pt); hit-slop lifts the tap target back to
                 // the 44pt floor without growing the visual chip.
                 hitSlop={8}
-                style={({ pressed }) => [styles.anglePill, pressed && drawerActionBarStyles.actionButtonPressed]}
+                style={({ pressed }) => [
+                  styles.anglePill,
+                  { borderColor: theme.systemColors.separator },
+                  pressed && drawerActionBarStyles.actionButtonPressed,
+                ]}
               >
-                <Text variant="caption1" style={styles.angleText}>
+                <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
                   {currentAngle}°
                 </Text>
               </Pressable>
@@ -374,7 +378,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 size="sm"
                 iconName={isFavorited ? 'favorite.fill' : 'favorite'}
                 onPress={handleFavorite}
-                iconColor={isFavorited ? iosSystemColors.systemRed : undefined}
+                iconColor={isFavorited ? theme.brandColors.error : undefined}
                 accessibilityLabel={
                   isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
                 }
@@ -433,6 +437,7 @@ type ShareButtonProps = {
 // the shared icon-map.
 function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
   const { dim, icon } = SIZES[size];
+  const { systemColors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -444,7 +449,7 @@ function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
         pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      <Icon name="share" size={icon} color={iosSystemColors.systemGray} />
+      <Icon name="share" size={icon} color={systemColors.secondaryLabel} />
     </Pressable>
   );
 }
@@ -511,11 +516,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
   },
   angleText: {
     fontWeight: '600',
-    color: iosSystemColors.systemGray,
   },
   countBadge: {
     position: 'absolute',

@@ -44,7 +44,33 @@ vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../Icon', () => ({ Icon: () => null }));
+// The native RadioGroup (SwiftUI inline Picker / Compose RadioButtons): one radio
+// per option, checked from `value`, picking through `onChange`.
+vi.mock('../../RadioGroup', () => ({
+  RadioGroup: ({
+    options,
+    value,
+    onChange,
+  }: {
+    options: { value: string; label: string; disabled?: boolean }[];
+    value: string | null;
+    onChange: (next: string) => void;
+  }) =>
+    createElement(
+      'div',
+      { role: 'radiogroup' },
+      options.map((option) =>
+        createElement('button', {
+          key: option.value,
+          role: 'radio',
+          'aria-label': option.label,
+          'aria-pressed': option.value === value,
+          'aria-disabled': option.disabled ? 'true' : 'false',
+          onClick: () => onChange(option.value),
+        }),
+      ),
+    ),
+}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, radii: { button: 10 }, chartColors: { label: '#16111F' } }),
 }));
@@ -90,6 +116,18 @@ describe('ReportSprayWallSheet', () => {
     expect(screen.getByLabelText('sprayModeration.reasons.personalInfo').getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByText('sprayModeration.submit'));
     expect(mutate).toHaveBeenCalledTimes(2);
+  });
+  it('lists the reasons in one native RadioGroup with nothing picked yet', () => {
+    const screen = render(<ReportSprayWallSheet wallUuid="wall-a" wallName="Crew wall" onClose={vi.fn()} />);
+    const radios = screen.getAllByRole('radio');
+    expect(screen.getAllByRole('radiogroup')).toHaveLength(1);
+    expect(radios.map((radio) => radio.getAttribute('aria-label'))).toEqual([
+      'sprayModeration.reasons.inappropriate',
+      'sprayModeration.reasons.notAWall',
+      'sprayModeration.reasons.personalInfo',
+      'sprayModeration.reasons.other',
+    ]);
+    expect(radios.every((radio) => radio.getAttribute('aria-pressed') === 'false')).toBe(true);
   });
   it('keeps the pending report disabled and announces its progress', () => {
     state.isPending = true;

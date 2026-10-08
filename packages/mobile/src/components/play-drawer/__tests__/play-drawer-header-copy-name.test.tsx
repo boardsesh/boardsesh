@@ -44,6 +44,9 @@ vi.mock('../../../lib/format-climb-stats', () => ({
   formatSends: (count: number) => `${count} sends`,
   formatQuality: (value: string) => value,
 }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));

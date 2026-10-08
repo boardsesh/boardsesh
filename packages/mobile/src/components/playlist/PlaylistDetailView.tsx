@@ -452,7 +452,7 @@ export function PlaylistDetailView({
     />
   ) : (
     <View style={styles.stateContainer}>
-      <Icon name="playlist" size={44} color={iosSystemColors.systemGray4} />
+      <Icon name="playlist" size={44} color={systemColors.tertiaryLabel} />
       <Text variant="subheadline" style={styles.emptyText}>
         {emptyMessage}
       </Text>
@@ -544,7 +544,7 @@ export function PlaylistDetailView({
                       </Text>
                     ) : null}
                     {hero.subtitle ? (
-                      <Text variant="footnote" numberOfLines={1} color={systemColors.tertiaryLabel}>
+                      <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
                         {hero.subtitle}
                       </Text>
                     ) : null}
@@ -884,7 +884,7 @@ function UnrenderablePlaylistClimbRow({
             accessibilityLabel={t('editClimbs.removeAria', { name: climb.name })}
             style={({ pressed }) => [styles.unrenderableRemove, pressed && styles.unrenderablePressed]}
           >
-            <Icon name="minus.circle" size={24} color={iosSystemColors.systemRed} />
+            <Icon name="minus.circle" size={24} color={systemColors.error} />
           </Pressable>
         ) : null}
       </View>

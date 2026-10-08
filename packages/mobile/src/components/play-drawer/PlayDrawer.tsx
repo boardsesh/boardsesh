@@ -120,7 +120,7 @@ import { useFirstConnectPill } from './use-first-connect-pill';
 import { deriveFirstConnectPillWouldConnect } from '../../lib/onboarding/first-connect-decision';
 import { getBleLightbulbLabelKind } from '../ble/ble-lightbulb-button-state';
 import { track } from '../../lib/analytics';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 import { spacing, sheetStyles } from '../../theme/tokens';
 
 // Matches DrawerHostProvider's string-backed route/preview configuration and
@@ -319,6 +319,7 @@ export function PlayDrawer({
   // pull-down dismiss gesture, the close chevron, the grabber, and router.dismiss.
   const isPane = presentation === 'pane';
   const { t } = useTranslation('session');
+  const { systemColors } = useTheme();
   // The copy/share affordance strings live in the `climbs` namespace alongside
   // the climb-actions sheet's "Link copied" toast.
   const { t: tClimbs } = useTranslation('climbs');
@@ -1890,7 +1891,7 @@ export function PlayDrawer({
                               style={styles.closeButton}
                               hitSlop={8}
                             >
-                              <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
+                              <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
                             </Pressable>
                           </>
                         ) : null}

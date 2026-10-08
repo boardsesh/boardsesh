@@ -62,7 +62,7 @@ function StorageBoardRowComponent({
           <Text variant="subheadline" numberOfLines={1}>
             {caption}
           </Text>
-          <Text variant="caption1" style={{ color: systemColors.tertiaryLabel }} numberOfLines={2}>
+          <Text variant="caption1" style={{ color: systemColors.secondaryLabel }} numberOfLines={2}>
             {statusLabel}
           </Text>
         </View>

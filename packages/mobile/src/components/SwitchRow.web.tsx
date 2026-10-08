@@ -24,7 +24,6 @@ export function SwitchRow({
   value,
   onValueChange,
   disabled = false,
-  tint,
 }: SwitchRowProps) {
   const handleToggle = makeToggleHandler(onValueChange, disabled);
 
@@ -44,7 +43,7 @@ export function SwitchRow({
         subtitle={description}
         wrapSubtitle={wrapDescription}
         showSeparator={false}
-        trailing={<Switch value={value} disabled={disabled} pointerEvents="none" color={tint} />}
+        trailing={<Switch value={value} disabled={disabled} pointerEvents="none" />}
       />
     </Pressable>
   );

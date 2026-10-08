@@ -161,7 +161,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
             </Text>
           ) : null}
 
-          <Text variant="caption2" style={[styles.hint, { color: systemColors.tertiaryLabel }]}>
+          <Text variant="caption2" style={[styles.hint, { color: systemColors.secondaryLabel }]}>
             {t('mobile.angleSelector.fromVerticalHint')}
           </Text>
 

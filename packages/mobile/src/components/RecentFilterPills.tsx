@@ -7,7 +7,6 @@ import { Icon } from './Icon';
 import type { RecentFilter } from '../lib/recent-filter-store';
 import { getFilterKey } from '../lib/recent-filter-store';
 import type { ClimbFilters } from './ClimbFilterSheet';
-import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
 import { hapticSelection } from '../lib/haptics';
@@ -32,7 +31,7 @@ function Pill({
   isActive: boolean;
   onApply: (filters: ClimbFilters, searchText: string) => void;
 }) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -65,10 +64,10 @@ function Pill({
         styles.pill,
         isActive
           ? { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` }
-          : styles.pillInactive,
+          : [styles.pillInactive, { borderColor: systemColors.separator }],
       ]}
     >
-      <Icon name="history" size={14} color={isActive ? brandColors.primary : iosSystemColors.systemGray} />
+      <Icon name="history" size={14} color={isActive ? brandColors.primary : systemColors.secondaryLabel} />
       <Text
         variant="caption1"
         color={isActive ? brandColors.primary : undefined}
@@ -156,7 +155,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pillInactive: {
-    borderColor: iosSystemColors.separator,
     backgroundColor: 'transparent',
   },
   pillLabel: {

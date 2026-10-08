@@ -43,7 +43,6 @@ import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-in
 import { useHeaderActions } from '../../hooks/use-header-actions';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { hapticSelection } from '../../lib/haptics';
 import { reportError } from '../../lib/error-reporting';
 import { useEffectiveBoardRenderSettings } from '../../hooks/use-native-climb-render';
@@ -326,7 +325,7 @@ export function SprayWallLookStep({
             slider and picker below it stay where they are. */}
         {saveError ? (
           <View style={styles.saveError}>
-            <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+            <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
               {saveError}
             </Text>
             <Button

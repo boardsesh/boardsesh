@@ -162,7 +162,7 @@ export const NewClimbFeedCard = memo(function NewClimbFeedCard({ item }: { item:
             {/* One line, count first: the count in a bolder secondary colour, the
                 time quieter — the same two-tier treatment the session card uses,
                 so the two cards read as one system. */}
-            <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.metaLine}>
+            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.metaLine}>
               <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.statEmphasis}>
                 {t('authors.newClimbCount', { count: total })}
               </Text>
@@ -286,7 +286,7 @@ const ClimbHero = memo(function ClimbHero({
               {angle}
             </Text>
           ) : null}
-          <Text variant="footnote" color={systemColors.tertiaryLabel} numberOfLines={1}>
+          <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
             {boardName}
           </Text>
         </View>

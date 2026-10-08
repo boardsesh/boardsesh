@@ -16,10 +16,8 @@ vi.mock('../../../lib/error-reporting', () => ({
   reportError,
 }));
 
-vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: {
-    systemGray: '#8E8E93',
-  },
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { fill: 'fill' } }),
 }));
 
 import { BoardRenderUnavailable } from '../BoardRenderUnavailable';

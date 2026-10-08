@@ -7,7 +7,6 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useIsAdmin } from '../../lib/graphql/hooks';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
 // Admin-only screen — hardcoded English literals, the tester-screen convention.
@@ -43,7 +42,7 @@ export function OutlineEditorGate({ children }: { children: ReactNode }) {
   if (!isAdmin) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.groupedBackground }]}>
-        <Icon name="lock" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="lock" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.title}>
           {/* i18n-ignore-next-line — admin-only screen */}
           The outline editor is admin-only.

@@ -4,7 +4,6 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../src/lib/auth-validation';
 import { resetPassword } from '../../src/lib/auth';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { useTheme } from '../../src/providers/theme-provider';
 import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
@@ -150,7 +149,10 @@ export default function ResetPasswordScreen() {
                 />
 
                 {formError ? (
-                  <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                  <Text
+                    style={[styles.errorText, { color: theme.systemColors.error }]}
+                    accessibilityLiveRegion="polite"
+                  >
                     {formError}
                   </Text>
                 ) : null}
@@ -188,7 +190,7 @@ const styles = StyleSheet.create({
   description: { fontSize: 15, lineHeight: 22, marginBottom: 24 },
   form: { gap: 12 },
   submitButton: { alignSelf: 'stretch', marginTop: 4 },
-  errorText: { color: iosSystemColors.systemRed, fontSize: 15 },
+  errorText: { fontSize: 15 },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   invalidLinkText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
 });

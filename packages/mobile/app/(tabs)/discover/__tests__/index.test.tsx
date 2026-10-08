@@ -182,7 +182,14 @@ vi.mock('../../../../src/theme/ios-colors', () => ({
   iosSystemColors: { systemGray: '#8E8E93', systemGray4: '#C7C7CC', separator: '#ddd' },
 }));
 vi.mock('../../../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primary: '#6D28D9' } }),
+  useTheme: () => ({
+    brandColors: { primary: '#6D28D9' },
+    systemColors: {
+      separator: 'theme-separator',
+      secondaryLabel: 'theme-secondary-label',
+      tertiaryLabel: 'theme-tertiary-label',
+    },
+  }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({
   useAuth: () => authState,

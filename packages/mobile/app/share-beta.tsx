@@ -34,7 +34,6 @@ import {
   type ShareBetaListItem,
 } from '../src/lib/share-beta-list';
 import { spacing, borderRadius } from '../src/theme/tokens';
-import { iosSystemColors } from '../src/theme/ios-colors';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 // Keep the ascents query from refiring on every keystroke; commit the search
@@ -183,7 +182,7 @@ function ShareBetaScreen() {
         return (
           <Text
             variant="footnote"
-            color={suggested ? brandColors.primary : systemColors.tertiaryLabel}
+            color={suggested ? brandColors.primary : systemColors.secondaryLabel}
             style={styles.sectionLabel}
             accessibilityRole="header"
           >
@@ -193,7 +192,7 @@ function ShareBetaScreen() {
       }
       return <ShareBetaAscentRow ascent={item.ascent} source={item.source} onActivate={handleAttach} />;
     },
-    [brandColors.primary, handleAttach, systemColors.tertiaryLabel, t],
+    [brandColors.primary, handleAttach, systemColors.secondaryLabel, t],
   );
 
   // One flat, fully virtualized list: section headers + suggested rows + the
@@ -263,7 +262,7 @@ function ShareBetaScreen() {
             {caption ?? link}
           </Text>
           {preview.isLoading && (
-            <Text variant="caption2" color={systemColors.tertiaryLabel}>
+            <Text variant="caption2" color={systemColors.secondaryLabel}>
               {t('mobile.betaVideos.shareReadingCaption')}
             </Text>
           )}
@@ -278,7 +277,7 @@ function ShareBetaScreen() {
         value={searchText}
         onChangeText={setSearchText}
         placeholder={t('mobile.betaVideos.shareSearchPlaceholder')}
-        placeholderTextColor={iosSystemColors.systemGray}
+        placeholderTextColor={systemColors.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"

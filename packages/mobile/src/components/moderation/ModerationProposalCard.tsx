@@ -219,7 +219,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
                 ) : null}
               </View>
 
-              <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
                 {getLayoutDisplayName(proposal.boardType, proposal.layoutId)}
                 {proposal.climbSetterUsername ? ` · ${proposal.climbSetterUsername}` : ''}
               </Text>
@@ -253,7 +253,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
 
         <View style={styles.proposerRow}>
           <Avatar uri={proposal.proposerAvatarUrl} name={proposal.proposerDisplayName} size={22} />
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.flex}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.flex}>
             {proposal.proposerDisplayName ?? t('mobile.moderation.unknownClimber')} ·{' '}
             {formatRelativeTime(proposal.createdAt)}
           </Text>
@@ -290,7 +290,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
           expanded={reasonsExpanded}
         />
 
-        <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.voteLine}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.voteLine}>
           {tFeed('proposalVoteBar.votesNeeded', { current: progress.current, required: progress.required })}
           {' · '}
           {t('mobile.moderation.reporters', { count: progress.reporters })}

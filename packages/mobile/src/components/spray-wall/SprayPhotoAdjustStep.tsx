@@ -252,7 +252,7 @@ export function SprayPhotoAdjustStep({
           variant="footnote"
           color={
             hint === 'failed'
-              ? iosSystemColors.systemRed
+              ? systemColors.error
               : hint === 'small'
                 ? iosSystemColors.systemOrange
                 : systemColors.secondaryLabel

@@ -40,6 +40,9 @@ vi.mock('../../../lib/format-climb-stats', () => ({
 // `numberOfLines` is forwarded as a data attribute so the "must not truncate"
 // case below is testing the real prop rather than an attribute jsdom would drop
 // on the floor either way.
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { secondaryLabel: 'secondaryLabel' } }),
+}));
 vi.mock('../../Text', () => ({
   Text: ({
     children,

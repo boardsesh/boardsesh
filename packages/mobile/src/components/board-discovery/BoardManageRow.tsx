@@ -267,7 +267,7 @@ function BoardManageRowComponent({
         {offlineStatus && !board.sprayImport ? (
           <Text
             variant="caption1"
-            color={downloadState === 'downloaded' ? brandColors.primary : systemColors.tertiaryLabel}
+            color={downloadState === 'downloaded' ? brandColors.primary : systemColors.secondaryLabel}
             numberOfLines={effectiveDownloadNotice ? undefined : 1}
             accessibilityLabel={offlineStatusAccessibilityLabel}
             accessibilityLiveRegion={Platform.OS === 'android' && effectiveDownloadNotice ? 'polite' : undefined}
@@ -276,7 +276,7 @@ function BoardManageRowComponent({
           </Text>
         ) : null}
         {pagedFallbackProgress ? (
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
             {pagedFallbackProgress}
           </Text>
         ) : null}

@@ -260,7 +260,7 @@ export function PlaylistFormSheet({
               accessibilityRole="button"
               style={[styles.removeChip, { borderColor: systemColors.separator }]}
             >
-              <Text variant="footnote" color={iosSystemColors.systemRed}>
+              <Text variant="footnote" color={systemColors.error}>
                 {t('edit.fields.removeIcon')}
               </Text>
             </Pressable>

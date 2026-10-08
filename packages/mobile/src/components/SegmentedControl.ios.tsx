@@ -58,7 +58,7 @@ export function SegmentedControl<K extends string = string>({
         }}
         modifiers={[
           pickerStyle('segmented'),
-          // Selected-fill tint (brand accent by default; amber for the logbook).
+          // Selected-fill tint (the brand tint unless a data-coded caller overrides it).
           tint(selectedFill),
           // Name the group for VoiceOver (the per-segment Text children stay the
           // individual labels). Skipped when no label is provided.
