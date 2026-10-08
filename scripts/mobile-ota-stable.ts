@@ -10,9 +10,10 @@ import {
   parseStageReceipt,
   promoteArchivedOta,
   validateExport,
+  verifyUnchangedPlatforms,
+  readRolloutReceipt,
 } from './mobile-ota-promote.ts';
 import type { StageReceipt } from './mobile-ota-promote.ts';
-import { object, string } from './lib/ota-publish-protocol.ts';
 import { listActiveRollouts, readUpdateHealth, revertRollout, setRolloutPercentage } from './lib/ota-rollout.ts';
 import type { ActiveRollout, RolloutHealth } from './lib/ota-rollout.ts';
 import { adminClientFromEnvironment, sameId } from './lib/xprem-admin.mts';
@@ -68,6 +69,14 @@ function validateArchive(stagePath: string, receipt: StageReceipt): void {
     validateExport(join(stagePath, platform), platform, receipt.platforms[platform].bundleSha256);
   }
 }
+const verifyUnchanged = (options: ControllerOptions, active: StableRelease) =>
+  verifyUnchangedPlatforms({
+    receipt: active.candidate.receipt,
+    iosExport: join(options.stagePath, 'ios'),
+    androidExport: join(options.stagePath, 'android'),
+    manifestUrl: options.manifestUrl,
+    unchangedPlatforms: active.unchangedPlatforms,
+  });
 async function promote(
   options: ControllerOptions,
   candidate: StableCandidate,
@@ -90,6 +99,17 @@ async function promote(
             percentage: otaReleasePolicy.canarySteps[0],
             receiptPath: rolloutReceiptPath,
             connect: async () => options.client,
+            onRecord: (record) => {
+              const active = options.state.active;
+              if (!active || active.candidate.receipt.commitHash !== candidate.receipt.commitHash)
+                throw new Error('Promotion record does not belong to the active candidate.');
+              const updateIds = { ...record.updateIds };
+              const unchangedPlatforms = { ...record.unchangedPlatforms };
+              parseStableState({ ...options.state, active: { ...active, updateIds, unchangedPlatforms } });
+              active.updateIds = updateIds;
+              active.unchangedPlatforms = unchangedPlatforms;
+              options.save();
+            },
           },
         }
       : {}),
@@ -214,8 +234,39 @@ function assertOwnedOnly(active: StableRelease | null, live: ActiveRollout[]): v
     }
   }
 }
+/** The workflow restores this receipt from the same trusted producer artifact as state.json. */
+function recoverStartingRecord(options: ControllerOptions): void {
+  const active = options.state.active;
+  const path = join(options.stagePath, 'rollout-receipt.json');
+  if (!active || active.phase !== 'starting' || !existsSync(path)) return;
+  const recovered = readRolloutReceipt(path, STABLE_BRANCH, active.candidate.receipt);
+  const updateIds = { ...active.updateIds };
+  const unchangedPlatforms = { ...active.unchangedPlatforms };
+  for (const platform of PLATFORMS) {
+    const recoveredId = recovered.updateIds[platform];
+    const recoveredUUID = recovered.unchangedPlatforms[platform];
+    if (recoveredId && ((updateIds[platform] && updateIds[platform] !== recoveredId) || unchangedPlatforms[platform]))
+      throw new Error('Recovered lease conflicts with checkpoint.');
+    if (
+      recoveredUUID &&
+      ((unchangedPlatforms[platform] && unchangedPlatforms[platform] !== recoveredUUID) || updateIds[platform])
+    )
+      throw new Error('Recovered unchanged attestation conflicts with checkpoint.');
+    if (recoveredId) {
+      if (recovered.baselineUpdateIds[platform] !== active.candidate.receipt.baselineProductionUpdateIds[platform])
+        throw new Error('Recovered lease baseline differs from candidate.');
+      updateIds[platform] = recoveredId;
+    }
+    if (recoveredUUID) unchangedPlatforms[platform] = recoveredUUID;
+  }
+  const restored = { ...active, updateIds, unchangedPlatforms };
+  parseStableState({ ...options.state, active: restored });
+  options.state.active = restored;
+  if (options.apply) options.save();
+}
 /** Abort preserves external publications, reverting only the still-live owned rows. */
 export async function abortStable(options: ControllerOptions): Promise<void> {
+  recoverStartingRecord(options);
   const active = options.state.active;
   const live = await listActiveRollouts(options.client, STABLE_BRANCH);
   assertOwnedOnly(active, live);
@@ -231,6 +282,7 @@ export async function abortStable(options: ControllerOptions): Promise<void> {
   }
   const current = await baseline(options, active.candidate.receipt);
   for (const platform of PLATFORMS) {
+    if (active.unchangedPlatforms[platform]) continue;
     const id = active.updateIds[platform];
     const stillLive = live.some(
       (entry) =>
@@ -262,12 +314,30 @@ export async function abortStable(options: ControllerOptions): Promise<void> {
 }
 export async function tickStable(options: ControllerOptions): Promise<void> {
   const { state, now } = options;
+  // Reconcile durable leases before classifying live rows as owned or foreign.
+  recoverStartingRecord(options);
   const live = await listActiveRollouts(options.client, STABLE_BRANCH);
   assertOwnedOnly(state.active, live);
+  if (state.active && state.active.phase !== 'reverting' && Object.keys(state.active.unchangedPlatforms).length > 0) {
+    const current = await baseline(options, state.active.candidate.receipt);
+    if (
+      PLATFORMS.some(
+        (platform) =>
+          state.active!.unchangedPlatforms[platform] &&
+          current[platform] !== state.active!.unchangedPlatforms[platform],
+      )
+    ) {
+      // Preserve an external replacement and revert only our changed sibling.
+      await abortStable(options);
+      return;
+    }
+    await verifyUnchanged(options, state.active);
+  }
   if (
     state.active?.phase === 'ramping' &&
     PLATFORMS.some(
       (platform) =>
+        !state.active!.unchangedPlatforms[platform] &&
         !live.some(
           (entry) =>
             entry.platform === platform &&
@@ -320,6 +390,7 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
         candidate,
         phase: 'starting',
         updateIds: {},
+        unchangedPlatforms: {},
         completedPlatforms: {},
         startedAt: now.toISOString(),
         stepSince: now.toISOString(),
@@ -330,7 +401,8 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
       state.lastStartedDate = now.toISOString().slice(0, 10);
       options.save();
     }
-    const active = state.active;
+    recoverStartingRecord(options);
+    const active = state.active!;
     const rolloutReceiptPath = join(options.stagePath, 'rollout-receipt.json');
     writeFileSync(
       rolloutReceiptPath,
@@ -338,6 +410,7 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
         branch: STABLE_BRANCH,
         commitHash: candidate.receipt.commitHash,
         updateIds: active.updateIds,
+        unchangedPlatforms: active.unchangedPlatforms,
         baselineUpdateIds: candidate.receipt.baselineProductionUpdateIds,
       }),
     );
@@ -350,14 +423,24 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
         rolloutReceiptPath,
       );
     } finally {
-      const leased = object(JSON.parse(readFileSync(rolloutReceiptPath, 'utf8')) as unknown, 'Leased IDs');
-      const ids = object(leased.updateIds, 'Leased IDs');
-      for (const platform of PLATFORMS)
-        if (ids[platform] !== undefined) active.updateIds[platform] = string(ids[platform], 'Lease ID');
+      const recorded = readRolloutReceipt(rolloutReceiptPath, STABLE_BRANCH, candidate.receipt);
+      const updateIds = { ...active.updateIds, ...recorded.updateIds };
+      const unchangedPlatforms = { ...active.unchangedPlatforms, ...recorded.unchangedPlatforms };
+      parseStableState({ ...state, active: { ...active, updateIds, unchangedPlatforms } });
+      active.updateIds = updateIds;
+      active.unchangedPlatforms = unchangedPlatforms;
       options.save();
     }
+    await verifyUnchanged(options, active);
+    if (PLATFORMS.every((platform) => active.unchangedPlatforms[platform])) {
+      state.lastCompletedCommit = active.candidate.receipt.commitHash;
+      state.active = null;
+      options.save();
+      options.log('Both platforms already serve the frozen bytes; candidate handled without rollout writes.');
+      return;
+    }
     active.phase = 'ramping';
-    // Start clocks after both platforms are confirmed: a partial start never shortens the soak.
+    // Start clocks after every changed canary and unchanged attestation is confirmed.
     const completedAt = new Date(Math.max(now.getTime(), (options.clock?.() ?? new Date()).getTime())).toISOString();
     active.startedAt = completedAt;
     active.stepSince = completedAt;
@@ -366,6 +449,7 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
   }
   const active = state.active;
   if (!active) throw new Error('No active release.');
+  const recoveryRevert = active.phase === 'reverting';
   if (decision.action === 'raise') active.pendingPercentage = decision.percentage;
   if (decision.action === 'finish') active.phase = 'finishing';
   if (decision.action === 'revert') {
@@ -380,7 +464,9 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
     }
   }
   for (const platform of PLATFORMS) {
+    if (active.unchangedPlatforms[platform]) continue;
     if (active.completedPlatforms[platform]) continue;
+    if (!recoveryRevert) await verifyUnchanged(options, active);
     const id = active.updateIds[platform];
     if (!id) throw new Error(`${platform} has no owned update ID.`);
     const runtimeVersion = active.candidate.receipt.platforms[platform].runtimeVersion;
@@ -416,11 +502,10 @@ export async function tickStable(options: ControllerOptions): Promise<void> {
       state.lastCompletedCommit = active.candidate.receipt.commitHash;
       if (state.candidate) {
         try {
-          state.candidate = refreshAfterOwnFinish(
-            state.candidate,
-            active,
-            active.completedPlatforms as Record<'ios' | 'android', string>,
-          );
+          state.candidate = refreshAfterOwnFinish(state.candidate, active, {
+            ...active.unchangedPlatforms,
+            ...active.completedPlatforms,
+          } as Record<'ios' | 'android', string>);
         } catch (error) {
           options.log(`Candidate invalidated: ${error instanceof Error ? error.message : String(error)}`);
           state.candidate = null;

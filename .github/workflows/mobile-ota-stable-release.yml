@@ -196,11 +196,12 @@ jobs:
           state="$(node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts state --out controller-state --exclude-run-id "$GITHUB_RUN_ID")"
           echo "loaded_run=$(jq -r '.runId // "0"' <<< "$state")" >> "$GITHUB_OUTPUT"
           if [ "$COMMAND" != abort ] && [ -f controller-state/state.json ]; then
-            candidate_run="$(jq -r 'if .active then (if .active.phase == "starting" then .active.candidate.preparationRunId else empty end) else (.candidate | select(.qaPassed == true) | .preparationRunId) end' controller-state/state.json)"
+            candidate_run="$(jq -r 'if .active then (if .active.phase != "reverting" then .active.candidate.preparationRunId else empty end) else (.candidate | select(.qaPassed == true) | .preparationRunId) end' controller-state/state.json)"
             if [ -n "$candidate_run" ]; then
               node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts candidate --run-id "$candidate_run" --out ota-stage
             fi
           fi
+          if [ -f controller-state/rollout-receipt.json ]; then cp controller-state/rollout-receipt.json ota-stage/; fi
       - name: Judge and apply at most one timed step
         id: controller
         env:

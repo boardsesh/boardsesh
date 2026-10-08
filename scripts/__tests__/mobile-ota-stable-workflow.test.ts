@@ -105,6 +105,12 @@ describe('daily stable workflow boundaries', () => {
     expect(execute.run).toContain('[ "$COMMAND" != plan ]; then flags+=(--apply)');
     expect(execute.run).toContain('"$operation"');
   });
+  it('restores exact archives throughout unchanged revalidation and keeps expired-ZIP revert recovery independent', () => {
+    const restore = step('tick', 'Restore trusted checkpoint and its exact candidate').run ?? '';
+    expect(restore).toContain('.active.phase != "reverting"');
+    expect(restore).not.toContain('.active.phase == "starting"');
+    expect(restore).toContain('cp controller-state/rollout-receipt.json ota-stage/');
+  });
   it('retains frozen bytes and state for thirty days, including failed verdicts', () => {
     const artifacts = Object.values(workflow.jobs)
       .flatMap((job) => job.steps ?? [])

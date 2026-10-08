@@ -24,6 +24,7 @@ export const activeFixture = (): StableRelease => ({
   candidate: candidateFixture(),
   phase: 'ramping',
   updateIds: { ios: '31', android: '32' },
+  unchangedPlatforms: {},
   completedPlatforms: {},
   startedAt: '2026-10-08T22:00:00Z',
   stepSince: '2026-10-08T22:00:00Z',

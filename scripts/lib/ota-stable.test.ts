@@ -122,6 +122,35 @@ describe('daily release decisions', () => {
     health[0].canary = { devicesOnUpdate: 1, successfulDevices: Number.NaN, faultyDevices: 0 };
     expect(decideStable(state, new Date('2026-10-09T08:00:00Z'), health).action).toBe('hold');
   });
+  it.each(['ios', 'android'] as const)(
+    'requires actual health only from the changed side when %s is unchanged',
+    (unchanged) => {
+      const active = activeFixture();
+      active.unchangedPlatforms = { [unchanged]: baselineIds[unchanged] };
+      delete active.updateIds[unchanged];
+      const changedHealth = healthFixture().filter((entry) => entry.rollout.platform !== unchanged);
+      const state = { ...initialStableState(), active };
+      expect(decideStable(state, new Date('2026-10-09T02:00:00Z'), changedHealth)).toMatchObject({
+        action: 'raise',
+        percentage: 10,
+      });
+      expect(decideStable(state, new Date('2026-10-09T02:00:00Z'), [])).toMatchObject({ action: 'hold' });
+      expect(
+        decideStable(
+          state,
+          new Date('2026-10-09T02:00:00Z'),
+          healthFixture().filter((entry) => entry.rollout.platform === unchanged),
+        ),
+      ).toMatchObject({ action: 'hold' });
+      active.percentage = 50;
+      active.stepSince = '2026-10-09T10:00:00Z';
+      expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), changedHealth)).toMatchObject({ action: 'finish' });
+      changedHealth[0].judgement.verdict = 'insufficient-evidence';
+      expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), changedHealth)).toMatchObject({ action: 'hold' });
+      changedHealth[0].judgement.verdict = 'unhealthy';
+      expect(decideStable(state, new Date('2026-10-09T22:00:00Z'), changedHealth)).toMatchObject({ action: 'revert' });
+    },
+  );
   it('unhealthy evidence reverts even before the timer expires', () => {
     expect(
       decideStable(
@@ -155,6 +184,34 @@ describe('daily release decisions', () => {
   });
 });
 describe('checkpoint validation and baseline refresh', () => {
+  it('loads legacy absent maps while strictly refusing malformed or overlapping unchanged ownership', () => {
+    const active = activeFixture();
+    const { unchangedPlatforms: _ignored, ...legacy } = active;
+    expect(parseStableState({ ...initialStableState(), active: legacy }).active?.unchangedPlatforms).toEqual({});
+    for (const unchangedPlatforms of [null, { ios: '31' }, { ios: baselineIds.ios }, { other: baselineIds.ios }]) {
+      expect(() => parseStableState({ ...initialStableState(), active: { ...active, unchangedPlatforms } })).toThrow();
+    }
+    const mixed = { ...active, updateIds: { android: '32' }, unchangedPlatforms: { ios: baselineIds.ios } };
+    expect(parseStableState({ ...initialStableState(), active: mixed }).active).toEqual(mixed);
+    expect(() =>
+      parseStableState({
+        ...initialStableState(),
+        active: { ...mixed, unchangedPlatforms: { ios: baselineIds.android } },
+      }),
+    ).toThrow('captured baseline');
+    expect(() => parseStableState({ ...initialStableState(), active: { ...mixed, updateIds: {} } })).toThrow(
+      'owned platform',
+    );
+    expect(() =>
+      parseStableState({ ...initialStableState(), active: { ...mixed, completedPlatforms: { ios: baselineIds.ios } } }),
+    ).toThrow('unchanged platform');
+    expect(() =>
+      parseStableState({
+        ...initialStableState(),
+        active: { ...mixed, updateIds: {}, unchangedPlatforms: baselineIds },
+      }),
+    ).toThrow('entirely unchanged');
+  });
   it('round trips and rejects malformed ownership before a write', () => {
     const state = { ...initialStableState(), active: activeFixture() };
     expect(parseStableState(state)).toEqual(state);
