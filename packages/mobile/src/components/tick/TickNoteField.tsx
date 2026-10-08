@@ -118,24 +118,10 @@ const styles = StyleSheet.create({
     // (7 x 20 + 16 padding + 2 border = 158, 2pt spare) — +67% on the old
     // ceiling, so a long note stays one glance rather than a blind scroll.
     //
-    // iOS is the tighter of the two and the real bound on this number: its
-    // keyboard-up visible body is 196pt. Derived, not measured, on the
-    // reference device the detent test pins (`log-ascent-sheet.test.tsx`:
-    // window 844 - top inset 44 - iOS-26 card gap 24 = base 776). The '92%'
-    // keyboard detent gives a 694pt column; the sheet pads it by the 336pt
-    // keyboard (`sheet-keyboard-inset.ts`), leaving 358; less the 56pt header
-    // and the 106pt footer = 196. The footer is 106, not 140, because the sheet
-    // swaps the 34pt window inset out of the footer's bottom padding while the
-    // keyboard is up (the keyboard already covers the home indicator). The 160
-    // ceiling predates that swap: it was set against a 162pt body when the
-    // footer kept the inset, so it still fits with 36pt to spare. Anyone raising
-    // this ceiling has to re-derive the body, not just the detent: a field
-    // taller than the visible body can never scroll fully into view.
-    //
-    // Anything longer scrolls the sheet body, which at least moves visibly.
-    // Detent VALUES are unchanged: the body is scrollable under a pinned
-    // footer, so the extra height costs the Attempt/Send bar nothing (the
-    // derivations in `tick-sheet-metrics.ts` do carry the taller note row).
+    // The standard large detent leaves a 180pt keyboard-up body in the
+    // reference geometry: 678pt column - 336pt keyboard - 56pt header -
+    // 106pt footer. The 160pt field ceiling fits with 20pt to spare; longer
+    // notes scroll while Attempt/Send remains pinned below the sheet body.
     maxHeight: 160,
     textAlignVertical: 'top',
   },

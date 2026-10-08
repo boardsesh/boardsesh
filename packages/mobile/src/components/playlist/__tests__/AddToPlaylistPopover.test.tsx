@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
 import { act, render } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

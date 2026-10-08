@@ -1,5 +1,6 @@
+import { AccessibleTextInput } from '../AccessibleTextInput';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { PointAnchoredPopover } from '../navigation/PointAnchoredPopover';
@@ -85,7 +86,7 @@ export function AddToPlaylistPopover({ anchorPoint, ...props }: AddToPlaylistPop
               angle={props.angle}
               boardName={props.boardName}
               layoutId={props.layoutId}
-              TextInputComponent={TextInput}
+              TextInputComponent={AccessibleTextInput}
               maxHeight={Math.max(200, windowHeight - 300)}
             />
           </View>
