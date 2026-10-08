@@ -1069,7 +1069,8 @@
       "failed": "No se pudo guardar el aspecto. Inténtalo de nuevo o publícalo igualmente.",
       "publishWithout": "Publicar igualmente",
       "dimTitle": "Oscurecer el resto del muro",
-      "dimOff": "Desactivado"
+      "dimOff": "Desactivado",
+      "previewPhoto": "La iluminación de las presas se muestra sobre la foto original. Al publicar se usará {{background}}."
     },
     "publish": {
       "title": "Añádelo a tus plafones",
@@ -1109,6 +1110,12 @@
       "photoTitle": "Fotografía el muro tal como está ahora",
       "photoBody": "Mismo nombre y ángulo que antes. Fotografía el muro entero y luego marca cada presa.",
       "archiveNotice": "Cuando este muro se publique, el anterior se archiva. Sus bloques y encadenes se quedan."
+    },
+    "background": {
+      "title": "¿Qué debería mostrar el muro?",
+      "body": "Desliza entre la foto, el muro y las presas antes de elegir cómo se iluminan.",
+      "next": "Elegir aspecto de las presas",
+      "unsupported": "Ahora solo está disponible la foto. Aún puedes terminar tu muro."
     }
   },
   "sprayResetConfirm": {

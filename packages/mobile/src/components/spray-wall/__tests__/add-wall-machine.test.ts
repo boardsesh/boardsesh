@@ -269,7 +269,7 @@ describe('addWallReducer — no model on this phone', () => {
 describe('addWallReducer — review, look and publish', () => {
   it('a commit from the editor moves on to the look step, not straight to publish', () => {
     const state = addWallReducer(atReview(), { type: 'REVIEW_COMMITTED', holdCount: 42 });
-    expect(state.step).toBe('look');
+    expect(state.step).toBe('background');
     expect(state.savedHoldCount).toBe(42);
     expect(state.publish).toEqual({ running: false, error: null });
   });
@@ -285,7 +285,10 @@ describe('addWallReducer — review, look and publish', () => {
   });
 
   it('moves to publish once holds exist and the look is confirmed', () => {
-    const state = run([{ type: 'REVIEW_COMMITTED', holdCount: 12 }, { type: 'LOOK_CONFIRMED' }], atReview());
+    const state = run(
+      [{ type: 'REVIEW_COMMITTED', holdCount: 12 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+      atReview(),
+    );
     expect(state.step).toBe('publish');
     expect(state.savedHoldCount).toBe(12);
   });
@@ -294,6 +297,7 @@ describe('addWallReducer — review, look and publish', () => {
     const state = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 12 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISH_FAILED', message: 'server said no' },
@@ -309,6 +313,7 @@ describe('addWallReducer — review, look and publish', () => {
     const state = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 12 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -333,6 +338,7 @@ describe('leavingKeepsDraft', () => {
     const published = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 1 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -380,6 +386,7 @@ describe('addWallReducer — picking up an abandoned wall', () => {
     const published = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -405,6 +412,7 @@ describe('addWallReducer — publishing is latched separately from binding', () 
     return run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -429,6 +437,7 @@ describe('addWallReducer — publishing is latched separately from binding', () 
     const state = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISH_FAILED', message: 'server said no' },
@@ -453,8 +462,10 @@ describe('addWallReducer — a resumed draft that already has holds', () => {
     const committed = addWallReducer(state, { type: 'REVIEW_COMMITTED', holdCount: 42 });
     // A resumed wall still gets its look asked — the resume lands on review, and
     // the look is only ever stored by this step.
-    expect(committed.step).toBe('look');
-    expect(addWallReducer(committed, { type: 'LOOK_CONFIRMED' }).step).toBe('publish');
+    expect(committed.step).toBe('background');
+    const holdLook = addWallReducer(committed, { type: 'BACKGROUND_CONFIRMED' });
+    expect(holdLook.step).toBe('look');
+    expect(addWallReducer(holdLook, { type: 'LOOK_CONFIRMED' }).step).toBe('publish');
   });
 
   it('never counts a negative stored total', () => {
@@ -480,7 +491,12 @@ describe('shouldConfirmLeave', () => {
     expect(shouldConfirmLeave(run([{ type: 'UPLOAD_STARTED' }]))).toBe(true);
     expect(shouldConfirmLeave(run([{ type: 'DETECTION_STARTED' }]))).toBe(true);
     const publishing = run(
-      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'LOOK_CONFIRMED' }, { type: 'PUBLISH_STARTED' }],
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'PUBLISH_STARTED' },
+      ],
       atReview(),
     );
     expect(publishing.publish.running).toBe(true);
@@ -495,6 +511,7 @@ describe('shouldConfirmLeave', () => {
     const published = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 1 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -528,6 +545,7 @@ describe('leaveDecision', () => {
     const done = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -545,6 +563,7 @@ describe('leaveDecision', () => {
     const failedBind = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -563,7 +582,12 @@ describe('leaveDecision', () => {
 
   it('only blocks on the review step: a stale flag cannot trap the climber elsewhere', () => {
     const publishing = run(
-      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'LOOK_CONFIRMED' }, { type: 'PUBLISH_STARTED' }],
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'PUBLISH_STARTED' },
+      ],
       atReview(),
     );
     expect(leaveDecision(publishing, EDITOR_HANDING_OVER)).toBe('confirm');
@@ -578,7 +602,7 @@ describe('leaveStillApplies', () => {
   });
 
   it('drops a Leave pressed after the look step handed over to the publish step', () => {
-    const atLook = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }], atReview());
+    const atLook = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'BACKGROUND_CONFIRMED' }], atReview());
     const asked = leaveCheckpoint(atLook);
     const handedOver = run([{ type: 'LOOK_CONFIRMED' }], atLook);
     expect(handedOver.step).toBe('publish');
@@ -591,12 +615,15 @@ describe('leaveStillApplies', () => {
     // the look step itself, so there is no publish for the answer to strand.
     const asked = leaveCheckpoint(atReview());
     const handedOver = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }], atReview());
-    expect(handedOver.step).toBe('look');
+    expect(handedOver.step).toBe('background');
     expect(leaveStillApplies(asked, handedOver, EDITOR_IDLE)).toBe(true);
   });
 
   it('drops a Leave pressed after the auto-publish started', () => {
-    const committed = run([{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'LOOK_CONFIRMED' }], atReview());
+    const committed = run(
+      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+      atReview(),
+    );
     const asked = leaveCheckpoint(committed);
     const publishing = run([{ type: 'PUBLISH_STARTED' }], committed);
     expect(leaveStillApplies(asked, publishing, EDITOR_IDLE)).toBe(false);
@@ -609,7 +636,12 @@ describe('leaveStillApplies', () => {
 
   it('keeps a Leave the climber agreed to mid-publish', () => {
     const publishing = run(
-      [{ type: 'REVIEW_COMMITTED', holdCount: 3 }, { type: 'LOOK_CONFIRMED' }, { type: 'PUBLISH_STARTED' }],
+      [
+        { type: 'REVIEW_COMMITTED', holdCount: 3 },
+        { type: 'BACKGROUND_CONFIRMED' },
+        { type: 'LOOK_CONFIRMED' },
+        { type: 'PUBLISH_STARTED' },
+      ],
       atReview(),
     );
     expect(leaveStillApplies(leaveCheckpoint(publishing), publishing, EDITOR_IDLE)).toBe(true);
@@ -618,7 +650,7 @@ describe('leaveStillApplies', () => {
 
 describe('addWallReducer — the look step', () => {
   function atLook(): AddWallState {
-    return run([{ type: 'REVIEW_COMMITTED', holdCount: 7 }], atReview());
+    return run([{ type: 'REVIEW_COMMITTED', holdCount: 7 }, { type: 'BACKGROUND_CONFIRMED' }], atReview());
   }
 
   it('is where a review commit lands, with the draft and the hold count intact', () => {
@@ -644,9 +676,14 @@ describe('addWallReducer — the look step', () => {
     expect(addWallReducer(meta, { type: 'LOOK_CONFIRMED' })).toBe(meta);
   });
 
-  it('has nowhere to go back to — the holds are committed, so back means leaving', () => {
+  it('returns from hold lighting to the background without losing the draft or holds', () => {
     const state = atLook();
-    expect(addWallReducer(state, { type: 'BACK' })).toBe(state);
+    const background = addWallReducer(state, { type: 'BACK' });
+    expect(background.step).toBe('background');
+    expect(background.draft).toEqual(state.draft);
+    expect(background.savedHoldCount).toBe(state.savedHoldCount);
+    expect(background.published).toBe(false);
+    expect(addWallReducer(background, { type: 'BACKGROUND_CONFIRMED' })).toEqual(state);
   });
 
   it('keeps the draft if the climber leaves here, and asks before they do', () => {
@@ -663,6 +700,7 @@ describe('addWallReducer — the look step', () => {
     const state = run(
       [
         { type: 'REVIEW_COMMITTED', holdCount: 4 },
+        { type: 'BACKGROUND_CONFIRMED' },
         { type: 'LOOK_CONFIRMED' },
         { type: 'PUBLISH_STARTED' },
         { type: 'PUBLISHED' },
@@ -710,16 +748,23 @@ describe('addWallReducer — the look step', () => {
 });
 
 describe('backLeavesFlow — what the footer Back does', () => {
-  it('leaves from the look step instead of stepping back into the editor', () => {
-    const atLook = run([{ type: 'REVIEW_COMMITTED', holdCount: 2 }], atReview());
-    expect(backLeavesFlow(atLook)).toBe(true);
+  it('leaves from background and returns to it from hold lighting', () => {
+    const background = run([{ type: 'REVIEW_COMMITTED', holdCount: 2 }], atReview());
+    expect(backLeavesFlow(background)).toBe(true);
+    const holdLook = addWallReducer(background, { type: 'BACKGROUND_CONFIRMED' });
+    expect(backLeavesFlow(holdLook)).toBe(false);
   });
 
   it('leaves from every step past the draft, and from the first step', () => {
     expect(backLeavesFlow(fresh())).toBe(true); // meta
     expect(backLeavesFlow(atReview())).toBe(true);
     expect(
-      backLeavesFlow(run([{ type: 'REVIEW_COMMITTED', holdCount: 2 }, { type: 'LOOK_CONFIRMED' }], atReview())),
+      backLeavesFlow(
+        run(
+          [{ type: 'REVIEW_COMMITTED', holdCount: 2 }, { type: 'BACKGROUND_CONFIRMED' }, { type: 'LOOK_CONFIRMED' }],
+          atReview(),
+        ),
+      ),
     ).toBe(true);
   });
 
@@ -808,5 +853,18 @@ describe('addWallReducer — crop or rotate', () => {
       { type: 'DRAFT_CREATED', draft: DRAFT },
     ]);
     expect(run([{ type: 'ADJUST_OPENED' }], { ...uploaded, step: 'photo' }).step).toBe('photo');
+  });
+});
+
+describe('background choice before hold lighting', () => {
+  it('cannot bypass either choice before publishing or start a save on background', () => {
+    const background = addWallReducer(atReview(), { type: 'REVIEW_COMMITTED', holdCount: 4 });
+    expect(background.step).toBe('background');
+    expect(addWallReducer(background, { type: 'LOOK_CONFIRMED' })).toBe(background);
+    expect(addWallReducer(background, { type: 'LOOK_SAVE_STARTED' })).toBe(background);
+    expect(addWallReducer(background, { type: 'PUBLISH_STARTED' })).toBe(background);
+    const look = addWallReducer(background, { type: 'BACKGROUND_CONFIRMED' });
+    expect(addWallReducer(look, { type: 'BACKGROUND_CONFIRMED' })).toBe(look);
+    expect(addWallReducer(atReview(), { type: 'BACKGROUND_CONFIRMED' }).step).toBe('review');
   });
 });

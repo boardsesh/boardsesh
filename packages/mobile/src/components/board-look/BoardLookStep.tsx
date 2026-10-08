@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
-import { BoardLookCarousel } from './BoardLookCarousel';
-import { RailIndexDots } from './RailIndexDots';
+import { BoardLookSlider } from './BoardLookSlider';
 import { useTheme } from '../../providers/theme-provider';
 import { useBoardRenderSettings, resolveEffectiveRenderSettings } from '../../lib/board-render-settings';
 import {
@@ -46,12 +45,10 @@ type BoardLookStepProps = {
  * "Pick your board look" — the one-time step that asks a climber which drawing
  * they want, now that 2.4 makes the Boardsesh one the default.
  *
- * Every card is a render of THEIR board, so the choice is made on what it
- * actually looks like. That is also why the rail is the hero here rather than a
- * thumbnail strip: the difference between these looks is glow radius and stroke
- * weight over a dozen holds, which is invisible at thumbnail size. The rail gets
- * every point of height the copy and the notes do not need, and the cards take
- * the board's own shape so none of it is spent on letterbox bars.
+ * One preview draws the climber's own board and climb. The horizontal slider
+ * changes the preview locally; only the primary action saves the chosen look.
+ * The content can scroll vertically at larger text sizes while Save stays
+ * available in the top bar.
  *
  * **There is no exit** (issue #4961): the "Not now" secondary is gone, because
  * declining silently accepted the new default — the one outcome this step exists
@@ -87,29 +84,34 @@ export function BoardLookStep({
 
   useBlockBack();
 
-  // Whatever they are on today leads the carousel — for this step's whole
-  // audience (`mode: 'default'`) that is the plain Boardsesh card.
-  const [selectedId, setSelectedId] = useState<BoardLookOptionId>(() => matchingBoardLookOptionId(settings));
+  // Start on their current offered look, or Aura for a settings-only preset.
+  const [selectedId, setSelectedId] = useState<BoardLookOptionId>(() => {
+    const currentId = matchingBoardLookOptionId(settings);
+    return BOARD_LOOK_ONBOARDING_OPTIONS.some((option) => option.id === currentId)
+      ? currentId
+      : BOARD_LOOK_ONBOARDING_OPTIONS[0].id;
+  });
+  const [saving, setSaving] = useState(false);
 
   // MEASURED, never computed from the window: the header above the rail grows
   // with the locale and the text size (the German subtitle is 97 characters
   // against 84 in en-US), so any arithmetic guess at its height is wrong in some
   // language at some text size.
-  const [railSlotHeight, setRailSlotHeight] = useState(0);
-  const handleRailLayout = useCallback((event: LayoutChangeEvent) => {
+  const [previewSlotHeight, setRailSlotHeight] = useState(0);
+  const handlePreviewLayout = useCallback((event: LayoutChangeEvent) => {
     setRailSlotHeight(event.nativeEvent.layout.height);
   }, []);
 
   const heroThumb = useMemo(() => {
-    if (railSlotHeight <= 0) return null;
+    if (previewSlotHeight <= 0) return null;
     // No description under a hero card, so nothing to reserve for one.
     const caption = captionBlockHeight(captionLineHeights('hero', textStyles), fontScale, 0);
     return resolveHeroThumb({
       aspect: preview.boardWidth / preview.boardHeight,
       windowWidth,
-      heightBudget: railSlotHeight - caption,
+      heightBudget: previewSlotHeight - caption - 60,
     });
-  }, [railSlotHeight, textStyles, fontScale, preview.boardWidth, preview.boardHeight, windowWidth]);
+  }, [previewSlotHeight, textStyles, fontScale, preview.boardWidth, preview.boardHeight, windowWidth]);
 
   const startedAtRef = useRef(Date.now());
   // Every Shown must resolve to exactly one terminal event. If they leave via
@@ -180,6 +182,7 @@ export function BoardLookStep({
     // write would otherwise let the unmount cleanup fire `skipped` first, and a
     // save would land in the funnel as an abandon.
     resolvedRef.current = true;
+    setSaving(true);
 
     // Marked seen HERE, on an answer, and nowhere else. Writing it on arrival
     // burned the one-shot question for a climber who never got to answer it: a
@@ -277,58 +280,55 @@ export function BoardLookStep({
           draws its own top bar. No leading action: this step has no exit. */}
       <SheetTopBar
         title=""
-        trailing={{ kind: 'forward', label: ctaLabel, onPress: () => void handleSave(), prominent: true }}
+        trailing={{
+          kind: 'forward',
+          label: ctaLabel,
+          onPress: () => void handleSave(),
+          prominent: true,
+          disabled: saving,
+          loading: saving,
+        }}
       />
-      <View style={styles.header}>
-        <Text variant="title1">{t('mobile.settings.boardLook.intro.title')}</Text>
-        <Text variant="subheadline" color={bodyColor} style={styles.description}>
-          {t('mobile.settings.boardLook.intro.subtitle')}
-        </Text>
-      </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text variant="title1">{t('mobile.settings.boardLook.intro.title')}</Text>
+          <Text variant="subheadline" color={bodyColor} style={styles.description}>
+            {t('mobile.settings.boardLook.intro.subtitle')}
+          </Text>
+        </View>
 
-      {/* The rail takes every point the copy above and the notes below do not,
-          and reports back how many it got. No ScrollView: a vertical scroller
-          wrapping a near-full-height horizontal rail steals the swipes meant for
-          the rail. */}
-      <View style={styles.railSlot} onLayout={handleRailLayout}>
-        {railSlotHeight > 0 ? (
-          <BoardLookCarousel
-            options={BOARD_LOOK_ONBOARDING_OPTIONS}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            preview={preview}
-            boardseshRendererAvailable={boardseshRendererAvailable}
-            onCardSeen={handleCardSeen}
-            heroThumb={heroThumb}
-            windowWidth={windowWidth}
-            // Safe here and nowhere else: this only moves local state until the
-            // top bar's save is pressed. In settings the same callback writes
-            // through to the physical board's LEDs.
-            selectOnSnap={heroThumb != null}
-            // Six cards each restating what the picture already shows is copy to
-            // read past on a step with no exit. The name under the board is the
-            // whole caption here.
-            showDescriptions={false}
-          />
-        ) : null}
-      </View>
+        {/* A vertical scroll fallback keeps the preview and controls reachable at
+          accessibility text sizes; slider gestures only claim horizontal intent. */}
+        <View style={styles.previewSlot} onLayout={handlePreviewLayout}>
+          {previewSlotHeight > 0 ? (
+            <BoardLookSlider
+              options={BOARD_LOOK_ONBOARDING_OPTIONS}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              preview={preview}
+              boardseshRendererAvailable={boardseshRendererAvailable}
+              onCardSeen={handleCardSeen}
+              heroThumb={heroThumb}
+              showDescription={false}
+              disabled={saving}
+              testID="onboarding-board-look-slider"
+            />
+          ) : null}
+        </View>
 
-      {/* Hero scale shows ~1.2 cards where the old rail showed ~2.2, so the dots
-          carry what the composition used to: how many looks there are. */}
-      <RailIndexDots count={BOARD_LOOK_ONBOARDING_OPTIONS.length} activeIndex={selectedIndex} />
-
-      {/* Fine print about what the save will and will not do. The second line
+        {/* Fine print about what the save will and will not do. The second line
           is the exit this step does not otherwise have: it is mandatory and has
           no "Not now", so saying the choice is reversible is what makes
           committing to one cheap. */}
-      <View style={styles.footnotes}>
-        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-          {t('mobile.settings.boardLook.intro.accessibilityNote')}
-        </Text>
-        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
-          {t('mobile.settings.boardLook.intro.changeLaterNote')}
-        </Text>
-      </View>
+        <View style={styles.footnotes}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
+            {t('mobile.settings.boardLook.intro.accessibilityNote')}
+          </Text>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.footnote}>
+            {t('mobile.settings.boardLook.intro.changeLaterNote')}
+          </Text>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -342,12 +342,13 @@ const styles = StyleSheet.create({
     paddingTop: spacing[2],
     gap: spacing[1],
     // Yields to the rail on a short screen rather than squeezing it.
-    flexShrink: 1,
+    flexShrink: 0,
   },
+  content: { flexGrow: 1 },
   description: {
     lineHeight: 20,
   },
-  railSlot: {
+  previewSlot: {
     flex: 1,
     justifyContent: 'center',
     paddingVertical: spacing[4],

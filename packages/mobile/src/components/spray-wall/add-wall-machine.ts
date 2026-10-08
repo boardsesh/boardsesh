@@ -1,6 +1,6 @@
 // The add-a-wall stepper, as a pure reducer (epic #5346, SW-09).
 //
-// Seven steps, four of which can fail, three of which talk to a server, and one
+// Eight steps, four of which can fail, three of which talk to a server, and one
 // of which is a whole other screen. Written as a reducer rather than a pile of
 // `useState` for the reason every step in the flow shares: **going back must not
 // lose anything.** A climber who reaches the anchors step, changes their mind
@@ -39,6 +39,7 @@ export type AddWallStep =
   | 'upload'
   | 'detect'
   | 'review'
+  | 'background'
   | 'look'
   | 'publish'
   | 'done';
@@ -170,6 +171,7 @@ export type AddWallAction =
   | { type: 'DETECTION_FAILED' }
   /** The editor saved every hold onto the draft; the look is all that is left before publishing. */
   | { type: 'REVIEW_COMMITTED'; holdCount: number }
+  | { type: 'BACKGROUND_CONFIRMED' }
   | { type: 'LOOK_SAVE_STARTED' }
   | { type: 'LOOK_SAVE_FAILED' }
   /** The wall's look is stored on the server; publishing is all that is left. */
@@ -202,13 +204,13 @@ export function initialAddWallState(): AddWallState {
 /**
  * Where `BACK` goes from each step.
  *
- * `detect`, `review`, `look` and `publish` are absent on purpose. By then the
+ * `detect`, `review`, `background` and `publish` are absent on purpose. By then the
  * wall and its draft version exist on the server and the photo has been adopted;
  * stepping back into `photo` would offer to upload a second photo onto a draft
  * that already has one, which `runUpload` declines outright — so the step would
- * sit there doing nothing at all, which is worse than having no way back. `look`
+ * sit there doing nothing at all, which is worse than having no way back. `background`
  * cannot step back into `review` either: the holds are already committed, and the
- * editor would reopen on them with nothing to ask. The way out of those four is
+ * editor would reopen on them with nothing to ask. `look` returns to `background`, preserving local choices. The way out of those four is
  * leaving the flow, which keeps the draft for later.
  *
  * `upload` keeps its way back because a draft cannot exist there: the action that
@@ -220,22 +222,24 @@ const BACK_TARGET: Partial<Record<AddWallStep, AddWallStep>> = {
   adjust: 'photo',
   anchors: 'photo',
   upload: 'photo',
+  look: 'background',
 };
 
 /**
  * Whether the footer's Back LEAVES the flow rather than stepping back inside it.
  *
- * `meta` is the first step, so there is nothing behind it. `review`, `look` and
+ * `meta` is the first step, so there is nothing behind it. `review`, `background` and
  * `publish` have no step behind them either — the draft is on the server by
- * then (see `BACK_TARGET`) — and any state holding a draft is past the point
- * where stepping back could do anything. Leaving keeps the draft.
+ * then (see `BACK_TARGET`). The hold-look step returns to the background choice;
+ * the two choices remain local until the final save. Leaving keeps the draft.
  */
 export function backLeavesFlow(state: AddWallState): boolean {
+  if (state.step === 'look') return false;
   return (
     state.draft != null ||
     state.step === 'meta' ||
     state.step === 'review' ||
-    state.step === 'look' ||
+    state.step === 'background' ||
     state.step === 'publish'
   );
 }
@@ -533,17 +537,21 @@ export function addWallReducer(state: AddWallState, action: AddWallAction): AddW
       };
 
     case 'REVIEW_COMMITTED':
-      // The editor's commit is the save; the wall's look is the one question
-      // left before publishing. Refused off the review step, and for an empty
+      // The editor's commit saves the holds; background and hold lighting are
+      // chosen next before publishing. Refused off the review step, and for an empty
       // wall — publishing a version with no holds creates a wall that cannot
       // hold a climb, and a look picked over no holds previews nothing.
       if (state.step !== 'review' || !(action.holdCount > 0)) return state;
       return {
         ...state,
-        step: 'look',
+        step: 'background',
         savedHoldCount: action.holdCount,
         publish: { running: false, error: null },
       };
+
+    case 'BACKGROUND_CONFIRMED':
+      if (state.step !== 'background') return state;
+      return { ...state, step: 'look' };
 
     case 'LOOK_CONFIRMED':
       // The look is already stored on the wall by the time this lands (the

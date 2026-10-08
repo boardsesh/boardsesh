@@ -76,7 +76,7 @@ type TileVisualProps = {
   locked: boolean;
 };
 
-const TileVisual = memo(function TileVisual({
+export const SprayWallBackgroundVisual = memo(function SprayWallBackgroundVisual({
   look,
   tile,
   source,
@@ -240,7 +240,7 @@ export const SprayWallBackgroundPicker = memo(function SprayWallBackgroundPicker
               testID={`spray-background-tile-${look}`}
             >
               {tile ? (
-                <TileVisual
+                <SprayWallBackgroundVisual
                   look={look}
                   tile={tile}
                   source={previewSource}

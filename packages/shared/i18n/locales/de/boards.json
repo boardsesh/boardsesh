@@ -1069,7 +1069,8 @@
       "failed": "Der Look konnte nicht gespeichert werden. Versuch es noch mal oder veröffentliche trotzdem.",
       "publishWithout": "Trotzdem veröffentlichen",
       "dimTitle": "Rest der Wand abdunkeln",
-      "dimOff": "Aus"
+      "dimOff": "Aus",
+      "previewPhoto": "Die Griffbeleuchtung siehst du auf deinem Originalfoto. Beim Veröffentlichen wird {{background}} verwendet."
     },
     "publish": {
       "title": "Ab zu deinen Boards",
@@ -1109,6 +1110,12 @@
       "photoTitle": "Fotografiere die Wand, wie sie jetzt ist",
       "photoBody": "Gleicher Name und Winkel wie vorher. Fotografiere die ganze Wand und markier dann jeden Griff.",
       "archiveNotice": "Sobald diese Wand live ist, wird die alte archiviert. Die Boulder und Begehungen darauf bleiben."
+    },
+    "background": {
+      "title": "Was soll die Wand zeigen?",
+      "body": "Wechsle mit dem Regler zwischen Foto, Wand und Griffen, bevor du ihre Beleuchtung auswählst.",
+      "next": "Griffoptik wählen",
+      "unsupported": "Aktuell ist nur das Foto verfügbar. Du kannst deine Wand trotzdem fertigstellen."
     }
   },
   "sprayResetConfirm": {

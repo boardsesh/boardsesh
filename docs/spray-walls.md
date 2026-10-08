@@ -348,7 +348,8 @@ than a tuned threshold.
 ## Adding a wall
 
 `packages/mobile/app/boards/spray/new.tsx` → `SprayWallWizardScreen` (SW-09,
-#5442). One route, seven steps, available to every climber.
+#5442). One route, with separate background and hold-look steps, available to
+every climber.
 
 Two front doors open it: the board picker's Spray wall tile, and "Add my spray
 wall" under My own board in the "Where do you climb?" block that Climbs' Find my
@@ -366,8 +367,17 @@ would leave first-run open.
 | `anchors` | Optional, Skip by default. Four draggable handles with the marked area outlined between them; a quad that crosses itself is refused client-side, because the server's fallback for a degenerate quad is the identity matrix. The photo is fitted on both axes to the space under the header (`corner-photo-fit.ts`), so all four handles are on screen and the step does not scroll. Back, Skip and Next are in the header; "Start the corners again" sits in a row above the photo that is always drawn (disabled until there are corners), so the photo is not re-fitted when the first drag ends. When that space would fall under about 200 points the photo stops shrinking and the step scrolls instead — reachable on a 375x667 phone at large text sizes — and the page is held still while a ring is being dragged, so a drag never becomes a scroll. The hint and the refusal that replaces it share one slot, so a refused quad does not re-fit the photo. |
 | `upload` | `createSprayWall`, then the multipart POST, then `createSprayWallVersion`. |
 | `detect` | Request or resume a server-owned recognition job. New walls can enter manual editing while queued ("Mark holds myself"). With the photo still on the phone the step is full-screen (`SprayScanPhoto`): the photo sits exactly where the editor will put it (`fitSprayPhoto`), dimmed, with a violet band looping down it and a glass status card. A run resumed without the file keeps the plain spinner. |
-| `review` | `SprayHoldEditorScreen`. Its one button, "Pick a look", commits the holds (`REVIEW_COMMITTED`) and hands over to the look step. Until its draft has loaded it shows `SprayEditorLoading`, never a bare spinner: the local photo dimmed with a status card and no scan band when the wizard still has the file, a spinner and a status line otherwise, and "Couldn't load your wall" with "Try again" when the read has given up or is parked offline (`useSprayWallDraft`'s `isStalled`; an automatic retry still in flight keeps the plain wait). "Try again" re-probes connectivity before it refetches, because an offline connectivity store refuses requests before they reach the network. The wizard prefetches that draft during `detect` (`prefetchSprayWallDraft`). |
-| `look` → `publish` | `SprayWallLookStep`. The onboarding board-look rail without Custom, every card drawn on the creator's own draft with ~12 of its holds lit as a stand-in problem (`samplePreviewHolds`, `useSyntheticSprayWallPreview`). Defaults to `DEFAULT_SPRAY_WALL_LOOK_OPTION_ID` (Aura Outline); no Skip. Its button stores the card's bundle with `setSprayWallRenderSettings`, then `LOOK_CONFIRMED`; the publish step then runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and only stops to show an error with Try again. Like `review`, it has no step behind it: Back leaves and keeps the draft. |
+| `review` | `SprayHoldEditorScreen`. Its one button, "Pick a look", commits the holds (`REVIEW_COMMITTED`) and hands over to the background step. Until its draft has loaded it shows `SprayEditorLoading`, never a bare spinner: the local photo dimmed with a status card and no scan band when the wizard still has the file, a spinner and a status line otherwise, and "Couldn't load your wall" with "Try again" when the read has given up or is parked offline (`useSprayWallDraft`'s `isStalled`; an automatic retry still in flight keeps the plain wait). "Try again" re-probes connectivity before it refetches, because an offline connectivity store refuses requests before they reach the network. The wizard prefetches that draft during `detect` (`prefetchSprayWallDraft`). |
+| `background` → `look` | `SprayWallLookStep` first shows one background preview above a stepped horizontal slider: Photo, Wall only, or Holds only. Generated choices keep the photo-quality and backend-capability gates; a photo-only fallback stays available. Continue moves to the hold-look step without saving or publishing. |
+| `look` → `publish` | The second look-and-feel step shows one real draft-board preview above the shared horizontal look slider, with ~12 holds lit as a stand-in problem (`samplePreviewHolds`, `useSyntheticSprayWallPreview`). Defaults to `DEFAULT_SPRAY_WALL_LOOK_OPTION_ID` (Aura Outline), retains the dim control, and has no Skip. Back returns to background with both selections and dimming preserved. The two phases share one mounted component. Its final button stores the look and selected background together with `setSprayWallRenderSettings`, then `LOOK_CONFIRMED`; publishing runs by itself once — `publishSprayWallVersion`, `invalidateSprayWallRenderData`, and the board bind — and stops on an error with Try again. Leaving still keeps the draft. |
+
+These are independent previews. Background uses the draft's canonical wall
+frame and the existing on-phone photo warp and hold mask. Hold lighting uses
+the registered draft's original-photo geometry; the screen explains that the
+chosen background is applied when the wall goes live. A flattened background
+must not be painted beneath that native overlay: its holds use photo pixels,
+while the generated background uses canonical coordinates. Previewing changes
+neither the global wall registry nor the climber's own render preferences.
 
 Three rules in that flow are not obvious from the API and are easy to undo:
 
@@ -408,10 +418,12 @@ Three rules in that flow are not obvious from the API and are easy to undo:
   same 30 s ceiling on its post-publish refresh, which ends in its Retry screen.
 
 The wizard always exposes a header close control, including cold deep links
-without a back stack: leading on the first step and from the draft on. On the
-photo, corners and upload steps a back chevron leads instead and the title is
+without a back stack: leading on the first step and the draft's editor,
+background, and publish steps. On the photo, corners, upload, and hold-look
+steps a back chevron leads instead and the title is
 blank; leaving from there is a swipe down through the same guard, or back to
-step 1's X. Android Back steps back like the chevron there. It returns to the resolved source tab when no back route
+step 1's X. Back from hold look returns to background. Android Back steps back
+like the chevron there. It returns to the resolved source tab when no back route
 exists, and native removal prevention runs the same busy, unsaved-edit and
 stale-confirmation checks for every header exit. Each step's actions are in
 the header (`useHeaderActions`); there is no footer. The editor and Look
@@ -2057,10 +2069,11 @@ the photo-pixel `holds` and `photoWidth` too: the hold editor, reset flows and
 drafts always work on the raw photo. Holds only gets the Aura field colour
 (`BOARD_FIELD_COLORS`) painted under it (`LayeredClimbImage` `baseColor`).
 
-The picker lives in the add-a-wall look step (a draft: art is made at publish)
-and on the board edit screen. It is shown only when `sprayWallArt` answers,
-because a backend older than generated looks validates render settings strictly
-and refuses the `background` key. The app sends `background` only for a
+The picker lives in the add-a-wall background step (a draft: art is made at publish)
+and on the board edit screen. The wizard keeps a photo-only preview when
+`sprayWallArt` cannot answer; the board edit screen hides its picker. A backend
+older than generated looks validates render settings strictly and refuses the
+`background` key. The app sends `background` only for a
 generated look, or `photo` when the owner moves off one (an omitted key keeps
 the stored value). The edit screen polls a live wall's art every 10 s while it
 is `NONE` or `PENDING`, for at most 30 reads, and swaps the wall onto the art
