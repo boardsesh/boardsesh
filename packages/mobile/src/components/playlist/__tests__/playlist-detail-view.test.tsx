@@ -155,6 +155,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       label: '#000000',
       secondaryLabel: '#666666',
       tertiaryLabel: '#999999',
+      error: '#ff3b30',
       fill: '#eeeeee',
       background: '#ffffff',
       secondaryBackground: '#f2f2f2',
@@ -193,13 +194,13 @@ vi.mock('../../../theme/colors', () => ({
   withAlpha: (color: string, alpha: number) => `${color}|${alpha}`,
 }));
 vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: { white: '#ffffff', systemGray4: '#aeaeb2' },
+  iosSystemColors: { white: '#ffffff' },
 }));
 
 // ── Leaf components ───────────────────────────────────────────────────────────
 vi.mock('../../Text', () => ({
-  Text: ({ children, variant }: { children?: ReactNode; variant?: string }) =>
-    createElement('span', { 'data-variant': variant ?? '' }, children),
+  Text: ({ children, variant, color }: { children?: ReactNode; variant?: string; color?: string }) =>
+    createElement('span', { 'data-variant': variant ?? '', 'data-color': color }, children),
 }));
 
 vi.mock('../../Icon', () => ({
@@ -486,6 +487,14 @@ describe('PlaylistDetailView', () => {
       <PlaylistDetailView {...makeProps({ hero: { name: 'P', climbCount: 0, subtitle: 'by Setter A' } })} />,
     );
     expect(getByText('by Setter A')).not.toBeNull();
+  });
+
+  it('reads the Material hero subtitle in secondaryLabel, not the low-contrast tertiary role', () => {
+    ctrl.variant = 'material';
+    const { getByText } = render(
+      <PlaylistDetailView {...makeProps({ hero: { name: 'P', climbCount: 0, subtitle: 'by Setter A' } })} />,
+    );
+    expect(getByText('by Setter A').getAttribute('data-color')).toBe('#666666');
   });
 
   it('renders follower label when provided', () => {

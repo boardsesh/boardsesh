@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { LIVE_TILE_GAP, LIVE_TILE_WIDTH } from './live-session-model';
 import { useLiveSessionColors } from './use-live-session-colors';
@@ -53,7 +52,7 @@ export const LiveRailErrorRow = memo(function LiveRailErrorRow({ onRetry }: { on
   const { brandColors, systemColors } = useTheme();
   return (
     <View testID="live-sessions-error" style={[styles.stateRow, { borderColor: systemColors.separator }]}>
-      <Icon name="error" size={20} color={iosSystemColors.systemRed} />
+      <Icon name="error" size={20} color={systemColors.error} />
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flex}>
         {t('mobile.liveSessions.error')}
       </Text>

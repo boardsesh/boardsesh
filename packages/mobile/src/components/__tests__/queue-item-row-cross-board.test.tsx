@@ -43,7 +43,13 @@ vi.mock('react-native-gesture-handler', () => {
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { secondaryBackground: '#fff', separator: '#ccc' },
+    systemColors: {
+      secondaryBackground: '#fff',
+      separator: '#ccc',
+      secondaryLabel: 'secondaryLabel',
+      tertiaryLabel: 'tertiaryLabel',
+      error: 'systemRed',
+    },
     brandColors: { primary: '#6D28D9', success: '#0a0', error: '#a00' },
   }),
 }));

@@ -102,6 +102,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondaryBackground: '#fff',
       separator: '#ccc',
     },
+    chartColors: { secondaryLabel: '#5B5563' },
   }),
 }));
 vi.mock('../../../theme/colors', () => ({

@@ -12,7 +12,6 @@ import {
   type CreateOverflowMenuState,
 } from './create-overflow-menu';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { deriveSaveButtonView } from './save-button-view';
 import type { SaveButtonState } from './use-create-climb-screen';
@@ -110,7 +109,7 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         hitSlop={8}
         style={[styles.iconButton, { backgroundColor: systemColors.fill }]}
       >
-        <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
+        <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
       </Pressable>
 
       <View style={styles.center}>

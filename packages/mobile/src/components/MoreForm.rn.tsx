@@ -15,7 +15,6 @@
 
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
-import { iosSystemColors } from '../theme/ios-colors';
 import { borderRadius, spacing } from '../theme/tokens';
 import { Text } from './Text';
 import { ListRow } from './ListRow';
@@ -97,7 +96,7 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
         <Pressable accessibilityRole="button" onPress={row.onPress} style={styles.buttonRow}>
           <Text
             variant={row.emphasis === 'subtle' ? 'footnote' : 'subheadline'}
-            color={row.role === 'destructive' ? iosSystemColors.systemRed : systemColors.accent}
+            color={row.role === 'destructive' ? systemColors.error : systemColors.accent}
           >
             {row.label}
           </Text>

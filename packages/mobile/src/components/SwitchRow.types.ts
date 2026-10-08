@@ -21,10 +21,4 @@ export type SwitchRowProps = {
   onValueChange: (next: boolean) => void;
   /** Dims the control and ignores taps. */
   disabled?: boolean;
-  /**
-   * On-track colour for the switch when on. Defaults to the brand accent (purple)
-   * so every existing call site is unchanged; the logbook passes `brandColors.accent`
-   * (amber) so its switches match the amber chip row.
-   */
-  tint?: string;
 };

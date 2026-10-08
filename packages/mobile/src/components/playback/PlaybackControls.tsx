@@ -594,7 +594,7 @@ export function PlaybackControls({
     <View
       style={[
         styles.container,
-        // Scheme-resolved, not the static light `iosSystemColors.separator` this
+        // Scheme-resolved, not the static light iOS separator constant this
         // used to hardcode — that value is a dark translucent grey and vanished
         // against the card's own dark fill, so the card had no edge at night.
         { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator },

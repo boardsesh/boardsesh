@@ -91,7 +91,7 @@ export const PeriodComparisonCard = memo(function PeriodComparisonCard({
               </Text>
             </>
           ) : (
-            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.noComparisonText}>
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.noComparisonText}>
               {current.sends > 0
                 ? t('stats.periodComparison.firstPeriod')
                 : t('stats.periodComparison.noComparisonData')}

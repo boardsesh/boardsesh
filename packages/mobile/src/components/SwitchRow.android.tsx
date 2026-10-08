@@ -26,11 +26,11 @@ import { spacing } from '../theme/tokens';
 import { makeToggleHandler } from './SwitchRow.logic';
 import type { SwitchRowProps } from './SwitchRow.types';
 
-export function SwitchRow({ label, description, value, onValueChange, disabled = false, tint }: SwitchRowProps) {
+export function SwitchRow({ label, description, value, onValueChange, disabled = false }: SwitchRowProps) {
   const { brandColors, colorScheme, systemColors } = useTheme();
   const handleToggle = makeToggleHandler(onValueChange, disabled);
-  // On-track colour: brand accent (purple) by default; the logbook passes amber.
-  const switchColors = tint ? { checkedTrackColor: tint } : switchBrandColors(brandColors);
+  // On-track colour: always the brand tint (M3: one primary colour for selection controls).
+  const switchColors = switchBrandColors(brandColors);
 
   const rowModifiers = [
     fillMaxWidth(),

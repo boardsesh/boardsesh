@@ -19,6 +19,7 @@ import {
   type GetPlaylistsForClimbQueryResponse,
 } from '@boardsesh/graphql/operations/playlists';
 import { playlistMembershipStore } from '@boardsesh/climb-actions';
+import { Button } from '../Button';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
@@ -572,47 +573,36 @@ export function InlinePlaylistPicker({
                 so a membership failure that lands here (an add from before the form
                 was opened) shows in the form's slot instead of nowhere. */}
             {(createError ?? error) ? (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.errorText}>
+              <Text variant="footnote" color={systemColors.error} style={styles.errorText}>
                 {createError ?? error}
               </Text>
             ) : null}
             <View style={styles.createActions}>
-              <Pressable
+              <Button
+                title={tc('actions.cancel')}
                 onPress={handleCloseCreate}
-                accessibilityRole="button"
-                accessibilityLabel={tc('actions.cancel')}
-                hitSlop={8}
-                style={styles.cancelButton}
+                variant="text"
+                role="cancel"
                 disabled={submitting}
-              >
-                <Text variant="body" color={systemColors.secondaryLabel}>
-                  {tc('actions.cancel')}
-                </Text>
-              </Pressable>
-              <Pressable
+              />
+              {/* The native filled button (HIG Buttons): its label sits on the
+                  scheme-aware `primaryFill`, so white text clears AA in dark too.
+                  The old hand-rolled white-on-#A78BFA pill was 2.7:1. */}
+              <Button
+                title={t('actions.playlist.create.submit')}
                 onPress={() => {
                   void handleSubmitCreate();
                 }}
-                accessibilityRole="button"
-                accessibilityLabel={t('actions.playlist.create.submit')}
-                hitSlop={8}
-                style={[styles.submitButton, { backgroundColor: brandColors.primary }]}
+                variant="filled"
+                loading={submitting}
                 disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color={iosSystemColors.white} />
-                ) : (
-                  <Text variant="body" color={iosSystemColors.white} style={styles.submitLabel}>
-                    {t('actions.playlist.create.submit')}
-                  </Text>
-                )}
-              </Pressable>
+              />
             </View>
           </View>
         </ScrollView>
       ) : !isAuthenticated ? (
         <View style={styles.message}>
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('actions.playlist.popover.signInBlurb')}
           </Text>
         </View>
@@ -635,14 +625,14 @@ export function InlinePlaylistPicker({
           style={scrollMaxHeight != null ? { maxHeight: scrollMaxHeight } : undefined}
           ListHeaderComponent={
             error ? (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.errorText}>
+              <Text variant="footnote" color={systemColors.error} style={styles.errorText}>
                 {error}
               </Text>
             ) : null
           }
           ListEmptyComponent={
             <View style={styles.message}>
-              <Text variant="subheadline" color={iosSystemColors.systemGray}>
+              <Text variant="subheadline" color={systemColors.secondaryLabel}>
                 {t('actions.playlist.popover.empty')}
               </Text>
             </View>
@@ -733,21 +723,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     marginTop: spacing[1],
-  },
-  cancelButton: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  submitButton: {
-    minWidth: 96,
-    height: spacing[10],
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing[4],
-  },
-  submitLabel: {
-    fontWeight: '600',
   },
   message: {
     alignItems: 'center',

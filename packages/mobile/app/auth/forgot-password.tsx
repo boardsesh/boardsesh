@@ -4,7 +4,6 @@ import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { requestPasswordReset } from '../../src/lib/auth';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { useTheme } from '../../src/providers/theme-provider';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
 import { Button } from '../../src/components/Button';
@@ -111,7 +110,10 @@ export default function ForgotPasswordScreen() {
                 />
 
                 {formError ? (
-                  <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                  <Text
+                    style={[styles.errorText, { color: theme.systemColors.error }]}
+                    accessibilityLiveRegion="polite"
+                  >
                     {formError}
                   </Text>
                 ) : null}
@@ -141,7 +143,7 @@ const styles = StyleSheet.create({
   description: { fontSize: 15, lineHeight: 22, marginBottom: 24 },
   form: { gap: 12 },
   submitButton: { alignSelf: 'stretch', marginTop: 4 },
-  errorText: { color: iosSystemColors.systemRed, fontSize: 15 },
+  errorText: { fontSize: 15 },
   successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   successText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
 });

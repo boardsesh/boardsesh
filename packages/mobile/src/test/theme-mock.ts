@@ -42,9 +42,11 @@ export function makeThemeMock(overrides: Partial<Theme> = {}): Theme {
   const variant = overrides.variant ?? 'liquidGlass';
   const colorScheme = overrides.colorScheme ?? 'light';
   const brand = colorScheme === 'dark' ? brandColorsDark : brandColors;
-  const systemColors =
-    overrides.systemColors ??
-    (variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme]);
+  const systemColors = overrides.systemColors ?? {
+    ...(variant === 'material' ? materialSurfaces[colorScheme] : androidFallbackColors[colorScheme]),
+    // The provider adds the error role on top of the surface palette (M3 error here).
+    error: brand.error,
+  };
   // Hoisted for the same reason as the provider: `sheetSurface` is the plain-string
   // ground the @expo/ui sheet background needs, taken from the chart palette.
   const resolvedChartColors = resolveChartColors(variant, colorScheme);

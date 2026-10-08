@@ -94,7 +94,7 @@ export const HeatmapLegend = memo(function HeatmapLegend({
           <View key={`${index}-${color}`} style={styles.swatchColumn}>
             <View style={[styles.swatch, { borderColor: color, backgroundColor: hexWithAlpha(color, 0.55) }]} />
             {edgeValues ? (
-              <Text variant="caption2" color={systemColors.tertiaryLabel} numberOfLines={1}>
+              <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
                 {edgeValues[index] == null ? '–' : formatCount(edgeValues[index] ?? 0)}
               </Text>
             ) : null}

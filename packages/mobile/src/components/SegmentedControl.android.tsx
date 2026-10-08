@@ -14,7 +14,7 @@
 // for other native Android controls (Button.android.tsx's own doc comment; see the
 // paper-removal endgame in #3273), so this isn't introducing a new pattern.
 //
-// `tint` (the logbook's amber) recolours the selected segment via a scoped Paper
+// `tint` (a data-coded override) recolours the selected segment via a scoped Paper
 // theme override — `secondaryContainer` is the fill, `onSecondaryContainer` the
 // on-fill label/check, derived to stay readable on the given fill. The default
 // (purple) needs no override — it's already the brand `secondaryContainer` from

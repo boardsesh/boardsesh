@@ -7,7 +7,6 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { countHolds } from './draft-format';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 
@@ -45,7 +44,7 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
   }, [climb, onPress]);
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { borderBottomColor: systemColors.separator }]}>
       <Pressable
         onPress={handlePress}
         accessibilityRole="button"
@@ -66,7 +65,7 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
         hitSlop={8}
         style={styles.deleteButton}
       >
-        <Icon name="delete" size={20} color={iosSystemColors.systemRed} />
+        <Icon name="delete" size={20} color={systemColors.error} />
       </Pressable>
     </View>
   );
@@ -78,7 +77,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing[3],
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: iosSystemColors.separator,
     gap: spacing[2],
   },
   rowMain: {

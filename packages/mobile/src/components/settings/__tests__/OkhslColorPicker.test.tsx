@@ -154,7 +154,8 @@ vi.mock('react-native-svg', () => ({
 }));
 
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
@@ -165,12 +166,9 @@ vi.mock('../../../providers/theme-provider', () => ({
       label: '#111111',
       secondaryLabel: '#666666',
       separator: '#cccccc',
+      error: '#c81e1e',
     },
   }),
-}));
-
-vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: { systemRed: '#ff3b30' },
 }));
 
 vi.mock('../../../theme/tokens', () => ({
@@ -683,5 +681,21 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(slider(container, SATURATION_LABEL).dataset.accessibilityValue).toBe('30%');
     expect(onChange).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('OkhslColorPicker invalid hex', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows the invalid-hex message in the theme error colour', () => {
+    const { container, getByText } = render(createElement(OkhslColorPicker, { value: '#336699', onChange: vi.fn() }));
+    const hexInput = container.querySelector<HTMLInputElement>(`[aria-label="${HEX_LABEL}"]`);
+    if (!hexInput) throw new Error('Missing hex input');
+
+    fireEvent.change(hexInput, { target: { value: '#zz' } });
+
+    expect(getByText('mobile.settings.accessibility.invalidHex').getAttribute('data-color')).toBe('#c81e1e');
   });
 });

@@ -39,7 +39,6 @@ import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { useSprayModerationAccess } from '../../lib/spray/use-spray-moderation';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
 // Module-level: the empty-list fallback keeps one identity across renders, and
@@ -328,7 +327,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
           <Text variant="headline" style={styles.stateTitle}>
             {t('mobile.moderation.unavailable.title')}
           </Text>
-          <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.stateBody}>
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateBody}>
             {t('mobile.moderation.unavailable.subtitle')}
           </Text>
         </View>
@@ -357,7 +356,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
             </View>
           ) : showError ? (
             <View style={styles.stateBlock}>
-              <Icon name="error" size={32} color={iosSystemColors.systemRed} />
+              <Icon name="error" size={32} color={systemColors.error} />
               <Text variant="headline" style={styles.stateTitle}>
                 {t('mobile.moderation.loadError')}
               </Text>
@@ -371,7 +370,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
               <Text variant="headline" style={styles.stateTitle}>
                 {t('mobile.moderation.empty.title')}
               </Text>
-              <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.stateBody}>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateBody}>
                 {t('mobile.moderation.empty.subtitle')}
               </Text>
             </View>

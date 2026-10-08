@@ -5,7 +5,6 @@ import { ModalSheet } from '../ModalSheet';
 import { ListRow } from '../ListRow';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
 type PlaylistActionsMenuProps = {
@@ -45,7 +44,7 @@ export function PlaylistActionsMenu({
   onClose,
 }: PlaylistActionsMenuProps) {
   const { t } = useTranslation('playlists');
-  const { actionColors } = useTheme();
+  const { actionColors, systemColors } = useTheme();
   // Room for four rows, or five when the add-climbs row is shown, on short
   // screens (e.g. iPhone SE landscape).
   const snapPoints = useMemo(() => [onAddClimbs ? '56%' : '46%'], [onAddClimbs]);
@@ -89,7 +88,7 @@ export function PlaylistActionsMenu({
         />
         <ListRow
           title={t('detail.menu.delete')}
-          leading={<Icon name="delete" size={22} color={iosSystemColors.systemRed} />}
+          leading={<Icon name="delete" size={22} color={systemColors.error} />}
           onPress={onDelete}
           showSeparator={false}
         />

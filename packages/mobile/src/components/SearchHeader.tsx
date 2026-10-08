@@ -129,7 +129,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
         pointerEvents="none"
       />
       <View style={[styles.content, { height }]}>
-        <Icon name="search" size={18} color={iosSystemColors.systemGray} />
+        <Icon name="search" size={18} color={systemColors.secondaryLabel} />
         <TextInput
           ref={inputRef}
           value={text}
@@ -137,7 +137,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
           onFocus={onFocus}
           onBlur={onBlur}
           placeholder={placeholder}
-          placeholderTextColor={iosSystemColors.systemGray}
+          placeholderTextColor={systemColors.tertiaryLabel}
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
@@ -153,7 +153,7 @@ export const SearchHeader = forwardRef<SearchHeaderHandle, SearchHeaderProps>(fu
             accessibilityLabel={t('mobile.a11y.clearSearch')}
             style={styles.clearTarget}
           >
-            <View style={styles.clearButton}>
+            <View style={[styles.clearButton, { backgroundColor: systemColors.tertiaryLabel }]}>
               <Icon name="close" size={12} color={iosSystemColors.white} />
             </View>
           </Pressable>
@@ -214,8 +214,6 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: iosSystemColors.systemGray,
-    opacity: 0.6,
     alignItems: 'center',
     justifyContent: 'center',
   },

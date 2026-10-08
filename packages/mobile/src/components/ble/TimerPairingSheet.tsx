@@ -7,7 +7,7 @@
 // resolves climbing-board serials, none of which apply to a plain UART timer.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Pressable, ActivityIndicator, StyleSheet, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { DiscoveredDevice } from '../../lib/ble/types';
@@ -28,10 +28,10 @@ type TimerPairingSheetProps = {
   onDismiss: () => void;
 };
 
-function classifyRssi(rssi: number): { bars: number; color: string } {
+function classifyRssi(rssi: number, weakColor: ColorValue): { bars: number; color: ColorValue } {
   if (rssi > -60) return { bars: 3, color: iosSystemColors.systemGreen };
   if (rssi > -80) return { bars: 2, color: iosSystemColors.systemYellow };
-  return { bars: 1, color: iosSystemColors.systemRed };
+  return { bars: 1, color: weakColor };
 }
 
 const TimerRow = memo(function TimerRow({
@@ -42,7 +42,7 @@ const TimerRow = memo(function TimerRow({
   onSelect: (timerName: string) => void;
 }) {
   const { systemColors } = useTheme();
-  const { bars, color } = classifyRssi(device.rssi);
+  const { bars, color } = classifyRssi(device.rssi, systemColors.error);
   const name = device.name ?? '';
 
   const handlePress = useCallback(() => {

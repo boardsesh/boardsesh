@@ -22,6 +22,7 @@ type ResponderConfig = {
 type MeasureCallback = (x: number, y: number, width: number, height: number, pageX: number, pageY: number) => void;
 type ViewHandle = { measure: (callback: MeasureCallback) => void };
 type ViewMockProps = ResponderConfig & {
+  style?: unknown;
   accessible?: boolean;
   accessibilityLabel?: string;
   children?: ReactNode;
@@ -44,6 +45,7 @@ vi.mock('react-native', () => {
       onPanResponderMove,
       onPanResponderRelease,
       onPanResponderTerminate,
+      style,
     },
     ref,
   ) {
@@ -53,7 +55,19 @@ vi.mock('react-native', () => {
     if (accessible && accessibilityLabel) {
       harness.config = { onPanResponderGrant, onPanResponderMove, onPanResponderRelease, onPanResponderTerminate };
     }
-    return createElement('div', { 'data-accessibility-label': accessibilityLabel }, children);
+    const flat = Object.assign({}, ...[style].flat(3).filter(Boolean)) as {
+      backgroundColor?: string;
+      borderColor?: string;
+    };
+    return createElement(
+      'div',
+      {
+        'data-accessibility-label': accessibilityLabel,
+        'data-bg': flat.backgroundColor,
+        'data-border': flat.borderColor,
+      },
+      children,
+    );
   });
 
   return {
@@ -69,6 +83,8 @@ vi.mock('../../Text', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    // Distinct from `systemColors.accent` so the test can tell which one paints.
+    brandColors: { primaryFill: '#7C3AED', onPrimary: '#FFFFFF' },
     systemColors: {
       accent: '#6D28D9',
       background: '#ffffff',
@@ -111,6 +127,25 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+describe('MarkerMultiplierSlider — tint', () => {
+  it('fills the track and rings the thumb with the native-control tint (primaryFill)', () => {
+    const { container } = render(
+      <MarkerMultiplierSlider
+        accessibilityLabel={LABEL}
+        value={1}
+        min={0.5}
+        max={2}
+        step={0.1}
+        format={String}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('[data-bg="#7C3AED"]')).not.toBeNull();
+    expect(container.querySelector('[data-border="#7C3AED"]')).not.toBeNull();
+    expect(container.querySelector('[data-bg="#6D28D9"]')).toBeNull();
+  });
 });
 
 describe('MarkerMultiplierSlider — tap-release commits the touched value, not the minimum', () => {

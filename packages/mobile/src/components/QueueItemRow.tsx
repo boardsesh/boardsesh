@@ -94,13 +94,13 @@ function PositionIndicator({
   isCurrentClimb: boolean;
   position: number;
 }) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   if (isEditMode) {
     return (
       <Icon
         name={isSelected ? 'checkmark.circle.fill' : 'circle'}
         size={22}
-        color={isSelected ? brandColors.primary : iosSystemColors.systemGray4}
+        color={isSelected ? brandColors.primary : systemColors.tertiaryLabel}
       />
     );
   }
@@ -110,7 +110,7 @@ function PositionIndicator({
   }
 
   return (
-    <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.positionText}>
+    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.positionText}>
       {String(position)}
     </Text>
   );
@@ -501,7 +501,7 @@ function QueueItemRowComponent({
         {showSentAtAngle && (
           <Text
             variant="caption1"
-            color={iosSystemColors.systemGray}
+            color={systemColors.secondaryLabel}
             style={styles.sentAtAngle}
             accessibilityLabel={t('mobile.queue.sentAtAngle', { angle: climbedAtAngle })}
           >
@@ -549,7 +549,7 @@ function QueueItemRowComponent({
               accessibilityRole="button"
               accessibilityLabel={t('mobile.queue.dragHandleAria', { name: climbName })}
             >
-              <Icon name="drag.handle" size={22} color={iosSystemColors.systemGray} />
+              <Icon name="drag.handle" size={22} color={systemColors.secondaryLabel} />
             </View>
           </GestureDetector>
         ) : null}
@@ -562,7 +562,7 @@ function QueueItemRowComponent({
       <View style={styles.swipeContainer}>
         {/* Delete action behind the row */}
         {swipeEnabled && (
-          <Animated.View style={[styles.deleteAction, deleteButtonStyle]}>
+          <Animated.View style={[styles.deleteAction, { backgroundColor: systemColors.error }, deleteButtonStyle]}>
             <Pressable
               testID="delete-button"
               onPress={handleDeletePress}
@@ -647,7 +647,6 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    backgroundColor: iosSystemColors.systemRed,
     justifyContent: 'center',
     alignItems: 'center',
   },

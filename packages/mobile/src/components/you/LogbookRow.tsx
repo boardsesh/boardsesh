@@ -163,7 +163,7 @@ export const LogbookRow = memo(function LogbookRow({
   const boardseshActive = useBoardseshGradesActive();
 
   const statusColor =
-    ascent.status === 'flash' ? brand.warning : ascent.status === 'send' ? brand.success : iosSystemColors.systemGray;
+    ascent.status === 'flash' ? brand.warning : ascent.status === 'send' ? brand.success : systemColors.secondaryLabel;
 
   // --- Grade column: the big grade is always the climber's effective grade
   // (their own, or the crowd grade when they never graded it — marked with the

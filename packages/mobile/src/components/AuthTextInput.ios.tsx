@@ -44,7 +44,6 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
-import { iosSystemColors } from '../theme/ios-colors';
 import { Text } from './Text';
 import {
   shouldPushValueToNative,
@@ -176,7 +175,7 @@ export const AuthTextInput = forwardRef<AuthTextInputHandle, AuthTextInputProps>
       {error ? (
         <Text
           variant="footnote"
-          style={[styles.message, { color: iosSystemColors.systemRed }]}
+          style={[styles.message, { color: systemColors.error }]}
           accessibilityLiveRegion="polite"
         >
           {error}

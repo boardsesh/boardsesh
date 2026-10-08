@@ -72,7 +72,6 @@ import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
 import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
 import { openAppSettings } from '../../src/lib/open-app-settings';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
 // Module-level so an absent board list keeps a stable identity: offline
@@ -810,7 +809,7 @@ export default function BoardSelection() {
   if (!isAuthenticated) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.centered}>
-        <Icon name="person" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="person" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.signInTitle')}
         </Text>
@@ -890,7 +889,7 @@ export default function BoardSelection() {
   if (isError) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.centered}>
-        <Icon name="error" size={40} color={iosSystemColors.systemRed} />
+        <Icon name="error" size={40} color={systemColors.error} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.errorTitle')}
         </Text>

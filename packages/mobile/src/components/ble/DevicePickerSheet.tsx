@@ -297,7 +297,7 @@ export function DevicePickerSheet({
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('ble.locationHintTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                 {locationHint.wasGranted ? t('ble.locationHintGranted') : t('ble.locationHintBody')}
               </Text>
               {locationHint.shouldOfferLocationGrant && (
@@ -319,7 +319,7 @@ export function DevicePickerSheet({
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('ble.locationServicesHintTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                 {locationHint.servicesWereEnabled
                   ? t('ble.locationServicesHintEnabled')
                   : t('ble.locationServicesHintBody')}
@@ -341,7 +341,7 @@ export function DevicePickerSheet({
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('ble.troubleshootTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                 {t('ble.troubleshootTips')}
               </Text>
               {/* The wall may simply have no light kit. Offer to drive it anyway:
@@ -349,7 +349,7 @@ export function DevicePickerSheet({
                   climb. Session-local — nothing is written to the board record. */}
               {showNoLedsOffer && (
                 <View style={styles.noLedsOffer}>
-                  <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                  <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                     {t('ble.noLedsBody')}
                   </Text>
                   <Button

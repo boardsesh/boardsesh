@@ -49,7 +49,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
 }: SimilarClimbsSectionProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
   const {
@@ -87,13 +87,13 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
           contentContainerStyle={styles.scroller}
         >
           {Array.from({ length: SKELETON_COUNT }, (_, index) => (
-            <View key={index} style={[styles.card, styles.skeletonCard]} />
+            <View key={index} style={[styles.card, styles.skeletonCard, { backgroundColor: systemColors.fill }]} />
           ))}
         </ScrollView>
         {/* The first read of a downloaded board builds its holds index, which
             can take a few seconds on a big catalogue. Say so. */}
         {source === 'local' ? (
-          <Text variant="caption1" color={iosSystemColors.systemGray}>
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('mobile.similarClimbs.preparing')}
           </Text>
         ) : null}
@@ -167,7 +167,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
               </View>
             ) : null}
             {byline ? (
-              <Text variant="caption2" color={iosSystemColors.systemGray} numberOfLines={1} style={styles.byline}>
+              <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.byline}>
                 {byline}
               </Text>
             ) : null}
@@ -179,10 +179,11 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
 });
 
 function SimilarClimbsEmpty({ message }: { message: string }) {
+  const { systemColors } = useTheme();
   return (
     <View style={styles.emptyContainer}>
-      <Icon name="search" size={20} color={iosSystemColors.systemGray} />
-      <Text variant="subheadline" color={iosSystemColors.systemGray}>
+      <Icon name="search" size={20} color={systemColors.secondaryLabel} />
+      <Text variant="subheadline" color={systemColors.secondaryLabel}>
         {message}
       </Text>
     </View>
@@ -285,7 +286,6 @@ const styles = StyleSheet.create({
   skeletonCard: {
     height: spacing[16],
     borderRadius: borderRadius.md,
-    backgroundColor: `${iosSystemColors.systemGray}14`,
   },
   name: {
     marginTop: spacing[1],

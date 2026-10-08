@@ -97,12 +97,15 @@ export const SessionTickRow = memo(function SessionTickRow({
   onPress,
 }: SessionTickRowProps) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { systemColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
   const { openClimbActions } = useDrawerHost();
 
   const meta = statusMeta(tick.status);
+  // The tinted disc (glyph on a 15% wash) adapts with the theme; only the solid
+  // badge below keeps the static gray, since it carries a white glyph.
+  const tintedStatusColor = STATUS_META[tick.status]?.color ?? chartColors.secondaryLabel;
   const attemptText = formatAttemptText(tick, t);
   // The setter moves out of the climb's primary subtitle into the detail line,
   // explicitly labelled, so it's never misread as the person who sent the climb.
@@ -183,8 +186,8 @@ export const SessionTickRow = memo(function SessionTickRow({
             />
           ) : (
             <View style={styles.statusSlot}>
-              <View style={[styles.statusIcon, { backgroundColor: withAlpha(meta.color, 0.15) }]}>
-                <Icon name={meta.icon} size={14} color={meta.color} />
+              <View style={[styles.statusIcon, { backgroundColor: withAlpha(tintedStatusColor, 0.15) }]}>
+                <Icon name={meta.icon} size={14} color={tintedStatusColor} />
               </View>
             </View>
           )}

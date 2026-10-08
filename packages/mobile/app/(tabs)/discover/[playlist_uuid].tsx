@@ -51,7 +51,6 @@ import { useAuth } from '../../../src/providers/auth-provider';
 import { useIsSharedSession } from '../../../src/providers/queue-provider';
 import { useToast } from '../../../src/providers/toast-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 
 type DetailParams = {
   playlist_uuid: string;
@@ -624,7 +623,7 @@ export default function PlaylistDetail() {
     return (
       <View style={styles.stateContainer}>
         <PlaylistBackFab />
-        <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('detail.errors.loadTitle')}
         </Text>
@@ -653,7 +652,7 @@ export default function PlaylistDetail() {
     return (
       <View style={styles.stateContainer}>
         <PlaylistBackFab />
-        <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('detail.errors.notFoundTitle')}
         </Text>

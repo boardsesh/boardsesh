@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, View, StyleSheet, type GestureResponderEvent } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { brandAccentColor } from '../../theme/expo-ui-modifiers';
 import { spacing } from '../../theme/tokens';
 
 /**
@@ -52,7 +53,10 @@ export function MarkerMultiplierSlider({
   onChange,
   onChangeEnd,
 }: MarkerMultiplierSliderProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
+  // The same on-track tint the native @expo/ui Slider and Switch use (HIG Color:
+  // one accent across every control), so this hand-built slider can't drift.
+  const onTrackColor = brandAccentColor(brandColors);
   const trackRef = useRef<View>(null);
   const trackLayoutRef = useRef<{ pageLeft: number; width: number } | null>(null);
   // The last value `applyPageX` actually applied via `onChange`. RN seeds
@@ -167,17 +171,14 @@ export function MarkerMultiplierSlider({
         style={[styles.track, { backgroundColor: systemColors.separator }]}
       >
         <View
-          style={[
-            styles.fill,
-            { backgroundColor: systemColors.accent, width: `${Math.max(0, Math.min(1, ratio)) * 100}%` },
-          ]}
+          style={[styles.fill, { backgroundColor: onTrackColor, width: `${Math.max(0, Math.min(1, ratio)) * 100}%` }]}
         />
         <View
           style={[
             styles.thumb,
             {
               backgroundColor: systemColors.background,
-              borderColor: systemColors.accent,
+              borderColor: onTrackColor,
               left: `${Math.max(0, Math.min(1, ratio)) * 100}%`,
             },
           ]}

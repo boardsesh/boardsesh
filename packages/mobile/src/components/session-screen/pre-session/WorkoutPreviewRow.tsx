@@ -9,7 +9,6 @@ import { PressableSurface } from '../../PressableSurface';
 import { Text } from '../../Text';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { useTheme } from '../../../providers/theme-provider';
-import { iosSystemColors } from '../../../theme/ios-colors';
 import { spacing } from '../../../theme/tokens';
 import { hapticSelection } from '../../../lib/haptics';
 import { formatQuality, formatSends } from '../../../lib/format-climb-stats';
@@ -130,9 +129,9 @@ function WorkoutPreviewRowComponent({
           style={[styles.refreshButton, refreshDisabled && !isRefreshing ? { opacity: opacity.disabled } : null]}
         >
           {isRefreshing ? (
-            <ActivityIndicator size="small" color={iosSystemColors.systemGray} />
+            <ActivityIndicator size="small" color={systemColors.secondaryLabel} />
           ) : (
-            <Icon name="refresh" size={22} color={iosSystemColors.systemGray} />
+            <Icon name="refresh" size={22} color={systemColors.secondaryLabel} />
           )}
         </PressableSurface>
       </View>

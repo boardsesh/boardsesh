@@ -23,6 +23,7 @@ export type RadioOption<T extends string> = {
 
 export type RadioGroupProps<T extends string> = {
   options: ReadonlyArray<RadioOption<T>>;
-  value: T;
+  /** The selected option, or `null` when the climber hasn't picked one yet (no row checked). */
+  value: T | null;
   onChange: (value: T) => void;
 };

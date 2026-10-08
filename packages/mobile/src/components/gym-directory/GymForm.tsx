@@ -7,7 +7,6 @@ import { useHeaderActions } from '../../hooks/use-header-actions';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { parseCoordinate, LATITUDE_RANGE, LONGITUDE_RANGE } from './gym-coordinate';
 
 /** The gym's current values, used to seed the form once on mount. */
@@ -173,7 +172,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
           autoCorrect={false}
           maxLength={500}
         />
-        <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.fieldHint}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.fieldHint}>
           {t('mobile.gymEdit.websiteHint')}
         </Text>
 
@@ -212,7 +211,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
               maxLength={20}
             />
             {latitude.error && (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.coordError}>
+              <Text variant="footnote" color={systemColors.error} style={styles.coordError}>
                 {t('mobile.gymEdit.invalidCoordinate')}
               </Text>
             )}
@@ -229,7 +228,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
               maxLength={20}
             />
             {longitude.error && (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.coordError}>
+              <Text variant="footnote" color={systemColors.error} style={styles.coordError}>
                 {t('mobile.gymEdit.invalidCoordinate')}
               </Text>
             )}

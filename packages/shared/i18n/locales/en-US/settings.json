@@ -471,7 +471,6 @@
       "timeoutLabel": "Disconnect after",
       "toggleTitle": "Auto-disconnect",
       "toggleSubtitle": "Disconnect after {{timeout}} of inactivity",
-      "toggleAccessibility": "Toggle auto-disconnect",
       "timeoutOptions": {
         "10": "10 seconds",
         "15": "15 seconds",

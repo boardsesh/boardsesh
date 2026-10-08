@@ -12,8 +12,8 @@
 //              that stays open (menuActionDismissBehavior) and live-commits.
 //
 // Every facet is ALWAYS shown — neutral glass with a resting placeholder until
-// set, then amber prominent glass with the value. Amber (brandColors.accent, not
-// the climb search's purple) marks this as the logbook, not a live search. The
+// set, then brand-tint prominent glass with the value (HIG Color: one tint for
+// every interactive element, so the logbook no longer uses amber). The
 // wording is sourced once in LogbookChipRow.logic.ts so it never diverges from
 // the sheet / badge.
 
@@ -35,7 +35,7 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { spacing } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { brandAccentColor } from '../../theme/expo-ui-modifiers';
 import { anyFilterActive, buildLogbookFacets } from './LogbookChipRow.logic';
 import type { LogbookChipRowProps } from './LogbookChipRow.types';
 
@@ -52,22 +52,20 @@ function LogbookChipRowComponent({
   const { brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
 
-  // Active = amber-tinted prominent glass with dark text, inactive = neutral glass.
-  // Amber (brandColors.accent) instead of the climb search's purple so the logbook
-  // reads as the logbook; amber is fill-only and pairs with dark text per
-  // brandColors, so the prominent chips force a black label. @expo/ui guards the
-  // glass styles with `if #available(iOS 26)`.
+  // Active = brand-tinted prominent glass with the on-fill label, inactive =
+  // neutral glass. Same tint as every other control (HIG Color). @expo/ui guards
+  // the glass styles with `if #available(iOS 26)`.
   const chipModifiers = useCallback(
     (active: boolean) =>
       active
         ? [
             buttonStyle('glassProminent'),
             controlSize('small'),
-            tint(brandColors.accent),
-            foregroundColor(iosSystemColors.black),
+            tint(brandAccentColor(brandColors)),
+            foregroundColor(brandColors.onPrimary),
           ]
         : [buttonStyle('glass'), controlSize('small')],
-    [brandColors.accent],
+    [brandColors],
   );
 
   // Rebuilt only when the filters / grade scale / formatter change, so the facet

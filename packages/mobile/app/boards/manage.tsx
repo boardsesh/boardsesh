@@ -84,7 +84,6 @@ import { offlineBoardRows } from '../../src/components/board-discovery/offline-b
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import { pickerNoticeKey } from '../../src/lib/boards/local-only';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
 const EMPTY_BOARDS: UserBoard[] = [];
@@ -673,7 +672,7 @@ export default function ManageBoards() {
   if (!isAuthenticated) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="person" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="person" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.signInTitle')}
         </Text>
@@ -705,7 +704,7 @@ export default function ManageBoards() {
   if (!showOfflineList && ((isError && myBoards.length === 0) || !currentUserId)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="error" size={40} color={iosSystemColors.systemRed} />
+        <Icon name="error" size={40} color={systemColors.error} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.errorTitle')}
         </Text>

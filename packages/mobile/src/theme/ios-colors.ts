@@ -1,19 +1,16 @@
-import { Platform } from 'react-native';
 import { brandColors } from './colors';
 
 /**
- * The interactive-accent blue. iOS keeps Apple's #007AFF; Android resolves it to
- * the brand tint so the active tab, links, and "edit / copy / open" affordances
- * read as Boardsesh violet rather than an out-of-place iOS blue.
+ * The interactive-accent tint: the brand violet on every platform, the same
+ * colour the @expo/ui controls tint with (HIG Color: one accent colour across
+ * the app's interactive elements; Apple's link blue was a second tint).
  *
  * For FOREGROUND use prefer the scheme-aware `useTheme().systemColors.accent`
- * (lifts to #A78BFA in Android dark so it clears AA on near-black). This static
- * value stays as the FILL fallback for the few StyleSheet backgrounds that carry
- * white text (e.g. the logbook angle chip), where lifting would break white-on-fill
- * contrast. Every other value below is intentionally identical across platforms —
- * iOS system reds/greens/grays read fine on Android too.
+ * (lifts to #A78BFA in dark so it clears AA on near-black). This static value
+ * stays as the FILL fallback for the few StyleSheet backgrounds that carry white
+ * text (e.g. the logbook angle chip): white on #6D28D9 is 7.10:1.
  */
-const ACCENT_TINT = Platform.OS === 'android' ? brandColors.tint : '#007AFF';
+const ACCENT_TINT = brandColors.tint;
 
 /**
  * iOS system color constants for use in contexts where PlatformColor
@@ -31,7 +28,7 @@ export const iosSystemColors = {
   systemGreen: '#34C759',
   /** iOS systemYellow — caution, moderate indicators */
   systemYellow: '#FFCC00',
-  /** Interactive accent — iOS systemBlue (#007AFF); brand violet on Android. */
+  /** Interactive accent fill — the brand violet (static light value; see ACCENT_TINT). */
   systemBlue: ACCENT_TINT,
   /** iOS systemOrange — moderate warnings, attempted indicators */
   systemOrange: '#FF9500',

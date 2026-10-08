@@ -31,18 +31,37 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-haptics', () => ({ selectionAsync: vi.fn() }));
 
+// Text/Icon surface the resolved colour so tests can assert which theme role a
+// line reads in: the `color` prop, or the last `color` in a style array.
+function resolvedColor(color: unknown, style: unknown): string | undefined {
+  if (typeof color === 'string') return color;
+  const styleEntries = Array.isArray(style) ? style : [style];
+  let styleColor: string | undefined;
+  for (const entry of styleEntries) {
+    if (entry && typeof entry === 'object' && 'color' in entry && typeof entry.color === 'string') {
+      styleColor = entry.color;
+    }
+  }
+  return styleColor;
+}
+
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color, style }: { children?: ReactNode; color?: unknown; style?: unknown }) =>
+    createElement('span', { 'data-color': resolvedColor(color, style) }, children),
 }));
 vi.mock('../../Icon', () => ({
-  Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
+  Icon: ({ name, color }: { name: string; color?: unknown }) =>
+    createElement('i', { 'data-icon': name, 'data-color': typeof color === 'string' ? color : undefined }),
 }));
 vi.mock('../DumbbellByAngleChart', () => ({
   DumbbellByAngleChart: () => createElement('div', { 'data-testid': 'dumbbell' }),
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primary: '#6D28D9' } }),
+  useTheme: () => ({
+    brandColors: { primary: '#6D28D9' },
+    systemColors: { secondaryLabel: 'secondaryLabel', tertiaryLabel: 'tertiaryLabel', fill: 'fill' },
+  }),
 }));
 vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ gradeFormat: 'v-grade' }) }));
 vi.mock('../../../hooks/use-my-grade', () => ({ useMyGrade: () => myGradeOverride.current }));
@@ -234,6 +253,50 @@ describe('BoardseshGradeSection', () => {
     // The "matches this board" note is the single "same" line — no arrow, no payoff row.
     expect(container.querySelector('[data-icon="arrow.right"]')).toBeNull();
     expect(text).not.toContain('boardseshGrade.payoff');
+  });
+});
+
+describe('BoardseshGradeSection colour roles', () => {
+  beforeEach(() => {
+    hookState.grade = undefined;
+    hookState.angleRows = undefined;
+    hookState.history = undefined;
+    myGradeOverride.current = { status: 'unknown' };
+  });
+
+  function spanWithText(container: HTMLElement, text: string): Element | undefined {
+    return Array.from(container.querySelectorAll('span')).find((node) => node.textContent === text);
+  }
+
+  it('reads the hero captions, crowd grade, trust line and arrow in secondaryLabel', () => {
+    hookState.grade = grade({ universalGrade: 20 });
+    hookState.history = [historyEntry(40, 22, 205)];
+    hookState.angleRows = [angleRow(40, 20)];
+
+    const { container } = renderSection();
+
+    expect(spanWithText(container, 'boardseshGrade.hero.thisBoard')?.getAttribute('data-color')).toBe('secondaryLabel');
+    expect(spanWithText(container, 'V6')?.getAttribute('data-color')).toBe('secondaryLabel');
+    expect(spanWithText(container, 'boardseshGrade.trust.confirmedRange')?.getAttribute('data-color')).toBe(
+      'secondaryLabel',
+    );
+    expect(container.querySelector('[data-icon="arrow.right"]')?.getAttribute('data-color')).toBe('secondaryLabel');
+  });
+
+  it('reads the setter call and its grade in secondaryLabel', () => {
+    hookState.grade = grade({ confidence: 'setter_only', ascensionistCount: 2 });
+
+    const { container } = renderSection();
+
+    expect(spanWithText(container, 'boardseshGrade.setterCall')?.getAttribute('data-color')).toBe('secondaryLabel');
+    expect(spanWithText(container, 'boardseshGrade.trust.setter')?.getAttribute('data-color')).toBe('secondaryLabel');
+  });
+
+  it('reads the no-crowd-grade explanation in secondaryLabel', () => {
+    const { container } = renderSection('woods');
+
+    expect(spanWithText(container, 'boardseshGrade.woodsBody')?.getAttribute('data-color')).toBe('secondaryLabel');
+    expect(container.querySelector('[data-icon="info"]')?.getAttribute('data-color')).toBe('secondaryLabel');
   });
 });
 

@@ -194,7 +194,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthCha
       ) : isEmpty ? (
         <View style={styles.emptyState} accessibilityRole="image" accessibilityLabel={emptyLabel}>
           <Icon name="chart.bar" size={22} color={systemColors.tertiaryLabel} />
-          <Text variant="footnote" color={systemColors.tertiaryLabel}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
             {emptyLabel}
           </Text>
         </View>
@@ -434,8 +434,8 @@ export const StackedBarChart = memo(function StackedBarChart({
                 yAxisThickness={0}
                 xAxisThickness={StyleSheet.hairlineWidth}
                 xAxisColor={chartColors.separator}
-                xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
-                yAxisTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+                xAxisLabelTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
+                yAxisTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
                 rulesColor={chartColors.separator}
                 rulesType="solid"
                 focusBarOnPress={interactive}
@@ -595,7 +595,7 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                 yAxisThickness={0}
                 xAxisThickness={StyleSheet.hairlineWidth}
                 xAxisColor={chartColors.separator}
-                xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+                xAxisLabelTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
                 focusBarOnPress={interactive}
                 highlightedBarIndex={selectedIndex == null ? -1 : [selectedIndex * 2, selectedIndex * 2 + 1]}
                 highlightEnabled={interactive && selectedIndex != null}
@@ -721,7 +721,7 @@ export const TotalAreaChart = memo(function TotalAreaChart({
                 labelComponent: () => (
                   <Text
                     variant="caption2"
-                    color={chartColors.tertiaryLabel}
+                    color={chartColors.secondaryLabel}
                     style={[styles.lineAxisLabel, { width: labelBudget }]}
                     numberOfLines={1}
                   >
@@ -757,8 +757,8 @@ export const TotalAreaChart = memo(function TotalAreaChart({
             xAxisColor={chartColors.separator}
             rulesColor={chartColors.separator}
             rulesType="solid"
-            yAxisTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
-            xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+            yAxisTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
+            xAxisLabelTextStyle={{ color: chartColors.secondaryLabel, fontSize: AXIS_LABEL_SIZE }}
             pointerConfig={{
               pointerStripColor: chartColors.separator,
               pointerStripWidth: 1,

@@ -16,7 +16,6 @@ import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
 /**
@@ -53,7 +52,7 @@ export default function EditGym() {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {header}
-        <Icon name="error" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="error" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.gymEdit.notFound')}
         </Text>
@@ -74,7 +73,7 @@ export default function EditGym() {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {header}
-        <Icon name="lock" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="lock" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.gymEdit.noAccess')}
         </Text>

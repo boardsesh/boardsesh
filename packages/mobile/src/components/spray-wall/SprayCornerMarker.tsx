@@ -35,6 +35,7 @@ import Svg, { Path } from 'react-native-svg';
 import type { Quad } from '@boardsesh/spray-wall-geometry';
 import { borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 import {
   CORNER_HANDLE_SIZE,
   cornerLayerLayout,
@@ -125,6 +126,7 @@ function FittedCornerMarker({
   renderScale: number;
 }) {
   const { t } = useTranslation('boards');
+  const { brandColors } = useTheme();
 
   const seed = useMemo(() => value ?? defaultQuad(photo.width, photo.height), [value, photo.width, photo.height]);
   const renderSeed = quadToRender(seed, renderScale);
@@ -238,7 +240,7 @@ function FittedCornerMarker({
     };
   });
 
-  const guideColor = invalid ? iosSystemColors.systemRed : iosSystemColors.systemBlue;
+  const guideColor = invalid ? brandColors.error : iosSystemColors.systemBlue;
 
   // Written out rather than looked up by index: the i18n linter only accepts
   // literal keys, and four corners is four lines.

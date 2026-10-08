@@ -66,7 +66,6 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 10: 40, 16: 64 },
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#888' } }));
 vi.mock('../../sheet-content-inset', () => ({ withSheetBottomInset: (style: unknown) => style }));
 vi.mock('../use-queue-drag', () => ({
   useQueueDrag: () => ({

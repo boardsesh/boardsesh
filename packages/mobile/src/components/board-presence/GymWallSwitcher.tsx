@@ -208,7 +208,7 @@ const GymWallRow = memo(function GymWallRow({
           {detail}
         </Text>
         {sharesClimbsWithActive ? (
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
             {t('mobile.boardPresence.gymWalls.sameClimbs')}
           </Text>
         ) : null}

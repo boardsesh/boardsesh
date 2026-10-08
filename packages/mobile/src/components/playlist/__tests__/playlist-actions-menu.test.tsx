@@ -34,7 +34,7 @@ vi.mock('../../../providers/theme-provider', () => ({
     const label = '#000';
     return {
       variant: ctrl.variant,
-      systemColors: { label, accent: '#007AFF' },
+      systemColors: { label, accent: '#007AFF', error: 'systemRed' },
       brandColors: { primary: '#6D28D9' },
       // Resolved action-icon colours: monochrome on Liquid Glass, semantic on Material.
       actionColors:
@@ -44,7 +44,6 @@ vi.mock('../../../providers/theme-provider', () => ({
     };
   },
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#FF3B30' } }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8 } }));
 
 import { PlaylistActionsMenu } from '../PlaylistActionsMenu';
@@ -76,7 +75,7 @@ describe('PlaylistActionsMenu', () => {
 
     expect(container.querySelector('[data-icon="pin.fill"]')?.getAttribute('data-color')).toBe('#000');
     expect(container.querySelector('[data-icon="edit"]')?.getAttribute('data-color')).toBe('#000');
-    expect(container.querySelector('[data-icon="delete"]')?.getAttribute('data-color')).toBe('#FF3B30');
+    expect(container.querySelector('[data-icon="delete"]')?.getAttribute('data-color')).toBe('systemRed');
   });
 
   it('keeps Material pin/edit actions on primary/accent colors', () => {

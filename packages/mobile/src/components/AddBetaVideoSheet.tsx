@@ -190,7 +190,7 @@ export function AddBetaVideoSheet({
         <View style={styles.pasteSection}>
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
-            <Text variant="footnote" color={systemColors.tertiaryLabel}>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('mobile.betaVideos.pasteSectionLabel')}
             </Text>
             <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />

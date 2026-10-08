@@ -34,9 +34,13 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('expo-haptics', () => ({ selectionAsync: vi.fn() }));
 vi.mock('@boardsesh/shared-schema', () => ({ betaLinkIdentity: (url: string) => url }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({ children, color }: { children?: ReactNode; color?: string }) =>
+    createElement('span', { 'data-color': color }, children),
 }));
-vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useBetaLinks: () => ({
     data: betaLinks.data,
@@ -46,8 +50,12 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     refetch: vi.fn(),
   }),
 }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ brandColors: { primary: '#000' } }) }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#888', systemRed: '#f00' } }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({
+    brandColors: { primary: '#000' },
+    systemColors: { secondaryLabel: 'theme-secondary-label', fill: 'theme-fill', error: 'theme-error' },
+  }),
+}));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 }, borderRadius: { md: 8, full: 999 } }));
 vi.mock('../BetaVideoCard', () => ({
   BETA_CARD_WIDTH: 108,
@@ -90,5 +98,24 @@ describe('BetaVideosSection', () => {
     expect(getByTestId('rngh-scroll')).toBeTruthy();
     expect(queryByTestId('rn-scroll')).toBeNull();
     expect(getAllByTestId('beta-card')).toHaveLength(2);
+  });
+
+  it('renders the video count in the scheme-aware secondary label', () => {
+    betaLinks.data = [betaLink('https://www.instagram.com/reel/aaa/')];
+
+    const { getByText } = render(createElement(BetaVideosSection, { climbUuid: 'climb-1', boardName: 'kilter' }));
+
+    expect(getByText('mobile.betaVideos.videoCount').getAttribute('data-color')).toBe('theme-secondary-label');
+  });
+
+  it('paints the load error glyph in the error role and its copy in the secondary label', () => {
+    betaLinks.isError = true;
+
+    const { container, getByText } = render(
+      createElement(BetaVideosSection, { climbUuid: 'climb-1', boardName: 'kilter' }),
+    );
+
+    expect(container.querySelector('i[data-icon="error"]')?.getAttribute('data-color')).toBe('theme-error');
+    expect(getByText('mobile.betaVideos.errorTitle').getAttribute('data-color')).toBe('theme-secondary-label');
   });
 });

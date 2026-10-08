@@ -1,6 +1,6 @@
 import Animated, { useAnimatedStyle, useDerivedValue, withTiming } from 'react-native-reanimated';
 import { Icon } from './Icon';
-import { iosSystemColors } from '../theme/ios-colors';
+import { useTheme } from '../providers/theme-provider';
 import { timing } from '../theme/animations';
 
 type SectionDisclosureChevronProps = {
@@ -19,6 +19,7 @@ type SectionDisclosureChevronProps = {
  * be the single source of truth.
  */
 export function SectionDisclosureChevron({ expanded, size = 16 }: SectionDisclosureChevronProps) {
+  const { systemColors } = useTheme();
   const rotation = useDerivedValue(() => withTiming(expanded ? 1 : 0, { duration: timing.normal }), [expanded]);
 
   const style = useAnimatedStyle(() => ({
@@ -27,7 +28,7 @@ export function SectionDisclosureChevron({ expanded, size = 16 }: SectionDisclos
 
   return (
     <Animated.View style={style}>
-      <Icon name="chevron.down" size={size} color={iosSystemColors.systemGray} />
+      <Icon name="chevron.down" size={size} color={systemColors.tertiaryLabel} />
     </Animated.View>
   );
 }

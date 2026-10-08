@@ -214,7 +214,13 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { secondaryBackground: '#fff', separator: '#ccc' },
+    systemColors: {
+      secondaryBackground: '#fff',
+      separator: '#ccc',
+      secondaryLabel: 'secondaryLabel',
+      tertiaryLabel: 'tertiaryLabel',
+      error: 'systemRed',
+    },
     brandColors: { primary: '#6D28D9', success: '#0a0', error: '#a00' },
   }),
 }));

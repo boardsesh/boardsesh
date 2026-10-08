@@ -23,7 +23,6 @@ import {
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
 // Module-level so the empty-list identity is stable across renders, and hoisted
@@ -156,7 +155,7 @@ export default function NotificationsScreen() {
             </View>
           ) : showError ? (
             <View style={styles.stateBlock}>
-              <Icon name="error" size={32} color={iosSystemColors.systemRed} />
+              <Icon name="error" size={32} color={systemColors.error} />
               <Text variant="headline" style={styles.stateTitle}>
                 {t('errors.load')}
               </Text>
