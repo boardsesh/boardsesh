@@ -4,8 +4,35 @@ Which PostHog events and filters the growth dashboards count, and why. Project
 412845. Written for #5653. The live insights are configured in PostHog; this
 file says what they are supposed to count, so a tile can be checked against it.
 
-Every figure here is a count of PostHog people. It is not a count of verified
-humans or store installs.
+Every figure here is a count of PostHog people, except active users (below),
+which come from our own database. None of them is a count of verified humans
+or store installs.
+
+## Active users (canonical DAU, WAU and MAU)
+
+The canonical active-user numbers are the `Active Users Snapshot` event, not a
+count of PostHog people. The backend writes one `user_activity_days` row per
+signed-in climber per UTC day per platform whatever their analytics consent,
+and the scheduler's `snapshot-active-users` job sends one event a day with the
+counts (see [analytics-consent.md](./analytics-consent.md)).
+
+- **Filter:** `event = Active Users Snapshot` (distinct id
+  `system:active-users`, `$lib = posthog-node`). One event per counted day, dated
+  midday UTC of that day; a re-run reuses the same event uuid, so it does not
+  double a day.
+- **Properties:** `day`, `dailyActiveUsers` (that day), `weeklyActiveUsers`
+  (7 days ending that day), `monthlyActiveUsers` (30 days ending that day),
+  and per platform with a suffix: `dailyActiveUsersWeb`, `…Ios`, `…Android`,
+  `…Unknown`. A climber on two platforms counts once overall and once on each.
+- **Who counts:** signed-in climbers only. Signed-out visitors are not in it,
+  and a signed-out climber who declines analytics can't be counted anywhere.
+- **Platform:** `unknown` until the web and app clients send
+  `x-boardsesh-platform` / `clientPlatform` (PRs B and C of #2644).
+- **PostHog MAU is no longer comparable.** Once the consent prompt ships (PRs B
+  and C of #2644), PostHog only sees climbers who chose "Allow", so a
+  people-based MAU tile drops by the share who declined or never answered.
+  Read growth from the snapshot; read behaviour (funnels, retention) from
+  PostHog people, knowing they are the consenting subset.
 
 ## Populations
 
@@ -22,7 +49,7 @@ population filters on both.
 | Preview            | `environment = preview`                                           | `pr-*` OTA bundles (`mobile-ota-preview.yml`). www previews send nothing: the web client only starts on a production host.            |
 | Legacy binaries    | `$lib = posthog-react-native` AND `environment` is not set        | Real climbers on store binaries built before 2026-07-25 (2.0.0, 2.1.0, early 2.2.2). They can't take OTAs since the V2 OTA server went away on 2026-08-25, so they stay untagged. Label them; don't fold them into production. |
 | www                | `$lib = js`                                                       | Marketing, public climb pages, auth, account. Split by `$pathname` (below).                                                             |
-| Backend            | `$lib = posthog-node`                                             | Server-side events. Only a production backend sends (`packages/backend/src/services/analytics/posthog.ts`).                             |
+| Backend            | `$lib = posthog-node`                                             | Server-side events. Only a production backend sends (`packages/backend/src/services/analytics/posthog.ts`). Since #2644 none of them is a person: each has its own random distinct id, so never count people on them. |
 | Internal and test  | cohort 295337                                                     | Exclude it explicitly. `filterTestAccounts` covers typed insights only; a SQL tile needs its own `person_id NOT IN COHORT 295337`.      |
 
 The internal cohort held one person at the 2026-09-20 audit. Excluding it does
@@ -766,5 +793,7 @@ finished the period shown as final. Mark the current, unfinished period.
 | #6078 OTA (fill in the date when it ships) | The app stops sending `$create_alias` and stops identifying signed-out installs. Native `$identify` volume drops by most of its total, upgraded signed-out installs each start one new anonymous person, and the identity split is expected to fall from this date (see "Identity-split pitfall") |
 | #6027 web deploy | www events carry `utm_*` and `gclid`; every Play link carries a link id (`utm_content`); `utm_medium=qr` on a gym install starts meaning a scan; `App Install Click` on /help starts sending `placement: 'help'` |
 | `NEXT_PUBLIC_APP_STORE_PROVIDER_ID` set | App Store campaign links start counting in App Analytics |
+| #2644 PR A backend deploy | `Active Users Snapshot` starts (first event the morning after). Backend events stop carrying a user: Live Activity events and `Tick Climb Not In Catalog` get a random distinct id each, so distinct-person counts on them stop meaning anything |
+| #2644 PRs B and C ship | PostHog capture needs consent: people-based counts drop to the consenting subset (see "Active users") |
 
 None of these repairs past data. Annotate them; do not backfill.
