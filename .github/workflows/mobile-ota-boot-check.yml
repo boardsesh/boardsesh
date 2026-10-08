@@ -5,7 +5,7 @@ name: Mobile OTA Boot Check
 # and an emulator. See docs/mobile-ota-updates.md ("Boot check").
 #
 # Per platform:
-#   1. Find the commit's stage receipt (runtime version + bundle hash).
+#   1. Find the commit's published receipt (runtime version + bundle hash).
 #   2. Restore a release binary built from that commit's native tree, or build it.
 #   3. scripts/mobile-ota-boot-check.ts: install fresh, launch twice, read what
 #      expo-updates recorded, fail unless the second launch ran that update.
@@ -15,7 +15,7 @@ name: Mobile OTA Boot Check
 # any publish.
 #
 # The pull_request trigger is the check testing itself: a PR that edits the
-# script or this file runs it against the newest staged update.
+# script or this file runs it against its own pinned PR preview.
 
 on:
   workflow_call:
@@ -64,6 +64,9 @@ on:
       - '.github/workflows/mobile-ota-boot-check.yml'
       - 'scripts/mobile-ota-boot-check.ts'
       - 'scripts/lib/ota-boot-check.ts'
+      - 'scripts/mobile-ota-boot-preview.ts'
+      - 'scripts/lib/ota-preview-boot-receipt.ts'
+      - 'scripts/lib/ota-publish-protocol.ts'
 
 permissions:
   contents: read
@@ -73,7 +76,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  UPDATE_BRANCH: ${{ inputs.branch || 'pr-staging' }}
+  UPDATE_BRANCH: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || inputs.branch || 'pr-staging' }}
   EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
   # What the embedded bundle is built with. No PostHog key and no Sentry DSN: the
   # bundle built into the gate's binary reports nothing. The update under test
@@ -92,30 +95,57 @@ env:
   TELEMETRY_HOSTS: us.i.posthog.com us-assets.i.posthog.com o4510644927660032.ingest.us.sentry.io
 
 jobs:
-  # Which commit, and what was staged for it. The receipt is the one the stage
-  # job archived beside the export it published; reading it needs no more than
-  # this repository's own token.
+  # PR selfchecks use the triggering head's preview receipt. Calls and dispatches
+  # retain their supplied receipt or stage-artifact path. Reading the publication
+  # evidence needs only this repository's read token.
   resolve:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
     permissions:
       actions: read
       contents: read
+      deployments: read
+      pull-requests: read
     outputs:
       commit: ${{ steps.receipt.outputs.commit }}
       receipt: ${{ steps.receipt.outputs.receipt }}
       ios_runtime: ${{ steps.receipt.outputs.ios_runtime }}
       android_runtime: ${{ steps.receipt.outputs.android_runtime }}
     steps:
+      - name: Check out the PR receipt resolver
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      - name: Set up Node for the receipt resolver
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+
+      - name: Wait for this PR head's frozen preview
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node --experimental-strip-types scripts/mobile-ota-boot-preview.ts "$PR_HEAD_SHA" "$PR_NUMBER" receipt.json
+
       - name: Find the receipt for the commit under test
         id: receipt
         env:
           GH_TOKEN: ${{ github.token }}
-          REF: ${{ inputs.ref }}
+          REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.ref }}
+          EVENT_NAME: ${{ github.event_name }}
           RECEIPT_JSON: ${{ inputs.receipt_json }}
         run: |
           set -euo pipefail
-          if [ -n "$RECEIPT_JSON" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            test -s receipt.json
+          elif [ -n "$RECEIPT_JSON" ]; then
             printf '%s' "$RECEIPT_JSON" > receipt.json
             echo "Using the receipt passed in."
           else

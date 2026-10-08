@@ -25,6 +25,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { recordPreviewPlatformReceipt } from './lib/ota-preview-boot-receipt';
 import { EOAS_PACKAGE_SPEC, SELF_HOSTED_UPLOAD_RATE_PER_SECOND } from './lib/eoas';
 import {
   publishPlatformsSequentially,
@@ -163,7 +164,7 @@ export function buildSelfHostedEoasArgs(
   branchName: string,
   platform: OtaPublishPlatform,
   updateMessage: string,
-  options: { allowDirtyTree?: boolean } = {},
+  options: { allowDirtyTree?: boolean; retainExport?: boolean } = {},
 ): string[] {
   // eoas aborts on a dirty tree before it ever reads the commit. Skipping that
   // check is what lets the workflow publish the regenerated changelog from an
@@ -184,7 +185,9 @@ export function buildSelfHostedEoasArgs(
         '--outputDir',
         'dist',
       ]
-    : [];
+    : options.retainExport === true
+      ? ['--outputDir', 'dist']
+      : [];
   return [
     EOAS_PACKAGE_SPEC,
     'publish',
@@ -464,6 +467,10 @@ async function publishToSelfHostedBranch(
   // no shipped binary runs (@expo/fingerprint is not deterministic across macOS and
   // Linux), so the check is skipped there rather than answered wrongly.
   const verifiable = PREVIEW_BRANCH_PATTERN.test(branchName) && runsInGithubActions();
+  const previewReceiptPath = process.env.OTA_PREVIEW_RECEIPT_PATH;
+  if (previewReceiptPath && (!verifiable || requestedSelfHostedPlatforms(platform).length !== 1)) {
+    throw new Error('Preview receipts require one preview platform in GitHub Actions.');
+  }
   const runtimeVersions = new Map<OtaPublishPlatform, string | null>();
   const runtimeVersionFor = (target: OtaPublishPlatform): string | null => {
     if (!verifiable) return null;
@@ -492,6 +499,7 @@ async function publishToSelfHostedBranch(
   const outcomes = await publishPlatformsSequentially(platforms, async (requestedPlatform) => {
     const eoasArgs = buildSelfHostedEoasArgs(branchName, requestedPlatform, updateMessage, {
       allowDirtyTree: shouldAllowDirtyTree(),
+      retainExport: Boolean(previewReceiptPath),
     });
     console.log('');
     console.log(`[mobile:publish] Running ${requestedPlatform}: vp dlx ${eoasArgs.join(' ')}`);
@@ -524,6 +532,21 @@ async function publishToSelfHostedBranch(
     if (!passed) return 1;
   }
 
+  if (previewReceiptPath) {
+    const target = platforms[0];
+    const runtimeVersion = runtimeVersionFor(target);
+    if (!runtimeVersion) throw new Error('Cannot attest preview without the publisher runtime version.');
+    const commitHash = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+    await recordPreviewPlatformReceipt({
+      platform: target,
+      runtimeVersion,
+      branch: branchName,
+      commitHash,
+      exportDir: resolve(MOBILE_DIR, 'dist'),
+      manifestUrl: serverUrl,
+      outPath: previewReceiptPath,
+    });
+  }
   for (const line of selfHostedPublishSuccessMessages(branchName)) console.log(line);
   return 0;
 }

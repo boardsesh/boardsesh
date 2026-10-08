@@ -70,6 +70,9 @@ describe('mobile-ota-boot-check.yml', () => {
       '.github/workflows/mobile-ota-boot-check.yml',
       'scripts/mobile-ota-boot-check.ts',
       'scripts/lib/ota-boot-check.ts',
+      'scripts/mobile-ota-boot-preview.ts',
+      'scripts/lib/ota-preview-boot-receipt.ts',
+      'scripts/lib/ota-publish-protocol.ts',
     ]);
   });
 
@@ -83,12 +86,57 @@ describe('mobile-ota-boot-check.yml', () => {
     }
   });
 
+  it('tests the triggering PR head on its own preview, with time to wait for an attested publication', () => {
+    const resolveJob = workflow.jobs.resolve;
+    expect(resolveJob['timeout-minutes']).toBeGreaterThan(25);
+    expect(workflow.env.UPDATE_BRANCH).toContain("format('pr-{0}', github.event.pull_request.number)");
+    const checkout = stepNamed(resolveJob, 'Check out the PR receipt resolver');
+    expect(checkout.if).toBe("github.event_name == 'pull_request'");
+    expect(checkout.with?.ref).toBe('${{ github.event.pull_request.head.sha }}');
+    expect(checkout.with?.['persist-credentials']).toBe(false);
+    const wait = stepNamed(resolveJob, "Wait for this PR head's frozen preview");
+    expect(wait.env?.PR_HEAD_SHA).toBe('${{ github.event.pull_request.head.sha }}');
+    expect(wait.run).toContain('mobile-ota-boot-preview.ts');
+    const receipt = stepNamed(resolveJob, 'Find the receipt for the commit under test');
+    expect(receipt.env?.REF).toContain('github.event.pull_request.head.sha');
+    expect(receipt.run).toContain('if [ "$EVENT_NAME" = "pull_request" ]; then');
+    expect(receipt.run).toContain('elif [ -n "$RECEIPT_JSON" ]; then');
+  });
+
+  it('archives a preview receipt only after both actual publisher steps succeed', () => {
+    const preview = parse(readFileSync(join(REPO_ROOT, '.github/workflows/mobile-ota-preview.yml'), 'utf8')) as {
+      jobs: { publish: Job };
+    };
+    const publishJob = preview.jobs.publish;
+    for (const platform of ['ios', 'android']) {
+      const step = stepNamed(publishJob, `Publish ${platform === 'ios' ? 'iOS' : 'Android'} OTA`);
+      expect(step.env?.OTA_PREVIEW_RECEIPT_PATH).toBe(`\${{ runner.temp }}/preview-${platform}.json`);
+    }
+    for (const name of ['Collect the frozen preview receipt', 'Archive the frozen preview receipt']) {
+      expect(stepNamed(publishJob, name).if).toBe(
+        "steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'",
+      );
+    }
+    expect(stepNamed(publishJob, 'Archive the frozen preview receipt').with?.name).toBe('mobile-ota-preview-receipt');
+    expect(stepNamed(publishJob, 'Collect the frozen preview receipt').env?.HEAD_SHA).toBe(
+      '${{ needs.gate.outputs.head_sha }}',
+    );
+    expect(stepNamed(publishJob, 'Collect the frozen preview receipt').run).toContain(
+      '"$HEAD_SHA" "$BRANCH" "$GITHUB_RUN_ID" "$DEPLOYMENT_ID"',
+    );
+  });
+
   it('holds no secret and no environment', () => {
     expect(code).not.toMatch(/secrets\./);
     for (const job of Object.values(workflow.jobs)) expect(job.environment).toBeUndefined();
     expect(workflow.permissions).toEqual({ contents: 'read' });
     // Reading another run's stage receipt is the only extra permission.
-    expect(workflow.jobs.resolve.permissions).toEqual({ actions: 'read', contents: 'read' });
+    expect(workflow.jobs.resolve.permissions).toEqual({
+      actions: 'read',
+      contents: 'read',
+      deployments: 'read',
+      'pull-requests': 'read',
+    });
   });
 
   it('stays out of every OTA publish lane', () => {
