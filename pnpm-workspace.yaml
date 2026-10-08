@@ -54,6 +54,9 @@ overrides:
   react-native-screens: 4.26.2
 
 patchedDependencies:
+  'expo-observe@57.0.24': patches/expo-observe@57.0.24.patch
+  '@sentry/react-native@8.24.0': patches/@sentry__react-native@8.24.0.patch
+  'posthog-react-native-session-replay@1.6.0': patches/posthog-react-native-session-replay@1.6.0.patch
   expo-sqlite@57.0.2: patches/expo-sqlite@57.0.2.patch
   'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch

@@ -1,5 +1,6 @@
 import { deactivateNotificationDevice } from '../notifications/device-registration';
 import { markStartup } from '../lib/profiling/startup-profile';
+import { invalidateConsentAccount } from '../lib/consent-state';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
@@ -113,7 +114,11 @@ function sameStorageOwner(left: UserStorageOwner, right: UserStorageOwner): bool
 }
 
 export function AuthProvider({ children, onReady }: AuthProviderProps) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setAuthenticated] = useState(false);
+  const setIsAuthenticated = useCallback((authenticated: boolean) => {
+    invalidateConsentAccount();
+    setAuthenticated(authenticated);
+  }, []);
   const [isLoading, setIsLoading] = useState(true);
   const [isSessionUnavailable, setIsSessionUnavailable] = useState(false);
   const [isNativeSessionDegraded, setIsNativeSessionDegraded] = useState(false);
@@ -1228,7 +1233,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // `readPostLoginReturnHref()` a constant `null` — so both branches below are
   // exactly what ships today on the store fleet. Asserted by test, because this
   // change auto-OTAs to every installed binary.
-  if (!isAuthenticated && !inAuthGroup && !isAnonymousReadOnlyLocation()) {
+  if (!isAuthenticated && !inAuthGroup && segments[0] !== 'privacy-consent' && !isAnonymousReadOnlyLocation()) {
     return <Redirect href="/auth/login" />;
   }
   if (isAuthenticated && inAuthGroup) {

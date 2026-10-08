@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { render, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -341,3 +343,6 @@ describe('DeepLinkProvider — board and climb links', () => {
     expect(store.has(PENDING_BOARD_LINK_KEY)).toBe(false);
   });
 });
+
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

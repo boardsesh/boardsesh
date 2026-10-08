@@ -1,3 +1,5 @@
+import { getConsentSnapshot } from '../../lib/consent-state';
+import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
 import { router, useSegments } from 'expo-router';
@@ -59,7 +61,8 @@ export function QaTesterGate() {
   // deferred work that has not navigated yet.
   const promptEnabledAtLaunchRef = useRef(qaPromptOnLaunch);
   const promptEnabledForSession = promptEnabledAtLaunchRef.current && qaPromptOnLaunch;
-  const ready = launchReady && flagsResolved;
+  const consentSettled = useConsentSettled();
+  const ready = launchReady && flagsResolved && consentSettled;
   const segments = useSegments();
   // Latest top-level segment for the async re-check, without re-running the
   // effect on every navigation — the gate decides once per launch.
@@ -147,10 +150,10 @@ export function QaTesterGate() {
         } catch {
           launchUrl = null;
         }
-        if (cancelled) return;
+        if (cancelled || !getConsentSnapshot().settled) return;
 
         const onboardingSeen = await hasSeenOnboarding();
-        if (cancelled) return;
+        if (cancelled || !getConsentSnapshot().settled) return;
 
         // Only production needs the branch list; on a preview the brief is about
         // the branch already running.
@@ -172,7 +175,7 @@ export function QaTesterGate() {
             reportHandledError(error, { tags: { source: 'qa', op: 'list-branches' } });
             return;
           }
-          if (cancelled) return;
+          if (cancelled || !getConsentSnapshot().settled) return;
         }
 
         // Re-decide against the CURRENT route: a deep link may have arrived

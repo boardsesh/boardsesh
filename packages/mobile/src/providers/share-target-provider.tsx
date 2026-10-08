@@ -1,3 +1,6 @@
+import { deferConsentDestination } from '../lib/consent-navigation';
+import { useConsentSettled } from '../lib/consent-hooks';
+import { getConsentSnapshot } from '../lib/consent-state';
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useRouter, useSegments } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -48,6 +51,7 @@ export function extractSharedLink(shareIntent: Pick<ShareIntent, 'webUrl' | 'tex
  * true. Non-beta URLs are rejected with a toast and never routed.
  */
 export function ShareTargetProvider({ children }: { children: ReactNode }) {
+  const consentSettled = useConsentSettled();
   const router = useRouter();
   const segments = useSegments();
   const { isAuthenticated } = useAuth();
@@ -70,6 +74,7 @@ export function ShareTargetProvider({ children }: { children: ReactNode }) {
 
   const navigateToShare = useCallback(
     (link: string) => {
+      if (deferConsentDestination(`/share-beta?link=${encodeURIComponent(link)}`)) return;
       // If the share modal is already open (rapid successive shares, or the
       // post-login replay landing on it), swap the link in place instead of
       // pushing a second modal. Each shared reel carries a different `link`, so
@@ -87,7 +92,7 @@ export function ShareTargetProvider({ children }: { children: ReactNode }) {
 
   const handleLink = useCallback(
     async (link: string) => {
-      if (isAuthenticatedRef.current) {
+      if (isAuthenticatedRef.current && getConsentSnapshot().settled) {
         navigateToShare(link);
         return;
       }
@@ -121,7 +126,7 @@ export function ShareTargetProvider({ children }: { children: ReactNode }) {
   // Replay a pending share once authenticated (post-login, or a link received
   // while signed out). Clears the stash on consume so it fires exactly once.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !consentSettled) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -137,7 +142,7 @@ export function ShareTargetProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, navigateToShare]);
+  }, [isAuthenticated, navigateToShare, consentSettled]);
 
   return <>{children}</>;
 }

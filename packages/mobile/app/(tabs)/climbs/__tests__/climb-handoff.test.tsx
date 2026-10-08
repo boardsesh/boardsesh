@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantAnalyticsForTest } from '../../../../test/consent-fixture';
 import { createElement, StrictMode, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -217,3 +218,5 @@ describe('session tick → public climb route → drawer handoff', () => {
     expect(drawerOptions()).toHaveProperty('previewQueueItem');
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());

@@ -66,10 +66,8 @@ export interface HealthCheckArgs {
 export interface HealthMetrics {
   launches: number;
   emergencyLaunches: number;
-  installs: number;
-  emergencyInstalls: number;
-  /** Distinct installs running the target update id (isEmbeddedLaunch false). null when no id resolved. */
-  targetUpdateInstalls: number | null;
+  /** Launches running the target update id (isEmbeddedLaunch false). null when no id resolved. */
+  targetUpdateLaunches: number | null;
   updateId: string | null;
 }
 
@@ -173,21 +171,19 @@ export function buildLatestUpdateQuery(hours: number): string {
 /**
  * Fleet health over the window: total production launches, how many fell back to
  * the embedded bundle (emergency), and — when a target id is known — how many
- * distinct installs are successfully running it.
+ * launches are successfully running it.
  */
 export function buildHealthQuery(options: { hours: number; updateId: string | null }): string {
   const { hours, updateId } = options;
-  const targetInstalls =
+  const targetLaunches =
     updateId !== null
-      ? `count(DISTINCT if(properties.updateId = '${sanitizeUpdateId(updateId)}' AND toString(properties.isEmbeddedLaunch) = 'false', person_id, NULL))`
+      ? `countIf(properties.updateId = '${sanitizeUpdateId(updateId)}' AND toString(properties.isEmbeddedLaunch) = 'false')`
       : '0';
   return `
     SELECT
       count() AS launches,
       countIf(toString(properties.isEmergencyLaunch) = 'true') AS emergency_launches,
-      count(DISTINCT person_id) AS installs,
-      count(DISTINCT if(toString(properties.isEmergencyLaunch) = 'true', person_id, NULL)) AS emergency_installs,
-      ${targetInstalls} AS target_update_installs
+      ${targetLaunches} AS target_update_launches
     FROM events
     WHERE event = '${OTA_UPDATE_STATUS_EVENT}'
       AND properties.channel = '${PRODUCTION_CHANNEL}'
@@ -218,12 +214,12 @@ export function summarizeVerdict(metrics: HealthMetrics, verdict: HealthVerdict,
   const lines = [
     `OTA health: ${status}`,
     `• window: last ${args.hours}h • channel: ${PRODUCTION_CHANNEL}`,
-    `• launches: ${metrics.launches} (from ${metrics.installs} installs)`,
+    `• launches: ${metrics.launches}`,
     `• emergency launches: ${metrics.emergencyLaunches} → rate ${formatPercent(verdict.emergencyRate)} (threshold ${formatPercent(args.threshold)}, min ${args.minSamples})`,
   ];
   if (metrics.updateId) {
-    const adoption = metrics.targetUpdateInstalls ?? 0;
-    lines.push(`• latest update ${metrics.updateId}: ${adoption} install(s) running it`);
+    const adoption = metrics.targetUpdateLaunches ?? 0;
+    lines.push(`• latest update ${metrics.updateId}: ${adoption} launch(es) running it`);
   }
   return lines;
 }
@@ -279,9 +275,7 @@ export async function runHealthCheck(args: HealthCheckArgs): Promise<number> {
     const metrics: HealthMetrics = {
       launches: toCount(row[0]),
       emergencyLaunches: toCount(row[1]),
-      installs: toCount(row[2]),
-      emergencyInstalls: toCount(row[3]),
-      targetUpdateInstalls: updateId ? toCount(row[4]) : null,
+      targetUpdateLaunches: updateId ? toCount(row[2]) : null,
       updateId,
     };
 

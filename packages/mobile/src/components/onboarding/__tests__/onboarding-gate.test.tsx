@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, render, waitFor } from '@testing-library/react';
 import type { OnboardingGateEvaluation } from '../../../lib/onboarding/onboarding-gate-analytics';
@@ -1245,3 +1247,6 @@ describe('OnboardingGate', () => {
     });
   });
 });
+
+import { grantAnalyticsForTest } from '../../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

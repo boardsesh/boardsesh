@@ -105,13 +105,21 @@ if (isSentryEnabled) {
     // (shared with PostHog — app-environment.ts).
     environment: resolveAppEnvironment(),
     tracesSampleRate: 0.1,
+    sendDefaultPii: false,
     // Drop the benign @expo/ui Android sheet "No handler registered" unhandled rejection
     // (partialExpand/expand on a binary whose native layer predates the method). Scoped
     // to that exact signature so every other rejection still reports. See
     // isExpoUiSheetNoHandlerRejection above.
     beforeSend(event, hint) {
       if (isExpoUiSheetNoHandlerRejection(event, hint?.originalException)) return null;
+      delete event.user;
+      if (event.contexts?.device) delete event.contexts.device.id;
       return applyChunkLoadFingerprint(event, hint?.originalException);
+    },
+    beforeSendTransaction(event) {
+      delete event.user;
+      if (event.contexts?.device) delete event.contexts.device.id;
+      return event;
     },
     // Explicit so a future option change can't silently turn either off. Native
     // crash handling persists SIGABRT / native exceptions across the crash and

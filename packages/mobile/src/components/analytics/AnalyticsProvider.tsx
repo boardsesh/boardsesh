@@ -1,22 +1,13 @@
+import { useAnalyticsConsent } from '../../lib/consent-hooks';
 import { useEffect, type ReactNode } from 'react';
-import { StyleSheet } from 'react-native';
-import { PostHogProvider } from 'posthog-react-native';
-import { getAnalyticsClient, setSessionRecordingEnabled } from '../../lib/analytics';
+import { setSessionRecordingEnabled } from '../../lib/analytics';
 import { startConnectivityTracking } from '../../lib/analytics-connectivity';
 import { loadSessionRecordingEnabled } from '../../lib/session-recording-preference';
 
-// PostHogProvider renders a touch-capturing View around its subtree; without
-// flex:1 it would collapse the app layout to zero height.
-const styles = StyleSheet.create({ root: { flex: 1 } });
-
-// Wraps the app in PostHogProvider when analytics is live. Touch and screen
-// autocapture stay OFF: the app has auth forms and free-text fields, and
-// posthog-react-native can't read Expo Router's navigation container reliably
-// anyway. AnalyticsScreenTracker emits explicit $screen events instead, and
-// user actions are tracked from reviewed call sites. When analytics is disabled
-// (dev / no key) this renders children untouched.
+// Reviewed manual capture calls use the singleton directly. Keeping the tree
+// stable avoids remounting auth and SQLite when analytics becomes available.
 export function AnalyticsProvider({ children }: { children: ReactNode }) {
-  const client = getAnalyticsClient();
+  const granted = useAnalyticsConsent();
 
   // Apply the session-recording preference at startup. Recording is opt-in only:
   // absent an explicit Privacy-toggle choice, the resolved preference is OFF.
@@ -25,12 +16,12 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadSessionRecordingEnabled()
       .then((enabled) => {
-        if (enabled) setSessionRecordingEnabled(true);
+        setSessionRecordingEnabled(enabled && granted);
       })
       .catch(() => {
         // A failed preference read leaves recording off (the safe default).
       });
-  }, []);
+  }, [granted]);
 
   // Stamp `connectivity` on every event and keep it current for the launch.
   // Declared BEFORE the `!client` early return so the hook order stays stable
@@ -38,10 +29,5 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   // against a null client, so running it either way costs nothing.
   useEffect(() => startConnectivityTracking(), []);
 
-  if (!client) return <>{children}</>;
-  return (
-    <PostHogProvider client={client} autocapture={{ captureTouches: false, captureScreens: false }} style={styles.root}>
-      {children}
-    </PostHogProvider>
-  );
+  return <>{children}</>;
 }

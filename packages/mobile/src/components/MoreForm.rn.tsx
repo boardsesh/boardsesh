@@ -44,7 +44,13 @@ function Row({ row, isLast }: { row: MoreRow; isLast: boolean }) {
     case 'toggle':
       return (
         <View style={styles.padded}>
-          <SwitchRow label={row.label} description={row.subtitle} value={row.value} onValueChange={row.onValueChange} />
+          <SwitchRow
+            label={row.label}
+            description={row.subtitle}
+            value={row.value}
+            disabled={row.disabled}
+            onValueChange={row.onValueChange}
+          />
         </View>
       );
     case 'segmented':

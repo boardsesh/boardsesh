@@ -58,7 +58,12 @@ export function isTabsRoute(segments: Segments): boolean {
  * cannot drift apart without re-breaking #5055.
  */
 export function isTabsChromeRoute(segments: Segments): boolean {
-  return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE || segments[0] === ONBOARDING_ROUTE;
+  return (
+    segments[0] === TABS_GROUP ||
+    segments[0] === PLAYER_ROUTE ||
+    segments[0] === ONBOARDING_ROUTE ||
+    segments[0] === 'privacy-consent'
+  );
 }
 
 /** True when the focused route is the Climbs tab (or one of its sub-routes). */

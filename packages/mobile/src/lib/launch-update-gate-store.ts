@@ -18,7 +18,7 @@
 // The rules themselves live in `launch-update-gate.ts`, which stays pure.
 import { AppState, Platform } from 'react-native';
 import * as Updates from 'expo-updates';
-import { getAnalyticsClient, track } from './analytics';
+import { reportAnonymousOtaLaunch } from './anonymous-ota-health';
 import { getConnectivitySnapshot, refreshDeviceState } from './connectivity/connectivity-store';
 import { addErrorBreadcrumb, reportHandledError } from './error-reporting';
 import {
@@ -41,7 +41,7 @@ import {
   type LaunchUpdateTrigger,
 } from './launch-update-gate';
 import { runChannelOverrideCleanupOnce } from './ota-channel-override-cleanup-run';
-import { OTA_LAUNCH_UPDATE_EVENT, buildOtaLaunchUpdateProperties } from './ota-telemetry';
+import { buildOtaLaunchUpdateProperties } from './ota-telemetry';
 import { getPreference, removePreference, setPreference } from './preference-store';
 
 export type LaunchUpdateGateFlags = {
@@ -179,14 +179,15 @@ function elapsedMs(): number {
   return performance.now() - startedAtMs;
 }
 
+let launchReport: Promise<void> = Promise.resolve();
+
 function trackLaunchUpdate(
   outcome: LaunchUpdateOutcome,
   phase: LaunchUpdatePhase,
   trigger: LaunchUpdateTrigger,
   capMs: number,
 ): void {
-  track(
-    OTA_LAUNCH_UPDATE_EVENT,
+  launchReport = reportAnonymousOtaLaunch(
     buildOtaLaunchUpdateProperties({
       outcome,
       phase,
@@ -208,7 +209,7 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
     runtimeVersion: Updates.runtimeVersion,
     reportOutcome: (outcome, phase) => trackLaunchUpdate(outcome, phase, prepared.trigger, prepared.capMs),
     flushOutcome: async () => {
-      await getAnalyticsClient()?.flush();
+      await launchReport;
     },
     markRuntimeHandled: (runtimeVersion) => setPreference(OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY, runtimeVersion),
     recordReloadTarget: (updateId) => setPreference(OTA_LAUNCH_UPDATE_LAST_RELOAD_TARGET_KEY, updateId),

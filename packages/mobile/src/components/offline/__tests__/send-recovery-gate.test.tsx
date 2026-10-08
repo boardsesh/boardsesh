@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 
@@ -204,3 +206,6 @@ describe('SendRecoveryGate readiness and its kill switch', () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 });
+
+import { grantAnalyticsForTest } from '../../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

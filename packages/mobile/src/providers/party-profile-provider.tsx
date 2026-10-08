@@ -1,3 +1,4 @@
+import { useAnalyticsConsent } from '../lib/consent-hooks';
 // PartyProfileProvider — mirrors web's
 // `packages/web/app/components/party-manager/party-profile-context.tsx`.
 // It keeps the shared party-profile UUID and PostHog identity reconciliation,
@@ -41,6 +42,7 @@ type PartyProfileContextValue = {
 const PartyProfileContext = createContext<PartyProfileContextValue | undefined>(undefined);
 
 export function PartyProfileProvider({ children }: { children: ReactNode }) {
+  const analyticsGranted = useAnalyticsConsent();
   const [profile, setProfile] = useState<PartyProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
@@ -103,13 +105,13 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     // hasn't been fetched yet, we pass the *raw* isAuthenticated so
     // reconcileAnalyticsIdentity holds; the identify(user) switch then fires
     // once authUserId lands.
-    if (isAuthLoading) return;
+    if (isAuthLoading || !analyticsGranted) return;
     // The routine reads who the SDK thinks it is, and the SDK only knows after
     // it has loaded its storage. A signed-out auth check can finish first, so
     // wait rather than reconcile against empty ids. Once the SDK is loaded the
     // callback runs before this returns.
     return onAnalyticsReady(reconcileIdentity);
-  }, [isAuthLoading, reconcileIdentity]);
+  }, [isAuthLoading, reconcileIdentity, analyticsGranted]);
 
   const hasUserProfile = !!userProfile;
   const isTester = userProfile?.isTester ?? null;
@@ -132,7 +134,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
   // effect already did) and then sends only if the SDK is on this user. That
   // holds whichever effect runs first and whether or not the SDK was loaded.
   useEffect(() => {
-    if (isAuthLoading || !isAuthenticated || !hasUserProfile || !authUserId) return;
+    if (isAuthLoading || !analyticsGranted || !isAuthenticated || !hasUserProfile || !authUserId) return;
     return onAnalyticsReady(() => {
       reconcileIdentity();
       if (getAnalyticsIdentity()?.distinctId !== authUserId) return;
@@ -148,6 +150,7 @@ export function PartyProfileProvider({ children }: { children: ReactNode }) {
     });
   }, [
     isAuthLoading,
+    analyticsGranted,
     isAuthenticated,
     hasUserProfile,
     authUserId,

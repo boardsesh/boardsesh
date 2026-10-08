@@ -1,3 +1,5 @@
+import { getConsentSnapshot } from '../../lib/consent-state';
+import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { router, useSegments } from 'expo-router';
@@ -151,7 +153,9 @@ function isProfileSettled(profileQuery: {
  * account gets its own first-run check.
  */
 export function OnboardingGate() {
-  const ready = useLaunchReady();
+  const launchReady = useLaunchReady();
+  const consentSettled = useConsentSettled();
+  const ready = launchReady && consentSettled;
   const flagsResolved = useFeatureFlagsResolved();
   const pickerEnabled = useFirstBoardPickerEnabled();
   const pickerEnabledRef = useRef(pickerEnabled);
@@ -346,7 +350,7 @@ export function OnboardingGate() {
         } catch {
           initialUrl = null;
         }
-        if (cancelled) return;
+        if (cancelled || !getConsentSnapshot().settled) return;
         if (initialUrl) {
           // The URL itself is never sent: only that there was one.
           decide({
@@ -384,7 +388,7 @@ export function OnboardingGate() {
         // signed up to see that climb, so nothing is pushed over it. Awaited,
         // because the provider's read of its stash can still be in flight.
         const replayedBoardLink = await didReplayBoardLink();
-        if (cancelled) return;
+        if (cancelled || !getConsentSnapshot().settled) return;
         if (replayedBoardLink) {
           decide({
             outcome: 'skipped',
@@ -399,7 +403,7 @@ export function OnboardingGate() {
         }
 
         const seen = await hasSeenOnboarding();
-        if (cancelled) return;
+        if (cancelled || !getConsentSnapshot().settled) return;
 
         // The connect-step test (#5654, PR 7) enrols here, at the post-login
         // decision and before anything the arms do differently can show: the
@@ -414,7 +418,7 @@ export function OnboardingGate() {
           hadBoard: hasBoardRef.current,
           uiVariant: uiVariantRef.current,
         });
-        if (cancelled) return;
+        if (cancelled || !getConsentSnapshot().settled) return;
 
         // A bound board means the flow has already done its job, however the
         // climber got there — the picker, the builder, a Bluetooth adopt, or a
@@ -456,7 +460,7 @@ export function OnboardingGate() {
         let pickerTimesShown: number | null = null;
         if (pickerVerdict === 'presented' && accountId) {
           pickerTimesShown = await readFirstBoardPickerShowCount(accountId);
-          if (cancelled) return;
+          if (cancelled || !getConsentSnapshot().settled) return;
           pickerVerdict = decideFirstBoardPicker({ ...pickerInput, timesShown: pickerTimesShown });
         }
 
@@ -485,7 +489,7 @@ export function OnboardingGate() {
             reportError(error);
             pickerVerdict = 'storage_error';
           }
-          if (cancelled) return;
+          if (cancelled || !getConsentSnapshot().settled) return;
         }
 
         if (pickerVerdict === 'presented') {

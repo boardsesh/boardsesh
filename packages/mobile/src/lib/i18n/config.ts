@@ -16,9 +16,13 @@ import { SCREENSHOT_LOCALE_OVERRIDE } from '../screenshot-mode';
 // --- Locale catalogs from @boardsesh/i18n ---
 // Static imports so Metro bundles only the namespaces the mobile app uses;
 // web-only namespaces (marketing, admin) are never pulled in.
+import consentEn from '@boardsesh/i18n/locales/en-US/consent.json';
 import commonEn from '@boardsesh/i18n/locales/en-US/common.json';
+import consentEs from '@boardsesh/i18n/locales/es/consent.json';
 import commonEs from '@boardsesh/i18n/locales/es/common.json';
+import consentFr from '@boardsesh/i18n/locales/fr/consent.json';
 import commonFr from '@boardsesh/i18n/locales/fr/common.json';
+import consentDe from '@boardsesh/i18n/locales/de/consent.json';
 import commonDe from '@boardsesh/i18n/locales/de/common.json';
 
 import authEn from '@boardsesh/i18n/locales/en-US/auth.json';
@@ -79,6 +83,7 @@ import auroraDe from '@boardsesh/i18n/locales/de/aurora.json';
 const resources = {
   'en-US': {
     common: commonEn,
+    consent: consentEn,
     auth: authEn,
     climbs: climbsEn,
     session: sessionEn,
@@ -93,6 +98,7 @@ const resources = {
   },
   es: {
     common: commonEs,
+    consent: consentEs,
     auth: authEs,
     climbs: climbsEs,
     session: sessionEs,
@@ -107,6 +113,7 @@ const resources = {
   },
   fr: {
     common: commonFr,
+    consent: consentFr,
     auth: authFr,
     climbs: climbsFr,
     session: sessionFr,
@@ -121,6 +128,7 @@ const resources = {
   },
   de: {
     common: commonDe,
+    consent: consentDe,
     auth: authDe,
     climbs: climbsDe,
     session: sessionDe,

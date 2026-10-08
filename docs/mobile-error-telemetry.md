@@ -18,6 +18,23 @@ dev never sends), owns the global `ErrorUtils` handler, and exposes `captureToSe
 and `wrapWithSentry`. `app/_layout.tsx` imports it first (init before any other
 module side-effect) and wraps the root with `wrapWithSentry`.
 
+## Privacy and release boundary
+
+Product analytics, session replay, Observe and publishing install attribution require a current
+Allow choice. Anonymous launch health reports are described in `docs/mobile-ota-updates.md`.
+Sentry crash, app-hang and ANR reporting continues with `sendDefaultPii: false`: JavaScript error
+and transaction hooks remove `user` and persistent device IDs. The native Sentry patch removes
+native users and Android device IDs before upload, including transactions. No account identity is
+assigned to Sentry.
+
+These native patches ship in the next store release from `main`. The current store binary cannot
+receive this change as an OTA; there is no backport. Before release, compile both native targets
+and inspect denied/granted/withdrawn traffic on devices, including queued replay uploads and a
+cold-start crash upload. The 30-day legacy-client grace period starts when that release is available
+in the stores. Disabling Sentry organization IP storage and enabling the legacy PostHog drop
+transformation are later operational changes requiring explicit confirmation. Historical PostHog
+person deletion is separate P2 work.
+
 ## What's automatic
 
 `Sentry.init` installs the JS error integrations (**uncaught exceptions** and

@@ -1,0 +1,691 @@
+diff --git a/ios/PosthogReactNativeSessionReplay.swift b/ios/PosthogReactNativeSessionReplay.swift
+index de679ac056..f7abd16d3a 100644
+--- a/ios/PosthogReactNativeSessionReplay.swift
++++ b/ios/PosthogReactNativeSessionReplay.swift
+@@ -1,13 +1,224 @@
+ import PostHog
++import Foundation
++import zlib
+ 
+ /// Meant for internally logging PostHog related things
+ private func hedgeLog(_ message: String) {
+     print("[PostHog] \(message)")
+ }
+ 
++
++// Each initialized SDK has its own transport. Retiring one never reopens it.
++private final class ReplayConsentTransport {
++    static let header = "X-Boardsesh-Replay-Generation"
++    private static let registryLock = NSLock()
++    private static var registry: [String: ReplayConsentTransport] = [:]
++    let identifier = UUID().uuidString
++    let storageToken: String
++    let publicToken: String
++    private let lock = NSLock()
++    private var sealed = false
++    private var tasks: [UUID: URLSessionDataTask] = [:]
++    init(publicToken: String) {
++        self.publicToken = publicToken
++        self.storageToken = publicToken + "-boardsesh-replay-" + UUID().uuidString
++        Self.registryLock.lock()
++        Self.registry[identifier] = self
++        Self.registryLock.unlock()
++    }
++    static func find(_ identifier: String) -> ReplayConsentTransport? {
++        registryLock.lock(); defer { registryLock.unlock() }
++        return registry[identifier]
++    }
++    func add(_ task: URLSessionDataTask, identifier: UUID) -> Bool {
++        lock.lock(); defer { lock.unlock() }
++        guard !sealed else { return false }
++        tasks[identifier] = task
++        return true
++    }
++    func finish(_ identifier: UUID) -> Bool {
++        lock.lock(); defer { lock.unlock() }
++        tasks.removeValue(forKey: identifier)
++        return !sealed
++    }
++    func retire() {
++        lock.lock()
++        sealed = true
++        let pending = Array(tasks.values)
++        tasks.removeAll()
++        lock.unlock()
++        Self.registryLock.lock()
++        Self.registry.removeValue(forKey: identifier)
++        Self.registryLock.unlock()
++        pending.forEach { $0.cancel() }
++    }
++
++    // projectToken also names the private SDK queue directory. A unique token
++    // isolates old queue writes; only this transport maps it to the real key.
++    func rewrite(_ request: inout URLRequest) throws {
++        if let url = request.url {
++            request.url = URL(string: url.absoluteString.replacingOccurrences(of: storageToken, with: publicToken))
++        }
++        var payload = request.httpBody
++        if payload == nil, let stream = request.httpBodyStream {
++            stream.open(); defer { stream.close() }
++            var collected = Data()
++            var buffer = [UInt8](repeating: 0, count: 65536)
++            while stream.hasBytesAvailable {
++                let count = stream.read(&buffer, maxLength: buffer.count)
++                if count < 0 { throw stream.streamError ?? URLError(.cannotDecodeContentData) }
++                if count == 0 { break }
++                collected.append(contentsOf: buffer.prefix(count))
++                if collected.count > 16 * 1024 * 1024 { throw URLError(.dataLengthExceedsMaximum) }
++            }
++            payload = collected
++        }
++        guard let payload else {
++            if request.httpMethod == "POST" { throw URLError(.cannotDecodeContentData) }
++            return
++        }
++        let compressed = request.value(forHTTPHeaderField: "Content-Encoding") == "gzip"
++        let decoded = compressed ? try gzip(payload, compress: false) : payload
++        guard let json = String(data: decoded, encoding: .utf8) else { throw URLError(.cannotDecodeContentData) }
++        let rewritten = Data(json.replacingOccurrences(of: storageToken, with: publicToken).utf8)
++        request.httpBodyStream = nil
++        request.httpBody = compressed ? try gzip(rewritten, compress: true) : rewritten
++        request.setValue(nil, forHTTPHeaderField: "Content-Length")
++    }
++
++    private func gzip(_ input: Data, compress: Bool) throws -> Data {
++        var stream = z_stream()
++        let initialized = compress
++            ? deflateInit2_(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 31, 8, Z_DEFAULT_STRATEGY, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
++            : inflateInit2_(&stream, 47, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
++        guard initialized == Z_OK else { throw URLError(.cannotDecodeContentData) }
++        defer { if compress { deflateEnd(&stream) } else { inflateEnd(&stream) } }
++        return try input.withUnsafeBytes { inputBytes in
++            stream.next_in = UnsafeMutablePointer<Bytef>(mutating: inputBytes.bindMemory(to: Bytef.self).baseAddress)
++            stream.avail_in = uInt(input.count)
++            var output = Data()
++            var buffer = [UInt8](repeating: 0, count: 65536)
++            var status = Z_OK
++            repeat {
++                status = buffer.withUnsafeMutableBytes { outputBytes in
++                    stream.next_out = outputBytes.bindMemory(to: Bytef.self).baseAddress
++                    stream.avail_out = uInt(outputBytes.count)
++                    return compress ? deflate(&stream, Z_FINISH) : inflate(&stream, Z_NO_FLUSH)
++                }
++                let written = buffer.count - Int(stream.avail_out)
++                output.append(contentsOf: buffer.prefix(written))
++                if output.count > 16 * 1024 * 1024 { throw URLError(.dataLengthExceedsMaximum) }
++            } while status == Z_OK
++            guard status == Z_STREAM_END else { throw URLError(.cannotDecodeContentData) }
++            return output
++        }
++    }
++
++    func configuration() -> URLSessionConfiguration {
++        let configuration = URLSessionConfiguration.ephemeral
++        configuration.protocolClasses = [ReplayConsentURLProtocol.self]
++        configuration.httpAdditionalHeaders = [Self.header: identifier]
++        return configuration
++    }
++}
++
++private final class ReplayConsentURLProtocol: URLProtocol {
++    private var task: URLSessionDataTask?
++    private var forwardingSession: URLSession?
++    override class func canInit(with request: URLRequest) -> Bool {
++        request.url?.scheme == "https" || request.url?.scheme == "http"
++    }
++    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
++    override func startLoading() {
++        guard let identifier = request.value(forHTTPHeaderField: ReplayConsentTransport.header),
++              let transport = ReplayConsentTransport.find(identifier) else {
++            client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
++            return
++        }
++        var forwarded = request
++        forwarded.setValue(nil, forHTTPHeaderField: ReplayConsentTransport.header)
++        do { try transport.rewrite(&forwarded) }
++        catch { client?.urlProtocol(self, didFailWithError: error); return }
++        let configuration = URLSessionConfiguration.ephemeral
++        // Avoid recursive interception and avoid shared cookies/cache.
++        configuration.protocolClasses = []
++        let session = URLSession(configuration: configuration)
++        forwardingSession = session
++        let taskId = UUID()
++        let pending = session.dataTask(with: forwarded) { [weak self] payload, response, error in
++            guard let self else { return }
++            defer { session.finishTasksAndInvalidate() }
++            guard transport.finish(taskId) else {
++                self.client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
++                return
++            }
++            if let error { self.client?.urlProtocol(self, didFailWithError: error); return }
++            if let response { self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed) }
++            if let payload { self.client?.urlProtocol(self, didLoad: payload) }
++            self.client?.urlProtocolDidFinishLoading(self)
++        }
++        task = pending
++        if transport.add(pending, identifier: taskId) { pending.resume() }
++        else { pending.cancel(); client?.urlProtocol(self, didFailWithError: URLError(.cancelled)) }
++    }
++    override func stopLoading() {
++        task?.cancel()
++        forwardingSession?.invalidateAndCancel()
++    }
++}
++
+ @objc(PosthogReactNativeSessionReplay)
+ class PosthogReactNativeSessionReplay: NSObject {
+     private var config: PostHogConfig?
++    private var consentAllowed = false
++    private var transport: ReplayConsentTransport?
++    private var latestDistinctId = ""
++    private var latestAnonymousId = ""
++    private var publicProjectToken = ""
++    private var savedSessionId = ""
++    private var savedSdkOptions: [String: Any] = [:]
++    private var savedReplayConfig: [String: Any] = [:]
++    private var savedDecideConfig: [String: Any] = [:]
++
++    @objc(setOptOut:withProjectToken:withResolver:withRejecter:)
++    func setOptOut(_ optedOut: Bool, projectToken: String, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
++        consentAllowed = !optedOut
++        if optedOut {
++            transport?.retire()
++            PostHogSDK.shared.optOut()
++            PostHogSDK.shared.stopSessionRecording()
++            PostHogSDK.shared.close()
++            config = nil
++            latestDistinctId = ""
++            latestAnonymousId = ""
++            let token = projectToken.isEmpty ? publicProjectToken : projectToken
++            do { try purgeCache(token) }
++            catch { reject("REPLAY_PURGE_FAILED", "Replay cache could not be removed", error); return }
++        }
++        resolve(nil)
++    }
++
++    private func purgeCache(_ token: String) throws {
++        guard !token.isEmpty, !token.contains("/"), !token.contains("..") else { return }
++        let manager = FileManager.default
++        let base = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
++            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "")
++        guard manager.fileExists(atPath: base.path) else { return }
++        let project = base.appendingPathComponent(token)
++        if manager.fileExists(atPath: project.path) { try manager.removeItem(at: project) }
++        for folder in (try? manager.contentsOfDirectory(at: base, includingPropertiesForKeys: nil)) ?? [] {
++            if folder.lastPathComponent.hasPrefix(token + "-boardsesh-replay-") { try manager.removeItem(at: folder) }
++        }
++        for legacy in ["posthog.queueFolder", "posthog.queue.plist", "posthog.queueFolder.uuid", "posthog.replayFolder", "posthog.replayBufferFolder", "posthog.logsFolder"] {
++            let location = base.appendingPathComponent(legacy)
++            if manager.fileExists(atPath: location.path) { try manager.removeItem(at: location) }
++        }
++    }
++
++    private func prepareTransport(_ configuration: PostHogConfig) {
++        configuration.urlSessionConfiguration = transport?.configuration()
++        configuration.optOut = false
++    }
+ 
+     @objc(start:withSdkOptions:withSdkReplayConfig:withDecideReplayConfig:withResolver:withRejecter:)
+     func start(
+@@ -15,6 +226,7 @@ class PosthogReactNativeSessionReplay: NSObject {
+         decideReplayConfig: [String: Any], resolve: RCTPromiseResolveBlock,
+         reject _: RCTPromiseRejectBlock
+     ) {
++        guard consentAllowed, !(sdkOptions["optOut"] as? Bool ?? true) else { resolve(nil); return }
+         // we've seen cases where distinctId and anonymousId are not strings, so we need to check and convert them
+         guard let sessionIdStr = sessionId as? String else {
+             hedgeLog("Invalid sessionId provided: \(sessionId). Expected a string.")
+@@ -31,7 +243,15 @@ class PosthogReactNativeSessionReplay: NSObject {
+ 
+         PostHogSessionManager.shared.setSessionId(sessionIdStr)
+ 
+-        let config = PostHogConfig(projectToken: projectToken, host: host)
++        publicProjectToken = projectToken
++        savedSessionId = sessionId
++        savedSdkOptions = sdkOptions
++        savedReplayConfig = sdkReplayConfig
++        savedDecideConfig = decideReplayConfig
++        let nextTransport = ReplayConsentTransport(publicToken: projectToken)
++        transport?.retire()
++        transport = nextTransport
++        let config = PostHogConfig(projectToken: nextTransport.storageToken, host: host)
+         config.sessionReplay = true
+         config.captureApplicationLifecycleEvents = false
+         config.captureScreenViews = false
+@@ -89,6 +309,10 @@ class PosthogReactNativeSessionReplay: NSObject {
+             postHogVersion = sdkVersion
+         }
+ 
++        // Old native replay buffers must never be uploaded by a fresh grant.
++        do { try purgeCache(projectToken) }
++        catch { resolve(nil); return }
++        prepareTransport(config)
+         PostHogSDK.shared.setup(config)
+ 
+         self.config = config
+@@ -114,6 +338,7 @@ class PosthogReactNativeSessionReplay: NSObject {
+             resolve(nil)
+             return
+         }
++        savedSessionId = sessionIdStr
+         PostHogSessionManager.shared.setSessionId(sessionIdStr)
+         PostHogSDK.shared.startSession()
+         resolve(nil)
+@@ -146,7 +371,9 @@ class PosthogReactNativeSessionReplay: NSObject {
+             resolve(nil)
+             return
+         }
+-        guard let storageManager = config?.storageManager else {
++        latestDistinctId = distinctIdStr
++        latestAnonymousId = anonymousIdStr
++        guard consentAllowed, let storageManager = config?.storageManager else {
+             hedgeLog("Storage manager is not available in the config.")
+             resolve(nil)
+             return
+@@ -159,6 +386,9 @@ class PosthogReactNativeSessionReplay: NSObject {
+     private func setIdentify(
+         _ storageManager: PostHogStorageManager, distinctId: String, anonymousId: String
+     ) {
++        latestDistinctId = distinctId
++        latestAnonymousId = anonymousId
++        guard consentAllowed else { return }
+         if !anonymousId.isEmpty {
+             storageManager.setAnonymousId(anonymousId)
+         }
+@@ -171,6 +401,16 @@ class PosthogReactNativeSessionReplay: NSObject {
+     func startRecording(
+         resumeCurrent: Bool, resolve: RCTPromiseResolveBlock, reject _: RCTPromiseRejectBlock
+     ) {
++        guard consentAllowed, !publicProjectToken.isEmpty else { resolve(nil); return }
++        if !PostHogSDK.shared.isEnabled() {
++            var options = savedSdkOptions
++            options["distinctId"] = latestDistinctId
++            options["anonymousId"] = latestAnonymousId
++            options["optOut"] = false
++            start(sessionId: savedSessionId, sdkOptions: options, sdkReplayConfig: savedReplayConfig,
++                  decideReplayConfig: savedDecideConfig, resolve: { _ in }, reject: { _, _, _ in })
++            guard PostHogSDK.shared.isEnabled() else { resolve(nil); return }
++        }
+         PostHogSDK.shared.startSessionRecording(resumeCurrent: resumeCurrent)
+         resolve(nil)
+     }
+diff --git a/ios/PosthogReactNativeSessionReplay.mm b/ios/PosthogReactNativeSessionReplay.mm
+index 1177e276c7..b60bd5b13e 100644
+--- a/ios/PosthogReactNativeSessionReplay.mm
++++ b/ios/PosthogReactNativeSessionReplay.mm
+@@ -2,6 +2,11 @@
+ 
+ @interface RCT_EXTERN_MODULE(PosthogReactNativeSessionReplay, NSObject)
+ 
++RCT_EXTERN_METHOD(setOptOut:(BOOL)optedOut
++                 withProjectToken:(NSString)projectToken
++                 withResolver:(RCTPromiseResolveBlock)resolve
++                 withRejecter:(RCTPromiseRejectBlock)reject)
++
+ RCT_EXTERN_METHOD(start:(NSString)sessionId
+                  withSdkOptions:(NSDictionary)sdkOptions
+                  withSdkReplayConfig:(NSDictionary)sdkReplayConfig
+diff --git a/android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt b/android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt
+index 316724fdab..087cc1fb49 100644
+--- a/android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt
++++ b/android/src/main/java/com/posthogreactnativesessionreplay/PosthogReactNativeSessionReplayModule.kt
+@@ -16,11 +16,123 @@ import com.posthog.internal.PostHogPreferences.Companion.ANONYMOUS_ID
+ import com.posthog.internal.PostHogPreferences.Companion.DISTINCT_ID
+ import com.posthog.internal.PostHogSessionManager
+ import java.util.UUID
++import java.io.File
++import java.io.IOException
++import java.util.concurrent.atomic.AtomicBoolean
++import java.util.concurrent.atomic.AtomicLong
++import okhttp3.OkHttpClient
++import okhttp3.RequestBody
++import okio.Buffer
++import okio.BufferedSink
++import okio.GzipSink
++import okio.buffer
+ 
+ class PosthogReactNativeSessionReplayModule(
+   reactContext: ReactApplicationContext,
+ ) : ReactContextBaseJavaModule(reactContext) {
+   override fun getName(): String = NAME
++  private val consentLock = Any()
++  @Volatile private var consentAllowed = false
++  private val consentGeneration = AtomicLong(0)
++  private var savedConfig: PostHogAndroidConfig? = null
++  private var nativeInitialized = false
++  @Volatile private var activeTransport: OkHttpClient? = null
++  @Volatile private var activePermission: AtomicBoolean? = null
++  private var latestDistinctId = ""
++  private var latestAnonymousId = ""
++
++  @ReactMethod
++  fun setOptOut(optedOut: Boolean, apiKey: String, promise: Promise) {
++    val changed = consentAllowed != !optedOut
++    consentAllowed = !optedOut
++    if (changed) consentGeneration.incrementAndGet()
++    // Seal transport immediately; all SDK view integration work stays on main.
++    val retiredPermission = activePermission
++    if (optedOut) {
++      retiredPermission?.set(false)
++      activeTransport?.dispatcher?.cancelAll()
++    }
++    UiThreadUtil.runOnUiThread(Runnable {
++      try {
++        synchronized(consentLock) {
++          if (optedOut && (activePermission === retiredPermission || !consentAllowed)) {
++            activePermission?.set(false)
++            activeTransport?.dispatcher?.cancelAll()
++            PostHog.optOut()
++            PostHog.stopSessionReplay()
++            PostHog.close()
++            nativeInitialized = false
++            purgeCache(if (apiKey.isEmpty()) savedConfig?.apiKey ?: "" else apiKey)
++            savedConfig = savedConfig?.let { copyReplayConfig(it) }
++            latestDistinctId = ""
++            latestAnonymousId = ""
++          }
++        }
++        promise.resolve(null)
++      } catch (error: Throwable) { promise.reject("REPLAY_PURGE_FAILED", error) }
++    })
++  }
++
++  private fun purgeCache(apiKey: String) {
++    if (apiKey.isEmpty() || apiKey.contains("/") || apiKey.contains("..")) return
++    val context = reactApplicationContext
++    val locations = listOf(
++      File(File(context.cacheDir, "posthog-disk-queue"), apiKey),
++      File(File(context.cacheDir, "posthog-disk-replay-queue"), apiKey),
++      File(context.getDir("app_posthog-disk-queue", 0), apiKey),
++      File(context.cacheDir, "boardsesh-consent-replay")
++    )
++    for (location in locations) {
++      if (location.exists() && !location.deleteRecursively()) throw IOException("Replay cache purge failed")
++    }
++    context.getSharedPreferences("posthog-android-$apiKey", 0).edit().clear().commit()
++  }
++
++  private fun copyReplayConfig(previous: PostHogAndroidConfig) = PostHogAndroidConfig(previous.apiKey, previous.host).apply {
++    captureDeepLinks = false
++    captureApplicationLifecycleEvents = false
++    captureScreenViews = false
++    sessionReplay = true
++    sessionReplayConfig = previous.sessionReplayConfig
++    snapshotEndpoint = previous.snapshotEndpoint
++    sdkName = previous.sdkName
++    sdkVersion = previous.sdkVersion
++    flushAt = previous.flushAt
++  }
++
++  private fun prepareTransport(config: PostHogAndroidConfig) {
++    activePermission?.set(false)
++    activeTransport?.dispatcher?.cancelAll()
++    val permission = AtomicBoolean(true)
++    val transport = OkHttpClient.Builder()
++      .addInterceptor { chain ->
++        if (!permission.get() || !consentAllowed) throw IOException("Replay consent withdrawn")
++        val request = chain.request()
++        val body = request.body
++        val compressed = if (body == null || request.header("Content-Encoding") != null) request else {
++          val buffer = Buffer()
++          GzipSink(buffer).buffer().use { body.writeTo(it) }
++          val bytes = buffer.readByteArray()
++          val gzipBody = object : RequestBody() {
++            override fun contentType() = body.contentType()
++            override fun contentLength() = bytes.size.toLong()
++            override fun writeTo(sink: BufferedSink) { sink.write(bytes) }
++          }
++          request.newBuilder().header("Content-Encoding", "gzip").method(request.method, gzipBody).build()
++        }
++        if (!permission.get() || !consentAllowed) throw IOException("Replay consent withdrawn")
++        chain.proceed(compressed)
++      }
++      .build()
++    activePermission = permission
++    activeTransport = transport
++    config.httpClient = transport
++    val generationRoot = File(reactApplicationContext.cacheDir, "boardsesh-consent-replay/${UUID.randomUUID()}")
++    config.storagePrefix = File(generationRoot, "events").absolutePath
++    config.replayStoragePrefix = File(generationRoot, "snapshots").absolutePath
++    config.optOut = false
++    config.addBeforeSend { event -> if (permission.get() && consentAllowed) event else null }
++  }
+ 
+   @ReactMethod
+   fun start(
+@@ -30,9 +142,16 @@ class PosthogReactNativeSessionReplayModule(
+     decideReplayConfig: ReadableMap,
+     promise: Promise,
+   ) {
++    if (!consentAllowed || runCatching { sdkOptions.getBoolean("optOut") }.getOrDefault(true)) {
++      promise.resolve(null)
++      return
++    }
++    val initializationGeneration = consentGeneration.get()
+     val initRunnable =
+       Runnable {
+         try {
++          synchronized(consentLock) {
++          if (!consentAllowed || initializationGeneration != consentGeneration.get()) return@Runnable
+           val uuid = UUID.fromString(sessionId)
+           PostHogSessionManager.setSessionId(uuid)
+ 
+@@ -101,9 +220,23 @@ class PosthogReactNativeSessionReplayModule(
+                 sdkVersion = theSdkVersion
+               }
+             }
++          purgeCache(apiKey)
++          prepareTransport(config)
++          savedConfig = config
+           PostHogAndroid.setup(context, config)
++          nativeInitialized = true
+ 
+           setIdentify(config.cachePreferences, distinctId, anonymousId)
++          if (!consentAllowed) {
++            activePermission?.set(false)
++            activeTransport?.dispatcher?.cancelAll()
++            PostHog.optOut()
++            PostHog.stopSessionReplay()
++            PostHog.close()
++            nativeInitialized = false
++            purgeCache(apiKey)
++          }
++          }
+         } catch (e: Throwable) {
+           logError("start", e)
+         } finally {
+@@ -163,7 +296,11 @@ class PosthogReactNativeSessionReplayModule(
+     promise: Promise,
+   ) {
+     try {
+-      setIdentify(PostHog.getConfig<PostHogConfig>()?.cachePreferences, distinctId, anonymousId)
++      latestDistinctId = distinctId
++      latestAnonymousId = anonymousId
++      synchronized(consentLock) {
++        if (consentAllowed) setIdentify(savedConfig?.cachePreferences, distinctId, anonymousId)
++      }
+     } catch (e: Throwable) {
+       logError("identify", e)
+     } finally {
+@@ -176,6 +313,9 @@ class PosthogReactNativeSessionReplayModule(
+     distinctId: String,
+     anonymousId: String,
+   ) {
++    latestDistinctId = distinctId
++    latestAnonymousId = anonymousId
++    if (!consentAllowed) return
+     cachePreferences?.let { preferences ->
+       if (anonymousId.isNotEmpty()) {
+         preferences.setValue(ANONYMOUS_ID, anonymousId)
+@@ -191,24 +331,39 @@ class PosthogReactNativeSessionReplayModule(
+     resumeCurrent: Boolean,
+     promise: Promise,
+   ) {
+-    try {
+-      PostHog.startSessionReplay(resumeCurrent)
+-    } catch (e: Throwable) {
+-      logError("startRecording", e)
+-    } finally {
+-      promise.resolve(null)
+-    }
++    val recordingGeneration = consentGeneration.get()
++    UiThreadUtil.runOnUiThread(Runnable {
++      try {
++        synchronized(consentLock) {
++          if (!consentAllowed || recordingGeneration != consentGeneration.get()) return@Runnable
++          if (!nativeInitialized) {
++            val previous = savedConfig ?: return@Runnable
++            val config = copyReplayConfig(previous)
++            savedConfig = config
++            prepareTransport(config)
++            PostHogAndroid.setup(reactApplicationContext, config)
++            nativeInitialized = true
++            setIdentify(config.cachePreferences, latestDistinctId, latestAnonymousId)
++          }
++          PostHog.startSessionReplay(resumeCurrent)
++        }
++      } catch (e: Throwable) {
++        logError("startRecording", e)
++      } finally {
++        promise.resolve(null)
++      }
++    })
+   }
+ 
+   @ReactMethod
+   fun stopRecording(promise: Promise) {
+-    try {
+-      PostHog.stopSessionReplay()
+-    } catch (e: Throwable) {
+-      logError("stopRecording", e)
+-    } finally {
+-      promise.resolve(null)
+-    }
++    UiThreadUtil.runOnUiThread(Runnable {
++      try {
++        synchronized(consentLock) { PostHog.stopSessionReplay() }
++      } catch (e: Throwable) {
++        logError("stopRecording", e)
++      } finally { promise.resolve(null) }
++    })
+   }
+ 
+   private fun logError(
+diff --git a/src/index.tsx b/src/index.tsx
+index 5d965a5f36..c66899dd63 100644
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -55,6 +55,11 @@ export function startRecording(resumeCurrent: boolean): Promise<void> {
+   return PosthogReactNativeSessionReplay.startRecording(resumeCurrent);
+ }
+ 
++export const reset = identify;
++export function setOptOut(optedOut: boolean, projectToken = ""): Promise<void> {
++  return PosthogReactNativeSessionReplay.setOptOut(optedOut, projectToken);
++}
++
+ export function stopRecording(): Promise<void> {
+   return PosthogReactNativeSessionReplay.stopRecording();
+ }
+@@ -78,6 +83,7 @@ export interface PostHogReactNativeSessionReplayModule {
+   startRecording: (resumeCurrent: boolean) => Promise<void>;
+ 
+   stopRecording: () => Promise<void>;
++  setOptOut: (optedOut: boolean, projectToken?: string) => Promise<void>;
+ }
+ 
+ const PostHogReactNativeSessionReplay: PostHogReactNativeSessionReplayModule = {
+@@ -88,6 +94,7 @@ const PostHogReactNativeSessionReplay: PostHogReactNativeSessionReplayModule = {
+   identify,
+   startRecording,
+   stopRecording,
++  setOptOut,
+ };
+ 
+ export default PostHogReactNativeSessionReplay;
+diff --git a/lib/module/index.js b/lib/module/index.js
+index d65abe3e87..c181f93af5 100644
+--- a/lib/module/index.js
++++ b/lib/module/index.js
+@@ -28,6 +28,10 @@ export function identify(distinctId, anonymousId) {
+ export function startRecording(resumeCurrent) {
+   return PosthogReactNativeSessionReplay.startRecording(resumeCurrent);
+ }
++export const reset = identify;
++export function setOptOut(optedOut, projectToken = "") {
++  return PosthogReactNativeSessionReplay.setOptOut(optedOut, projectToken);
++}
+ export function stopRecording() {
+   return PosthogReactNativeSessionReplay.stopRecording();
+ }
+@@ -38,7 +42,8 @@ const PostHogReactNativeSessionReplay = {
+   isEnabled,
+   identify,
+   startRecording,
+-  stopRecording
++  stopRecording,
++  setOptOut
+ };
+ export default PostHogReactNativeSessionReplay;
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/lib/commonjs/index.js b/lib/commonjs/index.js
+index 8e527cf880..e19c3a0cfb 100644
+--- a/lib/commonjs/index.js
++++ b/lib/commonjs/index.js
+@@ -11,6 +11,8 @@ exports.start = start;
+ exports.startRecording = startRecording;
+ exports.startSession = startSession;
+ exports.stopRecording = stopRecording;
++exports.setOptOut = setOptOut;
++exports.reset = identify;
+ var _reactNative = require("react-native");
+ const LINKING_ERROR = `The package 'posthog-react-native-session-replay' doesn't seem to be linked. Make sure: \n\n` + _reactNative.Platform.select({
+   ios: "- You have run 'pod install'\n",
+@@ -39,6 +41,9 @@ function identify(distinctId, anonymousId) {
+ function startRecording(resumeCurrent) {
+   return PosthogReactNativeSessionReplay.startRecording(resumeCurrent);
+ }
++function setOptOut(optedOut, projectToken = "") {
++  return PosthogReactNativeSessionReplay.setOptOut(optedOut, projectToken);
++}
+ function stopRecording() {
+   return PosthogReactNativeSessionReplay.stopRecording();
+ }
+@@ -49,7 +54,8 @@ const PostHogReactNativeSessionReplay = {
+   isEnabled,
+   identify,
+   startRecording,
+-  stopRecording
++  stopRecording,
++  setOptOut
+ };
+ var _default = exports.default = PostHogReactNativeSessionReplay;
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/lib/typescript/commonjs/src/index.d.ts b/lib/typescript/commonjs/src/index.d.ts
+index 1c2f942952..ce673c4bfc 100644
+--- a/lib/typescript/commonjs/src/index.d.ts
++++ b/lib/typescript/commonjs/src/index.d.ts
+@@ -30,4 +30,6 @@ export interface PostHogReactNativeSessionReplayModule {
+ }
+ declare const PostHogReactNativeSessionReplay: PostHogReactNativeSessionReplayModule;
+ export default PostHogReactNativeSessionReplay;
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=index.d.ts.map
++export declare function setOptOut(optedOut: boolean, projectToken?: string): Promise<void>;
++export declare const reset: typeof identify;
+diff --git a/lib/typescript/module/src/index.d.ts b/lib/typescript/module/src/index.d.ts
+index 1c2f942952..ce673c4bfc 100644
+--- a/lib/typescript/module/src/index.d.ts
++++ b/lib/typescript/module/src/index.d.ts
+@@ -30,4 +30,6 @@ export interface PostHogReactNativeSessionReplayModule {
+ }
+ declare const PostHogReactNativeSessionReplay: PostHogReactNativeSessionReplayModule;
+ export default PostHogReactNativeSessionReplay;
+-//# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
++//# sourceMappingURL=index.d.ts.map
++export declare function setOptOut(optedOut: boolean, projectToken?: string): Promise<void>;
++export declare const reset: typeof identify;

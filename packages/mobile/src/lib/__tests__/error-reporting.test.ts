@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { SchemaNewerThanAppError } from '@boardsesh/offline-sync';
 import { SCHEMA_NEWER_REPORT_KIND } from '../../db/schema-downgrade';
@@ -547,3 +548,5 @@ describe('Observe forwarding', () => {
     expect(mockedCaptureToSentry).toHaveBeenCalledWith(error, undefined);
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());

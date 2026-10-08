@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -115,3 +117,6 @@ describe('native notification update bridge', () => {
     expect(mocks.subscribe).toHaveBeenCalledOnce();
   });
 });
+
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

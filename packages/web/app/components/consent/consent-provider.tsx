@@ -1,8 +1,4 @@
 'use client';
-// Shared native privacy copy is consumed by the next stacked PR.
-// i18n-keep consent.mobileTitle
-// i18n-keep consent.mobileBody
-// i18n-keep consent.analyticsLabel
 import React, {
   createContext,
   useCallback,

@@ -20,6 +20,7 @@
     "@boardsesh/climb-actions": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/community-roles": "workspace:*",
+    "@boardsesh/consent": "workspace:*",
     "@boardsesh/create-climb-react": "workspace:*",
     "@boardsesh/graphql": "workspace:*",
     "@boardsesh/graphql-client": "workspace:*",

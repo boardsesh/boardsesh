@@ -1,13 +1,9 @@
 import { useEffect, useRef } from 'react';
 import * as Updates from 'expo-updates';
 import { registerSuperProperties, track } from '../../lib/analytics';
-import {
-  OTA_UPDATE_DOWNLOADED_EVENT,
-  OTA_UPDATE_STATUS_EVENT,
-  buildOtaStatusProperties,
-  readOtaBranch,
-} from '../../lib/ota-telemetry';
+import { OTA_UPDATE_DOWNLOADED_EVENT, buildOtaStatusProperties, readOtaBranch } from '../../lib/ota-telemetry';
 import { setOtaSentryTags } from '../../lib/sentry';
+import { reportAnonymousOtaStatus } from '../../lib/anonymous-ota-health';
 
 // Emits OTA-adoption telemetry so a JS-only rollout is measurable (we previously
 // had no way to tell how many installs pulled an OTA — issue #3098). On mount it
@@ -72,7 +68,7 @@ export function OtaUpdateTracker(): null {
       isEmergencyLaunch: Updates.isEmergencyLaunch,
       emergencyLaunchReason: Updates.emergencyLaunchReason,
     });
-    track(OTA_UPDATE_STATUS_EVENT, properties);
+    void reportAnonymousOtaStatus(properties);
     registerSuperProperties({
       ota_update_id: properties.updateId,
       ota_is_embedded: properties.isEmbeddedLaunch,

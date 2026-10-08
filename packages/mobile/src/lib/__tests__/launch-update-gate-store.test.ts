@@ -100,9 +100,11 @@ vi.mock('react-native', () => ({
   },
 }));
 
-vi.mock('../analytics', () => ({
-  track: analytics.track,
-  getAnalyticsClient: () => ({ flush: analytics.flush }),
+vi.mock('../anonymous-ota-health', () => ({
+  reportAnonymousOtaLaunch: (properties: unknown) => {
+    analytics.track('OTA Launch Update', properties);
+    return analytics.flush();
+  },
 }));
 vi.mock('../error-reporting', () => ({
   reportHandledError: errors.reportHandledError,

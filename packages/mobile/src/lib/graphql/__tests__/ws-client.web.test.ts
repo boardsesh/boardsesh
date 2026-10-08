@@ -31,6 +31,7 @@ vi.mock('../../error-reporting', () => ({
 }));
 
 vi.mock('../../env', () => ({ BACKEND_URL: 'https://api.test' }));
+vi.mock('../../client-platform', () => ({ CLIENT_PLATFORM: 'web' }));
 
 class BrowserSocketStub {
   static readonly CONNECTING = 0;
@@ -151,7 +152,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     new BrowserAuthWebSocket('wss://api.test/graphql', 'graphql-transport-ws');
 
     expect(BrowserSocketStub.instances[0]?.protocols).toBe('graphql-transport-ws');
-    await expect(connectionParams()()).resolves.toEqual({ authToken: 'browser-jwe' });
+    await expect(connectionParams()()).resolves.toEqual({ authToken: 'browser-jwe', clientPlatform: 'web' });
     expect(ensureFreshTokenMock).toHaveBeenCalledTimes(1);
     expect(getAuthTokenMock).toHaveBeenCalledTimes(1);
   });
@@ -297,7 +298,10 @@ describe('Expo web GraphQL WebSocket auth', () => {
     if (!firstSocket) throw new Error('first socket was not created');
     firstSocket.open();
     await vi.waitFor(() => expect(messagesOfType(firstSocket, 'connection_init')).toHaveLength(1));
-    expect(messagesOfType(firstSocket, 'connection_init')[0]?.payload).toEqual({ authToken: 'rejected-jwe' });
+    expect(messagesOfType(firstSocket, 'connection_init')[0]?.payload).toEqual({
+      authToken: 'rejected-jwe',
+      clientPlatform: 'web',
+    });
     firstSocket.receive({ type: 'connection_ack' });
     await vi.waitFor(() => expect(messagesOfType(firstSocket, 'subscribe')).toHaveLength(1));
 
@@ -312,7 +316,10 @@ describe('Expo web GraphQL WebSocket auth', () => {
     secondSocket.open();
 
     await vi.waitFor(() => expect(messagesOfType(secondSocket, 'connection_init')).toHaveLength(1));
-    expect(messagesOfType(secondSocket, 'connection_init')[0]?.payload).toEqual({ authToken: 'fresh-jwe' });
+    expect(messagesOfType(secondSocket, 'connection_init')[0]?.payload).toEqual({
+      authToken: 'fresh-jwe',
+      clientPlatform: 'web',
+    });
     secondSocket.receive({ type: 'connection_ack' });
     await vi.waitFor(() => expect(messagesOfType(secondSocket, 'subscribe')).toHaveLength(1));
 

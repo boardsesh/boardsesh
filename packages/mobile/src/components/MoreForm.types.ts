@@ -74,6 +74,7 @@ export type MoreToggleRow = {
   label: string;
   subtitle?: string;
   value: boolean;
+  disabled?: boolean;
   onValueChange: (value: boolean) => void;
 };
 

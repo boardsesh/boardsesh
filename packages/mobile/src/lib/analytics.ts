@@ -7,6 +7,9 @@ import { reregisterOfflineEngineState } from './analytics-offline-engine-state';
 import { reregisterActiveGym } from './analytics-gym';
 import { reregisterLowPowerMode } from './analytics-low-power-mode';
 import { reregisterConnectStepArm } from './analytics-connect-step-arm';
+import { isProductAnalyticsGranted } from './consent-state';
+import { applyPosthogConsent, subscribePosthogInitialized, clearPosthogQueues } from './posthog-client';
+import { applySessionReplayConsent } from './session-replay-consent';
 
 // `sendEvent: false` suppresses the SDK's `$feature_flag_called` capture. Verified
 // in @posthog/core 1.46.1 (shared by posthog-react-native and posthog-js-lite):
@@ -38,11 +41,7 @@ function getClient(): PostHog | null {
 export function setSessionRecordingEnabled(enabled: boolean): void {
   const client = getClient();
   if (!client) return;
-  if (enabled) {
-    void client.startSessionRecording();
-  } else {
-    void client.stopSessionRecording();
-  }
+  void applySessionReplayConsent(client, enabled).catch(() => {});
 }
 
 // Exposed so AnalyticsProvider can hand the same instance to PostHogProvider for
@@ -231,7 +230,18 @@ export function readPosthogFeatureFlagsRequestId(): string | undefined {
 
 export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
   const posthog = getClient();
-  if (!posthog) return () => {};
+  if (!posthog) {
+    let unbind = () => {};
+    const unsubscribeInitialized = subscribePosthogInitialized(() => {
+      unbind();
+      unbind = subscribePosthogFeatureFlags(onChange);
+      onChange();
+    });
+    return () => {
+      unsubscribeInitialized();
+      unbind();
+    };
+  }
   const featureFlagClient = asFeatureFlagClient(posthog);
 
   const reloadResult =
@@ -253,7 +263,7 @@ export function subscribePosthogFeatureFlags(onChange: () => void): () => void {
   return () => {};
 }
 
-const analytics = createAnalytics(getClient, {
+const analytics = createAnalytics(() => (isProductAnalyticsGranted() ? getClient() : null), {
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
@@ -317,14 +327,19 @@ export function registerRenderSuperProperties(effective: {
 // would put it back before the next account's enrolment is read, so the
 // sign-out events of an enrolled climber would lose their arm.
 export function reset(): boolean {
-  const didReset = analytics.reset();
+  const client = getClient();
+  if (client) {
+    client.reset([]);
+    clearPosthogQueues(client);
+  }
+  const didReset = client !== null;
+  void applyPosthogConsent().catch(() => {});
   // Clear the screen gate here rather than at each sign-out call site, so a new
   // "forget this person" path cannot forget it. analytics.reset() nulls the
   // SDK's persisted SessionId, which would re-arm the gate on the next
   // getSessionId() anyway — this just makes that explicit instead of a side
   // effect a reader has to know about.
   resetScreenSessionGate();
-  const client = getClient();
   if (client) {
     registerAppSuperProperties(client);
     registerConnectivitySuperProperty(client);
@@ -350,6 +365,7 @@ export function reset(): boolean {
 // the drift would worsen the longer a session ran. It is redundant on the
 // emitting path and load-bearing on the suppressed one; keep it unconditional.
 export function trackScreen(path: string): void {
+  if (!isProductAnalyticsGranted()) return;
   if (__DEV__) console.info('[analytics] $screen', path);
   const client = getClient();
   if (!client) return;

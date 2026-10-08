@@ -25,6 +25,12 @@ setObserveRuntime({
   configure: (overrides: ObserveRuntimeOverrides) => Observe.configure(buildObserveConfig(overrides)),
   dispatchEvents: () => Observe.dispatchEvents(),
   reportError: (error: unknown) => Observe.reportError(error),
+  discardPendingEvents: () => {
+    const native = Observe as typeof Observe & { discardPendingEvents?: () => Promise<void> };
+    if (typeof native.discardPendingEvents !== 'function')
+      return Promise.reject(new Error('Observe consent discard unavailable'));
+    return native.discardPendingEvents();
+  },
 });
 
 Observe.configure(buildObserveConfig());

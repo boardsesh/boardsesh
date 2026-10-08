@@ -1,4 +1,5 @@
 import type { ObserveRuntimeOverrides } from './observe-config';
+import { isProductAnalyticsGranted } from './consent-state';
 
 /**
  * Pure in-memory slot for the expo-observe SDK, registered by
@@ -17,6 +18,7 @@ export type ObserveRuntime = {
   configure(overrides: ObserveRuntimeOverrides): void;
   dispatchEvents(): Promise<void>;
   reportError(error: unknown): void;
+  discardPendingEvents?(): Promise<void>;
 };
 
 let runtime: ObserveRuntime | null = null;
@@ -45,13 +47,19 @@ export function configureObserve(overrides: ObserveRuntimeOverrides = {}): void 
  * a foreground transition must still complete when Observe cannot dispatch.
  */
 export async function dispatchObserveEvents(): Promise<void> {
-  if (!runtime) return;
+  if (!runtime || !isProductAnalyticsGranted()) return;
   try {
     await runtime.dispatchEvents();
   } catch (error) {
     // The next foreground/background transition can retry persisted events.
     if (__DEV__) console.warn('[observe] event dispatch failed; will retry later', error);
   }
+}
+
+/** Missing on an old native binary: fail closed rather than uploading its old buffer. */
+export async function discardObserveEvents(): Promise<void> {
+  if (!runtime?.discardPendingEvents) throw new Error('Observe consent discard unavailable');
+  await runtime.discardPendingEvents();
 }
 
 /**
@@ -62,7 +70,7 @@ export async function dispatchObserveEvents(): Promise<void> {
  * must never be able to lose the actual error.
  */
 export function captureToObserve(error: unknown): void {
-  if (!runtime) return;
+  if (!runtime || !isProductAnalyticsGranted()) return;
   try {
     runtime.reportError(error);
   } catch {

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   captureToObserve,
   configureObserve,
@@ -97,3 +98,5 @@ describe('observe-runtime slot', () => {
     expect(dispatchEvents).not.toHaveBeenCalled();
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());

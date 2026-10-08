@@ -105,14 +105,14 @@ describe('buildHealthQuery / buildLatestUpdateQuery', () => {
   it('inlines a sanitized update id and the adoption column when given an id', () => {
     const query = buildHealthQuery({ hours: 6, updateId: 'abc-123' });
     expect(query).toContain("properties.updateId = 'abc-123'");
-    expect(query).toContain('target_update_installs');
+    expect(query).toContain('target_update_launches');
     expect(query).toContain("event = 'OTA Update Status'");
     expect(query).toContain("properties.channel = 'production'");
     expect(query).toContain('INTERVAL 6 HOUR');
   });
 
   it('emits a constant 0 adoption column when no id is given', () => {
-    expect(buildHealthQuery({ hours: 24, updateId: null })).toContain('0 AS target_update_installs');
+    expect(buildHealthQuery({ hours: 24, updateId: null })).toContain('0 AS target_update_launches');
   });
 
   it('refuses to build a query for a malicious update id', () => {
@@ -132,9 +132,8 @@ describe('evaluateOtaHealth', () => {
   const metrics = (launches: number, emergencyLaunches: number): HealthMetrics => ({
     launches,
     emergencyLaunches,
-    installs: launches,
-    emergencyInstalls: emergencyLaunches,
-    targetUpdateInstalls: null,
+
+    targetUpdateLaunches: null,
     updateId: null,
   });
 
@@ -174,25 +173,23 @@ describe('summarizeVerdict', () => {
     const metrics: HealthMetrics = {
       launches: 100,
       emergencyLaunches: 20,
-      installs: 80,
-      emergencyInstalls: 18,
-      targetUpdateInstalls: 60,
+
+      targetUpdateLaunches: 60,
       updateId: 'abc-123',
     };
     const verdict = evaluateOtaHealth(metrics, { minSamples: args.minSamples, threshold: args.threshold });
     const lines = summarizeVerdict(metrics, verdict, args);
     expect(lines[0]).toContain('UNHEALTHY');
     expect(lines.join('\n')).toContain('abc-123');
-    expect(lines.join('\n')).toContain('60 install(s)');
+    expect(lines.join('\n')).toContain('60 launch(es)');
   });
 
   it('marks a low-sample result inconclusive and omits the adoption line without an id', () => {
     const metrics: HealthMetrics = {
       launches: 4,
       emergencyLaunches: 2,
-      installs: 4,
-      emergencyInstalls: 2,
-      targetUpdateInstalls: null,
+
+      targetUpdateLaunches: null,
       updateId: null,
     };
     const verdict = evaluateOtaHealth(metrics, { minSamples: args.minSamples, threshold: args.threshold });
@@ -238,10 +235,10 @@ describe('runHealthCheck (networked path)', () => {
 
   it('exits 1 and writes an UNHEALTHY summary when the emergency rate clears the gate', async () => {
     vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
-    // [launches, emergency_launches, installs, emergency_installs, target_update_installs]
+    // [launches, emergency_launches, target_update_launches]
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[100, 20, 80, 18, 60]] }) })),
+      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[100, 20, 60]] }) })),
     );
     const out = outPath();
 
@@ -253,7 +250,7 @@ describe('runHealthCheck (networked path)', () => {
     vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[500, 5, 400, 5, 300]] }) })),
+      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[500, 5, 300]] }) })),
     );
     await expect(runHealthCheck(baseArgs())).resolves.toBe(0);
   });

@@ -44,11 +44,9 @@ describe('parseObserveSampleRate', () => {
 });
 
 describe('resolveObserveDispatchEnabled', () => {
-  it('treats an unresolved flag as the shipped default, not as off', () => {
-    // A device that never reaches PostHog must keep reporting rather than go
-    // permanently quiet — the failure mode docs/feature-flags.md calls out.
-    expect(resolveObserveDispatchEnabled(undefined)).toBe(true);
-    expect(resolveObserveDispatchEnabled(null)).toBe(true);
+  it('keeps unresolved flags disabled', () => {
+    expect(resolveObserveDispatchEnabled(undefined)).toBe(false);
+    expect(resolveObserveDispatchEnabled(null)).toBe(false);
   });
 
   it('disables only on an explicit false', () => {
@@ -56,9 +54,9 @@ describe('resolveObserveDispatchEnabled', () => {
     expect(resolveObserveDispatchEnabled(true)).toBe(true);
   });
 
-  it('treats a stray string as enabled rather than silently disabling', () => {
-    expect(resolveObserveDispatchEnabled('true')).toBe(true);
-    expect(resolveObserveDispatchEnabled('')).toBe(true);
+  it('rejects malformed non-boolean dispatch flags', () => {
+    expect(resolveObserveDispatchEnabled('true')).toBe(false);
+    expect(resolveObserveDispatchEnabled('')).toBe(false);
   });
 
   it("honours the string 'false', so a kill switch typed as text still kills", () => {
@@ -76,8 +74,8 @@ describe('buildObserveConfig', () => {
 
   it('applies the shipped defaults when given no overrides', () => {
     const config = buildObserveConfig();
-    expect(config.sampleRate).toBe(OBSERVE_DEFAULT_SAMPLE_RATE);
-    expect(config.dispatchingEnabled).toBe(true);
+    expect(config.sampleRate).toBe(0);
+    expect(config.dispatchingEnabled).toBe(false);
   });
 
   it('applies overrides', () => {

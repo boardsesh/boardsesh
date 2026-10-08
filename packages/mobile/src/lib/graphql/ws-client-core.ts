@@ -1,4 +1,6 @@
 import { createGraphQLClient, type Client } from '@boardsesh/graphql-client';
+import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
+import { CLIENT_PLATFORM } from '../client-platform';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
 import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
@@ -275,7 +277,7 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
           if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
             throw new Error('Authentication session changed before the WebSocket handshake');
           }
-          return token ? { authToken: token } : {};
+          return { ...(token ? { authToken: token } : {}), [CLIENT_PLATFORM_CONNECTION_PARAM]: CLIENT_PLATFORM };
         },
       });
     }
