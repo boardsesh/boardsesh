@@ -212,6 +212,7 @@
     },
     "boardDetail": {
       "setActive": "Set as active board",
+      "setActiveShort": "Set active",
       "alreadyActive": "Active board",
       "stats": {
         "ascents": "ascents",
@@ -317,7 +318,6 @@
     },
     "gymClaim": {
       "title": "Claim {{gym}}",
-      "close": "Close",
       "done": "Done",
       "sectionTitle": "Own this gym?",
       "sectionDescription": "Claim it to keep the listing and boards accurate.",
@@ -330,6 +330,7 @@
         "emailLabel": "Work email",
         "emailPlaceholder": "you@{{domain}}",
         "submit": "Send verification email",
+        "submitShort": "Send",
         "sent": "Check your inbox at {{email}} and tap the link to finish."
       },
       "admin": {
@@ -337,6 +338,7 @@
         "messageLabel": "Message (optional)",
         "messagePlaceholder": "Anything that helps us verify you run this gym",
         "submit": "Request review",
+        "submitShort": "Request",
         "sent": "Your claim is in the review queue. We'll email you as soon as it's decided."
       },
       "approved": {

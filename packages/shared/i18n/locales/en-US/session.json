@@ -349,7 +349,6 @@
       "addButton": "Attach a beta video",
       "urlPlaceholder": "Paste TikTok or Instagram URL",
       "submitButton": "Attach",
-      "submitting": "Attaching...",
       "attachSuccess": "Beta video attached",
       "attachError": "Couldn't attach video",
       "errorTitle": "Couldn't load beta videos",

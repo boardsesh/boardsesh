@@ -349,7 +349,6 @@
       "addButton": "Adjuntar un video beta",
       "urlPlaceholder": "Pega un enlace de TikTok o Instagram",
       "submitButton": "Adjuntar",
-      "submitting": "Adjuntando...",
       "attachSuccess": "Video beta adjuntado",
       "attachError": "No se pudo adjuntar el video",
       "errorTitle": "No se pudieron cargar los videos beta",

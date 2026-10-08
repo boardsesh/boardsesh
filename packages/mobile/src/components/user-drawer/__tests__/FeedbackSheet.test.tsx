@@ -14,10 +14,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-type ModalSheetMockProps = { children?: ReactNode };
+type ModalSheetMockProps = { children?: ReactNode; header?: ReactNode };
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children }: ModalSheetMockProps) => createElement('div', { 'data-modal-sheet': 'true' }, children),
+  ModalSheet: ({ children, header }: ModalSheetMockProps) =>
+    createElement('div', { 'data-modal-sheet': 'true' }, header, children),
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
 type TextMockProps = { children?: ReactNode };
 vi.mock('../../Text', () => ({

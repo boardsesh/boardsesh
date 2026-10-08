@@ -6,7 +6,7 @@ import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { SwitchRow } from '../SwitchRow';
 import { PlaylistPreviewSquare } from './PlaylistPreviewSquare';
 import { normalizePlaylistColor, PLAYLIST_COLORS } from './playlist-colors';
@@ -126,13 +126,7 @@ export function PlaylistFormSheet({
   const visibleError = error ?? (submitErrorDismissed ? null : submitError) ?? null;
 
   const title = isEdit ? t('edit.title') : t('create.drawerTitle');
-  const submitLabel = isEdit
-    ? submitting
-      ? t('edit.actions.saving')
-      : t('edit.actions.save')
-    : submitting
-      ? t('create.submitting')
-      : t('create.submit');
+  const submitLabel = isEdit ? t('edit.actions.save') : t('create.submit');
 
   const inputStyle = useMemo(
     () => [
@@ -146,18 +140,27 @@ export function PlaylistFormSheet({
     [systemColors],
   );
 
-  const footer = (
-    <Button title={submitLabel} onPress={handleSubmit} loading={submitting} disabled={submitting} size="large" />
+  const header = (
+    <SheetTopBar
+      title={title}
+      leading={{ kind: 'cancel', onPress: onClose }}
+      trailing={{
+        label: submitLabel,
+        onPress: handleSubmit,
+        loading: submitting,
+        disabled: submitting,
+        prominent: true,
+      }}
+      error={visibleError}
+      reserveErrorSlot
+    />
   );
 
   return (
-    <ModalSheet visible={visible} snapPoints={['90%']} onClose={onClose} scrollable footer={footer}>
+    <ModalSheet visible={visible} snapPoints={['90%']} onClose={onClose} scrollable header={header}>
       <View style={styles.body}>
         <View style={styles.header}>
           <PlaylistPreviewSquare color={color} icon={icon} size={56} />
-          <Text variant="title3" style={styles.title}>
-            {title}
-          </Text>
         </View>
 
         <Text variant="footnote" style={styles.label}>
@@ -301,12 +304,6 @@ export function PlaylistFormSheet({
             />
           </View>
         ) : null}
-
-        {visibleError ? (
-          <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.error}>
-            {visibleError}
-          </Text>
-        ) : null}
       </View>
     </ModalSheet>
   );
@@ -324,10 +321,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[3],
     marginBottom: spacing[2],
-  },
-  title: {
-    fontWeight: '700',
-    flex: 1,
   },
   label: {
     fontWeight: '600',
@@ -404,8 +397,5 @@ const styles = StyleSheet.create({
   switchWrap: {
     marginTop: spacing[2],
     marginHorizontal: -spacing[4],
-  },
-  error: {
-    marginTop: spacing[2],
   },
 });

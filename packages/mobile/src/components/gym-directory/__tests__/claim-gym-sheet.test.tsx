@@ -20,8 +20,9 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children }: Children) => createElement('div', null, children),
+  ModalSheet: ({ children, header }: Children & { header?: ReactNode }) => createElement('div', null, header, children),
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('../../Text', () => ({
   Text: ({ children }: Children) => createElement('span', null, children),
 }));
@@ -76,7 +77,7 @@ const sheetRef = { current: { dismiss: dismissMock } } as unknown as RefObject<M
 const renderSheet = (overrides?: Partial<Gym>) =>
   render(<ClaimGymSheet sheetRef={sheetRef} gym={{ ...gym, ...overrides } as Gym} />);
 
-const submit = () => fireEvent.click(screen.getByText('mobile.gymClaim.admin.submit'));
+const submit = () => fireEvent.click(screen.getByLabelText('mobile.gymClaim.admin.submit'));
 
 describe('ClaimGymSheet — claim outcome', () => {
   beforeEach(() => {

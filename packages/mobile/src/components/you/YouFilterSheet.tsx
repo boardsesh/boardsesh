@@ -4,11 +4,10 @@ import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { BOARD_FILTER_TYPES, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
-import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
 import { Sheet } from '../Sheet';
-import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { SegmentedControl } from '../SegmentedControl';
 import { SectionHeader } from '../SectionHeader';
 import { spacing } from '../../theme/tokens';
@@ -50,16 +49,17 @@ export function YouFilterSheet({
     <Sheet
       ref={sheetRef}
       snapPoints={['55%']}
-      // Android's fixed partial detent strands the footer below the form.
+      // Android's fixed partial detent leaves empty sheet under the form.
       // Fit its bounded content there; iOS keeps the requested 55% detent.
       androidContentSized
       scrollable
-      footer={<Button title={t('mobile.filter.done')} onPress={() => sheetRef.current?.close()} />}
+      header={
+        <SheetTopBar
+          title={t('mobile.filter.title')}
+          trailing={{ label: t('mobile.filter.done'), onPress: () => sheetRef.current?.close(), prominent: true }}
+        />
+      }
     >
-      <Text variant="title3" style={styles.title}>
-        {t('mobile.filter.title')}
-      </Text>
-
       <SectionHeader title={t('mobile.filter.timeRange')} />
       <View style={styles.segment}>
         <SegmentedControl
@@ -88,10 +88,6 @@ export function YouFilterSheet({
 }
 
 const styles = StyleSheet.create({
-  title: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-  },
   segment: {
     paddingHorizontal: spacing[4],
   },

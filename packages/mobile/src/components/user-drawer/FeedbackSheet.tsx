@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
@@ -86,10 +87,6 @@ export const FeedbackSheet = memo(function FeedbackSheet({
 
   const snapPoints = useMemo(() => (isBugReport ? ['62%', '88%'] : ['44%', '72%']), [isBugReport]);
 
-  const handleDismiss = () => {
-    onClose();
-  };
-
   const handleSubmit = async () => {
     if (!canSubmit || submittingRef.current) return;
     submittingRef.current = true;
@@ -157,23 +154,22 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         snapPoints={snapPoints}
         scrollable
         contentContainerStyle={styles.content}
+        header={
+          <SheetTopBar
+            title={title}
+            leading={{ kind: 'cancel', onPress: onClose }}
+            trailing={{
+              label: submitLabel,
+              onPress: () => {
+                void handleSubmit();
+              },
+              disabled: !canSubmit || isUploading,
+              loading: isPending || isUploading,
+              prominent: true,
+            }}
+          />
+        }
       >
-        <View style={styles.headerRow}>
-          <Text variant="title3" style={styles.title}>
-            {title}
-          </Text>
-          <PressableSurface
-            onPress={handleDismiss}
-            feedback="opacity"
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('feedbackDialog.closeAria')}
-            style={styles.closeButton}
-          >
-            <Icon name="close" size={20} color={systemColors.secondaryLabel} />
-          </PressableSurface>
-        </View>
-
         {!isBugReport ? (
           <View style={styles.starRow}>
             {STAR_RATING_VALUES.map((starRating) => {
@@ -250,18 +246,6 @@ export const FeedbackSheet = memo(function FeedbackSheet({
           </View>
         ) : null}
 
-        <Button
-          title={submitLabel}
-          onPress={() => {
-            void handleSubmit();
-          }}
-          variant="filled"
-          size="large"
-          disabled={!canSubmit || isUploading}
-          loading={isPending || isUploading}
-          style={styles.submitButton}
-        />
-
         {showDiscordLink ? (
           <Button
             title={t('feedbackDialog.joinDiscord')}
@@ -282,24 +266,9 @@ export const FeedbackSheet = memo(function FeedbackSheet({
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
     paddingBottom: spacing[6],
     gap: spacing[4],
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-  },
-  title: {
-    flex: 1,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   starRow: {
     flexDirection: 'row',
@@ -327,8 +296,5 @@ const styles = StyleSheet.create({
   recordingCard: {
     overflow: 'hidden',
     borderRadius: borderRadius.lg,
-  },
-  submitButton: {
-    marginTop: spacing[1],
   },
 });

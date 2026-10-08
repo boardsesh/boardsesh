@@ -28,23 +28,11 @@ const PERMANENT_FOOTERS = [
 ];
 
 /** Footers still to move to the top bar. Each later PR deletes its lines. */
-const PENDING_FOOTERS = [
-  'src/components/AddBetaVideoSheet.tsx', // TODO(top-bar migration): remove
-  'src/components/board-discovery/BoardDetailSheet.tsx', // TODO(top-bar migration): remove
-  'src/components/playlist/PlaylistFormSheet.tsx', // TODO(top-bar migration): remove
-  'src/components/report-climb/ReportClimbSheet.tsx', // TODO(top-bar migration): remove
-  'src/components/settings/sections/AccessibilitySection.tsx', // TODO(top-bar migration): remove
-  'src/components/spray-wall/ReportSprayWallSheet.tsx', // TODO(top-bar migration): remove
-  'src/components/you/LogbookEditSheet.tsx', // TODO(top-bar migration): remove
-  'src/components/you/YouFilterSheet.tsx', // TODO(top-bar migration): remove
-];
+const PENDING_FOOTERS: string[] = [];
 
 const FOOTER_ALLOWLIST = new Set([...PERMANENT_FOOTERS, ...PENDING_FOOTERS]);
 
-const TICK_ACTION_BAR_ALLOWLIST = new Set([
-  'src/components/LogAscentSheet.tsx',
-  'src/components/you/LogbookEditSheet.tsx', // TODO(top-bar migration): remove
-]);
+const TICK_ACTION_BAR_ALLOWLIST = new Set(['src/components/LogAscentSheet.tsx']);
 
 /** Hand-rolled sheets that bound their own column. Shrink-only. */
 const SHEET_COLUMN_STYLE_ALLOWLIST = new Set([

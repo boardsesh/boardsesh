@@ -194,8 +194,7 @@
       "privateHint": "Les playlists privées ne sont visibles que par vous"
     },
     "actions": {
-      "save": "Enregistrer",
-      "saving": "Enregistrement..."
+      "save": "Enregistrer"
     },
     "validation": {
       "nameRequired": "Saisissez un nom de playlist",
@@ -210,7 +209,6 @@
   "create": {
     "drawerTitle": "Créer une playlist",
     "submit": "Créer",
-    "submitting": "Création...",
     "fields": {
       "name": "Nom",
       "namePlaceholder": "ex. : Réglettes qui piquent",

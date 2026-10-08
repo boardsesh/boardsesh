@@ -212,6 +212,7 @@
     },
     "boardDetail": {
       "setActive": "Utiliser cette board",
+      "setActiveShort": "Activer",
       "alreadyActive": "Board active",
       "stats": {
         "ascents": "ascensions",
@@ -317,7 +318,6 @@
     },
     "gymClaim": {
       "title": "Revendiquer {{gym}}",
-      "close": "Fermer",
       "done": "Terminé",
       "sectionTitle": "Cette salle est à toi ?",
       "sectionDescription": "Revendique-la pour garder ses informations à jour.",
@@ -330,6 +330,7 @@
         "emailLabel": "E-mail professionnel",
         "emailPlaceholder": "toi@{{domain}}",
         "submit": "Envoyer l'e-mail de vérification",
+        "submitShort": "Envoyer",
         "sent": "Consulte ta boîte à {{email}} et touche le lien pour terminer."
       },
       "admin": {
@@ -337,6 +338,7 @@
         "messageLabel": "Message (facultatif)",
         "messagePlaceholder": "Tout ce qui nous aide à vérifier que tu gères cette salle",
         "submit": "Demander une vérification",
+        "submitShort": "Demander",
         "sent": "Ta demande est dans la file d'examen. On t'écrit dès qu'elle est tranchée."
       },
       "approved": {

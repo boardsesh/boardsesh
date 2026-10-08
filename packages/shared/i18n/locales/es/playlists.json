@@ -194,8 +194,7 @@
       "privateHint": "Las listas privadas solo son visibles para ti"
     },
     "actions": {
-      "save": "Guardar",
-      "saving": "Guardando..."
+      "save": "Guardar"
     },
     "validation": {
       "nameRequired": "Introduce un nombre de lista",
@@ -210,7 +209,6 @@
   "create": {
     "drawerTitle": "Crear playlist",
     "submit": "Crear",
-    "submitting": "Creando...",
     "fields": {
       "name": "Nombre",
       "namePlaceholder": "p. ej., Regletas duras",

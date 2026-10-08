@@ -22,15 +22,15 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, visible }: { children: ReactNode; visible: boolean }) =>
-    visible ? createElement('div', null, children) : null,
+  Sheet: ({ children, header, visible }: { children: ReactNode; header?: ReactNode; visible: boolean }) =>
+    visible ? createElement('div', null, header, children) : null,
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../Avatar', () => ({ Avatar: () => null }));
-vi.mock('../../Button', () => ({ Button: () => null }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
 vi.mock('../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../lib/spray/use-spray-moderation', () => ({

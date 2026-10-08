@@ -18,11 +18,20 @@ const sheet = vi.hoisted(() => ({
   fullyDismissed: null as (() => void) | null,
 }));
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, onFullyDismissed }: { children?: ReactNode; onFullyDismissed?: () => void }) => {
+  ModalSheet: ({
+    children,
+    header,
+    onFullyDismissed,
+  }: {
+    children?: ReactNode;
+    header?: ReactNode;
+    onFullyDismissed?: () => void;
+  }) => {
     sheet.fullyDismissed = onFullyDismissed ?? null;
-    return createElement('div', { 'data-modal-sheet': 'true' }, children);
+    return createElement('div', { 'data-modal-sheet': 'true' }, header, children);
   },
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
 type TextMockProps = { children?: ReactNode };
 vi.mock('../../Text', () => ({

@@ -46,9 +46,23 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 // are queryable regardless of `visible` — the seeding effect keys off the
 // `visible` prop transition, not off whether the body is mounted.
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, footer }: { children?: ReactNode; footer?: ReactNode }) =>
-    createElement('div', { 'data-sheet': 'true' }, children, footer),
+  Sheet: ({
+    children,
+    header,
+    androidContentSized,
+  }: {
+    children?: ReactNode;
+    header?: ReactNode;
+    androidContentSized?: boolean;
+  }) =>
+    createElement(
+      'div',
+      { 'data-sheet': 'true', 'data-android-content-sized': String(Boolean(androidContentSized)) },
+      header,
+      children,
+    ),
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
 vi.mock('@boardsesh/shared-schema', () => ({ SESSION_NAME_MAX_LENGTH: 100 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: { SessionRenamed: 'Session Renamed' } }));
@@ -68,20 +82,12 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
 vi.mock('../../Text', () => ({
   Text: ({ children }: ChildrenProps) => createElement('span', { 'data-text': 'true' }, children),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, disabled }: { title: string; onPress?: () => void; disabled?: boolean }) =>
-    createElement('button', {
-      onClick: onPress,
-      'data-button': title,
-      'data-disabled': disabled ? 'true' : 'false',
-    }),
-}));
 
 import { SessionTitleSheet } from '../SessionTitleSheet';
 
 const input = (root: HTMLElement) => root.querySelector('[data-textinput]') as HTMLInputElement | null;
-const button = (root: HTMLElement, title: string) =>
-  root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
+const saveButton = (root: HTMLElement) =>
+  root.querySelector('[data-testid="sheet-top-bar-trailing"]') as HTMLButtonElement | null;
 
 describe('SessionTitleSheet', () => {
   beforeEach(() => {
@@ -92,6 +98,11 @@ describe('SessionTitleSheet', () => {
     queryClient.setQueryData.mockReset();
     analytics.track.mockReset();
     haptics.hapticSuccess.mockReset();
+  });
+
+  it('content-fits the sheet on Android, since its header adds a flex column', () => {
+    const { container } = render(<SessionTitleSheet visible sessionId="s1" currentName={null} onClose={() => {}} />);
+    expect(container.querySelector('[data-sheet]')?.getAttribute('data-android-content-sized')).toBe('true');
   });
 
   it('seeds the input from the current name on open', () => {
@@ -123,7 +134,7 @@ describe('SessionTitleSheet', () => {
   it('saves the trimmed name through updateSession', () => {
     const { container } = render(<SessionTitleSheet visible sessionId="s1" currentName={null} onClose={() => {}} />);
     fireEvent.change(input(container)!, { target: { value: '  Evening Board  ' } });
-    fireEvent.click(button(container, 'mobile.session.renameSave')!);
+    fireEvent.click(saveButton(container)!);
     expect(updateSession.mutate).toHaveBeenCalledTimes(1);
     const [variables] = updateSession.mutate.mock.calls[0];
     expect(variables).toEqual({ input: { sessionId: 's1', name: 'Evening Board' } });
@@ -134,7 +145,7 @@ describe('SessionTitleSheet', () => {
       <SessionTitleSheet visible sessionId="s1" currentName="Old name" onClose={() => {}} />,
     );
     fireEvent.change(input(container)!, { target: { value: '   ' } });
-    fireEvent.click(button(container, 'mobile.session.renameSave')!);
+    fireEvent.click(saveButton(container)!);
     const [variables] = updateSession.mutate.mock.calls[0];
     expect(variables).toEqual({ input: { sessionId: 's1', name: null } });
   });
@@ -149,7 +160,7 @@ describe('SessionTitleSheet', () => {
     const onClose = vi.fn();
     const { container } = render(<SessionTitleSheet visible sessionId="s1" currentName={null} onClose={onClose} />);
     fireEvent.change(input(container)!, { target: { value: 'Named' } });
-    fireEvent.click(button(container, 'mobile.session.renameSave')!);
+    fireEvent.click(saveButton(container)!);
 
     // Drive the mutation's per-call onSuccess as the hook would.
     const [, options] = updateSession.mutate.mock.calls[0];

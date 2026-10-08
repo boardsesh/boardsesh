@@ -7,8 +7,8 @@
 //
 // Driven by a controlled `visible` prop (mirrors ClimbActionsSheet): the
 // ModalSheet coordinator presents it above the play drawer's own native modal.
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
@@ -20,6 +20,8 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ModalSheet } from './ModalSheet';
 import { Text } from './Text';
 import { Button } from './Button';
+import { SheetTopBar } from './SheetTopBar';
+import { useSheetScrollIntoView } from './sheet-scroll-into-view';
 import { openInstagram } from '../lib/instagram';
 import { track } from '../lib/analytics';
 import { useAttachBetaLink } from '../lib/graphql/hooks';
@@ -53,7 +55,7 @@ export function AddBetaVideoSheet({
 }: AddBetaVideoSheetProps) {
   const { t } = useTranslation('session');
   const { showToast } = useToast();
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const [url, setUrl] = useState('');
 
   const attach = useAttachBetaLink();
@@ -128,55 +130,18 @@ export function AddBetaVideoSheet({
   const snapPoints = useMemo(() => ['85%'], []);
   const submitDisabled = !isValid || attach.isPending;
 
-  // The paste fallback lives in the sheet's `footer` slot: the wrapper wraps the
-  // footer in a KeyboardAvoidingView that lifts the input + submit clear of the
-  // software keyboard (the three share-steps scroll above). It previously sat in
-  // the scroll body with no avoidance, so the keyboard covered this bottom field.
-  const pasteFooter = (
-    <View style={styles.pasteFooter}>
-      <View style={styles.divider}>
-        <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
-        <Text variant="footnote" color={systemColors.tertiaryLabel}>
-          {t('mobile.betaVideos.pasteSectionLabel')}
-        </Text>
-        <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
-      </View>
-
-      <BottomSheetTextInput
-        value={url}
-        onChangeText={setUrl}
-        placeholder={t('mobile.betaVideos.urlPlaceholder')}
-        placeholderTextColor={systemColors.secondaryLabel}
-        keyboardType="url"
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="send"
-        onSubmitEditing={handleSubmit}
-        style={[styles.input, { color: systemColors.label, borderColor: systemColors.separator }]}
-      />
-      {showError && (
-        <Text variant="footnote" color={brandColors.error} style={styles.errorText}>
-          {t('mobile.betaVideos.urlInvalid')}
-        </Text>
-      )}
-
-      <Pressable
-        onPress={handleSubmit}
-        disabled={submitDisabled}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: submitDisabled }}
-        style={({ pressed }) => [
-          styles.submitButton,
-          { backgroundColor: brandColors.primaryFill },
-          submitDisabled && styles.submitButtonDisabled,
-          pressed && !submitDisabled && styles.submitButtonPressed,
-        ]}
-      >
-        <Text variant="headline" color={brandColors.onPrimary}>
-          {attach.isPending ? t('mobile.betaVideos.submitting') : t('mobile.betaVideos.submitButton')}
-        </Text>
-      </Pressable>
-    </View>
+  const header = (
+    <SheetTopBar
+      title={t('mobile.betaVideos.shareTitle')}
+      leading={{ kind: 'cancel', onPress: onClose }}
+      trailing={{
+        label: t('mobile.betaVideos.submitButton'),
+        onPress: handleSubmit,
+        disabled: submitDisabled,
+        loading: attach.isPending,
+        prominent: true,
+      }}
+    />
   );
 
   return (
@@ -186,13 +151,9 @@ export function AddBetaVideoSheet({
       onClose={onClose}
       onFullyDismissed={handleFullyDismissed}
       scrollable
-      footer={pasteFooter}
+      header={header}
     >
       <View style={styles.container}>
-        <Text variant="title3" style={styles.title}>
-          {t('mobile.betaVideos.shareTitle')}
-        </Text>
-
         <StepRow index={1} title={t('mobile.betaVideos.step1Title')}>
           <View style={[styles.captionBox, { borderColor: systemColors.separator }]}>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
@@ -226,8 +187,75 @@ export function AddBetaVideoSheet({
             {t('mobile.betaVideos.shareBackInstructions')}
           </Text>
         </StepRow>
+
+        <View style={styles.pasteSection}>
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
+            <Text variant="footnote" color={systemColors.tertiaryLabel}>
+              {t('mobile.betaVideos.pasteSectionLabel')}
+            </Text>
+            <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
+          </View>
+
+          <BetaUrlField value={url} invalid={showError} onChangeText={setUrl} onSubmit={handleSubmit} />
+        </View>
       </View>
     </ModalSheet>
+  );
+}
+
+type BetaUrlFieldProps = {
+  value: string;
+  /** Shows the invalid-URL message under the input. */
+  invalid: boolean;
+  onChangeText: (next: string) => void;
+  onSubmit: () => void;
+};
+
+/** The paste field and its error. The wrapper scrolls above the keyboard, so
+ *  the error clears it too. */
+function BetaUrlField({ value, invalid, onChangeText, onSubmit }: BetaUrlFieldProps) {
+  const { t } = useTranslation('session');
+  const { systemColors, brandColors } = useTheme();
+  const fieldRef = useRef<View>(null);
+  const scrollIntoView = useSheetScrollIntoView();
+  const focusedRef = useRef(false);
+  const handleFocus = useCallback(() => {
+    focusedRef.current = true;
+    if (fieldRef.current) scrollIntoView?.reveal(fieldRef.current);
+  }, [scrollIntoView]);
+  const handleBlur = useCallback(() => {
+    focusedRef.current = false;
+    if (fieldRef.current) scrollIntoView?.release(fieldRef.current);
+  }, [scrollIntoView]);
+  // The error line grows the wrapper after the focus reveal measured it, so
+  // scroll again to keep the error above the keyboard. `follow`, not `reveal`:
+  // it never moves the sheet's detent.
+  const handleLayout = useCallback(() => {
+    if (focusedRef.current && fieldRef.current) scrollIntoView?.follow(fieldRef.current);
+  }, [scrollIntoView]);
+  return (
+    <View ref={fieldRef} style={styles.urlField} onLayout={handleLayout}>
+      <BottomSheetTextInput
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        placeholder={t('mobile.betaVideos.urlPlaceholder')}
+        placeholderTextColor={systemColors.secondaryLabel}
+        keyboardType="url"
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="send"
+        onSubmitEditing={onSubmit}
+        style={[styles.input, { color: systemColors.label, borderColor: systemColors.separator }]}
+      />
+      {invalid && (
+        <Text variant="footnote" color={brandColors.error}>
+          {t('mobile.betaVideos.urlInvalid')}
+        </Text>
+      )}
+    </View>
   );
 }
 
@@ -263,9 +291,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[6],
     gap: spacing[4],
   },
-  title: {
-    marginBottom: spacing[1],
-  },
   step: {
     gap: spacing[2],
   },
@@ -295,7 +320,7 @@ const styles = StyleSheet.create({
   actionButton: {
     alignSelf: 'flex-start',
   },
-  pasteFooter: {
+  pasteSection: {
     gap: spacing[3],
   },
   divider: {
@@ -314,19 +339,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3],
     fontSize: textStyles.callout.fontSize,
   },
-  errorText: {
-    marginTop: -spacing[2],
-  },
-  submitButton: {
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing[3],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.5,
-  },
-  submitButtonPressed: {
-    opacity: 0.85,
+  urlField: {
+    gap: spacing[1],
   },
 });

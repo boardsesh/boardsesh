@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, KeyboardAvoidingView, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,7 +8,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Sheet } from '../Sheet';
 import type { SessionPreview } from '../../lib/graphql/operations';
 import { Text } from '../Text';
-import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useUpdateSession } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
@@ -87,48 +87,47 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
     );
   }, [sessionId, name, updateSession, queryClient, onClose]);
 
-  // Buttons live in the BODY (EndSessionSheet's pattern), not the Sheet footer
-  // slot: on Android's M3 sheet a small single detent gets a second expanded
-  // state (androidSafeSnapPoints) and the pinned footer lays out against the
-  // expanded height — off-screen below the partial sheet (emulator-verified).
-  // The KeyboardAvoidingView mirrors EndSessionSheet: the Android dialog window
-  // doesn't resize for the keyboard.
+  const header = (
+    <SheetTopBar
+      title={t('mobile.session.renameTitle')}
+      leading={{ kind: 'cancel', onPress: onClose, accessibilityLabel: tCommon('comment.cancel') }}
+      trailing={{
+        label: t('mobile.session.renameSave'),
+        onPress: handleSave,
+        loading: updateSession.isPending,
+        disabled: !sessionId,
+        prominent: true,
+      }}
+    />
+  );
+
+  // The header makes the Sheet wrap its body in a KeyboardAvoidingView, so the
+  // field stays above the keyboard without one of our own. `androidContentSized`
+  // keeps that wrapper content-fitted on Android, where a flex-1 column inside
+  // a content-sized host collapses to zero height.
   return (
-    <Sheet visible={visible} enableDynamicSizing onClose={onClose}>
-      <KeyboardAvoidingView behavior="padding">
-        <View style={styles.body}>
-          <Text variant="title2">{t('mobile.session.renameTitle')}</Text>
-          <BottomSheetTextInput
-            value={name}
-            onChangeText={handleChange}
-            placeholder={t('creation.form.sessionNamePlaceholder')}
-            placeholderTextColor={systemColors.tertiaryLabel}
-            maxLength={SESSION_NAME_MAX_LENGTH}
-            style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-            returnKeyType="done"
-            autoFocus
-            onSubmitEditing={handleSave}
-          />
-          {updateSession.isError ? (
-            <Text variant="footnote" color={brandColors.error} style={styles.error}>
-              {/* The server rejects non-creators; "try again" would mislead them. */}
-              {updateSession.error instanceof Error && updateSession.error.message.includes('creator')
-                ? t('mobile.session.renameNotAllowed')
-                : t('mobile.session.renameError')}
-            </Text>
-          ) : null}
-          <View style={styles.actions}>
-            <Button title={tCommon('comment.cancel')} variant="text" onPress={onClose} />
-            <Button
-              title={t('mobile.session.renameSave')}
-              variant="filled"
-              loading={updateSession.isPending}
-              disabled={!sessionId}
-              onPress={handleSave}
-            />
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+    <Sheet visible={visible} enableDynamicSizing androidContentSized onClose={onClose} header={header}>
+      <View style={styles.body}>
+        <BottomSheetTextInput
+          value={name}
+          onChangeText={handleChange}
+          placeholder={t('creation.form.sessionNamePlaceholder')}
+          placeholderTextColor={systemColors.tertiaryLabel}
+          maxLength={SESSION_NAME_MAX_LENGTH}
+          style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+          returnKeyType="done"
+          autoFocus
+          onSubmitEditing={handleSave}
+        />
+        {updateSession.isError ? (
+          <Text variant="footnote" color={brandColors.error} style={styles.error}>
+            {/* The server rejects non-creators; "try again" would mislead them. */}
+            {updateSession.error instanceof Error && updateSession.error.message.includes('creator')
+              ? t('mobile.session.renameNotAllowed')
+              : t('mobile.session.renameError')}
+          </Text>
+        ) : null}
+      </View>
     </Sheet>
   );
 }
@@ -136,7 +135,7 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
 const styles = StyleSheet.create({
   body: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
+    paddingTop: spacing[3],
     gap: spacing[3],
   },
   input: {
@@ -147,11 +146,5 @@ const styles = StyleSheet.create({
   },
   error: {
     marginTop: -spacing[1],
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: spacing[2],
   },
 });

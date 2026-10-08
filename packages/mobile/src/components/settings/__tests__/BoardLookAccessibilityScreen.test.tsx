@@ -259,13 +259,10 @@ vi.mock('../../SwitchRow', () => ({
   }) => createElement('button', { onClick: () => onValueChange(!value) }, label),
 }));
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ visible, children, footer }: { visible?: boolean; children?: ReactNode; footer?: ReactNode }) =>
-    visible ? createElement('div', { 'data-testid': 'modal-sheet' }, children, footer) : null,
+  ModalSheet: ({ visible, children, header }: { visible?: boolean; children?: ReactNode; header?: ReactNode }) =>
+    visible ? createElement('div', { 'data-testid': 'modal-sheet' }, header, children) : null,
 }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
-}));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: () => createElement('div', { 'data-testid': 'board-image' }),
 }));

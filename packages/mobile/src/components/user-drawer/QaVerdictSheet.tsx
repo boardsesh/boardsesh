@@ -1,15 +1,14 @@
 import { useCallback, useMemo, useRef, useState, type RefObject } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import * as Updates from 'expo-updates';
 import { useTranslation } from 'react-i18next';
 import type { QaVerdictKind } from '@boardsesh/shared-schema';
 import { useProfile } from '../../lib/graphql/hooks';
 import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
 import { Button } from '../Button';
-import { PressableSurface } from '../PressableSurface';
 import { ScreenshotPicker } from '../feedback/ScreenshotPicker';
 import { SegmentedControl } from '../SegmentedControl';
 import { useTheme } from '../../providers/theme-provider';
@@ -202,23 +201,22 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       surface="solid"
       contentContainerStyle={styles.content}
       onFullyDismissed={handleFullyDismissed}
+      header={
+        <SheetTopBar
+          title={title}
+          leading={{ kind: 'cancel', onPress: () => sheetRef.current?.dismiss() }}
+          trailing={{
+            label: t('qa.verdict.submitLabel'),
+            onPress: () => {
+              void handleSubmit();
+            },
+            disabled: !canSubmit || isUploading,
+            loading: isPending || isUploading,
+            prominent: true,
+          }}
+        />
+      }
     >
-      <View style={styles.headerRow}>
-        <Text variant="title3" numberOfLines={2} style={styles.title}>
-          {title}
-        </Text>
-        <PressableSurface
-          onPress={() => sheetRef.current?.dismiss()}
-          feedback="opacity"
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('actions.close')}
-          style={styles.closeButton}
-        >
-          <Icon name="close" size={20} color={systemColors.secondaryLabel} />
-        </PressableSurface>
-      </View>
-
       {runningPrNumber === null ? (
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
           {t('qa.verdict.notOnPreview')}
@@ -266,18 +264,6 @@ export function QaVerdictSheet({ sheetRef }: QaVerdictSheetProps) {
       ) : null}
 
       <Button
-        title={t('qa.verdict.submitLabel')}
-        onPress={() => {
-          void handleSubmit();
-        }}
-        variant="filled"
-        size="large"
-        disabled={!canSubmit || isUploading}
-        loading={isPending || isUploading}
-        style={styles.submitButton}
-      />
-
-      <Button
         title={t('qa.verdict.leaveLabel')}
         onPress={handleLeaveWithoutFeedback}
         variant="text"
@@ -293,24 +279,9 @@ const SNAP_POINTS = ['64%', '90%'];
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
     paddingBottom: spacing[6],
     gap: spacing[4],
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-  },
-  title: {
-    flex: 1,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   input: {
     minHeight: 116,
@@ -323,8 +294,5 @@ const styles = StyleSheet.create({
   },
   helperText: {
     marginTop: -spacing[2],
-  },
-  submitButton: {
-    marginTop: spacing[1],
   },
 });
