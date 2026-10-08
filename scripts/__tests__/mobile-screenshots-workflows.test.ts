@@ -196,6 +196,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'render_mode',
       'boards',
       'fixtures',
+      'fixture_snapshot',
       'frozen_now',
       'upload',
       'publish_baseline',
@@ -613,6 +614,22 @@ describe('screenshot captures follow the native deploys', () => {
     expect(source).toContain('if [ "$EVENT_NAME" = "workflow_run" ]; then\n            gate=probe');
   });
 
+  it('allows private Android replay captures without changing automatic previews', () => {
+    const workflow = parseWorkflow(ANDROID_WORKFLOW_PATH);
+    const dispatch = workflow.on?.workflow_dispatch as {
+      inputs?: Record<string, { type?: string; default?: unknown }>;
+    };
+    expect(dispatch.inputs?.share_preview).toEqual({
+      description: 'Post captured screenshots to Discord. Disable for private fixture replay validation.',
+      type: 'boolean',
+      default: true,
+    });
+    const previewStep = workflow.jobs.android.steps?.find((step) => step.name === 'Post screenshots to Discord');
+    expect(flatten(previewStep?.if)).toBe(
+      "${{ success() && inputs.flow != 'onboarding' && inputs.fixtures != 'record' && (github.event_name != 'workflow_dispatch' || inputs.share_preview == true) }}",
+    );
+  });
+
   it('never commits screenshots from an automatic Android run', () => {
     const workflow = parseWorkflow(ANDROID_WORKFLOW_PATH);
     // COMMIT_RUN opens with the dispatch check, so on `workflow_run` the whole
@@ -650,6 +667,7 @@ describe('ios-screenshot-shard composite action', () => {
       'render-mode',
       'boards',
       'fixtures',
+      'fixture-snapshot',
       'frozen-now',
       'app-cache-key',
     ]);

@@ -36,6 +36,9 @@ inputs:
   fixtures:
     description: 'Replay committed fixtures, record a fresh set, or use live traffic.'
     default: replay
+  fixture-snapshot:
+    description: 'Replay-only public HTTPS candidate snapshot reference.'
+    default: ''
   frozen-now:
     description: 'Optional frozen clock for recording.'
     default: ''
@@ -54,6 +57,20 @@ runs:
     - name: Install Node.js dependencies
       shell: bash
       run: vp install --frozen-lockfile
+
+    - name: Verify candidate fixture snapshot
+      if: ${{ inputs.fixture-snapshot != '' }}
+      shell: bash
+      env:
+        FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture-snapshot }}
+        FIXTURES_MODE: ${{ inputs.fixtures }}
+      run: |
+        set -euo pipefail
+        if [ "$FIXTURES_MODE" != "replay" ]; then
+          echo "::error::fixture_snapshot is only valid for replay"
+          exit 1
+        fi
+        vp run mobile:screenshot-fixtures-fetch -- --reference-url "$FIXTURE_SNAPSHOT_URL"
 
     # Restore the .app ios-build produced — read-only (never save) and
     # fail-on-cache-miss so a shard can NEVER silently cold-build. ios-build

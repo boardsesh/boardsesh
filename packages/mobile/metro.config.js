@@ -13,7 +13,13 @@ const { resolveWebRuntimeModulePath } = require('./metro-web-runtime-resolution.
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
 
-const config = getSentryExpoConfig(projectRoot);
+// Browser replay runs through PostHog and feedback through Boardsesh's own
+// sheet. Avoid shipping Sentry's unused browser widgets/replay alongside them;
+// native builds retain the SDK's existing defaults and integrations.
+const config = getSentryExpoConfig(
+  projectRoot,
+  process.env.BOARDSESH_WEB === '1' ? { includeWebReplay: false, includeWebFeedback: false } : undefined,
+);
 
 config.watchFolders = [monorepoRoot];
 
@@ -125,6 +131,9 @@ const WEB_SHIM_MODULES = {
 };
 const WEB_RUNTIME_MODULES = {
   '@gorhom/bottom-sheet': path.resolve(projectRoot, 'web-runtime/node_modules/@gorhom/bottom-sheet'),
+  // Expo aliases ESM imports, but an optional CommonJS require (Sentry's
+  // deep-link integration) can otherwise pull the native renderer into web.
+  'react-native': path.resolve(projectRoot, 'web-runtime/node_modules/react-native-web'),
   'react-native-web': path.resolve(projectRoot, 'web-runtime/node_modules/react-native-web'),
 };
 const WEB_SHIMS_DIR = path.resolve(projectRoot, 'src/web-shims');

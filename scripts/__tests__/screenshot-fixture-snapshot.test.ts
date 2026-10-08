@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   decodeFixtureSnapshot,
   ensureScreenshotFixtures,
+  fetchFixtureSnapshotReference,
+  installFixtureSnapshotReference,
   snapshotHash,
   type FixtureSnapshotReference,
 } from '../lib/screenshot-fixture-snapshot';
@@ -40,6 +42,94 @@ function snapshot(
 }
 
 describe('pinned screenshot fixture snapshots', () => {
+  it('validates a candidate reference before downloading its archive through ordinary integrity checks', async () => {
+    const { bytes, reference } = snapshot();
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(reference)))
+      .mockResolvedValueOnce(new Response(new Uint8Array(bytes)));
+    const candidate = await fetchFixtureSnapshotReference('https://example.com/reference.json', request);
+    const directory = await ensureScreenshotFixtures(candidate, cacheDirectory(), request);
+    expect(readFileSync(join(directory, 'graphql/GetClimbs/abc.json'), 'utf8')).toBe('{"climbs":[]}');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    'http://example.com/reference.json',
+    'https://localhost/reference.json',
+    'https://127.0.0.1/reference.json',
+    'https://user:secret@example.com/reference.json',
+  ])('rejects a nonpublic candidate reference URL before network access: %s', async (url) => {
+    const request = vi.fn<typeof fetch>();
+    await expect(fetchFixtureSnapshotReference(url, request)).rejects.toThrow('public HTTPS');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('bounds the reference response before parsing and rejects an invalid archive pin', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(' '.repeat(16 * 1024 + 1)));
+    await expect(fetchFixtureSnapshotReference('https://example.com/reference.json', request)).rejects.toThrow(
+      '16 KiB',
+    );
+    const invalid = { ...snapshot().reference, sha256: 'fake', bytes: 0 };
+    request.mockResolvedValueOnce(new Response(JSON.stringify(invalid)));
+    await expect(fetchFixtureSnapshotReference('https://example.com/reference.json', request)).rejects.toThrow(
+      'Invalid fixture snapshot reference',
+    );
+  });
+
+  it('rejects an HTTP error and a candidate pin pointing at a private archive', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('missing', { status: 404 }));
+    await expect(fetchFixtureSnapshotReference('https://example.com/reference.json', request)).rejects.toThrow(
+      'HTTP 404',
+    );
+    request.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ...snapshot().reference, url: 'https://localhost/archive.gz' })),
+    );
+    await expect(fetchFixtureSnapshotReference('https://example.com/reference.json', request)).rejects.toThrow(
+      'public HTTPS',
+    );
+  });
+
+  it('never replaces the committed pin when a candidate archive checksum fails', async () => {
+    const { bytes, reference } = snapshot();
+    const directory = cacheDirectory();
+    const pin = join(directory, 'pinned-reference.json');
+    const previous = JSON.stringify(snapshot({ 'manifest.json': '{"old":true}' }).reference);
+    writeFileSync(pin, previous);
+    bytes[bytes.length - 1] ^= 1;
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(reference)))
+      .mockResolvedValueOnce(new Response(new Uint8Array(bytes)));
+    await expect(
+      installFixtureSnapshotReference('https://example.com/candidate.json', pin, join(directory, 'cache'), request),
+    ).rejects.toThrow('checksum');
+    expect(readFileSync(pin, 'utf8')).toBe(previous);
+  });
+
+  it('installs a verified candidate pin and preserves the old content-addressed cache', async () => {
+    const old = snapshot({ 'manifest.json': '{"old":true}' });
+    const candidate = snapshot();
+    const directory = cacheDirectory();
+    const pin = join(directory, 'pinned-reference.json');
+    const oldRequest = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Uint8Array(old.bytes)));
+    const previousCache = await ensureScreenshotFixtures(old.reference, directory, oldRequest);
+    writeFileSync(pin, JSON.stringify(old.reference));
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(candidate.reference)))
+      .mockResolvedValueOnce(new Response(new Uint8Array(candidate.bytes)));
+    const candidateCache = await installFixtureSnapshotReference(
+      'https://example.com/candidate.json',
+      pin,
+      directory,
+      request,
+    );
+    expect(JSON.parse(readFileSync(pin, 'utf8'))).toEqual(candidate.reference);
+    expect(candidateCache).not.toBe(previousCache);
+    expect(readFileSync(join(previousCache, 'manifest.json'), 'utf8')).toBe('{"old":true}');
+  });
+
   it('downloads once, verifies offline cache bytes, and repairs an altered extracted file', async () => {
     const { bytes, reference } = snapshot();
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Uint8Array(bytes)));
