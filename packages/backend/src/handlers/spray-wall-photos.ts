@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import Busboy from 'busboy';
 import sharp from 'sharp';
 import { and, eq, isNull } from 'drizzle-orm';
-import { sprayWallPhotoMaxLongSide } from '@boardsesh/spray-wall-geometry';
+import { SPRAY_WALL_PHOTO_MAX_PIXELS, sprayWallPhotoMaxLongSide } from '@boardsesh/spray-wall-geometry';
 import { SPRAY_WALL_ARCHIVED_CODE, SPRAY_WALL_ARCHIVED_MESSAGE } from '../services/spray-wall-archive';
 import * as dbSchema from '@boardsesh/db/schema';
 import { applyCorsHeaders } from './cors';
@@ -249,9 +249,17 @@ function respondJson(res: ServerResponse, status: number, body: Record<string, u
 
 type EncodedWallPhoto = { body: Buffer; width: number; height: number };
 
+/**
+ * The most pixels an uploaded photo may decode to, four times the stored cap.
+ * The app never sends more than `SPRAY_WALL_PHOTO_MAX_PIXELS`, so this only
+ * turns away crafted files: 25 MB of PNG can hold ~250 MP, which would decode
+ * to ~750 MB on a 4 GB box. sharp's own default (268 MP) is far too high here.
+ */
+export const SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS = 4 * SPRAY_WALL_PHOTO_MAX_PIXELS;
+
 /** Orient, shrink to fit `maxDimension` (never enlarge) and re-encode one stored size. */
 async function encodeWallPhoto(input: Buffer, maxDimension: number): Promise<EncodedWallPhoto> {
-  const pipeline = sharp(input)
+  const pipeline = sharp(input, { limitInputPixels: SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS })
     .rotate()
     .resize({ width: maxDimension, height: maxDimension, fit: 'inside', withoutEnlargement: true })
     .jpeg({ quality: STORED_JPEG_QUALITY });
@@ -276,6 +284,11 @@ async function normaliseWallPhoto(input: Buffer): Promise<{ base: EncodedWallPho
   // The pixel cap depends only on the shape, so the pre-rotation header size is
   // enough: a quarter turn swaps the sides but not the ratio.
   const { width, height } = await sharp(input).metadata();
+  // Refuse an oversized photo from its header, before any pixel is decoded. The
+  // caller turns the throw into the same 400 as an unreadable file.
+  if ((width ?? 0) * (height ?? 0) > SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS) {
+    throw new Error(`Spray wall photo is ${width}x${height}, over the input pixel cap`);
+  }
   const full = await encodeWallPhoto(input, sprayWallPhotoMaxLongSide(width ?? 0, height ?? 0));
   if (Math.max(full.width, full.height) <= SPRAY_WALL_PHOTO_BASE_MAX_DIMENSION) {
     // Already within the base cap, so the one encode IS the base. No full copy:

@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
+import { crc32 } from 'node:zlib';
 
 const validateTokenMock = vi.hoisted(() => vi.fn());
 const { uploadedObjects, isS3ConfiguredMock, uploadRace } = vi.hoisted(() => ({
@@ -40,6 +41,7 @@ const {
   resetSprayWallPhotoRateLimit,
   sprayWallFullPhotoKey,
   sprayWallPhotoKey,
+  SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS,
   SPRAY_WALL_PHOTO_MAX_UPLOAD_BYTES,
 } = await import('../handlers/spray-wall-photos');
 
@@ -577,6 +579,23 @@ describe('POST /api/spray-wall-photos', () => {
       width: '4946',
       height: '4946',
     });
+  });
+
+  it('refuses a photo whose header claims more pixels than the input cap, before decoding it', async () => {
+    // A small real PNG with its IHDR rewritten to 20000 x 20000 (400 MP): the
+    // header is all sharp reads before the handler refuses it, so the test never
+    // allocates the gigabyte a decode would.
+    const png = await plainPng(64, 64);
+    const ihdrDataStart = 16;
+    png.writeUInt32BE(20000, ihdrDataStart);
+    png.writeUInt32BE(20000, ihdrDataStart + 4);
+    png.writeUInt32BE(crc32(png.subarray(12, ihdrDataStart + 13)), ihdrDataStart + 13);
+    expect(20000 * 20000).toBeGreaterThan(SPRAY_WALL_PHOTO_MAX_INPUT_PIXELS);
+
+    const response = await uploadPhoto(baseUrl, { token: OWNER, wallUuid, bytes: png, mimeType: 'image/png' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'That photo could not be read. Try another one.' });
+    expect(uploadedObjects).toEqual([]);
   });
 
   it('writes no full copy when the photo already fits the base cap', async () => {
