@@ -6,6 +6,10 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 
 import {
+  DEFAULT_BUTTON_MAX_FONT_SCALE,
+  buttonLabelStyle,
+  buttonLabelWeight,
+  resolveButtonMaxFontScale,
   cappedComposeLabelSize,
   dynamicTypeSizeCap,
   buttonFillAxes,
@@ -156,5 +160,45 @@ describe('cappedComposeLabelSize', () => {
     expect(cappedComposeLabelSize(14, 2, undefined)).toBeUndefined();
     // 14sp x 2 scale would be 28; capped at 1.3 it renders 18.2.
     expect((cappedComposeLabelSize(14, 2, 1.3) ?? 0) * 2).toBeCloseTo(14 * 1.3);
+  });
+});
+
+describe('resolveButtonMaxFontScale', () => {
+  it('defaults to the 1.5x Text cap', () => {
+    expect(DEFAULT_BUTTON_MAX_FONT_SCALE).toBe(1.5);
+    expect(resolveButtonMaxFontScale(undefined)).toBe(1.5);
+  });
+
+  it("keeps a caller's own cap", () => {
+    expect(resolveButtonMaxFontScale(1.3)).toBe(1.3);
+  });
+
+  it('resolves to xxxLarge on iOS, one step above the tick bar cap', () => {
+    expect(dynamicTypeSizeCap(resolveButtonMaxFontScale(undefined))).toBe('xxxLarge');
+  });
+
+  it('holds an Android label at 1.5x once the OS scale passes it', () => {
+    // 14sp labelLarge at a 2x OS font scale: 14 * 1.5 / 2 = 10.5sp, drawn at 21sp.
+    expect(cappedComposeLabelSize(14, 2, resolveButtonMaxFontScale(undefined))).toBe(10.5);
+    expect(cappedComposeLabelSize(14, 1.4, resolveButtonMaxFontScale(undefined))).toBeUndefined();
+  });
+});
+
+describe('buttonLabelWeight', () => {
+  it('is semibold only on the filled tier', () => {
+    expect(buttonLabelWeight('filled')).toBe('semibold');
+    expect(buttonLabelWeight('outlined')).toBe('regular');
+    expect(buttonLabelWeight('tonal')).toBe('regular');
+    expect(buttonLabelWeight('text')).toBe('regular');
+  });
+});
+
+describe('buttonLabelStyle', () => {
+  it('sets every Compose label in M3 labelLarge', () => {
+    expect(buttonLabelStyle(undefined)).toEqual({ typography: 'labelLarge' });
+  });
+
+  it('keeps labelLarge when the size is capped', () => {
+    expect(buttonLabelStyle(10.5)).toEqual({ typography: 'labelLarge', fontSize: 10.5 });
   });
 });

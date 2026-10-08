@@ -41,7 +41,14 @@ import { useGlassCapability } from '../hooks/use-glass-capability';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { overlays } from '../theme/tokens';
-import { buttonFillAxes, buttonMatchContents, dynamicTypeSizeCap, makeButtonPressHandler } from './Button.logic';
+import {
+  buttonFillAxes,
+  buttonLabelWeight,
+  buttonMatchContents,
+  dynamicTypeSizeCap,
+  makeButtonPressHandler,
+  resolveButtonMaxFontScale,
+} from './Button.logic';
 import { useButtonSurface } from './Button.surface';
 import { iconMap } from './icon-map';
 import type { ButtonProps, ButtonSize } from './Button.types';
@@ -132,11 +139,13 @@ export function Button({
     styleModifier,
     buttonBorderShape('roundedRectangle', radii.button),
     controlSize(CONTROL_SIZE[size]),
-    font({ textStyle: TEXT_STYLE[size], weight: 'semibold' }),
+    font({ textStyle: TEXT_STYLE[size], weight: buttonLabelWeight(variant) }),
     frame({ minHeight, ...fillFrame }),
     disabledModifier(disabled || loading),
     accessibilityLabelModifier(accessibilityLabel ?? title),
-    ...(maxFontSizeMultiplier != null ? [dynamicTypeSize({ max: dynamicTypeSizeCap(maxFontSizeMultiplier) })] : []),
+    // Always capped: an uncapped native label outgrew the 1.5x-capped Text
+    // around it at the accessibility sizes.
+    dynamicTypeSize({ max: dynamicTypeSizeCap(resolveButtonMaxFontScale(maxFontSizeMultiplier)) }),
   ];
   if (!isDestructive) {
     if (fillTint) modifiers.push(tint(fillTint));

@@ -464,7 +464,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing[2],
   },
+  // HIG grouped-list section header: footnote semibold, sentence case.
   sectionLabel: {
+    fontWeight: '600',
     marginBottom: spacing[1],
     marginTop: spacing[2],
   },

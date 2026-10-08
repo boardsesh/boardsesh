@@ -3,8 +3,35 @@
 // "what happens on tap", and it can be unit-tested without mounting a native
 // @expo/ui tree. Mirrors SwitchRow.logic.ts.
 
+import type { TextProps as ComposeTextProps } from '@expo/ui/jetpack-compose';
 import type { ViewStyle } from 'react-native';
 import { hapticLight } from '../lib/haptics';
+import type { ButtonVariant } from './Button.types';
+
+/**
+ * How far any Button label may grow with the OS text size when the caller sets
+ * no cap: 1.5x, the same ceiling every `Text` has (`maxFontSizeMultiplier={1.5}`
+ * in Text.tsx). On iOS that resolves to the `xxxLarge` Dynamic Type size (body
+ * 23pt, 1.35x), so a button label never outgrows the copy around it. A caller's
+ * own cap (the tick bar's 1.3) still wins.
+ */
+export const DEFAULT_BUTTON_MAX_FONT_SCALE = 1.5;
+
+/** The cap a Button applies: the caller's, else {@link DEFAULT_BUTTON_MAX_FONT_SCALE}. */
+export function resolveButtonMaxFontScale(maxFontSizeMultiplier: number | undefined): number {
+  return maxFontSizeMultiplier ?? DEFAULT_BUTTON_MAX_FONT_SCALE;
+}
+
+/**
+ * The SwiftUI label weight per emphasis tier. Only the filled (prominent) tier is
+ * semibold, like a system `.borderedProminent` call to action; outlined, tonal
+ * and text buttons are regular weight, as system bordered and borderless buttons
+ * are (HIG Buttons). Semibold on every tier made a row of secondary actions read
+ * as louder than the one primary.
+ */
+export function buttonLabelWeight(variant: ButtonVariant): 'semibold' | 'regular' {
+  return variant === 'filled' ? 'semibold' : 'regular';
+}
 
 /**
  * Whether a Button's `style` asks it to fill its row's width. Only a POSITIVE
@@ -132,4 +159,12 @@ export function cappedComposeLabelSize(
 ): number | undefined {
   if (maxScale == null || fontScale <= maxScale) return undefined;
   return (defaultSize * maxScale) / fontScale;
+}
+
+/**
+ * The Compose Button label's style: M3 labelLarge (14/20, weight 500) on every
+ * tier, with the font size held at the cap when the OS scale passes it.
+ */
+export function buttonLabelStyle(cappedSize: number | undefined): NonNullable<ComposeTextProps['style']> {
+  return cappedSize != null ? { typography: 'labelLarge', fontSize: cappedSize } : { typography: 'labelLarge' };
 }

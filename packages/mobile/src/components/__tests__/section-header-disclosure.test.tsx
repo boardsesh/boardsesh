@@ -43,6 +43,7 @@ vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
     variant: 'material' as const,
     brandColors: { primary: '#6D28D9' },
+    systemColors: { secondaryLabel: '#3C3C43' },
     m3: { onSurfaceVariant: '#49454F' },
     sectionCaption: { uppercase: false, opacity: 1, letterSpacing: 0 },
   }),

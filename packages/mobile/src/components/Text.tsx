@@ -7,6 +7,13 @@ export type { TextVariant };
 type TextProps = RNTextProps & {
   variant?: TextVariant;
   color?: ColorValue;
+  /**
+   * Set for a number that changes in place (a slider readout, a counter, a
+   * score column). Tabular figures give every digit the same advance, so the
+   * value doesn't jitter sideways as it changes (HIG Typography; M3 does the
+   * same with `tnum` in data tables).
+   */
+  numeric?: boolean;
 };
 
 /**
@@ -17,7 +24,10 @@ type TextProps = RNTextProps & {
  */
 export const variantStyles = StyleSheet.create(textStyles);
 
-export function Text({ variant = 'body', color, style, ...props }: TextProps) {
+/** Tabular figures, shared so every `numeric` Text gets the same style object. */
+const tabularStyle = StyleSheet.create({ numeric: { fontVariant: ['tabular-nums'] } }).numeric;
+
+export function Text({ variant = 'body', color, numeric = false, style, ...props }: TextProps) {
   // Default to the adaptive label colour so uncoloured text is readable in
   // dark mode (RN's default text colour is a non-adaptive black). An explicit
   // `color` prop or a `style.color` still wins. `useOptionalTheme` keeps this
@@ -33,7 +43,12 @@ export function Text({ variant = 'body', color, style, ...props }: TextProps) {
     <RNText
       allowFontScaling
       maxFontSizeMultiplier={1.5}
-      style={[typeStyle, resolvedColor != null ? { color: resolvedColor } : undefined, style]}
+      style={[
+        typeStyle,
+        numeric ? tabularStyle : undefined,
+        resolvedColor != null ? { color: resolvedColor } : undefined,
+        style,
+      ]}
       {...props}
     />
   );

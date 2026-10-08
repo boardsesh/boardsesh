@@ -178,7 +178,6 @@ export function SprayScanPhoto({
           <Button
             title={retry.label}
             variant="filled"
-            size="large"
             over="surface"
             onPress={retry.onPress}
             disabled={retry.disabled}

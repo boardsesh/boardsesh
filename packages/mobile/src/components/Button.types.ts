@@ -51,7 +51,7 @@ export type ButtonProps = {
    * How far the label may grow with the OS text size, as a multiple of its
    * default size (1.3 = 130%). iOS caps the SwiftUI Dynamic Type size at the
    * largest step within it; Android scales the Compose label back to it. Unset,
-   * the label scales freely.
+   * it is 1.5x (`DEFAULT_BUTTON_MAX_FONT_SCALE`), the same cap as every `Text`.
    */
   maxFontSizeMultiplier?: number;
   /** See {@link ButtonSurface}. Per-button override of the surrounding provider. */

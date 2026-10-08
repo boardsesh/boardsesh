@@ -73,9 +73,19 @@ vi.mock('@boardsesh/board-config', () => ({
 
 // The first Button rendered in the confirmation card is the Join action.
 vi.mock('../../../src/components/Button', () => ({
-  Button: ({ onPress }: { onPress?: () => void }) => {
+  Button: ({
+    onPress,
+    title,
+    variant,
+    size,
+  }: {
+    onPress?: () => void;
+    title?: string;
+    variant?: string;
+    size?: string;
+  }) => {
     if (buttons.joinPress === null && onPress) buttons.joinPress = onPress;
-    return createElement('button');
+    return createElement('button', { 'data-variant': variant ?? 'filled', 'data-size': size ?? 'medium' }, title);
   },
 }));
 vi.mock('../../../src/components/Text', () => ({
@@ -109,7 +119,7 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
 vi.mock('../../../src/lib/board-path-to-user-board', () => ({
   resolveBoardForSession: boardResolver.resolveBoardForSession,
 }));
-vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, borderRadius: {} }));
+vi.mock('../../../src/theme/tokens', () => ({ spacing: {}, cardCorners: {} }));
 
 import JoinSessionScreen from '../[sessionId]';
 
@@ -121,6 +131,7 @@ beforeEach(() => {
   buttons.joinPress = null;
   searchParams.current = { sessionId: 'session-42' };
   preview.data.boardPath = '/kilter/1/10/1,2/40';
+  preview.data.endedAt = null;
   boardConfig.parseBoardPath.mockReturnValue({ boardName: 'kilter', layoutId: 1, angle: 40 });
   boardConfig.parseNamedBoardPath.mockReturnValue(null);
   boardResolver.resolveBoardForSession.mockResolvedValue({ uuid: 'board-1', boardType: 'kilter', layoutId: 1 });
@@ -242,5 +253,21 @@ describe('JoinSessionScreen live-session funnel', () => {
     await waitFor(() => expect(queue.joinSession).toHaveBeenCalledTimes(1));
 
     expect(analytics.track).not.toHaveBeenCalledWith('Live Session Joined', expect.anything());
+  });
+});
+
+// HIG Buttons: a dead-end screen's only way out is not a prominent call to
+// action, and "Cancel" means abandoning a task that no longer exists here.
+describe('JoinSessionScreen ended session', () => {
+  it('offers a non-prominent Done instead of a large filled Cancel', () => {
+    preview.data.endedAt = '2026-10-01T10:00:00Z';
+    const { container } = render(createElement(JoinSessionScreen));
+
+    const exit = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'common:actions.done',
+    );
+    expect(exit?.getAttribute('data-variant')).toBe('outlined');
+    expect(exit?.getAttribute('data-size')).toBe('medium');
+    expect(container.textContent).not.toContain('mobileJoin.cancel');
   });
 });
