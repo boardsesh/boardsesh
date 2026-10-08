@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // The wall-state pill's tap explainer: one line of plain language about what the
 // wall is doing, plus the actions that change it.
 //
@@ -18,9 +19,9 @@
 // host — any state change or navigation.
 
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInUp, useReducedMotion } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius, shadows } from '../../theme/tokens';
@@ -175,7 +176,7 @@ function WallStateCalloutImpl({
           decorative so assistive tech has a way out that isn't the hardware back
           button. The notice owns no scrim at all — see `presentation`. */}
       {isNotice ? null : (
-        <Pressable
+        <PressableSurface
           onPress={onDismiss}
           accessibilityRole="button"
           accessibilityLabel={t('playView.closeAria')}
@@ -195,11 +196,11 @@ function WallStateCalloutImpl({
         {isNotice ? (
           // A tap on the notice itself puts it away early — the only exit it
           // offers, since it deliberately owns no scrim.
-          <Pressable onPress={onDismiss} accessibilityRole="button" accessibilityLabel={t('playView.closeAria')}>
+          <PressableSurface onPress={onDismiss} accessibilityRole="button" accessibilityLabel={t('playView.closeAria')}>
             <Text variant="footnote" color={systemColors.label} style={styles.body}>
               {body}
             </Text>
-          </Pressable>
+          </PressableSurface>
         ) : (
           <View ref={bodyRef} accessible accessibilityRole="text">
             <Text variant="footnote" color={systemColors.label} style={styles.body}>
@@ -211,7 +212,7 @@ function WallStateCalloutImpl({
         {/* Who lit it, and how long ago — the recency the 24pt pill avatar is too
             small to print, and the profile tap the pill deliberately gave up. */}
         {state === 'onWall' && !isNotice ? (
-          <Pressable
+          <PressableSurface
             onPress={handleOpenDriverProfile}
             disabled={!driverUserId}
             accessibilityRole={driverUserId ? 'button' : undefined}
@@ -237,7 +238,7 @@ function WallStateCalloutImpl({
                 {litAgo}
               </Text>
             ) : null}
-          </Pressable>
+          </PressableSurface>
         ) : null}
 
         {/* The notice states a fact; it asks for nothing, so it offers nothing —
@@ -246,18 +247,18 @@ function WallStateCalloutImpl({
         {isNotice ? null : (
           <View style={styles.actions}>
             {onBrowseFromHere ? (
-              <Pressable onPress={onBrowseFromHere} accessibilityRole="button" style={styles.action}>
+              <PressableSurface onPress={onBrowseFromHere} accessibilityRole="button" style={styles.action}>
                 <Text variant="subheadline" color={brandColors.tint} style={styles.actionLabel}>
                   {t('playView.wallState.browseFromHere')}
                 </Text>
-              </Pressable>
+              </PressableSurface>
             ) : null}
             {onBackToLive ? (
-              <Pressable onPress={onBackToLive} accessibilityRole="button" style={styles.action}>
+              <PressableSurface onPress={onBackToLive} accessibilityRole="button" style={styles.action}>
                 <Text variant="subheadline" color={brandColors.tint} style={styles.actionLabel}>
                   {t('playView.wallState.backToLive')}
                 </Text>
-              </Pressable>
+              </PressableSurface>
             ) : null}
           </View>
         )}

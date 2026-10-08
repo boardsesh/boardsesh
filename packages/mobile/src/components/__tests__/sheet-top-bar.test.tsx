@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+// Native magnification has its own wrapper tests; keep bar-geometry assertions on the bar.
+vi.mock('../LargeContentViewer', () => ({
+  LargeContentViewer: ({ children }: { children: React.ReactNode }) => children,
+}));
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -15,6 +19,7 @@ function flatten(style: unknown): Record<string, unknown> {
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown }) => options.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children, style, testID }: ViewMockProps) =>
     createElement('div', { 'data-testid': testID, 'data-style': JSON.stringify(flatten(style)) }, children),

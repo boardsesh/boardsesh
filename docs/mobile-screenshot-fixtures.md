@@ -30,6 +30,33 @@ then commit only the updated snapshot reference. Publishing uses the dedicated
 It bundles only manifest-listed fixtures and rejects sensitive request variables
 or other climbers' unpseudonymised identity fields before upload.
 
+### Portable candidate validation
+
+The default publisher still uses the isolated dev bucket. When those `DEV_*`
+credentials are unavailable, export the identical sanitized archive without
+credentials, uploads, or a pin change:
+
+```
+vp run mobile:screenshot-fixtures-publish -- --archive /tmp/candidate.json.gz /path/to/merged-recording
+```
+
+The command prints the archive's SHA-256, compressed byte count, and file count.
+Upload that immutable archive and a JSON reference with its public HTTPS URL to
+an explicitly designated dev prerelease; keep the original snapshot intact.
+A reference has the same `version`, `url`, `sha256`, `bytes`, and `files` shape as
+`app-stores/screenshot-fixtures.json`. Never reuse a filename for different bytes.
+This path publishes sanitized fixture data, not App Store or Play Store screenshots.
+
+Both screenshot workflows accept `fixture_snapshot`, a public HTTPS URL of that
+candidate reference. Use it only with `fixtures = replay`. The runner downloads
+the bounded reference and verifies the archive's normal checksum, size, paths,
+and decoded content before installing its local pin. A failed verification leaves
+the previous pin unchanged. No source commit is needed to replay the candidate.
+Android private validation also sets `share_preview = false`; keep store upload,
+baseline publication, and `commit_to_main` disabled. Replay every required platform
+before committing the verified candidate reference. These controls change storage
+and transport only; missing queries, document drift, and capture gaps still fail.
+
 ## The two modes
 
 **record** proxies the app's traffic to an upstream (PROD by default), streams
@@ -812,6 +839,9 @@ Record through the capture workflows, or a local Android emulator, then merge th
    below takes the max of each shard's own FINALIZED `frozenNow` regardless.
 2. Dispatch **Mobile Screenshots (Android)** with `fixtures = record`. It uploads
    `screenshot-fixtures-android`.
+   Recording never posts Android screenshots to Discord. For later private replay
+   validation, dispatch Android with `share_preview = false`, and leave
+   `commit_to_main`, iOS `upload`, and `publish_baseline` disabled.
 3. Download every `screenshot-fixtures-*` artifact and unpack each into its own
    directory.
 4. Fold them into one set:

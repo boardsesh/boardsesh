@@ -1,3 +1,4 @@
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from './Text';
@@ -36,6 +37,7 @@ type ResolvedChip = { key: string; name: string; dotColor: string; emoji: string
  * actions sheet).
  */
 export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climbUuid }: { climbUuid: string }) {
+  const styles = useTypographyStyles(createStyles);
   const { enabled } = useShowPlaylistTagsPreference();
   const membership = useClimbPlaylistMemberships(climbUuid);
   const playlistsContext = usePlaylistsContextOptional();
@@ -121,40 +123,41 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climb
   );
 });
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    marginTop: spacing[1],
-    overflow: 'hidden',
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    minHeight: 20,
-    // Let a chip shrink so a long name ellipsizes rather than shoving the "+N"
-    // token off the row.
-    flexShrink: 1,
-  },
-  // The overflow counter never shrinks — it must always stay visible.
-  overflowChip: {
-    flexShrink: 0,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: borderRadius.full,
-    flexShrink: 0,
-  },
-  emoji: {
-    fontSize: 12,
-  },
-  label: {
-    fontWeight: '500',
-    flexShrink: 1,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+      marginTop: spacing[1],
+      overflow: 'hidden',
+    },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+      paddingHorizontal: spacing[2],
+      paddingVertical: 2,
+      minHeight: 20,
+      // Let a chip shrink so a long name ellipsizes rather than shoving the "+N"
+      // token off the row.
+      flexShrink: 1,
+    },
+    // The overflow counter never shrinks — it must always stay visible.
+    overflowChip: {
+      flexShrink: 0,
+    },
+    dot: {
+      width: 8,
+      height: 8,
+      borderRadius: borderRadius.full,
+      flexShrink: 0,
+    },
+    emoji: {
+      fontSize: textStyles.caption1.fontSize,
+    },
+    label: {
+      fontWeight: '500',
+      flexShrink: 1,
+    },
+  });

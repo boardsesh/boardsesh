@@ -1,10 +1,14 @@
-import { type ReactNode, useCallback, useMemo, useState } from 'react';
+import { ReadableColumn } from '../ReadableColumn';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import {
   type ColorValue,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Pressable,
+  RefreshControl,
   View,
   StyleSheet,
 } from 'react-native';
@@ -17,7 +21,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlashList } from '@shopify/flash-list';
 import { Appbar } from 'react-native-paper';
@@ -31,9 +35,9 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow } from '../ClimbListRow';
 import { ClimbListRowSkeleton } from '../ClimbListRowSkeleton';
 import { THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH } from '../climb-list-thumbnail-metrics';
-import { GlassIconButton } from '../GlassIconButton';
 import { ProgressiveBlur } from '../ProgressiveBlur';
 import { Button } from '../Button';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import { PlaylistAddToQueueRow } from './PlaylistAddToQueueRow';
 import { PlaylistEditClimbRow, type PlaylistEditRowBoard } from './PlaylistEditClimbRow';
 import { usePlaylistDrag } from './use-playlist-drag';
@@ -55,6 +59,7 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { usePullRefresh } from '../../hooks/use-pull-refresh';
 import { glassSize } from '../../theme/layout';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -67,8 +72,8 @@ const HERO_SCRIM_LOCATIONS = [0, 0.45, 1] as const;
 const GRADIENT_START = { x: 0, y: 0 } as const;
 const GRADIENT_END = { x: 1, y: 1 } as const;
 /** Nav-bar height (below the status-bar inset) for the collapsed header — tall
- *  enough to contain the floating FABs (which sit `spacing[1]` below the inset),
- *  so they're centered in the bar rather than poking out under it. */
+ *  enough to contain the header buttons, so they sit inside the bar rather than
+ *  poking out under it. */
 const NAV_BAR_HEIGHT = glassSize.standard + spacing[1] * 2;
 /** Rows of skeleton placeholder shown while the first page loads. */
 const SKELETON_ROW_COUNT = 8;
@@ -138,11 +143,16 @@ export type PlaylistDetailViewProps = {
   /** Optional CTA under the empty state (e.g. "Add climbs" on an owner's empty
    *  playlist). Rendered in BOTH variants; omit for a message-only empty state. */
   emptyAction?: PlaylistDetailEmptyAction;
-  /** Floating top-right controls (follow / pin / more) over the hero, given the
-   *  current collapse state so a control can swap to its compact icon form once
-   *  the colour header bar takes over. The back FAB on the left is always
-   *  rendered; absent here = a back-only top bar. */
+  /** Top-right controls (follow / pin / more), given the current collapse state
+   *  so a control can swap to its compact icon form once the colour header bar
+   *  takes over. On Liquid Glass they are the native header's trailing item, next
+   *  to its own back button; on Material they sit in the in-body app bar. Absent
+   *  here = a back-only bar. */
   actions?: (collapsed: boolean) => ReactNode;
+  /** Pull to refresh (HIG Refresh content controls). Refetch everything the
+   *  screen shows; the spinner stays until the returned promise settles. Omit to
+   *  turn pull-to-refresh off. */
+  onRefresh?: () => unknown;
   /** Owner edit mode: rows swap to the reorder/remove treatment, tap-to-activate
    *  is disabled, and pagination is paused (the host passes a frozen list). */
   editMode?: boolean;
@@ -166,6 +176,8 @@ export type PlaylistDetailViewProps = {
 };
 
 const noopReorder = (_climbUuid: string, _newIndex: number) => {};
+const noopRefresh = () => undefined;
+const renderNoHeaderTitle = () => null;
 const noopRemove = (_climbUuid: string) => {};
 
 type ResolvedPlaylistClimbRow =
@@ -215,7 +227,9 @@ export function PlaylistDetailView({
   headerSlot,
   onAddAllToQueue,
   isAddingAllToQueue = false,
+  onRefresh,
 }: PlaylistDetailViewProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors, variant } = useTheme();
@@ -266,7 +280,49 @@ export function PlaylistDetailView({
       if (isCollapsed !== wasCollapsed) runOnJS(setCollapsed)(isCollapsed);
     },
   );
-  const actionNode = actions?.(collapsed);
+
+  // Liquid Glass shows the NATIVE header (HIG Navigation bars): its back button
+  // keeps the long-press history menu and the edge-swipe a hand-built chevron
+  // can't give. It is transparent over the full-bleed hero, draws no title of its
+  // own (the hero, then the collapsed colour bar below, carry the name; `title`
+  // still names this screen in the back menu), and hosts the actions as its
+  // trailing item. On iOS 26 that item already sits in the bar's Liquid Glass
+  // capsule, so the region is declared `glass` and the controls inside drop
+  // their own glass instead of stacking it (HIG Materials).
+  //
+  // Material keeps its in-body app bar, so the native header stays hidden
+  // ("header XOR in-body Appbar", theme/variants/README.md).
+  const navigation = useNavigation();
+  const headerTitle = hero.name;
+  useLayoutEffect(() => {
+    if (isMaterial) {
+      navigation.setOptions({ headerShown: false, headerRight: undefined });
+      return;
+    }
+    navigation.setOptions({
+      headerShown: true,
+      headerTransparent: true,
+      headerBlurEffect: 'none',
+      title: headerTitle,
+      headerTitle: renderNoHeaderTitle,
+      // Keyed on the memoised `actions` and `collapsed`, never on a rendered node:
+      // a fresh element each render would re-set the options on every render.
+      headerRight: actions
+        ? () => <ButtonSurfaceProvider surface="glass">{actions(collapsed)}</ButtonSurfaceProvider>
+        : undefined,
+    });
+  }, [navigation, isMaterial, headerTitle, actions, collapsed]);
+
+  const pullRefresh = usePullRefresh(onRefresh ?? noopRefresh);
+  const refreshControl = onRefresh ? (
+    <RefreshControl
+      refreshing={pullRefresh.refreshing}
+      onRefresh={pullRefresh.onRefresh}
+      tintColor={brandColors.primary}
+      // Android draws the spinner over the content; start it below the app bar.
+      progressViewOffset={headerBarHeight}
+    />
+  ) : undefined;
 
   const loadNextPage = useCallback(() => {
     if (hasNextPage && !isFetchingNextPage) fetchNextPage();
@@ -355,11 +411,11 @@ export function PlaylistDetailView({
     [openClimbActions, resolvedRowsByClimbUuid],
   );
   const handleOpenPlaylist = useCallback(
-    (climb: SchemaClimb) => {
+    (climb: SchemaClimb, anchorPoint?: WindowAnchorPoint) => {
       const resolved = resolvedRowsByClimbUuid.get(climb.uuid);
       if (!resolved || resolved.kind !== 'renderable') return;
       const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
-      openAddToPlaylist(climb, { boardName, layoutId, sizeId, setIds, angle });
+      openAddToPlaylist(climb, { boardName, layoutId, sizeId, setIds, angle }, anchorPoint);
     },
     [openAddToPlaylist, resolvedRowsByClimbUuid],
   );
@@ -420,7 +476,7 @@ export function PlaylistDetailView({
   // hero text of the current variant (white on glass, label on Material).
   const renderEditDetailsCog = (color: ColorValue) =>
     editMode && onEditDetails ? (
-      <Pressable
+      <PressableSurface
         onPress={onEditDetails}
         hitSlop={8}
         accessibilityRole="button"
@@ -428,7 +484,7 @@ export function PlaylistDetailView({
         style={styles.heroCog}
       >
         <Icon name="settings" size={22} color={color} />
-      </Pressable>
+      </PressableSurface>
     ) : null;
 
   const baseColor = normalizePlaylistColor(hero.color) ?? PLAYLIST_COLORS[0];
@@ -453,7 +509,7 @@ export function PlaylistDetailView({
     />
   ) : (
     <View style={styles.stateContainer}>
-      <Icon name="playlist" size={44} color={iosSystemColors.systemGray4} />
+      <Icon name="playlist" size={44} color={systemColors.tertiaryLabel} />
       <Text variant="subheadline" style={styles.emptyText}>
         {emptyMessage}
       </Text>
@@ -493,73 +549,83 @@ export function PlaylistDetailView({
     const accent = brandColors.primary;
     return (
       <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-        <FlashList
-          data={climbs}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          extraData={editMode}
-          scrollEnabled={!isDragging}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
-          ListHeaderComponent={
-            <>
-              <View onLayout={handleHeroLayout} style={styles.materialHero}>
-                <View
-                  style={[
-                    styles.materialHeroBand,
-                    { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
-                  ]}
-                >
-                  <View style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}>
-                    {heroEmojiIcon ? (
-                      <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
-                        {heroEmojiIcon}
+        <ReadableColumn style={styles.container}>
+          <FlashList
+            data={climbs}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            extraData={editMode}
+            scrollEnabled={!isDragging}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            refreshControl={refreshControl}
+            contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+            ListHeaderComponent={
+              <>
+                <View onLayout={handleHeroLayout} style={styles.materialHero}>
+                  <View
+                    style={[
+                      styles.materialHeroBand,
+                      { paddingTop: headerBarHeight + spacing[4], backgroundColor: systemColors.secondaryBackground },
+                    ]}
+                  >
+                    <View
+                      style={[styles.materialHeroEmojiCircle, { backgroundColor: systemColors.tertiaryBackground }]}
+                    >
+                      {heroEmojiIcon ? (
+                        <Text style={styles.materialHeroEmoji} allowFontScaling={false}>
+                          {heroEmojiIcon}
+                        </Text>
+                      ) : (
+                        <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
+                      )}
+                    </View>
+                    <View style={styles.materialHeroNameRow}>
+                      <Text
+                        variant="title2"
+                        numberOfLines={2}
+                        color={systemColors.label}
+                        style={styles.materialHeroName}
+                      >
+                        {hero.name}
                       </Text>
-                    ) : (
-                      <Icon name="tag" size={36} color={systemColors.secondaryLabel} />
-                    )}
-                  </View>
-                  <View style={styles.materialHeroNameRow}>
-                    <Text variant="title2" numberOfLines={2} color={systemColors.label} style={styles.materialHeroName}>
-                      {hero.name}
+                      {renderEditDetailsCog(systemColors.label)}
+                    </View>
+                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                      {t('detail.climbCount', { count: hero.climbCount })}
                     </Text>
-                    {renderEditDetailsCog(systemColors.label)}
+                    {hero.followerLabel ? (
+                      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
+                        {hero.followerLabel}
+                      </Text>
+                    ) : null}
                   </View>
-                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
-                    {t('detail.climbCount', { count: hero.climbCount })}
-                  </Text>
-                  {hero.followerLabel ? (
-                    <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.materialHeroMeta}>
-                      {hero.followerLabel}
-                    </Text>
+                  {hero.description || hero.subtitle ? (
+                    <View style={styles.heroBelow}>
+                      {hero.description ? (
+                        <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
+                          {hero.description}
+                        </Text>
+                      ) : null}
+                      {hero.subtitle ? (
+                        <Text variant="footnote" numberOfLines={1} color={systemColors.secondaryLabel}>
+                          {hero.subtitle}
+                        </Text>
+                      ) : null}
+                    </View>
                   ) : null}
                 </View>
-                {hero.description || hero.subtitle ? (
-                  <View style={styles.heroBelow}>
-                    {hero.description ? (
-                      <Text variant="footnote" numberOfLines={3} color={systemColors.secondaryLabel}>
-                        {hero.description}
-                      </Text>
-                    ) : null}
-                    {hero.subtitle ? (
-                      <Text variant="footnote" numberOfLines={1} color={systemColors.tertiaryLabel}>
-                        {hero.subtitle}
-                      </Text>
-                    ) : null}
-                  </View>
-                ) : null}
-              </View>
-              {bannerNode}
-              {addToQueueNode}
-              {headerSlot}
-            </>
-          }
-          ListFooterComponent={listFooterComponent}
-          ListEmptyComponent={listEmptyComponent}
-        />
+                {bannerNode}
+                {addToQueueNode}
+                {headerSlot}
+              </>
+            }
+            ListFooterComponent={listFooterComponent}
+            ListEmptyComponent={listEmptyComponent}
+          />
+        </ReadableColumn>
 
         {/* Collapsing M3 top app bar — sits over the hero band; its title fades in
             as the band scrolls under it, then the band's name is hidden behind. */}
@@ -613,7 +679,7 @@ export function PlaylistDetailView({
       {/* Full-bleed colour banner running up under the (transparent) header,
           replacing the small colour square. White text + a bottom scrim keep it
           legible across every palette colour and arbitrary user hex. */}
-      {/* Clear the floating back + action FABs that sit over the banner top. */}
+      {/* Clear the native header's back + action buttons over the banner top. */}
       <View
         onLayout={handleHeroLayout}
         style={[styles.heroBanner, { paddingTop: insets.top + spacing[12] + spacing[2], backgroundColor: baseColor }]}
@@ -689,38 +755,41 @@ export function PlaylistDetailView({
           is never the bare screen background — even on the first frame before the
           list lays its full-bleed hero out behind the island. */}
       <View pointerEvents="none" style={[styles.islandFill, { height: insets.top, backgroundColor: baseColor }]} />
-      <FlashList
-        data={climbs}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        extraData={editMode}
-        scrollEnabled={!isDragging}
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
-        // The hero banner is full-bleed and runs up behind the status bar / dynamic
-        // island, owning the top inset itself (paddingTop above). Both props are
-        // needed so iOS doesn't inset the content down on the first frame (which
-        // would briefly expose the screen background behind the island).
-        contentInsetAdjustmentBehavior="never"
-        automaticallyAdjustContentInsets={false}
-        contentContainerStyle={{ paddingBottom: listPaddingBottom }}
-        ListHeaderComponent={
-          <>
-            {header}
-            {bannerNode}
-            {addToQueueNode}
-            {headerSlot}
-          </>
-        }
-        ListFooterComponent={listFooterComponent}
-        ListEmptyComponent={listEmptyComponent}
-      />
+      <ReadableColumn style={styles.container}>
+        <FlashList
+          data={climbs}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          extraData={editMode}
+          scrollEnabled={!isDragging}
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          // The hero banner is full-bleed and runs up behind the status bar / dynamic
+          // island, owning the top inset itself (paddingTop above). Both props are
+          // needed so iOS doesn't inset the content down on the first frame (which
+          // would briefly expose the screen background behind the island).
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
+          refreshControl={refreshControl}
+          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+          ListHeaderComponent={
+            <>
+              {header}
+              {bannerNode}
+              {addToQueueNode}
+              {headerSlot}
+            </>
+          }
+          ListFooterComponent={listFooterComponent}
+          ListEmptyComponent={listEmptyComponent}
+        />
+      </ReadableColumn>
 
       {/* Collapsed header bar — a progressive blur (matching the tabs' chrome)
           carrying the centered name, fading in once the hero scrolls off. Sits
-          below the floating FABs. */}
+          under the transparent native header and its buttons. */}
       <Animated.View
         pointerEvents="none"
         style={[styles.headerBar, { height: headerBarHeight, paddingTop: insets.top }, headerBarStyle]}
@@ -732,23 +801,6 @@ export function PlaylistDetailView({
           </Text>
         </View>
       </Animated.View>
-
-      {/* Floating top bar over the gradient hero — replaces the native header.
-          Back chevron on the left, optional follow/pin/more on the right. */}
-      <View pointerEvents="box-none" style={[styles.topBar, { paddingTop: insets.top + spacing[1] }]}>
-        <GlassIconButton
-          iconName="back"
-          iconColor={systemColors.label}
-          onPress={() => router.back()}
-          accessibilityLabel={tCommon('ariaLabels.back')}
-          fallbackColor={systemColors.fill}
-        />
-        {actionNode ? (
-          <View pointerEvents="box-none" style={styles.topBarActions}>
-            {actionNode}
-          </View>
-        ) : null}
-      </View>
     </View>
   );
 }
@@ -770,6 +822,7 @@ function MaterialEmptyState({
   titleColor: ColorValue;
   supportingColor: ColorValue;
 }) {
+  const styles = useTypographyStyles(createStyles);
   return (
     <View style={styles.stateContainer}>
       <View accessibilityRole="image" accessibilityLabel={title}>
@@ -810,6 +863,7 @@ function BoardMismatchBanner({
     separator: ColorValue;
   };
 }) {
+  const styles = useTypographyStyles(createStyles);
   return (
     <View
       style={[
@@ -842,6 +896,7 @@ function UnrenderablePlaylistClimbRow({
   editMode: boolean;
   onRemove: (climbUuid: string) => void;
 }) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
   const { systemColors, opacity } = useTheme();
   const subtitle = t('detail.unrenderableClimb.subtitle');
@@ -878,15 +933,15 @@ function UnrenderablePlaylistClimbRow({
           </View>
         </View>
         {editMode ? (
-          <Pressable
+          <PressableSurface
             onPress={handleRemove}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t('editClimbs.removeAria', { name: climb.name })}
             style={({ pressed }) => [styles.unrenderableRemove, pressed && styles.unrenderablePressed]}
           >
-            <Icon name="minus.circle" size={24} color={iosSystemColors.systemRed} />
-          </Pressable>
+            <Icon name="minus.circle" size={24} color={systemColors.error} />
+          </PressableSurface>
         ) : null}
       </View>
       <View style={[styles.unrenderableSeparator, { backgroundColor: systemColors.separator }]} />
@@ -903,257 +958,243 @@ function keyExtractor(item: Climb) {
 // route-level early-return skeletons share the same count (no drift from this view).
 export const SKELETON_PLACEHOLDERS = Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => `skeleton-${index}`);
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  islandFill: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  headerBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 1,
-    overflow: 'hidden',
-  },
-  headerBarRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    // Keep the centered name clear of the back / action FABs at the edges.
-    paddingHorizontal: 64,
-  },
-  headerBarTitle: {
-    fontWeight: '600',
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-  },
-  topBarActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  hero: {
-    marginBottom: spacing[2],
-  },
-  heroBanner: {
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
-    overflow: 'hidden',
-    paddingBottom: spacing[5],
-  },
-  heroBannerContent: {
-    paddingHorizontal: spacing[4],
-  },
-  heroEmoji: {
-    fontSize: 52,
-    lineHeight: 60,
-    marginBottom: spacing[2],
-  },
-  heroName: {
-    textShadowColor: 'rgba(0, 0, 0, 0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  heroNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  heroNameFlex: {
-    flexShrink: 1,
-  },
-  heroCog: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  heroBannerMeta: {
-    marginTop: 2,
-    opacity: 0.85,
-  },
-  heroBelow: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[5],
-    gap: 2,
-  },
-  heroSubtitle: {
-    opacity: 0.5,
-  },
-  heroDescription: {
-    opacity: 0.7,
-  },
-  // ── Material hero ──────────────────────────────────────────────────────────
-  materialAppbar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    elevation: 0,
-  },
-  // Wraps Appbar.Content so the title can fade in (opacity-animated) as the hero
-  // band scrolls under the bar, without animating the back / play actions.
-  materialAppbarTitle: {
-    flex: 1,
-  },
-  materialAppbarTitleText: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  materialHero: {
-    marginBottom: spacing[2],
-  },
-  materialHeroBand: {
-    alignItems: 'center',
-    paddingHorizontal: spacing[5],
-    paddingBottom: spacing[6],
-    borderBottomLeftRadius: borderRadius.xl,
-    borderBottomRightRadius: borderRadius.xl,
-  },
-  materialHeroEmojiCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing[3],
-  },
-  materialHeroEmoji: {
-    fontSize: 36,
-    lineHeight: 44,
-  },
-  materialHeroNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[2],
-  },
-  materialHeroName: {
-    textAlign: 'center',
-    flexShrink: 1,
-  },
-  materialHeroMeta: {
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  materialEmptyTitle: {
-    textAlign: 'center',
-  },
-  materialEmptySupporting: {
-    textAlign: 'center',
-  },
-  emptyActionButton: {
-    marginTop: spacing[4],
-  },
-  banner: {
-    marginHorizontal: spacing[4],
-    marginTop: spacing[2],
-    marginBottom: spacing[2],
-    padding: spacing[4],
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: spacing[3],
-  },
-  bannerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[3],
-  },
-  bannerText: {
-    flex: 1,
-    gap: 2,
-  },
-  bannerTitle: {
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  bannerButton: {
-    alignSelf: 'flex-start',
-  },
-  footer: {
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  skeletonList: {
-    paddingTop: spacing[2],
-  },
-  stateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 80,
-    paddingHorizontal: 32,
-    gap: 12,
-  },
-  emptyText: {
-    opacity: 0.5,
-    textAlign: 'center',
-  },
-  unrenderableOuter: {
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  unrenderableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: CLIMB_ROW_GUTTER,
-    paddingVertical: spacing[2],
-    gap: spacing[2],
-  },
-  unrenderableContent: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  unrenderableThumbnail: {
-    width: THUMBNAIL_WIDTH,
-    height: THUMBNAIL_HEIGHT,
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  unrenderableText: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  unrenderableTitle: {
-    fontWeight: '600',
-  },
-  unrenderableRemove: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  unrenderablePressed: {
-    opacity: 0.6,
-  },
-  unrenderableSeparator: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      minHeight: 0,
+    },
+    islandFill: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+    },
+    headerBar: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 1,
+      overflow: 'hidden',
+    },
+    headerBarRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      // Keep the centered name clear of the header's back / action buttons.
+      paddingHorizontal: 64,
+    },
+    headerBarTitle: {
+      fontWeight: '600',
+    },
+    hero: {
+      marginBottom: spacing[2],
+    },
+    heroBanner: {
+      borderBottomLeftRadius: borderRadius.xl,
+      borderBottomRightRadius: borderRadius.xl,
+      overflow: 'hidden',
+      paddingBottom: spacing[5],
+    },
+    heroBannerContent: {
+      paddingHorizontal: spacing[4],
+    },
+    heroEmoji: {
+      fontSize: textStyles.largeTitle.fontSize,
+      lineHeight: textStyles.largeTitle.lineHeight,
+      marginBottom: spacing[2],
+    },
+    heroName: {
+      textShadowColor: 'rgba(0, 0, 0, 0.35)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    heroNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+    },
+    heroNameFlex: {
+      flexShrink: 1,
+    },
+    heroCog: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    heroBannerMeta: {
+      marginTop: 2,
+      opacity: 0.85,
+    },
+    heroBelow: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[4],
+      paddingBottom: spacing[5],
+      gap: 2,
+    },
+    heroSubtitle: {
+      opacity: 0.5,
+    },
+    heroDescription: {
+      opacity: 0.7,
+    },
+    // ── Material hero ──────────────────────────────────────────────────────────
+    materialAppbar: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 2,
+      elevation: 0,
+    },
+    // Wraps Appbar.Content so the title can fade in (opacity-animated) as the hero
+    // band scrolls under the bar, without animating the back / play actions.
+    materialAppbarTitle: {
+      flex: 1,
+    },
+    materialAppbarTitleText: {
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '600',
+    },
+    materialHero: {
+      marginBottom: spacing[2],
+    },
+    materialHeroBand: {
+      alignItems: 'center',
+      paddingHorizontal: spacing[5],
+      paddingBottom: spacing[6],
+      borderBottomLeftRadius: borderRadius.xl,
+      borderBottomRightRadius: borderRadius.xl,
+    },
+    materialHeroEmojiCircle: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing[3],
+    },
+    materialHeroEmoji: {
+      fontSize: textStyles.largeTitle.fontSize,
+      lineHeight: textStyles.largeTitle.lineHeight,
+    },
+    materialHeroNameRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing[2],
+    },
+    materialHeroName: {
+      textAlign: 'center',
+      flexShrink: 1,
+    },
+    materialHeroMeta: {
+      marginTop: 2,
+      textAlign: 'center',
+    },
+    materialEmptyTitle: {
+      textAlign: 'center',
+    },
+    materialEmptySupporting: {
+      textAlign: 'center',
+    },
+    emptyActionButton: {
+      marginTop: spacing[4],
+    },
+    banner: {
+      marginHorizontal: spacing[4],
+      marginTop: spacing[2],
+      marginBottom: spacing[2],
+      padding: spacing[4],
+      borderRadius: borderRadius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      gap: spacing[3],
+    },
+    bannerRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing[3],
+    },
+    bannerText: {
+      flex: 1,
+      gap: 2,
+    },
+    bannerTitle: {
+      fontWeight: '600',
+      marginBottom: 2,
+    },
+    bannerButton: {
+      alignSelf: 'flex-start',
+    },
+    footer: {
+      paddingVertical: 20,
+      alignItems: 'center',
+    },
+    skeletonList: {
+      paddingTop: spacing[2],
+    },
+    stateContainer: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 80,
+      paddingHorizontal: 32,
+      gap: 12,
+    },
+    emptyText: {
+      opacity: 0.5,
+      textAlign: 'center',
+    },
+    unrenderableOuter: {
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    unrenderableRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: CLIMB_ROW_GUTTER,
+      paddingVertical: spacing[2],
+      gap: spacing[2],
+    },
+    unrenderableContent: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+    },
+    unrenderableThumbnail: {
+      width: THUMBNAIL_WIDTH,
+      height: THUMBNAIL_HEIGHT,
+      borderRadius: borderRadius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    unrenderableText: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    unrenderableTitle: {
+      fontWeight: '600',
+    },
+    unrenderableRemove: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    unrenderablePressed: {
+      opacity: 0.6,
+    },
+    unrenderableSeparator: {
+      height: StyleSheet.hairlineWidth,
+      marginStart: THUMBNAIL_WIDTH + CLIMB_ROW_GUTTER + spacing[3],
+    },
+  });

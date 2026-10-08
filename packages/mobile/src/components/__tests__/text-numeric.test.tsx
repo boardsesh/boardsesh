@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+const bold = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => bold.enabled }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -13,9 +27,28 @@ function flatten(style: unknown): Record<string, unknown> {
 }
 
 vi.mock('react-native', () => ({
-  Text: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
-    createElement('span', { 'data-font-variant': JSON.stringify(flatten(style).fontVariant ?? null) }, children),
-  StyleSheet: { create: <T,>(styles: T): T => styles },
+  Text: ({
+    children,
+    style,
+    maxFontSizeMultiplier,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    maxFontSizeMultiplier?: number;
+  }) =>
+    createElement(
+      'span',
+      {
+        'data-font-variant': JSON.stringify(flatten(style).fontVariant ?? null),
+        'data-weight': flatten(style).fontWeight,
+        'data-scale-cap': maxFontSizeMultiplier,
+      },
+      children,
+    ),
+  StyleSheet: {
+    create: <T,>(styles: T): T => styles,
+    flatten,
+  },
 }));
 vi.mock('../../providers/theme-provider', () => ({ useOptionalTheme: () => null }));
 
@@ -40,4 +73,21 @@ describe('Text numeric', () => {
     );
     expect(getByText('12').getAttribute('data-font-variant')).toBe('["lining-nums"]');
   });
+});
+
+it('uses full Dynamic Type by default and honors an explicit chrome cap', () => {
+  const { getByText } = render(
+    <>
+      <Text>Full</Text>
+      <Text maxFontSizeMultiplier={1}>Chrome</Text>
+    </>,
+  );
+  expect(getByText('Full').getAttribute('data-scale-cap')).toBe('0');
+  expect(getByText('Chrome').getAttribute('data-scale-cap')).toBe('1');
+});
+it('strengthens the final caller weight when Bold Text is enabled', () => {
+  bold.enabled = true;
+  const { getByText } = render(<Text style={{ fontWeight: '600' }}>Bold</Text>);
+  expect(getByText('Bold').getAttribute('data-weight')).toBe('700');
+  bold.enabled = false;
 });

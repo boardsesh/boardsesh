@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View, type ColorValue } from 'react-native';
+import { ScrollView, StyleSheet, View, type ColorValue } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ClientError } from 'graphql-request';
@@ -31,6 +33,7 @@ function EmphasizedText({
   variant?: TextVariant;
   color?: ColorValue;
 }) {
+  const styles = useTypographyStyles(createStyles);
   const segments = text.split(/<strong>(.*?)<\/strong>/g);
   return (
     <Text variant={variant} color={color}>
@@ -48,6 +51,7 @@ function EmphasizedText({
 }
 
 export function DeleteAccountScreen() {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('settings');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
@@ -186,44 +190,48 @@ export function DeleteAccountScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    paddingTop: spacing[4],
-    paddingBottom: spacing[8],
-  },
-  card: {
-    overflow: 'hidden',
-    borderRadius: borderRadius.lg,
-    marginHorizontal: spacing[4],
-    padding: spacing[4],
-  },
-  section: {
-    gap: spacing[3],
-    marginTop: spacing[5],
-  },
-  checking: {
-    marginHorizontal: spacing[4],
-    marginTop: spacing[3],
-  },
-  confirmBlock: {
-    marginHorizontal: spacing[4],
-    marginTop: spacing[5],
-    gap: spacing[2],
-  },
-  input: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 16,
-  },
-  actions: {
-    marginHorizontal: spacing[4],
-    marginTop: spacing[6],
-    gap: spacing[2],
-  },
-  bold: {
-    fontWeight: '700',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      width: '100%',
+      maxWidth: 672,
+      alignSelf: 'center',
+      flexGrow: 1,
+      paddingTop: spacing[4],
+      paddingBottom: spacing[8],
+    },
+    card: {
+      overflow: 'hidden',
+      borderRadius: borderRadius.lg,
+      marginHorizontal: spacing[4],
+      padding: spacing[4],
+    },
+    section: {
+      gap: spacing[3],
+      marginTop: spacing[5],
+    },
+    checking: {
+      marginHorizontal: spacing[4],
+      marginTop: spacing[3],
+    },
+    confirmBlock: {
+      marginHorizontal: spacing[4],
+      marginTop: spacing[5],
+      gap: spacing[2],
+    },
+    input: {
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      borderRadius: borderRadius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      fontSize: textStyles.callout.fontSize,
+    },
+    actions: {
+      marginHorizontal: spacing[4],
+      marginTop: spacing[6],
+      gap: spacing[2],
+    },
+    bold: {
+      fontWeight: '700',
+    },
+  });

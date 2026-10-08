@@ -1,6 +1,9 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
 import {
@@ -47,6 +50,7 @@ type ClaimGymSheetProps = {
  * console, mirroring MyGymsScreen's kiosk hand-off and the web claim dialog.
  */
 export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const requestClaim = useRequestGymClaim();
@@ -170,7 +174,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   return (
     <ModalSheet
       ref={sheetRef}
-      snapPoints={['58%', '88%']}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       scrollable
       contentContainerStyle={styles.content}
       onFullyDismissed={handleFullyDismissed}
@@ -274,43 +278,44 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[6],
-    gap: spacing[3],
-  },
-  description: {
-    marginTop: -spacing[1],
-  },
-  fieldLabel: {
-    textTransform: 'uppercase',
-  },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  multiline: {
-    minHeight: 96,
-    maxHeight: 200,
-  },
-  errorText: {
-    marginTop: -spacing[1],
-  },
-  protections: {
-    gap: spacing[2],
-    marginTop: spacing[1],
-  },
-  confirmation: {
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingVertical: spacing[6],
-  },
-  confirmationTitle: {
-    textAlign: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    content: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[4],
+      paddingBottom: spacing[6],
+      gap: spacing[3],
+    },
+    description: {
+      marginTop: -spacing[1],
+    },
+    fieldLabel: {
+      textTransform: 'uppercase',
+    },
+    input: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    multiline: {
+      minHeight: 96,
+      maxHeight: 200,
+    },
+    errorText: {
+      marginTop: -spacing[1],
+    },
+    protections: {
+      gap: spacing[2],
+      marginTop: spacing[1],
+    },
+    confirmation: {
+      alignItems: 'center',
+      gap: spacing[3],
+      paddingVertical: spacing[6],
+    },
+    confirmationTitle: {
+      textAlign: 'center',
+    },
+  });

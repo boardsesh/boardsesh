@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // The explainer is the ungated way out of a browse latch — it sits in the header,
 // outside the region the switch-board overlay scrims — so the assertions here are
 // about which actions it offers in which state, and that it can always be closed.
@@ -33,7 +46,12 @@ vi.mock('react-native', () => ({
   ),
   Pressable: ({ children, onPress, disabled, accessibilityLabel }: PressMockProps) =>
     createElement('button', { onClick: onPress, disabled, 'data-label': accessibilityLabel ?? '' }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+    absoluteFill: {},
+  },
   BackHandler: {
     addEventListener: (_event: string, handler: () => boolean) => {
       backHandler.handler = handler;
@@ -94,7 +112,7 @@ vi.mock('react-native-reanimated', () => {
 vi.mock('../../../theme/animations', () => ({ springs: { gentle: { damping: 15, stiffness: 150, mass: 1 } } }));
 vi.mock('../../../theme/motion-config', () => ({ timingFor: (config: { duration: number }) => config }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: routerPush }) }));
+vi.mock('expo-router', () => ({ router: { push: routerPush }, useRouter: () => ({ push: routerPush }) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../Text', () => ({
@@ -115,6 +133,7 @@ const driverState = vi.hoisted(() => ({
 vi.mock('../use-wall-driver', () => ({ useWallDriver: () => driverState.value }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: 'liquidGlass',
     systemColors: { elevatedSurface: '#FFF', separator: '#CCC', label: '#111', secondaryLabel: '#666' },
@@ -126,6 +145,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { lg: 12 },
   shadows: { md: { shadowRadius: 4 } },

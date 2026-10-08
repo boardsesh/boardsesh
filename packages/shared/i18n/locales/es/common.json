@@ -80,7 +80,8 @@
       "finishTesting": "Terminar de probar #{{prNumber}}",
       "testPlan": "Plan de pruebas #{{prNumber}}",
       "badge": "QA"
-    }
+    },
+    "accountTitle": "Cuenta"
   },
   "qa": {
     "shared": {
@@ -459,6 +460,9 @@
             "title": "Tu teléfono está en escala de grises",
             "body": "Los glifos de rol ponen una forma en cada presa encendida, para que inicio, mano, final y pie se distingan sin color. Los LED de tu plafón no cambian.",
             "apply": "Activar glifos de rol"
+          },
+          "differentiateWithoutColor": {
+            "title": "«Diferenciar sin color» está activado"
           },
           "dismiss": "Ahora no",
           "dismissAccessibility": "Descartar esta sugerencia"
@@ -951,5 +955,16 @@
       "explore": "Explora",
       "smallPrint": "Letra pequeña"
     }
+  },
+  "unsavedChanges": {
+    "title": "¿Descartar los cambios?",
+    "message": "Tus cambios no se guardarán.",
+    "discard": "Descartar cambios",
+    "keepEditing": "Seguir editando"
+  },
+  "undoDelete": {
+    "removed": "Registro eliminado",
+    "undo": "Deshacer",
+    "cancelled": "Eliminación cancelada. Tu registro se ha conservado."
   }
 }

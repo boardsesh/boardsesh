@@ -6,7 +6,6 @@ import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { SwitchRow } from '../SwitchRow';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { OUTLINE_EDITOR_COLORS } from './OutlineSvgLayer';
 
@@ -144,7 +143,7 @@ export const EditToolbar = React.memo(function EditToolbar({
       </Text>
 
       {errorText ? (
-        <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.status}>
+        <Text variant="footnote" color={systemColors.error} style={styles.status}>
           {errorText}
         </Text>
       ) : null}
@@ -191,7 +190,7 @@ export const EditToolbar = React.memo(function EditToolbar({
       </View>
 
       {revertNote ? (
-        <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.status}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.status}>
           {revertNote}
         </Text>
       ) : null}

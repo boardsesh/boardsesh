@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../NativeMarkerSlider', () => ({ NativeMarkerSlider: () => null }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The Classic-gating guard for the Board look "Accessibility" leaf.
 //
@@ -65,6 +79,12 @@ const effectiveRenderState = vi.hoisted(() => ({
 
 const holdColorOverridesState = vi.hoisted(() => ({
   overrides: {},
+  markerOverrides: { colors: {}, shapes: {}, brushThickness: 1, shapeSize: 1 } as {
+    colors: Record<string, string>;
+    shapes: Record<string, string>;
+    brushThickness: number;
+    shapeSize: number;
+  },
   shapes: {},
   brushThickness: 1,
   shapeSize: 1,
@@ -119,18 +139,24 @@ vi.mock('react-native', () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
   PanResponder: { create: () => ({ panHandlers: {} }) },
   // Something in the render tree reaches `theme/ios-colors.ts`, which reads
   // `Platform.OS` at module top level (outside any component body) — needed
   // even though nothing in this suite exercises a platform branch directly.
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }) }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       accent: '#6D28D9',
@@ -383,8 +409,19 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
     fireEvent.click(getByText('mobile.settings.accessibility.roles.starting').closest('button')!);
     fireEvent.click(getByText('mobile.settings.accessibility.save'));
 
-    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalled();
+    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalledWith('STARTING', null, undefined);
     expect(customHoldColors.remember).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a shape selection even when it matches the displayed default', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookAccessibilityScreen />);
+
+    fireEvent.click(getByText('mobile.settings.accessibility.roles.starting').closest('button')!);
+    fireEvent.click(getByText('mobile.settings.accessibility.shapes.circle').closest('button')!);
+    fireEvent.click(getByText('mobile.settings.accessibility.save'));
+
+    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalledWith('STARTING', null, 'circle');
   });
 
   it('does not mirror a palette, which would destroy what Custom gives back', () => {
@@ -400,7 +437,10 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
   });
 
   it('forgets them when the climber resets the hold markers', () => {
-    holdColorOverridesState.renderSignature = 'starting-00ff00';
+    holdColorOverridesState.markerOverrides = {
+      ...holdColorOverridesState.markerOverrides,
+      colors: { STARTING: '#00ff00' },
+    };
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { getByText } = render(<BoardLookAccessibilityScreen />);
 
@@ -408,6 +448,6 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
 
     expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
     expect(customHoldColors.clear).toHaveBeenCalledTimes(1);
-    holdColorOverridesState.renderSignature = 'default';
+    holdColorOverridesState.markerOverrides = { ...holdColorOverridesState.markerOverrides, colors: {} };
   });
 });

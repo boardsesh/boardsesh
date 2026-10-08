@@ -16,6 +16,9 @@ type PanHandlers = {
 const pans = vi.hoisted(() => ({ built: [] as PanHandlers[] }));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  PlatformColor: (name: string) => name,
+  DynamicColorIOS: (pair: { light: string }) => pair.light,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
 }));
@@ -23,10 +26,9 @@ vi.mock('expo-image', () => ({ Image: () => createElement('img') }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-svg', () => ({
   default: ({ children }: { children?: ReactNode }) => createElement('svg', null, children),
-  Path: () => createElement('path'),
+  Path: ({ stroke }: { stroke?: string }) => createElement('path', { 'data-stroke': stroke }),
 }));
 vi.mock('../../../theme/tokens', () => ({ borderRadius: { lg: 12 } }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemBlue: '#007AFF', systemRed: '#FF3B30' } }));
 
 vi.mock('react-native-reanimated', async () => {
   const { useRef } = await import('react');
@@ -60,7 +62,7 @@ vi.mock('react-native-gesture-handler', () => ({
   },
 }));
 
-import { SprayCornerMarker, type SprayCornerMarkerProps } from '../SprayCornerMarker';
+import { SPRAY_GUIDE_COLORS, SprayCornerMarker, type SprayCornerMarkerProps } from '../SprayCornerMarker';
 
 /** A portrait photo in a box that limits it by height: scale 420 / 2048. */
 const PHOTO = { uri: 'file:///wall.jpg', width: 1536, height: 2048 };
@@ -75,6 +77,17 @@ afterEach(() => {
 });
 
 describe('SprayCornerMarker', () => {
+  it('draws photo guides in scheme-independent light tints over a dark halo', () => {
+    const { container, rerender } = render(createElement(SprayCornerMarker, props()));
+    const strokes = () =>
+      Array.from(container.querySelectorAll('path')).map((path) => path.getAttribute('data-stroke'));
+    expect(SPRAY_GUIDE_COLORS.valid).toBe('#A78BFA');
+    expect(SPRAY_GUIDE_COLORS.invalid).toBe('#F87171');
+    expect(strokes()).toEqual([SPRAY_GUIDE_COLORS.halo, SPRAY_GUIDE_COLORS.valid]);
+    rerender(createElement(SprayCornerMarker, props({ invalid: true })));
+    expect(strokes()).toEqual([SPRAY_GUIDE_COLORS.halo, SPRAY_GUIDE_COLORS.invalid]);
+  });
+
   it('builds no gestures until it has a box to fit the photo in', () => {
     render(createElement(SprayCornerMarker, props({ maxWidth: 0, maxHeight: 0 })));
     expect(pans.built).toHaveLength(0);

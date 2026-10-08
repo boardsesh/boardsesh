@@ -1,12 +1,8 @@
+import { ReadableColumn } from '../ReadableColumn';
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from 'react-native';
+import { RefreshControl, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
@@ -49,6 +45,7 @@ type SocialTabProps = {
 const EMPTY_PEOPLE: SocialPerson[] = [];
 
 export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop }: SocialTabProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
@@ -200,7 +197,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
   }
 
   return (
-    <View style={styles.flex}>
+    <ReadableColumn style={styles.flex}>
       <FlashList
         ref={listRef}
         data={showInitialSpinner || showSearchHint || showError || showOffline ? EMPTY_PEOPLE : people}
@@ -208,7 +205,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
         keyExtractor={(person) => person.id}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
@@ -240,7 +237,7 @@ export function SocialTab({ userId, onScroll, topInset = 0, registerScrollToTop 
           ) : null
         }
       />
-    </View>
+    </ReadableColumn>
   );
 }
 
@@ -261,7 +258,7 @@ function SocialStatCard({
   const color = active ? brandColors.primary : systemColors.secondaryLabel;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={`${value} ${label}`}
@@ -288,7 +285,7 @@ function SocialStatCard({
       <Text variant="footnote" color={systemColors.secondaryLabel}>
         {label}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -309,7 +306,7 @@ function SocialEmptyState({ mode }: { mode: Exclude<SocialMode, 'search'> }) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, minHeight: 0 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   summaryRow: {
     flexDirection: 'row',

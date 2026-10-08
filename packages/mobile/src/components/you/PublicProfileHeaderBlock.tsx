@@ -1,6 +1,7 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { StyleSheet, View } from 'react-native';
+import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
 import { isInstagramUrl } from '@boardsesh/shared-schema';
@@ -55,7 +56,7 @@ export function PublicProfileHeaderBlock({ profile, instagramUrl, currentUserId 
             {displayName}
           </Text>
           <View style={styles.countsRow}>
-            <Pressable
+            <PressableSurface
               onPress={() => openConnections('followers')}
               accessibilityRole="button"
               hitSlop={8}
@@ -64,11 +65,11 @@ export function PublicProfileHeaderBlock({ profile, instagramUrl, currentUserId 
               <Text variant="subheadline" color={systemColors.secondaryLabel}>
                 {t('mobile.social.followerCount', { count: profile.followerCount })}
               </Text>
-            </Pressable>
+            </PressableSurface>
             <Text variant="subheadline" color={systemColors.tertiaryLabel} style={styles.dot}>
               ·
             </Text>
-            <Pressable
+            <PressableSurface
               onPress={() => openConnections('following')}
               accessibilityRole="button"
               hitSlop={8}
@@ -77,7 +78,7 @@ export function PublicProfileHeaderBlock({ profile, instagramUrl, currentUserId 
               <Text variant="subheadline" color={systemColors.secondaryLabel}>
                 {t('mobile.social.followingCount', { count: profile.followingCount })}
               </Text>
-            </Pressable>
+            </PressableSurface>
           </View>
           {instagramUrl ? <InstagramLink url={instagramUrl} /> : null}
         </View>
@@ -146,7 +147,7 @@ function InstagramLink({ url }: { url: string }) {
   }, [showToast, t, url]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handleOpen}
       accessibilityRole="link"
       accessibilityLabel={t('mobile.social.instagramLink')}
@@ -157,16 +158,19 @@ function InstagramLink({ url }: { url: string }) {
         pressed && styles.pressed,
       ]}
     >
-      <Icon name="instagram" size={15} color={systemColors.secondaryLabel} />
+      <Icon maxFontSizeMultiplier={1} name="instagram" size={15} color={systemColors.secondaryLabel} />
       <Text variant="footnote" color={systemColors.secondaryLabel}>
         {t('mobile.social.instagramLink')}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     paddingBottom: spacing[3],

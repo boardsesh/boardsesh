@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -6,7 +19,10 @@ import { createElement, type ReactNode } from 'react';
 const hapticSelectionMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scrollview': 'true' }, children),
   Pressable: ({
     children,
@@ -25,8 +41,14 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', { 'data-icon': 'close' }) }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: hapticSelectionMock }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#888' } }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: { separator: '#333' } }) }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
+}));
+vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
+  useTheme: () => ({ systemColors: { separator: '#333' } }),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: { filter?: string }) => (opts?.filter ? `${key}:${opts.filter}` : key),

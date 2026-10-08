@@ -47,6 +47,18 @@ const materialTabIcon =
     <MaterialCommunityIcons name={focused ? active : inactive} color={color} size={size} />
   );
 
+// HIG Tab bars: a selected tab shows the filled variant of its SF Symbol, an
+// unselected one the outline. Climbs keeps the plain magnifying glass: it is the
+// search-role tab and the symbol has no fill variant. The Android JS bar fills
+// its Material icons on focus already (`materialTabIcon`).
+const TAB_SF_SYMBOLS = {
+  home: { default: 'house', selected: 'house.fill' },
+  climbs: 'magnifyingglass',
+  record: { default: 'record.circle', selected: 'record.circle.fill' },
+  discover: { default: 'bookmark', selected: 'bookmark.fill' },
+  profile: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
+} as const;
+
 // The iPad shell hides the Tabs navigator's own bar (the glass sidebar carries
 // navigation), while the navigator still owns routing + per-tab state.
 const renderHiddenTabBar = () => null;
@@ -261,25 +273,10 @@ export default function TabLayout() {
     />,
   ];
 
-  // Large-screen adaptive shell. ONE JS `Tabs` navigator is mounted across the
-  // regular↔compact boundary, so resizing an iPad window across the breakpoint (a
-  // Split View drag, a Stage Manager resize) swaps only the CHROME — the glass
-  // sidebar + content panes at regular width, the Material tab bar in a narrow
-  // split — and keeps each tab's scroll offset and nested-stack depth instead of
-  // remounting the navigator. Web follows this path with Material chrome. The
-  // navigator still owns routing; at regular width
-  // its bar is hidden and the sidebar drives it through the global router. iPad
-  // never uses NativeTabs: swapping navigator *types* on the boundary cross would
-  // remount, and a single NativeTabs across both widths cannot work either. Its
-  // navigator remounts whenever a trigger's `hidden` flag changes, a hidden tab
-  // cannot be navigated to, and the iPad-only "On the Wall" tab would have to
-  // be visible beside the sidebar yet hidden in a narrow split, where a sixth
-  // native tab spills into UIKit's More list. The native `sidebarAdaptable`
-  // sidebar has the same tab set, cannot host the live wall cell, and does not
-  // report its width or collapsed state to JS, which the pane budgets below need.
-  // NativeTabs stays the iPhone path below. The `content` View carries a stable
-  // key so the navigator survives the chrome swap.
-  if (deviceLayout.isTablet) {
+  // Material tablets retain the JS rail and pane shell at every width.
+  // Native iPad instead keeps one UIKit adaptive sidebar navigator below;
+  // NativeTabletContent owns panes inside each measured native tab host.
+  if (deviceLayout.isTablet && !nativeTabBar) {
     const isRegular = deviceLayout.widthClass === 'regular';
     const tabsNavigator = (
       <Tabs
@@ -349,6 +346,7 @@ export default function TabLayout() {
     // iOS 26 UIKit feature (react-native-screens logs a warning for any other
     // value below 26), so the iOS 18 bar keeps the system default.
     <NativeTabs
+      sidebarAdaptable={deviceLayout.isPad}
       minimizeBehavior={liquidGlassTabBar ? 'onScrollDown' : undefined}
       unstable_nativeProps={accessoryNativeProps}
       iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
@@ -378,22 +376,26 @@ export default function TabLayout() {
         </NativeTabs.BottomAccessory>
       ) : null}
 
+      {/* A hidden trigger still registers its route. Declare Wall exactly once,
+          keeping it first in the iPad sidebar and off the iPhone tab bar. */}
+      <NativeTabs.Trigger name="wall" hidden={!deviceLayout.isPad}>
+        <NativeTabs.Trigger.Icon sf={{ default: 'rectangle.portrait', selected: 'rectangle.portrait.fill' }} />
+        <NativeTabs.Trigger.Label>{t('mobile.nav.wall')}</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="home">
-        <NativeTabs.Trigger.Icon sf="house" md="home" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.home} md="home" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.home')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
-      {/* The search role makes Climbs the separated magnifier on the iOS 26 bar,
-          where the climbs screen hosts its search field in the tab bar. The
-          iOS 18 bar has no search slot, so Climbs stays an ordinary labelled tab
-          and the screen keeps its own search field. */}
+      {/* Only the iOS 26 bar has a separated search slot. */}
       <NativeTabs.Trigger name="climbs" role={liquidGlassTabBar ? 'search' : undefined}>
-        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="record">
-        <NativeTabs.Trigger.Icon sf="record.circle" md="radio_button_checked" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.record} md="radio_button_checked" />
         <NativeTabs.Trigger.Label>{tSession('mobile.session.recordTab')}</NativeTabs.Trigger.Label>
         {showRecordBadge ? (
           <NativeTabs.Trigger.Badge selectedBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}>
@@ -402,18 +404,13 @@ export default function TabLayout() {
         ) : null}
       </NativeTabs.Trigger>
 
-      {/* /wall is a (tabs) route (the iPad sidebar routes to it), so it must be
-          declared to NativeTabs — but `hidden` keeps it off the iPhone glass bar,
-          where a 6th tab would spill into "More" and clash with the search slot. */}
-      <NativeTabs.Trigger name="wall" hidden />
-
       <NativeTabs.Trigger name="discover">
-        <NativeTabs.Trigger.Icon sf="bookmark" md="bookmarks" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.discover} md="bookmarks" />
         <NativeTabs.Trigger.Label>{tPlaylists('bottomTabBar.discover')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Icon sf="person.crop.circle" md="account_circle" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.profile} md="account_circle" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.profile')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>

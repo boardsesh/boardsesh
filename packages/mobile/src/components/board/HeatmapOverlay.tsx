@@ -224,7 +224,7 @@ const HeatmapDots = memo(function HeatmapDots(props: HeatmapDotsProps) {
               top: `${geometry.topPct}%`,
               width: geometry.ringDiameter,
               height: geometry.ringDiameter,
-              marginLeft: -geometry.ringDiameter / 2,
+              marginStart: -geometry.ringDiameter / 2,
               marginTop: -geometry.ringDiameter / 2,
               borderRadius: geometry.ringDiameter / 2,
               backgroundColor: color,

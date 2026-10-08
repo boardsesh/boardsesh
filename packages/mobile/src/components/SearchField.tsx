@@ -1,7 +1,9 @@
+import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 import { forwardRef, type ComponentType } from 'react';
-import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { StyleSheet, View, type TextInputProps, type TextInput as NativeTextInput } from 'react-native';
 import { Icon } from './Icon';
-import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 
@@ -30,10 +32,11 @@ type SearchFieldProps = {
  * Not `SearchHeader` — that one is the climb list's Liquid Glass capsule and owns
  * focus choreography and recent-search behaviour that a simple filter does not want.
  */
-export const SearchField = forwardRef<TextInput, SearchFieldProps>(function SearchField(
+export const SearchField = forwardRef<NativeTextInput, SearchFieldProps>(function SearchField(
   { value, onChangeText, placeholder, clearAccessibilityLabel, inputComponent, autoFocus, onSubmitEditing },
   ref,
 ) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   // Cast so `ref` + `autoFocus` type-check: the default TextInput and the
   // BottomSheetTextInput callers both forward a TextInput instance at runtime.
@@ -49,7 +52,7 @@ export const SearchField = forwardRef<TextInput, SearchFieldProps>(function Sear
         onChangeText={onChangeText}
         onSubmitEditing={onSubmitEditing}
         placeholder={placeholder}
-        placeholderTextColor={iosSystemColors.systemGray}
+        placeholderTextColor={systemColors.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
@@ -57,7 +60,7 @@ export const SearchField = forwardRef<TextInput, SearchFieldProps>(function Sear
         style={[styles.searchInput, { color: systemColors.label }]}
       />
       {value.length > 0 ? (
-        <Pressable
+        <PressableSurface
           onPress={() => onChangeText('')}
           hitSlop={8}
           accessibilityRole="button"
@@ -65,31 +68,32 @@ export const SearchField = forwardRef<TextInput, SearchFieldProps>(function Sear
           style={styles.clearButton}
         >
           <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
 });
 
-const styles = StyleSheet.create({
-  searchField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    minHeight: 42,
-    borderRadius: 10,
-    paddingHorizontal: spacing[3],
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 0,
-  },
-  clearButton: {
-    minWidth: 44,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: -spacing[3],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    searchField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      minHeight: 42,
+      borderRadius: 10,
+      paddingHorizontal: spacing[3],
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: textStyles.body.fontSize,
+      paddingVertical: 0,
+    },
+    clearButton: {
+      minWidth: 44,
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginEnd: -spacing[3],
+    },
+  });

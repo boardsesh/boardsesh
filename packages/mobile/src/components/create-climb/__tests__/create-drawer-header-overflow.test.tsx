@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { fireEvent, render } from '@testing-library/react';
+import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 
 // The header owns the ⋯ menu, and the menu reports a POSITION. The row set
 // changes with editor state — Woods drops the route rows, a one-frame route has
@@ -12,11 +13,15 @@ import { createElement, type ReactNode } from 'react';
 type ViewMockProps = { children?: ReactNode; testID?: string };
 vi.mock('react-native', () => ({
   View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
-  Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
-    createElement('button', { onClick: onPress }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  TextInput: forwardRef(function TextInputMock(_props: unknown, ref) {
+    useImperativeHandle(ref, () => ({ focus: () => undefined }));
+    return createElement('input');
+  }),
+  StyleSheet: {
+    create: (styles: Record<string, unknown>) => styles,
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+  },
 }));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({ BottomSheetTextInput: () => createElement('input') }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, number | string>) => (params ? `${key}:${JSON.stringify(params)}` : key),
@@ -53,6 +58,25 @@ vi.mock('../../AppMenu', () => ({
 }));
 // The trailing Save, drawn as a plain button carrying what the header handed it.
 vi.mock('../../SheetTopBar', () => ({
+  // The X, drawn as a plain button carrying what the header handed it.
+  SheetTopBarLeadingButton: ({
+    kind,
+    onPress,
+    accessibilityLabel,
+    accessibilityHint,
+  }: {
+    kind: string;
+    onPress: () => void;
+    accessibilityLabel?: string;
+    accessibilityHint?: string;
+  }) =>
+    createElement('button', {
+      'data-node': 'close',
+      'data-kind': kind,
+      'data-label': accessibilityLabel,
+      'data-hint': accessibilityHint,
+      onClick: onPress,
+    }),
   SheetTopBarTrailingButton: ({
     label,
     accessibilityLabel,
@@ -85,9 +109,11 @@ vi.mock('../../SheetTopBar', () => ({
     }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' } }),
+  useTheme: () => ({
+    textStyles: { body: { fontSize: 17, lineHeight: 22, fontWeight: '400' } },
+    systemColors: { label: '#000', secondaryLabel: '#666', fill: '#EEE' },
+  }),
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#8E8E93' } }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 } }));
 
 import { CreateDrawerHeader } from '../CreateDrawerHeader';
@@ -99,6 +125,7 @@ function renderHeader(
 ) {
   const onSelectOverflowAction = vi.fn();
   const onSave = vi.fn();
+  const onClose = vi.fn();
   const { container } = render(
     createElement(CreateDrawerHeader, {
       name: 'Test climb',
@@ -106,7 +133,7 @@ function renderHeader(
       startingCount: 0,
       finishCount: 0,
       focusSignal: 0,
-      onClose: vi.fn(),
+      onClose,
       overflow: { supportsMultiFrame: true, routeMode: false, frameCount: 1, ...overflow },
       onSelectOverflowAction,
       saveState,
@@ -120,7 +147,8 @@ function renderHeader(
     (Array.from(container.querySelectorAll('[data-row]')).find((node) => node.getAttribute('data-row') === label) ??
       null) as HTMLButtonElement | null;
   const save = container.querySelector('[data-node="save"]') as HTMLButtonElement;
-  return { container, onSelectOverflowAction, onSave, row, save };
+  const close = container.querySelector('[data-node="close"]') as HTMLButtonElement;
+  return { container, onSelectOverflowAction, onSave, onClose, row, save, close };
 }
 
 describe('CreateDrawerHeader overflow menu', () => {
@@ -182,11 +210,27 @@ describe('CreateDrawerHeader contents', () => {
     const parts = Array.from(bar.children).map((child) => {
       if (child.getAttribute('data-node')) return child.getAttribute('data-node');
       if (child.querySelector('input')) return 'name';
-      if (child.querySelector('[data-icon="chevron.down"]')) return 'close';
       return child.tagName;
     });
     expect(parts).toEqual(['close', 'name', 'overflow', 'save']);
     expect(container.querySelector('[data-ble]')).toBeNull();
+  });
+});
+
+// A modal task's way out is an X on the leading edge (HIG): leaving loses
+// nothing, because the draft stays on this phone. There is no minimise any more.
+describe('CreateDrawerHeader X', () => {
+  it('is the top bar close X, not a collapse chevron, and says the draft is kept', () => {
+    const { close } = renderHeader();
+    expect(close.getAttribute('data-kind')).toBe('close');
+    expect(close.getAttribute('data-label')).toBe('mobile.create.actions.close');
+    expect(close.getAttribute('data-hint')).toBe('mobile.create.actions.closeHint');
+  });
+
+  it('leaves through onClose', () => {
+    const { close, onClose } = renderHeader();
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

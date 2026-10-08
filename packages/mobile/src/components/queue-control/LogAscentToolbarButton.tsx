@@ -37,7 +37,7 @@ export function LogAscentToolbarButton({
         accessibilityState={{ disabled }}
         style={[styles.action, { width: size, height: size }, disabled ? styles.disabled : null]}
       >
-        <Icon name="check.small" size={iconSize} color={iconColor} />
+        <Icon maxFontSizeMultiplier={1} name="check.small" size={iconSize} color={iconColor} />
       </PressableSurface>
     </Animated.View>
   );

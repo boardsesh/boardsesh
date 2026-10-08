@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { ONBOARDING_LINK_EMPTY_DISMISSED_KEY } from '@boardsesh/key-value-storage';
 import { boardTypeLabel } from '@boardsesh/board-constants';

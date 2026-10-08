@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { act, render } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -43,7 +56,11 @@ vi.mock('react-native', () => ({
     },
     select: (options: Record<string, unknown>) => options[platform.os] ?? options.default,
   },
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 vi.mock('react-native-gesture-handler', () => ({
@@ -78,6 +95,7 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { background: '#fff', separator: '#000' },
     sheet: { handleStyle: {} },
@@ -87,7 +105,10 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: vi.fn(), hapticWarning: vi.fn() }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { error: '#f00' } }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 3: 12, 4: 16 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 3: 12, 4: 16 },
+}));
 
 vi.mock('../QueueSheetHeader', () => ({ QueueSheetHeader: () => null }));
 vi.mock('../../UndoSnackbar', () => ({ UndoSnackbar: () => null }));

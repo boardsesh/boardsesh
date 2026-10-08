@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, useWindowDimensions } from 'react-native';
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { MoreForm } from '../../MoreForm';
 import { BoardLookCarousel } from '../../board-look/BoardLookCarousel';
@@ -52,7 +52,9 @@ export function BoardLookScreen() {
   // for the climber's text size — React Native scales lineHeight by the font
   // multiplier, and the old constant under-reported by 26pt at the largest sizes.
   const { fontScale } = useWindowDimensions();
-  const { overrides, shapes, brushThickness, shapeSize } = useHoldColorOverrides();
+  // The climber's own choices: shapes the OS fills in for Differentiate Without
+  // Color are not something they customised.
+  const { markerOverrides } = useHoldColorOverrides();
   const signals = useOsAccessibilitySignals();
   const { useOwnLook, setUseOwnLook } = useSprayWallsUseOwnLookSetting();
   const sprayWalls = useMemo(
@@ -132,10 +134,7 @@ export function BoardLookScreen() {
     return option ? t(option.labelI18nKey) : '';
   }, [matchingOptionId, t]);
 
-  const overriddenCount = useMemo(
-    () => countHoldMarkerOverrides({ colors: overrides, shapes, brushThickness, shapeSize }),
-    [overrides, shapes, brushThickness, shapeSize],
-  );
+  const overriddenCount = useMemo(() => countHoldMarkerOverrides(markerOverrides), [markerOverrides]);
 
   const carousel = useMemo(
     () =>

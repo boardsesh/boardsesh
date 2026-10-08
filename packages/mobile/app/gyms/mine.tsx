@@ -20,7 +20,6 @@ import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { OfflineState } from '../../src/components/OfflineState';
 import { useOfflineQueryState } from '../../src/hooks/use-offline-query-state';
 import { MyGymRow } from '../../src/components/gym-directory/MyGymRow';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing, borderRadius } from '../../src/theme/tokens';
 
 /**
@@ -133,7 +132,7 @@ export default function MyGymsScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {header}
-        <Icon name="error" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="error" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.myGyms.loadError')}
         </Text>
@@ -151,7 +150,7 @@ export default function MyGymsScreen() {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         {header}
-        <Icon name="location" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="location" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.myGyms.emptyTitle')}
         </Text>

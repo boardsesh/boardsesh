@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
@@ -6,6 +12,7 @@ import type { ManagedSheetHandle } from '../../../providers/sheet-presentation-p
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children }: ViewMockProps) => createElement('div', {}, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
@@ -310,7 +317,8 @@ describe('FeedbackSheet screenshots', () => {
     typeReport(getByPlaceholderText);
     fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
 
-    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('screenshots.uploadFailed', 'error'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('screenshots.uploadFailed'));
+    expect(showToast).not.toHaveBeenCalledWith('screenshots.uploadFailed', 'error');
     expect(feedbackMutation.mutateAsync).not.toHaveBeenCalled();
     expect((getByPlaceholderText('feedbackForm.bugPlaceholder') as HTMLInputElement).value).toBe(
       'the board disconnects on start',

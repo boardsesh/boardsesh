@@ -130,10 +130,18 @@ on:
           - replay
           - record
           - live
+      fixture_snapshot:
+        description: 'Replay only: public HTTPS JSON reference for a candidate fixture snapshot. Empty uses the committed pin.'
+        type: string
+        default: ''
       frozen_now:
         description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the iOS shards on the same run — the merge takes the max frozenNow across every shard regardless.'
         type: string
         default: ''
+      share_preview:
+        description: 'Post captured screenshots to Discord. Disable for private fixture replay validation.'
+        type: boolean
+        default: true
       commit_to_main:
         description: 'Commit the captured screenshots back to main (mobile-store-metadata.yml then uploads them to Google Play). Requires the app-store flow.'
         type: boolean
@@ -463,6 +471,19 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Verify candidate fixture snapshot
+        if: ${{ inputs.fixture_snapshot != '' && inputs.fixture_snapshot != null }}
+        env:
+          FIXTURE_SNAPSHOT_URL: ${{ inputs.fixture_snapshot || '' }}
+          FIXTURES_MODE: ${{ inputs.fixtures || 'replay' }}
+        run: |
+          set -euo pipefail
+          if [ "$FIXTURES_MODE" != "replay" ]; then
+            echo "::error::fixture_snapshot is only valid for replay"
+            exit 1
+          fi
+          vp run mobile:screenshot-fixtures-fetch -- --reference-url "$FIXTURE_SNAPSHOT_URL"
+
       - name: Capture Android screenshots
         uses: reactivecircus/android-emulator-runner@v2
         # android-emulator-runner splits `script:` by newline and runs each line
@@ -599,7 +620,7 @@ jobs:
       # later commit step runs after this, so its outcome can't suppress the
       # preview. Best-effort, so a webhook hiccup never fails the run.
       - name: Post screenshots to Discord
-        if: ${{ success() && inputs.flow != 'onboarding' && inputs.fixtures != 'record' }}
+        if: ${{ success() && inputs.flow != 'onboarding' && inputs.fixtures != 'record' && (github.event_name != 'workflow_dispatch' || inputs.share_preview == true) }}
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

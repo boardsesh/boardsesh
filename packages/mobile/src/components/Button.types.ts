@@ -19,8 +19,14 @@ export type ButtonSize = 'small' | 'medium' | 'large';
  * middle/low-emphasis tiers drop their translucent Liquid Glass for a solid,
  * legible capsule. The filled CTA is solid on EVERY surface, so it never depends
  * on this.
+ *
+ * `glass` is a region that already IS Liquid Glass (a glass panel, island, or a
+ * native iOS 26 bar item, which wraps its content in a glass capsule). HIG
+ * Materials: never stack glass on glass, so the middle tier draws a `bordered`
+ * capsule instead, and every `GlassSurface` inside the region drops its own
+ * glass layer (see GlassSurface).
  */
-export type ButtonSurface = 'surface' | 'content';
+export type ButtonSurface = 'surface' | 'content' | 'glass';
 
 /**
  * Native semantic role. `destructive` paints the system red and adds the
@@ -47,15 +53,7 @@ export type ButtonProps = {
    * row of 44dp controls and must not be the one under the touch floor.
    */
   minHeight?: number;
-  /**
-   * How far the label may grow with the OS text size, as a multiple of its
-   * default size (1.3 = 130%). iOS caps the SwiftUI Dynamic Type size at the
-   * largest step within it; Android scales the Compose label back to it. Unset,
-   * it is 1.5x (`DEFAULT_BUTTON_MAX_FONT_SCALE`), the same cap as every `Text`.
-   * iOS can only stop on a Dynamic Type step, so 1.5x lands on `xxxLarge`
-   * (body 23pt, about 1.35x): the next step, accessibility1, is 1.65x. Android
-   * holds the label at exactly the multiplier.
-   */
+  /** Label scaling cap for fixed chrome. Unset or zero follows all system text sizes. */
   maxFontSizeMultiplier?: number;
   /** See {@link ButtonSurface}. Per-button override of the surrounding provider. */
   over?: ButtonSurface;

@@ -149,7 +149,7 @@ export function SessionSummaryCard({
       </View>
       <View style={styles.secondaryStats}>
         <View style={styles.metaItem}>
-          <Icon name="flash" size={14} color={systemColors.secondaryLabel} />
+          <Icon name="flash.fill" size={14} color={systemColors.secondaryLabel} />
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.secondaryNumber}>
             {tSession('detail.flashesCount', { count: session.totalFlashes })}
           </Text>
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   notes: { marginTop: spacing[2], gap: spacing[1] },
   headlineStats: { flexDirection: 'row', marginTop: spacing[3] },
   headlineStat: { flex: 1, minWidth: 0, gap: spacing[1] },
-  gradeStat: { paddingLeft: spacing[4], borderLeftWidth: StyleSheet.hairlineWidth },
+  gradeStat: { paddingStart: spacing[4], borderLeftWidth: StyleSheet.hairlineWidth },
   gradeValue: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], minWidth: 0 },
   gradeAccent: { width: spacing[1], height: spacing[6], borderRadius: spacing[1], flexShrink: 0 },
   gradeNumber: { flexShrink: 1, minWidth: 0 },

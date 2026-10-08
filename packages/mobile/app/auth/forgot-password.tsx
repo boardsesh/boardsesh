@@ -1,10 +1,12 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { Text } from '../../src/components/Text';
+import { useTypographyStyles, type TypographyScale } from '../../src/hooks/use-typography-styles';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { requestPasswordReset } from '../../src/lib/auth';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { useTheme } from '../../src/providers/theme-provider';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
 import { Button } from '../../src/components/Button';
@@ -13,6 +15,8 @@ import { reportError } from '../../src/lib/error-reporting';
 import { track } from '../../src/lib/analytics';
 
 export default function ForgotPasswordScreen() {
+  const headerHeight = useHeaderHeight();
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
@@ -63,7 +67,11 @@ export default function ForgotPasswordScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: true, title: t('forgotPassword.heading') }} />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView
+        keyboardVerticalOffset={headerHeight}
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={styles.container}
@@ -106,7 +114,10 @@ export default function ForgotPasswordScreen() {
                 />
 
                 {formError ? (
-                  <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                  <Text
+                    style={[styles.errorText, { color: theme.systemColors.error }]}
+                    accessibilityLiveRegion="polite"
+                  >
                     {formError}
                   </Text>
                 ) : null}
@@ -131,12 +142,17 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, paddingTop: 16 },
-  description: { fontSize: 15, lineHeight: 22, marginBottom: 24 },
-  form: { gap: 12 },
-  submitButton: { alignSelf: 'stretch', marginTop: 4 },
-  errorText: { color: iosSystemColors.systemRed, fontSize: 15 },
-  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  successText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: { width: '100%', maxWidth: 672, alignSelf: 'center', flexGrow: 1, padding: 24, paddingTop: 16 },
+    description: {
+      fontSize: textStyles.subheadline.fontSize,
+      lineHeight: textStyles.subheadline.lineHeight,
+      marginBottom: 24,
+    },
+    form: { gap: 12 },
+    submitButton: { alignSelf: 'stretch', marginTop: 4 },
+    errorText: { fontSize: textStyles.subheadline.fontSize },
+    successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+    successText: { fontSize: textStyles.body.fontSize, textAlign: 'center', lineHeight: textStyles.body.lineHeight },
+  });

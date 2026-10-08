@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // #5099 — a queue can legitimately hold climbs from more than one board:
 // `decideAdd`'s "add anyway", a party peer on another wall, or a board switch
 // that leaves the whole queue behind. Each row's thumbnail has to be drawn on
@@ -14,10 +27,15 @@ const recorded = vi.hoisted(() => ({ rows: [] as BoardProps[] }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
@@ -42,8 +60,15 @@ vi.mock('react-native-gesture-handler', () => {
 });
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { secondaryBackground: '#fff', separator: '#ccc' },
+    systemColors: {
+      secondaryBackground: '#fff',
+      separator: '#ccc',
+      secondaryLabel: 'secondaryLabel',
+      tertiaryLabel: 'tertiaryLabel',
+      error: 'systemRed',
+    },
     brandColors: { primary: '#6D28D9', success: '#0a0', error: '#a00' },
   }),
 }));
@@ -58,7 +83,10 @@ vi.mock('../ClimbListItemContent', () => ({
 }));
 vi.mock('../ClimbListThumbnail', () => ({ THUMBNAIL_WIDTH: 96 }));
 vi.mock('../board-presence/BoardDriverAvatar', () => ({ BoardDriverAvatar: () => createElement('span') }));
-vi.mock('../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
+}));
 vi.mock('../../theme/animations', () => ({ springs: { interactive: {} } }));
 vi.mock('../play-drawer/queue-drag-math', () => ({ rowReorderShift: () => 0 }));
 

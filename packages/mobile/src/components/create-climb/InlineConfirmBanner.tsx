@@ -1,4 +1,5 @@
-import { View, Pressable, StyleSheet } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { View, StyleSheet } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { glassSize } from '../../theme/layout';
@@ -18,16 +19,16 @@ type InlineConfirmBannerProps = {
 /**
  * A confirm rendered as sheet CONTENT rather than as a dialog.
  *
- * `useConfirm` cannot be used from inside this drawer on Android: the Material
- * path renders a Paper `Dialog` inside a `Portal`, which is a JS view mounted at
- * the app root, while the create drawer is a NATIVE @expo/ui bottom sheet
- * composited above that root. The dialog paints behind the sheet and is never
+ * `useConfirm` cannot be used from inside the New climb editor on Android: the
+ * Material path renders a Paper `Dialog` inside a `Portal`, which is a JS view
+ * mounted at the app root, while the editor is a NATIVE modal route presented
+ * above that root. The dialog paints behind the modal and is never
  * seen — the promise just never resolves to `true`, so the action silently does
  * nothing. (iOS is fine: the same provider uses a native `Alert` there, which is
  * its own window.) The toast overlay has the identical problem, which is why
  * `toast-provider` carries a warning about it.
  *
- * Inline content cannot be occluded by the sheet it lives in, which is why
+ * Inline content cannot be occluded by the modal it lives in, which is why
  * `DuplicateBanner` — the other thing in this drawer that must not be missed —
  * is built the same way.
  */
@@ -51,16 +52,16 @@ export function InlineConfirmBanner({
         </Text>
       </View>
       <View style={styles.actions}>
-        <Pressable onPress={onCancel} accessibilityRole="button" hitSlop={8} style={styles.action}>
+        <PressableSurface onPress={onCancel} accessibilityRole="button" hitSlop={8} style={styles.action}>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {cancelLabel}
           </Text>
-        </Pressable>
-        <Pressable onPress={onConfirm} accessibilityRole="button" hitSlop={8} style={styles.action}>
+        </PressableSurface>
+        <PressableSurface onPress={onConfirm} accessibilityRole="button" hitSlop={8} style={styles.action}>
           <Text variant="footnote" color={brandColors.error}>
             {confirmLabel}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
     </View>
   );

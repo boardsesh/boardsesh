@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useMemo, type ReactNode } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { CLIMB_CHARACTERISTICS, type BoardName, type Climb } from '@boardsesh/shared-schema';
 import { useEffectiveClimbStats } from '@boardsesh/board-react';
@@ -13,7 +14,7 @@ import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
 import { DraftChip } from '../DraftChip';
 import { ProjectChip } from '../ProjectChip';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 import { PLAY_HEADER_TRAILING_MIN_WIDTH, WALL_STATE_PILL_TOUCH_HEIGHT } from '../../theme/layout';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { resolveClimbRuleLabels } from './climb-rule-labels';
@@ -104,6 +105,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   angle,
 }: PlayDrawerHeaderProps) {
   const { t } = useTranslation('climbs');
+  const { systemColors } = useTheme();
   // The header's height is pinned (see `minRowHeight` below) and the headline's
   // line height alone eats that floor once type is scaled up, so the second line
   // is dropped rather than clamping anyone's Dynamic Type. The same information
@@ -160,7 +162,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 that scrolls when it overflows, so the header height — and the board
                 below it — stays constant per climb. Under Reduce Motion it falls
                 back to a 2-line wrap (full name). */}
-            <Pressable
+            <PressableSurface
               onLongPress={onLongPressName}
               disabled={!onLongPressName}
               delayLongPress={350}
@@ -171,7 +173,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               <MarqueeText active variant="body" style={styles.nameClip} textStyle={styles.nameText} fallbackLines={2}>
                 {name}
               </MarqueeText>
-            </Pressable>
+            </PressableSurface>
             {/* Keep rules the matching/feet line does not state, including no kickboard. */}
             <ClimbAttributeIcons
               benchmarkDifficulty={benchmarkDifficulty}
@@ -183,7 +185,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
                 every draft. */}
             {isDraft ? <DraftChip style={styles.draftChip} testID="play-drawer-climb-draft" /> : null}
           </View>
-          <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
             {setterUsername && onPressSetter ? (
               <Text variant="caption1" onPress={onPressSetter} accessibilityRole="link">
@@ -196,8 +198,8 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               climb you can still open by link or queue, not an error. */}
           {isHidden ? (
             <View style={styles.hiddenRow} testID="play-drawer-climb-hidden">
-              <Icon name="visibility.off" size={14} color={iosSystemColors.systemGray} />
-              <Text variant="caption1" style={styles.hiddenText}>
+              <Icon maxFontSizeMultiplier={1} name="visibility.off" size={14} color={systemColors.secondaryLabel} />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
                 {t('mobile.hidden.banner')}
               </Text>
             </View>
@@ -210,6 +212,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           {ruleLabels ? (
             <Text
               variant="caption1"
+              color={systemColors.secondaryLabel}
               style={styles.rulesText}
               accessibilityLabel={ruleLabels.accessibilityLabel}
               testID="play-drawer-climb-rules"
@@ -226,7 +229,9 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             {/* The play drawer is the screen you hand your partner to show them
                 the beta, so an unlabelled headline number that is actually your
                 private opinion needs to say so. */}
-            {markedAsMine ? <Icon name="person" size={13} color={iosSystemColors.systemGray} /> : null}
+            {markedAsMine ? (
+              <Icon maxFontSizeMultiplier={1} name="person" size={13} color={systemColors.secondaryLabel} />
+            ) : null}
             {/* Nobody has graded it yet (#5971): say so rather than leave the
                 slot blank. */}
             {isProjectClimb({ gradeLabel: difficulty, isDraft, statsKnown: climbStatsKnown(boardName, statsAngle) }) ? (
@@ -239,8 +244,13 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
           </View>
           {secondaryGrade && !dropSecondaryLine ? (
             <View style={styles.gradeRow}>
-              <Icon name="people" size={11} color={iosSystemColors.systemGray} />
-              <Text variant="caption2" style={styles.secondaryGradeText} numberOfLines={1}>
+              <Icon maxFontSizeMultiplier={1} name="people" size={11} color={systemColors.secondaryLabel} />
+              <Text
+                variant="caption2"
+                color={systemColors.secondaryLabel}
+                style={styles.secondaryGradeText}
+                numberOfLines={1}
+              >
                 {secondaryGrade}
               </Text>
             </View>
@@ -250,6 +260,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               variant="caption2"
               numberOfLines={1}
               accessibilityLabel={t('mobile.climbRow.setAngleMarkerAria', { angle: statsAngle })}
+              color={systemColors.secondaryLabel}
               style={styles.setAngleMarkerText}
             >
               {t('mobile.climbRow.setAngleMarker', { angle: statsAngle })}
@@ -336,7 +347,6 @@ const styles = StyleSheet.create({
   // Deliberately uncoloured, same as the search-list row's marker — colour in
   // this slot carries the grade and nothing else.
   setAngleMarkerText: {
-    color: iosSystemColors.systemGray,
     textAlign: 'right',
   },
   gradeText: {
@@ -357,7 +367,6 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   secondaryGradeText: {
-    color: iosSystemColors.systemGray,
     fontVariant: ['tabular-nums'],
     fontWeight: '600',
     marginTop: -2,
@@ -370,7 +379,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   draftChip: {
-    marginLeft: 6,
+    marginStart: 6,
   },
   // Shrinks with the name so a long title scrolls within the available width while
   // the attribute glyphs stay visible; the long-press target is the name itself.
@@ -389,7 +398,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitleText: {
-    color: iosSystemColors.systemGray,
     marginTop: 2,
     textAlign: 'center',
   },
@@ -402,13 +410,9 @@ const styles = StyleSheet.create({
     gap: 4,
     marginTop: 2,
   },
-  hiddenText: {
-    color: iosSystemColors.systemGray,
-  },
   // Same grey as the subtitle it sits under — the rules are context, not a
   // second headline competing with the name and the grade.
   rulesText: {
-    color: iosSystemColors.systemGray,
     marginTop: 2,
     textAlign: 'center',
   },

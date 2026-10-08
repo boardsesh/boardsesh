@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 0 }));
+vi.mock('../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The two hops the rest of the W-06 suites can't see: login forwarding `next` to
 // the sign-up screen, and register handing it back. `AuthProvider` is what
@@ -43,7 +57,10 @@ vi.mock('react-native', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   Pressable: ({ onPress, children }: { onPress?: () => void; children?: ReactNode }) =>
     createElement('button', { onClick: onPress }, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 
 vi.mock('expo-image', () => ({ Image: () => createElement('img', null) }));

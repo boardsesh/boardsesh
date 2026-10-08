@@ -14,6 +14,8 @@
 // for an action (more, edit, help). No fill either way.
 import React from 'react';
 import { StyleSheet, type ColorValue, type StyleProp, type ViewStyle } from 'react-native';
+import { LargeContentViewer } from './LargeContentViewer';
+import { iconMap } from './icon-map';
 import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
 import type { IconName } from './icon-map';
@@ -88,12 +90,20 @@ export const ChromeIconButton = React.memo(function ChromeIconButton({
         style,
       ]}
     >
-      <Icon
-        name={icon}
-        size={spec.glyphSize}
-        weight="semibold"
-        color={disabled && spec.disabledInLabelColor ? systemColors.label : glyphColor}
-      />
+      <LargeContentViewer
+        title={accessibilityLabel}
+        systemImage={iconMap[icon].ios}
+        onActivate={disabled ? undefined : onPress}
+        style={{ width: frame, height: frame, alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Icon
+          maxFontSizeMultiplier={1}
+          name={icon}
+          size={spec.glyphSize}
+          weight="semibold"
+          color={disabled && spec.disabledInLabelColor ? systemColors.label : glyphColor}
+        />
+      </LargeContentViewer>
     </PressableSurface>
   );
 });

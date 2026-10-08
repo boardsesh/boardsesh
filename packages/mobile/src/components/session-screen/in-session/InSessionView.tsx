@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector, ScrollView as GestureScrollView } from 'react-native-gesture-handler';
@@ -38,7 +39,6 @@ import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useBottomChromeMetrics } from '../../../hooks/use-bottom-chrome-metrics';
 import { withAlpha } from '../../../theme/colors';
-import { iosSystemColors } from '../../../theme/ios-colors';
 import { springs } from '../../../theme/animations';
 import { borderRadius, spacing } from '../../../theme/tokens';
 import { gradeBadgeColor } from '../../you/profile-chart-colors';
@@ -111,15 +111,19 @@ function statusIcon(status: SessionHistoryStatus): IconName {
 }
 
 // Resolve the status tint from the current theme. `flash`/`send` are brand
-// foregrounds (lifted in dark); `attempt` stays the neutral system gray.
-function statusTint(status: SessionHistoryStatus, brand: { warning: string; success: string }): string {
+// foregrounds (lifted in dark); `attempt` takes the theme's neutral secondary label.
+function statusTint(
+  status: SessionHistoryStatus,
+  brand: { warning: string; success: string },
+  neutral: string,
+): string {
   switch (status) {
     case 'flash':
       return brand.warning;
     case 'send':
       return brand.success;
     case 'attempt':
-      return iosSystemColors.systemGray;
+      return neutral;
   }
 }
 
@@ -147,11 +151,11 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
   onPress,
 }: SessionHistoryRowProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, chartColors } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const { openClimbActions } = useDrawerHost();
   const statusIconName = statusIcon(status);
-  const statusColor = statusTint(status, brandColors);
+  const statusColor = statusTint(status, brandColors, chartColors.secondaryLabel);
   let statusLabel: string;
   switch (status) {
     case 'flash':
@@ -262,6 +266,7 @@ export function InSessionView({
   translateY,
   screenHeight,
 }: InSessionViewProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('session');
   const { systemColors, brandColors, features } = useTheme();
   const insets = useSafeAreaInsets();
@@ -701,7 +706,7 @@ export function InSessionView({
       nestedScrollEnabled={showChrome}
       // The floating chrome owns the top inset (tab mode), so pad manually by the
       // measured chrome height and never auto-inset under the (absent) header.
-      contentInsetAdjustmentBehavior="never"
+      contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
       contentContainerStyle={{
         paddingHorizontal: spacing[4],
         paddingTop: listPaddingTop,
@@ -849,7 +854,7 @@ const styles = StyleSheet.create({
   },
   historySeparator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[3] + 28 + spacing[3],
+    marginStart: spacing[3] + 28 + spacing[3],
   },
   inviteRow: {
     flexDirection: 'row',

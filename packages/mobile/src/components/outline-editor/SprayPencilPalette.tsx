@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { GlassIconButton } from '../GlassIconButton';
 import type { IconName } from '../icon-map';
@@ -102,7 +103,7 @@ export const SprayPencilPalette = React.memo(function SprayPencilPalette({
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none" accessibilityViewIsModal>
-      <Pressable
+      <PressableSurface
         style={StyleSheet.absoluteFill}
         onPress={onClose}
         accessibilityRole="button"

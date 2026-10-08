@@ -1,10 +1,12 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { SprayWallReportReason } from '@boardsesh/graphql/operations/spray-walls';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
+import { RadioGroup, type RadioOption } from '../RadioGroup';
 import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useConnectivity } from '../../lib/connectivity/use-connectivity';
@@ -37,6 +39,17 @@ export function ReportSprayWallSheet({
     PERSONAL_INFO: t('sprayModeration.reasons.personalInfo'),
     OTHER: t('sprayModeration.reasons.other'),
   };
+  const reasonOptions: RadioOption<SprayWallReportReason>[] = REASONS.map((option) => ({
+    value: option,
+    label: labels[option],
+    disabled: report.isPending,
+  }));
+  const pickReason = useCallback(
+    (next: SprayWallReportReason) => {
+      if (!report.isPending) setReason(next);
+    },
+    [report.isPending],
+  );
   const submit = useCallback(() => {
     if (!reason || !canReport || effectiveOffline || inFlight.current || report.isSuccess) return;
     inFlight.current = true;
@@ -50,10 +63,17 @@ export function ReportSprayWallSheet({
     );
   }, [reason, canReport, effectiveOffline, report, wallUuid]);
   const finished = report.isSuccess || !canReport;
+  const guard = useUnsavedSheetGuard({
+    visible: true,
+    dirty: reason !== null && !finished,
+    busy: report.isPending,
+    onClose,
+  });
+
   const header = (
     <SheetTopBar
       title={t('sprayModeration.reportTitle')}
-      leading={finished ? undefined : { kind: 'cancel', onPress: onClose }}
+      leading={finished ? undefined : { kind: 'cancel', onPress: guard.requestClose }}
       trailing={
         finished
           ? { kind: 'forward', label: tCommon('actions.done'), onPress: onClose, prominent: true }
@@ -71,10 +91,12 @@ export function ReportSprayWallSheet({
   return (
     <ModalSheet
       visible
-      snapPoints={['65%', '90%']}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       androidContentSized
       scrollable
-      onClose={onClose}
+      onDisplaced={onClose}
+      onClose={guard.requestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
       contentContainerStyle={styles.body}
       header={header}
     >
@@ -87,20 +109,18 @@ export function ReportSprayWallSheet({
         <Text accessibilityLiveRegion="polite">{t('sprayModeration.reported')}</Text>
       ) : (
         <>
-          {REASONS.map((option) => (
-            <Pressable
-              key={option}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: option === reason, disabled: report.isPending }}
-              accessibilityLabel={labels[option]}
-              disabled={report.isPending}
-              onPress={() => setReason(option)}
-              style={styles.reason}
-            >
-              <Icon name={option === reason ? 'check.small' : 'circle'} size={20} color={systemColors.label} />
-              <Text style={styles.label}>{labels[option]}</Text>
-            </Pressable>
-          ))}
+          {/* The app's native RadioGroup (SwiftUI inline Picker / Compose RadioButtons)
+              instead of a hand-drawn list: brand-tinted checkmark, platform picker a11y. */}
+          {/* Locked while the report is in flight. The iOS inline Picker ignores a
+              per-option `disabled`, so the whole group stops taking touches and
+              the handler refuses a change too. */}
+          <View
+            pointerEvents={report.isPending ? 'none' : 'auto'}
+            accessibilityState={{ disabled: report.isPending }}
+            style={report.isPending ? styles.locked : undefined}
+          >
+            <RadioGroup options={reasonOptions} value={reason} onChange={pickReason} />
+          </View>
           {effectiveOffline ? (
             <Text color={systemColors.secondaryLabel}>{t('sprayModeration.reportOffline')}</Text>
           ) : null}
@@ -112,6 +132,5 @@ export function ReportSprayWallSheet({
 }
 const styles = StyleSheet.create({
   body: { padding: spacing[4], gap: spacing[3] },
-  reason: { flexDirection: 'row', alignItems: 'center', minHeight: 48, gap: spacing[3] },
-  label: { flex: 1 },
+  locked: { opacity: 0.5 },
 });

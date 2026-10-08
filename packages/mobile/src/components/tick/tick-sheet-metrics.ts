@@ -1,3 +1,4 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 // The one geometry module the create-tick sheet (LogAscentSheet/QuickTickBar)
 // and the edit-tick sheet (LogbookEditSheet) both import.
 //
@@ -97,36 +98,8 @@ export const TICK_STACK_FONT_SCALE = 1.3;
  *  is one tap even before the climber has entered a higher count. */
 export const TICK_COUNT_RAIL_MIN_CHIPS = 15;
 
-/**
- * Create sheet detents. iOS / web only — Android takes `@expo/ui`'s
- * content-fitting path (`androidContentSized` on `ModalSheet`, #4720) and never
- * reads these values.
- *
- * Column: header 56 + rows (date 56 + grade 60 + stars 56 + tries 60 + note 68
- * = 300) + footer (paddingTop 12 + error slot 18 + gap 8 + button 48 +
- * paddingBottom 12 + window inset ~34 = 132) = 488; plus SHEET_TOP_CHROME_PT 20
- * = 508. On an iPhone 16 Pro the fraction base is 852 - 59 top inset - 24 top
- * gap = 769, so 508/769 = 66.1%. The detent stays '65%' anyway — that is a
- * 480pt column, ~8pt short of the content, so the bottom edge of the note row
- * opens just under the fold. Deliberate: the body scrolls under a pinned
- * footer, and erring SHORT is the safe direction (use-sheet-column-style.ts:5-8
- * — a few spare points beat a clipped footer, #3330). The second detent is the
- * keyboard detent.
- *
- * The note row is 68, not the 56pt beat: the field's own minHeight 64 plus the
- * row's 4pt `alignTop` inset (#4642). Change either and this derivation moves.
- */
-export const CREATE_TICK_SNAP_POINTS = ['65%', '92%'];
-
-/**
- * Edit sheet detents. iOS / web only — Android takes the content-fitting path
- * (`androidContentSized`, #4720).
- *
- * Column: header 56 + rows (status 56 + date 56 + grade 60 + angle 64 + stars
- * 56 + tries 60 + note 68 = 420) + delete group (spacing[8] 32 + 56 = 88) +
- * footer 114 = 678; plus 20 = 698/769 = 90.8%. That is higher than we want a
- * sheet to open, so the first detent is deliberately '80%' (a 595pt column) and
- * the body scrolls the last ~83pt — safe because Save is pinned in the footer,
- * not chased down the scroll. The second detent is the keyboard detent.
- */
-export const EDIT_TICK_SNAP_POINTS = ['80%', '92%'];
+/** Standard medium/large on iOS and web. Both forms scroll beneath their
+ * pinned action row; settling on large is still the keyboard expansion path.
+ * Android keeps its measured content-fitting contract (`androidContentSized`). */
+export const CREATE_TICK_SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
+export const EDIT_TICK_SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;

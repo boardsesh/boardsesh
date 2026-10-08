@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // What the play drawer's SECOND action row shows while a browse latch is up:
 // leave the latch, or put the climb you're looking at on the wall.
 //
@@ -15,7 +16,7 @@
 // row's geometry never moves under a thumb that is already on its way down.
 
 import { memo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
@@ -25,6 +26,7 @@ import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { CommitButtonLabel } from './wall-state';
@@ -129,28 +131,30 @@ function PlayDrawerCommitBarImpl({
         style={styles.controls}
       >
         {showExit ? (
-          <Pressable
+          <PressableSurface
             onPress={onBackToLive}
             accessibilityRole="button"
             accessibilityLabel={exitText}
             style={({ pressed }) => [styles.textButton, pressed && drawerActionBarStyles.actionButtonPressed]}
           >
-            <Text
-              variant="subheadline"
-              color={brandColors.tint}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              style={styles.textButtonLabel}
-            >
-              {exitText}
-            </Text>
-          </Pressable>
+            <LargeContentViewer title={exitText} onActivate={onBackToLive}>
+              <Text
+                variant="subheadline"
+                color={brandColors.tint}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.textButtonLabel}
+              >
+                {exitText}
+              </Text>
+            </LargeContentViewer>
+          </PressableSurface>
         ) : null}
 
         <View style={drawerActionBarStyles.spacer} />
 
         {showFilled ? (
-          <Pressable
+          <PressableSurface
             onPress={onCommit}
             accessibilityRole="button"
             accessibilityLabel={confirmText}
@@ -161,16 +165,18 @@ function PlayDrawerCommitBarImpl({
               pressed && styles.filledButtonPressed,
             ]}
           >
-            <Text
-              variant="subheadline"
-              color={brandColors.onPrimary}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              style={styles.filledButtonLabel}
-            >
-              {confirmText}
-            </Text>
-          </Pressable>
+            <LargeContentViewer title={confirmText} onActivate={onCommit}>
+              <Text
+                variant="subheadline"
+                color={brandColors.onPrimary}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                style={styles.filledButtonLabel}
+              >
+                {confirmText}
+              </Text>
+            </LargeContentViewer>
+          </PressableSurface>
         ) : null}
       </Animated.View>
     </View>

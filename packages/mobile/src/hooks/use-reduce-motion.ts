@@ -1,39 +1,53 @@
-import { useEffect, useState } from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { useSyncExternalStore } from 'react';
+import { AccessibilityInfo, AppState } from 'react-native';
 
-/**
- * Tracks the OS "Reduce Motion" accessibility setting so motion-heavy UI (FAB
- * icon morphs, reveal/slide animations) can fall back to instant state changes.
- * Mirrors {@link useReduceTransparency}. Defaults to `true` (conservative) until
- * the initial async read resolves, so a Reduce-Motion user never gets an
- * animated frame on cold start — animations here are interaction-triggered, so
- * the real value is always known by the time one would run.
- *
- * NOTE: the flip side of the conservative default is that a non-Reduce-Motion
- * user would miss the first frame of any animation that fired on *mount*. Nothing
- * here animates on mount today (all are interaction-triggered), so this is
- * harmless — revisit if a mount-time animation is added. RN exposes no
- * synchronous reduce-motion read, so a one-frame flash would be the trade-off.
- */
+let reduceMotion = true;
+let revision = 0;
+const listeners = new Set<() => void>();
+let subscriptions: { remove(): void }[] = [];
+function publish(enabled: boolean) {
+  if (reduceMotion === enabled) return;
+  reduceMotion = enabled;
+  for (const listener of listeners) listener();
+}
+function read() {
+  const readRevision = ++revision;
+  void AccessibilityInfo.isReduceMotionEnabled()
+    .then((enabled) => {
+      if (readRevision === revision) publish(enabled);
+    })
+    .catch(() => {});
+}
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  if (listeners.size === 1) {
+    subscriptions = [
+      AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+        revision++;
+        publish(enabled);
+      }),
+      AppState.addEventListener('change', (state) => {
+        if (state === 'active') read();
+      }),
+    ];
+    read();
+  }
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) {
+      revision++;
+      for (const subscription of subscriptions) subscription.remove();
+      subscriptions = [];
+      // A newly mounted screen must be conservative until its fresh read settles.
+      reduceMotion = true;
+    }
+  };
+}
+/** One OS subscription for every pressable/list row; unknown settings never animate. */
 export function useReduceMotion(): boolean {
-  const [reduceMotion, setReduceMotion] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (mounted) setReduceMotion(enabled);
-    });
-
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) =>
-      setReduceMotion(enabled),
-    );
-
-    return () => {
-      mounted = false;
-      subscription.remove();
-    };
-  }, []);
-
-  return reduceMotion;
+  return useSyncExternalStore(
+    subscribe,
+    () => reduceMotion,
+    () => true,
+  );
 }

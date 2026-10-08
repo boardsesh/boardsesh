@@ -1,4 +1,22 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -22,6 +40,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toast }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { fill: '#eee', label: '#000', tertiaryLabel: '#999' },
     brandColors: { primary: '#6D28D9' },
@@ -35,11 +54,15 @@ vi.mock('@boardsesh/profile-stats', () => ({ formatTickRelativeTime: () => 'now'
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: onPress, disabled, 'data-testid': 'send' }, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 
 // Sheet renders its children + footer so the composer is interactable.
@@ -100,7 +123,7 @@ describe('CommentSheet submit error handling', () => {
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
-  it('keeps the draft and shows an error toast when posting fails', () => {
+  it('keeps the draft and shows a persistent inline error when posting fails', () => {
     addComment.mutate.mockImplementation((_input: unknown, options: MutateOptions) => {
       options.onError?.(new Error('network down'));
     });
@@ -113,6 +136,9 @@ describe('CommentSheet submit error handling', () => {
     expect(addComment.mutate).toHaveBeenCalledOnce();
     // Draft must survive so the user's text isn't silently lost.
     expect(input.value).toBe('nice send');
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.comments.sendError', 'error');
+    expect(document.body.textContent).toContain('mobile.comments.sendError');
+    expect(toast.showToast).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'nice send again' } });
+    expect(document.body.textContent).not.toContain('mobile.comments.sendError');
   });
 });

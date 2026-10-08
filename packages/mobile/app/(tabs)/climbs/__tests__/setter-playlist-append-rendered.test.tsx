@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -48,6 +61,7 @@ const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProp
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
+  RefreshControl: () => null,
   View: ({
     children,
     pointerEvents,
@@ -75,6 +89,7 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
   StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (s: Record<string, unknown>) => s,
     absoluteFill: {},
     hairlineWidth: 1,
@@ -136,10 +151,12 @@ vi.mock('@shopify/flash-list', () => ({
   },
 }));
 
+const navigation = vi.hoisted(() => ({ setOptions: vi.fn() }));
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ username: 'tester' }),
   useRouter: () => ({ back: ctrl.back, push: vi.fn() }),
+  useNavigation: () => navigation,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({
@@ -159,6 +176,7 @@ vi.mock('react-i18next', () => ({
 
 // ── Theme / providers ─────────────────────────────────────────────────────────
 vi.mock('../../../../src/providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: ctrl.variant,
     systemColors: {
@@ -372,7 +390,7 @@ vi.mock('../../../../src/components/playlist', async () => ({
       '../../../../src/components/playlist/PlaylistDetailView',
     )
   ).PlaylistDetailView,
-  PlaylistBackFab: () => createElement('button', null, 'Back'),
+  PlaylistStateHeader: () => null,
 }));
 vi.mock('../../../../src/components/SetterFollowButton', () => ({
   SetterFollowButton: () => createElement('span', null, 'Follow'),

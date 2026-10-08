@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { type ReactNode, isValidElement, useCallback } from 'react';
 import { type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,7 @@ import { AngleToolbarAction } from './AngleToolbarAction';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
 import { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
+import { NativeRootHeader } from './NativeRootHeader';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 
 const TOP_TOOLBAR_RADIUS = TOP_ACTION_SIZE / 2;
@@ -101,6 +103,7 @@ export function CollapsingTopChrome({
   const { systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
   const nativeGlass = useNativeGlass();
+  const nativeHeader = useNativeRootHeader();
   const { data: activeBoard } = useActiveBoard();
   const bluetooth = useOptionalBluetoothContext();
 
@@ -183,7 +186,7 @@ export function CollapsingTopChrome({
       {leadingAction}
       {canCreate ? (
         <GlassToolbarAction onPress={onCreate} accessibilityLabel={createAccessibilityLabel}>
-          <Icon name="plus" size={24} color={systemColors.label} />
+          <Icon maxFontSizeMultiplier={1} name="plus" size={24} color={systemColors.label} />
         </GlassToolbarAction>
       ) : null}
     </GlassActionToolbar>
@@ -225,6 +228,33 @@ export function CollapsingTopChrome({
         {trailingAction}
       </View>
     ) : null;
+
+  if (nativeHeader)
+    return (
+      <NativeRootHeader
+        leftActions={leftActions}
+        rightActions={
+          rightActionCount > 0 ? (
+            <GlassActionToolbar actionCount={rightActionCount}>
+              <AngleToolbarAction />
+              {activeBoard ? (
+                <BoardToolbarAction
+                  onPress={onOpenBoardSwitcher}
+                  accessibilityHint={boardPillAccessibilityHint}
+                  badge={boardBadge}
+                />
+              ) : null}
+              {bluetooth && !hideLight ? <LightbulbToolbarAction /> : null}
+              {trailingAction}
+            </GlassActionToolbar>
+          ) : undefined
+        }
+        onHeightChange={onHeightChange}
+      >
+        {centerContent}
+        {children}
+      </NativeRootHeader>
+    );
 
   return (
     <CollapsingLargeTitleHeader

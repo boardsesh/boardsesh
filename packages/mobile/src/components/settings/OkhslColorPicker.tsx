@@ -1,3 +1,5 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
@@ -7,19 +9,14 @@ import {
   type StyleProp,
   type TextStyle,
 } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { hexToOkhsl, okhslToHex, type Okhsl } from '../../lib/okhsl';
 import { normalizeHexColor } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
-
-// Destructive red for the invalid-hex state (matches AuthTextInput's error
-// border) — the accent token reads as a focused/selected field, not an error.
-const ERROR_COLOR = iosSystemColors.systemRed;
 
 const HUE_STOPS = 13;
 const SL_STOPS = 12;
@@ -72,6 +69,7 @@ const ChannelSlider = memo(function ChannelSlider({
   onDragEnd,
   step,
 }: ChannelSliderProps) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   const gradientId = `okhsl-${useId().replace(/:/g, '_')}`;
   const trackRef = useRef<View>(null);
@@ -421,6 +419,7 @@ type OkhslColorPickerProps = {
  * dragging never drifts from hex round-tripping.
  */
 export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const [okhsl, setOkhsl] = useState<Okhsl>(() => hexToOkhsl(value) ?? DEFAULT_OKHSL);
@@ -499,7 +498,9 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
     {
       backgroundColor: systemColors.fill,
       color: systemColors.label,
-      borderColor: hexValid ? systemColors.separator : ERROR_COLOR,
+      // Destructive red for the invalid-hex state; the accent token would read as
+      // a focused/selected field, not an error.
+      borderColor: hexValid ? systemColors.separator : systemColors.error,
     },
   ];
 
@@ -558,7 +559,7 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         />
       </View>
       {hexValid ? null : (
-        <Text variant="footnote" color={ERROR_COLOR}>
+        <Text variant="footnote" color={systemColors.error}>
           {t('mobile.settings.accessibility.invalidHex')}
         </Text>
       )}
@@ -569,52 +570,53 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
 const TRACK_HEIGHT = 14;
 const ACCESSIBILITY_ACTIONS = [{ name: 'increment' }, { name: 'decrement' }] as const;
 
-const styles = StyleSheet.create({
-  container: {
-    gap: spacing[4],
-  },
-  sliderBlock: {
-    gap: spacing[2],
-  },
-  sliderLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sliderTouchArea: {
-    paddingVertical: spacing[2],
-  },
-  trackContainer: {
-    height: TRACK_HEIGHT,
-    justifyContent: 'center',
-  },
-  trackSvg: {
-    borderRadius: TRACK_HEIGHT / 2,
-  },
-  thumb: {
-    position: 'absolute',
-    top: -5,
-    width: TRACK_HEIGHT + 10,
-    height: TRACK_HEIGHT + 10,
-    marginLeft: -(TRACK_HEIGHT + 10) / 2,
-    borderRadius: (TRACK_HEIGHT + 10) / 2,
-    borderWidth: 3,
-    backgroundColor: 'transparent',
-  },
-  hexRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-  },
-  hexInput: {
-    minWidth: 120,
-    minHeight: 44,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing[3],
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '600',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      gap: spacing[4],
+    },
+    sliderBlock: {
+      gap: spacing[2],
+    },
+    sliderLabelRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    sliderTouchArea: {
+      paddingVertical: spacing[2],
+    },
+    trackContainer: {
+      height: TRACK_HEIGHT,
+      justifyContent: 'center',
+    },
+    trackSvg: {
+      borderRadius: TRACK_HEIGHT / 2,
+    },
+    thumb: {
+      position: 'absolute',
+      top: -5,
+      width: TRACK_HEIGHT + 10,
+      height: TRACK_HEIGHT + 10,
+      marginStart: -(TRACK_HEIGHT + 10) / 2,
+      borderRadius: (TRACK_HEIGHT + 10) / 2,
+      borderWidth: 3,
+      backgroundColor: 'transparent',
+    },
+    hexRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing[3],
+    },
+    hexInput: {
+      minWidth: 120,
+      minHeight: 44,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.md,
+      paddingHorizontal: spacing[3],
+      textAlign: 'center',
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '600',
+    },
+  });

@@ -5,7 +5,6 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { hapticLight } from '../../lib/haptics';
 import { PlaylistPreviewSquare } from './PlaylistPreviewSquare';
@@ -50,6 +49,7 @@ export const PlaylistListRow = memo(function PlaylistListRow({
   onPressUuid,
 }: PlaylistListRowProps) {
   const { t } = useTranslation('playlists');
+  const { systemColors } = useTheme();
 
   const countLabel = t('detail.climbCount', { count: climbCount ?? 0 });
 
@@ -76,7 +76,7 @@ export const PlaylistListRow = memo(function PlaylistListRow({
             {countLabel}
           </Text>
         </View>
-        <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+        <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
       </View>
     </PressableSurface>
   );
@@ -117,6 +117,6 @@ export const PlaylistListRowSeparator = memo(function PlaylistListRowSeparator()
 const separatorStyles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4] + THUMB_SIZE + spacing[3],
+    marginStart: spacing[4] + THUMB_SIZE + spacing[3],
   },
 });

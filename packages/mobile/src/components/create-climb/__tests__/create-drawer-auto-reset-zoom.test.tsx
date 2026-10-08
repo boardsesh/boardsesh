@@ -1,4 +1,18 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode, type RefObject } from 'react';
@@ -12,15 +26,31 @@ const seekSpy = vi.hoisted(() => vi.fn());
 
 type ViewMockProps = { children?: ReactNode; onLayout?: unknown; testID?: string };
 vi.mock('react-native', () => ({
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress, 'aria-label': accessibilityLabel }, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
   useWindowDimensions: () => ({ width: 405, height: 900 }),
+  Platform: { OS: 'ios' },
+  Keyboard: { addListener: () => ({ remove: () => undefined }) },
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
 // The drawer scrolls in RNGH's own ScrollView (so the board's pinch can declare
 // a relation with it), so the real RNGH module is in this file's import graph.
 vi.mock('react-native-gesture-handler', () => ({
@@ -29,11 +59,12 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { secondaryBackground: '#221A33' } }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
-  sheetStyles: { background: {} },
 }));
 
 // Publishes the handle the drawer calls, the same way the real board's
@@ -157,7 +188,6 @@ const drawer = (controllerOverrides: Record<string, unknown> = {}) =>
     controller: makeController(controllerOverrides),
     boardHolds,
     onLongPressHold: vi.fn(),
-    subSheetOpen: false,
     onLoadDraft,
     onClose: vi.fn(),
     onViewDuplicate: vi.fn(),

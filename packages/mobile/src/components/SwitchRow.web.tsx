@@ -1,3 +1,5 @@
+import { opacity } from '../theme/tokens';
+import { PressableSurface } from './PressableSurface';
 // SwitchRow — web implementation (react-native-web + react-native-paper). Renders
 // the shared `ListRow` (label + optional description) with a Material 3 Paper
 // `Switch` in its trailing slot — the Material counterpart to the Compose Row +
@@ -11,7 +13,7 @@
 // so `{ checked }` never reached the DOM and screen readers heard a switch with
 // no on/off state.
 
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Switch } from 'react-native-paper';
 import { ListRow } from './ListRow';
 import { makeToggleHandler } from './SwitchRow.logic';
@@ -24,12 +26,11 @@ export function SwitchRow({
   value,
   onValueChange,
   disabled = false,
-  tint,
 }: SwitchRowProps) {
   const handleToggle = makeToggleHandler(onValueChange, disabled);
 
   return (
-    <Pressable
+    <PressableSurface
       role="switch"
       aria-label={label}
       aria-checked={value}
@@ -44,14 +45,14 @@ export function SwitchRow({
         subtitle={description}
         wrapSubtitle={wrapDescription}
         showSeparator={false}
-        trailing={<Switch value={value} disabled={disabled} pointerEvents="none" color={tint} />}
+        trailing={<Switch value={value} disabled={disabled} pointerEvents="none" />}
       />
-    </Pressable>
+    </PressableSurface>
   );
 }
 
 const styles = StyleSheet.create({
   disabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
 });

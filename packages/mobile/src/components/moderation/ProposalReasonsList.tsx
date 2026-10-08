@@ -76,7 +76,7 @@ export const ProposalReasonsList = memo(function ProposalReasonsList({
   if (comments.length === 0) {
     return (
       <View style={styles.state}>
-        <Text variant="footnote" color={systemColors.tertiaryLabel}>
+        <Text variant="footnote" color={systemColors.secondaryLabel}>
           {t('mobile.moderation.noReasons')}
         </Text>
       </View>
@@ -101,7 +101,7 @@ const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
 
   return (
     <View style={[styles.row, { borderLeftColor: systemColors.separator }]}>
-      <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+      <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
         {comment.userDisplayName ?? t('mobile.moderation.unknownClimber')} · {formatRelativeTime(comment.createdAt)}
       </Text>
       <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -114,5 +114,5 @@ const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
 const styles = StyleSheet.create({
   state: { paddingTop: spacing[2] },
   list: { marginTop: spacing[2], gap: spacing[2] },
-  row: { borderLeftWidth: 2, paddingLeft: spacing[3], gap: 2 },
+  row: { borderLeftWidth: 2, paddingStart: spacing[3], gap: 2 },
 });

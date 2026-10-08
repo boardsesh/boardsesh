@@ -18,7 +18,6 @@ import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-f
 import { hapticSelection } from '../../lib/haptics';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import type { ShareBetaAscentSource } from '../../lib/share-beta-list';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 
@@ -101,7 +100,7 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
       ? brandColors.warning
       : ascent.status === 'send'
         ? brandColors.success
-        : iosSystemColors.systemGray;
+        : systemColors.secondaryLabel;
 
   const wallLabel = ascent.boardDisplayName ?? getLayoutDisplayName(ascent.boardType, ascent.layoutId);
   const wallAngleLabel = `${wallLabel} ${ascent.angle}°`;
@@ -208,7 +207,7 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
               {resultLabel}
             </Text>
           </View>
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
             {`${wallAngleLabel} · ${relativeTime}`}
           </Text>
         </View>
@@ -270,7 +269,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   mirrorIcon: {
-    marginLeft: 4,
+    marginStart: 4,
     flexShrink: 0,
   },
   resultRow: {
@@ -287,7 +286,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    marginLeft: spacing[1],
+    marginStart: spacing[1],
     maxWidth: 110,
   },
   grade: {
@@ -297,6 +296,6 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     // Inset to the text column: row padding + thumbnail + column gap.
-    marginLeft: spacing[4] + THUMBNAIL_SIZE.width + spacing[3],
+    marginStart: spacing[4] + THUMBNAIL_SIZE.width + spacing[3],
   },
 });

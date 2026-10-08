@@ -170,17 +170,17 @@ export type TextVariant = keyof typeof textStyles;
 /**
  * Max Dynamic Type multiplier for labels inside fixed-height glass chrome — the
  * queue capsule and the iOS 26 bottom-accessory / now-playing-style rows, whose
- * height is pinned to the `glassSize` ladder. The global `Text` default (1.5×)
- * clips the single-line climb name + grade against those rigid heights, so cap
- * them at 1.2× — still meaningfully larger for low-vision users, but it fits the
- * platter. Surfaces that can grow with their content keep the 1.5× default.
+ * height is pinned to the `glassSize` ladder. Uncapped `Text` would clip the
+ * single-line climb name + grade against those rigid heights. Their labels
+ * cap at 1.2× and use Large Content Viewer at accessibility sizes. Surfaces
+ * that can grow with their content keep the uncapped default.
  */
 export const CHROME_LABEL_MAX_FONT_SCALE = 1.2;
 
 /**
  * Max Dynamic Type multiplier for the rest-timer sheet's hero clock. Higher than
  * the chrome cap (the sheet grows with its content, so the digits can afford to
- * get bigger) but not the global 1.5×: at 34pt the widest reading the clock can
+ * get bigger) but stays bounded: at 34pt the widest reading the clock can
  * produce is a signed hour-long overrun, `-1:02:34`, and 1.5× puts that past the
  * width of a 375pt screen. 1.3× keeps the longest string on one line on the
  * narrowest phone we support.

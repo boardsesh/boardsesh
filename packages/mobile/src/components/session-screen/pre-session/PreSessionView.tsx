@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -99,6 +100,7 @@ export function PreSessionView({
   onStarted,
   isOpeningClimbs = false,
 }: PreSessionViewProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, variant } = useTheme();
@@ -429,7 +431,7 @@ export function PreSessionView({
         renderScrollComponent={GestureScrollView}
         // The floating chrome owns the top inset (tab mode), so pad manually by
         // the measured chrome height; never auto-inset under the (absent) header.
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{
           paddingTop: listPaddingTop,
           paddingBottom: footerHeight + footerBottom,

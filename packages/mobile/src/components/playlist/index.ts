@@ -9,7 +9,7 @@ export {
   type PlaylistDetailEmptyState,
   type PlaylistDetailEmptyAction,
 } from './PlaylistDetailView';
-export { PlaylistBackFab } from './PlaylistBackFab';
+export { PlaylistStateHeader } from './PlaylistStateHeader';
 export { PlaylistFormSheet, type PlaylistFormValues } from './PlaylistFormSheet';
 export { PlaylistPinButton } from './PlaylistPinButton';
 export { PlaylistFollowButton } from './PlaylistFollowButton';

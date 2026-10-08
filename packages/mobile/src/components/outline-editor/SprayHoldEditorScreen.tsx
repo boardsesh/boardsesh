@@ -118,7 +118,7 @@ import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-pho
 import { discardSprayFullPhoto, ensureSprayFullPhotoCached } from '../../lib/spray/spray-photo-cache';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { sprayPhotoReservesBottom, useSprayEditorLayout } from './use-spray-editor-layout';
-import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
+import { isIpadSprayFlow } from '../../lib/spray/spray-flow-presentation';
 import { revertedHold, type SpraySpotlightKind, type SpraySpotlightPulse } from './spray-spotlight';
 import { useSprayEditorHints, type SprayHintId } from './use-spray-editor-hints';
 import { renderToBoardScale, type StrokeRejection } from './stroke';
@@ -394,7 +394,8 @@ export function SprayHoldEditorScreen({
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
   const headerInset = useTransparentHeaderInset();
-  const { layout, landscape } = useSprayEditorLayout();
+  const [area, setArea] = useState({ width: 0, height: 0 });
+  const { layout, landscape } = useSprayEditorLayout(area);
   const tablet = layout === 'tablet';
   const tabletRef = useRef(tablet);
   tabletRef.current = tablet;
@@ -458,7 +459,6 @@ export function SprayHoldEditorScreen({
    * there the selection has to stay put.
    */
   const [joinCursorId, setJoinCursorId] = useState<number | null>(null);
-  const [area, setArea] = useState({ width: 0, height: 0 });
   const [state, dispatch] = useReducer(sprayEditorReducer, undefined, () => initialSprayEditorState());
   /** The first seed has run, so "no holds" now means no holds rather than not loaded yet. */
   const [seeded, setSeeded] = useState(false);
@@ -737,7 +737,7 @@ export function SprayHoldEditorScreen({
   useEffect(() => {
     const previous = fittedSizeRef.current;
     fittedSizeRef.current = { width: boardRender.width, height: boardRender.height };
-    if (!sprayFlowCoversScreen() || previous.width === 0) return;
+    if (!isIpadSprayFlow() || previous.width === 0) return;
     if (previous.width === boardRender.width && previous.height === boardRender.height) return;
     boardControlRef.current?.resetZoom();
     draftPointsSV.value = NO_POINTS;

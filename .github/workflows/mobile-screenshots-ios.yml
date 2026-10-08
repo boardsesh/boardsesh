@@ -190,6 +190,10 @@ on:
           - replay
           - record
           - live
+      fixture_snapshot:
+        description: 'Replay only: public HTTPS JSON reference for a candidate fixture snapshot. Empty uses the committed pin.'
+        type: string
+        default: ''
       frozen_now:
         description: 'Record only: ISO instant to freeze "now" at (e.g. 2026-09-08T12:00:00Z). Empty mints one from the current time. Optional even when recording alongside the Android shard on the same run — the merge takes the max frozenNow across every shard regardless.'
         type: string
@@ -578,6 +582,7 @@ jobs:
           flow: ${{ inputs.flow || 'app-store' }}
           fixtures: ${{ inputs.fixtures || 'replay' }}
           frozen-now: ${{ inputs.frozen_now || '' }}
+          fixture-snapshot: ${{ inputs.fixture_snapshot || '' }}
           render-mode: ${{ inputs.render_mode || '' }}
           boards: ${{ inputs.boards || '' }}
           app-cache-key: ${{ needs.ios-build.outputs.cache-key }}
@@ -730,6 +735,7 @@ jobs:
           flow: ${{ inputs.flow || 'app-store' }}
           fixtures: ${{ inputs.fixtures || 'replay' }}
           frozen-now: ${{ inputs.frozen_now || '' }}
+          fixture-snapshot: ${{ inputs.fixture_snapshot || '' }}
           render-mode: ${{ inputs.render_mode || '' }}
           boards: ${{ inputs.boards || '' }}
           app-cache-key: ${{ needs.ios-build.outputs.cache-key }}

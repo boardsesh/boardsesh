@@ -20,6 +20,7 @@ vi.mock('react-native', () => ({
       return native.announceWithOptions;
     },
   },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { absoluteFill: {}, create: (styles: Record<string, unknown>) => styles },

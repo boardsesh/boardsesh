@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +24,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { useGrades } from '../../lib/graphql/hooks';
 import { hapticSelection } from '../../lib/haptics';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { nowDate } from '../../lib/clock';
 
@@ -233,15 +233,15 @@ export function LogbookFilterSheet({
       enablePanDownToClose
       onChange={managed.onChange}
       onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={styles.indicator}
+      handleIndicatorStyle={{ ...styles.indicator, backgroundColor: theme.chartColors.separator }}
     >
       <View style={styles.header}>
         <Text variant="title3">{t('mobile.logbook.filter')}</Text>
-        <Pressable onPress={handleReset} hitSlop={8} accessibilityRole="button">
-          <Text variant="subheadline" color={theme.brandColors.accent}>
+        <PressableSurface onPress={handleReset} hitSlop={8} accessibilityRole="button">
+          <Text variant="subheadline" color={theme.systemColors.accent}>
             {t('mobile.logbook.reset')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
 
       <BottomSheetScrollView
@@ -267,7 +267,6 @@ export function LogbookFilterSheet({
               onSelect={(key) => handlePreset(key)}
               textVariant="footnote"
               trackColor={trackColor}
-              tint={theme.brandColors.accent}
               accessibilityLabel={t('mobile.logbook.sort')}
             />
           </View>
@@ -291,17 +290,15 @@ export function LogbookFilterSheet({
               onSelect={handleStatusChange}
               textVariant="footnote"
               trackColor={trackColor}
-              tint={theme.brandColors.accent}
               accessibilityLabel={t('mobile.logbook.statusLabel')}
             />
 
             <View style={styles.subsectionGap} />
-            <View style={styles.groupedCard}>
+            <View style={[styles.groupedCard, { backgroundColor: systemColors.tertiaryFill }]}>
               <SwitchRow
                 label={t('mobile.logbook.flashOnly')}
                 value={draftFilters.flashOnly && !flashDisabled}
                 disabled={flashDisabled}
-                tint={theme.brandColors.accent}
                 onValueChange={(value) => updateFilters({ flashOnly: value })}
               />
             </View>
@@ -314,7 +311,6 @@ export function LogbookFilterSheet({
               dismissible={false}
               showTitle
               centerOnEmpty={false}
-              accentColor={theme.brandColors.accent}
               style={styles.inlineGradeRail}
             />
 
@@ -343,11 +339,10 @@ export function LogbookFilterSheet({
             />
 
             <View style={styles.subsectionGap} />
-            <View style={styles.groupedCard}>
+            <View style={[styles.groupedCard, { backgroundColor: systemColors.tertiaryFill }]}>
               <SwitchRow
                 label={t('mobile.logbook.benchmarksOnly')}
                 value={draftFilters.benchmarkOnly}
-                tint={theme.brandColors.accent}
                 onValueChange={(value) => updateFilters({ benchmarkOnly: value })}
               />
             </View>
@@ -360,7 +355,6 @@ export function LogbookFilterSheet({
 
 const styles = StyleSheet.create({
   indicator: {
-    backgroundColor: iosSystemColors.separator,
     width: 36,
     height: 5,
     borderRadius: 3,
@@ -376,6 +370,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[3],
   },
   scrollContent: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     // Fill the sheet so the content is always scrollable to the last row (the
     // inline override supplies the generous safe-area-aware bottom padding).
     flexGrow: 1,
@@ -401,7 +398,6 @@ const styles = StyleSheet.create({
   },
   groupedCard: {
     borderRadius: borderRadius.lg,
-    backgroundColor: `${iosSystemColors.systemGray}14`,
     overflow: 'hidden',
   },
   inlineGradeRail: {

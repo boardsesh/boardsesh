@@ -152,7 +152,7 @@ export function EditProfileScreen() {
           }}
           disabled={isSaving}
         />
-        <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.avatarHint}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.avatarHint}>
           {t('profile.avatar.hintMobile')}
         </Text>
       </View>
@@ -197,6 +197,9 @@ export function EditProfileScreen() {
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     flexGrow: 1,
     paddingTop: spacing[4],
     paddingBottom: spacing[8],

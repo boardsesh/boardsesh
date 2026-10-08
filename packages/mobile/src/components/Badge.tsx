@@ -1,7 +1,9 @@
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Badge as PaperBadge } from 'react-native-paper';
 import { Text } from './Text';
+import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { createVariantComponent } from '../theme/variants';
 
@@ -19,7 +21,9 @@ type BadgeProps = {
  */
 export const Badge = createVariantComponent('Badge', { liquidGlass: BadgeGlass, material: BadgeMaterial });
 
-function BadgeMaterial({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
+function BadgeMaterial({ count, visible = true, color, size = 'medium' }: BadgeProps) {
+  const { systemColors } = useTheme();
+  const badgeColor = color ?? systemColors.error;
   const isDot = count === undefined || count === 0;
   const displayCount = count && count > 99 ? '99+' : String(count ?? '');
 
@@ -28,15 +32,18 @@ function BadgeMaterial({ count, visible = true, color = iosSystemColors.systemRe
   const badgeSize = size === 'small' ? 8 : isDot ? 10 : 18;
 
   return (
-    <PaperBadge visible={visible} size={badgeSize} style={{ backgroundColor: color }}>
+    <PaperBadge visible={visible} size={badgeSize} style={{ backgroundColor: badgeColor }}>
       {isDot ? undefined : displayCount}
     </PaperBadge>
   );
 }
 
 // Liquid Glass badge — the original animated implementation, unchanged.
-function BadgeGlass({ count, visible = true, color = iosSystemColors.systemRed, size = 'medium' }: BadgeProps) {
+function BadgeGlass({ count, visible = true, color, size = 'medium' }: BadgeProps) {
+  const styles = useTypographyStyles(createStyles);
+  const { systemColors } = useTheme();
   if (!visible) return null;
+  const badgeColor = color ?? systemColors.error;
 
   const isDot = count === undefined || count === 0;
   const displayCount = count && count > 99 ? '99+' : String(count ?? '');
@@ -54,15 +61,15 @@ function BadgeGlass({ count, visible = true, color = iosSystemColors.systemRed, 
       style={[
         styles.badge,
         {
-          backgroundColor: color,
-          height: badgeSize,
+          backgroundColor: badgeColor,
+          minHeight: badgeSize,
           minWidth,
           borderRadius: badgeSize / 2,
         },
       ]}
     >
       {!isDot && (
-        <Text variant="caption2" color={iosSystemColors.white} style={styles.text}>
+        <Text maxFontSizeMultiplier={1.2} variant="caption2" color={iosSystemColors.white} style={styles.text}>
           {displayCount}
         </Text>
       )}
@@ -70,15 +77,16 @@ function BadgeGlass({ count, visible = true, color = iosSystemColors.systemRed, 
   );
 }
 
-const styles = StyleSheet.create({
-  badge: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  text: {
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 13,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    badge: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 4,
+    },
+    text: {
+      fontSize: textStyles.caption2.fontSize,
+      fontWeight: '600',
+      lineHeight: textStyles.caption2.lineHeight,
+    },
+  });

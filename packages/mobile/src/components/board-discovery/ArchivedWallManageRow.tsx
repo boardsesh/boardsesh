@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -41,7 +42,7 @@ export const ArchivedWallManageRow = memo(function ArchivedWallManageRow({
 
   return (
     <View style={[styles.row, { backgroundColor: systemColors.background, borderBottomColor: systemColors.separator }]}>
-      <Pressable
+      <PressableSurface
         onPress={open}
         accessibilityRole="button"
         accessibilityLabel={`${wall.name}. ${subtitle}`}
@@ -58,7 +59,7 @@ export const ArchivedWallManageRow = memo(function ArchivedWallManageRow({
         </View>
         {isActive ? (
           <View style={styles.activeBadge}>
-            <Icon name="tick" size={14} color={brandColors.primary} />
+            <Icon name="tick.fill" size={14} color={brandColors.primary} />
             <Text variant="caption1" color={brandColors.primary}>
               {t('mobile.boardDetail.alreadyActive')}
             </Text>
@@ -66,8 +67,8 @@ export const ArchivedWallManageRow = memo(function ArchivedWallManageRow({
         ) : (
           <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
         )}
-      </Pressable>
-      <Pressable
+      </PressableSurface>
+      <PressableSurface
         onPress={remove}
         disabled={deleting}
         hitSlop={8}
@@ -77,7 +78,7 @@ export const ArchivedWallManageRow = memo(function ArchivedWallManageRow({
         style={({ pressed }) => [styles.deleteButton, pressed || deleting ? styles.pressed : null]}
       >
         <Icon name="delete" size={20} color={systemColors.secondaryLabel} />
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 });
@@ -86,7 +87,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingRight: spacing[2],
+    paddingEnd: spacing[2],
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   openArea: {
@@ -95,8 +96,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     columnGap: spacing[3],
     paddingVertical: spacing[3],
-    paddingLeft: spacing[4],
-    paddingRight: spacing[2],
+    paddingStart: spacing[4],
+    paddingEnd: spacing[2],
   },
   deleteButton: {
     padding: spacing[2],

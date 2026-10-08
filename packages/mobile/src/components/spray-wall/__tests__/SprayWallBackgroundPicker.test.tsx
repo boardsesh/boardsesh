@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { cleanup, fireEvent, render } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -6,8 +19,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 type A11yState = { disabled?: boolean; selected?: boolean };
 
 vi.mock('react-native', () => ({
-  StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    absoluteFill: {},
+  },
   Platform: { OS: 'ios', select: (choices: { ios: unknown }) => choices.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
   View: ({
     children,
@@ -104,6 +122,7 @@ vi.mock('../../Button', () => ({
 }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { secondaryLabel: '#888', secondaryBackground: '#eee', label: '#000', accent: '#07f' },
   }),

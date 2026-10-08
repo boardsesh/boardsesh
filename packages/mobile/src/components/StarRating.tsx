@@ -1,4 +1,5 @@
-import { View, Pressable, StyleSheet } from 'react-native';
+import { PressableSurface } from './PressableSurface';
+import { View, StyleSheet } from 'react-native';
 import { Icon } from './Icon';
 import { hapticSelection } from '../lib/haptics';
 import { useTheme } from '../providers/theme-provider';
@@ -51,7 +52,7 @@ export function StarRating({
         const filled = value != null && starIndex <= value;
         const selected = starIndex === value;
         return (
-          <Pressable
+          <PressableSurface
             key={starIndex}
             onPress={() => {
               hapticSelection();
@@ -68,7 +69,7 @@ export function StarRating({
               size={size}
               color={filled ? brandColors.warning : systemColors.secondaryLabel}
             />
-          </Pressable>
+          </PressableSurface>
         );
       })}
     </View>

@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -159,7 +172,10 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children, refreshControl }: { children?: ReactNode; refreshControl?: ReactNode }) =>
+    createElement('div', null, refreshControl, children),
+  RefreshControl: ({ refreshing, onRefresh }: { refreshing?: boolean; onRefresh?: () => void }) =>
+    createElement('button', { 'data-refresh-control': String(!!refreshing), onClick: onRefresh }, 'pull-to-refresh'),
   Pressable: ({
     children,
     onPress,
@@ -170,6 +186,7 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
   StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
     hairlineWidth: 1,
     absoluteFill: {},
@@ -178,13 +195,22 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../../../src/theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32, 10: 40, 16: 64 },
 }));
 vi.mock('../../../../src/theme/ios-colors', () => ({
   iosSystemColors: { systemGray: '#8E8E93', systemGray4: '#C7C7CC', separator: '#ddd' },
 }));
 vi.mock('../../../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { primary: '#6D28D9' } }),
+  useOptionalTheme: () => null,
+  useTheme: () => ({
+    brandColors: { primary: '#6D28D9' },
+    systemColors: {
+      separator: 'theme-separator',
+      secondaryLabel: 'theme-secondary-label',
+      tertiaryLabel: 'theme-tertiary-label',
+    },
+  }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({
   useAuth: () => authState,
@@ -1009,5 +1035,50 @@ describe('DiscoverLibrary create flow', () => {
     fireEvent.click(getByLabelText('open-create'));
     // Reopened with a clean slate — no stale error from the previous attempt.
     expect(container.querySelector('[data-create-error="true"]')).toBeNull();
+  });
+});
+
+// HIG Refresh content controls: a pull refetches every shelf on the hub.
+describe('DiscoverLibrary pull to refresh', () => {
+  function pull(container: HTMLElement) {
+    fireEvent.click(container.querySelector('[data-refresh-control]') as HTMLElement);
+  }
+  function spinnerOn(container: HTMLElement) {
+    return container.querySelector('[data-refresh-control]')?.getAttribute('data-refresh-control');
+  }
+  function hub() {
+    return (
+      <QueryClientProvider client={new QueryClient()}>
+        <DiscoverLibrary />
+      </QueryClientProvider>
+    );
+  }
+
+  it('refetches owned, pinned, community, smart and setter shelves on a pull', async () => {
+    followedSettersHook.data = [{ setterUsername: 'setter', climbCount: 3 }];
+    const { container } = renderHub();
+
+    await act(async () => pull(container));
+
+    expect(userHook.refetch).toHaveBeenCalledTimes(1);
+    expect(pinnedHook.refetch).toHaveBeenCalledTimes(1);
+    expect(communityHook.refetch).toHaveBeenCalledTimes(1);
+    expect(smartCountsHook.refetch).toHaveBeenCalledTimes(1);
+    expect(followedSettersHook.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the spinner until the playlist shelves finish loading', async () => {
+    // Like the real hook: a refetch flips the shelf's loading flag at once.
+    userHook.refetch.mockImplementationOnce(() => {
+      userHook.isLoading = true;
+    });
+    const { container, rerender } = render(hub());
+
+    await act(async () => pull(container));
+    expect(spinnerOn(container)).toBe('true');
+
+    userHook.isLoading = false;
+    rerender(hub());
+    expect(spinnerOn(container)).toBe('false');
   });
 });

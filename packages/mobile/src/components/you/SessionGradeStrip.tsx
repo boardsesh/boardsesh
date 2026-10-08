@@ -100,7 +100,7 @@ export const SessionGradeStrip = memo(function SessionGradeStrip({
 });
 
 const styles = StyleSheet.create({
-  container: { marginTop: spacing[2], gap: spacing[1] },
+  container: { width: '100%', maxWidth: 672, alignSelf: 'center', marginTop: spacing[2], gap: spacing[1] },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: BAR_MAX_HEIGHT },
   // Round only the top caps so the bars sit flush on the baseline.
   bar: { flex: 1, borderTopLeftRadius: borderRadius.sm, borderTopRightRadius: borderRadius.sm },

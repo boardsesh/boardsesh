@@ -46,7 +46,6 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
-import { iosSystemColors } from '../theme/ios-colors';
 import {
   shouldPushValueToNative,
   toIosAutocapitalization,
@@ -67,7 +66,7 @@ type AuthFieldProps = {
 };
 
 function AuthField({ spec, index, isLast, registerFocus, onAdvance }: AuthFieldProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const textState = useNativeState(spec.value);
   const lastEmittedRef = useRef(spec.value);
   const fieldRef = useRef<TextFieldRef | SecureFieldRef>(null);
@@ -162,7 +161,7 @@ function AuthField({ spec, index, isLast, registerFocus, onAdvance }: AuthFieldP
         />
       )}
       {spec.error ? (
-        <SwiftUIText modifiers={[foregroundStyle(iosSystemColors.systemRed)]}>{spec.error}</SwiftUIText>
+        <SwiftUIText modifiers={[foregroundStyle(systemColors.error)]}>{spec.error}</SwiftUIText>
       ) : spec.hint ? (
         <SwiftUIText modifiers={[foregroundStyle({ type: 'hierarchical', style: 'secondary' })]}>
           {spec.hint}

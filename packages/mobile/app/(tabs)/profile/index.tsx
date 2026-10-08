@@ -1,7 +1,9 @@
+import { ReadableColumn } from '../../../src/components/ReadableColumn';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { scopedRouter as router } from '../../../src/lib/routing/scoped-navigation';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useProfile, useYouProfileData } from '../../../src/lib/graphql/hooks';
 import { useTheme } from '../../../src/providers/theme-provider';
@@ -77,7 +79,7 @@ export default function YouScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-      <View style={styles.page}>
+      <ReadableColumn style={styles.page}>
         {activeTab === 'progress' ? (
           <ProgressTab data={youData} topInset={chromeHeight} userId={userId} onOpenFilters={openFilters} />
         ) : null}
@@ -85,7 +87,7 @@ export default function YouScreen() {
         {activeTab === 'logbook' ? <LogbookTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={chromeHeight} /> : null}
         {activeTab === 'social' ? <SocialTab userId={userId} topInset={chromeHeight} /> : null}
-      </View>
+      </ReadableColumn>
 
       <ProfileTopChrome activeTab={activeTab} onSelectTab={handleSelectTab} onHeightChange={setChromeHeight} />
 
@@ -102,5 +104,5 @@ export default function YouScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  page: { flex: 1 },
+  page: { width: '100%', maxWidth: 672, alignSelf: 'center', flex: 1 },
 });

@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// What this test is about: InteractiveCreateBoard's onInteractionActiveChange
-// callback, which CreateDrawer uses to disable its native bottom sheet's own
-// pan gesture while the board is zoomed or mid-pinch (see the doc comment on
-// the prop). Everything else is mocked to a stub — the gesture composition
-// itself is covered by use-zoom-pan-gesture's own tests.
+// What this test is about: InteractiveCreateBoard hands the editor's scroll to
+// useZoomPanGesture, so the pinch can be declared simultaneous with it.
+// Everything else is mocked to a stub — the gesture composition itself is
+// covered by use-zoom-pan-gesture's own tests.
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -45,7 +44,6 @@ vi.mock('../use-zoomed-hold-tap-gesture', () => ({
 }));
 vi.mock('../use-rest-hold-tap-gesture', () => ({ useRestHoldTapGesture: () => ({}) }));
 
-const zoomPanState = { isZoomed: false, isPinching: false };
 let lastUseZoomPanGestureOptions: Record<string, unknown> | null = null;
 vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
   useZoomPanGesture: (options: Record<string, unknown>) => {
@@ -53,8 +51,7 @@ vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
     return {
       pinchGesture: {},
       zoomPanGesture: {},
-      isZoomed: zoomPanState.isZoomed,
-      isPinching: zoomPanState.isPinching,
+      isZoomed: false,
       isPinchingSV: { value: false },
       scaleSV: { value: 1 },
       translateXSV: { value: 0 },
@@ -69,7 +66,7 @@ vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
 
 import { InteractiveCreateBoard } from '../InteractiveCreateBoard';
 
-function renderBoard(onInteractionActiveChange: (active: boolean) => void, scrollRef?: { current: undefined }) {
+function renderBoard(scrollRef?: { current: undefined }) {
   return render(
     createElement(InteractiveCreateBoard, {
       frames: 'p1r12',
@@ -85,41 +82,15 @@ function renderBoard(onInteractionActiveChange: (active: boolean) => void, scrol
       onLongPressHold: () => {},
       renderWidth: 300,
       renderHeight: 300,
-      onInteractionActiveChange,
       scrollRef,
     }),
   );
 }
 
-describe('InteractiveCreateBoard onInteractionActiveChange', () => {
-  beforeEach(() => {
-    zoomPanState.isZoomed = false;
-    zoomPanState.isPinching = false;
-  });
-
-  it('reports inactive at rest', () => {
-    const onInteractionActiveChange = vi.fn();
-    renderBoard(onInteractionActiveChange);
-    expect(onInteractionActiveChange).toHaveBeenLastCalledWith(false);
-  });
-
-  it('reports active while zoomed', () => {
-    zoomPanState.isZoomed = true;
-    const onInteractionActiveChange = vi.fn();
-    renderBoard(onInteractionActiveChange);
-    expect(onInteractionActiveChange).toHaveBeenLastCalledWith(true);
-  });
-
-  it('reports active mid-pinch, before isZoomed has flipped', () => {
-    zoomPanState.isPinching = true;
-    const onInteractionActiveChange = vi.fn();
-    renderBoard(onInteractionActiveChange);
-    expect(onInteractionActiveChange).toHaveBeenLastCalledWith(true);
-  });
-
+describe('InteractiveCreateBoard scroll relation', () => {
   it('forwards scrollRef to useZoomPanGesture, so the pinch can be declared simultaneous with the surrounding scroll', () => {
     const scrollRef = { current: undefined };
-    renderBoard(vi.fn(), scrollRef);
+    renderBoard(scrollRef);
     expect(lastUseZoomPanGestureOptions?.scrollRef).toBe(scrollRef);
   });
 });

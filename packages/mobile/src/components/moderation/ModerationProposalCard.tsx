@@ -43,7 +43,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 
 /** Portrait board-art cell. Narrower than the feed hero — this is a list row. */
 const THUMBNAIL = { width: 64, height: 80 } as const;
@@ -253,7 +253,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
 
         <View style={styles.proposerRow}>
           <Avatar uri={proposal.proposerAvatarUrl} name={proposal.proposerDisplayName} size={22} />
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} style={styles.flex}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.flex}>
             {proposal.proposerDisplayName ?? t('mobile.moderation.unknownClimber')} ·{' '}
             {formatRelativeTime(proposal.createdAt)}
           </Text>
@@ -290,7 +290,7 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
           expanded={reasonsExpanded}
         />
 
-        <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.voteLine}>
+        <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.voteLine}>
           {tFeed('proposalVoteBar.votesNeeded', { current: progress.current, required: progress.required })}
           {' · '}
           {t('mobile.moderation.reporters', { count: progress.reporters })}
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: borderRadius.full,
   },
-  voteButtonDisabled: { opacity: 0.5 },
+  voteButtonDisabled: { opacity: opacity.disabled },
   moderatorRow: { flexDirection: 'row', gap: spacing[2], marginTop: spacing[2] },
   flex: { flex: 1 },
 });

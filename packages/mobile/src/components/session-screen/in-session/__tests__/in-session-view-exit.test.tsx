@@ -42,6 +42,8 @@ const session = vi.hoisted(() => ({
 vi.mock('../../RestTimerArmRow', () => ({ RestTimerArmRow: () => null }));
 vi.mock('../SessionVisibilityControl', () => ({ SessionVisibilityControl: () => null }));
 vi.mock('react-native', () => ({
+  // This suite exercises the JS chrome fallback; native headers have their own navigation tests.
+  Platform: { OS: 'android' },
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

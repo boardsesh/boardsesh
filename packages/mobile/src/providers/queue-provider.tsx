@@ -1600,8 +1600,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const restoreQueueItems = useCallback(
     (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => {
       if (scope !== undoScopeRef.current) return;
-      applyQueueSnapshot(before.queue, before.currentClimbQueueItem, captureQueueMutationOrigin(), () => {
+      const origin = captureQueueMutationOrigin();
+      applyQueueSnapshot(before.queue, before.currentClimbQueueItem, origin, () => {
         if (scope !== undoScopeRef.current) return null;
+        // A removal failure may have a pre-Undo HTTP snapshot still in flight.
+        // Retire its ownership when this queued restore applies, so neither it
+        // nor a coalesced trailing read can overwrite Undo. Keep the mutation
+        // generation intact: pending appends of climbs we kept must still send.
+        // Initial profile resolution keeps older null-identity origins valid;
+        // retire those flights too, without cancelling any queued wire writes.
+        resyncFlightsByOriginRef.current.clear();
         return restoreRemovedQueueItems(before, removedUuids, {
           queue: stateRef.current.queue,
           currentClimbQueueItem: stateRef.current.currentClimbQueueItem,

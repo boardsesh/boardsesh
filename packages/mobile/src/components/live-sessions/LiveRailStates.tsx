@@ -1,10 +1,10 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { borderRadius, spacing } from '../../theme/tokens';
 import { LIVE_TILE_GAP, LIVE_TILE_WIDTH } from './live-session-model';
 import { useLiveSessionColors } from './use-live-session-colors';
@@ -53,11 +53,11 @@ export const LiveRailErrorRow = memo(function LiveRailErrorRow({ onRetry }: { on
   const { brandColors, systemColors } = useTheme();
   return (
     <View testID="live-sessions-error" style={[styles.stateRow, { borderColor: systemColors.separator }]}>
-      <Icon name="error" size={20} color={iosSystemColors.systemRed} />
+      <Icon name="error" size={20} color={systemColors.error} />
       <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flex}>
         {t('mobile.liveSessions.error')}
       </Text>
-      <Pressable
+      <PressableSurface
         onPress={onRetry}
         accessibilityRole="button"
         hitSlop={spacing[1]}
@@ -70,7 +70,7 @@ export const LiveRailErrorRow = memo(function LiveRailErrorRow({ onRetry }: { on
         <Text variant="subheadline" color={brandColors.primary}>
           {tCommon('actions.retry')}
         </Text>
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 });
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
   },
   skeletonAvatars: { flexDirection: 'row' },
   skeletonAvatar: { width: 40, height: 40, borderRadius: 20, opacity: 0.6 },
-  skeletonAvatarOverlap: { marginLeft: -14 },
+  skeletonAvatarOverlap: { marginStart: -14 },
   skeletonLine: { height: 12, borderRadius: borderRadius.full, opacity: 0.5 },
   skeletonLineWide: { width: '70%', height: 16 },
   skeletonLineMid: { width: '58%' },

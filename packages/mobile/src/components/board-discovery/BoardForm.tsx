@@ -1,10 +1,11 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
   View,
   ScrollView,
   StyleSheet,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
@@ -102,6 +103,7 @@ export function BoardForm({
   currentBoardUuid,
   sprayBackgroundSection,
 }: BoardFormProps) {
+  const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   // Only warn on a same-config foreign board — cross-model serial reuse is
@@ -232,7 +234,11 @@ export function BoardForm({
   }, [errorMessage, submitting, submitAttempt]);
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
@@ -245,7 +251,7 @@ export function BoardForm({
         {errorMessage ? (
           <Text
             variant="footnote"
-            color={iosSystemColors.systemRed}
+            color={systemColors.error}
             style={styles.errorMessage}
             accessibilityRole="alert"
             accessibilityLiveRegion="polite"
@@ -266,7 +272,7 @@ export function BoardForm({
           ) : (
             <View style={styles.previewPlaceholder}>
               <Icon name="boards" size={40} color={systemColors.tertiaryLabel} />
-              <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.previewHint}>
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.previewHint}>
                 {t('mobile.create.previewHint')}
               </Text>
             </View>
@@ -377,7 +383,7 @@ export function BoardForm({
         ) : null}
 
         {/* Advanced — hold sets (default all), visibility, location, serial. */}
-        <Pressable
+        <PressableSurface
           onPress={() => setAdvancedOpen((open) => !open)}
           accessibilityRole="button"
           accessibilityState={{ expanded: advancedOpen }}
@@ -385,7 +391,7 @@ export function BoardForm({
         >
           <Text variant="headline">{t('mobile.create.moreOptions')}</Text>
           <Icon name={advancedOpen ? 'chevron.up' : 'chevron.down'} size={18} color={systemColors.secondaryLabel} />
-        </Pressable>
+        </PressableSurface>
 
         {advancedOpen ? (
           <View style={styles.advancedBody}>
@@ -428,7 +434,7 @@ export function BoardForm({
                   autoCapitalize="characters"
                   maxLength={100}
                 />
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.serialHint}>
                   {t('mobile.create.serialHint')}
                 </Text>
 
@@ -437,7 +443,7 @@ export function BoardForm({
                   <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
                   <Text
                     variant="body"
-                    color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
+                    color={builder.timerName ? systemColors.label : systemColors.secondaryLabel}
                     numberOfLines={1}
                     style={styles.timerName}
                   >
@@ -459,7 +465,7 @@ export function BoardForm({
                     />
                   ) : null}
                 </View>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.serialHint}>
                   {t('mobile.create.timerHint')}
                 </Text>
               </>

@@ -1,11 +1,13 @@
+import { PressableSurface } from '../PressableSurface';
 // Home's "Climbing now" rail. Self-subscribing on purpose: Home's list header
 // is a `useMemo` whose deps must not include this query's data, or every poll
 // would rebuild the FlashList header. The screen passes the scope and a stable
 // invite callback; everything that changes on a poll stays in here.
 
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { FlatList, Pressable, StyleSheet, useWindowDimensions, View, type ListRenderItemInfo } from 'react-native';
-import { useIsFocused, useRouter } from 'expo-router';
+import { FlatList, StyleSheet, useWindowDimensions, View, type ListRenderItemInfo } from 'react-native';
+import { useIsFocused } from 'expo-router';
+import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../Text';
@@ -300,7 +302,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
   return (
     <View style={styles.section} testID="live-sessions-rail">
       {/* The whole heading row is one tap target (25pt + padding + hit slop ≥ 44pt). */}
-      <Pressable
+      <PressableSurface
         onPress={toggle}
         accessibilityRole="button"
         accessibilityLabel={title}
@@ -316,7 +318,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
             {t('mobile.liveSessions.liveCount', { count: liveCount })}
           </Text>
         ) : null}
-      </Pressable>
+      </PressableSurface>
       {/* Nothing until the stored collapse state lands: rendering the default
           and then correcting it is the cold-start flash this avoids. */}
       {!loaded || !expanded ? null : blockedOffline ? (

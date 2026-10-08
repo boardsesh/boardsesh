@@ -144,6 +144,9 @@ export const LogbookWallSubDivider = memo(function LogbookWallSubDivider({ wallL
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     gap: spacing[1],
     marginHorizontal: spacing[4],
     marginTop: spacing[2],

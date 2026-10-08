@@ -4,7 +4,7 @@ import type { GestureType } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { SwipeBoardCarousel } from './SwipeBoardCarousel';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 import { useDeferredUntilFrame } from '../../hooks/use-deferred-until-frame';
 
 type BoardRenderData = {
@@ -69,6 +69,7 @@ export const DeferredBoard = memo(function DeferredBoard({
   boardRenderData,
   ...carouselProps
 }: DeferredBoardProps) {
+  const { systemColors } = useTheme();
   // Let the viewport and header measurements reach layout before mounting the
   // carousel. Otherwise a cached image can paint at the fallback size and visibly
   // grow mid-presentation. Readiness stays true across swipes and positive resizes.
@@ -77,7 +78,7 @@ export const DeferredBoard = memo(function DeferredBoard({
   if (!open || !layoutReady || !ready) {
     return (
       <View
-        style={styles.placeholder}
+        style={[styles.placeholder, { backgroundColor: systemColors.tertiaryFill }]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
         testID="deferred-board-placeholder"
@@ -95,6 +96,5 @@ const styles = StyleSheet.create({
     // rather than a hard gap. No image decode, no gesture handlers — cheap to
     // mount on the present frame. Matches the section skeleton tint used
     // elsewhere in the play drawer.
-    backgroundColor: `${iosSystemColors.systemGray}14`,
   },
 });

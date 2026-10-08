@@ -1,3 +1,6 @@
+import { Text } from './Text';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 // AppMenu — web implementation (react-native-web + react-native-paper). A Paper
 // `Menu` anchored to a flat text + caret trigger (or a bare glyph trigger in icon
 // mode) — the Material counterpart to the Compose `DropdownMenu` in
@@ -11,7 +14,7 @@
 // name, matching Android, which also drops it.
 
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Menu } from 'react-native-paper';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -28,6 +31,7 @@ const CARET = '▾';
 const ICON_ANCHOR_SIZE = 44;
 
 export function AppMenu(props: AppMenuProps) {
+  const styles = useTypographyStyles(createStyles);
   const { actions, onSelectIndex, maxWidth, accessibilityLabel, accessibilityHint, style } = props;
   const { m3, systemColors } = useTheme();
   const [visible, setVisible] = useState(false);
@@ -40,7 +44,7 @@ export function AppMenu(props: AppMenuProps) {
   const disabledColor = systemColors.tertiaryLabel as string;
 
   const anchor = (
-    <Pressable
+    <PressableSurface
       onPress={() => setVisible(true)}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? props.label}
@@ -62,7 +66,7 @@ export function AppMenu(props: AppMenuProps) {
       {props.iconName == null && props.showCaret !== false ? (
         <Text style={[styles.caret, { color: caretColor }]}>{` ${CARET}`}</Text>
       ) : null}
-    </Pressable>
+    </PressableSurface>
   );
 
   return (
@@ -89,28 +93,29 @@ export function AppMenu(props: AppMenuProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  anchor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[1],
-    paddingVertical: spacing[2],
-  },
-  iconAnchor: {
-    width: ICON_ANCHOR_SIZE,
-    height: ICON_ANCHOR_SIZE,
-    borderRadius: ICON_ANCHOR_SIZE / 2,
-    justifyContent: 'center',
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-  },
-  anchorLabel: {
-    fontSize: 17,
-    fontWeight: '600',
-    flexShrink: 1,
-  },
-  caret: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    anchor: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing[1],
+      paddingVertical: spacing[2],
+    },
+    iconAnchor: {
+      width: ICON_ANCHOR_SIZE,
+      height: ICON_ANCHOR_SIZE,
+      borderRadius: ICON_ANCHOR_SIZE / 2,
+      justifyContent: 'center',
+      paddingHorizontal: 0,
+      paddingVertical: 0,
+    },
+    anchorLabel: {
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '600',
+      flexShrink: 1,
+    },
+    caret: {
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '600',
+    },
+  });

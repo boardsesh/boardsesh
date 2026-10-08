@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
 import { render, act } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

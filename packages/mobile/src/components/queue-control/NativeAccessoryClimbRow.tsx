@@ -1,5 +1,4 @@
 import { StyleSheet, View, type ColorValue } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
 import type { Climb } from '@boardsesh/queue';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useTheme } from '../../providers/theme-provider';
@@ -12,6 +11,9 @@ import { MarqueeText } from '../MarqueeText';
 import { DraftChip } from '../DraftChip';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { AccessoryPlayLink } from './AccessoryPlayLink';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { largeContentTitle } from './accessory-large-content-title';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -90,7 +92,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
   const { boardConfig } = useDrawerHost();
   const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  const { openGesture } = useAccessoryClimbTap();
+  const { openPlay, preparePlay } = useAccessoryClimbTap();
 
   const showThumbnail = placement === 'regular' && boardConfig !== null;
   const rowHeight = placement === 'inline' ? glassSize.inline : glassSize.standard;
@@ -100,21 +102,29 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
 
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
-      <GestureDetector gesture={openGesture}>
-        {/* tapClip reserves the leading slot via paddingLeft (not a real child),
+      <AccessoryPlayLink
+        style={styles.tapClip}
+        accessibilityLabel={climb.name}
+        onOpen={openPlay}
+        onPrepare={preparePlay}
+        zoomSourceRetained
+      >
+        {/* tapClip reserves the leading slot via paddingStart (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}
-        <View style={styles.tapClip} accessibilityRole="button" accessibilityLabel={climb.name}>
-          <View style={styles.labelSlot}>
-            <ClimbLabel
-              climb={climb}
-              labelColor={systemColors.label}
-              formattedGrade={currentFormattedGrade}
-              showThumbnail={showThumbnail}
-              boardConfig={boardConfig}
-            />
-          </View>
-        </View>
-      </GestureDetector>
+        <LargeContentViewer
+          style={styles.labelSlot}
+          title={largeContentTitle(climb.name, currentFormattedGrade)}
+          onActivate={openPlay}
+        >
+          <ClimbLabel
+            climb={climb}
+            labelColor={systemColors.label}
+            formattedGrade={currentFormattedGrade}
+            showThumbnail={showThumbnail}
+            boardConfig={boardConfig}
+          />
+        </LargeContentViewer>
+      </AccessoryPlayLink>
       <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
         <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
       </View>
@@ -137,8 +147,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: ACCESSORY_LEADING_INSET,
-    paddingRight: ACCESSORY_TRAILING_INSET,
+    paddingStart: ACCESSORY_LEADING_INSET,
+    paddingEnd: ACCESSORY_TRAILING_INSET,
   },
   // The lightbulb sits in this absolute slot on TOP of the climb gesture, so its
   // Pressable keeps a full, unobscured 44pt tap target. left matches the row's
@@ -158,7 +168,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
     // Reserve the leading slot so the thumbnail starts just past the lightbulb.
-    paddingLeft: THUMBNAIL_LEADING_INSET,
+    paddingStart: THUMBNAIL_LEADING_INSET,
   },
   labelSlot: {
     justifyContent: 'center',
@@ -169,8 +179,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 0,
     gap: spacing[2],
-    paddingLeft: spacing[2],
-    paddingRight: spacing[1],
+    paddingStart: spacing[2],
+    paddingEnd: spacing[1],
   },
   name: {
     flex: 1,

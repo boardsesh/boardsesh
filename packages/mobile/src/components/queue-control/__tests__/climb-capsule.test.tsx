@@ -27,6 +27,16 @@ function backgroundOf(style: unknown): string {
   return '';
 }
 type LayoutHandler = (event: { nativeEvent: { layout: { width: number; height: number } } }) => void;
+vi.mock('../AccessoryPlayLink', () => ({
+  AccessoryPlayLink: ({
+    children,
+    accessibilityLabel,
+  }: {
+    children: ReactNode;
+    style?: unknown;
+    accessibilityLabel: string;
+  }) => createElement('div', { 'aria-label': accessibilityLabel, 'data-accessory-play-link': true }, children),
+}));
 vi.mock('react-native', () => ({
   View: ({
     children,

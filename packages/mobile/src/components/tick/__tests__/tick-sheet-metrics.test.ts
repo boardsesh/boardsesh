@@ -58,7 +58,8 @@ describe('tick sheet metrics', () => {
       expect(snapPoints).toHaveLength(2);
       expect(snapPoints.every((snapPoint) => snapPoint.endsWith('%'))).toBe(true);
       expect(percentToNumber(snapPoints[0])).toBeLessThan(percentToNumber(snapPoints[1]));
-      expect(snapPoints[1]).toBe('92%');
+      expect(snapPoints[0]).toBe('50%');
+      expect(snapPoints[1]).toBe('90%');
     }
   });
 });

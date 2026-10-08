@@ -84,4 +84,12 @@ describe('useAccessoryClimbTap', () => {
     tap.onEnd?.();
     expect(drawer.openPlayDrawer).not.toHaveBeenCalled();
   });
+
+  it('stages the queue head without competing with Link navigation', () => {
+    const { result } = renderHook(() => useAccessoryClimbTap());
+    result.current.preparePlay();
+    expect(drawer.openPlayDrawer).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-head' }), {
+      navigate: false,
+    });
+  });
 });

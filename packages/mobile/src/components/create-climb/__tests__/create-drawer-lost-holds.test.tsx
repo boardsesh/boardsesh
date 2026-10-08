@@ -1,44 +1,56 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleHoldList', () => ({ AccessibleHoldList: () => null }));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, forwardRef, useEffect, useImperativeHandle, type ReactNode } from 'react';
+import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 
 // A remix of a climb that lost holds: the drawer hands the board the grey rings
 // as tap targets, and holds Save back with a line saying why until the climber
 // has tapped every ring away. Harness shared with create-drawer-grade-prompt.
 
-type LayoutEvent = { nativeEvent: { layout: { x: number; y: number; width: number; height: number } } };
-type ViewMockProps = { children?: ReactNode; onLayout?: (event: LayoutEvent) => void; testID?: string };
-
-/** Heights the two measured above-fold blocks report, keyed by testID. */
-const MEASURED_HEIGHTS: Record<string, number> = {
-  'create-drawer-measured-header': 60,
-  'create-drawer-measured-board-block': 640,
-};
+type ViewMockProps = { children?: ReactNode; testID?: string };
 
 vi.mock('react-native', () => ({
-  View: ({ children, onLayout, testID }: ViewMockProps) => {
-    // jsdom never lays out, so report the height the peek maths would measure.
-    useEffect(() => {
-      const height = testID ? MEASURED_HEIGHTS[testID] : undefined;
-      if (onLayout && height !== undefined) onLayout({ nativeEvent: { layout: { x: 0, y: 0, width: 405, height } } });
-    }, [onLayout, testID]);
-    return createElement('div', { 'data-testid': testID }, children);
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+    accessibilityLabel?: string;
+  }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress, 'aria-label': accessibilityLabel }, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
   },
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 405, height: 900 }),
+  Platform: { OS: 'ios' },
+  Keyboard: { addListener: () => ({ remove: () => undefined }) },
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
 
-const sheet = vi.hoisted(() => ({ snapToIndex: vi.fn(), close: vi.fn() }));
 const scroll = vi.hoisted(() => ({ scrollTo: vi.fn() }));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: forwardRef(function BottomSheetMock({ children }: { children?: ReactNode }, ref) {
-    useImperativeHandle(ref, () => sheet);
-    return createElement('div', null, children);
-  }),
-}));
 vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   ScrollView: forwardRef(function ScrollViewMock({ children }: { children?: ReactNode }, ref) {
@@ -48,11 +60,12 @@ vi.mock('react-native-gesture-handler', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { secondaryBackground: '#221A33' } }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
-  sheetStyles: { background: {} },
 }));
 vi.mock('../../board/HeatmapOverlay', () => ({
   HeatmapOverlay: () => null,
@@ -138,7 +151,6 @@ function drawerWith(lostHolds: LostHoldGhostsState | undefined) {
     controller,
     boardHolds,
     onLongPressHold: vi.fn(),
-    subSheetOpen: false,
     onLoadDraft: vi.fn(),
     onClose: vi.fn(),
     onViewDuplicate: vi.fn(),

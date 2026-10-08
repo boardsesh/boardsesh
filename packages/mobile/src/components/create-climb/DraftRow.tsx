@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
@@ -7,7 +8,6 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { countHolds } from './draft-format';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 
@@ -45,8 +45,8 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
   }, [climb, onPress]);
 
   return (
-    <View style={styles.row}>
-      <Pressable
+    <View style={[styles.row, { borderBottomColor: systemColors.separator }]}>
+      <PressableSurface
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={climb.name || t('createClimbForm.draftBadge')}
@@ -58,16 +58,16 @@ export function DraftRow({ climb, onPress, onDelete }: DraftRowProps) {
         <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
           {subtitleParts.join(' · ')}
         </Text>
-      </Pressable>
-      <Pressable
+      </PressableSurface>
+      <PressableSurface
         onPress={() => onDelete(climb)}
         accessibilityRole="button"
         accessibilityLabel={t('draftsDrawer.delete.tooltip')}
         hitSlop={8}
         style={styles.deleteButton}
       >
-        <Icon name="delete" size={20} color={iosSystemColors.systemRed} />
-      </Pressable>
+        <Icon name="delete" size={20} color={systemColors.error} />
+      </PressableSurface>
     </View>
   );
 }
@@ -78,7 +78,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing[3],
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: iosSystemColors.separator,
     gap: spacing[2],
   },
   rowMain: {

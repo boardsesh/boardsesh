@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, Pressable, StyleSheet, type FlatList } from 'react-native';
+import { View, StyleSheet, type FlatList } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +16,6 @@ import { withSheetBottomInset } from '../sheet-content-inset';
 import { QueueItemRow, type QueueItemRowBoard, POSITION_SLOT_WIDTH, SEPARATOR_INSET } from '../QueueItemRow';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { Text } from '../Text';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
@@ -275,7 +275,7 @@ function QueueListComponent({
       switch (row.type) {
         case 'history-show-all':
           return (
-            <Pressable
+            <PressableSurface
               onPress={onShowFullHistory}
               style={styles.showAllRow}
               accessibilityRole="button"
@@ -284,7 +284,7 @@ function QueueListComponent({
               <Text variant="subheadline" color={brandColors.primary}>
                 {t('queueList.showFullHistory', { count: row.hiddenCount })}
               </Text>
-            </Pressable>
+            </PressableSurface>
           );
 
         case 'history-divider':
@@ -354,7 +354,7 @@ function QueueListComponent({
         case 'suggestion':
           return (
             <View>
-              <Pressable
+              <PressableSurface
                 onPress={() => handleSuggestionPress(row.climb)}
                 accessibilityRole="button"
                 accessibilityLabel={row.climb.name}
@@ -369,7 +369,7 @@ function QueueListComponent({
                   setIds={board.setIds}
                   angle={board.angle}
                 />
-              </Pressable>
+              </PressableSurface>
               <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />
             </View>
           );
@@ -403,7 +403,7 @@ function QueueListComponent({
   if (rows.length === 0) {
     return (
       <View style={styles.emptyContainer}>
-        <Text variant="body" color={iosSystemColors.systemGray}>
+        <Text variant="body" color={systemColors.secondaryLabel}>
           {t('mobile.queueSheet.emptyQueue')}
         </Text>
       </View>
@@ -463,6 +463,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: SEPARATOR_INSET,
+    marginStart: SEPARATOR_INSET,
   },
 });

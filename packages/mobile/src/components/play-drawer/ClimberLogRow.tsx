@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
   },
   earlierButtonInset: {
-    marginLeft: AVATAR_SIZE + spacing[3],
+    marginStart: AVATAR_SIZE + spacing[3],
   },
   bareRow: {
     flexDirection: 'row',
@@ -431,8 +431,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   earlierRow: {
-    marginLeft: AVATAR_SIZE / 2,
-    paddingLeft: AVATAR_SIZE / 2 + spacing[3],
+    marginStart: AVATAR_SIZE / 2,
+    paddingStart: AVATAR_SIZE / 2 + spacing[3],
     paddingVertical: spacing[1],
     borderLeftWidth: StyleSheet.hairlineWidth,
   },

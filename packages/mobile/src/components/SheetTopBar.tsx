@@ -1,3 +1,4 @@
+import { LargeContentViewer } from './LargeContentViewer';
 // The one top bar for a sheet's actions: leading Cancel / close / back, a
 // centred title, and a trailing confirm. Passed through `ModalSheet` / `Sheet`'s
 // `header` slot, which sits above the body and outside its scroll, so the bar
@@ -60,6 +61,8 @@ type SheetTopBarLeadingBase = {
   onPress: () => void;
   /** Overrides the default spoken label. */
   accessibilityLabel?: string;
+  /** What leaving does, e.g. that a draft is kept. */
+  accessibilityHint?: string;
   /** Dims the action and swallows taps, as on the trailing confirm. */
   disabled?: boolean;
 };
@@ -154,10 +157,10 @@ type SheetTopBarProps = {
   testID?: string;
 };
 
-const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
+export const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
   leading: SheetTopBarLeading | SheetTopBarTextLeading,
 ) {
-  const { kind, onPress, accessibilityLabel, disabled = false } = leading;
+  const { kind, onPress, accessibilityLabel, accessibilityHint, disabled = false } = leading;
   const { t } = useTranslation('common');
   const { systemColors, brandColors, variant } = useTheme();
   const spec = topBarFor(variant);
@@ -173,18 +176,21 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
         feedback="opacity"
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
         accessibilityState={{ disabled }}
         style={[styles.textTarget, { minHeight: spec.iconTarget, minWidth: spec.iconTarget }]}
       >
-        <Text
-          variant="label"
-          color={look.labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={spec.labelMaxFontScale}
-          style={look.opacity < 1 ? { opacity: look.opacity } : null}
-        >
-          {label}
-        </Text>
+        <LargeContentViewer title={accessibilityLabel ?? label} onActivate={disabled ? undefined : onPress}>
+          <Text
+            variant="label"
+            color={look.labelColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={spec.labelMaxFontScale}
+            style={look.opacity < 1 ? { opacity: look.opacity } : null}
+          >
+            {label}
+          </Text>
+        </LargeContentViewer>
       </PressableSurface>
     );
   }
@@ -197,6 +203,7 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
       onPress={onPress}
       disabled={disabled}
       accessibilityLabel={accessibilityLabel ?? t(isClose ? 'ariaLabels.close' : 'ariaLabels.back')}
+      accessibilityHint={accessibilityHint}
     />
   );
 });
@@ -286,20 +293,22 @@ export const SheetTopBarTrailingButton = React.memo(function SheetTopBarTrailing
       <View style={[surface, icon ? [styles.iconRow, { gap: spacing[1] }] : null]}>
         {icon ? (
           <View testID="sheet-top-bar-trailing-icon" style={[dimLabel, loading ? styles.hidden : null]}>
-            <Icon name={icon} size={TRAILING_ICON_SIZE} color={look.labelColor} />
+            <Icon maxFontSizeMultiplier={1} name={icon} size={TRAILING_ICON_SIZE} color={look.labelColor} />
           </View>
         ) : null}
         {/* The label stays in the tree while loading, only hidden, so the slot
             keeps the label's width and nothing beside it moves. */}
-        <Text
-          variant="label"
-          color={look.labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={spec.labelMaxFontScale}
-          style={[look.fontWeight ? { fontWeight: look.fontWeight } : null, dimLabel, loading ? styles.hidden : null]}
-        >
-          {label}
-        </Text>
+        <LargeContentViewer title={accessibilityLabel ?? label} onActivate={inert ? undefined : handlePress}>
+          <Text
+            variant="label"
+            color={look.labelColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={spec.labelMaxFontScale}
+            style={[look.fontWeight ? { fontWeight: look.fontWeight } : null, dimLabel, loading ? styles.hidden : null]}
+          >
+            {label}
+          </Text>
+        </LargeContentViewer>
         {loading ? (
           <View style={styles.spinner} testID="sheet-top-bar-spinner">
             <ActivityIndicator size="small" color={look.labelColor} />
@@ -403,16 +412,18 @@ export const SheetTopBar = React.memo(function SheetTopBar({
           ]}
         >
           {error ? (
-            <Text
-              variant="footnote"
-              color={brandColors.error}
-              numberOfLines={1}
-              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-              accessibilityRole="alert"
-              accessibilityLiveRegion="polite"
-            >
-              {error}
-            </Text>
+            <LargeContentViewer title={error}>
+              <Text
+                variant="footnote"
+                color={brandColors.error}
+                numberOfLines={1}
+                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                {error}
+              </Text>
+            </LargeContentViewer>
           ) : null}
         </View>
       ) : null}

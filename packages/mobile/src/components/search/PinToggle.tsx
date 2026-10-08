@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
@@ -21,7 +22,7 @@ function PinToggleComponent({ kind }: { kind: PinnableChipKind }) {
   const onPress = useCallback(() => togglePin(kind), [togglePin, kind]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       hitSlop={10}
       accessibilityRole="button"
@@ -34,7 +35,7 @@ function PinToggleComponent({ kind }: { kind: PinnableChipKind }) {
         size={16}
         color={pinned ? brandColors.primary : systemColors.tertiaryLabel}
       />
-    </Pressable>
+    </PressableSurface>
   );
 }
 

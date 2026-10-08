@@ -134,6 +134,9 @@ const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regu
 vi.mock('../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
 }));
+vi.mock('../../hooks/native-tablet-pane-width', () => ({
+  useTabletPaneWidth: () => ({ width: 1024, sidebarWidth: 96 }),
+}));
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-uuid',
@@ -984,6 +987,17 @@ describe('DrawerHostProvider climb actions', () => {
     });
   });
 
+  it('forwards a measured playlist control anchor with the explicit board snapshot', async () => {
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    const anchorPoint = { x: 740, y: 270 };
+    const boardConfig = { boardName: 'tension', layoutId: 9, sizeId: 12, setIds: '3', angle: 35 };
+    act(() => hosts.at(-1)?.openAddToPlaylist(climb, boardConfig, anchorPoint));
+    expect(playlistSheet.props).toMatchObject({ visible: true, climb, ...boardConfig, anchorPoint });
+  });
+
   it('opens add beta video against the active board snapshot', async () => {
     // The reaction menu opens the share-your-beta sheet via openAddBetaVideo; assert
     // that opener snapshots the active board config onto the sheet.
@@ -1008,6 +1022,21 @@ describe('DrawerHostProvider climb actions', () => {
 });
 
 describe('DrawerHostProvider play drawer open target', () => {
+  it('stages a Link target without a second navigation or leaking navigation options', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    routerNavigate.mockClear();
+    const climb = makeQueueItem('zoom-head').climb as unknown as Climb;
+    act(() => hosts.at(-1)?.openPlayDrawer(climb, { navigate: false }));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+    expect(routerNavigate).not.toHaveBeenCalled();
+    expect(routes.at(-1)?.playTarget?.options).toEqual({});
+  });
   it('does not leak boardConfig into the open target', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];

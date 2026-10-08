@@ -15,6 +15,7 @@ import {
   androidFallbackColors,
   materialSurfaces,
   materialSurfaceContainers,
+  tertiaryFillFallback,
   type MaterialSurfaceContainers,
 } from '../theme/colors';
 import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
@@ -80,12 +81,24 @@ type ResolvedSystemColors = {
   separator: string | OpaqueColorValue;
   fill: string | OpaqueColorValue;
   /**
-   * Interactive-accent foreground (links, active tab, edit·copy·open). iOS uses
-   * Apple's link blue; Android/Material use the brand violet, lifted to #A78BFA
-   * in dark so it clears AA on near-black. Replaces the static
-   * `iosSystemColors.systemBlue` for foreground use.
+   * Interactive-accent foreground (links, checkmarks, active tab, edit·copy·open).
+   * The brand violet on every platform and variant — the same tint the @expo/ui
+   * controls use — lifted to #A78BFA in dark so it clears AA on near-black. HIG
+   * Color: one tint for every interactive element.
    */
   accent: string | OpaqueColorValue;
+  /**
+   * Error / destructive foreground. iOS Liquid Glass uses `systemRed`, which
+   * adapts to dark mode and Increase Contrast; Android and Material use the M3
+   * `error` role (the same `brandColors.error` the Paper theme maps).
+   */
+  error: string | OpaqueColorValue;
+  /**
+   * Fill for LARGE shapes (grouped cards, section backgrounds): iOS
+   * `tertiarySystemFill`, a step lighter than `fill`, which Apple reserves for
+   * small controls. Android/Material use a fainter version of the violet fill.
+   */
+  tertiaryFill: string | OpaqueColorValue;
 };
 
 type Theme = {
@@ -208,12 +221,13 @@ export function useAppColorScheme(): ColorScheme {
  * androidFallbackColors light/dark map.
  */
 function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): ResolvedSystemColors {
+  const brand = resolveBrandColors(colorScheme);
   switch (variant) {
     // Material variant: M3 tonal surfaces on every platform — including iOS 26
     // hardware when the user explicitly chose Material. Drawn opaque (no glass),
     // so we don't use PlatformColor here.
     case 'material':
-      return { ...materialSurfaces[colorScheme] };
+      return { ...materialSurfaces[colorScheme], error: brand.error, tertiaryFill: tertiaryFillFallback[colorScheme] };
     case 'liquidGlass': {
       if (Platform.OS === 'ios' && iosSystemColors) {
         // PlatformColor values adapt automatically on iOS — return as-is,
@@ -245,6 +259,8 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
         separator: fallback.separator,
         fill: fallback.fill,
         accent: fallback.accent,
+        error: brand.error,
+        tertiaryFill: tertiaryFillFallback[colorScheme],
       };
     }
     // A new UiVariant must declare how its system colours resolve.
@@ -420,6 +436,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         accent: resolvedSystemColors.accent,
         brandSuccess: resolvedBrandColors.success,
         brandPrimary: resolvedBrandColors.primary,
+        error: resolvedSystemColors.error,
       }),
       chartColors: resolvedChartColors,
       heatRamp: resolveHeatRamp(colorScheme),

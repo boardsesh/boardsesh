@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useMemo, type ReactNode } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, HoldFilterMode, HoldFilterType } from '@boardsesh/shared-schema';
@@ -124,7 +125,7 @@ export function HoldFilterPicker({
           const markerDiameter = 22 * shapeSize;
           const markerStrokeWidth = Math.max(2, 2 * brushThickness);
           return (
-            <Pressable
+            <PressableSurface
               key={option.type}
               onPress={() => handleSelect(option.type)}
               accessibilityRole="button"
@@ -154,7 +155,7 @@ export function HoldFilterPicker({
               <Text variant="caption1" style={styles.chipLabel} numberOfLines={1}>
                 {typeLabels[option.type]}
               </Text>
-            </Pressable>
+            </PressableSurface>
           );
         })}
       </View>

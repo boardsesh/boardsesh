@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -110,7 +111,7 @@ export const ResetZoomButton = memo(function ResetZoomButton({ visible, onPress,
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
     >
-      <Pressable onPress={handlePress} accessibilityRole="button" accessibilityLabel={label} hitSlop={8}>
+      <PressableSurface onPress={handlePress} accessibilityRole="button" accessibilityLabel={label} hitSlop={8}>
         <Animated.View style={[styles.pill, widthStyle]}>
           {/* Laid out at natural width and measured; the pill above clips it.
               Right-aligned so the glyph holds the trailing edge while the label
@@ -124,7 +125,7 @@ export const ResetZoomButton = memo(function ResetZoomButton({ visible, onPress,
             </View>
           </View>
         </Animated.View>
-      </Pressable>
+      </PressableSurface>
     </Animated.View>
   );
 });
@@ -151,7 +152,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: overlays.onScrim,
-    paddingLeft: spacing[3],
+    paddingStart: spacing[3],
   },
   glyph: {
     width: glassSize.mini,

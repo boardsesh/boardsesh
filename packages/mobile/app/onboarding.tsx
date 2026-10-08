@@ -1,6 +1,7 @@
 import { useCallback, useEffect, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
+import { scopedRouter as router } from '../src/lib/routing/scoped-navigation';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import { OnboardingPrompt } from '../src/components/onboarding/OnboardingPrompt';
 import { OnboardingBoardRoute } from '../src/components/onboarding/OnboardingBoardRoute';

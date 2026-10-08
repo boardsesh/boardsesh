@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    paddingRight: 6,
+    paddingEnd: 6,
     maxWidth: 150,
   },
   toggle: {
@@ -116,8 +116,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'stretch',
-    paddingLeft: 16,
-    paddingRight: 6,
+    paddingStart: 16,
+    paddingEnd: 6,
     gap: 2,
   },
   label: {

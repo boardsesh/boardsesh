@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated from 'react-native-reanimated';
+import { Link } from 'expo-router';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { GlassSurface } from '../src/components/GlassSurface';
+import { ScreenBackground } from '../src/components/ScreenBackground';
 import { PlayDrawer } from '../src/components/play-drawer';
 import { QueueSheet, type QueueSheetHandle } from '../src/components/play-drawer/QueueSheet';
 import { DevicePickerSheetHost } from '../src/components/ble/DevicePickerSheetHost';
@@ -34,7 +35,7 @@ import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until
  * route's first frame. PlayDrawer's mount is heavy (board geometry + a stack of
  * hooks), and the old overlay hid that by running its slide on the UI thread
  * (reanimated) while content filled in. To restore the instant-start feel, the
- * first frame paints ONLY the full-screen GlassSurface (cheap), so the present
+ * first frame paints ONLY the full-screen background (cheap), so the present
  * begins immediately; PlayDrawer + the QueueSheet mount one frame later and fill
  * in mid-slide (the present runs natively, off the JS thread). A deterministic
  * rAF gate (not InteractionManager, which waits out the whole present and is
@@ -136,67 +137,57 @@ function PlayScreen() {
   });
 
   return (
-    <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
-      {/* Opaque backstop. The player is a transparentModal, so the live tabs
-          screen sits behind it — paint a solid background under the glass so the
-          Climbs list doesn't show through the translucent GlassSurface. */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: systemColors.secondaryBackground }]} />
-      {/* Edge-to-edge glass/material background with NO radius — full-screen, not
-          a card. Rendered on the first frame so the present animates over it.
-          GlassSurface resolves Liquid Glass / blur / Material / Reduce-
-          Transparency-solid per device.
-
-          `level0` and `pointerEvents="none"` are load-bearing, not cosmetic. This
-          surface is a BACKGROUND with the player stacked on top as a sibling, and
-          Android orders siblings by Z: GlassSurface's Material branch otherwise
-          defaults to `shadows.sm` (elevation 2), which lifts the full-screen fill
-          above the elevation-0 PlayDrawer and paints over the whole player — the
-          drawer opened showing nothing but its own tint (#4209). A background also
-          has no business taking touches. */}
-      <GlassSurface
-        style={StyleSheet.absoluteFill}
-        glassEffectStyle="regular"
-        role="low"
-        level="level0"
-        pointerEvents="none"
-        fallbackColor={systemColors.secondaryBackground}
-        tintColor={playDrawerMaterialTint[colorScheme]}
-      />
-      {contentMounted && activeBoardConfig ? (
-        <>
-          <PlayDrawer
-            swipeDismiss={swipeDismiss}
-            onClose={close}
-            boardConfig={activeBoardConfig}
-            onAngleChange={onAngleChange}
-            isAngleAdjustable={isAngleAdjustable}
-            onOpenQueue={presentQueue}
-            boardMismatch={boardMismatch}
-            reachableBoardKeys={reachableBoardKeys}
-            mismatchBoardLabel={mismatchBoardLabel}
-            onSwitchBoard={onSwitchBoard}
-            onOpenClimbActions={openPlayerClimbActions}
-            dismissPlayerAndWait={dismissPlayerAndWait}
-            openTarget={playTarget}
-          />
-          {queueBoard ? (
-            <QueueSheet
-              ref={queueSheetRef}
-              board={queueBoard}
-              onClose={requestCloseQueue}
-              onClimbPress={handleClimbPress}
-              onOpenActions={handleOpenActions}
-              onSuggestionPress={handleSuggestionPress}
-              onTickHistory={handleTickHistory}
+    <Link.AppleZoomTarget>
+      <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
+        {/* Opaque background. The player is a transparentModal, so the live tabs
+          screen sits behind it and must not show through. On Liquid Glass it is
+          plain secondarySystemBackground: HIG Materials keeps glass on the
+          controls layer, not under the player's content. Material and Reduce
+          Transparency keep their opaque tonal surface — see ScreenBackground,
+          which also owns why that fill stays `level0` and untouchable (#4209).
+          Rendered on the first frame so the present animates over it. */}
+        <ScreenBackground
+          color={systemColors.secondaryBackground}
+          role="low"
+          fallbackColor={systemColors.secondaryBackground}
+          tintColor={playDrawerMaterialTint[colorScheme]}
+        />
+        {contentMounted && activeBoardConfig ? (
+          <>
+            <PlayDrawer
+              swipeDismiss={swipeDismiss}
+              onClose={close}
+              boardConfig={activeBoardConfig}
+              onAngleChange={onAngleChange}
+              isAngleAdjustable={isAngleAdjustable}
+              onOpenQueue={presentQueue}
+              boardMismatch={boardMismatch}
+              reachableBoardKeys={reachableBoardKeys}
+              mismatchBoardLabel={mismatchBoardLabel}
+              onSwitchBoard={onSwitchBoard}
+              onOpenClimbActions={openPlayerClimbActions}
+              dismissPlayerAndWait={dismissPlayerAndWait}
+              openTarget={playTarget}
             />
-          ) : null}
-        </>
-      ) : null}
-      {/* Host the BLE device picker from inside this route so a connect from the
+            {queueBoard ? (
+              <QueueSheet
+                ref={queueSheetRef}
+                board={queueBoard}
+                onClose={requestCloseQueue}
+                onClimbPress={handleClimbPress}
+                onOpenActions={handleOpenActions}
+                onSuggestionPress={handleSuggestionPress}
+                onTickHistory={handleTickHistory}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {/* Host the BLE device picker from inside this route so a connect from the
           player's lightbulb (when disconnected) presents OVER the player. Claims
           the picker, suppressing the app-root instance while mounted. */}
-      <DevicePickerSheetHost registerExternal />
-    </Animated.View>
+        <DevicePickerSheetHost registerExternal />
+      </Animated.View>
+    </Link.AppleZoomTarget>
   );
 }
 

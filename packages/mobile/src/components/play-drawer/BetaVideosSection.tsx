@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 // The play drawer's outer scroll is a react-native-gesture-handler ScrollView, so
 // a nested horizontal shelf must also be RNGH's ScrollView — otherwise on Android
 // the outer scroll's native gesture handler swallows the horizontal pans and this
@@ -14,8 +15,7 @@ import { Icon } from '../Icon';
 import { useBetaLinks } from '../../lib/graphql/hooks';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 import { BetaVideoCard, BETA_CARD_WIDTH, BETA_CARD_HEIGHT } from './BetaVideoCard';
 
 type BetaVideosSectionProps = {
@@ -32,7 +32,7 @@ const CARD_GAP = spacing[3];
 export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, boardName }: BetaVideosSectionProps) {
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   // The cheap boolean, not the whole snapshot: this section is memo'd inside
   // the play drawer, and subscribing to every probe result and failure-counter
   // tick would re-render it for changes it does not read.
@@ -50,7 +50,7 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
     <View>
       {hasContent && (
         <View style={styles.headerRow}>
-          <Text variant="footnote" color={iosSystemColors.systemGray}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
             {t('mobile.betaVideos.videoCount', { count: links.length })}
           </Text>
         </View>
@@ -64,7 +64,7 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
           scrollEnabled={false}
         >
           {Array.from({ length: SKELETON_COUNT }).map((_, index) => (
-            <View key={`skeleton-${index}`} style={styles.skeletonCard} />
+            <View key={`skeleton-${index}`} style={[styles.skeletonCard, { backgroundColor: systemColors.fill }]} />
           ))}
         </ScrollView>
       ) : effectiveOffline && !hasContent ? (
@@ -73,17 +73,17 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
         // — and "No beta videos yet" would be a claim we can't back. One muted
         // line; the global connectivity banner owns the recovery.
         <View style={styles.errorContainer}>
-          <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.errorText}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.errorText}>
             {tCommon('mobile.connectivity.needsConnection')}
           </Text>
         </View>
       ) : isError ? (
         <View style={styles.errorContainer}>
-          <Icon name="error" size={20} color={iosSystemColors.systemRed} />
-          <Text variant="subheadline" color={iosSystemColors.systemGray} style={styles.errorText}>
+          <Icon name="error" size={20} color={systemColors.error} />
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.errorText}>
             {t('mobile.betaVideos.errorTitle')}
           </Text>
-          <Pressable
+          <PressableSurface
             onPress={handleRetry}
             disabled={isRefetching}
             accessibilityRole="button"
@@ -98,12 +98,12 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
             <Text variant="footnote" color={brandColors.primary}>
               {t('mobile.betaVideos.retry')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       ) : !links || links.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Icon name="video" size={20} color={iosSystemColors.systemGray} />
-          <Text variant="subheadline" color={iosSystemColors.systemGray}>
+          <Icon name="video" size={20} color={systemColors.secondaryLabel} />
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('mobile.betaVideos.empty')}
           </Text>
         </View>
@@ -140,7 +140,6 @@ const styles = StyleSheet.create({
     width: BETA_CARD_WIDTH,
     height: BETA_CARD_HEIGHT,
     borderRadius: borderRadius.md,
-    backgroundColor: `${iosSystemColors.systemGray}26`,
   },
   emptyContainer: {
     flexDirection: 'row',
@@ -164,6 +163,6 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   retryButtonDisabled: {
-    opacity: 0.5,
+    opacity: opacity.disabled,
   },
 });

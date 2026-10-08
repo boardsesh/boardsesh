@@ -1,7 +1,9 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { ChromeIconButton } from '../ChromeIconButton';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
@@ -49,21 +51,23 @@ export const QueueSheetHeader = memo(function QueueSheetHeader({
     return (
       <View style={styles.container}>
         <View style={styles.leftSection}>
-          <Pressable
+          <PressableSurface
             onPress={onClearAll}
             accessibilityRole="button"
             accessibilityLabel={t('queueDrawer.clear')}
             hitSlop={8}
           >
-            <Text
-              variant="label"
-              color={brandColors.error}
-              numberOfLines={1}
-              maxFontSizeMultiplier={spec.labelMaxFontScale}
-            >
-              {t('queueDrawer.clear')}
-            </Text>
-          </Pressable>
+            <LargeContentViewer title={t('queueDrawer.clear')} onActivate={onClearAll}>
+              <Text
+                variant="label"
+                color={systemColors.error}
+                numberOfLines={1}
+                maxFontSizeMultiplier={spec.labelMaxFontScale}
+              >
+                {t('queueDrawer.clear')}
+              </Text>
+            </LargeContentViewer>
+          </PressableSurface>
         </View>
 
         <View style={styles.centerSection}>

@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 
+const platform = vi.hoisted(() => ({ OS: 'android' }));
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
-const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn(), dismissTo: vi.fn() }));
 const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const confirmSignOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 // Mutable so a test can set the focused tab before openUserDrawer captures the
@@ -31,6 +45,7 @@ vi.mock('../../launch-update/hold-until-launch-ready', () => ({
   holdUntilLaunchReady: <Screen,>(Screen: Screen) => Screen,
 }));
 vi.mock('react-native', () => ({
+  Platform: platform,
   Pressable: ({
     accessibilityLabel,
     children,
@@ -41,7 +56,12 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
   }) => createElement('button', { 'aria-label': accessibilityLabel, onClick: onPress, type: 'button' }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { absoluteFill: {}, create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    absoluteFill: {},
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
   useWindowDimensions: () => ({ width: 390 }),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -60,7 +80,9 @@ vi.mock('react-native-reanimated', () => ({
   },
 }));
 
+vi.mock('../../HeaderActionButtons', () => ({ HeaderLeadingButton: () => null }));
 vi.mock('expo-router', () => ({
+  Stack: { Screen: () => null },
   router: routerMock,
   useSegments: () => segmentsMock.current,
 }));
@@ -165,6 +187,7 @@ vi.mock('../../../hooks/use-confirm-sign-out', () => ({
   useConfirmSignOut: () => confirmSignOutMock,
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { error: '#c00', primary: '#6D28D9' },
     systemColors: {
@@ -178,6 +201,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   borderRadius: { lg: 12 },
   overlays: { scrim: 'rgba(0,0,0,0.4)' },
   shadows: { lg: {} },
@@ -227,7 +251,7 @@ vi.mock('../QaVerdictSheet', () => ({
 
 import { DISCORD_INVITE_URL } from '../../../lib/discord';
 import { UserDrawerProvider, useUserDrawer } from '../UserDrawerProvider';
-import UserDrawerScreen from '../../../../app/user-drawer';
+import UserDrawerScreen, { UserDrawerScreen as AccountMenu } from '../../../../app/user-drawer';
 
 function DrawerTrigger() {
   const { openUserDrawer } = useUserDrawer();
@@ -251,8 +275,10 @@ function Harness({ showScreen }: { showScreen: boolean }) {
 }
 
 beforeEach(() => {
+  platform.OS = 'android';
   browser.openBrowserAsync.mockClear();
   routerMock.push.mockClear();
+  routerMock.dismissTo.mockClear();
   routerMock.back.mockClear();
   signOutMock.mockClear();
   signOutMock.mockResolvedValue(undefined);
@@ -348,7 +374,8 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     expect(routerMock.push).not.toHaveBeenCalled();
 
     rerender(<Harness showScreen={false} />);
-    expect(routerMock.push).toHaveBeenCalledWith(route);
+    const navigate = route === '/(tabs)/discover/all' ? routerMock.dismissTo : routerMock.push;
+    expect(navigate).toHaveBeenCalledWith(route);
   });
 
   it('shows the "New" pill on the What\'s New row when there is an unseen changelog entry', async () => {
@@ -587,5 +614,28 @@ describe('user-drawer crowdsourced-QA rows', () => {
     rerender(<Harness showScreen={false} />);
 
     expect(routerMock.push).toHaveBeenCalledWith('/qa/brief');
+  });
+});
+
+describe('native Account navigation', () => {
+  it('opens the native account sheet from the iOS avatar', () => {
+    platform.OS = 'ios';
+    render(<Harness showScreen={false} />);
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.push).toHaveBeenCalledWith('/account');
+  });
+  it('pushes Settings and Edit profile inside Account without dismissing the sheet', () => {
+    platform.OS = 'ios';
+    render(
+      <UserDrawerProvider>
+        <AccountMenu presentation="account" />
+      </UserDrawerProvider>,
+    );
+    fireEvent.click(screen.getByText('Settings'));
+    expect(routerMock.push).toHaveBeenCalledWith('/account/settings');
+    fireEvent.click(screen.getByLabelText('profile.editAction'));
+    expect(routerMock.push).toHaveBeenCalledWith('/account/settings/edit');
+    expect(routerMock.back).not.toHaveBeenCalled();
+    expect(reanimated.closeCallbacks).toHaveLength(0);
   });
 });

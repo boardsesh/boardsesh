@@ -1,4 +1,5 @@
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { Modal, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardCandidate } from '@boardsesh/shared-schema';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -40,7 +41,7 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
     <Modal visible={visible} transparent animationType={reduceMotion ? 'fade' : 'slide'} onRequestClose={onCancel}>
       <View style={styles.backdrop}>
         {/* Sibling, not parent: a tappable ancestor hides the card's buttons from VoiceOver. */}
-        <Pressable
+        <PressableSurface
           testID="disambiguation-backdrop"
           accessible={false}
           importantForAccessibility="no"
@@ -66,7 +67,7 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
             {candidates.map((candidate) => {
               const location = candidate.gymName ?? candidate.locationName ?? null;
               return (
-                <Pressable
+                <PressableSurface
                   key={candidate.boardId}
                   accessibilityRole="button"
                   onPress={() => onPick(candidate.boardId)}
@@ -87,16 +88,16 @@ export function BoardDisambiguationSheet({ visible, candidates, onPick, onCancel
                       {location ?? candidate.boardType}
                     </Text>
                   </View>
-                </Pressable>
+                </PressableSurface>
               );
             })}
           </ScrollView>
 
-          <Pressable accessibilityRole="button" onPress={onCancel} style={styles.cancel}>
+          <PressableSurface accessibilityRole="button" onPress={onCancel} style={styles.cancel}>
             <Text variant="headline" color={systemColors.secondaryLabel}>
               {t('mobile.disambiguation.cancel')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       </View>
     </Modal>

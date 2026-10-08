@@ -6,13 +6,15 @@ import { createElement, type ReactNode } from 'react';
 // Minimal RN surface. View forwards accessibilityViewIsModal onto a data
 // attribute so the scrim's modal-focus trap (keeps the blocked queue/tick/BLE
 // controls out of the a11y tree) is inspectable.
-type ViewMockProps = { children?: ReactNode; accessibilityViewIsModal?: boolean };
+type ViewMockProps = { children?: ReactNode; accessibilityViewIsModal?: boolean; testID?: string; style?: unknown };
 vi.mock('react-native', () => ({
-  View: ({ children, accessibilityViewIsModal }: ViewMockProps) =>
+  View: ({ children, accessibilityViewIsModal, testID, style }: ViewMockProps) =>
     createElement(
       'div',
       {
         'data-modal': accessibilityViewIsModal == null ? undefined : String(accessibilityViewIsModal),
+        'data-testid': testID,
+        'data-bg': (Array.isArray(style) ? Object.assign({}, ...style) : (style ?? {})).backgroundColor,
       },
       children,
     ),
@@ -42,9 +44,6 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title?: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
-// The glass surface picks its rendering path from Platform + capability hooks,
-// none of which this harness mounts. Its own behaviour is covered by
-// GlassSurface's tests; here it is just the box the callout draws in.
 vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
   ActionButton: ({
     iconName,
@@ -56,10 +55,9 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'data-icon': iconName, 'aria-label': accessibilityLabel }),
 }));
-vi.mock('../../GlassSurface', () => ({
-  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-glass': 'true' }, children),
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { elevatedSurface: '#221A32', label: '#F5F2FB', secondaryLabel: '#A9A2B6' } }),
 }));
-vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string) => color }));
 vi.mock('../../../theme/tokens', () => ({
   overlays: { scrim: '#0008', onScrim: '#FFFFFF' },
   borderRadius: { lg: 16 },
@@ -69,6 +67,14 @@ vi.mock('../../../theme/tokens', () => ({
 import { SwitchBoardOverlay } from '../SwitchBoardOverlay';
 
 describe('SwitchBoardOverlay', () => {
+  // HIG Materials: the message card is content, so it is opaque. It used to be a
+  // glass card inside the glass player, which stacked glass on glass.
+  it('draws the message on an opaque card, not glass', () => {
+    const { getByTestId } = render(createElement(SwitchBoardOverlay, { boardLabel: 'Kilter', onSwitchBoard: vi.fn() }));
+
+    expect(getByTestId('switch-board-card').getAttribute('data-bg')).toBe('#221A32');
+  });
+
   it('interpolates boardLabel into the mismatch title and subtitle copy', () => {
     const { container } = render(createElement(SwitchBoardOverlay, { boardLabel: 'Kilter', onSwitchBoard: vi.fn() }));
 
@@ -102,12 +108,14 @@ describe('SwitchBoardOverlay', () => {
 // A climb on a board at THIS gym gets no overlay at all — it renders on its own
 // board with every control live. Only a board somewhere else raises the scrim.
 describe('SwitchBoardOverlay presentation', () => {
-  it('puts the message on a glass card rather than straight on the scrim', () => {
-    const { container } = render(createElement(SwitchBoardOverlay, { boardLabel: 'Woods', onSwitchBoard: vi.fn() }));
+  it('puts the message on a card rather than straight on the scrim', () => {
+    const { container, getByTestId } = render(
+      createElement(SwitchBoardOverlay, { boardLabel: 'Woods', onSwitchBoard: vi.fn() }),
+    );
 
     // The scrim alone is a 60% fill, so the controls it covers read right
     // through words laid directly on it. The card is what makes them recede.
-    expect(container.querySelector('[data-glass]')).toBeTruthy();
+    expect(getByTestId('switch-board-card').textContent).toContain('boardMismatch.title:Woods');
     expect(container.querySelector('[data-modal="true"]')).toBeTruthy();
   });
 });

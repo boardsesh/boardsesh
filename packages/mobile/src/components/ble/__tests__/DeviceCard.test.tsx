@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -8,9 +21,22 @@ import type { ResolvedBoardEntry } from '../../../lib/ble/resolve-serials';
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (colorName: string) => colorName,
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
+  // Exposes the resolved background colour so the RSSI bars can be asserted.
+  View: ({ children, style }: { children?: ReactNode; style?: unknown }) => {
+    const styleEntries = (Array.isArray(style) ? style : [style]) as Array<{ backgroundColor?: string } | undefined>;
+    const backgroundColor = styleEntries.reduce<string | undefined>(
+      (resolved, entry) => entry?.backgroundColor ?? resolved,
+      undefined,
+    );
+    return createElement('div', backgroundColor ? { 'data-bg': backgroundColor } : null, children);
+  },
   Pressable: ({
     children,
     accessibilityLabel,
@@ -45,6 +71,7 @@ vi.mock('../../BoardImageNative', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       label: '#111111',
@@ -54,6 +81,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       background: '#ffffff',
       secondaryBackground: '#f8f8f8',
       tertiaryBackground: '#f0f0f0',
+      error: 'theme-error',
     },
   }),
 }));
@@ -62,7 +90,6 @@ vi.mock('../../../theme/ios-colors', () => ({
   iosSystemColors: {
     systemGreen: '#34c759',
     systemYellow: '#ffcc00',
-    systemRed: '#ff3b30',
   },
 }));
 
@@ -217,6 +244,25 @@ describe('getPreviewImageStyle', () => {
 
   it('fits a landscape board to the max width', () => {
     expect(getPreviewImageStyle(200, 100)).toEqual({ width: 58, height: 29 });
+  });
+
+  it('draws a weak signal in the theme error role, not a static red', () => {
+    const { container } = render(
+      <DeviceCard device={{ deviceId: 'device-weak', name: 'Kilter Board#SN-9@3', rssi: -90 }} onSelect={vi.fn()} />,
+    );
+
+    const errorBars = container.querySelectorAll('[data-bg="theme-error"]');
+    expect(errorBars).toHaveLength(1);
+    expect(container.querySelector('[data-bg="#ff3b30"]')).toBeNull();
+  });
+
+  it('keeps a strong signal green', () => {
+    const { container } = render(
+      <DeviceCard device={{ deviceId: 'device-strong', name: 'Kilter Board#SN-8@3', rssi: -40 }} onSelect={vi.fn()} />,
+    );
+
+    expect(container.querySelectorAll('[data-bg="#34c759"]')).toHaveLength(3);
+    expect(container.querySelector('[data-bg="theme-error"]')).toBeNull();
   });
 
   it('keeps a square board at the full thumbnail size', () => {

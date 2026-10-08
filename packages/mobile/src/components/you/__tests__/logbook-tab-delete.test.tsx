@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +21,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // delete), and a success must be tracked. (The optimistic cache strip lives
 // in useDeleteTick — covered by use-mutate-tick.test.tsx.)
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
-const deleteTick = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
+const owner = vi.hoisted(() => {
+  const owner = {
+    scope: 'scope',
+    getDeleteScope: (): string => owner.scope,
+    scheduleDelete: vi.fn((_request: unknown) => true),
+  };
+  return owner;
+});
+vi.mock('../../../providers/logbook-delete-provider', () => ({
+  usePendingLogbookDeletes: () => new Set(),
+  useLogbookDeleteActions: () => owner,
+}));
 const dialog = vi.hoisted(() => ({ confirm: vi.fn<(options: unknown) => Promise<boolean>>(async () => false) }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn(), hapticSuccess: vi.fn(), hapticError: vi.fn() }));
@@ -56,7 +80,11 @@ vi.mock('react-native', () => ({
   RefreshControl: () => null,
   Pressable: () => null,
   useWindowDimensions: () => ({ fontScale: 1, width: 375, height: 800 }),
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
   Platform: { OS: 'ios', select: (specifics: Record<string, unknown>) => specifics.ios ?? specifics.default },
 }));
 
@@ -105,8 +133,13 @@ vi.mock('../../../lib/graphql/hooks', () => ({
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: {}, borderRadius: {} }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: {},
+  borderRadius: {},
+}));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: {}, brandColors: {} }),
 }));
 vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }), useFocusEffect: () => {} }));
@@ -116,7 +149,6 @@ vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardCo
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }),
 }));
-vi.mock('@boardsesh/board-react', () => ({ useDeleteTick: () => deleteTick }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => dialog.confirm }));
 // Pin the flags explicitly: kill switch off, filters off — the suite must
 // not silently change code path if a provider default ever moves.
@@ -137,8 +169,9 @@ async function fireDeleteRequest(method: 'swipe' | 'a11y') {
 }
 
 beforeEach(() => {
+  owner.scope = 'scope';
   analytics.track.mockClear();
-  deleteTick.mutate.mockClear();
+  owner.scheduleDelete.mockClear();
   dialog.confirm.mockClear();
   dialog.confirm.mockImplementation(async () => false);
   toast.showToast.mockClear();
@@ -154,39 +187,21 @@ describe('LogbookTab guarded delete', () => {
     await fireDeleteRequest('swipe');
 
     expect(dialog.confirm).toHaveBeenCalledWith(expect.objectContaining({ destructive: true }));
-    expect(deleteTick.mutate).not.toHaveBeenCalled();
+    expect(owner.scheduleDelete).not.toHaveBeenCalled();
   });
 
-  it('deletes the captured uuid once confirmed and tracks the method on success', async () => {
-    dialog.confirm.mockImplementation(async () => true);
-    render(createElement(LogbookTab, { userId: 'user-1' }));
-
-    await fireDeleteRequest('swipe');
-
-    expect(deleteTick.mutate).toHaveBeenCalledWith(
-      'tick-1',
-      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
-    );
-
-    // Drive the mutation's success path. (The optimistic cache strip lives in
-    // useDeleteTick itself — covered by use-mutate-tick.test.tsx.)
-    const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onSuccess: () => void };
-    act(() => mutateOptions.onSuccess());
-
-    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'swipe', viaChooser: false });
-  });
-
-  it('tracks the a11y method when the delete came from an accessibility action', async () => {
-    dialog.confirm.mockImplementation(async () => true);
-    render(createElement(LogbookTab, { userId: 'user-1' }));
-
-    await fireDeleteRequest('a11y');
-
-    const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onSuccess: () => void };
-    act(() => mutateOptions.onSuccess());
-
-    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'a11y', viaChooser: false });
-  });
+  it.each(['swipe', 'a11y'] as const)(
+    'schedules the captured UUID only after confirming %s deletion',
+    async (method) => {
+      dialog.confirm.mockImplementation(async () => true);
+      render(createElement(LogbookTab, { userId: 'user-1' }));
+      await fireDeleteRequest(method);
+      expect(owner.scheduleDelete).toHaveBeenCalledWith(
+        expect.objectContaining({ uuid: 'tick-1', method, viaChooser: false, onSettled: expect.any(Function) }),
+      );
+      expect(analytics.track).not.toHaveBeenCalled();
+    },
+  );
 
   it('ignores a second delete request while the confirm dialog is open', async () => {
     // Controllable confirm: hold the dialog open across both requests.
@@ -214,18 +229,33 @@ describe('LogbookTab guarded delete', () => {
     expect(dialog.confirm).toHaveBeenCalledTimes(2);
   });
 
-  it('surfaces a failed delete with one error toast, which owns the haptic', async () => {
+  it('captures the origin scope before awaiting a destructive confirmation', async () => {
+    let finish: (confirmed: boolean) => void = () => {};
+    dialog.confirm.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    await fireDeleteRequest('swipe');
+    owner.scope = 'new-account:board';
+    await act(async () => {
+      finish(true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(owner.scheduleDelete).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'tick-1', originScope: 'scope' }),
+    );
+  });
+
+  it('re-arms the local flow after the owner settles an Undo', async () => {
     dialog.confirm.mockImplementation(async () => true);
     render(createElement(LogbookTab, { userId: 'user-1' }));
-
     await fireDeleteRequest('swipe');
-
-    const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onError: () => void };
-    act(() => mutateOptions.onError());
-
-    // The toast provider plays the error haptic; a second one here would double it.
-    expect(haptics.hapticError).not.toHaveBeenCalled();
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.logbook.deleteError', 'error');
-    expect(analytics.track).not.toHaveBeenCalledWith('Logbook Entry Deleted', expect.anything());
+    const request = owner.scheduleDelete.mock.calls[0][0] as unknown as { onSettled: () => void };
+    act(() => request.onSettled());
+    await fireDeleteRequest('swipe');
+    expect(owner.scheduleDelete).toHaveBeenCalledTimes(2);
   });
 });

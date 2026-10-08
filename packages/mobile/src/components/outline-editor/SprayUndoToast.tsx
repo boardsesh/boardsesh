@@ -8,7 +8,6 @@ import { GlassSurface } from '../GlassSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 
 /** How long the toast stays up when nothing else takes it down first. */
 export const SPRAY_UNDO_TOAST_MS = 4000;
@@ -68,13 +67,7 @@ export const SprayUndoToast = React.memo(function SprayUndoToast({
         pointerEvents="none"
       />
       <View style={styles.line}>
-        <Text
-          variant="subheadline"
-          color={systemColors.label}
-          numberOfLines={2}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.message}
-        >
+        <Text variant="subheadline" color={systemColors.label} numberOfLines={2} style={styles.message}>
           {message}
         </Text>
         <Button title={t('sprayEditor.bar.undo')} variant="text" size="small" over="surface" onPress={onUndo} />
@@ -91,8 +84,8 @@ const styles = StyleSheet.create({
     borderRadius: glassSize.capsule / 2,
     overflow: 'hidden',
     justifyContent: 'center',
-    paddingLeft: spacing[4],
-    paddingRight: spacing[1],
+    paddingStart: spacing[4],
+    paddingEnd: spacing[1],
   },
   line: {
     flexDirection: 'row',

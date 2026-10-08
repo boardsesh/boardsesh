@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   carousel: vi.fn(),
   snap: { current: undefined as ((index: number) => void) | undefined },
 }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock('expo-router', () => ({ router: { push: mocks.push }, useRouter: () => ({ push: mocks.push }) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: { count?: number; setter?: string }) =>

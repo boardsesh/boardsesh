@@ -1,9 +1,10 @@
-import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
+import { StyleSheet, type ColorValue, type ViewStyle } from 'react-native';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import type { IconName } from '../icon-map';
-import { iosSystemColors } from '../../theme/ios-colors';
-import { spacing } from '../../theme/tokens';
+import { useTheme } from '../../providers/theme-provider';
+import { opacity, spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
 
 // Shared building blocks for the Play Drawer and Create Drawer action bars: the
@@ -28,7 +29,7 @@ type ActionButtonProps = {
   disabled?: boolean;
   active?: boolean;
   activeColor?: string;
-  iconColor?: string;
+  iconColor?: ColorValue;
   accessibilityLabel: string;
   /**
    * Why the button is unavailable. A disabled icon-only button is ~1.1:1
@@ -60,6 +61,7 @@ export function ActionButton({
   checked,
   accessibilityValueText,
 }: ActionButtonProps) {
+  const { systemColors } = useTheme();
   const { dim, icon } = SIZES[size];
   const buttonStyle: ViewStyle[] = [
     drawerActionBarStyles.actionButton,
@@ -70,11 +72,11 @@ export function ActionButton({
   }
 
   const resolvedColor = disabled
-    ? iosSystemColors.systemGray4
-    : (iconColor ?? (active && activeColor ? activeColor : iosSystemColors.systemGray));
+    ? systemColors.tertiaryLabel
+    : (iconColor ?? (active && activeColor ? activeColor : systemColors.secondaryLabel));
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       disabled={disabled}
       accessibilityRole={checked === undefined ? 'button' : 'togglebutton'}
@@ -91,16 +93,16 @@ export function ActionButton({
       {busy ? (
         <ActivityIndicator size="small" color={resolvedColor} />
       ) : (
-        <Icon name={iconName} size={icon} color={resolvedColor} />
+        <Icon maxFontSizeMultiplier={1} name={iconName} size={icon} color={resolvedColor} />
       )}
-    </Pressable>
+    </PressableSurface>
   );
 }
 
 export const drawerActionBarStyles = StyleSheet.create({
   container: {
+    // Colour comes from the theme separator at the call site (adapts to dark mode).
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
   },
   rowPrimary: {
     flexDirection: 'row',
@@ -129,7 +131,7 @@ export const drawerActionBarStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   actionButtonDisabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
   actionButtonPressed: {
     opacity: 0.6,

@@ -48,6 +48,9 @@ export default function SessionUnavailableScreen() {
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',

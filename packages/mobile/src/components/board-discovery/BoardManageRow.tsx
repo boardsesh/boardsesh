@@ -1,6 +1,7 @@
+import { PressableSurface } from '../PressableSurface';
 import { sprayImportCopy } from '../../lib/spray/spray-import-progress';
 import { memo, useEffect, useMemo, useRef } from 'react';
-import { AccessibilityInfo, Platform, Pressable, View, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Platform, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardRowSubtitle, toBoardName } from '@boardsesh/board-config';
@@ -15,7 +16,7 @@ import { formatBytes } from '../../lib/format-bytes';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { opacity, spacing, borderRadius } from '../../theme/tokens';
 
 const THUMB_SIZE = 56;
 
@@ -258,16 +259,16 @@ function BoardManageRowComponent({
           </Text>
         ) : null}
         {board.sprayImport && onOpenImport ? (
-          <Pressable onPress={() => onOpenImport(board)} accessibilityRole="button" hitSlop={8}>
+          <PressableSurface onPress={() => onOpenImport(board)} accessibilityRole="button" hitSlop={8}>
             <Text variant="caption1" color={brandColors.primary}>
               {board.sprayImport.stage === 'ready' ? t('sprayImport.review') : t('sprayImport.open')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         ) : null}
         {offlineStatus && !board.sprayImport ? (
           <Text
             variant="caption1"
-            color={downloadState === 'downloaded' ? brandColors.primary : systemColors.tertiaryLabel}
+            color={downloadState === 'downloaded' ? brandColors.primary : systemColors.secondaryLabel}
             numberOfLines={effectiveDownloadNotice ? undefined : 1}
             accessibilityLabel={offlineStatusAccessibilityLabel}
             accessibilityLiveRegion={Platform.OS === 'android' && effectiveDownloadNotice ? 'polite' : undefined}
@@ -276,7 +277,7 @@ function BoardManageRowComponent({
           </Text>
         ) : null}
         {pagedFallbackProgress ? (
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
             {pagedFallbackProgress}
           </Text>
         ) : null}
@@ -289,7 +290,7 @@ function BoardManageRowComponent({
           />
         ) : null}
         {canRetryFastDownload && onRetryFastDownload ? (
-          <Pressable
+          <PressableSurface
             onPress={() => onRetryFastDownload(board)}
             disabled={offlineControlsDisabled}
             hitSlop={8}
@@ -305,7 +306,7 @@ function BoardManageRowComponent({
             <Text variant="caption1" color={brandColors.primary}>
               {t('mobile.offline.retryFastDownload')}
             </Text>
-          </Pressable>
+          </PressableSurface>
         ) : null}
       </View>
 
@@ -320,7 +321,7 @@ function BoardManageRowComponent({
 
       {isActive ? (
         <View style={styles.activeBadge}>
-          <Icon name="tick" size={14} color={brandColors.primary} />
+          <Icon name="tick.fill" size={14} color={brandColors.primary} />
           <Text variant="caption1" color={brandColors.primary}>
             {t('mobile.boardDetail.alreadyActive')}
           </Text>
@@ -345,7 +346,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   controlDisabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
   retryFastDownload: {
     alignSelf: 'flex-start',

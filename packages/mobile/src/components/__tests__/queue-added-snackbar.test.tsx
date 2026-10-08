@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -18,7 +31,11 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel ?? '' }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {} },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    absoluteFill: {},
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -77,11 +94,13 @@ vi.mock('../Text', () => ({
 }));
 vi.mock('../../theme/colors', () => ({ brandColors: { primary: '#6D28D9' } }));
 vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   borderRadius: { lg: 12 },
   spacing: { 2: 8, 3: 12, 4: 16 },
   shadowColor: '#000',
 }));
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: ctrl.variant,
     brandColors: { primary: '#6D28D9' },

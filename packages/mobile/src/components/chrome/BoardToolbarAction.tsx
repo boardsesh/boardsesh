@@ -41,7 +41,7 @@ export function BoardToolbarAction({ onPress, accessibilityHint, badge = false }
 
   return (
     <GlassToolbarAction onPress={handlePress} accessibilityLabel={boardLabel} accessibilityHint={accessibilityHint}>
-      <Icon name="boards" size={23} color={systemColors.label} />
+      <Icon maxFontSizeMultiplier={1} name="boards" size={23} color={systemColors.label} />
       {badge ? (
         // Unclipped overlay so the parent toolbar's rounded corner can't crop the
         // dot. The enclosing GlassActionToolbar clips (overflow:hidden), so the

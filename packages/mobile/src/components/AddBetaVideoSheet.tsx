@@ -1,3 +1,7 @@
+import { useScopedSheetError } from '../hooks/use-scoped-sheet-error';
+import { InlineSheetError } from './InlineSheetError';
+import { useUnsavedSheetGuard } from '../hooks/use-unsaved-sheet-guard';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
 // "Share your beta" modal — the outbound half of the beta-video flow. It hands
 // the climber a ready-to-paste, board-aware caption (with the climb name baked
 // in so the share-back auto-match can recover the climb), copies it, opens
@@ -9,7 +13,7 @@
 // ModalSheet coordinator presents it above the play drawer's own native modal.
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -30,6 +34,7 @@ import { useToast } from '../providers/toast-provider';
 import { useTheme } from '../providers/theme-provider';
 import { spacing, borderRadius } from '../theme/tokens';
 import { textStyles } from '../theme/typography';
+import { LARGE_SNAP_POINTS } from './sheet-snap-points';
 
 type AddBetaVideoSheetProps = {
   visible: boolean;
@@ -60,6 +65,15 @@ export function AddBetaVideoSheet({
 
   const attach = useAttachBetaLink();
 
+  const { submitError, setSubmitError, clearError } = useScopedSheetError(climb?.uuid ?? 'beta', visible && !!climb);
+  const guard = useUnsavedSheetGuard({
+    visible: visible && !!climb,
+    dirty: url.length > 0,
+    busy: attach.isPending,
+    onClose,
+    scope: climb?.uuid,
+  });
+
   const caption = useMemo(() => {
     if (!climb) return '';
     return buildInstagramCaption({
@@ -74,8 +88,9 @@ export function AddBetaVideoSheet({
 
   const handleFullyDismissed = useCallback(() => {
     setUrl('');
+    clearError();
     onFullyDismissed?.();
-  }, [onFullyDismissed]);
+  }, [onFullyDismissed, clearError]);
 
   const handleCopyCaption = useCallback(async () => {
     if (!caption || !climb) return;
@@ -94,9 +109,9 @@ export function AddBetaVideoSheet({
     if (caption) await Clipboard.setStringAsync(caption);
     const { opened, usedFallback } = await openInstagram();
     track(SHARED_EVENTS.BetaInstagramOpened, { boardType: boardName, climbUuid: climb.uuid, opened, usedFallback });
-    if (!opened) showToast(t('mobile.betaVideos.instagramOpenFailed'), 'error');
+    if (!opened) setSubmitError(t('mobile.betaVideos.instagramOpenFailed'));
     else if (usedFallback) showToast(t('mobile.betaVideos.instagramNotInstalled'), 'info');
-  }, [caption, climb, boardName, showToast, t]);
+  }, [caption, climb, boardName, showToast, t, setSubmitError]);
 
   const trimmed = url.trim();
   const hasInput = trimmed.length > 0;
@@ -106,6 +121,7 @@ export function AddBetaVideoSheet({
 
   const handleSubmit = useCallback(() => {
     if (!climb || !isValid || attach.isPending) return;
+    setSubmitError(null);
     attach.mutate(
       { boardType: boardName, climbUuid: climb.uuid, link: trimmed, angle },
       {
@@ -119,19 +135,20 @@ export function AddBetaVideoSheet({
           onClose();
         },
         onError: (error: unknown) => {
-          showToast(extractGraphqlMessage(error) ?? t('mobile.betaVideos.attachError'), 'error');
+          setSubmitError(extractGraphqlMessage(error) ?? t('mobile.betaVideos.attachError'));
         },
       },
     );
-  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose]);
+  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose, setSubmitError]);
 
-  const snapPoints = useMemo(() => ['85%'], []);
+  // A form: large, so the field and its keyboard both fit (HIG Sheets).
+  const snapPoints = LARGE_SNAP_POINTS;
   const submitDisabled = !isValid || attach.isPending;
 
   const header = (
     <SheetTopBar
       title={t('mobile.betaVideos.shareTitle')}
-      leading={{ kind: 'cancel', onPress: onClose }}
+      leading={{ kind: 'cancel', onPress: guard.requestClose }}
       trailing={{
         kind: 'confirm',
         label: t('mobile.betaVideos.submitButton'),
@@ -147,12 +164,15 @@ export function AddBetaVideoSheet({
     <ModalSheet
       visible={visible && !!climb}
       snapPoints={snapPoints}
-      onClose={onClose}
+      onDisplaced={onClose}
+      onClose={guard.requestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
       onFullyDismissed={handleFullyDismissed}
       scrollable
       header={header}
     >
       <View style={styles.container}>
+        <InlineSheetError message={submitError} visible={visible} scope={climb?.uuid ?? 'beta'} />
         <StepRow index={1} title={t('mobile.betaVideos.step1Title')}>
           <View style={[styles.captionBox, { borderColor: systemColors.separator }]}>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
@@ -190,13 +210,21 @@ export function AddBetaVideoSheet({
         <View style={styles.pasteSection}>
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
-            <Text variant="footnote" color={systemColors.tertiaryLabel}>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('mobile.betaVideos.pasteSectionLabel')}
             </Text>
             <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
           </View>
 
-          <BetaUrlField value={url} invalid={showError} onChangeText={setUrl} onSubmit={handleSubmit} />
+          <BetaUrlField
+            value={url}
+            invalid={showError}
+            onChangeText={(next) => {
+              setUrl(next);
+              setSubmitError(null);
+            }}
+            onSubmit={handleSubmit}
+          />
         </View>
       </View>
     </ModalSheet>

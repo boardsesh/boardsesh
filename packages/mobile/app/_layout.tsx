@@ -1,3 +1,4 @@
+import { PressableSurface } from '../src/components/PressableSurface';
 // Import first so Sentry.init() runs (and installs its global handler) before
 // any other module side-effect — notably posthog-client's analytics init and the
 // worklet-serialization global-error-capture install, which must wrap Sentry's
@@ -8,10 +9,13 @@ import { wrapWithSentry } from '../src/lib/sentry';
 // isInitialized() when a screen mounts and throws if it changes afterwards — so
 // this cannot become a hook or an effect. See observe-bootstrap.ts.
 import '../src/lib/observe-bootstrap';
+import { NavigationScopePublisher } from '../src/components/navigation/NavigationScopePublisher';
+import { LogbookDeleteProvider } from '../src/providers/logbook-delete-provider';
 import { markStartup } from '../src/lib/profiling/startup-profile';
 import { initializeUserDataExportDownloads } from '../src/lib/user-data-export-download';
+import { startHoldShapeSystemDefaultSync } from '../src/lib/hold-shape-system-default';
 import { useCallback, useEffect, useLayoutEffect, useRef, useMemo, useState, type ReactNode } from 'react';
-import { LogBox, Pressable, StyleSheet, View } from 'react-native';
+import { LogBox, StyleSheet, View } from 'react-native';
 // Navigation theme comes from expo-router's vendored React Navigation. Expo
 // SDK 57's expo-router is not compatible with a separately-installed
 // @react-navigation/* package, so import these from `expo-router` directly.
@@ -116,8 +120,6 @@ import {
   runChannelOverrideCleanupOnce,
 } from '../src/lib/ota-channel-override-cleanup-run';
 import { setOtaBranchSurfingState } from '../src/lib/ota-branch-surfing-state';
-import { opensIntoSprayFlow } from '../src/lib/spray/spray-routes';
-import { sprayFlowCoversScreen } from '../src/lib/spray/spray-flow-presentation';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -395,7 +397,7 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
             secondary style. In dev / when the button is hidden, "Try again" keeps
             the primary style. */}
         {showRecoveryButton && (
-          <Pressable
+          <PressableSurface
             onPress={() => void handleCheckForFix()}
             disabled={isBusy}
             accessibilityRole="button"
@@ -410,9 +412,9 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
             <Text variant="body" color={brandColors.onPrimary} style={errorStyles.buttonLabel}>
               {recoveryLabel}
             </Text>
-          </Pressable>
+          </PressableSurface>
         )}
-        <Pressable
+        <PressableSurface
           onPress={retry}
           accessibilityRole="button"
           accessibilityLabel="Try again"
@@ -428,8 +430,8 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
           >
             Try again
           </Text>
-        </Pressable>
-        <Pressable
+        </PressableSurface>
+        <PressableSurface
           onPress={handleGoHome}
           accessibilityRole="button"
           accessibilityLabel="Go home"
@@ -438,7 +440,7 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
           <Text variant="body" color={brandColors.primary} style={errorStyles.buttonLabel}>
             Go home
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
       {recovery.kind === 'no-fix-available' && (
         <Text variant="footnote" style={errorStyles.statusText}>
@@ -570,6 +572,11 @@ function RootLayout() {
 
   useEffect(() => {
     void initializeUserDataExportDownloads().catch(reportError);
+  }, []);
+
+  // iOS "Differentiate Without Color" turns on per-role hold shapes (HIG Color).
+  useEffect(() => {
+    startHoldShapeSystemDefaultSync();
   }, []);
 
   // Flush decoded board-art bitmaps on background / memory warning (#3479).
@@ -748,76 +755,78 @@ function RootLayout() {
                                                           outside the context so useBottomChromeMetrics() threw and
                                                           white-screened every install that took the OTA. #2565. */}
                                                         <BottomChromeMetricsProvider>
-                                                          <DrawerHostProvider>
-                                                            <DeepLinkProvider>
-                                                              <ShareTargetProvider>
-                                                                <TabBarHeightProvider>
-                                                                  <UserDrawerProvider>
-                                                                    <ThemedNavigation>
-                                                                      <Stack
-                                                                        // Root scenes keep the opaque, theme-aware nav background so a dark
-                                                                        // backstop sits behind the tab screens (the tab stacks paint their own
-                                                                        // transparent content over it). glassStackScreenOptions' transparent
-                                                                        // contentStyle would expose the light window background at the top of the
-                                                                        // screen in dark mode, where the floating chrome leaves it uncovered.
-                                                                        // The header props still apply to root-level pushed screens (session, about).
-                                                                        screenOptions={{
-                                                                          ...glassStackScreenOptions,
-                                                                          headerShown: false,
-                                                                          contentStyle: undefined,
-                                                                        }}
-                                                                        initialRouteName="index"
-                                                                      >
-                                                                        <Stack.Screen name="index" />
-                                                                        <Stack.Screen name="(tabs)" />
-                                                                        <Stack.Screen
-                                                                          name="auth"
-                                                                          options={{
+                                                          <LogbookDeleteProvider>
+                                                            <DrawerHostProvider>
+                                                              <DeepLinkProvider>
+                                                                <ShareTargetProvider>
+                                                                  <TabBarHeightProvider>
+                                                                    <UserDrawerProvider>
+                                                                      <NavigationScopePublisher />
+                                                                      <ThemedNavigation>
+                                                                        <Stack
+                                                                          // Root scenes keep the opaque, theme-aware nav background so a dark
+                                                                          // backstop sits behind the tab screens (the tab stacks paint their own
+                                                                          // transparent content over it). glassStackScreenOptions' transparent
+                                                                          // contentStyle would expose the light window background at the top of the
+                                                                          // screen in dark mode, where the floating chrome leaves it uncovered.
+                                                                          // The header props still apply to root-level pushed screens (session, about).
+                                                                          screenOptions={{
+                                                                            ...glassStackScreenOptions,
                                                                             headerShown: false,
-                                                                            gestureEnabled: false,
+                                                                            contentStyle: undefined,
                                                                           }}
-                                                                        />
-                                                                        {/* Public climber profiles + climber search, pushed from any
+                                                                          initialRouteName="index"
+                                                                        >
+                                                                          <Stack.Screen name="index" />
+                                                                          <Stack.Screen name="(tabs)" />
+                                                                          <Stack.Screen
+                                                                            name="auth"
+                                                                            options={{
+                                                                              headerShown: false,
+                                                                              gestureEnabled: false,
+                                                                            }}
+                                                                          />
+                                                                          {/* Public climber profiles + climber search, pushed from any
                                                           tab (tappable avatars, the Home search action). */}
-                                                                        <Stack.Screen name="users/[userId]/index" />
-                                                                        {/* A climber's full beta-video grid — the "See all" target of
+                                                                          <Stack.Screen name="users/[userId]/index" />
+                                                                          {/* A climber's full beta-video grid — the "See all" target of
                                                           the profile beta shelf. Sets its own solid header. */}
-                                                                        <Stack.Screen name="users/[userId]/beta" />
-                                                                        {/* Headerless push — hides the tab bar like the other pushed
+                                                                          <Stack.Screen name="users/[userId]/beta" />
+                                                                          {/* Headerless push — hides the tab bar like the other pushed
                                                           screens, with its own in-body search bar. NOT a modal: a native
                                                           modal presentation traps the root play drawer beneath it when a
                                                           climb is opened from a profile pushed off search. */}
-                                                                        <Stack.Screen
-                                                                          name="users/search"
-                                                                          options={{ headerShown: false }}
-                                                                        />
-                                                                        <Stack.Screen name="users/connections" />
-                                                                        {/* Settings and every one of its sub-pages — a
+                                                                          <Stack.Screen
+                                                                            name="users/search"
+                                                                            options={{ headerShown: false }}
+                                                                          />
+                                                                          <Stack.Screen name="users/connections" />
+                                                                          {/* Settings and every one of its sub-pages — a
                                                           destination of its own, pushed over the tabs like
                                                           about/changelog, NOT a branch of the You tab. It lived at
                                                           `(tabs)/profile/more`, where opening it left
                                                           `more` on the You tab's stack: the next tap on You reopened
                                                           Settings instead of the profile. app/settings/_layout.tsx
                                                           owns the headers for the whole stack. */}
-                                                                        <Stack.Screen
-                                                                          name="settings"
-                                                                          options={{ headerShown: false }}
-                                                                        />
-                                                                        <Stack.Screen
-                                                                          name="join/[sessionId]"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: false,
-                                                                          }}
-                                                                        />
-                                                                        <Stack.Screen
-                                                                          name="share-beta"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: false,
-                                                                          }}
-                                                                        />
-                                                                        {/* Board selection is a modal off the Climbs capsule /
+                                                                          <Stack.Screen
+                                                                            name="settings"
+                                                                            options={{ headerShown: false }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="join/[sessionId]"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="share-beta"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          {/* Board selection is a modal off the Climbs capsule /
                                                       no-board CTA — board switching is rare, so it doesn't
                                                       earn a tab. Its own _layout owns the headers.
 
@@ -827,18 +836,14 @@ function RootLayout() {
                                                       cover is decided here from the entry screen. iPad
                                                       never mounts NativeTabs, so rule 2 of
                                                       docs/mobile-sheets-vs-routes.md is not in play. */}
-                                                                        <Stack.Screen
-                                                                          name="boards"
-                                                                          options={({ route }) => ({
-                                                                            presentation:
-                                                                              sprayFlowCoversScreen() &&
-                                                                              opensIntoSprayFlow(route)
-                                                                                ? 'fullScreenModal'
-                                                                                : 'modal',
-                                                                            headerShown: false,
-                                                                          })}
-                                                                        />
-                                                                        {/* The moderation feed — ONE root modal, not a copy in each
+                                                                          <Stack.Screen
+                                                                            name="boards"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          {/* The moderation feed — ONE root modal, not a copy in each
                                                       tab stack. The play drawer's Community section links into
                                                       it, and /play is itself a root transparentModal, so a push
                                                       aimed at a tab stack lands BENEATH the player (dead tap,
@@ -847,21 +852,21 @@ function RootLayout() {
                                                       and the drawer all push the same route. app/moderation.tsx
                                                       titles itself on its own Stack.Screen, the way
                                                       about/changelog/scout do. */}
-                                                                        <Stack.Screen
-                                                                          name="moderation"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: true,
-                                                                          }}
-                                                                        />
-                                                                        <Stack.Screen
-                                                                          name="moderation/spray-walls"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: true,
-                                                                          }}
-                                                                        />
-                                                                        {/* The walkthrough, now reached only from Settings'
+                                                                          <Stack.Screen
+                                                                            name="moderation"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: true,
+                                                                            }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="moderation/spray-walls"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: true,
+                                                                            }}
+                                                                          />
+                                                                          {/* The walkthrough, now reached only from Settings'
                                                       replay rows (OnboardingGate opens the first-board
                                                       picker at /boards instead, #5654). A full-screen cover
                                                       over the live tabs: transparentModal with the opaque
@@ -870,16 +875,16 @@ function RootLayout() {
                                                       docs/mobile-sheets-vs-routes.md). Gesture disabled
                                                       because each step's only way on is its own CTA, and
                                                       each swallows Android back too. */}
-                                                                        <Stack.Screen
-                                                                          name="onboarding"
-                                                                          options={{
-                                                                            presentation: 'transparentModal',
-                                                                            headerShown: false,
-                                                                            gestureEnabled: false,
-                                                                            animation: 'fade',
-                                                                          }}
-                                                                        />
-                                                                        {/* Full-screen "now playing" player. A modal VC so the
+                                                                          <Stack.Screen
+                                                                            name="onboarding"
+                                                                            options={{
+                                                                              presentation: 'transparentModal',
+                                                                              headerShown: false,
+                                                                              gestureEnabled: false,
+                                                                              animation: 'fade',
+                                                                            }}
+                                                                          />
+                                                                          {/* Full-screen "now playing" player. A modal VC so the
                                                       sub-drawers / queue / share sheet opened from inside it stack
                                                       ABOVE it (the FullWindowOverlay it replaced sat in a higher
                                                       window, so native sheets rendered behind). transparentModal —
@@ -891,7 +896,7 @@ function RootLayout() {
                                                       opaque backing (see app/play.tsx) so the live tabs screen
                                                       doesn't show through the glass. Custom pull-down dismiss; covers
                                                       the tab bar. */}
-                                                                        {/* User drawer as a route, not an RN-core <Modal>. A
+                                                                          {/* User drawer as a route, not an RN-core <Modal>. A
                                                       single native presentation system, so it no longer
                                                       collides with the @expo/ui FeedbackSheet (the
                                                       dual-presentation freeze, issue #3211). transparentModal
@@ -900,113 +905,120 @@ function RootLayout() {
                                                       runs its OWN reanimated slide (app/user-drawer.tsx).
                                                       gestureEnabled off so the only dismiss is the panel's
                                                       own animated close (backdrop tap / a row). */}
-                                                                        {/* Crowdsourced QA (tester-only). Plain modals: each
+                                                                          {/* Crowdsourced QA (tester-only). Plain modals: each
                                                       screen paints its own header so it reads as a
                                                       self-contained prompt rather than a pushed settings
                                                       page, and a swipe-dismiss on the picker is a Skip. */}
-                                                                        <Stack.Screen
-                                                                          name="qa/pick"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: false,
-                                                                          }}
-                                                                        />
-                                                                        <Stack.Screen
-                                                                          name="qa/brief"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: false,
-                                                                          }}
-                                                                        />
-                                                                        {/* One-time "sends we lost are on their way" notice
+                                                                          <Stack.Screen
+                                                                            name="qa/pick"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="qa/brief"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          {/* One-time "sends we lost are on their way" notice
                                                       (#5335). A plain modal, like the QA screens: it paints
                                                       its own body and a swipe-dismiss is a perfectly good
                                                       way to close it. */}
-                                                                        <Stack.Screen
-                                                                          name="send-recovery"
-                                                                          options={{
-                                                                            presentation: 'modal',
-                                                                            headerShown: false,
-                                                                          }}
-                                                                        />
-                                                                        <Stack.Screen
-                                                                          name="user-drawer"
-                                                                          options={{
-                                                                            presentation: 'transparentModal',
-                                                                            headerShown: false,
-                                                                            gestureEnabled: false,
-                                                                            animation: 'none',
-                                                                          }}
-                                                                        />
-                                                                        <Stack.Screen
-                                                                          name="play"
-                                                                          options={{
-                                                                            presentation: 'transparentModal',
-                                                                            headerShown: false,
-                                                                            // Native interactive dismiss OFF — it lives outside
-                                                                            // RNGH so it couldn't negotiate with the board
-                                                                            // swipe/pinch (only fired on the grabber). A custom
-                                                                            // RNGH pull-down (use-drawer-dismiss-gesture) drives
-                                                                            // dismissal from the whole surface instead.
-                                                                            gestureEnabled: false,
-                                                                            animation: 'slide_from_bottom',
-                                                                          }}
-                                                                        />
-                                                                      </Stack>
-                                                                    </ThemedNavigation>
-                                                                    <PersistentQueueBar />
-                                                                    <OfflineSyncBridge />
-                                                                    <OwnedSprayWallsOfflinePin />
-                                                                    {/* Rest timer runtime (#5378): renders nothing, and mounts
+                                                                          <Stack.Screen
+                                                                            name="send-recovery"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="account"
+                                                                            options={{
+                                                                              presentation: 'modal',
+                                                                              headerShown: false,
+                                                                            }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="user-drawer"
+                                                                            options={{
+                                                                              presentation: 'transparentModal',
+                                                                              headerShown: false,
+                                                                              gestureEnabled: false,
+                                                                              animation: 'none',
+                                                                            }}
+                                                                          />
+                                                                          <Stack.Screen
+                                                                            name="play"
+                                                                            options={{
+                                                                              presentation: 'transparentModal',
+                                                                              headerShown: false,
+                                                                              // Native interactive dismiss OFF — it lives outside
+                                                                              // RNGH so it couldn't negotiate with the board
+                                                                              // swipe/pinch (only fired on the grabber). A custom
+                                                                              // RNGH pull-down (use-drawer-dismiss-gesture) drives
+                                                                              // dismissal from the whole surface instead.
+                                                                              gestureEnabled: false,
+                                                                              animation: 'slide_from_bottom',
+                                                                            }}
+                                                                          />
+                                                                        </Stack>
+                                                                      </ThemedNavigation>
+                                                                      <PersistentQueueBar />
+                                                                      <OfflineSyncBridge />
+                                                                      <OwnedSprayWallsOfflinePin />
+                                                                      {/* Rest timer runtime (#5378): renders nothing, and mounts
                                                             its queue/session subscriptions only once the flag is on
                                                             AND a climber has armed the timer. Sits inside
                                                             QueueProvider so it can advance the queue. */}
-                                                                    <RestTimerRuntime />
-                                                                    {/* One-time tip floating above the tab bar / accessory bar,
+                                                                      <RestTimerRuntime />
+                                                                      {/* One-time tip floating above the tab bar / accessory bar,
                                                             mounted next to PersistentQueueBar so it watches climb
                                                             presence globally and overlays both the native (iOS 26) and
                                                             JS bottom-bar variants. */}
-                                                                    <AccessoryOnboardingTip />
-                                                                    {/* iOS 26 only: the one-time "tap the magnifier to get
+                                                                      <AccessoryOnboardingTip />
+                                                                      {/* iOS 26 only: the one-time "tap the magnifier to get
                                                             back to your climbs" tip for new accounts (#5654). A
                                                             root sibling of the tip above, which it waits behind
                                                             because both float in the same place. */}
-                                                                    <ClimbsTabReturnTip />
-                                                                    {/* The rest-timer pill (#5378): a root overlay pinned at
+                                                                      <ClimbsTabReturnTip />
+                                                                      {/* The rest-timer pill (#5378): a root overlay pinned at
                                                             bottomChrome.restTimerBottom, the anchor the bottom-chrome
                                                             reserve is computed against. A sibling of the tip above for
                                                             the same reason — it must float over BOTH the iOS 26 UIKit
                                                             platter and the JS queue bar. It brings its own sheet; the
                                                             play drawer mounts a second copy so that sheet can present
                                                             above the /play modal. */}
-                                                                    <RootRestTimerPillHost />
-                                                                    {/* The one app-wide "we can't reach the server"
+                                                                      <RootRestTimerPillHost />
+                                                                      {/* The one app-wide "we can't reach the server"
                                                             banner (#4862). A root sibling like the tip above so
                                                             it survives navigation and floats over every route;
                                                             it publishes its own height so the bottom-chrome
                                                             geometry can lift the FABs and list tails clear of
                                                             it. Waits on the launch-ready context like
                                                             OnboardingGate, so it never paints over the splash. */}
-                                                                    <ConnectivityBanner />
-                                                                    <OnboardingGate />
-                                                                    {/* The connect-step test's (#5654) always-mounted half:
+                                                                      <ConnectivityBanner />
+                                                                      <OnboardingGate />
+                                                                      {/* The connect-step test's (#5654) always-mounted half:
                                                             binds its store to the signed-in account, records this
                                                             phone's first connect and shows the one-time
                                                             confirmation. Renders nothing. Inside the Bluetooth
                                                             and dialog providers, which it reads. */}
-                                                                    <FirstConnectHost />
-                                                                    {/* Asks a tester to try a PR preview (or shows what to
+                                                                      <FirstConnectHost />
+                                                                      {/* Asks a tester to try a PR preview (or shows what to
                                                             test on the one already running). No-op for everyone
                                                             else. A first run outranks it through the seen flag
                                                             it waits for, not through mount order. */}
-                                                                    <QaTesterGate />
-                                                                    {/* Brings the OTA branch pin in line with the "Get updates
+                                                                      <QaTesterGate />
+                                                                      {/* Brings the OTA branch pin in line with the "Get updates
                                                             early" choice once flags and branch surfing are ready: in
                                                             the background, after first interactions, never a reload.
                                                             No request when they already agree. Beside QaTesterGate
                                                             because it reads the signed-in profile too. Null render. */}
-                                                                    <EarlyUpdatesLaunchSync />
-                                                                    {/* Tells a climber the one-time #5335 recovery found sends
+                                                                      <EarlyUpdatesLaunchSync />
+                                                                      {/* Tells a climber the one-time #5335 recovery found sends
                                                             of theirs that never reached the server. Silent for
                                                             everyone else, which is almost everyone. It and
                                                             QaTesterGate run side by side, and neither outranks
@@ -1020,30 +1032,31 @@ function RootLayout() {
                                                             finishes inside one frame could still stack both
                                                             modals; that takes a tester with owed sends, and each
                                                             dismisses normally. */}
-                                                                    <SendRecoveryGate />
-                                                                    {/* Tester-only diagnostic for the Android-16 edge-to-edge
+                                                                      <SendRecoveryGate />
+                                                                      {/* Tester-only diagnostic for the Android-16 edge-to-edge
                                                             touch-dead bug; a root sibling (stays tappable while the
                                                             <Stack> hit-region is frozen). No-op unless built with
                                                             EXPO_PUBLIC_FREEZE_DEBUG=1. */}
-                                                                    <FreezeDebugOverlay />
-                                                                    {/* Live bottom-chrome geometry readout (dev / preview /
+                                                                      <FreezeDebugOverlay />
+                                                                      {/* Live bottom-chrome geometry readout (dev / preview /
                                                             pr-channel + settings toggle). Inside the metrics provider
                                                             so it reads the same derived values consumers position with. */}
-                                                                    <BottomChromeDebugOverlay />
-                                                                    {/* Root-sampled window inset for bottom-docked sheets —
+                                                                      <BottomChromeDebugOverlay />
+                                                                      {/* Root-sampled window inset for bottom-docked sheets —
                                                             here (outside the tabs) useSafeAreaInsets IS the window's. */}
-                                                                    <WindowInsetPublisher />
-                                                                  </UserDrawerProvider>
-                                                                </TabBarHeightProvider>
-                                                                <AnalyticsScreenTracker />
-                                                                <ImageCacheTabSweeper />
-                                                                <OtaUpdateTracker />
-                                                                <LowPowerModeTracker />
-                                                                <InstallReferrerTracker />
-                                                                <KeychainNamespaceMigration />
-                                                              </ShareTargetProvider>
-                                                            </DeepLinkProvider>
-                                                          </DrawerHostProvider>
+                                                                      <WindowInsetPublisher />
+                                                                    </UserDrawerProvider>
+                                                                  </TabBarHeightProvider>
+                                                                  <AnalyticsScreenTracker />
+                                                                  <ImageCacheTabSweeper />
+                                                                  <OtaUpdateTracker />
+                                                                  <LowPowerModeTracker />
+                                                                  <InstallReferrerTracker />
+                                                                  <KeychainNamespaceMigration />
+                                                                </ShareTargetProvider>
+                                                              </DeepLinkProvider>
+                                                            </DrawerHostProvider>
+                                                          </LogbookDeleteProvider>
                                                         </BottomChromeMetricsProvider>
                                                       </BleControlSheetProvider>
                                                     </RogueTimerProvider>

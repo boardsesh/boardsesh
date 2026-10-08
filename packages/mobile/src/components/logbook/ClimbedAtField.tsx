@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // A single date-or-time field for a tick's `climbedAt`, shared by the create
 // flow (QuickTickBar) and the edit flow (LogbookEditSheet). One instance edits
 // one part (`mode="date"` or `mode="time"`); render two side by side for a full
@@ -6,7 +7,7 @@
 // `onFutureAdjusted` so the parent can surface a toast in its own namespace —
 // the field itself stays free of provider/i18n coupling.
 import React, { useCallback } from 'react';
-import { Platform, Pressable, StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -82,7 +83,7 @@ export const ClimbedAtField = React.memo(function ClimbedAtField({
   }
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={openAndroid}
       style={[styles.trigger, { backgroundColor: systemColors.fill }]}
       accessibilityRole="button"
@@ -92,7 +93,7 @@ export const ClimbedAtField = React.memo(function ClimbedAtField({
         {mode === 'date' ? formatDateForDisplay(value) : formatTimeForDisplay(value)}
       </Text>
       <Icon name={mode === 'date' ? 'calendar' : 'clock'} size={18} color={systemColors.secondaryLabel} />
-    </Pressable>
+    </PressableSurface>
   );
 });
 

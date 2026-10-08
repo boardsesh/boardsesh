@@ -1,5 +1,8 @@
+import { ReadableColumn } from '../../../src/components/ReadableColumn';
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, RefreshControl, ScrollView, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useFocusEffect } from 'expo-router';
@@ -41,9 +44,9 @@ import { useAuthToken } from '../../../src/lib/graphql/use-auth-token';
 import { useProfile, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { iconMap } from '../../../src/components/icon-map';
 import { selectByVariant } from '../../../src/theme/variants';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT } from '../../../src/theme/layout';
 import { screenshotModeLoadMore } from '../../../src/lib/screenshot-mode';
@@ -105,8 +108,9 @@ function playlistKey(playlist: { uuid: string }): string {
 }
 
 export default function DiscoverLibrary() {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('playlists');
-  const { brandColors, variant } = useTheme();
+  const { brandColors, systemColors, variant } = useTheme();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const bottomChrome = useBottomChromeMetrics();
   // The screen sits ABOVE the in-flow Material tab bar, so the FAB's `bottom` is
@@ -597,193 +601,232 @@ export default function DiscoverLibrary() {
     refetchFollowedSetters,
   ]);
 
+  // Pull to refresh (HIG Refresh content controls): every shelf on the hub. The
+  // playlist hooks report progress through their loading flags, the React Query
+  // sources through their promises; the spinner waits for both.
+  const handlePullRefresh = useCallback(() => {
+    refetchUser();
+    refetchCommunity();
+    // Typed `() => void`, but the pinned hook's refetch is its async fetch, so
+    // the spinner can wait on what it returns.
+    const pinnedRefresh: unknown = refetchPinned();
+    return Promise.all([
+      pinnedRefresh,
+      refetchSmartCounts(),
+      followedSettersEnabled ? refetchFollowedSetters() : undefined,
+    ]);
+  }, [
+    refetchUser,
+    refetchPinned,
+    refetchCommunity,
+    refetchSmartCounts,
+    followedSettersEnabled,
+    refetchFollowedSetters,
+  ]);
+  const pullRefresh = usePullRefresh(handlePullRefresh, userPlaylistsLoading || communityLoading);
+
   return (
     <View style={styles.flex}>
-      <ScrollView
-        style={styles.flex}
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{
-          paddingTop: chromeHeight,
-          paddingBottom: bottomChrome.scrollBottomPadding + spacing[6],
-        }}
-        scrollIndicatorInsets={{ top: chromeHeight }}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* The screen's identity, in-body under the floating chrome (the grey
+      <ReadableColumn style={styles.flex}>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefresh.refreshing}
+              onRefresh={pullRefresh.onRefresh}
+              tintColor={brandColors.primary}
+              // Android draws the spinner over the content; start it below the chrome.
+              progressViewOffset={chromeHeight}
+            />
+          }
+          style={styles.flex}
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
+          contentContainerStyle={{
+            paddingTop: chromeHeight,
+            paddingBottom: bottomChrome.scrollBottomPadding + spacing[6],
+          }}
+          scrollIndicatorInsets={{ top: chromeHeight }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* The screen's identity, in-body under the floating chrome (the grey
             "Discover" stack header is gone). */}
-        <Text variant="largeTitle" style={styles.screenTitle}>
-          {t('bottomTabBar.discover')}
-        </Text>
+          <Text variant="largeTitle" style={styles.screenTitle}>
+            {t('bottomTabBar.discover')}
+          </Text>
 
-        {showSignInPrompt ? (
-          <Pressable style={styles.signInBanner} onPress={() => router.push('/auth/login')} accessibilityRole="button">
-            <Icon name="person" size={26} color={iosSystemColors.systemGray} />
-            <View style={styles.signInText}>
-              <Text variant="subheadline" style={styles.signInTitle}>
-                {t('library.signInBanner.title')}
-              </Text>
-              <Text variant="caption1" style={styles.signInDescription}>
-                {t('library.signInBanner.description')}
-              </Text>
-            </View>
-            <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
-              {t('library.signInBanner.cta')}
-            </Text>
-          </Pressable>
-        ) : null}
-
-        {/* Pinned — dense grid capped at four rows of two. */}
-        {isAuthenticated && hasVisiblePinnedItems ? (
-          <View style={styles.section}>
-            <SectionHeader title={t('library.sections.pinned')} />
-            <View style={styles.grid}>
-              {visiblePinnedSmartCards.map(({ preset, count }, index) => (
-                <View key={preset.type} style={styles.gridItem}>
-                  <DiscoverSmartPlaylistCard
-                    smartType={preset.type}
-                    name={t(preset.titleI18nKey)}
-                    climbCount={count}
-                    color={preset.color}
-                    icon={preset.icon}
-                    variant="grid"
-                    index={index}
-                    onOpen={goToSmartPlaylist}
-                    isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
-                    onPin={smartPinsHydrated ? handleToggleSmartPin : undefined}
-                  />
-                </View>
-              ))}
-              {visiblePinnedPlaylists.map((playlist, index) => (
-                <View key={playlist.uuid} style={styles.gridItem}>
-                  <DiscoverPlaylistCard
-                    uuid={playlist.uuid}
-                    name={playlist.name}
-                    climbCount={playlist.climbCount}
-                    color={playlist.color}
-                    icon={playlist.icon}
-                    variant="grid"
-                    index={visiblePinnedSmartCards.length + index}
-                    onOpen={goToPlaylist}
-                    isPinned={playlist.isPinnedByMe}
-                    onPin={togglePlaylistPin}
-                  />
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        {/* My Playlists — user's own playlists, excluding the pinned grid above. */}
-        {isAuthenticated && (userLoading || unpinnedUserPlaylists.length > 0) ? (
-          <PlaylistShelf
-            title={t('library.allPlaylists.title')}
-            actionLabel={userPlaylists.length > 0 ? t('library.allPlaylists.seeAll') : undefined}
-            onActionPress={userPlaylists.length > 0 ? openAllPlaylists : undefined}
-            loading={userLoading && unpinnedUserPlaylists.length === 0}
-            isLoadingMore={userLoadingMore}
-            hasMore={userHasMore || userLoadMoreError}
-            onEndReached={screenshotModeLoadMore(userLoadMoreError ? retryLoadMoreUser : loadMoreUser)}
-            items={unpinnedUserPlaylists}
-            renderItem={renderOwnedPlaylist}
-            keyExtractor={playlistKey}
-          />
-        ) : null}
-
-        {/* For You — personal smart playlists, then followed setters on this board. */}
-        {isAuthenticated && userId && (smartCountsLoading || followedSettersLoading || forYouCards.length > 0) ? (
-          <PlaylistShelf
-            title={t('library.sections.forYou')}
-            loading={(smartCountsLoading || followedSettersLoading) && forYouCards.length === 0}
-            isLoadingMore={(smartCountsLoading || followedSettersLoading) && forYouCards.length > 0}
-            hasMore={false}
-            onEndReached={noMoreForYouCards}
-            items={forYouCards}
-            renderItem={renderForYouCard}
-            keyExtractor={forYouCardKey}
-            extraData={forYouInvalidation}
-          />
-        ) : null}
-
-        {/* Community Playlists — user-made public playlists. */}
-        {communityLoading || communityItems.length > 0 ? (
-          <PlaylistShelf
-            title={t('library.sections.community')}
-            loading={communityLoading && communityItems.length === 0}
-            isLoadingMore={communityLoadingMore}
-            hasMore={communityHasMore}
-            onEndReached={screenshotModeLoadMore(loadMoreCommunity)}
-            items={communityItems}
-            renderItem={renderCommunityPlaylist}
-            keyExtractor={playlistKey}
-            extraData={communityInvalidation}
-          />
-        ) : null}
-
-        {/* Load error: a section's first page failed and the hub is empty.
-            Offer a retry instead of falsely claiming the library is empty. */}
-        {showLoadError ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('library.errors.loadTitle')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('library.errors.loadDescription')}
-            </Text>
-            <Pressable
-              onPress={handleRetryLoad}
+          {showSignInPrompt ? (
+            <PressableSurface
+              style={[styles.signInBanner, { borderColor: systemColors.separator }]}
+              onPress={() => router.push('/auth/login')}
               accessibilityRole="button"
-              accessibilityLabel={t('library.errors.tryAgain')}
-              hitSlop={8}
             >
-              <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
-                {t('library.errors.tryAgain')}
+              <Icon name="person" size={26} color={systemColors.secondaryLabel} />
+              <View style={styles.signInText}>
+                <Text variant="subheadline" style={styles.signInTitle}>
+                  {t('library.signInBanner.title')}
+                </Text>
+                <Text variant="caption1" style={styles.signInDescription}>
+                  {t('library.signInBanner.description')}
+                </Text>
+              </View>
+              <Text variant="subheadline" color={brandColors.primary} style={styles.signInCta}>
+                {t('library.signInBanner.cta')}
               </Text>
-            </Pressable>
-          </View>
-        ) : null}
+            </PressableSurface>
+          ) : null}
 
-        {showOfflineState ? <OfflineState reason={offlineStateReason} /> : null}
-
-        {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
-        {!showOfflineState &&
-        isAuthenticated &&
-        !userLoading &&
-        !smartCountsLoading &&
-        !followedSettersLoading &&
-        !communityLoading &&
-        !profileLoading &&
-        !showLoadError &&
-        !hasVisiblePinnedItems &&
-        userPlaylists.length === 0 &&
-        forYouCards.length === 0 &&
-        communityItems.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Icon name="playlist" size={48} color={iosSystemColors.systemGray4} />
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('library.empty.title')}
-            </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
-              {t('library.empty.description')}
-            </Text>
-            <View style={styles.emptyCta}>
-              <Button title={t('library.empty.createCta')} icon="plus" onPress={handleCreatePress} />
+          {/* Pinned — dense grid capped at four rows of two. */}
+          {isAuthenticated && hasVisiblePinnedItems ? (
+            <View style={styles.section}>
+              <SectionHeader title={t('library.sections.pinned')} />
+              <View style={styles.grid}>
+                {visiblePinnedSmartCards.map(({ preset, count }, index) => (
+                  <View key={preset.type} style={styles.gridItem}>
+                    <DiscoverSmartPlaylistCard
+                      smartType={preset.type}
+                      name={t(preset.titleI18nKey)}
+                      climbCount={count}
+                      color={preset.color}
+                      icon={preset.icon}
+                      variant="grid"
+                      index={index}
+                      onOpen={goToSmartPlaylist}
+                      isPinned={pinnedSmartPlaylistTypeSet.has(preset.type)}
+                      onPin={smartPinsHydrated ? handleToggleSmartPin : undefined}
+                    />
+                  </View>
+                ))}
+                {visiblePinnedPlaylists.map((playlist, index) => (
+                  <View key={playlist.uuid} style={styles.gridItem}>
+                    <DiscoverPlaylistCard
+                      uuid={playlist.uuid}
+                      name={playlist.name}
+                      climbCount={playlist.climbCount}
+                      color={playlist.color}
+                      icon={playlist.icon}
+                      variant="grid"
+                      index={visiblePinnedSmartCards.length + index}
+                      onOpen={goToPlaylist}
+                      isPinned={playlist.isPinnedByMe}
+                      onPin={togglePlaylistPin}
+                    />
+                  </View>
+                ))}
+              </View>
             </View>
-          </View>
-        ) : null}
+          ) : null}
 
-        {/* Initial spinner before any section has resolved. */}
-        {!showOfflineState &&
-        (authLoading || tokenLoading) &&
-        !hasVisiblePinnedItems &&
-        userPlaylists.length === 0 &&
-        forYouCards.length === 0 &&
-        communityItems.length === 0 ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" />
-          </View>
-        ) : null}
-      </ScrollView>
+          {/* My Playlists — user's own playlists, excluding the pinned grid above. */}
+          {isAuthenticated && (userLoading || unpinnedUserPlaylists.length > 0) ? (
+            <PlaylistShelf
+              title={t('library.allPlaylists.title')}
+              actionLabel={userPlaylists.length > 0 ? t('library.allPlaylists.seeAll') : undefined}
+              onActionPress={userPlaylists.length > 0 ? openAllPlaylists : undefined}
+              loading={userLoading && unpinnedUserPlaylists.length === 0}
+              isLoadingMore={userLoadingMore}
+              hasMore={userHasMore || userLoadMoreError}
+              onEndReached={screenshotModeLoadMore(userLoadMoreError ? retryLoadMoreUser : loadMoreUser)}
+              items={unpinnedUserPlaylists}
+              renderItem={renderOwnedPlaylist}
+              keyExtractor={playlistKey}
+            />
+          ) : null}
+
+          {/* For You — personal smart playlists, then followed setters on this board. */}
+          {isAuthenticated && userId && (smartCountsLoading || followedSettersLoading || forYouCards.length > 0) ? (
+            <PlaylistShelf
+              title={t('library.sections.forYou')}
+              loading={(smartCountsLoading || followedSettersLoading) && forYouCards.length === 0}
+              isLoadingMore={(smartCountsLoading || followedSettersLoading) && forYouCards.length > 0}
+              hasMore={false}
+              onEndReached={noMoreForYouCards}
+              items={forYouCards}
+              renderItem={renderForYouCard}
+              keyExtractor={forYouCardKey}
+              extraData={forYouInvalidation}
+            />
+          ) : null}
+
+          {/* Community Playlists — user-made public playlists. */}
+          {communityLoading || communityItems.length > 0 ? (
+            <PlaylistShelf
+              title={t('library.sections.community')}
+              loading={communityLoading && communityItems.length === 0}
+              isLoadingMore={communityLoadingMore}
+              hasMore={communityHasMore}
+              onEndReached={screenshotModeLoadMore(loadMoreCommunity)}
+              items={communityItems}
+              renderItem={renderCommunityPlaylist}
+              keyExtractor={playlistKey}
+              extraData={communityInvalidation}
+            />
+          ) : null}
+
+          {/* Load error: a section's first page failed and the hub is empty.
+            Offer a retry instead of falsely claiming the library is empty. */}
+          {showLoadError ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('library.errors.loadTitle')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('library.errors.loadDescription')}
+              </Text>
+              <PressableSurface
+                onPress={handleRetryLoad}
+                accessibilityRole="button"
+                accessibilityLabel={t('library.errors.tryAgain')}
+                hitSlop={8}
+              >
+                <Text variant="subheadline" color={brandColors.primary} style={styles.retryCta}>
+                  {t('library.errors.tryAgain')}
+                </Text>
+              </PressableSurface>
+            </View>
+          ) : null}
+
+          {showOfflineState ? <OfflineState reason={offlineStateReason} /> : null}
+
+          {/* Empty state: signed in, nothing anywhere, nothing loading, no error. */}
+          {!showOfflineState &&
+          isAuthenticated &&
+          !userLoading &&
+          !smartCountsLoading &&
+          !followedSettersLoading &&
+          !communityLoading &&
+          !profileLoading &&
+          !showLoadError &&
+          !hasVisiblePinnedItems &&
+          userPlaylists.length === 0 &&
+          forYouCards.length === 0 &&
+          communityItems.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {t('library.empty.title')}
+              </Text>
+              <Text variant="subheadline" style={styles.emptySubtitle}>
+                {t('library.empty.description')}
+              </Text>
+              <View style={styles.emptyCta}>
+                <Button title={t('library.empty.createCta')} icon="plus" onPress={handleCreatePress} />
+              </View>
+            </View>
+          ) : null}
+
+          {/* Initial spinner before any section has resolved. */}
+          {!showOfflineState &&
+          (authLoading || tokenLoading) &&
+          !hasVisiblePinnedItems &&
+          userPlaylists.length === 0 &&
+          forYouCards.length === 0 &&
+          communityItems.length === 0 ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" />
+            </View>
+          ) : null}
+        </ScrollView>
+      </ReadableColumn>
 
       <DiscoverTopChrome
         canCreate={isAuthenticated}
@@ -827,6 +870,7 @@ export default function DiscoverLibrary() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+    minHeight: 0,
   },
   // Material create FAB: bottom-trailing, the list scrolls under it; the host sets
   // `bottom` from the variant-correct floating-control offset (clears tab bar +
@@ -852,7 +896,7 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: '50%',
-    paddingRight: spacing[3],
+    paddingEnd: spacing[3],
   },
   signInBanner: {
     flexDirection: 'row',
@@ -864,7 +908,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
   },
   signInText: {
     flex: 1,

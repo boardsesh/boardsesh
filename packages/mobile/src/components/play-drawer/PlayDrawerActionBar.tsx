@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
@@ -217,7 +218,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   }, [onToggleFavorite]);
 
   return (
-    <View style={drawerActionBarStyles.container}>
+    <View style={[drawerActionBarStyles.container, { borderTopColor: theme.systemColors.separator }]}>
       <View style={drawerActionBarStyles.rowPrimary}>
         {/* Mirror, or the heart where a board can't mirror. An anonymous reader
             gets neither fallback — a favourite needs an account — so the slot
@@ -242,7 +243,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
               size="lg"
               iconName={isFavorited ? 'favorite.fill' : 'favorite'}
               onPress={handleFavorite}
-              iconColor={isFavorited ? iosSystemColors.systemRed : undefined}
+              iconColor={isFavorited ? theme.actionColors.favoriteSelected : undefined}
               accessibilityLabel={
                 isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
               }
@@ -337,26 +338,30 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
         ) : (
           <>
             {onOpenAngleSelector && currentAngle != null && (
-              <Pressable
+              <PressableSurface
                 onPress={onOpenAngleSelector}
                 accessibilityRole="button"
                 accessibilityLabel={t('mobile.angleSelector.title')}
                 // A label-only mini pill (32pt); hit-slop lifts the tap target back to
                 // the 44pt floor without growing the visual chip.
                 hitSlop={8}
-                style={({ pressed }) => [styles.anglePill, pressed && drawerActionBarStyles.actionButtonPressed]}
+                style={({ pressed }) => [
+                  styles.anglePill,
+                  { borderColor: theme.systemColors.separator },
+                  pressed && drawerActionBarStyles.actionButtonPressed,
+                ]}
               >
-                <Text variant="caption1" style={styles.angleText}>
+                <Text variant="caption1" color={theme.systemColors.secondaryLabel} style={styles.angleText}>
                   {currentAngle}°
                 </Text>
-              </Pressable>
+              </PressableSurface>
             )}
             {supportsMirroring && !isAnonymous && (
               <ActionButton
                 size="sm"
                 iconName={isFavorited ? 'favorite.fill' : 'favorite'}
                 onPress={handleFavorite}
-                iconColor={isFavorited ? iosSystemColors.systemRed : undefined}
+                iconColor={isFavorited ? theme.actionColors.favoriteSelected : undefined}
                 accessibilityLabel={
                   isFavorited ? t('playView.actionBar.removeFavoriteAria') : t('playView.actionBar.addFavoriteAria')
                 }
@@ -415,8 +420,9 @@ type ShareButtonProps = {
 // the shared icon-map.
 function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
   const { dim, icon } = SIZES[size];
+  const { systemColors } = useTheme();
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
@@ -426,8 +432,8 @@ function ShareButton({ size, onPress, accessibilityLabel }: ShareButtonProps) {
         pressed && drawerActionBarStyles.actionButtonPressed,
       ]}
     >
-      <Icon name="share" size={icon} color={iosSystemColors.systemGray} />
-    </Pressable>
+      <Icon maxFontSizeMultiplier={1} name="share" size={icon} color={systemColors.secondaryLabel} />
+    </PressableSurface>
   );
 }
 
@@ -449,7 +455,7 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
   }, [onLongPress]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       onLongPress={handleLongPress}
       accessibilityRole="button"
@@ -462,7 +468,7 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
     >
       {/* The primary log action: a green glyph on the glass sheet (colour on the
           icon, not a fill) — its hue and the count badge mark it as the hero. */}
-      <Icon name="tick.outline" size={icon} color={theme.brandColors.success} />
+      <Icon maxFontSizeMultiplier={1} name="tick.outline" size={icon} color={theme.brandColors.success} />
       {ascentCount > 0 && (
         <View style={styles.countBadge}>
           <Text
@@ -476,7 +482,7 @@ function TickButton({ size, ascentCount, onPress, onLongPress, accessibilityLabe
           </Text>
         </View>
       )}
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -495,11 +501,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: iosSystemColors.separator,
   },
   angleText: {
     fontWeight: '600',
-    color: iosSystemColors.systemGray,
   },
   // caption2 (11pt) in a box that grows with the text (count-badge-style.ts).
   countBadge: {

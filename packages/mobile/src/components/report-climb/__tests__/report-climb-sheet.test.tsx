@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
 //
 // The one sheet rule #5971 added: on your own climb (only a spray wall offers
 // Report there) the sheet is for changing the grade, so it locks to grade and

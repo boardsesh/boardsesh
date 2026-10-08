@@ -1,5 +1,6 @@
+import { Text } from './Text';
 import { memo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import {
@@ -117,11 +118,11 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
 
 const styles = StyleSheet.create({
   icon: {
-    marginLeft: 4,
+    marginStart: 4,
     flexShrink: 0,
   },
   method: {
-    marginLeft: 6,
+    marginStart: 6,
     flexShrink: 0,
     fontWeight: '600',
     textTransform: 'uppercase',

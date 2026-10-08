@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 //
 // The card is the one thing the onboarding step and the Board look settings
 // screen both draw, so its states have to be readable at a glance: which look is
@@ -54,8 +59,14 @@ vi.mock('react-native', () => {
         { 'data-testid': testID, 'data-style': JSON.stringify(flattenStyle(style)), onClick: onPress },
         children as ReactNode,
       ),
-    StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
+    StyleSheet: {
+      flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+      create: (styles: Record<string, unknown>) => styles,
+      hairlineWidth: 1,
+      absoluteFill: {},
+    },
     Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+    DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (color: string) => color,
     useWindowDimensions: () => ({ width: 402, height: 874, scale: 3, fontScale: 1 }),
   };
@@ -81,6 +92,8 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityState,
     accessibilityValue,
     feedback,
+    testID,
+    accessibilityLabel,
   }: {
     children?: ReactNode;
     onPress?: () => void;
@@ -88,11 +101,14 @@ vi.mock('../../PressableSurface', () => ({
     accessibilityState?: { checked?: boolean };
     accessibilityValue?: { text?: string };
     feedback?: string;
+    testID?: string;
+    accessibilityLabel?: string;
   }) =>
     createElement(
       'button',
       {
-        'data-testid': 'card-press',
+        'data-testid': testID ?? 'card-press',
+        'aria-label': accessibilityLabel,
         'data-role': accessibilityRole,
         'data-checked': accessibilityState?.checked?.toString(),
         'data-value': accessibilityValue?.text,
@@ -104,6 +120,7 @@ vi.mock('../../PressableSurface', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       label: '#000',

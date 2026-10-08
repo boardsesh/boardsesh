@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -23,11 +36,16 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
+    createElement('div', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: () => onPress?.() }, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('react-native-reanimated', () => ({
@@ -42,8 +60,15 @@ vi.mock('../Text', () => ({
   Text: ({ children, style }: { children?: ReactNode; style?: StyleProp }) =>
     createElement('span', { 'data-style': JSON.stringify(flattenStyle(style)) }, children),
 }));
-vi.mock('../Icon', () => ({ Icon: () => createElement('i', null) }));
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
+  useTheme: () => ({ systemColors: { tertiaryFill: 'theme-tertiary-fill', tertiaryLabel: 'theme-tertiary-label' } }),
+}));
 
 const TITLE = 'Logbook';
 const LONG_SUMMARY = '40° · not tried yet · sent at 3 angles · tried at 45°';
@@ -61,7 +86,14 @@ async function renderHeader() {
     if (!node) throw new Error(`No <span> rendered for ${JSON.stringify(text)}`);
     return JSON.parse(node.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
   };
-  return { title: styleOf(TITLE), summary: styleOf(LONG_SUMMARY) };
+  const chevron = container.querySelector('i[data-icon="chevron.down"]');
+  const card = container.firstElementChild;
+  return {
+    title: styleOf(TITLE),
+    summary: styleOf(LONG_SUMMARY),
+    chevronColor: chevron?.getAttribute('data-color'),
+    cardStyle: JSON.parse(card?.getAttribute('data-style') ?? '{}') as Record<string, unknown>,
+  };
 }
 
 describe('CollapsibleSection collapsed header layout', () => {
@@ -85,5 +117,13 @@ describe('CollapsibleSection collapsed header layout', () => {
     expect(summary.flexBasis).toBe(0);
     expect(summary.flexGrow).toBe(1);
     expect(summary.flexShrink).toBe(1);
+  });
+
+  it('paints the card and chevron from the scheme-aware theme roles', async () => {
+    const { chevronColor, cardStyle } = await renderHeader();
+
+    // The static #8E8E93 never adapted to dark mode; the theme roles do.
+    expect(chevronColor).toBe('theme-tertiary-label');
+    expect(cardStyle.backgroundColor).toBe('theme-tertiary-fill');
   });
 });

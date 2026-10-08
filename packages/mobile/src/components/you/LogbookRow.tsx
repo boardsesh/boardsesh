@@ -1,3 +1,11 @@
+import { PressableSurface } from '../PressableSurface';
+import { useFullSwipe } from '../use-full-swipe';
+import {
+  SWIPE_ACTION_REVEAL as ACTION_REVEAL,
+  SWIPE_FULL_THRESHOLD as COMMIT_THRESHOLD,
+  SWIPE_REVEAL_THRESHOLD,
+  SWIPE_FRICTION,
+} from '../swipe-action-model';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet, type AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -79,9 +87,6 @@ type LogbookRowProps = {
 // Swipe tuning mirrors ClimbListRow: drag up to ACTION_REVEAL wide; dragging
 // past COMMIT_THRESHOLD and releasing commits the action (no resting-open
 // state). friction=1 tracks the finger 1:1.
-const ACTION_REVEAL = 150;
-const COMMIT_THRESHOLD = 96;
-const SWIPE_FRICTION = 1;
 
 // Time is secondary to board identity and outcomes; omit it visually at larger
 // type sizes while retaining it in the complete accessibility announcement.
@@ -134,16 +139,32 @@ function SwipeAction({
   active,
   icon,
   side,
+  onPress,
+  label,
 }: {
   translation: SharedValue<number>;
   active: boolean;
   icon: IconName;
   side: 'left' | 'right';
+  onPress: () => void;
+  label: string;
 }) {
   return (
-    <View style={[styles.swipeAction, side === 'left' ? styles.swipeActionLeft : styles.swipeActionRight]}>
-      {active ? <SwipeActionInner translation={translation} icon={icon} /> : null}
-    </View>
+    <PressableSurface
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.swipeAction, side === 'left' ? styles.swipeActionLeft : styles.swipeActionRight]}
+    >
+      {active ? (
+        <SwipeActionInner translation={translation} icon={icon} />
+      ) : (
+        <Icon name={icon} size={24} color={iosSystemColors.white} />
+      )}
+      <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
+        {label}
+      </Text>
+    </PressableSurface>
   );
 }
 
@@ -163,7 +184,7 @@ export const LogbookRow = memo(function LogbookRow({
   const boardseshActive = useBoardseshGradesActive();
 
   const statusColor =
-    ascent.status === 'flash' ? brand.warning : ascent.status === 'send' ? brand.success : iosSystemColors.systemGray;
+    ascent.status === 'flash' ? brand.warning : ascent.status === 'send' ? brand.success : systemColors.secondaryLabel;
 
   // --- Grade column: the big grade is always the climber's effective grade
   // (their own, or the crowd grade when they never graded it — marked with the
@@ -307,29 +328,35 @@ export const LogbookRow = memo(function LogbookRow({
     requestDelete(ascentRef.current, 'swipe');
   }, []);
 
-  // Snap shut once fully settled open (the action already fired on willOpen).
-  const handleSwipeableOpened = useCallback(() => {
-    swipeableRef.current?.close();
-  }, []);
-
-  const handleSwipeableClosed = useCallback(() => {
-    disarm();
-  }, [disarm]);
-
-  const handleSwipeStartDrag = useCallback(() => {
-    arm();
-  }, [arm]);
-
-  const handleSwipeWillOpen = useCallback(
+  const closeSwipe = useCallback(() => swipeableRef.current?.close(), []);
+  const commitSwipe = useCallback(
     (direction: 'left' | 'right') => {
-      // ReanimatedSwipeable reports the SWIPE direction, not the actions side:
-      // 'right' fires when the LEFT actions (Edit) open (left-to-right swipe);
-      // 'left' fires when the RIGHT actions (Delete) open (right-to-left).
       if (direction === 'right') handleEdit();
       else handleDeleteRequest();
     },
     [handleEdit, handleDeleteRequest],
   );
+  const fullSwipe = useFullSwipe({
+    scope: ascent.uuid,
+    enabled: !!onEdit || !!onDeleteRequest,
+    onCommit: commitSwipe,
+    close: closeSwipe,
+  });
+  const handleSwipeableClosed = useCallback(() => {
+    fullSwipe.onClosed();
+    disarm();
+  }, [fullSwipe.onClosed, disarm]);
+  const handleSwipeStartDrag = useCallback(() => {
+    arm();
+  }, [arm]);
+  const pressLeadingAction = useCallback(() => {
+    handleEdit();
+    closeSwipe();
+  }, [handleEdit, closeSwipe]);
+  const pressTrailingAction = useCallback(() => {
+    handleDeleteRequest();
+    closeSwipe();
+  }, [handleDeleteRequest, closeSwipe]);
 
   const singleTapGesture = useMemo(
     () =>
@@ -361,6 +388,11 @@ export const LogbookRow = memo(function LogbookRow({
     [onOpenActions, longPressGesture, singleTapGesture],
   );
 
+  const rowGestures = useMemo(
+    () => Gesture.Simultaneous(tapGesture, fullSwipe.gesture),
+    [tapGesture, fullSwipe.gesture],
+  );
+
   // Read dragArmedRef.current rather than the armed state directly so these stay
   // dep-free: a changed render-callback reference makes ReanimatedSwipeable
   // re-create the action-panel subtree (remounting the heavy inner). The armed
@@ -368,15 +400,29 @@ export const LogbookRow = memo(function LogbookRow({
   // shell→inner swap in place.
   const renderLeftActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <SwipeAction translation={translation} active={dragArmedRef.current} icon="edit" side="left" />
+      <SwipeAction
+        translation={translation}
+        active={dragArmedRef.current}
+        icon="edit"
+        side="left"
+        onPress={pressLeadingAction}
+        label={t('mobile.logbook.row.editAction')}
+      />
     ),
-    [dragArmedRef],
+    [dragArmedRef, pressLeadingAction, t],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-      <SwipeAction translation={translation} active={dragArmedRef.current} icon="delete" side="right" />
+      <SwipeAction
+        translation={translation}
+        active={dragArmedRef.current}
+        icon="delete"
+        side="right"
+        onPress={pressTrailingAction}
+        label={t('mobile.logbook.row.deleteAction')}
+      />
     ),
-    [dragArmedRef],
+    [dragArmedRef, pressTrailingAction, t],
   );
 
   // --- Non-visual parity: the label reads as a log entry ("Sent X, V7, you
@@ -431,15 +477,15 @@ export const LogbookRow = memo(function LogbookRow({
       <ReanimatedSwipeable
         ref={swipeableRef}
         friction={SWIPE_FRICTION}
-        leftThreshold={COMMIT_THRESHOLD}
-        rightThreshold={COMMIT_THRESHOLD}
-        overshootLeft={false}
-        overshootRight={false}
+        simultaneousWithExternalGesture={fullSwipe.gesture}
+        leftThreshold={SWIPE_REVEAL_THRESHOLD}
+        rightThreshold={SWIPE_REVEAL_THRESHOLD}
+        overshootLeft
+        overshootRight
         renderLeftActions={onEdit ? renderLeftActions : undefined}
         renderRightActions={onDeleteRequest ? renderRightActions : undefined}
         onSwipeableOpenStartDrag={handleSwipeStartDrag}
-        onSwipeableWillOpen={handleSwipeWillOpen}
-        onSwipeableOpen={handleSwipeableOpened}
+        onSwipeableOpen={fullSwipe.onOpened}
         onSwipeableClose={handleSwipeableClosed}
       >
         {/* touchAction="pan-y" (web only): without it RNGH defaults the row's DOM
@@ -447,7 +493,7 @@ export const LogbookRow = memo(function LogbookRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        <GestureDetector gesture={tapGesture} touchAction="pan-y">
+        <GestureDetector gesture={rowGestures} touchAction="pan-y">
           <View
             testID={`logbook-entry-${ascent.uuid}`}
             accessible
@@ -469,10 +515,10 @@ export const LogbookRow = memo(function LogbookRow({
                   {ascent.climbName}
                 </Text>
                 {/* ClimbAttributeIcons keys the © glyph on Number(value) > 0 and
-                    never renders the value itself, so the '1' fallback only
-                    forces the glyph on for a benchmark tick whose grade names
-                    are missing — isBenchmark is authoritative here (the old
-                    null fallback silently hid the glyph on those rows). */}
+                      never renders the value itself, so the '1' fallback only
+                      forces the glyph on for a benchmark tick whose grade names
+                      are missing — isBenchmark is authoritative here (the old
+                      null fallback silently hid the glyph on those rows). */}
                 <ClimbAttributeIcons
                   benchmarkDifficulty={
                     ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
@@ -514,14 +560,14 @@ export const LogbookRow = memo(function LogbookRow({
             </View>
 
             {/* Grade column — your grade big; the crowd's as a small secondary
-                with the disagreement direction. flexShrink:0 so the title never
-                squeezes the grade. */}
+                  with the disagreement direction. flexShrink:0 so the title never
+                  squeezes the grade. */}
             <View style={styles.trailing}>
               {gradeLabel || starsLabel || hasBetaVideo ? (
                 <View style={styles.iconGradeRow}>
                   {/* Your rating + beta marker sit LEFT of the grade (review
-                      feedback: the meta line was too crowded to scan them).
-                      Camera keeps its filled brand-violet emphasis. */}
+                        feedback: the meta line was too crowded to scan them).
+                        Camera keeps its filled brand-violet emphasis. */}
                   {starsLabel ? (
                     <Text variant="caption1" color={systemColors.secondaryLabel}>
                       {starsLabel}
@@ -599,7 +645,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   mirrorIcon: {
-    marginLeft: 4,
+    marginStart: 4,
     flexShrink: 0,
   },
   metaRow: {
@@ -617,7 +663,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'flex-end',
     gap: 1,
-    marginLeft: spacing[2],
+    marginStart: spacing[2],
     maxWidth: 120,
   },
   gradeText: {
@@ -633,20 +679,21 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     // Inset to the text column: row padding + status slot + column gap.
-    marginLeft: spacing[4] + 28 + spacing[3],
+    marginStart: spacing[4] + 28 + spacing[3],
   },
+  swipeLabel: { textAlign: 'center' },
   swipeAction: {
     width: ACTION_REVEAL,
     justifyContent: 'center',
   },
   swipeActionLeft: {
-    alignItems: 'flex-start',
-    paddingLeft: 22,
+    alignItems: 'center',
+    paddingHorizontal: 4,
     backgroundColor: brandColors.primary,
   },
   swipeActionRight: {
-    alignItems: 'flex-end',
-    paddingRight: 22,
+    alignItems: 'center',
+    paddingHorizontal: 4,
     backgroundColor: brandColors.error,
   },
 });

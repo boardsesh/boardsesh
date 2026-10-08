@@ -1,7 +1,7 @@
 import { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { reportError } from '../../lib/error-reporting';
-import { iosSystemColors } from '../../theme/ios-colors';
+import { useTheme } from '../../providers/theme-provider';
 
 type BoardRenderUnavailableProps = {
   boardName: string;
@@ -20,6 +20,7 @@ export const BoardRenderUnavailable = memo(function BoardRenderUnavailable({
   climbUuid,
   climbName,
 }: BoardRenderUnavailableProps) {
+  const { systemColors } = useTheme();
   useEffect(() => {
     reportError(new Error('Play drawer board render data unavailable'), {
       tags: {
@@ -39,7 +40,7 @@ export const BoardRenderUnavailable = memo(function BoardRenderUnavailable({
   return (
     <View
       testID="play-drawer-board-unavailable"
-      style={styles.container}
+      style={[styles.container, { backgroundColor: systemColors.fill }]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     />
@@ -49,6 +50,5 @@ export const BoardRenderUnavailable = memo(function BoardRenderUnavailable({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: `${iosSystemColors.systemGray}33`,
   },
 });

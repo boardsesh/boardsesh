@@ -1,9 +1,11 @@
+import { Pressable } from 'react-native';
+import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
 import {
   View,
-  Pressable,
   StyleSheet,
-  TextInput,
   type ViewStyle,
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -71,7 +73,7 @@ import { springs } from '../theme/animations';
 // with white text that must stay legible in both schemes.
 import { brandColors as staticBrandColors } from '../theme/colors';
 import { iosSystemColors } from '../theme/ios-colors';
-import { spacing } from '../theme/tokens';
+import { opacity, spacing } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
 import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';
@@ -134,6 +136,7 @@ const SHEET_DETENT_FRACTION = 0.9;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -192,6 +195,7 @@ export function ClimbFilterSheet({
   onClearName,
   lockedDimensions = NO_LOCKED_DIMENSIONS,
 }: ClimbFilterSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
@@ -982,14 +986,14 @@ export function ClimbFilterSheet({
                   style={[styles.nameInput, { color: systemColors.label }]}
                 />
                 {nameDraft.length > 0 ? (
-                  <Pressable
+                  <PressableSurface
                     onPress={handleClearNameField}
                     hitSlop={8}
                     accessibilityRole="button"
                     accessibilityLabel={tCommon('actions.clear')}
                   >
                     <Icon name="close" size={14} color={systemColors.tertiaryLabel} />
-                  </Pressable>
+                  </PressableSurface>
                 ) : null}
               </View>
             </View>
@@ -1245,7 +1249,7 @@ export function ClimbFilterSheet({
               ) : null}
 
               <View style={styles.subsectionGap} />
-              <Pressable
+              <PressableSurface
                 onPress={openSetters}
                 disabled={!boardConfig}
                 accessibilityRole="button"
@@ -1266,7 +1270,7 @@ export function ClimbFilterSheet({
                   </Text>
                   <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
                 </View>
-              </Pressable>
+              </PressableSurface>
 
               {isAuthenticated ? (
                 <View style={styles.followingSection}>
@@ -1279,7 +1283,7 @@ export function ClimbFilterSheet({
               ) : null}
 
               <View style={styles.subsectionGap} />
-              <Pressable
+              <PressableSurface
                 onPress={openHoldFilter}
                 disabled={!boardConfig}
                 accessibilityRole="button"
@@ -1300,10 +1304,10 @@ export function ClimbFilterSheet({
                   </Text>
                   <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
                 </View>
-              </Pressable>
+              </PressableSurface>
 
               <View style={styles.subsectionGap} />
-              <Pressable
+              <PressableSurface
                 onPress={openZoneFilter}
                 disabled={!boardConfig}
                 accessibilityRole="button"
@@ -1322,7 +1326,7 @@ export function ClimbFilterSheet({
                   </Text>
                   <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
                 </View>
-              </Pressable>
+              </PressableSurface>
 
               {/* Beta videos — a content property of the climb, not a quality signal.
                   A group header carries the pin; the switch uses the descriptive line
@@ -1403,119 +1407,120 @@ export function ClimbFilterSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  indicator: {
-    // Colour is themed at the call site (systemColors.separator adapts light/dark);
-    // only the static dimensions live here.
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  body: {
-    paddingHorizontal: spacing[4],
-  },
-  // Each top-level group. A generous top pad separates the six headers into
-  // distinct inset-style groups; the first group sits tighter under the sheet header.
-  section: {
-    paddingTop: spacing[5],
-  },
-  sectionFirst: {
-    paddingTop: spacing[2],
-  },
-  // The six group titles — more prominent than the muted footnote sub-labels so
-  // the flat sheet reads as six inset groups without accordions.
-  sectionHeader: {
-    marginBottom: spacing[3],
-  },
-  // The name field's row — same tertiaryBackground pill language as the
-  // tappable rows below (setters/holds/zone), so it reads as part of the family.
-  nameInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    borderRadius: 10,
-    minHeight: 44,
-  },
-  nameInput: {
-    flex: 1,
-    fontSize: 17,
-    paddingVertical: 0,
-  },
-  subsectionLabel: {
-    opacity: 0.55,
-    marginTop: spacing[1],
-    marginBottom: spacing[2],
-  },
-  // A one-line hint under a sub-label (e.g. what "Grade accuracy" means). Sits
-  // tight under the label (cancels its marginBottom) and more muted than it.
-  subsectionDescription: {
-    opacity: 0.4,
-    marginTop: -spacing[2],
-    marginBottom: spacing[1],
-  },
-  subsectionGap: {
-    height: spacing[4],
-  },
-  followingSection: {
-    marginTop: spacing[4],
-  },
-  // A control's label line with a trailing pin toggle (pin the control to the chip row).
-  pinnableLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  // Breathing room between a footnote sub-label and a flush native SegmentedControl
-  // (which, unlike the chip rows, has no intrinsic top padding).
-  controlGap: {
-    height: spacing[2],
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  chipText: {
-    fontWeight: '500',
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[4],
-  },
-  tappableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-    borderRadius: 10,
-    minHeight: 44,
-  },
-  tappableRowPressed: {
-    opacity: 0.6,
-  },
-  tappableRowDisabled: {
-    opacity: 0.4,
-  },
-  tappableRowTrailing: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  tappableRowValue: {
-    opacity: 0.55,
-  },
-  inlineGradeRail: {
-    marginTop: spacing[2],
-  },
-  countNote: {
-    paddingTop: spacing[3],
-    textAlign: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    indicator: {
+      // Colour is themed at the call site (systemColors.separator adapts light/dark);
+      // only the static dimensions live here.
+      width: 36,
+      height: 5,
+      borderRadius: 3,
+    },
+    scrollView: {
+      flex: 1,
+    },
+    body: {
+      paddingHorizontal: spacing[4],
+    },
+    // Each top-level group. A generous top pad separates the six headers into
+    // distinct inset-style groups; the first group sits tighter under the sheet header.
+    section: {
+      paddingTop: spacing[5],
+    },
+    sectionFirst: {
+      paddingTop: spacing[2],
+    },
+    // The six group titles — more prominent than the muted footnote sub-labels so
+    // the flat sheet reads as six inset groups without accordions.
+    sectionHeader: {
+      marginBottom: spacing[3],
+    },
+    // The name field's row — same tertiaryBackground pill language as the
+    // tappable rows below (setters/holds/zone), so it reads as part of the family.
+    nameInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      borderRadius: 10,
+      minHeight: 44,
+    },
+    nameInput: {
+      flex: 1,
+      fontSize: textStyles.body.fontSize,
+      paddingVertical: 0,
+    },
+    subsectionLabel: {
+      opacity: 0.55,
+      marginTop: spacing[1],
+      marginBottom: spacing[2],
+    },
+    // A one-line hint under a sub-label (e.g. what "Grade accuracy" means). Sits
+    // tight under the label (cancels its marginBottom) and more muted than it.
+    subsectionDescription: {
+      opacity: 0.4,
+      marginTop: -spacing[2],
+      marginBottom: spacing[1],
+    },
+    subsectionGap: {
+      height: spacing[4],
+    },
+    followingSection: {
+      marginTop: spacing[4],
+    },
+    // A control's label line with a trailing pin toggle (pin the control to the chip row).
+    pinnableLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    // Breathing room between a footnote sub-label and a flush native SegmentedControl
+    // (which, unlike the chip rows, has no intrinsic top padding).
+    controlGap: {
+      height: spacing[2],
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing[2],
+    },
+    chipText: {
+      fontWeight: '500',
+    },
+    ratingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[4],
+    },
+    tappableRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+      borderRadius: 10,
+      minHeight: 44,
+    },
+    tappableRowPressed: {
+      opacity: 0.6,
+    },
+    tappableRowDisabled: {
+      opacity: opacity.disabled,
+    },
+    tappableRowTrailing: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+    },
+    tappableRowValue: {
+      opacity: 0.55,
+    },
+    inlineGradeRail: {
+      marginTop: spacing[2],
+    },
+    countNote: {
+      paddingTop: spacing[3],
+      textAlign: 'center',
+    },
+  });

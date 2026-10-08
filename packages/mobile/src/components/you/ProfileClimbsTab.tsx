@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -29,6 +30,7 @@ const keyExtractor = (climb: Climb) => climb.uuid;
  * carries no size/sets — and opens the climb read-only in the play drawer.
  */
 export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps) {
+  const nativeRootHeader = useNativeRootHeader();
   const { t } = useTranslation('you');
   const { systemColors } = useTheme();
   const router = useRouter();
@@ -123,7 +125,7 @@ export function ProfileClimbsTab({ userId, topInset = 0 }: ProfileClimbsTabProps
         data={climbs}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentInsetAdjustmentBehavior="never"
+        contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
         contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
         scrollIndicatorInsets={{ top: topInset }}
         onEndReached={handleEndReached}

@@ -1,3 +1,4 @@
+import { LargeContentViewer } from './LargeContentViewer';
 import { useCallback, useEffect, useRef } from 'react';
 import {
   type AccessibilityActionEvent,
@@ -258,14 +259,23 @@ function GlassIconButtonGlass({
         {secondaryIconName ? (
           <>
             <Animated.View style={[StyleSheet.absoluteFill, styles.center, primaryIconStyle]} pointerEvents="none">
-              <Icon name={iconName} size={iconSize} color={iconColor as string} />
+              <Icon maxFontSizeMultiplier={1} name={iconName} size={iconSize} color={iconColor as string} />
             </Animated.View>
             <Animated.View style={[StyleSheet.absoluteFill, styles.center, secondaryIconStyle]} pointerEvents="none">
-              <Icon name={secondaryIconName} size={iconSize} color={iconColor as string} />
+              <Icon maxFontSizeMultiplier={1} name={secondaryIconName} size={iconSize} color={iconColor as string} />
             </Animated.View>
           </>
+        ) : onLongPress ? (
+          <Icon maxFontSizeMultiplier={1} name={iconName} size={iconSize} color={iconColor as string} />
         ) : (
-          <Icon name={iconName} size={iconSize} color={iconColor as string} />
+          <LargeContentViewer
+            title={accessibilityLabel}
+            systemImage={iconMap[iconName]?.ios}
+            onActivate={disabled ? undefined : handlePress}
+            style={styles.center}
+          >
+            <Icon maxFontSizeMultiplier={1} name={iconName} size={iconSize} color={iconColor as string} />
+          </LargeContentViewer>
         )}
       </PressableSurface>
 

@@ -28,12 +28,16 @@ name: onboarding illustrations
 
 # Prime the "Open in 'Boardsesh'?" confirmation away on throwaway /home
 # navigations before any capture (see app-store.yaml for the full rationale).
+# Both prime steps are optional: a reused simulator or capture retry may already
+# remember the confirmation and never show it. The repeat still handles re-prompts.
 - openLink: com.boardsesh.app://home
 - extendedWaitUntil:
     visible: 'Open'
     timeout: 12000
+    optional: true
 - tapOn:
     text: 'Open'
+    optional: true
 - waitForAnimationToEnd
 - repeat:
     times: 3

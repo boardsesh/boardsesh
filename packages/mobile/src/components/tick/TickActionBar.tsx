@@ -14,7 +14,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Button } from '../Button';
+import { TickActionButton as Button } from './TickActionButton';
 import { useTheme } from '../../providers/theme-provider';
 import type { IconName } from '../icon-map';
 import {
@@ -69,7 +69,7 @@ export const TickActionBar = React.memo(function TickActionBar({ primary, second
       >
         {error ? (
           <>
-            <Icon name="warning" size={ERROR_ICON_SIZE} color={brandColors.error} />
+            <Icon maxFontSizeMultiplier={1} name="warning" size={ERROR_ICON_SIZE} color={brandColors.error} />
             <Text variant="footnote" color={brandColors.error} numberOfLines={2} style={styles.errorText}>
               {error}
             </Text>

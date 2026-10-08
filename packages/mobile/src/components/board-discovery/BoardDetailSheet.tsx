@@ -1,5 +1,7 @@
+import { PressableSurface } from '../PressableSurface';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { useCallback, useMemo, useState } from 'react';
-import { View, Pressable, StyleSheet, type ColorValue } from 'react-native';
+import { View, StyleSheet, type ColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -68,7 +70,7 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
     <>
       <Sheet
         visible={visible && !!board}
-        snapPoints={['55%', '90%']}
+        snapPoints={MEDIUM_LARGE_SNAP_POINTS}
         onClose={onClose}
         scrollable
         contentContainerStyle={styles.content}
@@ -134,7 +136,7 @@ function BoardDetailBody({
       <View style={styles.header}>
         {isActive ? (
           <View style={[styles.activePill, { backgroundColor: systemColors.tertiaryBackground }]}>
-            <Icon name="tick" size={16} color={systemColors.secondaryLabel} />
+            <Icon name="tick.fill" size={16} color={systemColors.secondaryLabel} />
             <Text variant="subheadline" color={systemColors.secondaryLabel}>
               {t('mobile.boardDetail.alreadyActive')}
             </Text>
@@ -237,7 +239,7 @@ function WallRow({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
@@ -258,7 +260,7 @@ function WallRow({
         </Text>
       </View>
       <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 

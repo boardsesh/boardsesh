@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { forwardRef, useCallback, useEffect } from 'react';
-import { View, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
@@ -17,6 +18,7 @@ import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { MEDIUM_SNAP_POINTS } from '../sheet-snap-points';
 
 type BluetoothQuickstartSheetProps = {
   /** True while the sheet is open — drives when the scan kicks off. */
@@ -109,7 +111,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
               <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {tSettings('ble.blockedTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {bluetoothBlockedBody(tSettings)}
               </Text>
               {canOpenAppSettings() && (
@@ -152,7 +154,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
         return (
           <View style={styles.list}>
             {boards.map((board) => (
-              <Pressable
+              <PressableSurface
                 key={board.uuid}
                 accessibilityRole="button"
                 onPress={() => onSelect(board)}
@@ -166,7 +168,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                   </Text>
                 </View>
                 <Icon name="add" size={20} color={systemColors.tertiaryLabel} />
-              </Pressable>
+              </PressableSurface>
             ))}
           </View>
         );
@@ -189,7 +191,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationHintTitle')}
                 </Text>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationHintBody')}
                 </Text>
                 <Button
@@ -205,7 +207,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationServicesHintTitle')}
                 </Text>
-                <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+                <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                   {t('settings:ble.locationServicesHintBody')}
                 </Text>
                 <Button
@@ -218,7 +220,7 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
               </>
             ) : (
               // The zero-result state used to end here, with nothing to try next.
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.stateText}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.stateText}>
                 {t('settings:ble.troubleshootTips')}
               </Text>
             )}
@@ -249,10 +251,16 @@ export const BluetoothQuickstartSheet = forwardRef<BottomSheet, BluetoothQuickst
 
     // Scrollable: the footnote sits above every state, and the Android empty
     // scan (hint title, body and a grant button under "No boards in range")
-    // runs past a 55% sheet on a 667 pt phone at large text. Without a scroll
+    // runs past a medium sheet on a 667 pt phone at large text. Without a scroll
     // the recovery buttons at the bottom were the part that got cut off.
     return (
-      <Sheet ref={ref} snapPoints={['55%']} onClose={onClose} scrollable contentContainerStyle={styles.scrollContent}>
+      <Sheet
+        ref={ref}
+        snapPoints={MEDIUM_SNAP_POINTS}
+        onClose={onClose}
+        scrollable
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.content}>
           <Text variant="title3" style={styles.heading}>
             {t('mobile.bluetooth.title')}

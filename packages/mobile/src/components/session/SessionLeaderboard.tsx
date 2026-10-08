@@ -34,7 +34,7 @@ type Hardest = { difficulty: number; name: string | null; boardType: string };
 export function SessionLeaderboard({ participants, ticks }: SessionLeaderboardProps) {
   const { t } = useTranslation('session');
   const { t: tYou } = useTranslation('you');
-  const { brandColors } = useTheme();
+  const { brandColors, chartColors } = useTheme();
   const boardseshActive = useBoardseshGradesActive();
 
   // Each climber's hardest grade (max difficulty among their sends/flashes).
@@ -97,7 +97,7 @@ export function SessionLeaderboard({ participants, ticks }: SessionLeaderboardPr
                   <Chip icon="flash" label={`${entry.participant.flashes}`} tint={brandColors.warning} />
                 )}
                 {entry.participant.attempts > 0 && (
-                  <Chip icon="circle" label={`${entry.participant.attempts}`} tint={iosSystemColors.systemGray} />
+                  <Chip icon="circle" label={`${entry.participant.attempts}`} tint={chartColors.secondaryLabel} />
                 )}
               </View>
             </View>
@@ -116,7 +116,7 @@ function RankAvatar({ participant, isLeader }: { participant: SessionFeedPartici
       <Avatar uri={participant.avatarUrl} name={participant.displayName} size={32} />
       {isLeader ? (
         <View style={[styles.crownBadge, { backgroundColor: brandColors.accent }]}>
-          <Icon name="crown" size={10} color={iosSystemColors.white} />
+          <Icon name="crown.fill" size={10} color={iosSystemColors.white} />
         </View>
       ) : null}
     </View>

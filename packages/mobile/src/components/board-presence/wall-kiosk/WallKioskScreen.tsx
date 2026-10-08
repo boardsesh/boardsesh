@@ -110,8 +110,8 @@ function WallKioskScreenComponent({ boardConfig }: { boardConfig: BoardConfig })
           backgroundColor: systemColors.background,
           paddingTop: insets.top,
           paddingBottom: insets.bottom,
-          paddingLeft: insets.left,
-          paddingRight: insets.right,
+          paddingStart: insets.left,
+          paddingEnd: insets.right,
         },
       ]}
     >

@@ -1,3 +1,4 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { type RefObject, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
@@ -48,7 +49,7 @@ export function YouFilterSheet({
   return (
     <Sheet
       ref={sheetRef}
-      snapPoints={['55%']}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       // Android's fixed partial detent leaves empty sheet under the form.
       // Fit its bounded content there; iOS keeps the requested 55% detent.
       androidContentSized

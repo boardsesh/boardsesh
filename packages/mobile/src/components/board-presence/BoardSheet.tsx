@@ -41,6 +41,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
 import type { BoardSheetClimbAction, NowOnTheWallPanelHandle } from './NowOnTheWallPanel';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
@@ -154,7 +155,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     });
   }, [isPresented, visibleHistory.length]);
 
-  const snapPoints = useMemo(() => ['55%', '92%'], []);
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
   // Let the native sheet draw its own material wherever it can.
   //
   // This used to pass the colour unconditionally, which was meant to darken the

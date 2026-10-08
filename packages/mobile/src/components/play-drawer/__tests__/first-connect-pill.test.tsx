@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The connect-step pill (#5654, PR 7, treatment only): the play view's bulb
 // with a label, and the hook that decides when it replaces the bulb.
@@ -36,7 +49,10 @@ vi.mock('react-native', () => ({
       { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel, 'aria-busy': accessibilityState?.busy },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+  },
 }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -60,10 +76,12 @@ vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ brandColors: { primaryFill: '#6D28D9', onPrimary: '#fff' } }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticMedium: hapticMock }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   androidRipple: () => ({ color: '#fff', borderless: false }),
   spacing: { 2: 8, 4: 16 },
 }));
@@ -77,6 +95,18 @@ vi.mock('../../../lib/onboarding/first-connect-store', () => ({
 }));
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFirstConnectCtaEnabled: () => flagsCtrl.enabled,
+}));
+
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
 }));
 
 const { FirstConnectPill } = await import('../FirstConnectPill');
@@ -108,6 +138,19 @@ describe('FirstConnectPill', () => {
     fireEvent.click(pill);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(hapticMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs the same connect action once through the viewer and keeps pending activation inert', () => {
+    const onPress = vi.fn();
+    const { container, rerender } = render(<FirstConnectPill pending={false} onPress={onPress} />);
+    const viewer = () => container.querySelector('[data-viewer-title="Light it on the board"]')!;
+    fireEvent.contextMenu(viewer());
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(hapticMock).toHaveBeenCalledOnce();
+    rerender(<FirstConnectPill pending onPress={onPress} />);
+    fireEvent.contextMenu(viewer());
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(hapticMock).toHaveBeenCalledOnce();
   });
 
   it('caps the label’s font scale like the other chrome labels', () => {

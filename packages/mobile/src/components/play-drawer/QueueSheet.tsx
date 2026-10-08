@@ -1,5 +1,7 @@
+import { PressableSurface } from '../PressableSurface';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { View, Pressable, Platform, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
@@ -76,7 +78,6 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   const sheetRef = useRef<BottomSheetModal>(null);
 
   const {
-    removeFromQueue,
     removeQueueItems,
     clearQueue,
     reorderQueue,
@@ -114,7 +115,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
     setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
   }, [undoScope]);
 
-  const snapPoints = useMemo(() => ['70%', '95%'], []);
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
 
   // Both QueueSheet instances (root + /play copy, PR #3337) stay mounted the whole
   // session. Freeze the hidden one's queue data to a referentially stable snapshot
@@ -261,9 +262,13 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   const handleRemove = useCallback(
     (uuid: string) => {
-      removeFromQueue(uuid);
+      const before = getQueueSnapshot();
+      if (!before.queue.some((item) => item.uuid === uuid)) return;
+      const removedUuids = new Set([uuid]);
+      removeQueueItems([uuid]);
+      offerUndo('removed', before, removedUuids);
     },
-    [removeFromQueue],
+    [getQueueSnapshot, removeQueueItems, offerUndo],
   );
 
   const viewOnlyMode = queue.length === 0;
@@ -333,7 +338,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
             },
           ]}
         >
-          <Pressable
+          <PressableSurface
             onPress={handleBulkRemove}
             accessibilityRole="button"
             accessibilityLabel={t('queueDrawer.removeItems', { count: selectedItems.size })}
@@ -342,7 +347,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
             <Text variant="headline" color={iosSystemColors.white}>
               {t('queueDrawer.removeItems', { count: selectedItems.size })}
             </Text>
-          </Pressable>
+          </PressableSurface>
         </View>
       )}
     </>

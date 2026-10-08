@@ -6,7 +6,10 @@ import { createElement, type ReactNode, type Ref } from 'react';
 // Capture each ListRow's title + onPress so we can fire the matching row.
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Switch: () => null,
+  // A raw RN Switch renders system green on iOS; the sheet must not use one.
+  Switch: () => {
+    throw new Error('BleControlSheet must use SwitchRow, not a raw RN Switch');
+  },
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 
@@ -23,16 +26,40 @@ vi.mock('../ModalSheet', async () => {
 });
 
 vi.mock('../ListRow', () => ({
-  ListRow: ({ title, onPress }: { title: string; onPress: () => void }) =>
-    createElement('button', { 'data-title': title, onClick: onPress }, title),
+  ListRow: ({ title, onPress, leading }: { title: string; onPress: () => void; leading?: ReactNode }) =>
+    createElement('button', { 'data-title': title, onClick: onPress }, leading, title),
 }));
 
-vi.mock('../Icon', () => ({ Icon: () => null }));
+// The app's native SwitchRow (brand-tinted SwiftUI Toggle / Compose Switch).
+vi.mock('../SwitchRow', () => ({
+  SwitchRow: ({
+    label,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    value: boolean;
+    onValueChange: (next: boolean) => void;
+  }) =>
+    createElement(
+      'button',
+      { 'data-switch-row': label, 'aria-checked': value, onClick: () => onValueChange(!value) },
+      label,
+    ),
+}));
+vi.mock('../Separator', () => ({ Separator: () => null }));
+
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: { warning: '#f80' }, systemColors: { secondaryLabel: '#888' } }),
+  useTheme: () => ({
+    brandColors: { warning: '#f80' },
+    systemColors: { secondaryLabel: '#888', error: 'theme-error' },
+  }),
 }));
-vi.mock('../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#f00' } }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8 } }));
 
 import { BleControlSheet } from '../ble/BleControlSheet';
@@ -67,6 +94,24 @@ beforeEach(() => {
 });
 
 describe('BleControlSheet', () => {
+  it('renders every toggle through the native SwitchRow', () => {
+    const { container } = render(<BleControlSheet {...baseProps} showLightAdjacentHolds />);
+    const rows = Array.from(container.querySelectorAll('[data-switch-row]')).map((row) =>
+      row.getAttribute('data-switch-row'),
+    );
+    expect(rows).toEqual([
+      'ble.autoDisconnect.toggleTitle',
+      'lightControl.lightAdjacentHolds',
+      'ble.lighting.onSwipeLabel',
+      'ble.lighting.onTapLabel',
+    ]);
+  });
+
+  it('paints the disconnect glyph with the theme error colour, not a static red', () => {
+    const { container } = render(<BleControlSheet {...baseProps} />);
+    expect(container.querySelector('[data-icon="bluetooth.off"]')?.getAttribute('data-color')).toBe('theme-error');
+  });
+
   it('renders re-light, turn-off-all-lights, and disconnect rows', () => {
     const { getByText } = render(<BleControlSheet {...baseProps} />);
     expect(getByText('ble.relightBoard')).toBeDefined();

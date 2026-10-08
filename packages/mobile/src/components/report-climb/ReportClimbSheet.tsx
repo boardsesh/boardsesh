@@ -1,3 +1,5 @@
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
 // "Report climb" — the climber-facing half of community moderation. One form,
 // two kinds: hide the climb (junk, duplicate, unclimbable) or argue its grade.
 // Either way the server opens a proposal, joins the open one, or tells us this
@@ -53,7 +55,7 @@ type ReportClimbSheetProps = {
   onFullyDismissed?: () => void;
 };
 
-const SNAP_POINTS = ['62%', '88%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 export function ReportClimbSheet({
   visible,
@@ -85,6 +87,14 @@ export function ReportClimbSheet({
   const [pickedDifficultyId, setPickedDifficultyId] = useState<number | null>(null);
 
   const { mutate: sendReport, reset: resetReport, isPending, error: reportError } = useReportClimb();
+
+  const guard = useUnsavedSheetGuard({
+    visible: visible && !!climb,
+    dirty: reason.length > 0 || pickedDifficultyId !== null || (!ownClimb && chosenKind !== 'hide'),
+    busy: isPending,
+    onClose,
+    scope: climb?.uuid,
+  });
 
   const { data: grades } = useGrades(boardName, visible && kind === 'grade');
 
@@ -187,7 +197,7 @@ export function ReportClimbSheet({
   const header = (
     <SheetTopBar
       title={t('mobile.report.title')}
-      leading={{ kind: 'cancel', onPress: onClose }}
+      leading={{ kind: 'cancel', onPress: guard.requestClose }}
       trailing={{
         kind: 'send',
         label: t('mobile.report.submit'),
@@ -208,7 +218,9 @@ export function ReportClimbSheet({
       scrollable
       surface="solid"
       androidContentSized
-      onClose={onClose}
+      onDisplaced={onClose}
+      onClose={guard.requestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
       onFullyDismissed={handleFullyDismissed}
       header={header}
     >

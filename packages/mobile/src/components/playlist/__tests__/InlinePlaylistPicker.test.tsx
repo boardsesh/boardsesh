@@ -1,6 +1,19 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
@@ -63,7 +76,11 @@ vi.mock('react-native', () => ({
           )
         : ListEmptyComponent,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 // Interpolating values into the key keeps the named-toast copy assertable without
@@ -96,6 +113,7 @@ vi.mock('../../../providers/playlists-provider', () => ({
 }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     brandColors: { primary: '#6D28D9' },
     systemColors: {
@@ -105,6 +123,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondaryLabel: '#555',
       tertiaryLabel: '#999',
       separator: '#ccc',
+      error: '#f00',
     },
   }),
 }));
@@ -114,12 +133,44 @@ vi.mock('../../../theme/ios-colors', () => ({
 }));
 
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   borderRadius: { full: 9999, md: 8 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32, 10: 40 },
 }));
 
 vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
+}));
+
+// The native Button is a platform-split @expo/ui tree; render its contract
+// (variant, loading, disabled) so the create form's button choice is assertable.
+vi.mock('../../Button', () => ({
+  Button: ({
+    title,
+    onPress,
+    accessibilityLabel,
+    variant,
+    loading,
+    disabled,
+  }: {
+    title: string;
+    onPress: () => void;
+    accessibilityLabel?: string;
+    variant?: string;
+    loading?: boolean;
+    disabled?: boolean;
+  }) =>
+    createElement(
+      'button',
+      {
+        onClick: onPress,
+        'aria-label': accessibilityLabel ?? title,
+        'data-variant': variant ?? 'filled',
+        'data-loading': loading ? 'true' : 'false',
+        disabled,
+      },
+      title,
+    ),
 }));
 
 vi.mock('../../Text', () => ({
@@ -367,6 +418,33 @@ describe('InlinePlaylistPicker', () => {
       expect(membershipStore.setMembershipForClimb).toHaveBeenLastCalledWith('climb-1', []);
     });
 
+    it('toasts a pending failure when the native host stays mounted after closing', async () => {
+      const { pending, rejection } = setupDeferredAdd();
+      playlistContext.addToPlaylist.mockReset().mockReturnValueOnce(rejection);
+      const { getByLabelText, rerender, queryByText } = renderPicker();
+      fireEvent.click(getByLabelText('Minimoon circuit'));
+      await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalled());
+      rerender(
+        <InlinePlaylistPicker
+          climb={climb}
+          angle={40}
+          boardName="kilter"
+          layoutId={1}
+          TextInputComponent={NameInput as never}
+          active={false}
+        />,
+      );
+      pending.resolve();
+      await waitFor(() =>
+        expect(showToast).toHaveBeenCalledWith(
+          'actions.playlist.toast.addFailedNamed:playlist=Minimoon circuit',
+          'error',
+        ),
+      );
+      expect(queryByText('actions.playlist.toast.addFailed')).toBeNull();
+      expect(membershipStore.setMembershipForClimb).toHaveBeenLastCalledWith('climb-1', []);
+    });
+
     it('keeps the failure inline and does NOT toast while the picker is still mounted', async () => {
       const { pending, rejection } = setupDeferredAdd();
       playlistContext.addToPlaylist.mockReset().mockReturnValueOnce(rejection);
@@ -448,6 +526,26 @@ describe('InlinePlaylistPicker', () => {
       });
       expect(reportHandledError).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('submits through the native filled Button, which shows its own spinner while creating', async () => {
+    const pending = deferred<Playlist>();
+    playlistContext.createPlaylist.mockReturnValueOnce(pending.promise);
+    const { getByLabelText } = renderPicker();
+
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Projects' } });
+    const submit = getByLabelText('actions.playlist.create.submit');
+    // A filled native button, not a hand-rolled white-on-brand pill (2.7:1 in dark).
+    expect(submit.getAttribute('data-variant')).toBe('filled');
+    expect(submit.getAttribute('data-loading')).toBe('false');
+
+    fireEvent.click(submit);
+    await waitFor(() => {
+      expect(getByLabelText('actions.playlist.create.submit').getAttribute('data-loading')).toBe('true');
+    });
+    expect(getByLabelText('actions.cancel').hasAttribute('disabled')).toBe(true);
+    pending.resolve(makePlaylist('p-new', 'Projects'));
   });
 
   it('creates a playlist inline and adds the climb to it', async () => {
@@ -598,6 +696,29 @@ describe('InlinePlaylistPicker', () => {
     await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1));
     expect(playlistContext.removeFromPlaylist).not.toHaveBeenCalled();
     addDeferred.resolve();
+  });
+
+  it('stops a create continuation after closing a retained native host and unlocks the draft', async () => {
+    const pending = deferred<Playlist>();
+    playlistContext.createPlaylist.mockReturnValueOnce(pending.promise);
+    const { getByLabelText, rerender } = renderPicker();
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Projects' } });
+    fireEvent.click(getByLabelText('actions.playlist.create.submit'));
+    await waitFor(() => expect(playlistContext.createPlaylist).toHaveBeenCalled());
+    const pickerProps = {
+      climb,
+      angle: 40,
+      boardName: 'kilter' as const,
+      layoutId: 1,
+      TextInputComponent: NameInput as never,
+    };
+    rerender(<InlinePlaylistPicker {...pickerProps} active={false} />);
+    await act(async () => pending.resolve(makePlaylist('p-new', 'Projects')));
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
+    rerender(<InlinePlaylistPicker {...pickerProps} />);
+    expect(getByLabelText('actions.playlist.create.submit').getAttribute('data-loading')).toBe('false');
+    expect((getByLabelText('name-input') as HTMLInputElement).value).toBe('Projects');
   });
 
   it('aborts the create continuation when the picker unmounts mid-create', async () => {

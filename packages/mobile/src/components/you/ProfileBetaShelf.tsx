@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { router } from 'expo-router';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { betaLinkIdentity } from '@boardsesh/shared-schema';
 import { HorizontalScrollSection } from '../HorizontalScrollSection';

@@ -1,7 +1,7 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   PixelRatio,
-  Pressable,
   View,
   StyleSheet,
   type GestureResponderEvent,
@@ -199,7 +199,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthCha
       ) : isEmpty ? (
         <View style={styles.emptyState} accessibilityRole="image" accessibilityLabel={emptyLabel}>
           <Icon name="chart.bar" size={22} color={systemColors.tertiaryLabel} />
-          <Text variant="footnote" color={systemColors.tertiaryLabel}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
             {emptyLabel}
           </Text>
         </View>
@@ -207,7 +207,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthCha
         children(width, zoomScale, canZoom && isZoomed)
       ) : null}
       {canZoom && isZoomed ? (
-        <Pressable
+        <PressableSurface
           onPress={resetZoom}
           style={[
             styles.resetZoomButton,
@@ -222,7 +222,7 @@ function ChartFrame({ height, loading, emptyLabel, isEmpty, zoomable, onWidthCha
           hitSlop={8}
         >
           <Icon name="crop.free" size={15} color={systemColors.label} />
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
@@ -440,12 +440,12 @@ export const StackedBarChart = memo(function StackedBarChart({
                 xAxisThickness={StyleSheet.hairlineWidth}
                 xAxisColor={chartColors.separator}
                 xAxisLabelTextStyle={{
-                  color: chartColors.tertiaryLabel,
+                  color: chartColors.secondaryLabel,
                   fontSize: AXIS_LABEL_SIZE,
                   fontVariant: TABULAR_FIGURES,
                 }}
                 yAxisTextStyle={{
-                  color: chartColors.tertiaryLabel,
+                  color: chartColors.secondaryLabel,
                   fontSize: AXIS_LABEL_SIZE,
                   fontVariant: TABULAR_FIGURES,
                 }}
@@ -610,7 +610,7 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                 xAxisThickness={StyleSheet.hairlineWidth}
                 xAxisColor={chartColors.separator}
                 xAxisLabelTextStyle={{
-                  color: chartColors.tertiaryLabel,
+                  color: chartColors.secondaryLabel,
                   fontSize: AXIS_LABEL_SIZE,
                   fontVariant: TABULAR_FIGURES,
                 }}
@@ -739,7 +739,7 @@ export const TotalAreaChart = memo(function TotalAreaChart({
                 labelComponent: () => (
                   <Text
                     variant="caption2"
-                    color={chartColors.tertiaryLabel}
+                    color={chartColors.secondaryLabel}
                     numeric
                     style={[styles.lineAxisLabel, { width: labelBudget }]}
                     numberOfLines={1}
@@ -777,12 +777,12 @@ export const TotalAreaChart = memo(function TotalAreaChart({
             rulesColor={chartColors.separator}
             rulesType="solid"
             yAxisTextStyle={{
-              color: chartColors.tertiaryLabel,
+              color: chartColors.secondaryLabel,
               fontSize: AXIS_LABEL_SIZE,
               fontVariant: TABULAR_FIGURES,
             }}
             xAxisLabelTextStyle={{
-              color: chartColors.tertiaryLabel,
+              color: chartColors.secondaryLabel,
               fontSize: AXIS_LABEL_SIZE,
               fontVariant: TABULAR_FIGURES,
             }}

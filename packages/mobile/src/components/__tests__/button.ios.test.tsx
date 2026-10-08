@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // What the iOS Button hands its @expo/ui `Host`. The native SwiftUI tree can't
 // mount under vitest, so the `Host` is captured, not rendered. The SwiftUI side
 // of the prop (expo-modules-core `setSafeAreaRegions(ignoring:)` removing
@@ -14,6 +27,7 @@ const buttonCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 vi.mock('@expo/ui', () => ({
@@ -57,6 +71,7 @@ vi.mock('../../providers/theme-provider', async () => {
 });
 
 import { Button } from '../Button.ios';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import type { ButtonVariant } from '../Button.types';
 
 function lastHostProps(): Record<string, unknown> {
@@ -112,7 +127,7 @@ describe('iOS Button Dynamic Type cap', () => {
   it('caps at xxxLarge (1.5x, like Text) when the caller sets nothing', () => {
     render(<Button title="Save" onPress={vi.fn()} />);
 
-    expect(modifierArg('dynamicTypeSize')).toEqual({ max: 'xxxLarge' });
+    expect(modifierArg('dynamicTypeSize')).toEqual({ max: 'accessibility5' });
   });
 
   it("keeps the caller's tighter cap", () => {
@@ -135,5 +150,37 @@ describe('iOS Button host', () => {
     render(<Button title="Attempt" onPress={vi.fn()} variant={variant} size="large" style={style} />);
 
     expect(lastHostProps().ignoreSafeArea).toBe('keyboard');
+  });
+});
+
+// HIG Materials: glass never sits on glass. Inside a region that is already
+// Liquid Glass the middle tier draws a bordered capsule instead of its own glass.
+describe('iOS Button surface', () => {
+  it.each<ButtonVariant>(['tonal', 'outlined'])('%s is glass on an ordinary surface', (variant) => {
+    render(<Button title="Refine" onPress={vi.fn()} variant={variant} />);
+    expect(modifierArg('buttonStyle')).toBe('glass');
+  });
+
+  it.each<ButtonVariant>(['tonal', 'outlined'])('%s is bordered inside a glass region', (variant) => {
+    render(
+      <ButtonSurfaceProvider surface="glass">
+        <Button title="Refine" onPress={vi.fn()} variant={variant} />
+      </ButtonSurfaceProvider>,
+    );
+    expect(modifierArg('buttonStyle')).toBe('bordered');
+  });
+
+  it('honours a per-button over="glass"', () => {
+    render(<Button title="Clear" onPress={vi.fn()} variant="outlined" over="glass" />);
+    expect(modifierArg('buttonStyle')).toBe('bordered');
+  });
+
+  it('keeps the filled CTA solid inside a glass region', () => {
+    render(
+      <ButtonSurfaceProvider surface="glass">
+        <Button title="Save" onPress={vi.fn()} variant="filled" />
+      </ButtonSurfaceProvider>,
+    );
+    expect(modifierArg('buttonStyle')).toBe('borderedProminent');
   });
 });

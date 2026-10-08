@@ -1,18 +1,17 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, StyleSheet, Pressable, type TextInput } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { View, StyleSheet, type TextInput as NativeTextInput } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
 import { AppMenu } from '../AppMenu';
-import { SheetTopBarTrailingButton } from '../SheetTopBar';
+import { SheetTopBarLeadingButton, SheetTopBarTrailingButton } from '../SheetTopBar';
 import {
   buildCreateOverflowMenu,
   type CreateOverflowAction,
   type CreateOverflowMenuState,
 } from './create-overflow-menu';
 import { useTheme } from '../../providers/theme-provider';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { deriveSaveButtonView } from './save-button-view';
 import type { SaveButtonState } from './use-create-climb-screen';
@@ -41,14 +40,14 @@ type CreateDrawerHeaderProps = {
 };
 
 /**
- * Create-drawer header, mirroring the Play Drawer chrome: a close chevron on the
- * left, the always-editable climb name + start/finish counts in the centre, then
- * the overflow menu and the trailing Save. Nothing else: every extra 44pt here
+ * The New climb top bar, laid out like a SheetTopBar: the X on the left, the
+ * always-editable climb name + start/finish counts in the centre, then the
+ * overflow menu (the bar's trailing accessory) and the trailing Save. Nothing else: every extra 44pt here
  * comes out of the name field, which a French or German Save already narrows.
  * The lightbulb lives in the tool row for that reason.
  *
- * Bespoke rather than a SheetTopBar because its title is a text field. Save
- * still uses the top bar's own trailing confirm, so it looks and behaves like
+ * Bespoke rather than a SheetTopBar because its title is a text field. The X
+ * and Save are still the top bar's own leading and trailing buttons, so it looks and behaves like
  * every other sheet's (see docs/mobile-sheets-vs-routes.md, "Where actions go").
  */
 export const CreateDrawerHeader = memo(function CreateDrawerHeader({
@@ -64,9 +63,10 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   onSave,
   climbReady,
 }: CreateDrawerHeaderProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
   const { systemColors } = useTheme();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<NativeTextInput>(null);
 
   useEffect(() => {
     if (focusSignal > 0) inputRef.current?.focus();
@@ -102,21 +102,15 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
           On a close button, for a feature whose whole point is "does closing lose
           my work?", the screen-reader user was getting a stronger wrong signal
           than the sighted one. The work is kept; the hint says where. */}
-      <Pressable
+      <SheetTopBarLeadingButton
+        kind="close"
         onPress={onClose}
-        accessibilityRole="button"
         accessibilityLabel={t('mobile.create.actions.close')}
         accessibilityHint={t('mobile.create.actions.closeHint')}
-        hitSlop={8}
-        style={[styles.iconButton, { backgroundColor: systemColors.fill }]}
-      >
-        <Icon name="chevron.down" size={20} color={iosSystemColors.systemGray} />
-      </Pressable>
+      />
 
       <View style={styles.center}>
-        <BottomSheetTextInput
-          // The native drop-in re-exports BottomSheetTextInput as RN's TextInput,
-          // so the ref is a plain TextInput ref (used for focus()).
+        <TextInput
           ref={inputRef}
           value={name}
           onChangeText={onChangeName}
@@ -127,7 +121,7 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
           style={[styles.nameInput, { color: systemColors.label }]}
         />
         {/* One line whatever the locale: it shrinks before it wraps, so the
-            header's height (part of the measured peek) never changes. */}
+            pinned top bar's height never changes. */}
         <Text
           variant="caption1"
           color={systemColors.secondaryLabel}
@@ -165,45 +159,36 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
   );
 });
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    minHeight: 56,
-    gap: spacing[2],
-  },
-  // A 44pt circle echoing the Play Drawer's close button. The fill is applied
-  // inline from the theme (systemColors.fill) so it adapts to dark mode and
-  // matches the drawer's action buttons.
-  overflow: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  center: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-  },
-  nameInput: {
-    fontWeight: '700',
-    fontSize: 17,
-    textAlign: 'center',
-    paddingVertical: 0,
-    alignSelf: 'stretch',
-  },
-  subtitle: {
-    marginTop: 2,
-    textAlign: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      minHeight: 56,
+      gap: spacing[2],
+    },
+    overflow: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    center: {
+      flex: 1,
+      minWidth: 0,
+      alignItems: 'center',
+    },
+    nameInput: {
+      fontWeight: '700',
+      fontSize: textStyles.body.fontSize,
+      textAlign: 'center',
+      paddingVertical: 0,
+      alignSelf: 'stretch',
+    },
+    subtitle: {
+      marginTop: 2,
+      textAlign: 'center',
+    },
+  });

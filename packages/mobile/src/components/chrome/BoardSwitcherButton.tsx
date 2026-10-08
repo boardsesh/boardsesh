@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
   // label flex-shrinks and truncates so the caret stays visible and the actions
   // are never pushed off-screen. alignSelf stretch overrides the Appbar's
   // alignItems:'center' so the tap target spans the full app-bar height, not just
-  // the label line. paddingLeft lands the title near the M3 16dp margin (the
+  // the label line. paddingStart lands the title near the M3 16dp margin (the
   // Appbar adds its own ~4dp), aligning it with the search row below.
   press: {
     flex: 1,
@@ -96,8 +96,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[1],
-    paddingLeft: spacing[3],
-    paddingRight: spacing[1],
+    paddingStart: spacing[3],
+    paddingEnd: spacing[1],
   },
   label: {
     flexShrink: 1,

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 // `PlatformColor`. Same stub the sibling board-look tests use.
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (spec: Record<string, unknown>) => spec.ios },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (color: string) => color,
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
 }));

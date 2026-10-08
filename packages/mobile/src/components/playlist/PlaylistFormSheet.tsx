@@ -1,6 +1,10 @@
+import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, Pressable } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { View, StyleSheet } from 'react-native';
+
 import { useTranslation } from 'react-i18next';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { ModalSheet } from '../ModalSheet';
@@ -61,6 +65,7 @@ export function PlaylistFormSheet({
   onSubmit,
   onClose,
 }: PlaylistFormSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('playlists');
   const { systemColors, brandColors } = useTheme();
   const isEdit = mode === 'edit';
@@ -104,6 +109,21 @@ export function PlaylistFormSheet({
     wasVisibleRef.current = visible;
   }, [visible, isEdit, playlist]);
 
+  const initial = isEdit && playlist ? playlist : null;
+  const dirty =
+    name !== (initial?.name ?? '') ||
+    description !== (initial?.description ?? '') ||
+    color !== (normalizePlaylistColor(initial?.color) ?? undefined) ||
+    icon !== initial?.icon ||
+    isPublic !== (initial?.isPublic ?? false);
+  const guard = useUnsavedSheetGuard({
+    visible,
+    dirty,
+    busy: submitting,
+    onClose,
+    scope: `${mode}:${playlist?.uuid ?? ''}`,
+  });
+
   const handleSubmit = useCallback(() => {
     const result = buildPlaylistFormValues(mode, { name, description, color, icon, isPublic });
     if (!result.ok) {
@@ -143,7 +163,7 @@ export function PlaylistFormSheet({
   const header = (
     <SheetTopBar
       title={title}
-      leading={{ kind: 'cancel', onPress: onClose }}
+      leading={{ kind: 'cancel', onPress: guard.requestClose }}
       trailing={{
         kind: 'confirm',
         label: submitLabel,
@@ -158,7 +178,15 @@ export function PlaylistFormSheet({
   );
 
   return (
-    <ModalSheet visible={visible} snapPoints={['90%']} onClose={onClose} scrollable header={header}>
+    <ModalSheet
+      visible={visible}
+      snapPoints={['90%']}
+      onDisplaced={onClose}
+      onClose={guard.requestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
+      scrollable
+      header={header}
+    >
       <View style={styles.body}>
         <View style={styles.header}>
           <PlaylistPreviewSquare color={color} icon={icon} size={56} />
@@ -203,7 +231,7 @@ export function PlaylistFormSheet({
           {PLAYLIST_COLORS.map((swatch) => {
             const selected = color === swatch;
             return (
-              <Pressable
+              <PressableSurface
                 key={swatch}
                 onPress={() => setColor(selected ? undefined : swatch)}
                 accessibilityRole="button"
@@ -222,7 +250,7 @@ export function PlaylistFormSheet({
                 ]}
               >
                 {selected ? <Icon name="check.small" size={18} color={iosSystemColors.white} /> : null}
-              </Pressable>
+              </PressableSurface>
             );
           })}
         </View>
@@ -256,15 +284,15 @@ export function PlaylistFormSheet({
             ]}
           />
           {icon ? (
-            <Pressable
+            <PressableSurface
               onPress={() => setIcon(undefined)}
               accessibilityRole="button"
               style={[styles.removeChip, { borderColor: systemColors.separator }]}
             >
-              <Text variant="footnote" color={iosSystemColors.systemRed}>
+              <Text variant="footnote" color={systemColors.error}>
                 {t('edit.fields.removeIcon')}
               </Text>
-            </Pressable>
+            </PressableSurface>
           ) : null}
         </View>
         <Text variant="caption1" style={styles.iconHint}>
@@ -274,7 +302,7 @@ export function PlaylistFormSheet({
           {SUGGESTED_ICONS.map((preset) => {
             const selected = icon === preset;
             return (
-              <Pressable
+              <PressableSurface
                 key={preset}
                 onPress={() => setIcon(selected ? undefined : preset)}
                 accessibilityRole="button"
@@ -290,7 +318,7 @@ export function PlaylistFormSheet({
                 <Text style={styles.emoji} allowFontScaling={false}>
                   {preset}
                 </Text>
-              </Pressable>
+              </PressableSurface>
             );
           })}
         </View>
@@ -310,93 +338,94 @@ export function PlaylistFormSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  body: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    paddingBottom: spacing[4],
-    gap: spacing[2],
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    marginBottom: spacing[2],
-  },
-  label: {
-    fontWeight: '600',
-    opacity: 0.6,
-    marginTop: spacing[2],
-  },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  multiline: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  swatchRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[3],
-    marginTop: spacing[1],
-  },
-  iconRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    marginTop: spacing[1],
-  },
-  emojiInput: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 28,
-    paddingVertical: 0,
-  },
-  iconHint: {
-    opacity: 0.5,
-    marginTop: spacing[2],
-  },
-  swatch: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  swatchSelected: {
-    borderWidth: 3,
-    borderColor: iosSystemColors.white,
-  },
-  emojiChip: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emojiChipSelected: {
-    borderWidth: 2,
-  },
-  emoji: {
-    fontSize: 22,
-  },
-  removeChip: {
-    height: 40,
-    paddingHorizontal: spacing[3],
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  switchWrap: {
-    marginTop: spacing[2],
-    marginHorizontal: -spacing[4],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    body: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[2],
+      paddingBottom: spacing[4],
+      gap: spacing[2],
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+      marginBottom: spacing[2],
+    },
+    label: {
+      fontWeight: '600',
+      opacity: 0.6,
+      marginTop: spacing[2],
+    },
+    input: {
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: 10,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    multiline: {
+      minHeight: 80,
+      textAlignVertical: 'top',
+    },
+    swatchRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing[3],
+      marginTop: spacing[1],
+    },
+    iconRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+      marginTop: spacing[1],
+    },
+    emojiInput: {
+      width: 56,
+      height: 56,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      fontSize: textStyles.title1.fontSize,
+      paddingVertical: 0,
+    },
+    iconHint: {
+      opacity: 0.5,
+      marginTop: spacing[2],
+    },
+    swatch: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    swatchSelected: {
+      borderWidth: 3,
+      borderColor: iosSystemColors.white,
+    },
+    emojiChip: {
+      width: 40,
+      height: 40,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    emojiChipSelected: {
+      borderWidth: 2,
+    },
+    emoji: {
+      fontSize: textStyles.title2.fontSize,
+    },
+    removeChip: {
+      height: 40,
+      paddingHorizontal: spacing[3],
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    switchWrap: {
+      marginTop: spacing[2],
+      marginHorizontal: -spacing[4],
+    },
+  });

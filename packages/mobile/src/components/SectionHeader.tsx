@@ -89,7 +89,7 @@ export function SectionHeader({ title, actionLabel, onActionPress, disclosure }:
           <Text variant="footnote" color={brandColors.primary} style={styles.actionText}>
             {actionLabel}
           </Text>
-          <Icon name="chevron.right" size={12} color={brandColors.primary} />
+          <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={brandColors.primary} />
         </PressableSurface>
       ) : null}
     </View>

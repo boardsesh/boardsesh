@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, useRef, type ReactNode } from 'react';
@@ -69,6 +82,7 @@ vi.mock('react-native', () => {
       createElement(tag, null, children);
   return {
     Platform: platform,
+    DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (name: string) => name,
     View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
       if (testID === 'tick-button') {
@@ -88,6 +102,7 @@ vi.mock('react-native', () => {
       return createElement('button', null, children);
     },
     StyleSheet: {
+      flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
       create: (styles: Record<string, unknown>) => styles,
       hairlineWidth: 1,
     },
@@ -213,8 +228,15 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
-    systemColors: { secondaryBackground: '#fff', separator: '#ccc' },
+    systemColors: {
+      secondaryBackground: '#fff',
+      separator: '#ccc',
+      secondaryLabel: 'secondaryLabel',
+      tertiaryLabel: 'tertiaryLabel',
+      error: 'systemRed',
+    },
     brandColors: { primary: '#6D28D9', success: '#0a0', error: '#a00' },
   }),
 }));
@@ -246,7 +268,10 @@ vi.mock('../board-presence/BoardDriverAvatar', () => ({
   BoardDriverAvatar: ({ name }: { name?: string | null }) => createElement('span', { 'data-added-by': name ?? '' }),
 }));
 
-vi.mock('../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
+}));
 
 vi.mock('../../theme/animations', () => ({ springs: { interactive: {} } }));
 
@@ -293,6 +318,42 @@ describe('QueueItemRow React.memo', () => {
     a11y.row = null;
     a11y.tick = null;
     vi.clearAllMocks();
+  });
+
+  it('reveals a short swipe, commits a full release, and ignores cancelled releases', () => {
+    render(
+      <QueueItemRow
+        item={makeItem('a', 'Crimp Master')}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+      />,
+    );
+    const release = gestureCalls.panLogs[0].find((call) => call.method === 'onEnd')?.args[0] as (
+      event: { translationX: number },
+      success: boolean,
+    ) => void;
+    release({ translationX: -90 }, true);
+    expect(onRemove).not.toHaveBeenCalled();
+    release({ translationX: -220 }, false);
+    expect(onRemove).not.toHaveBeenCalled();
+    release({ translationX: -220 }, true);
+    expect(onRemove).toHaveBeenCalledExactlyOnceWith('a');
+  });
+
+  it('does not let a stale full swipe delete a recycled row', () => {
+    const props = { position: 1, board, isCurrentClimb: false, onPress, onRemove, onToggleSelect };
+    const { rerender } = render(<QueueItemRow item={makeItem('a', 'Crimp Master')} {...props} />);
+    const oldRelease = gestureCalls.panLogs[0].find((call) => call.method === 'onEnd')?.args[0] as (
+      event: { translationX: number },
+      success: boolean,
+    ) => void;
+    rerender(<QueueItemRow item={makeItem('b', 'New Climb')} {...props} />);
+    oldRelease({ translationX: -220 }, true);
+    expect(onRemove).not.toHaveBeenCalled();
   });
 
   it('skips re-render when given referentially-equal props', () => {

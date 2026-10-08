@@ -1,5 +1,7 @@
+import { Pressable } from 'react-native';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback } from 'react';
-import { Pressable, ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS, formatBoardDisplayName } from '@boardsesh/board-config';
@@ -154,11 +156,11 @@ export function WallFinderFilterChips({
       })}
 
       {hasActive ? (
-        <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button" style={styles.clear}>
+        <PressableSurface onPress={onClear} hitSlop={8} accessibilityRole="button" style={styles.clear}>
           <Text variant="caption1" color={brandColors.primary} style={styles.chipLabel}>
             {t('actions.clear')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </ScrollView>
   );

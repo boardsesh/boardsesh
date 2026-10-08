@@ -1,4 +1,11 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
+const confirmDiscard = vi.hoisted(() => vi.fn(async () => false));
+vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => confirmDiscard }));
+vi.mock('../../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { it, expect, vi, beforeEach } from 'vitest';
 import { render, renderHook, fireEvent, act } from '@testing-library/react';
 import { createElement, createRef, useSyncExternalStore, Profiler, useState, type ReactNode } from 'react';
@@ -15,8 +22,13 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-type ModalSheetMockProps = { children?: ReactNode; header?: ReactNode; visible?: boolean; onClose?: () => void };
-const nativeSheet = vi.hoisted(() => ({ close: undefined as (() => void) | undefined }));
+type ModalSheetMockProps = {
+  children?: ReactNode;
+  header?: ReactNode;
+  visible?: boolean;
+  onClose?: () => void | Promise<void>;
+};
+const nativeSheet = vi.hoisted(() => ({ close: undefined as (() => void | Promise<void>) | undefined }));
 vi.mock('../../ModalSheet', () => ({
   ModalSheet: ({ children, header, visible, onClose }: ModalSheetMockProps) => {
     nativeSheet.close = onClose;
@@ -216,6 +228,7 @@ function mountFeedback(initialVisible = false) {
 }
 
 beforeEach(() => {
+  confirmDiscard.mockReset().mockResolvedValue(false);
   request.mockReset().mockResolvedValue({ submitAppFeedback: true });
   uploadFeedbackScreenshots.mockReset().mockResolvedValue(['screenshot-key']);
   closeRequested.mockClear();
@@ -226,7 +239,7 @@ beforeEach(() => {
   metadata.boardName = 'kilter';
 });
 
-it('unsubscribes while closed, keeps drafts, and does not reopen after native dismissal', async () => {
+it('keeps dirty feedback open on cancelled dismissal and clears only a confirmed discard', async () => {
   const { onRender, getByText, getByPlaceholderText, container } = mountFeedback();
   expect(metadata.subscriptions).toBe(0);
   const closedRenders = onRender.mock.calls.length;
@@ -240,7 +253,17 @@ it('unsubscribes while closed, keeps drafts, and does not reopen after native di
   fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
     target: { value: 'Keep this draft on close' },
   });
-  act(() => nativeSheet.close?.());
+  await act(async () => {
+    await nativeSheet.close?.();
+  });
+  expect(metadata.subscriptions).toBe(3);
+  expect((getByPlaceholderText('feedbackForm.bugPlaceholder') as HTMLInputElement).value).toBe(
+    'Keep this draft on close',
+  );
+  confirmDiscard.mockResolvedValueOnce(true);
+  await act(async () => {
+    await nativeSheet.close?.();
+  });
   expect(metadata.subscriptions).toBe(0);
   expect(container.querySelector('[data-modal-sheet="false"]')).not.toBeNull();
   act(() => {
@@ -249,9 +272,7 @@ it('unsubscribes while closed, keeps drafts, and does not reopen after native di
   });
   expect(container.querySelector('[data-modal-sheet="false"]')).not.toBeNull();
   fireEvent.click(getByText('Open feedback'));
-  expect((getByPlaceholderText('feedbackForm.bugPlaceholder') as HTMLInputElement).value).toBe(
-    'Keep this draft on close',
-  );
+  expect((getByPlaceholderText('feedbackForm.bugPlaceholder') as HTMLInputElement).value).toBe('');
 });
 
 it('reads current board, route, session, and queue after a dismissed screenshot upload', async () => {
@@ -274,7 +295,9 @@ it('reads current board, route, session, and queue after a dismissed screenshot 
   fireEvent.click(container.querySelector('[data-screenshot-picker]')!);
   fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
   expect(uploadFeedbackScreenshots).toHaveBeenCalledTimes(1);
-  act(() => nativeSheet.close?.());
+  await act(async () => {
+    await nativeSheet.close?.();
+  });
   expect(metadata.subscriptions).toBe(3);
   act(() => {
     metadata.pathname = '/climbs';
@@ -312,7 +335,8 @@ it('retains attachments and draft after an upload failure and allows retry', asy
   });
   fireEvent.click(container.querySelector('[data-screenshot-picker]')!);
   fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);
-  await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('screenshots.uploadFailed', 'error'));
+  await vi.waitFor(() => expect(document.body.textContent).toContain('screenshots.uploadFailed'));
+  expect(showToast).not.toHaveBeenCalledWith('screenshots.uploadFailed', 'error');
   expect(request).not.toHaveBeenCalled();
   expect(container.querySelector('[data-screenshot-picker="file:///shot-0.jpg"]')).not.toBeNull();
   fireEvent.click(container.querySelector('[data-button="feedbackDialog.submitBug"]')!);

@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { createElement, forwardRef, useEffect, useImperativeHandle, type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -166,6 +179,7 @@ vi.mock('react-native', () => ({
       'aria-label': accessibilityLabel,
     }),
   StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (styles: Record<string, unknown>) => styles,
     hairlineWidth: 1,
     // Consumed by the #3922 detent probe (sheet-detent-probe.ts).
@@ -303,6 +317,7 @@ vi.mock('../../lib/create-board-holds', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       fill: '#eee',
@@ -326,6 +341,7 @@ vi.mock('../../theme/ios-colors', () => ({
   },
 }));
 vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { lg: 12 },
 }));
@@ -1089,7 +1105,7 @@ describe('ClimbFilterSheet rows without a board config', () => {
     expect(routerPush).not.toHaveBeenCalled();
 
     const rowStyle = JSON.parse(setters.getAttribute('data-style') ?? 'null');
-    expect(rowStyle ?? []).toContainEqual({ opacity: 0.4 });
+    expect(rowStyle ?? []).toContainEqual({ opacity: 0.5 });
   });
 
   it('keeps the Setters row enabled and unstyled when a board config is present', () => {
@@ -1099,7 +1115,7 @@ describe('ClimbFilterSheet rows without a board config', () => {
     expect(setters.disabled).toBe(false);
 
     const rowStyle = JSON.parse(setters.getAttribute('data-style') ?? 'null');
-    expect(rowStyle ?? []).not.toContainEqual({ opacity: 0.4 });
+    expect(rowStyle ?? []).not.toContainEqual({ opacity: 0.5 });
   });
 });
 

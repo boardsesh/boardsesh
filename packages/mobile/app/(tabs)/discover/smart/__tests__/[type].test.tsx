@@ -48,7 +48,7 @@ type DetailViewProps = {
 };
 vi.mock('../../../../../src/components/playlist', () => ({
   SKELETON_PLACEHOLDERS: [],
-  PlaylistBackFab: () => null,
+  PlaylistStateHeader: () => null,
   PlaylistDetailView: ({ onActivateClimb, onAddAllToQueue, isAddingAllToQueue }: DetailViewProps) =>
     createElement(
       'div',
@@ -86,7 +86,9 @@ vi.mock('../../../../../src/lib/smart-playlists', () => ({
 }));
 vi.mock('../../../../../src/lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'u-1' } }) }));
 vi.mock('../../../../../src/lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ isLoading: false }) }));
-vi.mock('../../../../../src/theme/ios-colors', () => ({ iosSystemColors: { systemGray4: '#C7C7CC' } }));
+vi.mock('../../../../../src/providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { tertiaryLabel: 'theme-tertiary-label' } }),
+}));
 // Whether anyone else is in the session — what decides between replacing the
 // crew's queue and simply showing the tapped climb.
 const sessionMock = vi.hoisted(() => ({ isShared: false }));

@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AccessibilityInfo, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../Text';
@@ -187,7 +188,7 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
             {t('mobile.firstConnect.card.body')}
           </Text>
         </View>
-        <Pressable
+        <PressableSurface
           onPress={handleDismiss}
           accessibilityRole="button"
           accessibilityLabel={t('mobile.firstConnect.card.notNow')}
@@ -195,7 +196,7 @@ function FirstConnectCardBody({ boardName, boardHasLights, style }: FirstConnect
           style={styles.close}
         >
           <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-        </Pressable>
+        </PressableSurface>
       </View>
       {/* Outcome-neutral on purpose: connect() resolves false for a dismissed
           picker, a denied permission and a radio that's off as well as a board

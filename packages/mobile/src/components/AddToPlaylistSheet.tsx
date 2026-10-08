@@ -1,11 +1,15 @@
-import { useMemo, type ComponentType } from 'react';
+import { useMemo, useRef, type ComponentType } from 'react';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
 import { type FlatListProps } from 'react-native';
-import { BottomSheetTextInput, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 import { ModalSheet } from './ModalSheet';
 import { ClimbPreviewCard } from './ClimbPreviewCard';
 import { InlinePlaylistPicker, type PickerTextInputProps } from './playlist/InlinePlaylistPicker';
+import { useDeviceLayout } from '../hooks/use-device-layout';
+import { AddToPlaylistPopover } from './playlist/AddToPlaylistPopover';
+import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
 
 type AddToPlaylistSheetProps = {
   visible: boolean;
@@ -15,6 +19,8 @@ type AddToPlaylistSheetProps = {
   sizeId: number;
   setIds: string;
   angle: number;
+  /** Actual control location in native-window coordinates. */
+  anchorPoint?: WindowAnchorPoint;
   /** Request an animated close (pan-down). */
   onClose: () => void;
   /** Fired once the dismiss animation has settled — safe to unmount/clear.
@@ -46,10 +52,42 @@ function AddToPlaylistSheet({
   sizeId,
   setIds,
   angle,
+  anchorPoint,
   onClose,
   onFullyDismissed,
 }: AddToPlaylistSheetProps) {
   const snapPoints = useMemo(() => ['50%', '90%'], []);
+  const { isPad, widthClass } = useDeviceLayout();
+  const presentation = useRef({ visible: false, climbUuid: climb?.uuid, popover: false, anchorPoint });
+  if (visible && (!presentation.current.visible || presentation.current.climbUuid !== climb?.uuid)) {
+    presentation.current = {
+      visible,
+      climbUuid: climb?.uuid,
+      popover: isPad && widthClass === 'regular' && !!anchorPoint,
+      anchorPoint,
+    };
+  } else {
+    presentation.current.visible = visible;
+  }
+
+  if (presentation.current.popover && presentation.current.anchorPoint && climb) {
+    // Keep this native Host mounted when closed. Expo's popover binding reports
+    // dismissal intent, not animation completion; clearing deferred data there
+    // would destroy its presenting controller during the native transition.
+    return (
+      <AddToPlaylistPopover
+        visible={visible}
+        climb={climb}
+        boardName={boardName}
+        layoutId={layoutId}
+        sizeId={sizeId}
+        setIds={setIds}
+        angle={angle}
+        anchorPoint={presentation.current.anchorPoint}
+        onClose={onClose}
+      />
+    );
+  }
 
   return (
     <ModalSheet

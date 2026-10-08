@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -8,7 +13,11 @@ type Children = { children?: ReactNode };
 
 vi.mock('react-native', () => ({
   View: ({ children }: Children) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@boardsesh/profile-stats', () => ({ getLayoutDisplayName: () => 'Layout' }));
@@ -46,6 +55,7 @@ vi.mock('../../PressableSurface', () => ({
 }));
 vi.mock('../proposal-presenters', () => ({
   extraReasonCount: () => 0,
+  proposalToClimb: () => null,
   isUnhideProposal: () => false,
   proposalTypeLine: () => ({ textI18nKey: 'climbs:type', params: {} }),
   statusChip: () => null,
@@ -61,6 +71,7 @@ vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({ getBoardCo
 vi.mock('../../../lib/haptics', () => ({ hapticLight: () => {}, hapticMedium: () => {} }));
 vi.mock('../../../lib/format-relative-time', () => ({ formatRelativeTime: () => 'now' }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { separator: '#ccc', secondaryLabel: '#666', tertiaryLabel: '#999', label: '#000', fill: '#eee' },
     brandColors: { primary: '#6D28D9' },
@@ -70,6 +81,7 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => vi.fn() }));
 vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ formatGrade: () => null }) }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { md: 8, full: 999 },
 }));

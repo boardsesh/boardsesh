@@ -1,4 +1,9 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -38,7 +43,12 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    absoluteFill: {},
+    hairlineWidth: 1,
+  },
   AccessibilityInfo: { announceForAccessibility: spies.announce },
 }));
 
@@ -70,6 +80,7 @@ vi.mock('../../board-presence/BoardDriverAvatar', () => ({
     createElement('span', { 'data-driver-avatar': 'true', 'data-uri': uri ?? '', 'data-name': name ?? '' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: spies.variant,
     colorScheme: spies.colorScheme,
@@ -131,6 +142,7 @@ vi.mock('../../PressableSurface', () => ({
     ),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
   borderRadius: { none: 0, sm: 4, md: 8, lg: 12, xl: 16, full: 9999 },
 }));
@@ -248,7 +260,7 @@ describe('WallStatusCapsule', () => {
   it('renders the Liquid Glass Pressable pill (not the Material band) on iOS', () => {
     const { container, queryByText } = render(<WallStatusCapsule climb={makeClimb()} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
-    expect(container.querySelector('[data-pressable-surface]')).toBeNull();
+    expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
     // The glass pill carries the "lit" cue as the amber tint — no visible overline.
     expect(queryByText('mobile.boardPresence.stripOverline')).toBeNull();
   });

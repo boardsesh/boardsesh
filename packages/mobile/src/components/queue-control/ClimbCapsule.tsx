@@ -6,7 +6,6 @@
 
 import { useMemo, type ReactNode } from 'react';
 import { View, StyleSheet, type ColorValue } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
 import { DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import type { Climb } from '@boardsesh/queue';
 import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
@@ -21,6 +20,9 @@ import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-pro
 import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './AccessoryBarSurface';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { AccessoryPlayLink } from './AccessoryPlayLink';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { largeContentTitle } from './accessory-large-content-title';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -89,7 +91,7 @@ export function ClimbCapsule({
   const { systemColors, brandColors } = useTheme();
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
-  const { openGesture, currentItem } = useAccessoryClimbTap();
+  const { openPlay, preparePlay, currentItem } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
   const { inAppBoardConnection, bluetooth } = useBoardConnectionState();
@@ -147,24 +149,27 @@ export function ClimbCapsule({
           style={[styles.gradeAccent, { backgroundColor: gradeAccentColor }]}
         />
       ) : null}
-      <GestureDetector gesture={openGesture}>
-        <View
-          style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
-          accessibilityRole="button"
-          accessibilityLabel={currentClimb.name}
+      <AccessoryPlayLink
+        style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
+        accessibilityLabel={currentClimb.name}
+        onOpen={openPlay}
+        onPrepare={preparePlay}
+      >
+        <LargeContentViewer
+          style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}
+          title={largeContentTitle(currentClimb.name, grades.current)}
+          onActivate={openPlay}
         >
-          <View style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}>
-            <ClimbLabel
-              climb={currentClimb}
-              labelColor={systemColors.label}
-              formattedGrade={grades.current}
-              gradeColor={grades.currentColor}
-              showThumbnail={showThumbnail}
-              boardConfig={boardConfig}
-            />
-          </View>
-        </View>
-      </GestureDetector>
+          <ClimbLabel
+            climb={currentClimb}
+            labelColor={systemColors.label}
+            formattedGrade={grades.current}
+            gradeColor={grades.currentColor}
+            showThumbnail={showThumbnail}
+            boardConfig={boardConfig}
+          />
+        </LargeContentViewer>
+      </AccessoryPlayLink>
       {/* Leading board control — outside the tap target so it never opens the
           drawer. Sits over the bar's left edge, symmetric to the trailing tick. */}
       {hasBoardControl ? (

@@ -1,6 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
 import {
-  Pressable,
   View,
   StyleSheet,
   type AccessibilityActionEvent,
@@ -15,7 +15,6 @@ import type { Climb } from '@boardsesh/queue';
 import { Icon } from '../Icon';
 import { ClimbListItemContent } from '../ClimbListItemContent';
 import { THUMBNAIL_WIDTH } from '../ClimbListThumbnail';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 import { springs } from '../../theme/animations';
 import { useTheme } from '../../providers/theme-provider';
@@ -119,15 +118,15 @@ function PlaylistEditClimbRowComponent({
     <Animated.View style={dragAnimatedStyle} onLayout={handleRowLayout}>
       <View style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}>
         {/* Leading: red remove control */}
-        <Pressable
+        <PressableSurface
           onPress={handleRemove}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={t('editClimbs.removeAria', { name: climb.name })}
           style={({ pressed }) => [styles.controlSlot, pressed && styles.pressed]}
         >
-          <Icon name="minus.circle" size={24} color={iosSystemColors.systemRed} />
-        </Pressable>
+          <Icon name="minus.circle" size={24} color={systemColors.error} />
+        </PressableSurface>
 
         {/* Center: shared climb visual (thumbnail + name/subtitle + grade). Ascent
             status is dropped in edit mode to keep the row focused on curation. */}
@@ -150,12 +149,12 @@ function PlaylistEditClimbRowComponent({
             accessibilityActions={REORDER_A11Y_ACTIONS}
             onAccessibilityAction={handleAccessibilityAction}
           >
-            <Icon name="drag.handle" size={22} color={iosSystemColors.systemGray} />
+            <Icon name="drag.handle" size={22} color={systemColors.secondaryLabel} />
           </View>
         </GestureDetector>
       </View>
 
-      <View style={[styles.separator, { marginLeft: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
+      <View style={[styles.separator, { marginStart: SEPARATOR_INSET, backgroundColor: systemColors.separator }]} />
     </Animated.View>
   );
 }

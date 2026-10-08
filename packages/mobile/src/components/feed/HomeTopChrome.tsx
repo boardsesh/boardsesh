@@ -1,3 +1,4 @@
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 // Top chrome for the Home (feed) tab, routed by UI variant.
 //
 // Liquid Glass: the floating chrome shared with the other tabs — an always-on
@@ -26,6 +27,7 @@ import { ProgressiveBlur } from '../ProgressiveBlur';
 import { GlassActionToolbar, GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome';
 import { NotificationsToolbarAction } from '../chrome/NotificationsToolbarAction';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
+import { NativeRootHeader } from '../chrome/NativeRootHeader';
 import { FeedScopeTitle } from './FeedScopeTitle';
 
 const ROW_GUTTER = spacing[4];
@@ -67,6 +69,7 @@ function HomeTopChromeGlass({
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const nativeHeader = useNativeRootHeader();
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -74,6 +77,36 @@ function HomeTopChromeGlass({
   );
 
   const handleOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
+
+  if (nativeHeader)
+    return (
+      <NativeRootHeader
+        title={scopeTitle}
+        onHeightChange={onHeightChange}
+        leftActions={
+          <GlassActionToolbar actionCount={1}>
+            <UserAvatarToolbarAction variant="glass" />
+          </GlassActionToolbar>
+        }
+        rightActions={
+          <GlassActionToolbar actionCount={2}>
+            <NotificationsToolbarAction variant="glass" onPress={handleOpenNotifications} />
+            <GlassToolbarAction onPress={onOpenSearch} accessibilityLabel={searchAccessibilityLabel}>
+              <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+            </GlassToolbarAction>
+          </GlassActionToolbar>
+        }
+      >
+        <View style={styles.nativeScope}>
+          <FeedScopeTitle
+            title={scopeTitle}
+            actions={scopeActions}
+            onSelectIndex={onSelectScopeIndex}
+            accessibilityHint={scopeAccessibilityHint}
+          />
+        </View>
+      </NativeRootHeader>
+    );
 
   return (
     <>
@@ -111,7 +144,7 @@ function HomeTopChromeGlass({
           <GlassActionToolbar actionCount={2}>
             <NotificationsToolbarAction variant="glass" onPress={handleOpenNotifications} />
             <GlassToolbarAction onPress={onOpenSearch} accessibilityLabel={searchAccessibilityLabel}>
-              <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+              <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={22} color={systemColors.label} />
             </GlassToolbarAction>
           </GlassActionToolbar>
         </View>
@@ -184,6 +217,7 @@ function HomeTopChromeMaterial({
 }
 
 const styles = StyleSheet.create({
+  nativeScope: { alignItems: 'flex-start', paddingHorizontal: spacing[4], paddingBottom: spacing[2] },
   // Progressive blur layer (height applied inline): spans from the top of the screen
   // down to just below the islands row, behind the islands.
   topBlur: {

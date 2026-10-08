@@ -18,12 +18,16 @@ vi.mock('react-native-reanimated', () => ({
   withTiming: (value: number) => value,
 }));
 vi.mock('../Icon', () => ({
-  Icon: ({ name, size }: { name: string; size?: number }) =>
-    createElement('i', { 'data-icon': name, 'data-size': String(size) }),
+  Icon: ({ name, size, color }: { name: string; size?: number; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-size': String(size), 'data-color': color }),
+}));
+vi.mock('../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: { tertiaryLabel: 'theme-tertiary-label' } }),
 }));
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 
@@ -34,6 +38,11 @@ function transformOf(container: HTMLElement): string | null {
 }
 
 describe('SectionDisclosureChevron', () => {
+  it('draws the chevron in the adaptive tertiaryLabel, not a static grey', () => {
+    const { container } = render(createElement(SectionDisclosureChevron, { expanded: false }));
+    expect(container.querySelector('[data-icon]')?.getAttribute('data-color')).toBe('theme-tertiary-label');
+  });
+
   it('points down (0deg) when collapsed', () => {
     const { container } = render(createElement(SectionDisclosureChevron, { expanded: false }));
     expect(transformOf(container)).toContain('0deg');

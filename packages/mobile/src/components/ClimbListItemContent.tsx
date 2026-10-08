@@ -671,7 +671,7 @@ const styles = StyleSheet.create({
   // The chip shape itself is `climbChipStyles.chip`, shared with DraftChip; this
   // is only where a chip sits in the name row.
   nameRowChip: {
-    marginLeft: 6,
+    marginStart: 6,
   },
   subtitle: {
     opacity: 0.6,

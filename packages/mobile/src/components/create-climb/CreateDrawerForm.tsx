@@ -1,10 +1,11 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
 import { useMemo } from 'react';
 import { View, StyleSheet, type TextStyle } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { SwitchRow } from '../SwitchRow';
 import { offersNoKickboardRule } from './spray-climb-rules';
+import { textStyles as fallbackTextStyles } from '../../theme/typography';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -53,7 +54,7 @@ export function CreateDrawerForm({
   onChangeIsDraft,
 }: CreateDrawerFormProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors } = useTheme();
+  const { systemColors, textStyles = fallbackTextStyles } = useTheme();
 
   const inputStyle = useMemo<TextStyle>(
     () => ({
@@ -62,9 +63,9 @@ export function CreateDrawerForm({
       borderRadius: borderRadius.md,
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[3],
-      fontSize: 16,
+      ...textStyles.callout,
     }),
-    [systemColors],
+    [systemColors, textStyles],
   );
 
   return (
@@ -72,7 +73,7 @@ export function CreateDrawerForm({
       <Text variant="footnote" style={styles.label}>
         {t('createClimbForm.fields.description')}
       </Text>
-      <BottomSheetTextInput
+      <TextInput
         value={description}
         onChangeText={onChangeDescription}
         placeholder={t('createClimbForm.descriptionPlaceholder')}

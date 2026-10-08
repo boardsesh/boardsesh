@@ -1,6 +1,6 @@
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import React, {
   useCallback,
-  useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -44,31 +44,22 @@ type InteractiveCreateBoardProps = {
   holdTargets: BoardHoldTarget[];
   litUpHoldsMap: LitUpHoldsMap;
   onPaint: (holdId: number) => void;
-  onLongPressHold: (holdId: number) => void;
+  onLongPressHold: (holdId: number, anchor?: WindowAnchorPoint) => void;
   mirrored?: boolean;
   /** Exact on-screen board size, computed by the drawer up front so the board
-   *  renders immediately (no onLayout round-trip while the sheet animates in). */
+   *  renders immediately (no onLayout round-trip while the modal animates in). */
   renderWidth: number;
   renderHeight: number;
   /** Optional overlay (e.g. heatmap) drawn between the board photo and the holds. */
   overlay?: ReactNode;
   /** Lets the drawer reset the zoom — both from its own chrome and on frame change. */
   controlRef?: RefObject<CreateBoardControls | null>;
-  /** Fires whenever the board is zoomed or mid-pinch. The create drawer's sheet
-   *  is an `@expo/ui` native bottom sheet (Jetpack Compose on Android, SwiftUI
-   *  on iOS), not an RNGH surface — RNGH's gesture-relation APIs (the pinchRef
-   *  simultaneity above) can't reach outside this board's own root, so nothing
-   *  here stops the sheet's own drag gesture from grabbing a 2-finger pinch or
-   *  a 1-finger pan-while-zoomed. The host uses this to disable that gesture
-   *  for the duration (see CreateDrawer's enablePanDownToClose). */
-  onInteractionActiveChange?: (active: boolean) => void;
   /** RNGH ref to the surrounding scroll (CreateDrawer's own RNGH `ScrollView`,
-   *  swapped in for `@expo/ui`'s plain-RN-ScrollView `BottomSheetScrollView`
-   *  specifically so this relation is possible). Declares the pinch
+   *  not a plain RN one, specifically so this relation is possible). Declares the pinch
    *  simultaneous with it so a 2-finger pinch with any vertical component
    *  isn't cancelled by the scroll's own touch interception, and makes that
    *  scroll wait on the zoomed-only pan so a 1-finger drag while zoomed pans
-   *  the board instead of scrolling the sheet. Mirrors PlayDrawer's
+   *  the board instead of scrolling the editor. Mirrors PlayDrawer's
    *  scrollRef — see the import comment at the top of CreateDrawer.tsx. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
   /**
@@ -102,16 +93,14 @@ const NO_GHOST_TARGETS: readonly BoardHoldTarget[] = [];
  * Sized by the drawer (renderWidth/renderHeight) so it paints on the first frame.
  * Gesture model mirrors the Play Drawer's board: pinch is always live, but the
  * 1-finger zoom-pan only mounts while zoomed (a conditional overlay) so idle
- * vertical drags fall through to the BottomSheetScrollView and scroll/close the
- * drawer instead of being eaten here.
+ * vertical drags fall through to the editor's ScrollView and scroll it instead
+ * of being eaten here.
  *
- * Wrapped in its own GestureHandlerRootView: on Android, CreateDrawer's sheet
- * (`@expo/ui/community/bottom-sheet`) hosts its content inside a Jetpack Compose
- * `ModalBottomSheet` via a native `RNHostView` bridge — a separate surface the
- * app's single root-level GestureHandlerRootView (app/_layout.tsx) doesn't cover.
- * Without a nested root here, the tap/long-press overlay and the pinch/pan
- * gestures silently never receive touches on Android, so no hold can be
- * painted (#4320). RNGH's own docs call out nesting a root per-Modal for exactly
+ * Wrapped in its own GestureHandlerRootView: the editor used to live in an
+ * `@expo/ui` bottom sheet, which on Android hosts its content in a separate
+ * Compose surface the app's root-level GestureHandlerRootView doesn't cover, and
+ * no hold could be painted (#4320). It is a modal route now, but the nested root
+ * is harmless and keeps the board working wherever it is hosted. RNGH's own docs call out nesting a root per-Modal for exactly
  * this reason; iOS isn't affected since its modal presentation doesn't split the
  * touch-dispatch tree the same way.
  */
@@ -132,7 +121,6 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   renderHeight,
   overlay,
   controlRef,
-  onInteractionActiveChange,
   scrollRef,
   ghostTargets = NO_GHOST_TARGETS,
   onGhostPress,
@@ -145,7 +133,6 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     pinchGesture,
     zoomPanGesture,
     isZoomed,
-    isPinching,
     isPinchingSV,
     scaleSV,
     translateXSV,
@@ -170,12 +157,6 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   const overlayRenderWidth = useMemo(() => Math.round(renderWidth * PixelRatio.get()), [renderWidth]);
 
   useImperativeHandle(controlRef, () => ({ resetZoom }), [resetZoom]);
-
-  // Tell the host (CreateDrawer) to disable its native sheet's own pan while
-  // the board is zoomed or mid-pinch — see onInteractionActiveChange above.
-  useEffect(() => {
-    onInteractionActiveChange?.(isZoomed || isPinching);
-  }, [isZoomed, isPinching, onInteractionActiveChange]);
 
   const holdById = useMemo(() => {
     const map = new Map<number, BoardHoldTarget>();
@@ -212,8 +193,9 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     [ghostIds, onGhostPress, onPaint],
   );
   const handleLongPress = useCallback(
-    (holdId: number) => {
+    (holdId: number, anchor?: WindowAnchorPoint) => {
       if (onGhostPress && ghostIds.has(holdId)) onGhostPress(holdId);
+      else if (anchor) onLongPressHold(holdId, anchor);
       else onLongPressHold(holdId);
     },
     [ghostIds, onGhostPress, onLongPressHold],

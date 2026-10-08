@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
@@ -173,12 +174,12 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
   };
 
   return (
-    <View style={drawerActionBarStyles.container}>
+    <View style={[drawerActionBarStyles.container, { borderTopColor: systemColors.separator }]}>
       <View style={styles.brushRow}>
         {roleChips.map(({ role, label, color }) => {
           const selected = selectedBrush === role;
           return (
-            <Pressable
+            <PressableSurface
               key={role}
               onPress={() => handleSelect(role)}
               accessibilityRole="button"
@@ -194,10 +195,10 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
               <Text variant="caption1" style={styles.chipLabel} numberOfLines={1}>
                 {label}
               </Text>
-            </Pressable>
+            </PressableSurface>
           );
         })}
-        <Pressable
+        <PressableSurface
           onPress={() => handleSelect('OFF')}
           accessibilityRole="button"
           accessibilityLabel={t('mobile.create.brush.erase')}
@@ -208,11 +209,11 @@ export const CreateDrawerActionBar = memo(function CreateDrawerActionBar({
             selectedBrush === 'OFF' && { borderColor: systemColors.label, borderWidth: 2 },
           ]}
         >
-          <Icon name="eraser" size={18} color={systemColors.label} />
+          <Icon maxFontSizeMultiplier={1} name="eraser" size={18} color={systemColors.label} />
           <Text variant="caption1" style={styles.chipLabel} numberOfLines={1}>
             {t('mobile.create.brush.erase')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
 
       <View style={[drawerActionBarStyles.rowSecondary, styles.toolRow]} testID="create-tool-row">

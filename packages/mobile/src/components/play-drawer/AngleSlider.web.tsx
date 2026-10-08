@@ -1,5 +1,7 @@
+import { Text } from '../Text';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { createElement, type ChangeEvent, type CSSProperties } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
@@ -7,6 +9,7 @@ import { makeAngleSliderHandler, sliderIndexForAngle } from './AngleSlider.logic
 import type { AngleSliderProps } from './AngleSlider.types';
 
 export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('climbs');
   const { brandColors, systemColors } = useTheme();
   if (angles.length === 0) return null;
@@ -39,18 +42,19 @@ export function AngleSlider({ angles, value, onChange }: AngleSliderProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing[4],
-    minHeight: 48,
-    width: '100%',
-  },
-  value: {
-    fontSize: 18,
-    fontWeight: '600',
-    minWidth: 56,
-    textAlign: 'center',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: {
+      alignItems: 'center',
+      flexDirection: 'row',
+      gap: spacing[4],
+      minHeight: 48,
+      width: '100%',
+    },
+    value: {
+      fontSize: textStyles.body.fontSize,
+      fontWeight: '600',
+      minWidth: 56,
+      textAlign: 'center',
+    },
+  });

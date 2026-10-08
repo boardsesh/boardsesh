@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // The commit row's job is to never over-promise: the filled button says "Put on
 // the wall" only where a wall can actually be reached, and it disappears rather
 // than sitting there disabled when there is nothing to commit.
@@ -39,7 +52,11 @@ vi.mock('react-native', () => ({
       { onClick: onPress, 'data-label': accessibilityLabel, 'data-style': JSON.stringify(resolveStyle(style) ?? null) },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -67,6 +84,7 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
   drawerActionBarStyles: { spacer: { flex: 1 }, actionButtonPressed: { opacity: 0.6 } },
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: 'liquidGlass',
     brandColors: { tint: '#6D28D9', primaryFill: '#6D28D9', onPrimary: '#FFFFFF', live: '#FFB020' },
@@ -77,6 +95,7 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 5: 20 },
   borderRadius: { md: 8 },
   shadows: { sm: { shadowRadius: 2 } },

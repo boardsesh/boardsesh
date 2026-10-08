@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { View, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -376,7 +377,7 @@ export const DeferredSections = memo(function DeferredSections({
             persistKey={BETA_SHELF_SECTION_KEY}
             headerAction={
               isAuthenticated && onAddBetaVideo ? (
-                <Pressable
+                <PressableSurface
                   onPress={handleAddBetaVideoPress}
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.betaVideos.addButton')}
@@ -387,7 +388,7 @@ export const DeferredSections = memo(function DeferredSections({
                   ]}
                 >
                   <Icon name="add" size={22} color={brandColors.primary} />
-                </Pressable>
+                </PressableSurface>
               ) : undefined
             }
           >

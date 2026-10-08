@@ -5,7 +5,6 @@ import { Icon } from './Icon';
 import { PressableSurface } from './PressableSurface';
 import { hapticLight } from '../lib/haptics';
 import { useTheme } from '../providers/theme-provider';
-import { iosSystemColors } from '../theme/ios-colors';
 
 type ListRowProps = {
   title: string;
@@ -66,7 +65,7 @@ export function ListRow({
         {trailing && <View style={styles.trailing}>{trailing}</View>}
         {showChevron && (
           <View style={styles.chevron}>
-            <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+            <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
           </View>
         )}
       </View>
@@ -74,7 +73,7 @@ export function ListRow({
         <View
           style={[
             styles.separator,
-            { marginLeft: separatorInset + (leading ? 48 : 0), backgroundColor: systemColors.separator },
+            { marginStart: separatorInset + (leading ? 48 : 0), backgroundColor: systemColors.separator },
           ]}
         />
       )}
@@ -113,7 +112,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   leading: {
-    marginRight: 12,
+    marginEnd: 12,
     width: 32,
     alignItems: 'center',
     justifyContent: 'center',
@@ -127,10 +126,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   trailing: {
-    marginLeft: 8,
+    marginStart: 8,
   },
   chevron: {
-    marginLeft: 4,
+    marginStart: 4,
   },
   separator: {
     // backgroundColor is applied inline from systemColors.separator so it

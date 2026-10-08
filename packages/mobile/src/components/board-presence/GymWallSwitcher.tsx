@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardConfigLabel, disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
@@ -91,11 +92,11 @@ function GymWallSwitcherComponent({ activeBoard, onSelectBoard }: GymWallSwitche
       ))}
 
       {hiddenCount > 0 ? (
-        <Pressable onPress={handleExpand} accessibilityRole="button" style={styles.showAll}>
+        <PressableSurface onPress={handleExpand} accessibilityRole="button" style={styles.showAll}>
           <Text variant="subheadline" color={brandColors.primary}>
             {t('mobile.boardPresence.gymWalls.showAll', { count: siblings.length })}
           </Text>
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
@@ -193,7 +194,7 @@ const GymWallRow = memo(function GymWallRow({
     .join(' · ');
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={t('mobile.boardPresence.gymWalls.rowAria', { board: title })}
@@ -208,12 +209,12 @@ const GymWallRow = memo(function GymWallRow({
           {detail}
         </Text>
         {sharesClimbsWithActive ? (
-          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+          <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
             {t('mobile.boardPresence.gymWalls.sameClimbs')}
           </Text>
         ) : null}
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

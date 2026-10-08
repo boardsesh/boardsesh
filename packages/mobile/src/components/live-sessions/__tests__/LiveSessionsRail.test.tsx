@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // Render states of Home's "Climbing now" rail. The tiles themselves are stubbed
 // to testid markers: this file is about WHICH tiles and rows the rail shows for
@@ -59,10 +72,14 @@ vi.mock('react-native', () => ({
       { 'data-testid': 'rail-list' },
       data.map((item, index) => createElement('div', { key: keyExtractor(item) }, renderItem({ item, index }))),
     ),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
   useWindowDimensions: () => ({ fontScale: 1, width: 390, height: 844, scale: 3 }),
 }));
 vi.mock('expo-router', () => ({
+  router: { push: spies.push, navigate: spies.navigate },
   useIsFocused: () => true,
   useRouter: () => ({ push: spies.push, navigate: spies.navigate }),
 }));
@@ -105,7 +122,10 @@ vi.mock('../../../hooks/use-grade-format', () => ({
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueSessionId: () => ({ sessionId: state.queueSessionId }),
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 5: 20 },
+}));
 vi.mock('../LiveSessionCard', () => ({
   LiveSessionCard: ({ card, onPress }: { card: LiveCardModel; onPress: (card: LiveCardModel) => void }) =>
     createElement('button', { 'data-testid': `card-${card.sessionId}`, onClick: () => onPress(card) }),

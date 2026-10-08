@@ -1,10 +1,24 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { ProfileTabKey, ProfileTopChromeProps } from '../ProfileTopChrome';
 
 const ctrl = vi.hoisted(() => ({
+  fontScale: 1,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
 }));
 // Captures the props the SegmentedControl receives so the test can assert its
@@ -28,8 +42,18 @@ const materialTabs = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  useWindowDimensions: () => ({ width: 402, height: 874, fontScale: ctrl.fontScale }),
+  Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, children),
+  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-scroll-tabs': true }, children),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    absoluteFill: {},
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('react-native-reanimated', () => ({}));
 vi.mock('react-native-safe-area-context', () => ({
@@ -38,6 +62,7 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { label: '#000', separator: '#ccc', fill: '#eee' },
     brandColors: { primary: '#6D28D9' },
@@ -46,7 +71,11 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 4: 16 }, shadows: { sm: {} } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8, 4: 16 },
+  shadows: { sm: {} },
+}));
 
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: string }) =>
@@ -163,6 +192,7 @@ const filterAction = (root: HTMLElement) =>
 
 describe('ProfileTopChrome', () => {
   beforeEach(() => {
+    ctrl.fontScale = 1;
     ctrl.variant = 'liquidGlass';
     segments.entries = [];
     materialTabs.entries = [];
@@ -247,3 +277,14 @@ describe('ProfileTopChrome', () => {
     });
   });
 });
+
+for (const variant of ['liquidGlass', 'material'] as const) {
+  it(`keeps all five tabs scrollable at accessibility sizes on ${variant}`, () => {
+    ctrl.variant = variant;
+    ctrl.fontScale = 2;
+    const { container } = render(<ProfileTopChrome {...makeProps()} />);
+    expect(container.querySelector('[data-scroll-tabs]')).not.toBeNull();
+    expect(container.querySelector('[data-segmented]')).toBeNull();
+    expect(container.querySelector('[data-material-tabs]')).toBeNull();
+  });
+}

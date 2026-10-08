@@ -15,6 +15,7 @@ vi.mock('react-native', () => ({
   }) => createElement('img', { src: source.uri, onError, 'aria-label': accessibilityLabel }),
   PixelRatio: { get: () => 3 },
   Platform: { OS: 'ios' },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children, accessibilityLabel }: { children?: ReactNode; accessibilityLabel?: string }) =>

@@ -196,28 +196,18 @@ describe('use-bottom-accessory', () => {
       expect(result.current).toBe(false);
     });
 
-    it('is false on the iPad sidebar shell (regular width), even when glass-capable', () => {
-      // The regular-width iPad renders JS Tabs + a glass sidebar, so the native
-      // tab bar is not on screen there — and everything that branches on this
-      // predicate (search mode, accessory, bottom-chrome geometry) must agree.
+    it('uses native tabs on a regular-width iPad', () => {
+      cfg.isTablet = true;
       cfg.widthClass = 'regular';
-
       const { result } = renderHook(() => useNativeTabBar());
-
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     });
 
-    it('is false on a tablet in a narrow split (compact width), even when glass-capable', () => {
-      // The single-navigator shell keeps a tablet on JS Tabs + the Material bar at
-      // compact width too (never NativeTabs), so the native bar is not on screen.
-      // If this returned true, the bottom-chrome metrics would suppress the JS queue
-      // bar for a native accessory that never mounts — dropping the now-playing bar.
+    it('keeps native tabs when an iPad enters a narrow split', () => {
       cfg.isTablet = true;
       cfg.widthClass = 'compact';
-
       const { result } = renderHook(() => useNativeTabBar());
-
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     });
 
     it('is false on an Android tablet (Material variant) — the shell rail carries nav', () => {
@@ -266,12 +256,12 @@ describe('use-bottom-accessory', () => {
       expect(result.current).toBe(false);
     });
 
-    it('is false on a tablet, even when glass-capable', () => {
+    it('uses the glass native tab bar on a capable iPad', () => {
       cfg.isTablet = true;
 
       const { result } = renderHook(() => useLiquidGlassTabBar());
 
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     });
   });
 

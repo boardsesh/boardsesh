@@ -1,8 +1,9 @@
+import { PressableSurface } from '../../src/components/PressableSurface';
 import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
 import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
 import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, StyleSheet, Pressable } from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@expo/ui/community/bottom-sheet';
@@ -72,7 +73,6 @@ import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
 import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
 import { openAppSettings } from '../../src/lib/open-app-settings';
-import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
 
 // Module-level so an absent board list keeps a stable identity: offline
@@ -610,12 +610,12 @@ export default function BoardSelection() {
   // it, so it renders on the offline branch too: it is navigation, not a
   // mutation, and the manage screen has its own offline list.
   const manageBoardsRow = (
-    <Pressable onPress={onManageBoards} accessibilityRole="button" style={styles.manageRow}>
+    <PressableSurface onPress={onManageBoards} accessibilityRole="button" style={styles.manageRow}>
       <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
         {tCommon('myBoards.title')}
       </Text>
       <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-    </Pressable>
+    </PressableSurface>
   );
 
   const myBoardsSection =
@@ -624,7 +624,7 @@ export default function BoardSelection() {
         title={t('mobile.discovery.yourBoardsTitle')}
         trailing={
           canEditBoards ? (
-            <Pressable
+            <PressableSurface
               onPress={() => {
                 hapticSelection();
                 setIsEditingBoards((previous) => !previous);
@@ -635,7 +635,7 @@ export default function BoardSelection() {
               <Text variant="body" color={brandColors.primary}>
                 {isEditingBoards ? t('mobile.manage.done') : t('mobile.manage.edit')}
               </Text>
-            </Pressable>
+            </PressableSurface>
           ) : null
         }
       >
@@ -810,7 +810,7 @@ export default function BoardSelection() {
   if (!isAuthenticated) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.centered}>
-        <Icon name="person" size={40} color={iosSystemColors.systemGray} />
+        <Icon name="person" size={40} color={systemColors.secondaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.signInTitle')}
         </Text>
@@ -890,7 +890,7 @@ export default function BoardSelection() {
   if (isError) {
     return (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.centered}>
-        <Icon name="error" size={40} color={iosSystemColors.systemRed} />
+        <Icon name="error" size={40} color={systemColors.error} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.errorTitle')}
         </Text>
@@ -914,12 +914,12 @@ export default function BoardSelection() {
         showsVerticalScrollIndicator={false}
       >
         {activeBoard?.boardType === 'spray' ? (
-          <Pressable onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
+          <PressableSurface onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
             <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
               {t('mobile.boardDetail.activeSprayDetails', { name: activeBoard.name })}
             </Text>
             <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-          </Pressable>
+          </PressableSurface>
         ) : null}
         {showFirstBoardChoice ? (
           <>

@@ -15,7 +15,7 @@ import { ClimbListRowSkeleton } from '../../../../src/components/ClimbListRowSke
 import {
   PlaylistDetailView,
   SKELETON_PLACEHOLDERS,
-  PlaylistBackFab,
+  PlaylistStateHeader,
   type PlaylistDetailEmptyState,
 } from '../../../../src/components/playlist';
 import { getHttpClient } from '../../../../src/lib/graphql/client';
@@ -26,7 +26,7 @@ import { smartPlaylistByType } from '../../../../src/lib/smart-playlists';
 import { useProfile } from '../../../../src/lib/graphql/hooks';
 import { useAuthToken } from '../../../../src/lib/graphql/use-auth-token';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';
-import { iosSystemColors } from '../../../../src/theme/ios-colors';
+import { useTheme } from '../../../../src/providers/theme-provider';
 
 type SmartParams = {
   type: string;
@@ -35,6 +35,7 @@ type SmartParams = {
 export default function SmartPlaylistDetail() {
   const { type } = useLocalSearchParams<SmartParams>();
   const { t } = useTranslation('playlists');
+  const { systemColors } = useTheme();
   const { data: profile } = useProfile();
   const { isLoading: tokenLoading } = useAuthToken();
   // "Is anyone else here" — one boolean off a dedicated selector context, so the
@@ -131,8 +132,8 @@ export default function SmartPlaylistDetail() {
   if (!preset && !query.isLoading) {
     return (
       <View style={styles.stateContainer}>
-        <PlaylistBackFab />
-        <Icon name="error" size={48} color={iosSystemColors.systemGray4} />
+        <PlaylistStateHeader />
+        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('library.smart.notFound.title')}
         </Text>
@@ -146,7 +147,7 @@ export default function SmartPlaylistDetail() {
   if (query.isLoading && allClimbs.length === 0) {
     return (
       <View style={styles.skeletonContainer}>
-        <PlaylistBackFab />
+        <PlaylistStateHeader />
         <View style={styles.skeletonList}>
           {SKELETON_PLACEHOLDERS.map((key) => (
             <ClimbListRowSkeleton key={key} />
@@ -171,6 +172,7 @@ export default function SmartPlaylistDetail() {
         emptyState={emptyState}
         onAddAllToQueue={playlistActivation.addToQueue.append}
         isAddingAllToQueue={playlistActivation.addToQueue.isAppending}
+        onRefresh={query.refetch}
       />
     </>
   );

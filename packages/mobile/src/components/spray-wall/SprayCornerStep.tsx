@@ -165,12 +165,7 @@ export function SprayCornerStep({
             onDragActiveChange={fittedStage.onDragActiveChange}
           />
         ) : (
-          <Text
-            variant="subheadline"
-            color={iosSystemColors.systemRed}
-            style={styles.hint}
-            accessibilityLiveRegion="polite"
-          >
+          <Text variant="subheadline" color={systemColors.error} style={styles.hint} accessibilityLiveRegion="polite">
             {t('sprayWizard.photo.failed')}
           </Text>
         )}
@@ -179,7 +174,7 @@ export function SprayCornerStep({
         {/* The one announcement of a refusal, in both flows. */}
         <Text
           variant="footnote"
-          color={invalid ? iosSystemColors.systemRed : systemColors.secondaryLabel}
+          color={invalid ? systemColors.error : systemColors.secondaryLabel}
           style={styles.hint}
           accessibilityLiveRegion={invalid ? 'polite' : 'none'}
         >

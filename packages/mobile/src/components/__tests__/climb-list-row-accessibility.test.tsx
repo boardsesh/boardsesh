@@ -1,4 +1,15 @@
 // @vitest-environment jsdom
+vi.mock('../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    disabled?: boolean;
+  }) => createElement('button', { disabled, onClick: disabled ? undefined : onPress }, children),
+}));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -41,6 +52,7 @@ vi.mock('react-native', () => {
   });
   return {
     Platform: platform,
+    DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     PlatformColor: (name: string) => name,
     View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
       if (testID === 'climb-row') a11y.row = capture(rest);
@@ -82,6 +94,8 @@ vi.mock('react-native-gesture-handler', () => {
   return {
     GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
     Gesture: {
+      Pan: () => makeBuilder(),
+      Simultaneous: (...gestures: unknown[]) => gestures[0],
       Tap: () => makeBuilder(),
       LongPress: () => makeBuilder(),
       Exclusive: () => ({}),

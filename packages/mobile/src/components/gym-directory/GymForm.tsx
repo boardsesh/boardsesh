@@ -1,5 +1,8 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useState, type ComponentProps, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -7,7 +10,6 @@ import { useHeaderActions } from '../../hooks/use-header-actions';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { spacing, borderRadius } from '../../theme/tokens';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { parseCoordinate, LATITUDE_RANGE, LONGITUDE_RANGE } from './gym-coordinate';
 
 /** The gym's current values, used to seed the form once on mount. */
@@ -60,6 +62,8 @@ function coordToText(value: number | null): string {
  * screen remounts it per gym).
  */
 export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections }: GymFormProps) {
+  const headerHeight = useHeaderHeight();
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
@@ -125,7 +129,11 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
   });
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding }]}
@@ -173,7 +181,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
           autoCorrect={false}
           maxLength={500}
         />
-        <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.fieldHint}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.fieldHint}>
           {t('mobile.gymEdit.websiteHint')}
         </Text>
 
@@ -212,7 +220,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
               maxLength={20}
             />
             {latitude.error && (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.coordError}>
+              <Text variant="footnote" color={systemColors.error} style={styles.coordError}>
                 {t('mobile.gymEdit.invalidCoordinate')}
               </Text>
             )}
@@ -229,7 +237,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
               maxLength={20}
             />
             {longitude.error && (
-              <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.coordError}>
+              <Text variant="footnote" color={systemColors.error} style={styles.coordError}>
                 {t('mobile.gymEdit.invalidCoordinate')}
               </Text>
             )}
@@ -252,6 +260,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
 }
 
 function SectionLabel({ children }: { children: string }) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   return (
     <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionLabel}>
@@ -262,6 +271,7 @@ function SectionLabel({ children }: { children: string }) {
 
 /** Themed text input for the gym form fields. Mirrors the board form's input. */
 function GymTextInput({ style, ...props }: ComponentProps<typeof TextInput>) {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors } = useTheme();
   return (
     <TextInput
@@ -280,44 +290,45 @@ function GymTextInput({ style, ...props }: ComponentProps<typeof TextInput>) {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing[4],
-    gap: spacing[2],
-  },
-  sectionLabel: {
-    marginTop: spacing[3],
-    marginBottom: spacing[1],
-    textTransform: 'uppercase',
-  },
-  input: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 17,
-  },
-  multiline: {
-    minHeight: 88,
-    textAlignVertical: 'top',
-  },
-  fieldHint: {
-    marginTop: spacing[1],
-  },
-  coordRow: {
-    flexDirection: 'row',
-    gap: spacing[3],
-  },
-  coordField: {
-    flex: 1,
-  },
-  coordError: {
-    marginTop: spacing[1],
-  },
-  switchBlock: {
-    marginTop: spacing[4],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    flex: {
+      flex: 1,
+    },
+    content: {
+      padding: spacing[4],
+      gap: spacing[2],
+    },
+    sectionLabel: {
+      marginTop: spacing[3],
+      marginBottom: spacing[1],
+      textTransform: 'uppercase',
+    },
+    input: {
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      borderRadius: borderRadius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      fontSize: textStyles.body.fontSize,
+    },
+    multiline: {
+      minHeight: 88,
+      textAlignVertical: 'top',
+    },
+    fieldHint: {
+      marginTop: spacing[1],
+    },
+    coordRow: {
+      flexDirection: 'row',
+      gap: spacing[3],
+    },
+    coordField: {
+      flex: 1,
+    },
+    coordError: {
+      marginTop: spacing[1],
+    },
+    switchBlock: {
+      marginTop: spacing[4],
+    },
+  });

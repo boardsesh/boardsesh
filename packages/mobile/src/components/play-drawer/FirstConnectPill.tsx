@@ -1,8 +1,10 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticMedium } from '../../lib/haptics';
@@ -41,7 +43,7 @@ function FirstConnectPillComponent({ pending, onPress }: FirstConnectPillProps) 
   }, [pending, onPress]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -58,18 +60,20 @@ function FirstConnectPillComponent({ pending, onPress }: FirstConnectPillProps) 
       ) : (
         <Icon name="lightbulb" size={PILL_ICON_SIZE} color={brandColors.onPrimary} />
       )}
-      <Text
-        variant="subheadline"
-        color={brandColors.onPrimary}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={PILL_MIN_FONT_SCALE}
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.label}
-      >
-        {label}
-      </Text>
-    </Pressable>
+      <LargeContentViewer title={label} onActivate={pending ? undefined : handlePress} style={styles.labelViewer}>
+        <Text
+          variant="subheadline"
+          color={brandColors.onPrimary}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={PILL_MIN_FONT_SCALE}
+          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          style={styles.label}
+        >
+          {label}
+        </Text>
+      </LargeContentViewer>
+    </PressableSurface>
   );
 }
 
@@ -91,6 +95,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
     transform: [{ scale: 0.96 }],
   },
+  labelViewer: { flexShrink: 1 },
   label: {
     fontWeight: '600',
     flexShrink: 1,

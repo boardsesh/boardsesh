@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -17,7 +30,10 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress, accessibilityLabel }: PressProps) =>
     createElement('button', { onClick: onPress, type: 'button', 'aria-label': accessibilityLabel }, children),
   ScrollView: ({ children }: Children) => createElement('div', null, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -30,10 +46,14 @@ vi.mock('react-native-reanimated', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../Text', () => ({ Text: ({ children }: Children) => createElement('span', null, children) }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8, 3: 12 },
+}));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => hapticSelection() }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ brandColors: { primary: '#6D28D9' }, systemColors: { separator: '#ccc' } }),
 }));
 

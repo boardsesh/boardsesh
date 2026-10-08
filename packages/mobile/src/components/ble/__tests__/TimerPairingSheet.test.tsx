@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -31,11 +44,23 @@ vi.mock('../../../lib/ble/rogue-timer-ble', () => ({
 type ChildrenProps = { children?: ReactNode };
 type PressableProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
-  View: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  // Exposes the resolved background colour so the RSSI bars can be asserted.
+  View: ({ children, style }: ChildrenProps & { style?: unknown }) => {
+    const styleEntries = (Array.isArray(style) ? style : [style]) as Array<{ backgroundColor?: string } | undefined>;
+    const backgroundColor = styleEntries.reduce<string | undefined>(
+      (resolved, entry) => entry?.backgroundColor ?? resolved,
+      undefined,
+    );
+    return createElement('div', backgroundColor ? { 'data-bg': backgroundColor } : {}, children);
+  },
   Pressable: ({ children, onPress, accessibilityLabel }: PressableProps) =>
     createElement('button', { onClick: onPress, 'data-row': accessibilityLabel }, children),
   ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 type FlatListProps = { data?: DiscoveredDevice[]; renderItem?: (info: { item: DiscoveredDevice }) => ReactNode };
@@ -64,14 +89,16 @@ vi.mock('../../SheetTopBar', () => ({
     ),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: {}, brandColors: { primary: '#000' } }),
+  useOptionalTheme: () => null,
+  useTheme: () => ({ systemColors: { error: 'theme-error', fill: 'theme-fill' }, brandColors: { primary: '#000' } }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: new Proxy({}, { get: () => 0 }),
   borderRadius: new Proxy({}, { get: () => 0 }),
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: {} }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGreen: '#34c759', systemYellow: '#ffcc00' } }));
 vi.mock('../../Text', () => ({ Text: ({ children }: ChildrenProps) => createElement('span', {}, children) }));
 vi.mock('../../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
 
@@ -129,5 +156,13 @@ describe('TimerPairingSheet', () => {
     const cancel = container.querySelector('[data-leading="cancel"]') as HTMLButtonElement;
     act(() => cancel.click());
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws a weak timer signal in the theme error role', () => {
+    const { container } = render(<TimerPairingSheet onSelect={vi.fn()} onDismiss={vi.fn()} />);
+    act(() => scan.state.onUpdate?.([device('weak', 'Rogue Far Timer', -90)]));
+
+    expect(container.querySelectorAll('[data-bg="theme-error"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-bg="theme-fill"]').length).toBeGreaterThanOrEqual(2);
   });
 });

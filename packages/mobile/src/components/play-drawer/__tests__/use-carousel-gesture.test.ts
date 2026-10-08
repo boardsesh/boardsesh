@@ -110,12 +110,12 @@ describe('useCarouselGesture', () => {
     const handlers = latestHandlers();
 
     result.current.translateX.value = -(SWIPE_THRESHOLD + 1);
-    handlers.onEnd();
+    handlers.onEnd({ velocityX: 0 });
     expect(onSwipeNext).toHaveBeenCalledTimes(1);
 
     rerender(makeOptions({ reduceMotion: true, canSwipeNext: false }));
     result.current.translateX.value = -(SWIPE_THRESHOLD + 1);
-    handlers.onEnd();
+    handlers.onEnd({ velocityX: 0 });
     expect(onSwipeNext).toHaveBeenCalledTimes(1);
   });
 
@@ -140,7 +140,7 @@ describe('useCarouselGesture', () => {
     const handlers = latestHandlers();
 
     result.current.translateX.value = -(SWIPE_THRESHOLD - 1);
-    handlers.onEnd();
+    handlers.onEnd({ velocityX: 0 });
 
     expect(onSwipeNext).not.toHaveBeenCalled();
     expect(onSwipePrevious).not.toHaveBeenCalled();

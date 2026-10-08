@@ -1,3 +1,7 @@
+import { opacity } from '../theme/tokens';
+import { AccessibleTextInput as TextInput } from './AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
+import { PressableSurface } from './PressableSurface';
 import { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
@@ -5,10 +9,8 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
-  Pressable,
   StyleSheet,
   Modal,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -28,6 +30,7 @@ import { hapticLight, hapticError } from '../lib/haptics';
 import { discoverBundlers, type DiscoveredBundler } from '../lib/metro-discovery';
 import { addSavedMetroTarget, getSavedMetroTargets, removeSavedMetroTarget } from '../lib/metro-target-store';
 import { expoDevLauncher, isDevLauncherAvailable } from '../lib/dev-launcher';
+import { MEDIUM_LARGE_SNAP_POINTS } from './sheet-snap-points';
 
 function getTailscaleHosts(): string[] {
   const hosts = Constants.expoConfig?.extra?.tailscaleHosts;
@@ -53,6 +56,7 @@ function formatStartedAt(value: string | null | undefined): string {
 }
 
 export function DevServerSwitcherScreen() {
+  const styles = useTypographyStyles(createStyles);
   const { systemColors, spacing, borderRadius } = useTheme();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -297,7 +301,7 @@ export function DevServerSwitcherScreen() {
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {bundlersQuery.error instanceof Error ? bundlersQuery.error.message : 'Failed to probe bundlers'}
             </Text>
-            <Pressable
+            <PressableSurface
               onPress={() => {
                 hapticLight();
                 void bundlersQuery.refetch();
@@ -315,7 +319,7 @@ export function DevServerSwitcherScreen() {
               <Text variant="footnote" color={systemColors.label}>
                 Retry
               </Text>
-            </Pressable>
+            </PressableSurface>
           </View>
         ) : bundlers.length === 0 ? (
           <View style={[styles.errorContainer, { marginHorizontal: spacing[4] }]}>
@@ -343,7 +347,7 @@ export function DevServerSwitcherScreen() {
                   const isDisabled = isSwitching && !isThisSwitching;
                   const trailing = (
                     <View style={styles.rowActions}>
-                      <Pressable
+                      <PressableSurface
                         accessibilityRole="button"
                         // i18n-ignore-next-line
                         accessibilityLabel="Server info"
@@ -354,7 +358,7 @@ export function DevServerSwitcherScreen() {
                         style={styles.iconButton}
                       >
                         <Icon name="info" size={20} color={systemColors.secondaryLabel} />
-                      </Pressable>
+                      </PressableSurface>
                       {isThisSwitching ? <ActivityIndicator size="small" /> : null}
                     </View>
                   );
@@ -396,7 +400,7 @@ export function DevServerSwitcherScreen() {
                   key={target}
                   title={target}
                   trailing={
-                    <Pressable
+                    <PressableSurface
                       accessibilityRole="button"
                       // i18n-ignore-next-line
                       accessibilityLabel="Remove saved server"
@@ -404,7 +408,7 @@ export function DevServerSwitcherScreen() {
                       style={styles.iconButton}
                     >
                       <Icon name="delete" size={20} color={systemColors.secondaryLabel} />
-                    </Pressable>
+                    </PressableSurface>
                   }
                   haptic={false}
                   showSeparator={index < savedTargets.length - 1}
@@ -417,7 +421,7 @@ export function DevServerSwitcherScreen() {
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      <Sheet ref={infoSheetRef} snapPoints={['55%', '90%']}>
+      <Sheet ref={infoSheetRef} snapPoints={MEDIUM_LARGE_SNAP_POINTS}>
         {selectedBundler ? (
           <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
             {/* i18n-ignore-next-line */}
@@ -460,7 +464,7 @@ export function DevServerSwitcherScreen() {
                 {selectedBundler.metadata?.qaNotes ?? 'No QA plan loaded for this Metro server.'}
               </Text>
               {selectedBundler.metadata?.qaNotesFilePath ? (
-                <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.filePath} selectable>
+                <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.filePath} selectable>
                   {selectedBundler.metadata.qaNotesFilePath}
                 </Text>
               ) : null}
@@ -483,7 +487,11 @@ export function DevServerSwitcherScreen() {
       </Sheet>
 
       <Modal animationType="fade" transparent visible={isAddPromptOpen} onRequestClose={handleAddPromptCancel}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          keyboardVerticalOffset={0}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
           <View
             style={[
               styles.modalCard,
@@ -543,88 +551,89 @@ export function DevServerSwitcherScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    padding: 12,
-    overflow: 'hidden',
-  },
-  centered: {
-    paddingVertical: 32,
-    alignItems: 'center',
-  },
-  errorContainer: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    gap: 12,
-  },
-  actionBar: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingBottom: 8,
-  },
-  rowActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  disabledRow: {
-    opacity: 0.5,
-  },
-  sheetContent: {
-    paddingBottom: 32,
-  },
-  qaCard: {
-    marginHorizontal: 16,
-    padding: 12,
-  },
-  qaText: {
-    lineHeight: 18,
-  },
-  filePath: {
-    marginTop: 8,
-  },
-  sheetButton: {
-    marginHorizontal: 16,
-    marginTop: 16,
-  },
-  bottomSpacer: {
-    height: 40,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  modalCard: {
-    padding: 20,
-    gap: 12,
-  },
-  modalSubtitle: {
-    marginBottom: 4,
-  },
-  modalInput: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 4,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    card: {
+      padding: 12,
+      overflow: 'hidden',
+    },
+    centered: {
+      paddingVertical: 32,
+      alignItems: 'center',
+    },
+    errorContainer: {
+      alignItems: 'center',
+      paddingVertical: 16,
+      gap: 12,
+    },
+    actionBar: {
+      flexDirection: 'row',
+      gap: 8,
+      paddingBottom: 8,
+    },
+    rowActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    iconButton: {
+      width: 36,
+      height: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    retryButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    disabledRow: {
+      opacity: opacity.disabled,
+    },
+    sheetContent: {
+      paddingBottom: 32,
+    },
+    qaCard: {
+      marginHorizontal: 16,
+      padding: 12,
+    },
+    qaText: {
+      lineHeight: 18,
+    },
+    filePath: {
+      marginTop: 8,
+    },
+    sheetButton: {
+      marginHorizontal: 16,
+      marginTop: 16,
+    },
+    bottomSpacer: {
+      height: 40,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.4)',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    modalCard: {
+      padding: 20,
+      gap: 12,
+    },
+    modalSubtitle: {
+      marginBottom: 4,
+    },
+    modalInput: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: textStyles.callout.fontSize,
+    },
+    modalActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      gap: 8,
+      marginTop: 4,
+    },
+  });

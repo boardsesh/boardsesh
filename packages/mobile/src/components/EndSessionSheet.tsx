@@ -1,10 +1,8 @@
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
+import { useTypographyStyles, type TypographyScale } from '../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
-import BottomSheet, {
-  BottomSheetView,
-  BottomSheetTextInput,
-  type BottomSheetMethods,
-} from '@expo/ui/community/bottom-sheet';
+import BottomSheet, { BottomSheetView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../hooks/use-window-bottom-inset';
 import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useTranslation } from 'react-i18next';
@@ -64,6 +62,7 @@ export function EndSessionSheet({
   defaultMode,
   canEnd,
 }: EndSessionSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const windowInsetBottom = useWindowBottomInset();
@@ -218,32 +217,33 @@ export function EndSessionSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    // No flex:1 — enableDynamicSizing measures the content's intrinsic height.
-    paddingHorizontal: spacing[6],
-    paddingTop: spacing[4],
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  subtitle: {
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  statRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  notesInput: {
-    width: '100%',
-    minHeight: 64,
-    maxHeight: 120,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    fontSize: 15,
-    // Multiline text should start at the top on Android (matches iOS default).
-    textAlignVertical: 'top',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    content: {
+      // No flex:1 — enableDynamicSizing measures the content's intrinsic height.
+      paddingHorizontal: spacing[6],
+      paddingTop: spacing[4],
+      alignItems: 'center',
+      gap: spacing[3],
+    },
+    subtitle: {
+      textAlign: 'center',
+      lineHeight: 20,
+    },
+    statRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+    },
+    notesInput: {
+      width: '100%',
+      minHeight: 64,
+      maxHeight: 120,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      fontSize: textStyles.subheadline.fontSize,
+      // Multiline text should start at the top on Android (matches iOS default).
+      textAlignVertical: 'top',
+    },
+  });

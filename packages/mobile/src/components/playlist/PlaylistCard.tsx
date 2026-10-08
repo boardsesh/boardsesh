@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { hapticLight } from '../../lib/haptics';
@@ -66,7 +67,7 @@ export const PlaylistCard = memo(function PlaylistCard({
 
   if (isScroll) {
     return (
-      <Pressable
+      <PressableSurface
         onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={`${name}, ${displayMeta}`}
@@ -79,12 +80,12 @@ export const PlaylistCard = memo(function PlaylistCard({
         <Text variant="caption1" numberOfLines={1} style={styles.meta}>
           {displayMeta}
         </Text>
-      </Pressable>
+      </PressableSurface>
     );
   }
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={`${name}, ${displayMeta}`}
@@ -99,7 +100,7 @@ export const PlaylistCard = memo(function PlaylistCard({
           {displayMeta}
         </Text>
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4],
+    marginStart: spacing[4],
   },
   modal: {
     flex: 1,

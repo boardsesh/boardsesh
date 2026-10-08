@@ -1,6 +1,19 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 vi.mock('react-native', () => ({
@@ -14,7 +27,10 @@ vi.mock('react-native', () => ({
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel ?? '' }, children),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 vi.mock('react-native-gesture-handler', () => ({
   GestureDetector: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -24,11 +40,23 @@ vi.mock('../../Text', () => ({
   Text: ({ children, color }: { children?: ReactNode; color?: unknown }) =>
     createElement('span', { 'data-text-color': typeof color === 'string' ? color : '' }, children),
 }));
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
+}));
 vi.mock('../../Icon', () => ({
   Icon: ({ name, color }: { name: string; color?: unknown }) =>
     createElement('span', { 'data-icon': name, 'data-color': typeof color === 'string' ? color : '' }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { label: '#000', tertiaryLabel: '#999' },
     brandColors: { primary: '#6D28D9', error: '#C81E1E' },
@@ -46,7 +74,10 @@ vi.mock('../../ChromeIconButton', () => ({
   }) => createElement('button', { onClick: onPress, 'data-label': accessibilityLabel, 'data-chrome-icon': icon }),
   useChromeIconButtonSize: () => 44,
 }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
+}));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.2 }));
 
 import { SessionScreenHeader } from '../SessionScreenHeader';
@@ -59,6 +90,37 @@ const MINIMIZE = '[data-label="mobile.session.minimize"]';
 describe('SessionScreenHeader', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it.each(['end', 'leave'] as const)(
+    'keeps the %s viewer on the label and activates the existing exit once',
+    (exitVariant) => {
+      const onEndSession = vi.fn();
+      const { container } = render(
+        <SessionScreenHeader sessionActive onEndSession={onEndSession} exitVariant={exitVariant} />,
+      );
+      const title = exitVariant === 'leave' ? 'mobile.session.inLeave' : 'mobile.session.inStop';
+      const viewer = container.querySelector(`[data-viewer-title="${title}"]`);
+      expect(viewer?.closest('button')).not.toBeNull();
+      expect(viewer?.querySelector('[data-icon]')).toBeNull();
+      fireEvent.contextMenu(viewer!);
+      expect(onEndSession).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('activates Invite once through its label and preserves the icon-only control without a hint', () => {
+    const onShare = vi.fn();
+    const { container, rerender } = render(<SessionScreenHeader sessionActive onShare={onShare} inviteHint />);
+    const viewer = container.querySelector('[data-viewer-title="mobile.session.inviteAction"]');
+    expect(viewer?.querySelector('[data-icon]')).toBeNull();
+    fireEvent.contextMenu(viewer!);
+    expect(onShare).toHaveBeenCalledOnce();
+    rerender(<SessionScreenHeader sessionActive onShare={onShare} />);
+    expect(container.querySelector('[data-viewer-title]')).toBeNull();
+    const share = container.querySelector(SHARE);
+    expect(share?.querySelector('[data-icon="share"]')).not.toBeNull();
+    fireEvent.click(share!);
+    expect(onShare).toHaveBeenCalledTimes(2);
   });
 
   it('docks an End control (calling onEndSession) when onEndSession is provided', () => {

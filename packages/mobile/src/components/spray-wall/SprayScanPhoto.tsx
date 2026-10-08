@@ -78,8 +78,8 @@ export function SprayScanPhoto({
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const { layout } = useSprayEditorLayout();
   const [area, setArea] = useState({ width: 0, height: 0 });
+  const { layout } = useSprayEditorLayout(area);
   const [loadedSize, setLoadedSize] = useState<{ width: number; height: number } | null>(null);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {

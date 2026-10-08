@@ -43,7 +43,7 @@ export const PaintedRing = React.memo(function PaintedRing({
             width: markerDiameter,
             height: markerDiameter,
             borderRadius: markerDiameter / 2,
-            marginLeft: -markerDiameter / 2,
+            marginStart: -markerDiameter / 2,
             marginTop: -markerDiameter / 2,
             borderWidth: strokeWidth,
             borderColor: color,
@@ -67,7 +67,7 @@ export const PaintedRing = React.memo(function PaintedRing({
         {
           left: `${leftPct}%`,
           top: `${topPct}%`,
-          marginLeft: -markerDiameter / 2,
+          marginStart: -markerDiameter / 2,
           marginTop: -markerDiameter / 2,
         },
       ]}

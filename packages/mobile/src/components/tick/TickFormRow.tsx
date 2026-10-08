@@ -71,7 +71,7 @@ export const TickFormRow = React.memo(function TickFormRow({
         style={[
           styles.row,
           {
-            paddingRight: bleed ? 0 : TICK_GUTTER,
+            paddingEnd: bleed ? 0 : TICK_GUTTER,
             minHeight: height ?? TICK_ROW_HEIGHT,
             gap: stacked ? spacing[2] : TICK_LABEL_GAP,
             paddingTop: topAligned ? spacing[1] : 0,
@@ -104,7 +104,7 @@ export const TickFormRow = React.memo(function TickFormRow({
               // Stacked, the control no longer starts at the seam — it starts at
               // the gutter — so a seam-inset hairline would float detached under
               // it. Same flag drives both.
-              marginLeft: stacked ? TICK_GUTTER : TICK_CONTROL_ORIGIN,
+              marginStart: stacked ? TICK_GUTTER : TICK_CONTROL_ORIGIN,
             },
           ]}
         />
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingLeft: TICK_GUTTER,
+    paddingStart: TICK_GUTTER,
   },
   rowAlignTop: {
     // Paired with the row's `paddingTop` and the label's, this sits the label's

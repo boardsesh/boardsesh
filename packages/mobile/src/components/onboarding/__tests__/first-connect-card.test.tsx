@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The connect-step test's Climbs card (#5654, PR 7, treatment only). The copy is
 // the en-US catalog itself, so a renamed or missing key fails here instead of
@@ -50,7 +63,10 @@ vi.mock('react-native', () => ({
     accessibilityLabel,
   }: Children & { onPress?: () => void; accessibilityLabel?: string }) =>
     createElement('button', { type: 'button', onClick: onPress, 'aria-label': accessibilityLabel }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+  },
   AccessibilityInfo: { announceForAccessibility: announceMock },
 }));
 
@@ -108,6 +124,7 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
   useFirstConnectCtaEnabled: () => flagsCtrl.enabled,
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: 'liquidGlass',
     systemColors: { secondaryLabel: '#666', secondaryBackground: '#eee' },
@@ -115,7 +132,11 @@ vi.mock('../../../providers/theme-provider', () => ({
     m3SurfaceContainers: { high: '#ddd' },
   }),
 }));
-vi.mock('../../../theme/tokens', () => ({ borderRadius: { lg: 12 }, spacing: { 1: 4, 2: 8, 3: 12 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  borderRadius: { lg: 12 },
+  spacing: { 1: 4, 2: 8, 3: 12 },
+}));
 
 const { FirstConnectCard, useFirstConnectCardExpected } = await import('../FirstConnectCard');
 

@@ -1,12 +1,27 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/queue';
 import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
 
 const ctrl = vi.hoisted(() => ({
   back: vi.fn(),
+  setOptions: vi.fn(),
+  navigation: null as unknown as { setOptions: (options: Record<string, unknown>) => void },
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   addToQueue: vi.fn(),
   openAddToPlaylist: vi.fn(),
@@ -36,6 +51,8 @@ type CapturedPlaylistEditClimbRowProps = {
     angle: number;
   };
 };
+
+ctrl.navigation = { setOptions: (options: Record<string, unknown>) => ctrl.setOptions(options) };
 
 const capturedClimbRows = vi.hoisted(() => [] as CapturedClimbListRowProps[]);
 const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProps[]);
@@ -68,7 +85,10 @@ vi.mock('react-native', () => ({
     onPress?: () => void;
     accessibilityLabel?: string;
   }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+  RefreshControl: ({ refreshing, onRefresh }: { refreshing?: boolean; onRefresh?: () => void }) =>
+    createElement('button', { 'data-refresh-control': String(!!refreshing), onClick: onRefresh }, 'refresh'),
   StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
     create: (s: Record<string, unknown>) => s,
     absoluteFill: {},
     hairlineWidth: 1,
@@ -106,6 +126,7 @@ vi.mock('@shopify/flash-list', () => ({
     ListEmptyComponent,
     ListFooterComponent,
     onEndReached,
+    refreshControl,
   }: {
     data?: unknown[];
     renderItem?: (info: { item: unknown; index: number }) => ReactNode;
@@ -113,6 +134,7 @@ vi.mock('@shopify/flash-list', () => ({
     ListEmptyComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
     onEndReached?: () => void;
+    refreshControl?: ReactNode;
   }) => {
     const rowNodes = data?.map((item, index) => {
       const key =
@@ -122,6 +144,7 @@ vi.mock('@shopify/flash-list', () => ({
     return createElement(
       'div',
       { 'data-list': 'true', onClick: onEndReached },
+      refreshControl ?? null,
       ListHeaderComponent ?? null,
       data?.length === 0 ? (ListEmptyComponent ?? null) : null,
       rowNodes ?? null,
@@ -130,7 +153,11 @@ vi.mock('@shopify/flash-list', () => ({
   },
 }));
 
-vi.mock('expo-router', () => ({ useRouter: () => ({ back: ctrl.back }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ back: ctrl.back }),
+  // Stable, like the real navigation object, so an effect keyed on it settles.
+  useNavigation: () => ctrl.navigation,
+}));
 
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 44, bottom: 0, left: 0, right: 0 }),
@@ -149,12 +176,14 @@ vi.mock('react-i18next', () => ({
 
 // ── Theme / providers ─────────────────────────────────────────────────────────
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: ctrl.variant,
     systemColors: {
       label: '#000000',
       secondaryLabel: '#666666',
       tertiaryLabel: '#999999',
+      error: '#ff3b30',
       fill: '#eeeeee',
       background: '#ffffff',
       secondaryBackground: '#f2f2f2',
@@ -193,13 +222,13 @@ vi.mock('../../../theme/colors', () => ({
   withAlpha: (color: string, alpha: number) => `${color}|${alpha}`,
 }));
 vi.mock('../../../theme/ios-colors', () => ({
-  iosSystemColors: { white: '#ffffff', systemGray4: '#aeaeb2' },
+  iosSystemColors: { white: '#ffffff' },
 }));
 
 // ── Leaf components ───────────────────────────────────────────────────────────
 vi.mock('../../Text', () => ({
-  Text: ({ children, variant }: { children?: ReactNode; variant?: string }) =>
-    createElement('span', { 'data-variant': variant ?? '' }, children),
+  Text: ({ children, variant, color }: { children?: ReactNode; variant?: string; color?: string }) =>
+    createElement('span', { 'data-variant': variant ?? '', 'data-color': color }, children),
 }));
 
 vi.mock('../../Icon', () => ({
@@ -314,8 +343,15 @@ vi.mock('../PlaylistEditClimbRow', () => ({
 
 // ── Subject ───────────────────────────────────────────────────────────────────
 import { PlaylistDetailView, type PlaylistDetailViewProps } from '../PlaylistDetailView';
+import { useButtonSurface } from '../../Button.surface';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function lastHeaderOptions(): Record<string, unknown> {
+  const options = ctrl.setOptions.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined;
+  if (!options) throw new Error('navigation.setOptions was never called');
+  return options;
+}
+
 const CLIMB: Climb = {
   uuid: 'abc-123',
   name: 'Test Route',
@@ -379,6 +415,7 @@ function makeProps(overrides: Partial<PlaylistDetailViewProps> = {}): PlaylistDe
 describe('PlaylistDetailView', () => {
   beforeEach(() => {
     ctrl.back.mockClear();
+    ctrl.setOptions.mockClear();
     ctrl.addToQueue.mockClear();
     ctrl.openAddToPlaylist.mockClear();
     ctrl.openClimbActions.mockClear();
@@ -389,16 +426,20 @@ describe('PlaylistDetailView', () => {
 
   // ── Navigation ──────────────────────────────────────────────────────────────
 
-  it('always renders the back FAB', () => {
+  // HIG Navigation bars: the native header and its system back button (long-press
+  // history, edge swipe), transparent over the hero — not a hand-built chevron.
+  it('shows the native header, transparent over the hero, instead of a back FAB', () => {
     const { container } = render(<PlaylistDetailView {...makeProps()} />);
-    const btn = container.querySelector('[data-icon="back"]');
-    expect(btn).not.toBeNull();
+
+    expect(lastHeaderOptions()).toMatchObject({ headerShown: true, headerTransparent: true, title: 'My Playlist' });
+    expect(container.querySelector('[data-icon="back"]')).toBeNull();
   });
 
-  it('clicking the back FAB calls router.back', () => {
-    const { container } = render(<PlaylistDetailView {...makeProps()} />);
-    fireEvent.click(container.querySelector('[data-icon="back"]') as HTMLElement);
-    expect(ctrl.back).toHaveBeenCalledTimes(1);
+  it('draws no native title over the hero, which already carries the name', () => {
+    render(<PlaylistDetailView {...makeProps()} />);
+
+    const headerTitle = lastHeaderOptions().headerTitle as () => ReactNode;
+    expect(headerTitle()).toBeNull();
   });
 
   // ── Screenshot-mode page cap ────────────────────────────────────────────────
@@ -437,20 +478,65 @@ describe('PlaylistDetailView', () => {
 
   // ── Action threading ────────────────────────────────────────────────────────
 
-  it('calls actions(false) initially and renders the returned node', () => {
+  it('hosts the expanded actions as the native header trailing item', () => {
     const actions = vi.fn((collapsed: boolean) =>
       createElement('span', { 'data-action-collapsed': String(collapsed) }, 'action'),
     );
-    const { container } = render(<PlaylistDetailView {...makeProps({ actions })} />);
+    render(<PlaylistDetailView {...makeProps({ actions })} />);
+
+    const headerRight = lastHeaderOptions().headerRight as () => ReactNode;
+    const { container } = render(createElement('div', null, headerRight()));
     expect(actions).toHaveBeenCalledWith(false);
     expect(container.querySelector('[data-action-collapsed="false"]')).not.toBeNull();
   });
 
-  it('renders no actions container when actions prop is omitted', () => {
+  // HIG Materials: the iOS 26 bar item is already a glass capsule, so the region
+  // is declared glass and the controls inside drop their own.
+  it('declares the header trailing item a glass region', () => {
+    function SurfaceProbe() {
+      return createElement('span', { 'data-surface': useButtonSurface() });
+    }
+    render(<PlaylistDetailView {...makeProps({ actions: () => createElement(SurfaceProbe) })} />);
+
+    const headerRight = lastHeaderOptions().headerRight as () => ReactNode;
+    const { container } = render(createElement('div', null, headerRight()));
+    expect(container.querySelector('[data-surface]')?.getAttribute('data-surface')).toBe('glass');
+  });
+
+  it('sets no trailing item when actions prop is omitted', () => {
+    render(<PlaylistDetailView {...makeProps()} />);
+    expect(lastHeaderOptions().headerRight).toBeUndefined();
+  });
+
+  it('does not re-set the header options on a plain re-render', () => {
+    const actions = vi.fn(() => createElement('span', null, 'action'));
+    const props = makeProps({ actions });
+    const { rerender } = render(<PlaylistDetailView {...props} />);
+    const callsAfterMount = ctrl.setOptions.mock.calls.length;
+
+    rerender(<PlaylistDetailView {...props} />);
+    expect(ctrl.setOptions.mock.calls.length).toBe(callsAfterMount);
+  });
+
+  // ── Pull to refresh (HIG Refresh content controls) ─────────────────────────
+
+  it('refreshes on a pull and spins until the refetch settles', async () => {
+    let settle: () => void = () => undefined;
+    const onRefresh = vi.fn(() => new Promise<void>((resolve) => (settle = resolve)));
+    const { container } = render(<PlaylistDetailView {...makeProps({ onRefresh })} />);
+    const control = () => container.querySelector('[data-refresh-control]');
+
+    fireEvent.click(control() as HTMLElement);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(control()?.getAttribute('data-refresh-control')).toBe('true');
+
+    await act(async () => settle());
+    expect(control()?.getAttribute('data-refresh-control')).toBe('false');
+  });
+
+  it('has no pull-to-refresh without an onRefresh', () => {
     const { container } = render(<PlaylistDetailView {...makeProps()} />);
-    // Only the back FAB button should be present; no extra data-icon= elements
-    const allButtons = container.querySelectorAll('button[data-icon]');
-    expect(allButtons).toHaveLength(1);
+    expect(container.querySelector('[data-refresh-control]')).toBeNull();
   });
 
   // ── Hero content ────────────────────────────────────────────────────────────
@@ -486,6 +572,14 @@ describe('PlaylistDetailView', () => {
       <PlaylistDetailView {...makeProps({ hero: { name: 'P', climbCount: 0, subtitle: 'by Setter A' } })} />,
     );
     expect(getByText('by Setter A')).not.toBeNull();
+  });
+
+  it('reads the Material hero subtitle in secondaryLabel, not the low-contrast tertiary role', () => {
+    ctrl.variant = 'material';
+    const { getByText } = render(
+      <PlaylistDetailView {...makeProps({ hero: { name: 'P', climbCount: 0, subtitle: 'by Setter A' } })} />,
+    );
+    expect(getByText('by Setter A').getAttribute('data-color')).toBe('#666666');
   });
 
   it('renders follower label when provided', () => {
@@ -611,13 +705,17 @@ describe('PlaylistDetailView', () => {
     for (const row of capturedClimbRows) {
       expect(row.onOpenPlaylist).toBeTypeOf('function');
       row.onOpenPlaylist?.(row.climb);
-      expect(ctrl.openAddToPlaylist).toHaveBeenLastCalledWith(row.climb, {
-        boardName: row.boardName,
-        layoutId: row.layoutId,
-        sizeId: row.sizeId,
-        setIds: row.setIds,
-        angle: row.angle,
-      });
+      expect(ctrl.openAddToPlaylist).toHaveBeenLastCalledWith(
+        row.climb,
+        {
+          boardName: row.boardName,
+          layoutId: row.layoutId,
+          sizeId: row.sizeId,
+          setIds: row.setIds,
+          angle: row.angle,
+        },
+        undefined,
+      );
     }
     expect(ctrl.openAddToPlaylist).toHaveBeenCalledTimes(2);
     expect(ctrl.addToQueue).not.toHaveBeenCalled();
@@ -734,6 +832,11 @@ describe('PlaylistDetailView', () => {
       expect(container.querySelector('[data-appbar]')).not.toBeNull();
       // No gradient hero in the Material branch.
       expect(container.querySelector('[data-gradient]')).toBeNull();
+    });
+
+    it('keeps its in-body app bar and hides the native header (header XOR in-body Appbar)', () => {
+      render(<PlaylistDetailView {...makeProps()} />);
+      expect(lastHeaderOptions()).toMatchObject({ headerShown: false });
     });
 
     it('back action calls router.back', () => {

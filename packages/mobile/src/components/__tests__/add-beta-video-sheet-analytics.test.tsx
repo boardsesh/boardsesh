@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+vi.mock('../AccessibleBottomSheetTextInput', async () => {
+  const { BottomSheetTextInput } = await import('@expo/ui/community/bottom-sheet');
+  return { AccessibleBottomSheetTextInput: BottomSheetTextInput };
+});
+vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => async () => false }));
+vi.mock('../../lib/announce-queued', () => ({ announceQueued: vi.fn() }));
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +15,7 @@ const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 // the component's onSuccess (where the analytics fire) runs inline in the test.
 const attach = vi.hoisted(() => ({
   isPending: false,
-  mutate: vi.fn((_variables: unknown, callbacks: { onSuccess?: () => void }) => {
+  mutate: vi.fn((_variables: unknown, callbacks: { onSuccess?: () => void; onError?: (error: Error) => void }) => {
     callbacks.onSuccess?.();
   }),
 }));
@@ -27,6 +33,7 @@ const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn(async (_text: string
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
@@ -149,6 +156,18 @@ describe('AddBetaVideoSheet attach analytics', () => {
 
     expect(attach.mutate).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed link editable and displays the error until retry', () => {
+    attach.mutate.mockImplementationOnce((_variables, callbacks) => callbacks.onError?.(new Error('offline')));
+    const screen = renderSheet();
+    typeAndSubmit('https://www.instagram.com/reel/ABC123/');
+    expect(screen.getByText('mobile.betaVideos.attachError')).toBeTruthy();
+    expect(analytics.track).not.toHaveBeenCalled();
+    act(() => captured.onChangeText?.('https://www.instagram.com/reel/XYZ456/'));
+    expect(screen.queryByText('mobile.betaVideos.attachError')).toBeNull();
+    typeAndSubmit('https://www.instagram.com/reel/XYZ456/');
+    expect(attach.mutate).toHaveBeenCalledTimes(2);
   });
 
   // Regression guard for the decoupled copy/open flow: "Open Instagram" must copy

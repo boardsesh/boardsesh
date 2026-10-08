@@ -1,3 +1,5 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
@@ -6,10 +8,8 @@ import {
   type OpaqueColorValue,
   PixelRatio,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -470,7 +470,7 @@ export function ClimbReactionMenu({
             menu — so a stray tap can't tear down a half-typed create form. */}
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
           <View style={[StyleSheet.absoluteFill, { backgroundColor: boardArtBackgroundColor }]} />
-          <Pressable
+          <PressableSurface
             style={StyleSheet.absoluteFill}
             onPress={handleRequestClose}
             accessibilityRole="button"
@@ -624,7 +624,7 @@ type PrimaryActionButtonProps = {
 // tallest, so "Add to Playlist" wrapping to two lines keeps all three the same height.
 function PrimaryActionButton({ action, fillColor, labelColor }: PrimaryActionButtonProps) {
   return (
-    <Pressable
+    <PressableSurface
       onPress={action.run}
       accessibilityRole="button"
       accessibilityLabel={action.title}
@@ -638,7 +638,7 @@ function PrimaryActionButton({ action, fillColor, labelColor }: PrimaryActionBut
       <Text variant="caption1" numberOfLines={2} style={[styles.primaryButtonLabel, { color: labelColor }]}>
         {action.title}
       </Text>
-    </Pressable>
+    </PressableSurface>
   );
 }
 

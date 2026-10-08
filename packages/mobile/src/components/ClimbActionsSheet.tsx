@@ -22,6 +22,7 @@ import { useSprayWallIsArchived } from '../lib/spray/use-spray-wall-archive';
 import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 import { canDeleteClimb } from './climb-actions/delete-climb-rules';
 import { useDeleteClimbAction } from './climb-actions/use-delete-climb-action';
+import { MEDIUM_LARGE_SNAP_POINTS } from './sheet-snap-points';
 
 type ClimbActionsSheetProps = {
   visible: boolean;
@@ -241,9 +242,10 @@ function ClimbActionsSheet({
     void requestDeleteClimb(climb, boardName, onClimbDeleted);
   }, [climb, boardName, onClose, requestDeleteClimb, onClimbDeleted]);
 
-  // Sized for the climb preview row plus the action list (a couple more rows show
-  // for owners / Aurora-app climbs); the modal pans down to close.
-  const snapPoints = useMemo(() => ['55%'], []);
+  // HIG Sheets: opens at medium with the climb preview and the first actions,
+  // drags to large for the rest (owners and Aurora-app climbs get more rows);
+  // the modal pans down to close.
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
   // Monochrome on Liquid Glass, semantic on Material — resolved once as a token.
   const {
     success: successActionIconColor,
@@ -305,7 +307,7 @@ function ClimbActionsSheet({
         {onTick && (
           <ListRow
             title={t('mobile.climbActions.tick')}
-            leading={<Icon name="tick" size={22} color={successActionIconColor} />}
+            leading={<Icon name="tick.fill" size={22} color={successActionIconColor} />}
             onPress={handleTick}
             showSeparator
           />

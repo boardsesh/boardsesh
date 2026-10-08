@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
@@ -24,10 +25,10 @@ function classifyRssi(rssi: number): RssiStrength {
   return 'weak';
 }
 
-const rssiBarColor: Record<RssiStrength, string> = {
+// Weak signal reads in the theme's adaptive error red, resolved per render.
+const rssiBarColor: Record<Exclude<RssiStrength, 'weak'>, string> = {
   strong: iosSystemColors.systemGreen,
   good: iosSystemColors.systemYellow,
-  weak: iosSystemColors.systemRed,
 };
 
 const PREVIEW_SIZE = 64;
@@ -36,7 +37,7 @@ const PREVIEW_IMAGE_MAX_SIZE = 58;
 function RssiIndicator({ rssi }: { rssi: number }) {
   const { systemColors } = useTheme();
   const strength = classifyRssi(rssi);
-  const activeColor = rssiBarColor[strength];
+  const activeColor = strength === 'weak' ? systemColors.error : rssiBarColor[strength];
   const inactiveColor = systemColors.fill;
 
   const barHeights = [8, 13, 18];
@@ -215,7 +216,7 @@ export const DeviceCard = memo(function DeviceCard({
   const boardLabel = boardType ? formatBoardDisplayName(boardType) : undefined;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={presentation.title}
@@ -248,7 +249,7 @@ export const DeviceCard = memo(function DeviceCard({
             </View>
           )}
           {serialNumber && (
-            <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1}>
+            <Text variant="caption1" color={systemColors.secondaryLabel} numberOfLines={1}>
               #{serialNumber}
             </Text>
           )}
@@ -258,7 +259,7 @@ export const DeviceCard = memo(function DeviceCard({
       <View style={styles.rightSection}>
         <RssiIndicator rssi={device.rssi} />
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

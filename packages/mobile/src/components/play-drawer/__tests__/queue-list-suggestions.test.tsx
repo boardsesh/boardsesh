@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +42,11 @@ vi.mock('react-native', () => ({
   }: ViewProps & { onPress?: () => void; accessibilityLabel?: string }) =>
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
@@ -56,6 +73,7 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { separator: '#ccc', secondaryBackground: '#fff' },
     brandColors: { primary: '#6D28D9' },
@@ -64,9 +82,9 @@ vi.mock('../../../providers/theme-provider', () => ({
 
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 10: 40, 16: 64 },
 }));
-vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { systemGray: '#888' } }));
 vi.mock('../../sheet-content-inset', () => ({ withSheetBottomInset: (style: unknown) => style }));
 vi.mock('../use-queue-drag', () => ({
   useQueueDrag: () => ({

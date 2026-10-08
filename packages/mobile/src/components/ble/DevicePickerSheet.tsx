@@ -19,8 +19,9 @@ import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
-const SNAP_POINTS = ['72%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 // "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
 // knows, never the serial (#5658). The suffix is the one the board-account card
@@ -297,7 +298,7 @@ export function DevicePickerSheet({
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('ble.locationHintTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                 {locationHint.wasGranted ? t('ble.locationHintGranted') : t('ble.locationHintBody')}
               </Text>
               {locationHint.shouldOfferLocationGrant && (
@@ -319,7 +320,7 @@ export function DevicePickerSheet({
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('ble.locationServicesHintTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                 {locationHint.servicesWereEnabled
                   ? t('ble.locationServicesHintEnabled')
                   : t('ble.locationServicesHintBody')}
@@ -341,7 +342,7 @@ export function DevicePickerSheet({
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('ble.troubleshootTitle')}
               </Text>
-              <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                 {t('ble.troubleshootTips')}
               </Text>
               {/* The wall may simply have no light kit. Offer to drive it anyway:
@@ -349,7 +350,7 @@ export function DevicePickerSheet({
                   climb. Session-local — nothing is written to the board record. */}
               {showNoLedsOffer && (
                 <View style={styles.noLedsOffer}>
-                  <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+                  <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.troubleshootTip}>
                     {t('ble.noLedsBody')}
                   </Text>
                   <Button

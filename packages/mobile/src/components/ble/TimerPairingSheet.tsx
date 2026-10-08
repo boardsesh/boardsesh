@@ -1,3 +1,4 @@
+import { PressableSurface } from '../PressableSurface';
 // Bottom sheet for pairing a Rogue Fitness workout timer to a board. Scans for
 // nearby Rogue/Echo timers (via a throwaway RogueTimerController — pairing only
 // *records the timer's name*, it doesn't hold a connection) and returns the
@@ -7,7 +8,7 @@
 // resolves climbing-board serials, none of which apply to a plain UART timer.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { DiscoveredDevice } from '../../lib/ble/types';
@@ -20,18 +21,19 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
-const SNAP_POINTS = ['60%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 type TimerPairingSheetProps = {
   onSelect: (timerName: string) => void;
   onDismiss: () => void;
 };
 
-function classifyRssi(rssi: number): { bars: number; color: string } {
+function classifyRssi(rssi: number, weakColor: ColorValue): { bars: number; color: ColorValue } {
   if (rssi > -60) return { bars: 3, color: iosSystemColors.systemGreen };
   if (rssi > -80) return { bars: 2, color: iosSystemColors.systemYellow };
-  return { bars: 1, color: iosSystemColors.systemRed };
+  return { bars: 1, color: weakColor };
 }
 
 const TimerRow = memo(function TimerRow({
@@ -42,7 +44,7 @@ const TimerRow = memo(function TimerRow({
   onSelect: (timerName: string) => void;
 }) {
   const { systemColors } = useTheme();
-  const { bars, color } = classifyRssi(device.rssi);
+  const { bars, color } = classifyRssi(device.rssi, systemColors.error);
   const name = device.name ?? '';
 
   const handlePress = useCallback(() => {
@@ -51,7 +53,7 @@ const TimerRow = memo(function TimerRow({
   }, [name, onSelect]);
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={name}
@@ -74,7 +76,7 @@ const TimerRow = memo(function TimerRow({
           />
         ))}
       </View>
-    </Pressable>
+    </PressableSurface>
   );
 });
 

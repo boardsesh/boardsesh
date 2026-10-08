@@ -1,5 +1,8 @@
+import { AccessibleTextInput as TextInput } from '../../src/components/AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../src/hooks/use-typography-styles';
+import { PressableSurface } from '../../src/components/PressableSurface';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -64,6 +67,7 @@ function movedEnough(a: Coords, b: Coords): boolean {
  * Selecting a board makes it active.
  */
 export default function GymDiscovery() {
+  const styles = useTypographyStyles(createStyles);
   const router = useRouter();
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
@@ -494,14 +498,14 @@ export default function GymDiscovery() {
       />
       {isGeocoding ? <ActivityIndicator /> : null}
       {inputText.length > 0 || searchLabel ? (
-        <Pressable
+        <PressableSurface
           onPress={clearSearch}
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={t('mobile.gyms.clearSearch')}
         >
           <Icon name="close" size={18} color={systemColors.secondaryLabel} />
-        </Pressable>
+        </PressableSurface>
       ) : null}
     </View>
   );
@@ -524,11 +528,11 @@ export default function GymDiscovery() {
             <Text variant="caption1" color={systemColors.secondaryLabel} accessibilityLiveRegion="polite">
               {t('mobile.gyms.refreshFailed')}
             </Text>
-            <Pressable onPress={retrySearch} accessibilityRole="button" hitSlop={8}>
+            <PressableSurface onPress={retrySearch} accessibilityRole="button" hitSlop={8}>
               <Text variant="caption1" color={brandColors.primary}>
                 {t('mobile.gyms.retry')}
               </Text>
-            </Pressable>
+            </PressableSurface>
           </>
         ) : null}
       </View>
@@ -587,35 +591,36 @@ export default function GymDiscovery() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  closeWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing[4],
-    alignItems: 'flex-start',
-  },
-  searchField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    height: 44,
-    borderRadius: borderRadius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-  },
-  placePill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
-    borderRadius: borderRadius.full,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    flex: {
+      flex: 1,
+    },
+    closeWrap: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      paddingHorizontal: spacing[4],
+      alignItems: 'flex-start',
+    },
+    searchField: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      paddingHorizontal: spacing[3],
+      height: 44,
+      borderRadius: borderRadius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: textStyles.callout.fontSize,
+    },
+    placePill: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[1],
+      borderRadius: borderRadius.full,
+    },
+  });

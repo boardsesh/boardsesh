@@ -1,12 +1,6 @@
+import { Pressable } from 'react-native';
 import { memo, useCallback, useMemo } from 'react';
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  Platform,
-  type AccessibilityActionEvent,
-  type AccessibilityActionInfo,
-} from 'react-native';
+import { View, StyleSheet, Platform, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { sprayImportCopy } from '../../lib/spray/spray-import-progress';
@@ -360,7 +354,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             <Icon name="offline.pending" size={15} color={systemColors.secondaryLabel} />
           </View>
         ) : canDownload ? (
-          <Pressable
+          <PressableSurface
             onPress={handleDownload}
             accessibilityRole="button"
             accessibilityLabel={downloadLabel}
@@ -372,11 +366,11 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             hitSlop={CORNER_BADGE_HIT_SLOP}
           >
             <Icon name="offline.download" size={15} color={brandColors.primaryFill} />
-          </Pressable>
+          </PressableSurface>
         ) : null}
 
         {showEditBadge ? (
-          <Pressable
+          <PressableSurface
             onPress={handleAction}
             accessibilityRole="button"
             accessibilityLabel={actionLabel}
@@ -384,7 +378,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             hitSlop={CORNER_BADGE_HIT_SLOP}
           >
             <Icon name="edit" size={15} color={brandColors.primaryFill} />
-          </Pressable>
+          </PressableSurface>
         ) : showFollowingBadge ? (
           // No press target and no accessibility props of its own: the composed
           // card label already announces "Following".
@@ -398,7 +392,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             the distance pill, which an active Near-you board also carries. */}
         {item.isActive ? (
           <View style={styles.activeBadge}>
-            <Icon name="tick" size={11} color={overlays.onScrim} />
+            <Icon name="tick.fill" size={11} color={overlays.onScrim} />
             <Text
               variant="caption2"
               color={overlays.onScrim}
@@ -418,7 +412,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
             can't be both a proximity result and one of yours to pin, but guard
             anyway so the two can never stack. */}
         {onTogglePin && item.distanceMeters == null ? (
-          <Pressable
+          <PressableSurface
             onPress={handleTogglePin}
             accessibilityRole="button"
             accessibilityState={{ selected: item.isPinned === true }}
@@ -431,7 +425,7 @@ export const BoardDiscoveryCard = memo(function BoardDiscoveryCard({
               size={15}
               color={item.isPinned ? brandColors.onPrimary : brandColors.primaryFill}
             />
-          </Pressable>
+          </PressableSurface>
         ) : null}
 
         {item.distanceMeters != null ? (

@@ -1,5 +1,6 @@
+import { PressableSurface } from './PressableSurface';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { Icon } from './Icon';
 import { brandColorsDark, materialSurfaces } from '../theme/colors';
@@ -103,7 +104,7 @@ export function ChunkLoadErrorScreen({ error }: { error: Error }) {
         {copy.message}
       </Text>
       {showReloadButton && (
-        <Pressable
+        <PressableSurface
           onPress={reloadPage}
           accessibilityRole="button"
           accessibilityLabel="Reload"
@@ -112,7 +113,7 @@ export function ChunkLoadErrorScreen({ error }: { error: Error }) {
           <Text variant="body" color={brandColorsDark.onPrimary} style={styles.buttonLabel}>
             Reload
           </Text>
-        </Pressable>
+        </PressableSurface>
       )}
     </View>
   );

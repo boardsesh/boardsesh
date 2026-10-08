@@ -1,4 +1,22 @@
 // @vitest-environment jsdom
+vi.mock('../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8, 3: 12, 4: 16 },
+  radii: { sm: 4, md: 8 },
+}));
+vi.mock('../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 //
 // The browser SwitchRow. react-native-web 0.21 ignores `accessibilityState`, so
 // these pin the aria props that actually reach the DOM (a switch with no
@@ -41,7 +59,10 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
-  StyleSheet: { create: (styles: unknown) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: unknown) => styles,
+  },
 }));
 vi.mock('react-native-paper', () => ({ Switch: () => null }));
 vi.mock('../../lib/haptics', () => haptics);

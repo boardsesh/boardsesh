@@ -1,4 +1,12 @@
 // @vitest-environment jsdom
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({ children }: { children: React.ReactNode }) => children,
+}));
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, cleanup, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -32,14 +40,14 @@ vi.mock('react-native', () => ({
     children,
     onPress,
     accessibilityLabel,
-    disabled,
     style,
+    disabled,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
-    disabled?: boolean;
     style?: unknown;
+    disabled?: boolean;
   }) =>
     createElement(
       'div',
@@ -62,7 +70,11 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 
 // Reanimated host components: passthrough + no-op hooks so the card renders in
@@ -104,6 +116,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../lib/haptics', () => ({ hapticLight: vi.fn(), hapticHeavy: vi.fn() }));
 vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: new Proxy({}, { get: () => 4 }),
   borderRadius: { lg: 12, md: 8, full: 999 },
   overlays: { scrim: '#0008', onScrim: '#fff' },
@@ -111,6 +124,7 @@ vi.mock('../../../theme/tokens', () => ({
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}/${alpha}` }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: { tertiaryBackground: '#eee', separator: '#ccc', tertiaryLabel: '#999', secondaryLabel: '#888' },
     brandColors: { primary: '#6D28D9', primaryFill: '#6D28D9', onPrimary: '#FFFFFF', error: '#C81E1E' },
@@ -131,11 +145,13 @@ vi.mock('../../PressableSurface', () => ({
     children,
     onPress,
     accessibilityLabel,
+    style,
     disabled,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityLabel?: string;
+    style?: unknown;
     disabled?: boolean;
   }) =>
     createElement(
@@ -151,6 +167,7 @@ vi.mock('../../PressableSurface', () => ({
         'aria-label': accessibilityLabel,
         'aria-disabled': disabled === true ? 'true' : undefined,
         'data-testid': 'edit-action',
+        'data-style': styleAttribute(style),
         role: 'button',
       },
       children,
@@ -454,7 +471,7 @@ describe('BoardDiscoveryCard corner budget', () => {
         onPress: vi.fn(),
       }),
     );
-    const activePill = container.querySelector('[data-icon="tick"]')!.parentElement;
+    const activePill = container.querySelector('[data-icon="tick.fill"]')!.parentElement;
     const distancePill = container.querySelector('[data-icon="location"]')!.parentElement;
     expect(edgeKeys(activePill)).toEqual(['bottom', 'left']);
     expect(edgeKeys(distancePill)).toEqual(['bottom', 'right']);

@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 // The header pill is the one place the drawer STATES what the wall is doing, so
 // the assertions below are about truthfulness, not pixels: which state prints
 // which words, that the words it can't print (there's no room beside the climb
@@ -6,7 +19,7 @@
 // actually reachable. Narration is the host's job now — see
 // use-wall-state-announcer.test.ts.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; style?: unknown };
@@ -48,7 +61,12 @@ vi.mock('react-native', () => ({
       },
       children,
     ),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1, absoluteFill: {} },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+    absoluteFill: {},
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -96,6 +114,7 @@ const driverState = vi.hoisted(() => ({
 vi.mock('../use-wall-driver', () => ({ useWallDriver: () => driverState.value }));
 
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     variant: 'liquidGlass',
     systemColors: { secondaryBackground: '#FFF', label: '#111', separator: '#CCC' },
@@ -106,6 +125,7 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/colors', () => ({ withAlpha: (color: string, alpha: number) => `${color}@${alpha}` }));
 vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
   spacing: { 1: 4, 3: 12 },
   borderRadius: { full: 9999 },
   androidRipple: (color: string, borderless: boolean) => ({ color, borderless }),
@@ -115,6 +135,18 @@ vi.mock('../../../theme/layout', () => ({
   glassSize: { mini: 32, inline: 44 },
   WALL_LIVE_DOT_SIZE: 10,
   WALL_STATE_PILL_TOUCH_HEIGHT: 44,
+}));
+
+vi.mock('../../LargeContentViewer', () => ({
+  LargeContentViewer: ({
+    title,
+    onActivate,
+    children,
+  }: {
+    title: string;
+    onActivate?: () => void;
+    children?: ReactNode;
+  }) => createElement('span', { 'data-viewer-title': title, onContextMenu: onActivate }, children),
 }));
 
 import { WallStatePill } from '../WallStatePill';
@@ -140,6 +172,21 @@ beforeEach(() => {
 });
 
 describe('WallStatePill', () => {
+  it.each(['live', 'browsing'] as const)(
+    'opens %s controls once through its viewer and leaves reserved chrome inert',
+    (state) => {
+      const onPress = vi.fn();
+      const { container, rerender } = render(createElement(WallStatePill, { state, onPress }));
+      const viewer = () => container.querySelector('[data-viewer-title]')!;
+      expect(viewer().getAttribute('data-viewer-title')).toBe(pill(container).getAttribute('data-label'));
+      fireEvent.contextMenu(viewer());
+      expect(onPress).toHaveBeenCalledOnce();
+      rerender(createElement(WallStatePill, { state, reserveOnly: true }));
+      fireEvent.contextMenu(viewer());
+      expect(onPress).toHaveBeenCalledOnce();
+    },
+  );
+
   it('says "Browsing" in words and in the accent fill', () => {
     const { container } = renderPill({ state: 'browsing' });
 

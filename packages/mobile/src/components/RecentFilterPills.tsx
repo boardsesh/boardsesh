@@ -1,5 +1,7 @@
+import { Pressable } from 'react-native';
+import { PressableSurface } from './PressableSurface';
 import { useCallback } from 'react';
-import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, ScrollView, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
@@ -7,7 +9,6 @@ import { Icon } from './Icon';
 import type { RecentFilter } from '../lib/recent-filter-store';
 import { getFilterKey } from '../lib/recent-filter-store';
 import type { ClimbFilters } from './ClimbFilterSheet';
-import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
 import { springs } from '../theme/animations';
 import { hapticSelection } from '../lib/haptics';
@@ -32,7 +33,7 @@ function Pill({
   isActive: boolean;
   onApply: (filters: ClimbFilters, searchText: string) => void;
 }) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -65,10 +66,10 @@ function Pill({
         styles.pill,
         isActive
           ? { borderColor: brandColors.primary, backgroundColor: `${brandColors.primary}14` }
-          : styles.pillInactive,
+          : [styles.pillInactive, { borderColor: systemColors.separator }],
       ]}
     >
-      <Icon name="history" size={14} color={isActive ? brandColors.primary : iosSystemColors.systemGray} />
+      <Icon name="history" size={14} color={isActive ? brandColors.primary : systemColors.secondaryLabel} />
       <Text
         variant="caption1"
         color={isActive ? brandColors.primary : undefined}
@@ -100,11 +101,11 @@ export function RecentFilterPills({
         <Text variant="footnote" style={styles.headerLabel}>
           {t('mobile.search.recentFilters')}
         </Text>
-        <Pressable onPress={onClear} hitSlop={8} accessibilityRole="button">
+        <PressableSurface onPress={onClear} hitSlop={8} accessibilityRole="button">
           <Text variant="footnote" color={brandColors.primary}>
             {t('mobile.search.clearRecent')}
           </Text>
-        </Pressable>
+        </PressableSurface>
       </View>
       <ScrollView
         horizontal
@@ -156,7 +157,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   pillInactive: {
-    borderColor: iosSystemColors.separator,
     backgroundColor: 'transparent',
   },
   pillLabel: {

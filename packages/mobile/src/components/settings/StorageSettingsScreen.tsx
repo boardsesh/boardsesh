@@ -55,7 +55,6 @@ import { useOfflineSchemaReady } from '../../db/use-offline-schema-ready';
 import { useOfflineSchemaDowngrade } from '../../db/use-offline-schema-downgrade';
 import { reportError } from '../../lib/error-reporting';
 import { hapticLight } from '../../lib/haptics';
-import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 type StorageMeasurement = {
@@ -340,7 +339,7 @@ export function StorageSettingsScreen() {
   if (isError || !measurement) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        <Icon name="error" size={40} color={iosSystemColors.systemRed} />
+        <Icon name="error" size={40} color={systemColors.error} />
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.settings.storage.errorTitle')}
         </Text>
@@ -471,7 +470,7 @@ export function StorageSettingsScreen() {
               />
             ) : null}
           </Card>
-          <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
+          <Text variant="caption1" style={[styles.note, { color: systemColors.secondaryLabel }]}>
             {t('mobile.settings.storage.cachedImagesNote')}
           </Text>
           <Button
@@ -513,7 +512,7 @@ export function StorageSettingsScreen() {
             ))}
           </Card>
 
-          <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
+          <Text variant="caption1" style={[styles.note, { color: systemColors.secondaryLabel }]}>
             {t('mobile.settings.storage.estimateNote')}
           </Text>
 

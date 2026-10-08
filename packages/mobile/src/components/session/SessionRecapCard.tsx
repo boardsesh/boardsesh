@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useEffect, useState } from 'react';
-import { View, TextInput, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -34,6 +36,7 @@ type SessionRecapCardProps = {
  * toast would render behind the modal route.
  */
 export function SessionRecapCard({ sessionId, notes, editable = false, onEditorFocus }: SessionRecapCardProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -107,7 +110,7 @@ export function SessionRecapCard({ sessionId, notes, editable = false, onEditorF
           textAlignVertical="top"
           onFocus={onEditorFocus}
         />
-        <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.helper}>
+        <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.helper}>
           {t('summary.commentHelper', { count: draft.length, max: SESSION_NOTES_MAX_LENGTH })}
         </Text>
         {updateSession.isError ? (
@@ -155,38 +158,39 @@ export function SessionRecapCard({ sessionId, notes, editable = false, onEditorF
   return null;
 }
 
-const styles = StyleSheet.create({
-  card: {
-    gap: spacing[1],
-  },
-  input: {
-    minHeight: 88,
-    maxHeight: 160,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    fontSize: 15,
-    marginTop: spacing[1],
-  },
-  helper: {
-    textAlign: 'right',
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: spacing[2],
-    marginTop: spacing[1],
-  },
-  addRow: {
-    alignItems: 'flex-start',
-    // Cancel the text Button's internal content padding so the + icon lines up
-    // with the left content edge of the sibling cards and stat tiles.
-    marginLeft: -spacing[4],
-  },
-  captionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[1],
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    card: {
+      gap: spacing[1],
+    },
+    input: {
+      minHeight: 88,
+      maxHeight: 160,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      fontSize: textStyles.subheadline.fontSize,
+      marginTop: spacing[1],
+    },
+    helper: {
+      textAlign: 'right',
+    },
+    actions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: spacing[2],
+      marginTop: spacing[1],
+    },
+    addRow: {
+      alignItems: 'flex-start',
+      // Cancel the text Button's internal content padding so the + icon lines up
+      // with the left content edge of the sibling cards and stat tiles.
+      marginStart: -spacing[4],
+    },
+    captionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[1],
+    },
+  });

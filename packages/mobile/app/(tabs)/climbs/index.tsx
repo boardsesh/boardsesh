@@ -1,3 +1,6 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
+import { PressableSurface } from '../../../src/components/PressableSurface';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
   View,
@@ -6,7 +9,6 @@ import {
   Keyboard,
   InteractionManager,
   Platform,
-  Pressable,
   type ColorValue,
 } from 'react-native';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
@@ -81,6 +83,7 @@ import { useLiquidGlassTabBar } from '../../../src/hooks/use-bottom-accessory';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { useDeviceLayout } from '../../../src/hooks/use-device-layout';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
@@ -140,7 +143,6 @@ import { filtersForBoard } from '../../../src/lib/climb-filter-types';
 import { getActiveFilterTokens } from '../../../src/lib/filter-tokens';
 import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
-import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
 import { timing } from '../../../src/theme/animations';
 
@@ -220,6 +222,11 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 });
 
 function ClimbListInner() {
+  const { isPad, widthClass } = useDeviceLayout();
+  const [gradePresentation, setGradePresentation] = useState<'popover' | 'overlay' | null>(null);
+  const gradeUsesPopover =
+    gradePresentation === 'popover' || (gradePresentation === null && isPad && widthClass === 'regular');
+  const nativeRootHeader = useNativeRootHeader();
   const router = useRouter();
   // Screenshot mode opens the first climb's board view via this deep-link param
   // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
@@ -341,6 +348,7 @@ function ClimbListInner() {
   const handleOpenFilters = useCallback(() => {
     blurSearchInputs();
     setShowGrade(false);
+    setGradePresentation(null);
     setShowFilters(true);
   }, [blurSearchInputs]);
   const handleDismissFilters = useCallback(() => {
@@ -349,9 +357,13 @@ function ClimbListInner() {
   const handleOpenGrade = useCallback(() => {
     blurSearchInputs();
     setShowFilters(false);
+    setGradePresentation(isPad && widthClass === 'regular' ? 'popover' : 'overlay');
     setShowGrade(true);
-  }, [blurSearchInputs]);
-  const handleDismissGrade = useCallback(() => setShowGrade(false), []);
+  }, [blurSearchInputs, isPad, widthClass]);
+  const handleDismissGrade = useCallback(() => {
+    setShowGrade(false);
+    setGradePresentation(null);
+  }, []);
 
   const applyVisibleSearchText = useCallback(
     (text: string) => {
@@ -1170,9 +1182,9 @@ function ClimbListInner() {
   );
 
   const handleOpenAddToPlaylist = useCallback(
-    (climb: Climb) => {
+    (climb: Climb, anchorPoint?: WindowAnchorPoint) => {
       if (isPlaceholderDataRef.current) return;
-      openAddToPlaylist(climb);
+      openAddToPlaylist(climb, undefined, anchorPoint);
     },
     [openAddToPlaylist],
   );
@@ -1562,6 +1574,19 @@ function ClimbListInner() {
           onOpenGrade={handleOpenGrade}
           gradeRailOpen={showGrade}
           onCloseGrade={handleDismissGrade}
+          gradePopoverContent={
+            gradeUsesPopover ? (
+              <GradeRangeRail
+                grades={grades}
+                bound={gradeBound}
+                lastUsedGradeId={lastUsedGrade}
+                boardName={boardName}
+                onChange={handleGradeChange}
+                onRequestClose={handleDismissGrade}
+                dismissible={false}
+              />
+            ) : undefined
+          }
           dimensionChips={dimensionChips}
           minAscents={filters.minAscents}
           onChangePopularity={handleChangePopularity}
@@ -1589,6 +1614,12 @@ function ClimbListInner() {
     );
   }, [
     showFilterChips,
+    gradeUsesPopover,
+    grades,
+    gradeBound,
+    lastUsedGrade,
+    boardName,
+    handleGradeChange,
     pinnedChips,
     activeFilterCount,
     handleOpenFilters,
@@ -1709,10 +1740,11 @@ function ClimbListInner() {
             // shadow, no title. The floating glass chrome then owns the top.
             headerShown: true,
             headerTransparent: true,
-            headerBlurEffect: 'none' as const,
+            headerBlurEffect: nativeRootHeader ? undefined : ('none' as const),
             headerShadowVisible: false,
             headerStyle: { backgroundColor: 'transparent' },
-            title: '',
+            title: nativeRootHeader ? tCommon('mobile.nav.climbs') : '',
+            headerLargeTitle: nativeRootHeader,
             headerSearchBarOptions: {
               ref: nativeSearchRef,
               placement: 'automatic' as const,
@@ -1726,8 +1758,17 @@ function ClimbListInner() {
               onCancelButtonPress: handleNativeSearchCancel,
             },
           }
-        : { headerShown: false },
-    [useNativeSearch, t, handleNativeSearchChange, handleSearchFocus, handleSearchBlur, handleNativeSearchCancel],
+        : { headerShown: nativeRootHeader, headerLargeTitle: nativeRootHeader, title: tCommon('mobile.nav.climbs') },
+    [
+      useNativeSearch,
+      nativeRootHeader,
+      t,
+      tCommon,
+      handleNativeSearchChange,
+      handleSearchFocus,
+      handleSearchBlur,
+      handleNativeSearchCancel,
+    ],
   );
 
   const renderClimbItem = useCallback(
@@ -1777,7 +1818,7 @@ function ClimbListInner() {
       <>
         <Stack.Screen options={stackOptions} />
         <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
             {t('mobile.emptyState.boardRestoreFailed.title')}
           </Text>
@@ -1802,7 +1843,7 @@ function ClimbListInner() {
       <>
         <Stack.Screen options={stackOptions} />
         <View style={styles.emptyContainer}>
-          <Icon name="boards" size={48} color={iosSystemColors.systemGray4} />
+          <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
           <Text variant="headline" style={styles.emptyTitle}>
             {t('mobile.emptyState.noBoard.title')}
           </Text>
@@ -1915,7 +1956,7 @@ function ClimbListInner() {
           // The header is transparent on every path now, so the chrome owns the top
           // inset and the list pads manually by the measured chrome height. Leaving
           // this 'automatic' would double-inset under the (invisible) native header.
-          contentInsetAdjustmentBehavior="never"
+          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
           contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
           scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
           keyboardShouldPersistTaps="handled"
@@ -1947,7 +1988,7 @@ function ClimbListInner() {
                 <Icon
                   name={offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'}
                   size={48}
-                  color={iosSystemColors.systemGray4}
+                  color={systemColors.tertiaryLabel}
                 />
                 {/* "Needs a signal" is a lie when the phone has four bars and we
                 are the ones who are down, or when the climber chose Offline
@@ -1971,7 +2012,7 @@ function ClimbListInner() {
               </View>
             ) : offlineCatalogMissing ? (
               <View style={styles.emptyContainer}>
-                <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('mobile.emptyState.offlineNoCatalog.title')}
                 </Text>
@@ -1982,7 +2023,7 @@ function ClimbListInner() {
               </View>
             ) : offlineCatalogQueued ? (
               <View style={styles.emptyContainer}>
-                <Icon name="offline.download" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('mobile.emptyState.offlineCatalogQueued.title')}
                 </Text>
@@ -1992,7 +2033,7 @@ function ClimbListInner() {
               </View>
             ) : isUnsetWall ? (
               <View style={styles.emptyContainer}>
-                <Icon name="add" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="add" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {t('mobile.emptyState.unsetWall.title')}
                 </Text>
@@ -2010,7 +2051,7 @@ function ClimbListInner() {
               </View>
             ) : isEmpty ? (
               <View style={styles.emptyContainer}>
-                <Icon name="search" size={48} color={iosSystemColors.systemGray4} />
+                <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
                 <Text variant="headline" style={styles.emptyTitle}>
                   {name.length > 0 ? t('mobile.emptyState.noMatches.title') : t('mobile.emptyState.noClimbs.title')}
                 </Text>
@@ -2066,9 +2107,9 @@ function ClimbListInner() {
           dismiss layer, just below the measured chrome. (Material renders its own
           grade rail inside ClimbTopChrome, so this glass-only overlay is gated on
           !filterInTopChrome.) */}
-      {showFilterChips && !filterInTopChrome && showGrade ? (
+      {showFilterChips && !filterInTopChrome && !gradeUsesPopover && showGrade ? (
         <>
-          <Pressable
+          <PressableSurface
             style={styles.chipGradeDismiss}
             onPress={handleDismissGrade}
             accessibilityElementsHidden

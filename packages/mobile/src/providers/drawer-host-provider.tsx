@@ -1,3 +1,4 @@
+import { useTabletPaneWidth } from '../hooks/native-tablet-pane-width';
 /**
  * DrawerHostProvider mounts PlayDrawer and LogAscentSheet once at the app root
  * and exposes imperative openers via `useDrawerHost()`. This lets the
@@ -13,7 +14,6 @@
 
 import { useClimbModerationEnabled } from './feature-flags-provider';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useWindowDimensions } from 'react-native';
 import { router, useSegments } from 'expo-router';
 import { tabsActiveSegment } from '../lib/route-segments';
 import type { BoardName, Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -39,6 +39,7 @@ import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
+import type { WindowAnchorPoint } from '../components/navigation/AnchoredPopover.types';
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
@@ -51,7 +52,6 @@ import { climbToQueueItem } from '../lib/climb-to-queue-item';
 import { useActiveClimbUuid, useQueueActions, useQueueSessionControls } from './queue-provider';
 import { useDeviceLayout } from '../hooks/use-device-layout';
 import { resolveDetailPaneSurface } from '../theme/size-class';
-import { SIDEBAR_WIDTH } from '../theme/layout';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
@@ -137,6 +137,8 @@ export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig |
 }
 
 export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
+  /** A Link owns navigation when it supplies the native zoom source. */
+  navigate?: false;
   /** Switch the drawer to a different board config before opening (e.g. the
    *  caller is opening a climb that belongs to a board other than the user's
    *  default). The override is applied via state, so the actual open happens
@@ -195,7 +197,7 @@ type DrawerHostValue = {
   closeClimbActions: () => void;
   /** Opens the add-to-playlist bottom sheet for the given climb. Snapshots the
    *  active boardConfig (for the angle) at open time. */
-  openAddToPlaylist: (climb: Climb, boardConfigOverride?: BoardConfig) => void;
+  openAddToPlaylist: (climb: Climb, boardConfigOverride?: BoardConfig, anchorPoint?: WindowAnchorPoint) => void;
   /** Opens the share-your-beta sheet for the given climb. Snapshots the active
    *  boardConfig (for the angle) at open time. Used by the iOS climb context menu's
    *  shared action list (useClimbActions). */
@@ -386,7 +388,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // budget (resolveDetailPaneSurface — the tightest regular portraits fall back
   // to the route + compact sheets). A ref lets the empty-dep `openPlayDrawer`
   // read it without churning its identity.
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, sidebarWidth: paneSidebarWidth } = useTabletPaneWidth();
   const { widthClass } = useDeviceLayout();
   // The "On the Wall" kiosk tab hides the shell's detail pane (it IS the wall
   // surface and needs the full content pane), so a climb open there must fall back
@@ -396,7 +398,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const routeSegments = useSegments();
   const onWallTab = tabsActiveSegment(routeSegments) === 'wall';
   const usesDetailPane =
-    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane' && !onWallTab;
+    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: paneSidebarWidth }) === 'pane' &&
+    !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);
   usesDetailPaneRef.current = usesDetailPane;
   // Auth gates two things here. (1) myBoards requires authentication: running it
@@ -426,7 +429,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     open: openPlaylistSheet,
     close: closePlaylistSheet,
     clearIfClosed: clearPlaylistSheet,
-  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>();
   const {
     data: betaVideoData,
     visible: betaVideoVisible,
@@ -551,7 +554,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const openPlayDrawer = useCallback((climb: Climb, options?: OpenPlayDrawerOptions) => {
     // Pull `boardConfig` out so it doesn't reach the open target.
-    const { boardConfig: override, ...openOptions } = options ?? {};
+    const { boardConfig: override, navigate = true, ...openOptions } = options ?? {};
     // Set the board override BEFORE navigating so the route reads the right board
     // from `activeBoardConfig` (reactive) on mount — no requestAnimationFrame /
     // pending-replay dance. Only set an override that genuinely differs from the
@@ -576,7 +579,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     // navigate is a no-op, but the new nonce re-applies the target in place.
     playTargetNonceRef.current += 1;
     setPlayTarget({ climb, options: openOptions, nonce: playTargetNonceRef.current });
-    router.navigate('/play');
+    if (navigate) router.navigate('/play');
   }, []);
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
@@ -701,10 +704,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openAddToPlaylist = useCallback(
-    (climb: Climb, boardConfigOverride?: BoardConfig) => {
+    (climb: Climb, boardConfigOverride?: BoardConfig, anchorPoint?: WindowAnchorPoint) => {
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
       if (!boardConfig) return;
-      openPlaylistSheet({ climb, boardConfig });
+      openPlaylistSheet({ climb, boardConfig, anchorPoint });
     },
     [openPlaylistSheet],
   );
@@ -1208,6 +1211,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               sizeId={playlistData.boardConfig.sizeId}
               setIds={playlistData.boardConfig.setIds}
               angle={playlistData.boardConfig.angle}
+              anchorPoint={playlistData.anchorPoint}
               onClose={closeAddToPlaylist}
               onFullyDismissed={clearPlaylistSheet}
             />

@@ -1,9 +1,10 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
-import { spacing } from '../../theme/tokens';
+import { opacity, spacing } from '../../theme/tokens';
 import type { BoardDownloadState } from './board-offline-state';
 
 type BoardOfflineToggleProps = {
@@ -34,7 +35,7 @@ function BoardOfflineToggleComponent({ state, onPress, accessibilityLabel, disab
   const iconColor = state === 'downloaded' ? brandColors.primary : systemColors.secondaryLabel;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       disabled={disabled}
       hitSlop={HIT_SLOP}
@@ -44,7 +45,7 @@ function BoardOfflineToggleComponent({ state, onPress, accessibilityLabel, disab
       style={[styles.control, disabled && styles.disabled]}
     >
       <Icon name={iconName} size={22} color={iconColor} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 
@@ -57,6 +58,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   disabled: {
-    opacity: 0.4,
+    opacity: opacity.disabled,
   },
 });

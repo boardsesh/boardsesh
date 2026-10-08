@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback } from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import type { IconName } from '../icon-map';
@@ -70,15 +71,20 @@ function OnboardingTipBannerComponent({
       ]}
     >
       {onPress ? (
-        <Pressable style={styles.tappable} onPress={handlePress} accessibilityRole="button" accessibilityLabel={text}>
+        <PressableSurface
+          style={styles.tappable}
+          onPress={handlePress}
+          accessibilityRole="button"
+          accessibilityLabel={text}
+        >
           {body}
-        </Pressable>
+        </PressableSurface>
       ) : (
         <View style={styles.tappable} accessible accessibilityLabel={text}>
           {body}
         </View>
       )}
-      <Pressable
+      <PressableSurface
         onPress={onDismiss}
         accessibilityRole="button"
         accessibilityLabel={dismissLabel}
@@ -86,7 +92,7 @@ function OnboardingTipBannerComponent({
         style={styles.close}
       >
         <Icon name="close" size={16} color={systemColors.secondaryLabel} />
-      </Pressable>
+      </PressableSurface>
     </View>
   );
 }

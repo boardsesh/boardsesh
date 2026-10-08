@@ -1,3 +1,5 @@
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { PressableSurface } from '../PressableSurface';
 // "Add a spray wall", end to end (epic #5346, SW-09).
 //
 // Name it → photograph it → optionally mark its corners → upload → let the
@@ -33,7 +35,6 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -142,7 +143,7 @@ import {
   type DetectionOutcome,
 } from './add-wall-machine';
 import { findResumableWall, planUploadRetry, resumeTargetFor, startOverPlan } from './resume-draft';
-import { SPRAY_FORM_MAX_WIDTH, sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
+import { SPRAY_FORM_MAX_WIDTH, isIpadSprayFlow } from '../../lib/spray/spray-flow-presentation';
 
 /** The angle list as `AngleSlider` takes it. Built once: it never changes. */
 const sprayAngles: number[] = [...SPRAY_ANGLE_OPTIONS];
@@ -199,6 +200,7 @@ export function SprayWallWizardScreen({
   wallUuid,
   versionId,
 }: SprayWallWizardScreenProps) {
+  const headerHeight = useHeaderHeight();
   const countedSteps = resetOfWallUuid != null ? RESET_COUNTED_STEPS : COUNTED_STEPS;
   const { t, i18n } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -246,7 +248,7 @@ export function SprayWallWizardScreen({
   const { width: windowWidth } = useWindowDimensions();
   // Launch-fixed, like the presentation it follows: an iPad's flow is a full-screen
   // cover however its window is later resized.
-  const formColumnCapped = sprayFlowCoversScreen();
+  const formColumnCapped = isIpadSprayFlow();
   const bottomInset = useWindowBottomInset();
 
   const builder = useSprayWallBuilder();
@@ -1382,7 +1384,11 @@ export function SprayWallWizardScreen({
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView
+      keyboardVerticalOffset={headerHeight}
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         // Nothing pinned under the page, so it pads only past the home
@@ -1406,7 +1412,7 @@ export function SprayWallWizardScreen({
             {resumeError ? null : <ActivityIndicator />}
             <Text
               variant="subheadline"
-              color={resumeError ? iosSystemColors.systemRed : systemColors.secondaryLabel}
+              color={resumeError ? systemColors.error : systemColors.secondaryLabel}
               accessibilityLiveRegion="polite"
             >
               {resumeError ??
@@ -1449,7 +1455,7 @@ export function SprayWallWizardScreen({
               />
             </View>
             <AngleSlider angles={sprayAngles} value={builder.angle} onChange={builder.setAngle} />
-            <Text variant="caption1" color={systemColors.tertiaryLabel}>
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
               {t('sprayWizard.meta.angleHint')}
             </Text>
 
@@ -1462,7 +1468,7 @@ export function SprayWallWizardScreen({
                 number a gym with a lot of bays can reach, and meeting it as a
                 refusal on the publish step — with a photo already uploaded — is
                 the worst moment to learn it. */}
-            <Text variant="caption1" color={systemColors.tertiaryLabel}>
+            <Text variant="caption1" color={systemColors.secondaryLabel}>
               {t('sprayCaps.wallsHint', { max: SPRAY_CAP_VALUES.walls })}
             </Text>
           </>
@@ -1479,7 +1485,7 @@ export function SprayWallWizardScreen({
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.tip')}
             </Text>
-            <Pressable
+            <PressableSurface
               onPress={openPhotoGuide}
               hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
               style={styles.photoGuideLink}
@@ -1489,7 +1495,7 @@ export function SprayWallWizardScreen({
               <Text variant="subheadline" color={systemColors.accent}>
                 {t('sprayWizard.photo.helpLink')}
               </Text>
-            </Pressable>
+            </PressableSurface>
             {/* Said before the upload, not after it fails: Offline mode is a
                 switch the climber can turn off right now. */}
             {offlineModeOn ? (
@@ -1545,7 +1551,7 @@ export function SprayWallWizardScreen({
           <>
             <Text variant="title3">{t('sprayWizard.upload.title')}</Text>
             {state.upload.error ? (
-              <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
                 {state.upload.error}
               </Text>
             ) : (
@@ -1574,7 +1580,7 @@ export function SprayWallWizardScreen({
           <>
             <Text variant="title3">{t('sprayWizard.publish.title')}</Text>
             {state.publish.error ? (
-              <Text variant="subheadline" color={iosSystemColors.systemRed} accessibilityLiveRegion="polite">
+              <Text variant="subheadline" color={systemColors.error} accessibilityLiveRegion="polite">
                 {state.publish.error}
               </Text>
             ) : (
@@ -1663,7 +1669,7 @@ function ProgressBlock({ label, progress }: { label: string; progress: number | 
               styles.progressFill,
               {
                 width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%`,
-                backgroundColor: iosSystemColors.systemBlue,
+                backgroundColor: systemColors.accent,
               },
             ]}
           />

@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { useRouter } from 'expo-router';
+import { useScopedRouter as useRouter } from '../lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
 import { Avatar } from './Avatar';
 import { PressableSurface } from './PressableSurface';

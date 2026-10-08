@@ -1,5 +1,6 @@
+import { PressableSurface } from '../../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../../Text';
@@ -167,7 +168,7 @@ function HeatmapScopeChip({
   const label = wholeBoard ? t('mobile.heatmap.wholeBoard') : summary;
 
   return (
-    <Pressable
+    <PressableSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: !wholeBoard }}
@@ -189,7 +190,7 @@ function HeatmapScopeChip({
         {label}
       </Text>
       <Icon name="chevron.down" size={12} color={wholeBoard ? systemColors.secondaryLabel : brandColors.primary} />
-    </Pressable>
+    </PressableSurface>
   );
 }
 

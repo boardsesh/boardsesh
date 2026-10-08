@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { PlaylistDetailView, PlaylistBackFab } from '../../../../src/components/playlist';
+import { PlaylistDetailView, PlaylistStateHeader } from '../../../../src/components/playlist';
 import { SetterFollowButton } from '../../../../src/components/SetterFollowButton';
 import { Button } from '../../../../src/components/Button';
 import { Text } from '../../../../src/components/Text';
@@ -72,9 +72,14 @@ export default function SetterPlaylist() {
     [username, count.data, allClimbs.length, t],
   );
   const actions = useCallback(() => <SetterFollowButton username={username} />, [username]);
+  const { refetch: refetchClimbs } = query;
+  const { refetch: refetchCount } = count;
+  const handleRefresh = useCallback(
+    () => Promise.all([refetchClimbs(), refetchCount()]),
+    [refetchClimbs, refetchCount],
+  );
   return (
     <>
-      <Stack.Screen options={{ headerShown: false }} />
       {renderBoard ? (
         <PlaylistDetailView
           hero={hero}
@@ -88,6 +93,7 @@ export default function SetterPlaylist() {
           onActivateClimb={activation.activate}
           onAddAllToQueue={activation.addToQueue.append}
           isAddingAllToQueue={activation.addToQueue.isAppending}
+          onRefresh={handleRefresh}
           emptyMessage={query.isError ? t('authors.loadError') : t('authors.empty')}
           headerSlot={
             query.isError ? <Button title={t('authors.retry')} onPress={() => void query.refetch()} /> : undefined
@@ -95,7 +101,7 @@ export default function SetterPlaylist() {
         />
       ) : (
         <View style={styles.chooseBoard}>
-          <PlaylistBackFab />
+          <PlaylistStateHeader />
           <Text>{t('authors.chooseBoard')}</Text>
           <Button
             title={t('authors.chooseBoard')}

@@ -10,6 +10,9 @@ type ViewMockProps = {
   children?: ReactNode;
   onLayout?: (event: { nativeEvent: { layout: { height: number } } }) => void;
 };
+vi.mock('../../../hooks/use-native-root-header', () => ({ useNativeRootHeader: () => false }));
+vi.mock('../../chrome/NativeRootHeader', () => ({ NativeRootHeader: () => null }));
+
 vi.mock('react-native', () => ({
   View: ({ children, onLayout }: ViewMockProps) =>
     createElement(

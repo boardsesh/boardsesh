@@ -1,3 +1,4 @@
+import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
 import { Stack } from 'expo-router';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
@@ -13,9 +14,12 @@ export default function WallLayout() {
 
   return (
     <BoardArtVisibilityProvider tab="wall">
-      <Stack screenOptions={screenOptions}>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-      </Stack>
+      <NativeTabletContent>
+        <Stack screenOptions={screenOptions}>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
+        </Stack>
+      </NativeTabletContent>
     </BoardArtVisibilityProvider>
   );
 }

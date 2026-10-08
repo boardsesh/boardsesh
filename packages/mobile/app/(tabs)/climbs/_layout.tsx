@@ -1,82 +1,103 @@
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { NativeTabletContent } from '../../../src/components/navigation/NativeTabletContent';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useStackScreenOptions } from '../../../src/hooks/use-stack-screen-options';
 import { usePopToTopOnTabBlur } from '../../../src/hooks/use-pop-to-top-on-tab-blur';
 import { NativeTabContentInsetProbe } from '../../../src/components/navigation/NativeTabContentInsetProbe';
 import { BoardArtVisibilityProvider } from '../../../src/providers/board-art-visibility-provider';
+import { useTheme } from '../../../src/providers/theme-provider';
 
 export default function ClimbsLayout() {
   const { t } = useTranslation('common');
   const screenOptions = useStackScreenOptions();
+  const nativeRootHeader = useNativeRootHeader();
+  const { systemColors } = useTheme();
   usePopToTopOnTabBlur('climbs');
 
   return (
     <BoardArtVisibilityProvider tab="climbs">
       <NativeTabContentInsetProbe />
-      <Stack screenOptions={screenOptions}>
-        <Stack.Screen
-          name="index"
-          options={{
-            title: t('mobile.nav.climbs'),
-            // The climb list owns its own floating glass search row, so it hides
-            // the native header (which otherwise occluded the in-body controls).
-            headerShown: false,
-          }}
-        />
-        <Stack.Screen
-          name="[climbUuid]"
-          options={{
-            // The climb page is now a thin redirector: it loads the climb by uuid,
-            // opens it in the play drawer, then pops. It only ever flashes a
-            // spinner, so it has no header.
-            headerShown: false,
-          }}
-        />
-        <Stack.Screen
-          name="create"
-          options={{
-            // The create UI is just the drawer floating over the climbs/search
-            // list — a transparent, headerless modal (no separate card around it).
-            headerShown: false,
-            presentation: 'transparentModal',
-            animation: 'fade',
-          }}
-        />
-        <Stack.Screen
-          name="holds"
-          options={{
-            // Full-screen interactive board for the hold-type filter (a pushed route,
-            // not a modal, so the board's pan/pinch never competes with a modal's
-            // pan). The native stack header carries the title + back chevron; "Clear
-            // all" is a headerRight (set per-screen). Opaque, not the app's glass push
-            // header, so the board lays out below the bar (mirrors users/[userId]).
-            title: t('mobile.nav.holdFilter'),
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen
-          name="zone"
-          options={{
-            // Full-screen interactive board for the board-region (zone) filter. Same
-            // as the hold filter: native header (title + back chevron), opaque so the
-            // board sits below the bar, headerRight "Clear all" set per-screen.
-            title: t('mobile.nav.zoneFilter'),
-            headerTransparent: false,
-          }}
-        />
-        <Stack.Screen
-          name="setters"
-          options={{
-            // Setter search/multi-select for the climb filter. A pushed route (not a
-            // stacked sheet) because native sheets can't stack above the filter sheet.
-            // Native header (title + back chevron), opaque so the search bar sits below
-            // the bar; headerRight "Clear all" set per-screen. The screen's pinned
-            // "Show N climbs" footer applies; back keeps the picks as a sheet draft.
-            title: t('mobile.nav.setters'),
-            headerTransparent: false,
-          }}
-        />
-      </Stack>
+      <NativeTabletContent>
+        <Stack screenOptions={screenOptions}>
+          <Stack.Screen
+            name="index"
+            options={{
+              title: t('mobile.nav.climbs'),
+              // UIKit owns the native large title, including empty/loading branches.
+              // ClimbTopChrome adds actions; Material keeps its own app bar.
+              headerShown: nativeRootHeader,
+              headerLargeTitle: nativeRootHeader,
+              headerTransparent: nativeRootHeader,
+            }}
+          />
+          <Stack.Screen
+            name="[climbUuid]"
+            options={{
+              // The climb page is now a thin redirector: it loads the climb by uuid,
+              // opens it in the play drawer, then pops. It only ever flashes a
+              // spinner, so it has no header.
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="create"
+            options={{
+              // New climb is a focused, full-height modal task, like Mail's compose
+              // or a new reminder (HIG "Modality"). iOS: a pageSheet, with the list
+              // scaled behind it. Android: an M3 full-screen dialog sliding up. Not
+              // fullScreenModal on a phone: that snapshots the tab bar and doubles
+              // the iOS 26 accessory (docs/mobile-sheets-vs-routes.md, rule 2).
+              // iPad keeps a native editing card too; the board measures its host.
+              //
+              // Swipe-down is off: painting and pinching the board are drags, and
+              // a sheet's dismiss pan fights them (rule 3). The X leaves instead,
+              // and leaving loses nothing because the draft is kept.
+              headerShown: false,
+              presentation: 'modal',
+              gestureEnabled: false,
+              contentStyle: { backgroundColor: systemColors.secondaryBackground },
+              ...(Platform.OS === 'android' ? { animation: 'slide_from_bottom' as const } : null),
+            }}
+          />
+          <Stack.Screen
+            name="holds"
+            options={{
+              // Full-screen interactive board for the hold-type filter (a pushed route,
+              // not a modal, so the board's pan/pinch never competes with a modal's
+              // pan). The native stack header carries the title + back chevron; "Clear
+              // all" is a headerRight (set per-screen). Opaque, not the app's glass push
+              // header, so the board lays out below the bar (mirrors users/[userId]).
+              title: t('mobile.nav.holdFilter'),
+              headerTransparent: false,
+            }}
+          />
+          <Stack.Screen
+            name="zone"
+            options={{
+              // Full-screen interactive board for the board-region (zone) filter. Same
+              // as the hold filter: native header (title + back chevron), opaque so the
+              // board sits below the bar, headerRight "Clear all" set per-screen.
+              title: t('mobile.nav.zoneFilter'),
+              headerTransparent: false,
+            }}
+          />
+          <Stack.Screen
+            name="setters"
+            options={{
+              // Setter search/multi-select for the climb filter. A pushed route (not a
+              // stacked sheet) because native sheets can't stack above the filter sheet.
+              // Native header (title + back chevron), opaque so the search bar sits below
+              // the bar; headerRight "Clear all" set per-screen. The screen's pinned
+              // "Show N climbs" footer applies; back keeps the picks as a sheet draft.
+              title: t('mobile.nav.setters'),
+              headerTransparent: false,
+            }}
+          />
+          <Stack.Screen name="settings" options={{ headerShown: false }} />
+        </Stack>
+      </NativeTabletContent>
     </BoardArtVisibilityProvider>
   );
 }

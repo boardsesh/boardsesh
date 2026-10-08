@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +36,11 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress, accessibilityLabel }: ViewProps) =>
     createElement('button', { onClick: onPress, 'data-label': accessibilityLabel }, children),
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios },
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    hairlineWidth: 1,
+  },
 }));
 vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: ViewProps) => createElement('div', null, children),
@@ -47,12 +64,16 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ systemColors: { background: '#fff', separator: '#000' }, sheet: { handleStyle: {} } }),
 }));
 vi.mock('../../../lib/haptics', () => ({ hapticWarning: vi.fn() }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { error: '#f00' } }));
 vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { white: '#fff' } }));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 3: 12, 4: 16 } }));
+vi.mock('../../../theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 3: 12, 4: 16 },
+}));
 vi.mock('../../Text', () => ({ Text: ({ children }: ViewProps) => createElement('span', null, children) }));
 
 // Header: Clear + an edit toggle. List: one select button per row.
@@ -66,15 +87,30 @@ vi.mock('../QueueSheetHeader', () => ({
     ),
 }));
 vi.mock('../QueueList', () => ({
-  QueueList: ({ queue, onToggleSelect }: { queue: ClimbQueueItem[]; onToggleSelect: (uuid: string) => void }) =>
+  QueueList: ({
+    queue,
+    onToggleSelect,
+    onRemove,
+  }: {
+    queue: ClimbQueueItem[];
+    onToggleSelect: (uuid: string) => void;
+    onRemove: (uuid: string) => void;
+  }) =>
     createElement(
       'div',
       null,
-      queue.map((item) =>
+      ...queue.map((item) =>
         createElement('button', {
           key: item.uuid,
           'data-testid': `select-${item.uuid}`,
           onClick: () => onToggleSelect(item.uuid),
+        }),
+      ),
+      ...queue.map((item) =>
+        createElement('button', {
+          key: `remove-${item.uuid}`,
+          'data-testid': `remove-${item.uuid}`,
+          onClick: () => onRemove(item.uuid),
         }),
       ),
     ),
@@ -163,7 +199,10 @@ beforeEach(() => {
     const removed = new Set(uuids);
     live.current = {
       queue: live.current.queue.filter((queueItem) => !removed.has(queueItem.uuid)),
-      currentClimbQueueItem: live.current.currentClimbQueueItem,
+      currentClimbQueueItem:
+        live.current.currentClimbQueueItem && removed.has(live.current.currentClimbQueueItem.uuid)
+          ? null
+          : live.current.currentClimbQueueItem,
     };
   });
 });
@@ -215,6 +254,19 @@ describe('QueueSheet undo', () => {
     fireEvent.click(getByTestId('undo'));
     const [restoredQueue] = actions.setQueue.mock.calls[0] as [ClimbQueueItem[]];
     expect(uuidsOf(restoredQueue)).toEqual(['a', 'c']);
+  });
+
+  it('offers scoped Undo for a one-row swipe removal and keeps a peer current climb', () => {
+    const { getByTestId } = renderSheet();
+    fireEvent.click(getByTestId('remove-b'));
+    expect(actions.removeQueueItems).toHaveBeenCalledWith(['b']);
+    expect(getByTestId('undo-snackbar').getAttribute('data-message')).toBe('mobile.queueSheet.removed:1');
+    const peer = item('peer');
+    live.current = { queue: [...live.current.queue, peer], currentClimbQueueItem: peer };
+    fireEvent.click(getByTestId('undo'));
+    const [restoredQueue, restoredCurrent] = actions.setQueue.mock.calls[0] as [ClimbQueueItem[], ClimbQueueItem];
+    expect(uuidsOf(restoredQueue)).toEqual(['a', 'b', 'c', 'peer']);
+    expect(restoredCurrent.uuid).toBe('peer');
   });
 
   it('drops the offer when dismissed, so a late tap restores nothing', () => {

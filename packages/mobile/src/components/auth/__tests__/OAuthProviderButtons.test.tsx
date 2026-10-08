@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +22,8 @@ const appleButton = vi.hoisted(() => ({ props: null as ApplePressProps | null })
 const theme = vi.hoisted(() => ({ colorScheme: 'light' as 'light' | 'dark' }));
 
 vi.mock('react-native', () => ({
+  PlatformColor: (name: string) => name,
+  DynamicColorIOS: (colors: { light: string }) => colors.light,
   Platform: { OS: 'ios' },
   Pressable: ({
     accessibilityLabel,
@@ -28,7 +43,10 @@ vi.mock('react-native', () => ({
       { 'aria-label': accessibilityLabel, 'data-testid': testID, disabled, onClick: onPress },
       children,
     ),
-  StyleSheet: { create: <Styles,>(styles: Styles) => styles },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: <Styles,>(styles: Styles) => styles,
+  },
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   View: ({ children }: { children: ReactNode }) => createElement('div', null, children),
 }));
@@ -48,6 +66,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => ({ 'login.providers.google': 'Continue with Google' })[key] ?? key }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({ colorScheme: theme.colorScheme, radii: { button: 10 } }),
 }));
 vi.mock('../../../lib/auth', () => ({ isGoogleSignInConfigured: () => true }));

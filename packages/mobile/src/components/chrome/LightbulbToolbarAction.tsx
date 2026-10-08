@@ -85,6 +85,7 @@ export function LightbulbToolbarAction() {
       accessibilityLabel={accessibilityLabel}
     >
       <Icon
+        maxFontSizeMultiplier={1}
         name={lit ? 'lightbulb.fill' : 'lightbulb'}
         size={23}
         color={lit ? brandColors.warning : systemColors.label}

@@ -89,7 +89,7 @@ export function AvatarGroup({
             isHighlighted(participant) && styles.onTop,
             {
               borderColor: ringFor(participant),
-              marginLeft: index === 0 ? 0 : -overlap,
+              marginStart: index === 0 ? 0 : -overlap,
               borderRadius: size / 2,
             },
           ]}
@@ -106,7 +106,7 @@ export function AvatarGroup({
               width: size,
               height: size,
               borderRadius: size / 2,
-              marginLeft: shown.length === 0 ? 0 : -overlap,
+              marginStart: shown.length === 0 ? 0 : -overlap,
               borderColor: separatorRing,
             },
           ]}

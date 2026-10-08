@@ -6,6 +6,7 @@ import { Appbar } from 'react-native-paper';
 import { CollapsingTopChrome, GlassToolbarAction, TOP_ACTION_SIZE } from '../chrome';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
 import { PressableSurface } from '../PressableSurface';
 import { iconMap } from '../icon-map';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
@@ -170,16 +171,18 @@ export function RecordTopChrome({
               accessibilityLabel={exitLabel}
               style={[styles.materialExitAction, { borderRadius: radii.button }]}
             >
-              <Icon name={exitIcon} size={20} color={exitTint} />
-              <Text
-                variant="subheadline"
-                color={exitTint}
-                numberOfLines={1}
-                maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-                style={styles.exitLabel}
-              >
-                {exitActionLabel}
-              </Text>
+              <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
+              <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
+                <Text
+                  variant="subheadline"
+                  color={exitTint}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+                  style={styles.exitLabel}
+                >
+                  {exitActionLabel}
+                </Text>
+              </LargeContentViewer>
             </PressableSurface>
           ) : null}
         </Appbar.Header>
@@ -196,7 +199,7 @@ export function RecordTopChrome({
   const inSession = onEndSession !== undefined;
   const leadingAction = onShare ? (
     <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
-      <Icon name="person.badge.plus" size={22} color={systemColors.label} />
+      <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={22} color={systemColors.label} />
     </GlassToolbarAction>
   ) : undefined;
   // Stop is a labelled glass pill (icon + "Stop"), not an icon-only slot, so it reads
@@ -211,18 +214,20 @@ export function RecordTopChrome({
       accessibilityLabel={exitLabel}
       style={styles.glassExitAction}
     >
-      <Icon name={exitIcon} size={20} color={exitTint} />
-      <Text
-        variant="subheadline"
-        color={exitTint}
-        numberOfLines={1}
-        // The pill's height is pinned to the glass slot ladder, so the label has
-        // to stop growing before it clips.
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.exitLabel}
-      >
-        {exitActionLabel}
-      </Text>
+      <Icon maxFontSizeMultiplier={1} name={exitIcon} size={20} color={exitTint} />
+      <LargeContentViewer title={exitActionLabel} onActivate={onEndSession}>
+        <Text
+          variant="subheadline"
+          color={exitTint}
+          numberOfLines={1}
+          // The pill's height is pinned to the glass slot ladder, so the label has
+          // to stop growing before it clips.
+          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+          style={styles.exitLabel}
+        >
+          {exitActionLabel}
+        </Text>
+      </LargeContentViewer>
     </PressableSurface>
   ) : undefined;
 
@@ -278,7 +283,7 @@ const styles = StyleSheet.create({
     gap: spacing[1],
     paddingHorizontal: spacing[3],
     height: MATERIAL_EXIT_HEIGHT,
-    marginRight: spacing[1],
+    marginEnd: spacing[1],
     overflow: 'hidden',
   },
   exitLabel: {

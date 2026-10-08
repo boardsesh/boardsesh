@@ -24,6 +24,9 @@ export function FeedSectionLabel({ label }: { label: string }) {
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    maxWidth: 672,
+    alignSelf: 'center',
     paddingHorizontal: spacing[4],
     paddingTop: spacing[5],
     paddingBottom: spacing[1],

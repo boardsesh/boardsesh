@@ -1,6 +1,12 @@
-import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
+import { InlineSheetError } from '../InlineSheetError';
+import { useUnsavedSheetGuard } from '../../hooks/use-unsaved-sheet-guard';
+import { memo, useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
+import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { StyleSheet, View } from 'react-native';
-import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
@@ -48,6 +54,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   onClose,
   showDiscordLink = false,
 }: FeedbackSheetProps) {
+  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('settings');
   // The screenshot strings live in `common`, shared with the QA verdict sheet.
   const { t: tCommon } = useTranslation('common');
@@ -76,21 +83,36 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   const submitLabel = isBugReport ? t('feedbackDialog.submitBug') : t('feedbackDialog.submitRating');
   const inputPlaceholder = isBugReport ? t('feedbackForm.bugPlaceholder') : t('feedbackForm.ratingPlaceholder');
 
-  useEffect(() => {
+  const { submitError, setSubmitError, clearError } = useScopedSheetError(mode, visible);
+  const resetForm = useCallback(() => {
     setSelectedRating(null);
     setComment('');
     setCaptureBleDiag(false);
     setContactConsent(true);
     setScreenshotUris([]);
+    clearError();
     reset();
-  }, [mode, reset]);
+  }, [reset, clearError]);
+  useEffect(resetForm, [mode, resetForm]);
 
-  const snapPoints = useMemo(() => (isBugReport ? ['62%', '88%'] : ['44%', '72%']), [isBugReport]);
+  const dirty =
+    selectedRating !== null || comment.length > 0 || captureBleDiag || !contactConsent || screenshotUris.length > 0;
+  const guard = useUnsavedSheetGuard({
+    visible,
+    dirty,
+    busy: isSubmitting || isPending || isUploading,
+    onClose,
+    onDiscard: resetForm,
+    scope: mode,
+  });
+
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
 
   const handleSubmit = async () => {
     if (!canSubmit || submittingRef.current) return;
     submittingRef.current = true;
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       // Uploaded before the report so it carries keys the backend can resolve. A
       // failed upload leaves the typed report and the picked shots untouched.
@@ -100,7 +122,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         try {
           screenshotKeys = await uploadFeedbackScreenshots(screenshotUris);
         } catch {
-          showToast(tCommon('screenshots.uploadFailed'), 'error');
+          setSubmitError(tCommon('screenshots.uploadFailed'));
           return;
         } finally {
           setIsUploading(false);
@@ -136,7 +158,7 @@ export const FeedbackSheet = memo(function FeedbackSheet({
         // one must upload its own rather than reuse these.
         clearScreenshotUploadCache();
       } catch {
-        showToast(t('feedbackDialog.errorRating'), 'error');
+        setSubmitError(t('feedbackDialog.errorRating'));
       }
     } finally {
       submittingRef.current = false;
@@ -150,27 +172,30 @@ export const FeedbackSheet = memo(function FeedbackSheet({
       <ModalSheet
         ref={sheetRef}
         visible={visible}
-        onClose={onClose}
+        onDisplaced={onClose}
+        onClose={guard.requestClose}
+        enablePanDownToClose={guard.enablePanDownToClose}
         snapPoints={snapPoints}
         scrollable
         contentContainerStyle={styles.content}
         header={
           <SheetTopBar
             title={title}
-            leading={{ kind: 'cancel', onPress: onClose }}
+            leading={{ kind: 'cancel', onPress: guard.requestClose }}
             trailing={{
               kind: 'send',
               label: submitLabel,
               onPress: () => {
                 void handleSubmit();
               },
-              disabled: !canSubmit || isUploading,
-              loading: isPending || isUploading,
+              disabled: !canSubmit || isSubmitting || isPending || isUploading,
+              loading: isSubmitting || isPending || isUploading,
               prominent: true,
             }}
           />
         }
       >
+        <InlineSheetError message={submitError} visible={visible} scope={mode} />
         {!isBugReport ? (
           <View style={styles.starRow}>
             {STAR_RATING_VALUES.map((starRating) => {
@@ -263,38 +288,39 @@ export const FeedbackSheet = memo(function FeedbackSheet({
   );
 });
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
-    paddingBottom: spacing[6],
-    gap: spacing[4],
-  },
-  starRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing[2],
-  },
-  starButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  input: {
-    minHeight: 116,
-    maxHeight: 220,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.lg,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-  },
-  helperText: {
-    marginTop: -spacing[2],
-  },
-  recordingCard: {
-    overflow: 'hidden',
-    borderRadius: borderRadius.lg,
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    content: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[4],
+      paddingBottom: spacing[6],
+      gap: spacing[4],
+    },
+    starRow: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: spacing[2],
+    },
+    starButton: {
+      width: 44,
+      height: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    input: {
+      minHeight: 116,
+      maxHeight: 220,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.lg,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+    },
+    helperText: {
+      marginTop: -spacing[2],
+    },
+    recordingCard: {
+      overflow: 'hidden',
+      borderRadius: borderRadius.lg,
+    },
+  });

@@ -18,6 +18,8 @@ export type AccessoryClimbTap = {
   openGesture: GestureType;
   /** The same open-the-queue-head action as a plain callback, for non-gesture callers. */
   openPlay: () => void;
+  /** Stage the queue head before a Link performs its own native navigation. */
+  preparePlay: () => boolean;
   /** Local queue head. */
   currentItem: ClimbQueueItem | null | undefined;
 };
@@ -36,6 +38,13 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
     openPlayDrawer(accessoryClimb, {});
   }, [openPlayDrawer, accessoryClimb]);
 
+  const preparePlay = useCallback(() => {
+    if (!accessoryClimb) return false;
+    hapticLight();
+    openPlayDrawer(accessoryClimb, { navigate: false });
+    return true;
+  }, [openPlayDrawer, accessoryClimb]);
+
   const openGesture = useMemo(
     () =>
       Gesture.Tap()
@@ -47,5 +56,5 @@ export function useAccessoryClimbTap(): AccessoryClimbTap {
     [handleOpenPlay],
   );
 
-  return { openGesture, openPlay: handleOpenPlay, currentItem: currentClimbQueueItem };
+  return { openGesture, openPlay: handleOpenPlay, preparePlay, currentItem: currentClimbQueueItem };
 }

@@ -170,7 +170,9 @@ which are the explicit hexes — iOS uses `PlatformColor` for the same roles):
 | `tertiaryLabel`       | `#8E8898`                | `#6E687C`                | Tertiary text                                                                       |
 | `separator`           | `rgba(60,55,75,0.18)`    | `rgba(180,168,205,0.2)`  | Hairlines, dividers                                                                 |
 | `fill`                | `rgba(109,40,217,0.1)`   | `rgba(199,184,232,0.12)` | Faint violet track (segmented controls, fills)                                      |
-| `accent`              | `#6D28D9`                | `#A78BFA`                | Interactive-accent foreground (links, active tab). iOS uses Apple's link blue here. |
+| `accent`              | `#6D28D9`                | `#A78BFA`                | Interactive foreground. iOS brand violet adapts to Increase Contrast. |
+| `error`               | iOS `systemRed` / M3 error | iOS `systemRed` / M3 error | Destructive foreground and selected favourite hearts. |
+| `tertiaryFill`        | iOS `tertiarySystemFill` | iOS `tertiarySystemFill` | Large grouped backgrounds; `fill` is reserved for small controls. |
 
 Material tonal surfaces (`materialSurfaces`) are the same shape with M3-specific values
 (`background` `#F3EFFA` light / `#15101E` dark, `secondaryBackground` `#FFFFFF` / `#221A33`, etc.).
@@ -757,3 +759,64 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
 climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.
+
+## Native accessibility defaults
+
+The native `accessibility-ui` module reads iOS **Differentiate Without Color** and
+listens for changes, including a fresh read after returning from Settings. In
+Classic board art, uncustomised hold roles gain distinct shapes while it is on:
+start is an upward triangle, hand a circle, finish a square, foot a downward
+triangle. An explicit shape selection always wins, including a circle or the
+current system default. Saving only a colour preserves the existing shape choice;
+Reset removes explicit choices and resumes following the OS. The effective shapes
+are part of the render signature, so board-art caches update when the OS changes.
+The Boardsesh drawing instead offers its existing role-glyph suggestion. Android
+has no corresponding queryable setting; high-contrast text does not describe hold
+roles, so it does not change the marker default.
+
+Persistent climb labels in `ClimbCapsule` and `NativeAccessoryClimbRow` retain
+their chrome text cap and use a native Large Content Viewer at accessibility text
+sizes. Long-pressing the label reveals its full climb name and grade; releasing
+on it opens the play drawer. The wrapper excludes controls with their own
+long-press gestures. Android, web, and binaries without the module keep the
+ordinary view. UIKit interaction/activation and text-size changes require iOS
+device verification before extending this wrapper to more chrome.
+
+The `with-brand-accent-color` config plugin generates a light/dark iOS
+`AccentColor` asset, including Increase Contrast variants (`#4C1D95` light,
+`#C4B5FD` dark), and the app target's global accent setting. Android AppTheme
+uses the matching light/night `colorAccent`; Expo's `primaryColor` sets the same
+brand violet. These native inputs require a new binary; an OTA cannot add them.
+
+
+### Full accessibility text and board alternatives
+
+Content `Text`, native buttons, and RN inputs accept the full system text range.
+Use `AccessibleTextInput` for ordinary inputs and `AccessibleBottomSheetTextInput`
+in sheets; both share Bold Text styling, and the sheet wrapper preserves Expo
+keyboard handling and the native input ref.
+Only fixed chrome opts into an explicit cap; capped climb labels expose Large
+Content Viewer. Bold Text changes apply live and are reread on foregrounding.
+Reduce Motion and Bold Text use ref-counted external stores: one native setting
+subscription plus one foreground subscription, with revision-fenced async reads.
+PressableSurface preserves caller transforms, uses immediate opacity under Reduce
+Motion, and supplies Material ripple and semantic disabled opacity.
+Use `useTypographyStyles` for style factories so Material uses its own type scale.
+Never introduce numeric `fontSize` literals in mobile components or routes.
+
+Readable text and feed/profile columns have a 672pt maximum width on iPad.
+Logical Start/End spacing and directional SF Symbols prepare UI for RTL; board
+hold coordinates remain physical. At scales above 1.3, segmented choices become
+scrollable text-sized tabs. Native linear settings sliders commit once on release;
+nonlinear ValueSlider tracks retain their existing mapping.
+
+Boards announce the rendered hold-role counts. Play boards expose adjustable
+previous/next actions at queue boundaries. Create's “Choose holds from a list”
+switch replaces the drawing area with a virtualized list using the same paint and
+role-picker callbacks. A short fast flick commits a carousel swipe; springs use
+release velocity and retain the host's post-render handoff.
+
+Device QA remains required: iPhone/iPad AX1–AX5 plus Bold Text, VoiceOver/TalkBack
+hold editing and queue boundaries, native slider drag/accessibility commits,
+keyboard-visible form submission, RTL semantic navigation, and Reduce Motion.
+Linux typechecking/tests/bundles cannot validate UIKit/SwiftUI layout or gestures.

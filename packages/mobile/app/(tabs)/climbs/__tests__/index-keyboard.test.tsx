@@ -1,4 +1,17 @@
 // @vitest-environment jsdom
+vi.mock('../../../../src/components/AccessibleTextInput', async () => {
+  const { TextInput } = await import('react-native');
+  return { AccessibleTextInput: TextInput };
+});
+vi.mock('../../../../src/hooks/use-bold-text', () => ({ useBoldText: () => false }));
+vi.mock('../../../../src/components/PressableSurface', async () => {
+  const { Pressable } = await import('react-native');
+  const { createElement } = await import('react');
+  return {
+    PressableSurface: (props: React.ComponentProps<typeof Pressable>) =>
+      createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
+  };
+});
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -86,9 +99,16 @@ type FlashListProps<Item> = {
 };
 
 vi.mock('react-native', () => ({
+  Pressable: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
+    createElement('button', { onClick: disabled ? undefined : onPress }, children),
   View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
     createElement('div', testID ? { 'data-testid': testID } : null, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
+  StyleSheet: {
+    flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)),
+    create: (styles: Record<string, unknown>) => styles,
+    absoluteFill: {},
+    hairlineWidth: 1,
+  },
   RefreshControl: ({ refreshing }: { refreshing?: boolean }) =>
     createElement('div', { 'data-refresh-control': 'true', 'data-refreshing': String(!!refreshing) }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
@@ -106,6 +126,9 @@ vi.mock('react-native', () => ({
       return { cancel: () => undefined };
     },
   },
+}));
+vi.mock('../../../../src/hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ isPad: false, isTablet: false, widthClass: 'compact' }),
 }));
 
 vi.mock('@shopify/flash-list', () => ({
@@ -307,6 +330,7 @@ vi.mock('../../../../src/providers/drawer-host-provider', () => ({
 }));
 
 vi.mock('../../../../src/providers/theme-provider', () => ({
+  useOptionalTheme: () => null,
   useTheme: () => ({
     systemColors: {
       background: '#fff',
@@ -469,7 +493,10 @@ vi.mock('../../../../src/lib/analytics', () => ({ track: mocks.track }));
 vi.mock('../../../../src/theme/ios-colors', () => ({
   iosSystemColors: { systemGray4: '#C7C7CC' },
 }));
-vi.mock('../../../../src/theme/tokens', () => ({ spacing: { 2: 8 } }));
+vi.mock('../../../../src/theme/tokens', () => ({
+  opacity: { disabled: 0.5 },
+  spacing: { 2: 8 },
+}));
 vi.mock('../../../../src/theme/layout', () => ({ glassSize: { standard: 48 } }));
 vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }));
 
@@ -725,7 +752,11 @@ describe('ClimbList previous results standing in for a loading search', () => {
       expect.objectContaining({ climb: expect.objectContaining({ uuid: 'climb-1' }) }),
     );
     expect(mocks.openClimbActions).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
-    expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
+    expect(mocks.openAddToPlaylist).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'climb-1' }),
+      undefined,
+      undefined,
+    );
   });
 });
 

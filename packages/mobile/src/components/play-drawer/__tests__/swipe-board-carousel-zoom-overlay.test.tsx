@@ -40,6 +40,7 @@ vi.mock('react-native', () => ({
   PixelRatio: { get: () => 2 },
   // The theme tokens the carousel imports resolve iOS system colours at module load.
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock('../../../hooks/native-tablet-pane-width', () => ({
+  useTabletPaneWidth: () => ({ width: cfg.width, sidebarWidth: 96 }),
+}));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
@@ -28,6 +31,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: cfg.width, height: 1024 }),
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
 }));
 

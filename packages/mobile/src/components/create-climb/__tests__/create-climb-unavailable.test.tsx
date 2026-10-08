@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ loading: false, canGoBack: true, back: vi.fn(), replace: vi.fn(), notify: vi.fn() }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
+  BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
+  DynamicColorIOS: (appearances: { light: string }) => appearances.light,
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { create: (styles: unknown) => styles },
@@ -14,6 +16,7 @@ vi.mock('react-native-safe-area-context', () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 vi.mock('expo-router', () => ({
+  useIsFocused: () => true,
   useRouter: () => ({ canGoBack: () => state.canGoBack, back: state.back, replace: state.replace }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));

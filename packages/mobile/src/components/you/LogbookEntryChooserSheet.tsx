@@ -1,12 +1,13 @@
+import { PressableSurface } from '../PressableSurface';
 import { useCallback, useMemo, useRef, type ComponentRef } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { parseTickTime } from '@boardsesh/profile-stats';
 import { displayedAttemptCount, normalizeLogbookQuality } from '@boardsesh/logbook';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { MEDIUM_SNAP_POINTS, androidSafeSnapPoints } from '../sheet-snap-points';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -52,7 +53,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<ComponentRef<typeof BottomSheetModal>>(null);
   const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['45%']), []);
+  const snapPoints = useMemo(() => androidSafeSnapPoints(MEDIUM_SNAP_POINTS), []);
 
   const handlePick = useCallback(
     (entry: AscentFeedItem) => {
@@ -82,7 +83,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
         .filter(Boolean)
         .join(' · ');
       return (
-        <Pressable
+        <PressableSurface
           onPress={() => handlePick(entry)}
           accessibilityRole="button"
           accessibilityLabel={`${timeLabel}, ${meta}`}
@@ -106,7 +107,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
             size={18}
             color={intent === 'delete' ? brandColors.error : systemColors.secondaryLabel}
           />
-        </Pressable>
+        </PressableSurface>
       );
     },
     [brandColors, systemColors, i18n.language, t, intent, handlePick],
@@ -139,10 +140,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
 }
 
 const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing[4],
-    gap: spacing[2],
-  },
+  content: { width: '100%', maxWidth: 672, alignSelf: 'center', paddingHorizontal: spacing[4], gap: spacing[2] },
   title: {
     marginBottom: spacing[2],
   },

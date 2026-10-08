@@ -1,5 +1,6 @@
+import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useMemo } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
@@ -161,7 +162,7 @@ const WallActionRow = memo(function WallActionRow({
     );
   }
   return (
-    <Pressable
+    <PressableSurface
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
@@ -169,7 +170,7 @@ const WallActionRow = memo(function WallActionRow({
       style={({ pressed }) => [styles.row, separatorStyle, pressed ? styles.pressed : null]}
     >
       {content}
-    </Pressable>
+    </PressableSurface>
   );
 });
 

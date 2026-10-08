@@ -293,6 +293,13 @@ describe('ThemeProvider', () => {
       expect(result.current.brandColors.error).toBe('#F87171');
       expect(result.current.systemColors.accent).toBe('#A78BFA');
     });
+
+    it('exposes the M3 error role as systemColors.error, scheme-aware', async () => {
+      useColorSchemeMock.mockReturnValue('dark');
+      const { result } = renderHook(() => useTheme(), { wrapper });
+      await waitFor(() => expect(getMock).toHaveBeenCalled());
+      expect(result.current.systemColors.error).toBe('#F87171');
+    });
   });
 
   describe('hydration race guard', () => {

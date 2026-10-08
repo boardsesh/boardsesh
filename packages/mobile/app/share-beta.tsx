@@ -1,5 +1,7 @@
+import { AccessibleTextInput as TextInput } from '../src/components/AccessibleTextInput';
+import { useTypographyStyles, type TypographyScale } from '../src/hooks/use-typography-styles';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, TextInput } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,7 +37,6 @@ import {
   type ShareBetaListItem,
 } from '../src/lib/share-beta-list';
 import { spacing, borderRadius } from '../src/theme/tokens';
-import { iosSystemColors } from '../src/theme/ios-colors';
 import { holdUntilLaunchReady } from '../src/components/launch-update/hold-until-launch-ready';
 
 // Keep the ascents query from refiring on every keystroke; commit the search
@@ -50,6 +51,7 @@ const SEARCH_DEBOUNCE_MS = 300;
  * arrives as a route param so this screen is decoupled from the native module.
  */
 function ShareBetaScreen() {
+  const styles = useTypographyStyles(createStyles);
   // `link` is what the share target hands over. `screenshotShareBeta` is the
   // capture's way in — see the resolver below.
   const { link: sharedLink, screenshotShareBeta } = useLocalSearchParams<{
@@ -183,7 +185,7 @@ function ShareBetaScreen() {
         return (
           <Text
             variant="footnote"
-            color={suggested ? brandColors.primary : systemColors.tertiaryLabel}
+            color={suggested ? brandColors.primary : systemColors.secondaryLabel}
             style={styles.sectionLabel}
             accessibilityRole="header"
           >
@@ -193,7 +195,7 @@ function ShareBetaScreen() {
       }
       return <ShareBetaAscentRow ascent={item.ascent} source={item.source} onActivate={handleAttach} />;
     },
-    [brandColors.primary, handleAttach, systemColors.tertiaryLabel, t],
+    [brandColors.primary, handleAttach, systemColors.secondaryLabel, t],
   );
 
   // One flat, fully virtualized list: section headers + suggested rows + the
@@ -262,7 +264,7 @@ function ShareBetaScreen() {
             {caption ?? link}
           </Text>
           {preview.isLoading && (
-            <Text variant="caption2" color={systemColors.tertiaryLabel}>
+            <Text variant="caption2" color={systemColors.secondaryLabel}>
               {t('mobile.betaVideos.shareReadingCaption')}
             </Text>
           )}
@@ -277,7 +279,7 @@ function ShareBetaScreen() {
         value={searchText}
         onChangeText={setSearchText}
         placeholder={t('mobile.betaVideos.shareSearchPlaceholder')}
-        placeholderTextColor={iosSystemColors.systemGray}
+        placeholderTextColor={systemColors.tertiaryLabel}
         autoCapitalize="none"
         autoCorrect={false}
         returnKeyType="search"
@@ -339,76 +341,77 @@ function ShareBetaScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
-  },
-  linkCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    marginHorizontal: spacing[4],
-    padding: spacing[3],
-    borderRadius: borderRadius.md,
-  },
-  thumb: { width: 44, height: 44, borderRadius: borderRadius.sm },
-  thumbFallback: { alignItems: 'center', justifyContent: 'center' },
-  linkText: { flex: 1, gap: 2 },
-  sectionLabel: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[1],
-    fontWeight: '600',
-  },
-  prompt: { paddingHorizontal: spacing[4], marginTop: spacing[4], marginBottom: spacing[2] },
-  input: {
-    marginHorizontal: spacing[4],
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
-    fontSize: 16,
-    marginBottom: spacing[2],
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    marginHorizontal: spacing[4],
-    marginBottom: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-    borderRadius: borderRadius.md,
-  },
-  errorText: { flex: 1 },
-  listWrapper: { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing[4], padding: spacing[6] },
-  centeredText: { textAlign: 'center' },
-  footer: { paddingVertical: spacing[5], alignItems: 'center' },
-  empty: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 96,
-    paddingHorizontal: spacing[8],
-    gap: spacing[3],
-  },
-  emptyText: { textAlign: 'center' },
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.15)',
-  },
-});
+const createStyles = (textStyles: TypographyScale) =>
+  StyleSheet.create({
+    container: { flex: 1 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing[4],
+      paddingVertical: spacing[3],
+    },
+    linkCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[3],
+      marginHorizontal: spacing[4],
+      padding: spacing[3],
+      borderRadius: borderRadius.md,
+    },
+    thumb: { width: 44, height: 44, borderRadius: borderRadius.sm },
+    thumbFallback: { alignItems: 'center', justifyContent: 'center' },
+    linkText: { flex: 1, gap: 2 },
+    sectionLabel: {
+      paddingHorizontal: spacing[4],
+      paddingTop: spacing[3],
+      paddingBottom: spacing[1],
+      fontWeight: '600',
+    },
+    prompt: { paddingHorizontal: spacing[4], marginTop: spacing[4], marginBottom: spacing[2] },
+    input: {
+      marginHorizontal: spacing[4],
+      borderWidth: StyleSheet.hairlineWidth,
+      borderRadius: borderRadius.md,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[3],
+      fontSize: textStyles.callout.fontSize,
+      marginBottom: spacing[2],
+    },
+    errorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing[2],
+      marginHorizontal: spacing[4],
+      marginBottom: spacing[2],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+      borderRadius: borderRadius.md,
+    },
+    errorText: { flex: 1 },
+    listWrapper: { flex: 1 },
+    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing[4], padding: spacing[6] },
+    centeredText: { textAlign: 'center' },
+    footer: { paddingVertical: spacing[5], alignItems: 'center' },
+    empty: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 96,
+      paddingHorizontal: spacing[8],
+      gap: spacing[3],
+    },
+    emptyText: { textAlign: 'center' },
+    overlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(0,0,0,0.15)',
+    },
+  });
 
 // iOS presents this route as a native modal, above the launch update
 // placeholder, and a URL can open it on a cold start. Held until launch is
