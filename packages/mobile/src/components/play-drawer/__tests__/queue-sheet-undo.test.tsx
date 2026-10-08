@@ -3,6 +3,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import { restoreRemovedQueueItems } from '../../../lib/queue-undo';
 
 // The queue sheet's Clear and bulk Remove each offer an Undo (HIG "Undo and
 // redo"). The Undo must restore through the queue's ordinary whole-queue
@@ -10,7 +11,11 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 // must keep whatever a crew member changed in the meantime.
 
 type Snapshot = { queue: ClimbQueueItem[]; currentClimbQueueItem: ClimbQueueItem | null };
-const live = vi.hoisted(() => ({ current: { queue: [], currentClimbQueueItem: null } as Snapshot }));
+const live = vi.hoisted(() => ({
+  current: { queue: [], currentClimbQueueItem: null } as Snapshot,
+  sessionId: 'session-1' as string | null,
+  boardAccountScope: 'kilter:account-1',
+}));
 
 type ViewProps = { children?: ReactNode; testID?: string; onPress?: () => void; accessibilityLabel?: string };
 vi.mock('react-native', () => ({
@@ -92,11 +97,13 @@ const actions = vi.hoisted(() => ({
   clearQueue: vi.fn(),
   removeQueueItems: vi.fn(),
   setQueue: vi.fn(),
+  restoreQueueItems: vi.fn(),
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => live.current,
   useQueueActions: () => actions,
   usePlaylistSuggestionSource: () => null,
+  useQueueSessionId: () => ({ sessionId: live.sessionId, undoScope: `${live.sessionId}:${live.boardAccountScope}` }),
 }));
 
 import { QueueSheet, type QueueSheetHandle } from '../QueueSheet';
@@ -123,18 +130,17 @@ function item(uuid: string): ClimbQueueItem {
 
 const uuidsOf = (queue: ClimbQueueItem[]) => queue.map((queueItem) => queueItem.uuid);
 
+const sheetProps = {
+  board: { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+  onClose: () => {},
+  onClimbPress: () => {},
+  onSuggestionPress: () => {},
+  onTickHistory: () => {},
+};
+
 function renderSheet() {
   const ref = createRef<QueueSheetHandle>();
-  const view = render(
-    createElement(QueueSheet, {
-      ref,
-      board: { boardName: 'kilter' as const, layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
-      onClose: () => {},
-      onClimbPress: () => {},
-      onSuggestionPress: () => {},
-      onTickHistory: () => {},
-    }),
-  );
+  const view = render(createElement(QueueSheet, { ...sheetProps, ref }));
   act(() => ref.current?.present());
   return view;
 }
@@ -142,8 +148,14 @@ function renderSheet() {
 beforeEach(() => {
   const queue = ['a', 'b', 'c'].map(item);
   live.current = { queue, currentClimbQueueItem: queue[1] };
+  live.sessionId = 'session-1';
+  live.boardAccountScope = 'kilter:account-1';
   for (const mock of Object.values(actions)) mock.mockReset();
   actions.getQueueSnapshot.mockImplementation(() => live.current);
+  actions.restoreQueueItems.mockImplementation((before: Snapshot, removedUuids: ReadonlySet<string>) => {
+    const restored = restoreRemovedQueueItems(before, removedUuids, live.current);
+    actions.setQueue(restored.queue, restored.currentClimbQueueItem);
+  });
   actions.clearQueue.mockImplementation(() => {
     live.current = { queue: [], currentClimbQueueItem: null };
   });
@@ -211,5 +223,41 @@ describe('QueueSheet undo', () => {
     fireEvent.click(getByTestId('undo-dismiss'));
     expect(queryByTestId('undo-snackbar')).toBeNull();
     expect(actions.setQueue).not.toHaveBeenCalled();
+  });
+
+  it('drops the offer when the session ends or changes, so Undo cannot write into another room', () => {
+    const { getByTestId, queryByTestId, rerender } = renderSheet();
+    fireEvent.click(getByTestId('clear'));
+    expect(getByTestId('undo-snackbar')).toBeTruthy();
+
+    // SessionEnded / leave → clearSession → the provider's session id changes.
+    live.sessionId = null;
+    rerender(createElement(QueueSheet, sheetProps));
+    expect(queryByTestId('undo-snackbar')).toBeNull();
+    expect(actions.setQueue).not.toHaveBeenCalled();
+  });
+
+  it.each(['tension:account-1', 'kilter:account-2'])('drops solo Undo on board/account switch to %s', (scope) => {
+    live.sessionId = null;
+    const { getByTestId, queryByTestId, rerender } = renderSheet();
+    fireEvent.click(getByTestId('clear'));
+    live.boardAccountScope = scope;
+    rerender(createElement(QueueSheet, sheetProps));
+    expect(queryByTestId('undo-snackbar')).toBeNull();
+    expect(actions.restoreQueueItems).not.toHaveBeenCalled();
+  });
+
+  it("keeps an Undo within the 500-climb sync cap by dropping re-added climbs, never the crew's", () => {
+    const fullQueue = Array.from({ length: 500 }, (_unused, index) => item(`q-${index}`));
+    live.current = { queue: fullQueue, currentClimbQueueItem: null };
+    const { getByTestId } = renderSheet();
+    fireEvent.click(getByTestId('clear'));
+    live.current = { queue: [item('peer')], currentClimbQueueItem: null };
+
+    fireEvent.click(getByTestId('undo'));
+    const [restoredQueue] = actions.setQueue.mock.calls[0] as [ClimbQueueItem[]];
+    expect(restoredQueue).toHaveLength(500);
+    expect(restoredQueue.at(-1)?.uuid).toBe('peer');
+    expect(restoredQueue.some((queueItem) => queueItem.uuid === 'q-499')).toBe(false);
   });
 });

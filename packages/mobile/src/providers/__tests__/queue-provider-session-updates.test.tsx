@@ -141,7 +141,7 @@ const queueMutations = vi.hoisted(() => ({
   setCurrentClimb: vi.fn(async () => {}),
   mirrorCurrentClimb: vi.fn(async () => {}),
   publishPlaybackState: vi.fn(async () => {}),
-  setQueue: vi.fn(async () => {}),
+  setQueue: vi.fn(async (_queue: ClimbQueueItem[], _current?: ClimbQueueItem) => {}),
   replaceQueueItem: vi.fn(async () => {}),
   confirmClimbOnWall: vi.fn(async () => {}),
   reportWallDisconnect: vi.fn(async () => {}),
@@ -279,6 +279,8 @@ type Snapshot = {
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
   removeQueueItems: ReturnType<typeof useQueue>['removeQueueItems'];
+  restoreQueueItems: ReturnType<typeof useQueue>['restoreQueueItems'];
+  undoScope: string;
   clearQueue: ReturnType<typeof useQueue>['clearQueue'];
   reorderQueue: ReturnType<typeof useQueue>['reorderQueue'];
   setQueue: ReturnType<typeof useQueue>['setQueue'];
@@ -362,6 +364,7 @@ function createJoinSessionResponse() {
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
   const queue = useQueue();
+  const { undoScope } = useQueueSessionId();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
   // sessionUsers moved out of useQueue() into its own live-stats context so the
   // ≤1/2s party push no longer re-renders every queue consumer; read it here.
@@ -381,6 +384,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       addToQueue: queue.addToQueue,
       removeFromQueue: queue.removeFromQueue,
       removeQueueItems: queue.removeQueueItems,
+      restoreQueueItems: queue.restoreQueueItems,
+      undoScope,
       clearQueue: queue.clearQueue,
       reorderQueue: queue.reorderQueue,
       setQueue: queue.setQueue,
@@ -406,6 +411,8 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.addToQueue,
     queue.removeFromQueue,
     queue.removeQueueItems,
+    queue.restoreQueueItems,
+    undoScope,
     queue.clearQueue,
     queue.reorderQueue,
     queue.setQueue,
@@ -3554,7 +3561,7 @@ describe('QueueProvider mutation-failure resync', () => {
   // setQueue. The removes must ride the serialized lane so that restore reaches
   // the server AFTER them — a late remove landing behind it would delete the
   // climbs the Undo just put back, for the whole crew.
-  it('sends a bulk remove on the queue lane, so an Undo setQueue lands after it', async () => {
+  it('merges Undo at send time, retaining peer adds, removals and order during a removal retry', async () => {
     const snapshots: Snapshot[] = [];
     routeHttpRequest(queueStateResponse([]));
     renderProvider((snapshot) => snapshots.push(snapshot));
@@ -3598,28 +3605,96 @@ describe('QueueProvider mutation-failure resync', () => {
     await waitFor(() => {
       expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['bulk-kept']);
     });
+    // Sequential: only the first remove is on the wire while it is held.
     await waitFor(() => {
-      expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(2);
+      expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(1);
     });
 
     const afterRemove = snapshots.at(-1);
     if (!afterRemove) throw new Error('queue snapshot was not captured');
     act(() => {
-      afterRemove.setQueue(restoredQueue, null);
+      afterRemove.restoreQueueItems(
+        { queue: restoredQueue, currentClimbQueueItem: null },
+        new Set(['bulk-one', 'bulk-two']),
+        afterRemove.undoScope,
+      );
     });
-    // The restore is local at once…
-    await waitFor(() => {
-      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['bulk-one', 'bulk-two', 'bulk-kept']);
-    });
-    // …but its wire send waits behind the removes still in flight.
+    // A retry is still in flight; Undo must not overtake it.
     expect(queueMutations.setQueue).not.toHaveBeenCalled();
+    // A peer drops the kept item, adds two, and reorders them while we wait.
+    const peerLast = makeQueueItem('peer-last');
+    const peerFirst = makeQueueItem('peer-first');
+    act(() => pushFullSync([peerFirst, peerLast], peerFirst, 1));
+    await waitFor(() =>
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['peer-first', 'peer-last']),
+    );
 
     await act(async () => {
       releaseRemoves();
       await removesHeld;
     });
     await waitFor(() => {
+      // Every original remove, including its retry, settles before the restore.
       expect(order).toEqual(['remove:bulk-one', 'remove:bulk-two', 'setQueue']);
+      const [sentQueue, sentCurrent] = queueMutations.setQueue.mock.calls[0];
+      expect(sentQueue.map((item) => item.uuid)).toEqual(['bulk-one', 'bulk-two', 'peer-first', 'peer-last']);
+      expect(sentCurrent?.uuid).toBe('peer-first');
+    });
+  });
+
+  // N concurrent removes contend on the backend's single-key CAS (three retries,
+  // no backoff) and mostly fail, which resyncs the "removed" climbs back in. The
+  // lane sends them one at a time, and one failure does not reorder the rest.
+  it('sends a clear one remove at a time, in order, past a failed one', async () => {
+    const snapshots: Snapshot[] = [];
+    routeHttpRequest(queueStateResponse([]));
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      void prepared.addToQueue(makeQueueItem('seq-one', 'climb-seq-one'));
+      void prepared.addToQueue(makeQueueItem('seq-two', 'climb-seq-two'));
+      void prepared.addToQueue(makeQueueItem('seq-three', 'climb-seq-three'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(3);
+    });
+
+    const events: string[] = [];
+    let inFlight = 0;
+    queueMutations.removeQueueItem.mockClear();
+    queueMutations.removeQueueItem.mockImplementation(async (uuid: string) => {
+      inFlight += 1;
+      events.push(`start:${uuid}:${inFlight}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight -= 1;
+      events.push(`end:${uuid}`);
+      if (uuid === 'seq-two') throw new Error('network');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.clearQueue();
+    });
+    await waitFor(() => {
+      expect(events).toHaveLength(6);
+    });
+    // Never two in flight, and the failure on the second leaves the third in place.
+    expect(events).toEqual([
+      'start:seq-one:1',
+      'end:seq-one',
+      'start:seq-two:1',
+      'end:seq-two',
+      'start:seq-three:1',
+      'end:seq-three',
+    ]);
+    // One failure → one reconcile for the batch.
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
     });
   });
 

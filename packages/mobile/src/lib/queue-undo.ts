@@ -1,4 +1,4 @@
-import type { ClimbQueueItem } from '@boardsesh/queue';
+import { MAX_SYNCED_QUEUE_ITEMS, type ClimbQueueItem } from '@boardsesh/queue';
 
 export type QueueContentSnapshot = {
   queue: ClimbQueueItem[];
@@ -19,15 +19,22 @@ export type QueueContentSnapshot = {
  *   the removal (the first slot when nothing did);
  * - an item that was neither removed here nor is live any more stays gone —
  *   someone else dropped it;
- * - the current climb is the live one; only when nothing is current does the
- *   pre-removal current come back, and only if it is in the restored queue.
+ * - the current climb is the live one. Only when nothing is current, AND the
+ *   pre-removal current is one of the climbs this climber removed, does it come
+ *   back: a null current with that climb never removed here means a crew
+ *   member unset it, and the Undo must not override them;
+ * - the result never exceeds `cap` (the party backend's `setQueue` limit, which
+ *   throws rather than truncating). Live items always stay; re-added items are
+ *   dropped from the end until it fits, and `droppedCount` says how many.
  */
 export function restoreRemovedQueueItems(
   before: QueueContentSnapshot,
   removedUuids: ReadonlySet<string>,
   live: QueueContentSnapshot,
-): QueueContentSnapshot {
+  cap: number = MAX_SYNCED_QUEUE_ITEMS,
+): QueueContentSnapshot & { droppedCount: number } {
   const restored = [...live.queue];
+  const readded = new Set<string>();
   let anchorUuid: string | null = null;
   for (const item of before.queue) {
     if (restored.some((restoredItem) => restoredItem.uuid === item.uuid)) {
@@ -38,14 +45,23 @@ export function restoreRemovedQueueItems(
     const anchorIndex =
       anchorUuid === null ? -1 : restored.findIndex((restoredItem) => restoredItem.uuid === anchorUuid);
     restored.splice(anchorIndex + 1, 0, item);
+    readded.add(item.uuid);
     anchorUuid = item.uuid;
+  }
+
+  let droppedCount = 0;
+  for (let index = restored.length - 1; index >= 0 && restored.length > cap; index -= 1) {
+    if (!readded.has(restored[index].uuid)) continue;
+    readded.delete(restored[index].uuid);
+    restored.splice(index, 1);
+    droppedCount += 1;
   }
 
   const previousCurrentUuid = before.currentClimbQueueItem?.uuid;
   const currentClimbQueueItem =
     live.currentClimbQueueItem ??
-    (previousCurrentUuid === undefined
-      ? null
-      : (restored.find((restoredItem) => restoredItem.uuid === previousCurrentUuid) ?? null));
-  return { queue: restored, currentClimbQueueItem };
+    (previousCurrentUuid !== undefined && readded.has(previousCurrentUuid)
+      ? (restored.find((restoredItem) => restoredItem.uuid === previousCurrentUuid) ?? null)
+      : null);
+  return { queue: restored, currentClimbQueueItem, droppedCount };
 }

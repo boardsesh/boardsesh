@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
@@ -10,10 +10,15 @@ import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
 import { Text } from '../Text';
 import type { QueueItemRowBoard } from '../QueueItemRow';
-import { usePlaylistSuggestionSource, useQueueData, useQueueActions } from '../../providers/queue-provider';
+import {
+  usePlaylistSuggestionSource,
+  useQueueData,
+  useQueueActions,
+  useQueueSessionId,
+} from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticWarning } from '../../lib/haptics';
-import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../../lib/queue-undo';
+import type { QueueContentSnapshot } from '../../lib/queue-undo';
 import { UndoSnackbar } from '../UndoSnackbar';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -27,6 +32,8 @@ const QUEUE_UNDO_DURATION = 8000;
 type PendingQueueUndo = {
   nonce: number;
   kind: 'cleared' | 'removed';
+  /** The session the removal happened in; the offer dies with it. */
+  scope: string;
   before: QueueContentSnapshot;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   removedUuids: ReadonlySet<string>;
@@ -73,11 +80,12 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
     removeQueueItems,
     clearQueue,
     reorderQueue,
-    setQueue,
+    restoreQueueItems,
     getQueueSnapshot,
     setPlaylistSuggestionSource,
   } = useQueueActions();
   const playlistSuggestionSource = usePlaylistSuggestionSource();
+  const { undoScope } = useQueueSessionId();
   const liveQueueData = useQueueData();
 
   const [isEditMode, setIsEditMode] = useState(false);
@@ -100,6 +108,11 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // in the sheet, not a root portal: the native sheet would cover a portal.
   const [pendingUndo, setPendingUndo] = useState<PendingQueueUndo | null>(null);
   const undoNonceRef = useRef(0);
+  // Session, board and account changes retire the offer, including solo mode.
+  // Otherwise Undo would write the prior queue into the new climbing context.
+  useEffect(() => {
+    setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
+  }, [undoScope]);
 
   const snapPoints = useMemo(() => ['70%', '95%'], []);
 
@@ -200,12 +213,13 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
       setPendingUndo({
         nonce: undoNonceRef.current,
         kind,
+        scope: undoScope,
         before,
         playlistSuggestionSource,
         removedUuids,
       });
     },
-    [playlistSuggestionSource],
+    [playlistSuggestionSource, undoScope],
   );
 
   const handleClearAll = useCallback(() => {
@@ -228,21 +242,20 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
     offerUndo('removed', before, removedUuids);
   }, [selectedItems, removeQueueItems, getQueueSnapshot, offerUndo]);
 
-  // Put back what this climber removed through the queue's normal whole-queue
-  // replace, so the crew gets it as an ordinary SET_QUEUE. setQueue rides the
-  // same serialized lane as the removals, so it reaches the server after them.
-  // Anything a crew member added, removed or reordered meanwhile is kept.
+  // The provider composes the restore when the removal lane finishes. Crew
+  // additions, removals and reorders made during that wait stay in the payload.
   const handleUndo = useCallback(() => {
-    if (!pendingUndo) return;
-    const restored = restoreRemovedQueueItems(pendingUndo.before, pendingUndo.removedUuids, getQueueSnapshot());
-    setQueue(restored.queue, restored.currentClimbQueueItem);
+    if (!pendingUndo || pendingUndo.scope !== undoScope) return;
+    // Merge at wire-send time, after the removal lane finishes. A peer may
+    // change the queue between this tap and then.
+    restoreQueueItems(pendingUndo.before, pendingUndo.removedUuids, pendingUndo.scope);
     // A clear also dropped the playlist feed behind the queue; bring it back
     // unless something else has taken its place since.
     if (pendingUndo.kind === 'cleared' && pendingUndo.playlistSuggestionSource && !playlistSuggestionSource) {
       setPlaylistSuggestionSource(pendingUndo.playlistSuggestionSource);
     }
     setPendingUndo(null);
-  }, [pendingUndo, getQueueSnapshot, setQueue, playlistSuggestionSource, setPlaylistSuggestionSource]);
+  }, [pendingUndo, undoScope, restoreQueueItems, playlistSuggestionSource, setPlaylistSuggestionSource]);
 
   const handleUndoDismiss = useCallback(() => setPendingUndo(null), []);
 

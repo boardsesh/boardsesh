@@ -507,6 +507,16 @@ just did. The rules:
    that toasts must not also call a notification haptic, or the climber feels it twice. An
    outcome with no toast (an inline error, a sheet closing on save) keeps its own haptic.
 
+### Queue Undo
+
+Clear and bulk remove offer Undo inside the queue sheet, where a native modal cannot hide it.
+The provider serializes the removals and composes Undo from the live queue when those requests
+finish, preserving crew additions, removals and order during a retry. The shared GraphQL transport
+owns bounded attempts and rate-limit retries; do not race a second deadline against that promise.
+Undo restores the current climb only if this removal cleared it, keeps live items within the
+500-climb sync limit, and expires when the session, board configuration or account changes.
+VoiceOver announcements queue behind current speech; Android uses its live region.
+
 ---
 
 ## Iconography

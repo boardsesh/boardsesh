@@ -1,3 +1,4 @@
+import type { QueueContentSnapshot } from '../../lib/queue-undo';
 import type { WidgetMirrorEvent } from '../../../modules/live-activity/src/index';
 import { createContext, useContext } from 'react';
 import type {
@@ -79,9 +80,11 @@ type QueueContextValue = {
   removeFromQueue: (uuid: string) => void;
   /**
    * Remove several queue items in one intent. The wire sends share the
-   * serialized queue lane, so a following `setQueue` (an Undo) lands after them.
+   * serialized queue lane, so `restoreQueueItems` lands after them.
    */
   removeQueueItems: (uuids: readonly string[]) => void;
+  /** Merge an Undo against live state when its serialized removal finishes. */
+  restoreQueueItems: (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => void;
   /** `source` is analytics attribution only — a drag in the queue sheet vs a Play next. */
   reorderQueue: (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => void;
   clearQueue: () => void;
@@ -237,6 +240,8 @@ export const QueueSessionControlContext = createContext<QueueSessionControlConte
  */
 type QueueSessionIdContextValue = {
   sessionId: string | null;
+  /** Scope for Undo offers: session, physical board configuration and account. */
+  undoScope: string;
 };
 
 export const QueueSessionIdContext = createContext<QueueSessionIdContextValue | null>(null);

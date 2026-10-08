@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Toast, type ToastVariant, type ToastData } from '../components/Toast';
 import { hapticSuccess, hapticError } from '../lib/haptics';
+import { announceQueued } from '../lib/announce-queued';
 
 const MAX_VISIBLE_TOASTS = 2;
 const DEFAULT_DURATION = 3000;
@@ -38,7 +39,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     // VoiceOver ignores `accessibilityLiveRegion` (Android-only), so iOS is told
     // explicitly, once per toast. Android already reads the live region; an
     // announce there would read the message twice.
-    if (Platform.OS === 'ios') AccessibilityInfo.announceForAccessibility(message);
+    if (Platform.OS === 'ios') announceQueued(message);
 
     setToasts((prev) => {
       const next = [...prev, toast];

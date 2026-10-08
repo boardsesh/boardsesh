@@ -122,6 +122,7 @@ vi.mock('../../../providers/queue-provider', () => ({
   useQueueData: () => queueData.current,
   useQueueActions: () => queueActions,
   usePlaylistSuggestionSource: () => null,
+  useQueueSessionId: () => ({ sessionId: null }),
 }));
 
 import { QueueSheet, type QueueSheetHandle } from '../QueueSheet';

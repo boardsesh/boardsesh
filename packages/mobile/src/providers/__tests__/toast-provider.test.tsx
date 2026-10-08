@@ -3,14 +3,23 @@ import { useEffect, createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
-const native = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android', announce: vi.fn() }));
+const native = vi.hoisted(() => ({
+  os: 'ios' as 'ios' | 'android',
+  announce: vi.fn(),
+  announceWithOptions: vi.fn() as ReturnType<typeof vi.fn> | undefined,
+}));
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
       return native.os;
     },
   },
-  AccessibilityInfo: { announceForAccessibility: native.announce },
+  AccessibilityInfo: {
+    announceForAccessibility: (message: string) => native.announce(message),
+    get announceForAccessibilityWithOptions() {
+      return native.announceWithOptions;
+    },
+  },
   PlatformColor: (name: string) => name,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   StyleSheet: { absoluteFill: {}, create: (styles: Record<string, unknown>) => styles },
@@ -70,6 +79,7 @@ function ToastLauncher({ variant = 'success' }: { variant?: 'success' | 'error' 
 beforeEach(() => {
   native.os = 'ios';
   native.announce.mockClear();
+  native.announceWithOptions = vi.fn();
   haptics.hapticSuccess.mockClear();
   haptics.hapticError.mockClear();
 });
@@ -87,7 +97,19 @@ describe('ToastProvider', () => {
 });
 
 describe('ToastProvider feedback', () => {
-  it('announces each toast to VoiceOver once on iOS', () => {
+  it('announces each toast to VoiceOver once on iOS, queued behind what it is reading', () => {
+    render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+    expect(native.announceWithOptions).toHaveBeenCalledTimes(1);
+    expect(native.announceWithOptions).toHaveBeenCalledWith('Saved', { queue: true });
+    expect(native.announce).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the plain announce where the queued form is missing', () => {
+    native.announceWithOptions = undefined;
     render(
       <ToastProvider>
         <ToastLauncher />
@@ -105,6 +127,7 @@ describe('ToastProvider feedback', () => {
       </ToastProvider>,
     );
     expect(native.announce).not.toHaveBeenCalled();
+    expect(native.announceWithOptions).not.toHaveBeenCalled();
   });
 
   it('owns the outcome haptic: success and error buzz once, info stays silent', () => {

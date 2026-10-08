@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
 import { Text } from './Text';
 import { borderRadius, spacing, shadowColor } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { selectByVariant } from '../theme/variants';
+import { announceQueued } from '../lib/announce-queued';
 
 export type UndoSnackbarProps = {
   visible: boolean;
@@ -34,6 +35,14 @@ export type UndoSnackbarProps = {
  */
 export function UndoSnackbar(props: UndoSnackbarProps) {
   const { variant: uiVariant } = useTheme();
+  const { visible, nonce, message } = props;
+  // VoiceOver doesn't read an `alert` role appearing; say it once per show
+  // (keyed on `nonce`). Android's Snackbar / live region already speaks.
+  const messageRef = useRef(message);
+  messageRef.current = message;
+  useEffect(() => {
+    if (visible && Platform.OS === 'ios') announceQueued(messageRef.current);
+  }, [visible, nonce]);
   return selectByVariant(uiVariant, {
     material: <UndoSnackbarMaterial {...props} />,
     liquidGlass: <UndoSnackbarGlass {...props} />,

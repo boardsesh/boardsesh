@@ -110,7 +110,7 @@ import { useLostHoldRemix } from './use-lost-hold-remix';
 import { useMountedOnFirstOpen } from '../../hooks/use-mounted-on-first-open';
 import { getBoardRenderData } from '../../lib/board-details';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
-import { hapticSuccess } from '../../lib/haptics';
+import { hapticSelection, hapticSuccess } from '../../lib/haptics';
 import { nextMirrorIntentAction, resolveMirroredOrientation } from '../../lib/ble/mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
@@ -1569,6 +1569,13 @@ export function PlayDrawer({
     );
   }, [displayedClimb, isFavorited, favoriteOverride, boardName, layoutId, angle, toggleFavoriteMutate, showToast, t]);
 
+  // The climb-actions sheet's heart is the same toggle as the action bar's, so
+  // it gets the same selection tick (HIG "Playing haptics").
+  const handleToggleFavoriteFromMenu = useCallback(() => {
+    hapticSelection();
+    handleToggleFavorite();
+  }, [handleToggleFavorite]);
+
   const handleLightbulbLongPress = useCallback(() => {
     if (!bluetooth?.isConnected) return;
     // Reveal the BLE controls (Re-light / Disconnect) rather than disconnecting
@@ -2196,7 +2203,7 @@ export function PlayDrawer({
               });
             }
           }}
-          onToggleFavorite={handleToggleFavorite}
+          onToggleFavorite={handleToggleFavoriteFromMenu}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
           onReportClimb={
             canReportDisplayedClimb({
