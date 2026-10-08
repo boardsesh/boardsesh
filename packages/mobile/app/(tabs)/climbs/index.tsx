@@ -1,4 +1,5 @@
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
 import { memo, useState, useCallback, useMemo, useRef, useEffect, type ComponentProps } from 'react';
 import {
   View,
@@ -1181,9 +1182,9 @@ function ClimbListInner() {
   );
 
   const handleOpenAddToPlaylist = useCallback(
-    (climb: Climb) => {
+    (climb: Climb, anchorPoint?: WindowAnchorPoint) => {
       if (isPlaceholderDataRef.current) return;
-      openAddToPlaylist(climb);
+      openAddToPlaylist(climb, undefined, anchorPoint);
     },
     [openAddToPlaylist],
   );

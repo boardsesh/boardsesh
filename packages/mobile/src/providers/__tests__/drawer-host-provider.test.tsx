@@ -134,6 +134,9 @@ const layoutCfg = vi.hoisted(() => ({ widthClass: 'compact' as 'compact' | 'regu
 vi.mock('../../hooks/use-device-layout', () => ({
   useDeviceLayout: () => ({ widthClass: layoutCfg.widthClass, expanded: false }),
 }));
+vi.mock('../../hooks/native-tablet-pane-width', () => ({
+  useTabletPaneWidth: () => ({ width: 1024, sidebarWidth: 96 }),
+}));
 
 vi.mock('expo-crypto', () => ({
   randomUUID: () => 'test-uuid',
@@ -982,6 +985,17 @@ describe('DrawerHostProvider climb actions', () => {
       setIds: '1,2',
       angle: 40,
     });
+  });
+
+  it('forwards a measured playlist control anchor with the explicit board snapshot', async () => {
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    const anchorPoint = { x: 740, y: 270 };
+    const boardConfig = { boardName: 'tension', layoutId: 9, sizeId: 12, setIds: '3', angle: 35 };
+    act(() => hosts.at(-1)?.openAddToPlaylist(climb, boardConfig, anchorPoint));
+    expect(playlistSheet.props).toMatchObject({ visible: true, climb, ...boardConfig, anchorPoint });
   });
 
   it('opens add beta video against the active board snapshot', async () => {

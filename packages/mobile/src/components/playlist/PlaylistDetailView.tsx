@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
 import {
   type ColorValue,
   type LayoutChangeEvent,
@@ -407,11 +408,11 @@ export function PlaylistDetailView({
     [openClimbActions, resolvedRowsByClimbUuid],
   );
   const handleOpenPlaylist = useCallback(
-    (climb: SchemaClimb) => {
+    (climb: SchemaClimb, anchorPoint?: WindowAnchorPoint) => {
       const resolved = resolvedRowsByClimbUuid.get(climb.uuid);
       if (!resolved || resolved.kind !== 'renderable') return;
       const { boardName, layoutId, sizeId, setIds, angle } = resolved.renderBoard;
-      openAddToPlaylist(climb, { boardName, layoutId, sizeId, setIds, angle });
+      openAddToPlaylist(climb, { boardName, layoutId, sizeId, setIds, angle }, anchorPoint);
     },
     [openAddToPlaylist, resolvedRowsByClimbUuid],
   );

@@ -8,6 +8,16 @@ const captured = vi.hoisted(() => ({
   sheetVisible: undefined as boolean | undefined,
   sheetProps: null as Record<string, unknown> | null,
   pickerProps: null as Record<string, unknown> | null,
+  popoverProps: null as Record<string, unknown> | null,
+  layout: { isPad: false, widthClass: 'compact' },
+}));
+
+vi.mock('../../hooks/use-device-layout', () => ({ useDeviceLayout: () => captured.layout }));
+vi.mock('../playlist/AddToPlaylistPopover', () => ({
+  AddToPlaylistPopover: (props: Record<string, unknown>) => {
+    captured.popoverProps = props;
+    return createElement('div', { 'data-native-popover': 'true' });
+  },
 }));
 
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
@@ -69,6 +79,8 @@ describe('AddToPlaylistSheet', () => {
     captured.sheetVisible = undefined;
     captured.sheetProps = null;
     captured.pickerProps = null;
+    captured.popoverProps = null;
+    captured.layout = { isPad: false, widthClass: 'compact' };
   });
 
   it('renders the preview + inline picker with the climb/board props when a climb is present', () => {
@@ -102,5 +114,44 @@ describe('AddToPlaylistSheet', () => {
     // reach the ModalSheet rather than being swallowed by the wrapper.
     expect(captured.sheetProps?.onClose).toBe(onClose);
     expect(captured.sheetProps?.onFullyDismissed).toBe(onFullyDismissed);
+  });
+
+  it('keeps the same anchored native host through resize and close, choosing afresh on reopen', () => {
+    captured.layout = { isPad: true, widthClass: 'regular' };
+    const onClose = vi.fn();
+    const onFullyDismissed = vi.fn();
+    const anchorPoint = { x: 640, y: 220 };
+    const props = {
+      climb,
+      boardName: 'kilter' as const,
+      layoutId: 1,
+      sizeId: 10,
+      setIds: '1',
+      angle: 40,
+      anchorPoint,
+      onClose,
+      onFullyDismissed,
+    };
+    const { container, rerender } = render(<AddToPlaylistSheet {...props} visible />);
+    const nativeHost = container.querySelector('[data-native-popover]');
+    expect(nativeHost).not.toBeNull();
+    expect(captured.popoverProps).toMatchObject({ visible: true, anchorPoint });
+    captured.layout.widthClass = 'compact';
+    rerender(<AddToPlaylistSheet {...props} visible />);
+    expect(container.querySelector('[data-native-popover]')).toBe(nativeHost);
+    rerender(<AddToPlaylistSheet {...props} visible={false} />);
+    expect(container.querySelector('[data-native-popover]')).toBe(nativeHost);
+    expect(captured.popoverProps?.visible).toBe(false);
+    expect(onFullyDismissed).not.toHaveBeenCalled();
+    rerender(<AddToPlaylistSheet {...props} visible />);
+    expect(container.querySelector('[data-native-popover]')).toBeNull();
+    expect(captured.sheetVisible).toBe(true);
+  });
+
+  it('uses a sheet on regular iPad when no actual control anchor is supplied', () => {
+    captured.layout = { isPad: true, widthClass: 'regular' };
+    renderSheet(climb);
+    expect(captured.sheetVisible).toBe(true);
+    expect(captured.popoverProps).toBeNull();
   });
 });

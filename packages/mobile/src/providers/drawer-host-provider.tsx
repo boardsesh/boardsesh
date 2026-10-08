@@ -39,6 +39,7 @@ import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
+import type { WindowAnchorPoint } from '../components/navigation/AnchoredPopover.types';
 import { useProfile, useMyBoards } from '../lib/graphql/hooks';
 import { useStoredUserId } from '../hooks/use-current-user-id';
 import { boardLooselyMatches } from '../lib/boards/board-matches';
@@ -196,7 +197,7 @@ type DrawerHostValue = {
   closeClimbActions: () => void;
   /** Opens the add-to-playlist bottom sheet for the given climb. Snapshots the
    *  active boardConfig (for the angle) at open time. */
-  openAddToPlaylist: (climb: Climb, boardConfigOverride?: BoardConfig) => void;
+  openAddToPlaylist: (climb: Climb, boardConfigOverride?: BoardConfig, anchorPoint?: WindowAnchorPoint) => void;
   /** Opens the share-your-beta sheet for the given climb. Snapshots the active
    *  boardConfig (for the angle) at open time. Used by the iOS climb context menu's
    *  shared action list (useClimbActions). */
@@ -428,7 +429,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     open: openPlaylistSheet,
     close: closePlaylistSheet,
     clearIfClosed: clearPlaylistSheet,
-  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>();
   const {
     data: betaVideoData,
     visible: betaVideoVisible,
@@ -703,10 +704,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openAddToPlaylist = useCallback(
-    (climb: Climb, boardConfigOverride?: BoardConfig) => {
+    (climb: Climb, boardConfigOverride?: BoardConfig, anchorPoint?: WindowAnchorPoint) => {
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
       if (!boardConfig) return;
-      openPlaylistSheet({ climb, boardConfig });
+      openPlaylistSheet({ climb, boardConfig, anchorPoint });
     },
     [openPlaylistSheet],
   );
@@ -1210,6 +1211,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
               sizeId={playlistData.boardConfig.sizeId}
               setIds={playlistData.boardConfig.setIds}
               angle={playlistData.boardConfig.angle}
+              anchorPoint={playlistData.anchorPoint}
               onClose={closeAddToPlaylist}
               onFullyDismissed={clearPlaylistSheet}
             />

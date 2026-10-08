@@ -63,6 +63,8 @@ type InlinePlaylistPickerProps = {
   angle: number;
   boardName: BoardName;
   layoutId: number;
+  /** Retained native popover hosts can be mounted while their picker is hidden. */
+  active?: boolean;
   /**
    * Text input host: inject `BottomSheetTextInput` when rendered inside a
    * `ModalSheet` (so the keyboard pushes the sheet), and the plain RN
@@ -121,6 +123,7 @@ export function InlinePlaylistPicker({
   angle,
   boardName,
   layoutId,
+  active = true,
   TextInputComponent,
   onBack,
   maxHeight,
@@ -171,6 +174,8 @@ export function InlinePlaylistPicker({
   // Whether this picker is still on screen. Read inside a settled request's catch
   // block to pick the channel the climber can actually see — see `surfaceFailure`.
   const mountedRef = useRef(true);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   /**
    * Report a membership failure through whichever channel is visible right now.
@@ -193,7 +198,7 @@ export function InlinePlaylistPicker({
   detachedFailureRef.current = onDetachedFailure;
   const surfaceFailure = useCallback(
     (inlineMessage: string, detachedMessage: string) => {
-      if (mountedRef.current) {
+      if (mountedRef.current && activeRef.current) {
         setError(inlineMessage);
         return;
       }
@@ -311,6 +316,12 @@ export function InlinePlaylistPicker({
   // user backed out.
   const createRequestIdRef = useRef(0);
   useEffect(() => {
+    if (!active) {
+      createRequestIdRef.current += 1;
+      setSubmitting(false);
+    }
+  }, [active]);
+  useEffect(() => {
     // Set on mount as well as cleared on unmount: a mount/cleanup/mount cycle
     // (StrictMode, Fast Refresh) would otherwise leave a live picker classified
     // as detached forever, sending every failure to an invisible toast.
@@ -352,7 +363,7 @@ export function InlinePlaylistPicker({
     // No length check needed: the input caps at NAME_MAX (maxLength) and trim only
     // shortens, so the name can't exceed it.
     const requestId = (createRequestIdRef.current += 1);
-    const isCurrent = () => createRequestIdRef.current === requestId;
+    const isCurrent = () => createRequestIdRef.current === requestId && activeRef.current && mountedRef.current;
     setSubmitting(true);
     setCreateError(null);
     // Create and add are separate operations with separate failure handling: if
@@ -366,6 +377,8 @@ export function InlinePlaylistPicker({
       if (isCurrent()) {
         setCreateError(t('actions.playlist.toast.createFailed'));
         setSubmitting(false);
+      } else if (!activeRef.current || !mountedRef.current) {
+        surfaceFailure(t('actions.playlist.toast.createFailed'), t('actions.playlist.toast.createFailed'));
       }
       if (__DEV__) {
         console.warn('[playlist] inline create failed', {

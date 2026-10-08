@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
@@ -399,6 +399,33 @@ describe('InlinePlaylistPicker', () => {
       expect(membershipStore.setMembershipForClimb).toHaveBeenLastCalledWith('climb-1', []);
     });
 
+    it('toasts a pending failure when the native host stays mounted after closing', async () => {
+      const { pending, rejection } = setupDeferredAdd();
+      playlistContext.addToPlaylist.mockReset().mockReturnValueOnce(rejection);
+      const { getByLabelText, rerender, queryByText } = renderPicker();
+      fireEvent.click(getByLabelText('Minimoon circuit'));
+      await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalled());
+      rerender(
+        <InlinePlaylistPicker
+          climb={climb}
+          angle={40}
+          boardName="kilter"
+          layoutId={1}
+          TextInputComponent={NameInput as never}
+          active={false}
+        />,
+      );
+      pending.resolve();
+      await waitFor(() =>
+        expect(showToast).toHaveBeenCalledWith(
+          'actions.playlist.toast.addFailedNamed:playlist=Minimoon circuit',
+          'error',
+        ),
+      );
+      expect(queryByText('actions.playlist.toast.addFailed')).toBeNull();
+      expect(membershipStore.setMembershipForClimb).toHaveBeenLastCalledWith('climb-1', []);
+    });
+
     it('keeps the failure inline and does NOT toast while the picker is still mounted', async () => {
       const { pending, rejection } = setupDeferredAdd();
       playlistContext.addToPlaylist.mockReset().mockReturnValueOnce(rejection);
@@ -650,6 +677,29 @@ describe('InlinePlaylistPicker', () => {
     await waitFor(() => expect(playlistContext.addToPlaylist).toHaveBeenCalledTimes(1));
     expect(playlistContext.removeFromPlaylist).not.toHaveBeenCalled();
     addDeferred.resolve();
+  });
+
+  it('stops a create continuation after closing a retained native host and unlocks the draft', async () => {
+    const pending = deferred<Playlist>();
+    playlistContext.createPlaylist.mockReturnValueOnce(pending.promise);
+    const { getByLabelText, rerender } = renderPicker();
+    fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
+    fireEvent.change(getByLabelText('name-input'), { target: { value: 'Projects' } });
+    fireEvent.click(getByLabelText('actions.playlist.create.submit'));
+    await waitFor(() => expect(playlistContext.createPlaylist).toHaveBeenCalled());
+    const pickerProps = {
+      climb,
+      angle: 40,
+      boardName: 'kilter' as const,
+      layoutId: 1,
+      TextInputComponent: NameInput as never,
+    };
+    rerender(<InlinePlaylistPicker {...pickerProps} active={false} />);
+    await act(async () => pending.resolve(makePlaylist('p-new', 'Projects')));
+    expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
+    rerender(<InlinePlaylistPicker {...pickerProps} />);
+    expect(getByLabelText('actions.playlist.create.submit').getAttribute('data-loading')).toBe('false');
+    expect((getByLabelText('name-input') as HTMLInputElement).value).toBe('Projects');
   });
 
   it('aborts the create continuation when the picker unmounts mid-create', async () => {
