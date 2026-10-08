@@ -7,8 +7,15 @@ import { IsRestoringProvider, QueryClient, QueryClientProvider } from '@tanstack
 import { useSession } from 'next-auth/react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { GET_USER_CLIMB_PERCENTILE, GET_USER_PROFILE_STATS, GET_USER_TICKS } from '@boardsesh/graphql/operations';
+import {
+  GET_PUBLIC_PROFILE,
+  GET_USER_CLIMB_PERCENTILE,
+  GET_USER_PROFILE_STATS,
+  GET_USER_TICKS,
+} from '@boardsesh/graphql/operations';
 import { useProfileData } from '../use-profile-data';
+
+const mockWsAuthState = vi.hoisted(() => ({ token: 'ws-token' as string | null, isLoading: false }));
 
 vi.mock('next-auth/react', () => ({
   useSession: vi.fn(),
@@ -20,6 +27,15 @@ vi.mock('@/app/components/providers/snackbar-provider', () => ({
 
 vi.mock('@/app/hooks/use-grade-format', () => ({
   useGradeFormat: vi.fn(),
+}));
+
+vi.mock('@/app/hooks/use-ws-auth-token', () => ({
+  useWsAuthToken: vi.fn(() => ({
+    token: mockWsAuthState.token,
+    isAuthenticated: !!mockWsAuthState.token,
+    isLoading: mockWsAuthState.isLoading,
+    error: null,
+  })),
 }));
 
 const mockRequest = vi.fn();
@@ -50,6 +66,8 @@ function renderProfileDataHook<T>(callback: () => T, options?: { isRestoring?: b
 describe('useProfileData', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockWsAuthState.token = 'ws-token';
+    mockWsAuthState.isLoading = false;
     mockUseSession.mockReturnValue({
       status: 'authenticated',
       data: { user: { id: 'user-1' }, expires: '' },
@@ -64,14 +82,6 @@ describe('useProfileData', () => {
       getGradeColor: vi.fn(() => undefined),
     });
     mockRequest.mockResolvedValue({ userClimbPercentile: null });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-      } as Response),
-    );
   });
 
   it('adds explicit send and flash status metadata to hardest grade highlights', () => {
@@ -80,10 +90,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'Test User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'Test User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -143,23 +152,20 @@ describe('useProfileData', () => {
   });
 
   it('fetches missing profile, ticks, stats, and percentile data on mount', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        id: 'user-1',
-        email: 'test@example.com',
-        name: 'Fetched User',
-        image: null,
-        profile: null,
-        credentials: [],
-        followerCount: 4,
-        followingCount: 2,
-        isFollowedByMe: false,
-      }),
-    } as Response);
-
     mockRequest.mockImplementation(async (query: unknown, variables?: Record<string, unknown>) => {
+      if (query === GET_PUBLIC_PROFILE) {
+        return {
+          publicProfile: {
+            id: 'user-1',
+            displayName: 'Fetched User',
+            avatarUrl: null,
+            instagramUrl: null,
+            followerCount: 4,
+            followingCount: 2,
+            isFollowedByMe: true,
+          },
+        };
+      }
       if (query === GET_USER_TICKS && variables?.boardType === 'kilter') {
         return {
           userTicks: [
@@ -206,11 +212,89 @@ describe('useProfileData', () => {
       expect(result.current.loadingProfileStats).toBe(false);
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/internal/profile/user-1');
-    expect(result.current.profile?.name).toBe('Fetched User');
+    expect(mockRequest).toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
+    expect(result.current.profile?.displayName).toBe('Fetched User');
+    // Resolved from the viewer's bearer token — an anonymous request would
+    // come back false and stomp the SSR-seeded follow state.
+    expect(result.current.profile?.isFollowedByMe).toBe(true);
     expect(result.current.statisticsSummary.totalAscents).toBe(1);
     expect(result.current.hardestSend).toMatchObject({ label: 'V6', status: 'send' });
     expect(result.current.percentile).toMatchObject({ percentile: 90, totalActiveUsers: 10 });
+  });
+
+  it('keeps the SSR Following state when an authenticated viewer has no ws token', async () => {
+    mockWsAuthState.token = null;
+    mockWsAuthState.isLoading = false;
+    const initialProfile = {
+      id: 'user-1',
+      email: undefined,
+      displayName: 'SSR User',
+      avatarUrl: null,
+      instagramUrl: null,
+      followerCount: 4,
+      followingCount: 2,
+      isFollowedByMe: true,
+    };
+    const { result, queryClient } = renderProfileDataHook(() =>
+      useProfileData('user-1', { initialProfile, initialIsOwnProfile: false }),
+    );
+
+    expect(result.current.profile?.isFollowedByMe).toBe(true);
+    const profileQuery = queryClient.getQueryCache().find({ queryKey: ['userProfile', 'user-1'] });
+    expect(profileQuery).toBeDefined();
+
+    // Calling Query.fetch directly models refetch paths that bypass enabled.
+    await act(async () => {
+      await profileQuery?.fetch();
+    });
+
+    expect(mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE)).toHaveLength(0);
+    expect(result.current.profile?.isFollowedByMe).toBe(true);
+  });
+
+  it('allows a confirmed anonymous viewer to fetch a public profile', async () => {
+    mockWsAuthState.token = null;
+    mockUseSession.mockReturnValue({
+      status: 'unauthenticated',
+      data: null,
+      update: vi.fn(),
+    });
+    mockRequest.mockImplementation(async (query: unknown) => {
+      if (query === GET_PUBLIC_PROFILE) {
+        return {
+          publicProfile: {
+            id: 'user-1',
+            displayName: 'Public User',
+            avatarUrl: null,
+            instagramUrl: null,
+            followerCount: 1,
+            followingCount: 3,
+            isFollowedByMe: false,
+          },
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderProfileDataHook(() => useProfileData('user-1'));
+    await waitFor(() => expect(result.current.profile?.displayName).toBe('Public User'));
+    expect(mockRequest).toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
+  });
+
+  it('does not fetch the profile while the NextAuth session is loading', async () => {
+    mockWsAuthState.token = null;
+    mockUseSession.mockReturnValue({
+      status: 'loading',
+      data: null,
+      update: vi.fn(),
+    });
+
+    renderProfileDataHook(() => useProfileData('user-1'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE)).toHaveLength(0);
   });
 
   it('recomputes hardest grades when filtering to a single board', async () => {
@@ -219,10 +303,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'Test User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'Test User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -284,10 +367,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'SSR User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'SSR User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -306,18 +388,17 @@ describe('useProfileData', () => {
       await Promise.resolve();
     });
 
-    expect(fetch).not.toHaveBeenCalled();
+    expect(mockRequest).not.toHaveBeenCalledWith(GET_PUBLIC_PROFILE, { userId: 'user-1' });
     expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_PROFILE_STATS, { userId: 'user-1' });
     expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_CLIMB_PERCENTILE, { userId: 'user-1' });
     expect(mockRequest).not.toHaveBeenCalledWith(GET_USER_TICKS, { userId: 'user-1', boardType: 'kilter' });
   });
 
-  it('flags notFound when the profile endpoint returns 404', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({}),
-    } as Response);
+  it('flags notFound when publicProfile resolves to null', async () => {
+    mockRequest.mockImplementation(async (query: unknown) => {
+      if (query === GET_PUBLIC_PROFILE) return { publicProfile: null };
+      return {};
+    });
 
     const { result } = renderProfileDataHook(() => useProfileData('missing-user'));
 
@@ -325,6 +406,9 @@ describe('useProfileData', () => {
       expect(result.current.notFound).toBe(true);
     });
     expect(result.current.profile).toBeNull();
+    // A missing profile must not be retried — it's an answer, not a failure.
+    const publicProfileCalls = mockRequest.mock.calls.filter((call) => call[0] === GET_PUBLIC_PROFILE);
+    expect(publicProfileCalls).toHaveLength(1);
   });
 
   it('seeds percentile from initial data without waiting on a fetch', () => {
@@ -339,10 +423,9 @@ describe('useProfileData', () => {
         initialProfile: {
           id: 'user-1',
           email: undefined,
-          name: 'Test User',
-          image: null,
-          profile: null,
-          credentials: [],
+          displayName: 'Test User',
+          avatarUrl: null,
+          instagramUrl: null,
           followerCount: 0,
           followingCount: 0,
           isFollowedByMe: false,
@@ -370,10 +453,9 @@ describe('useProfileData', () => {
           initialProfile: {
             id: 'user-1',
             email: undefined,
-            name: 'SSR User',
-            image: null,
-            profile: null,
-            credentials: [],
+            displayName: 'SSR User',
+            avatarUrl: null,
+            instagramUrl: null,
             followerCount: 0,
             followingCount: 0,
             isFollowedByMe: false,
@@ -397,10 +479,9 @@ describe('useProfileData', () => {
       initialProfile: {
         id: 'user-1',
         email: undefined,
-        name: 'Test',
-        image: null,
-        profile: null,
-        credentials: [],
+        displayName: 'Test',
+        avatarUrl: null,
+        instagramUrl: null,
         followerCount: 0,
         followingCount: 0,
         isFollowedByMe: false,
@@ -449,22 +530,6 @@ describe('useProfileData', () => {
       if (query === GET_USER_CLIMB_PERCENTILE) throw new Error('percentile boom');
       return {};
     });
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        id: 'user-1',
-        email: undefined,
-        name: 'Test',
-        image: null,
-        profile: null,
-        credentials: [],
-        followerCount: 0,
-        followingCount: 0,
-        isFollowedByMe: false,
-      }),
-    } as Response);
-
     renderProfileDataHook(() => useProfileData('user-1'));
 
     await waitFor(() => {
