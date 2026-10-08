@@ -25,9 +25,9 @@
 // filter is never worded two ways.
 
 import { memo, useCallback } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Host, HStack, ScrollView, Menu, Picker, Button, Text, Divider } from '@expo/ui/swift-ui';
+import { Host, HStack, ScrollView, Menu, Picker, Button, Text, Divider, Popover, RNHostView } from '@expo/ui/swift-ui';
 import { buttonStyle, controlSize, tint, tag, padding, fixedSize } from '@expo/ui/swift-ui/modifiers';
 import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
@@ -72,6 +72,7 @@ function FilterChipRowComponent({
   onOpenGrade,
   gradeRailOpen,
   onCloseGrade,
+  gradePopoverContent,
   dimensionChips,
   minAscents,
   onChangePopularity,
@@ -173,11 +174,35 @@ function FilterChipRowComponent({
           {/* Grade → the range rail overlay. A button, not a menu; tap toggles the
               rail (close path beyond the tap-outside dismiss layer). [PRIMARY #1] */}
           {pinnedChips.includes('grade') ? (
-            <Button
-              label={gradeLabel}
-              onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
-              modifiers={chipModifiers(gradeActive)}
-            />
+            gradePopoverContent ? (
+              <Popover
+                isPresented={gradeRailOpen}
+                attachmentAnchor="bottom"
+                arrowEdge="top"
+                onIsPresentedChange={(presented) => {
+                  if (!presented) onCloseGrade();
+                }}
+              >
+                <Popover.Trigger>
+                  <Button
+                    label={gradeLabel}
+                    onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+                    modifiers={chipModifiers(gradeActive)}
+                  />
+                </Popover.Trigger>
+                <Popover.Content>
+                  <RNHostView matchContents>
+                    <View style={styles.gradePopover}>{gradePopoverContent}</View>
+                  </RNHostView>
+                </Popover.Content>
+              </Popover>
+            ) : (
+              <Button
+                label={gradeLabel}
+                onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+                modifiers={chipModifiers(gradeActive)}
+              />
+            )
           ) : null}
 
           {/* Grade accuracy ▾ — single-select over Off/Loose/Moderate/Tight; refines
@@ -389,6 +414,7 @@ function FilterChipRowComponent({
 }
 
 const styles = StyleSheet.create({
+  gradePopover: { width: 400 },
   host: {
     width: '100%',
   },

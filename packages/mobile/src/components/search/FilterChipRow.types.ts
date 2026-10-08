@@ -5,6 +5,7 @@
 // jetpack-compose) — whose components resolve native views at module load — off the
 // other platform's bundle path.
 
+import type { ReactElement } from 'react';
 import type { ProgressFilter, SortOption, GradeAccuracyValue } from '@boardsesh/climb-filters';
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { PinnableChipKind } from '../../lib/pinnable-chips';
@@ -47,6 +48,8 @@ export type FilterChipRowProps = {
   /** Whether the grade range rail is currently shown — the chip toggles it. */
   gradeRailOpen: boolean;
   onCloseGrade: () => void;
+  /** Regular-width iPad places the range picker at its native chip anchor. */
+  gradePopoverContent?: ReactElement;
 
   /**
    * Tall/Wide chips the current board size supports (empty otherwise). Each one

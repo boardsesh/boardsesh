@@ -81,6 +81,7 @@ import { useLiquidGlassTabBar } from '../../../src/hooks/use-bottom-accessory';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { useDeviceLayout } from '../../../src/hooks/use-device-layout';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
@@ -219,6 +220,8 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 });
 
 function ClimbListInner() {
+  const { isPad, widthClass } = useDeviceLayout();
+  const gradeUsesPopover = isPad && widthClass === 'regular';
   const router = useRouter();
   // Screenshot mode opens the first climb's board view via this deep-link param
   // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
@@ -1561,6 +1564,19 @@ function ClimbListInner() {
           onOpenGrade={handleOpenGrade}
           gradeRailOpen={showGrade}
           onCloseGrade={handleDismissGrade}
+          gradePopoverContent={
+            gradeUsesPopover ? (
+              <GradeRangeRail
+                grades={grades}
+                bound={gradeBound}
+                lastUsedGradeId={lastUsedGrade}
+                boardName={boardName}
+                onChange={handleGradeChange}
+                onRequestClose={handleDismissGrade}
+                dismissible={false}
+              />
+            ) : undefined
+          }
           dimensionChips={dimensionChips}
           minAscents={filters.minAscents}
           onChangePopularity={handleChangePopularity}
@@ -1588,6 +1604,12 @@ function ClimbListInner() {
     );
   }, [
     showFilterChips,
+    gradeUsesPopover,
+    grades,
+    gradeBound,
+    lastUsedGrade,
+    boardName,
+    handleGradeChange,
     pinnedChips,
     activeFilterCount,
     handleOpenFilters,
@@ -2065,7 +2087,7 @@ function ClimbListInner() {
           dismiss layer, just below the measured chrome. (Material renders its own
           grade rail inside ClimbTopChrome, so this glass-only overlay is gated on
           !filterInTopChrome.) */}
-      {showFilterChips && !filterInTopChrome && showGrade ? (
+      {showFilterChips && !filterInTopChrome && !gradeUsesPopover && showGrade ? (
         <>
           <Pressable
             style={styles.chipGradeDismiss}
