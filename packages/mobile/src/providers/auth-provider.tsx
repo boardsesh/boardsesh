@@ -257,9 +257,6 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // loader's copy). Some of it is per account: who replaced a wall is only
       // shown to a viewer who may see the replacement.
       clearSprayWallArchives();
-      // Which owned spray walls were pinned offline, and for whom. The next
-      // account's walls are its own to pin.
-      clearOwnedSprayWallPins();
       return Promise.allSettled([
         clearUserDataExportDownloads(exportCredentialGeneration),
         clearStoredSessionId(owner),
@@ -471,6 +468,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       // would otherwise paper over the cross-user leak. Doing this at the auth
       // boundary keeps the rest of the hooks simple.
       queryClient.clear();
+      // Which owned spray walls were pinned offline, and for whom. Here, after
+      // the roster cache is gone, and not with the persisted stores above: the
+      // pin (`OwnedSprayWallsOfflinePin`) stays mounted with this account's
+      // cached roster until `isAuthenticated` flips, and a record cleared
+      // earlier would be rewritten by the next settings write, re-pinning into
+      // the wipe and leaving nothing to pin on the next sign-in.
+      clearOwnedSprayWallPins();
       // The spray registry is module state, so `clear()` does not reach it, and
       // it holds one per-account answer: whether the viewer can edit each wall.
       // After the client reset above, so the re-read is the next viewer's.
@@ -532,6 +536,9 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       } else {
         if (!isAuthTransitionCurrent(transitionEpoch)) return false;
         resetAnalyticsForSignedOutTransition();
+        // A signed-out cold start has no live roster to race, so the pin record
+        // goes with the persisted stores here.
+        clearOwnedSprayWallPins();
         const persistedStoreCleanup = clearPersistedUserStores(previousStorageOwner, exportCredentialGeneration);
         if (Platform.OS === 'web') await waitForCleanupPhase(persistedStoreCleanup);
         else await persistedStoreCleanup;

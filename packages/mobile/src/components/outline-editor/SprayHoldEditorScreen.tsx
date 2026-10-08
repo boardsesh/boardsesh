@@ -115,9 +115,6 @@ import {
 } from './spray-photo-frame';
 import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-photo';
 import { discardSprayFullPhoto, ensureSprayFullPhotoCached } from '../../lib/spray/spray-photo-cache';
-
-/** The hold editor keeps its full-resolution photo on disk between visits. */
-const KEEP_FULL_PHOTO_ON_DISK = { keep: ensureSprayFullPhotoCached, discard: discardSprayFullPhoto };
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
 import { sprayPhotoReservesBottom, useSprayEditorLayout } from './use-spray-editor-layout';
 import { sprayFlowCoversScreen } from '../../lib/spray/spray-flow-presentation';
@@ -164,6 +161,9 @@ import {
   strokeExtent,
   toRingPoints,
 } from './spray-hold-tools';
+
+/** The hold editor keeps its full-resolution photo on disk between visits. */
+const KEEP_FULL_PHOTO_ON_DISK = { keep: ensureSprayFullPhotoCached, discard: discardSprayFullPhoto };
 
 /** The ring reveal's sweep down the wall, after a fresh scan. */
 const REVEAL_MS = 700;

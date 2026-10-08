@@ -3955,12 +3955,16 @@ loads the thumbnail itself.
 the signed-in climber owns (`ownerId` is theirs; `isOwned` is a different
 question) is made available offline without the switch: photo, holds and
 climbs. `OwnedSprayWallsOfflinePin`, mounted at the root beside
-`OfflineSyncBridge`, runs `planOwnedSprayWallPins` against the `myBoards` roster
-and turns the wall on through `enableBoardsOffline`, the switch's own path
+`OfflineSyncBridge`, runs `planOwnedSprayWallPins` against the whole roster
+(`fetchAllMyBoards`, every page, under the `['myBoards', 'ownedSprayWallPins']`
+key so any `myBoards` invalidation refetches it) and turns the wall on through `enableBoardsOffline`, the switch's own path
 (trigger `owned-wall`, source `owned_wall`). Publishing a wall, its first holds
 or a later hold edit, invalidates `myBoards`, so a new wall is pinned as soon as
 the refetch names it; before its first publish there is nothing to download. It is idle signed out, offline (a cached roster is no evidence of a
-change), and wherever offline downloads are off (Expo web has a no-op twin).
+change), in screenshot captures (their requests are replayed from a
+recording), wherever offline downloads are off (Expo web has a no-op twin), and
+while a sign-out is wiping (`isSigningOut()`): the leaving account's roster is
+still cached then, and a pin would re-enable its walls mid-wipe.
 
 - **Pinned once, then the owner's switch.** The pin is recorded per wall in
   `offlineOwnedSprayWallsV1` (with the account it was made for), and a recorded
@@ -3975,13 +3979,22 @@ change), and wherever offline downloads are off (Expo web has a no-op twin).
   wall missing from the roster is left alone: `myBoards` leaves archived walls
   out, and those stay downloaded so they open offline. A deleted wall goes
   through `forgetDeletedSprayWall`, which also drops its record.
-- **One account.** The record is cleared at the account boundary
-  (`clearPersistedUserStores`), and a record naming another account reads as
-  empty, so the next climber on a shared phone pins their own walls.
+- **One account.** The record is cleared at sign-out right after
+  `queryClient.clear()` (and with the persisted stores on a signed-out cold
+  start), never earlier: cleared while the roster is still cached, the next
+  settings write would re-pin and rewrite it, and the same climber signing back
+  in would get nothing pinned. A record naming another account reads as empty,
+  so the next climber on a shared phone pins their own walls.
+- **The cap.** The record keeps 128 walls. Over it, walls the roster no longer
+  names go first, so an owner's "keep it off" is never forgotten for a wall
+  they still have.
 - **Storage.** An owner has at most 10 live walls and 50 archived ones; a
   wall's download is its 2048 px photo (about 1 to 2 MB) plus its climbs, so no
-  cap was added. Known limit: the roster pages at 20 boards, so an owned wall
-  past the first page is pinned only once the roster that names it loads.
+  cap was added. The roster read walks every page rather than taking
+  `myBoards`' first 20, because a wall never opened sorts last and a fresh wall
+  on a busy account would otherwise never be pinned; for nearly everyone it is
+  one request of up to 50 boards, made when the roster is invalidated or after
+  ten minutes.
 
 **A wall's storage is reclaimed on four paths**, because a photograph outliving
 its row is invisible until a phone fills up: a reset prunes the generation it

@@ -8,6 +8,7 @@ import { createElement } from 'react';
 // and Storage's Remove already use.
 
 const state = vi.hoisted(() => ({
+  signingOut: false,
   isAuthenticated: true,
   downloadsEnabled: true,
   isOffline: false,
@@ -24,17 +25,28 @@ const setOwnedSprayWallPins = vi.hoisted(() =>
   }),
 );
 
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({}),
+  useQuery: (options: { enabled: boolean }) => ({
+    data: options.enabled && state.boards ? state.boards : undefined,
+  }),
+}));
+vi.mock('@boardsesh/offline-sync', () => ({
+  isSigningOut: () => state.signingOut,
+  offlineBoardScopeForBoard: (board: { boardType: string; layoutId: number; sizeId: number }) => ({
+    boardType: board.boardType,
+    layoutId: board.layoutId,
+    sizeId: board.sizeId,
+  }),
+  offlineBoardKeyForBoard: (board: { boardType: string; layoutId: number; sizeId: number }) =>
+    `${board.boardType}:${board.layoutId}:${board.sizeId}`,
+}));
 vi.mock('../../db/use-offline-database', () => ({ useOfflineDatabase: () => ({}) }));
 vi.mock('../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: state.isAuthenticated }) }));
 vi.mock('../../providers/feature-flags-provider', () => ({ useOfflineDownloadsEnabled: () => state.downloadsEnabled }));
 vi.mock('../../hooks/use-current-user-id', () => ({ useStoredUserId: () => ({ userId: state.userId }) }));
 vi.mock('../../hooks/use-is-offline', () => ({ useIsOffline: () => state.isOffline }));
-vi.mock('../../lib/graphql/hooks', () => ({
-  useMyBoards: (_input: unknown, options: { enabled: boolean }) => ({
-    data: options.enabled && state.boards ? { boards: state.boards } : undefined,
-  }),
-}));
+vi.mock('../../lib/graphql/hooks', () => ({ fetchAllMyBoards: vi.fn() }));
 vi.mock('../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../offline/use-board-downloads', () => ({ useBoardDownloads: () => ({ enableBoardsOffline }) }));
 vi.mock('../../offline/remove-offline-board', () => ({ removeOfflineBoard }));
@@ -54,6 +66,7 @@ beforeEach(() => {
   cleanup();
   vi.clearAllMocks();
   Object.assign(state, {
+    signingOut: false,
     isAuthenticated: true,
     downloadsEnabled: true,
     isOffline: false,
@@ -94,5 +107,51 @@ describe('OwnedSprayWallsOfflinePin', () => {
     expect(enableBoardsOffline).not.toHaveBeenCalled();
     expect(removeOfflineBoard).not.toHaveBeenCalled();
     expect(setOwnedSprayWallPins).not.toHaveBeenCalled();
+  });
+});
+
+// Sign-out keeps this account's roster cached until isAuthenticated flips, and
+// every settings write re-renders the pin. Pinning then would re-enable the
+// walls mid-wipe and rewrite the record the sign-out clears.
+describe('OwnedSprayWallsOfflinePin across a sign-out', () => {
+  it('pins nothing while a sign-out is wiping, even with the record already cleared', () => {
+    state.signingOut = true;
+    state.ledger = null;
+    const view = render(createElement(OwnedSprayWallsOfflinePin));
+    // A settings write mid-wipe re-renders every reader.
+    state.enabled = [];
+    view.rerender(createElement(OwnedSprayWallsOfflinePin));
+    expect(enableBoardsOffline).not.toHaveBeenCalled();
+    expect(setOwnedSprayWallPins).not.toHaveBeenCalled();
+    expect(state.ledger).toBeNull();
+  });
+
+  it('pins the same walls again when the same climber signs back in', () => {
+    // Pinned, then signed out: the record and the enabled scopes are cleared.
+    render(createElement(OwnedSprayWallsOfflinePin));
+    expect(enableBoardsOffline).toHaveBeenCalledTimes(1);
+    cleanup();
+    state.ledger = null;
+    state.enabled = [];
+    state.isAuthenticated = false;
+    render(createElement(OwnedSprayWallsOfflinePin));
+    expect(enableBoardsOffline).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    state.isAuthenticated = true;
+    render(createElement(OwnedSprayWallsOfflinePin));
+    expect(enableBoardsOffline).toHaveBeenCalledTimes(2);
+    expect(enableBoardsOffline).toHaveBeenLastCalledWith([myWall], { trigger: 'owned-wall', source: 'owned_wall' });
+    expect(state.ledger).toEqual({ userId: 'user-me', wallUuids: ['wall-a'] });
+  });
+
+  it('does nothing in a screenshot capture, whose requests are replayed', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    try {
+      render(createElement(OwnedSprayWallsOfflinePin));
+      expect(enableBoardsOffline).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

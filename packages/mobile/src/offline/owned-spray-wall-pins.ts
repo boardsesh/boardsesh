@@ -84,6 +84,31 @@ export function planOwnedSprayWallPins<Board extends OwnedSprayWallPinBoard>(inp
   }
 
   if (!changed) return { pin, unpin, ledger: null };
-  const kept = nextWallUuids.slice(Math.max(0, nextWallUuids.length - MAX_OWNED_SPRAY_WALL_PINS));
-  return { pin, unpin, ledger: { userId: viewerUserId, wallUuids: kept } };
+  return { pin, unpin, ledger: { userId: viewerUserId, wallUuids: trimToCap(nextWallUuids, boards) } };
+}
+
+/**
+ * Over the cap, walls the roster no longer names go first (deleted, or
+ * archived and long gone), oldest first; then the oldest overall. Evicting a
+ * wall the roster still names would forget an owner's "keep it off" and pin it
+ * again on the next run.
+ */
+function trimToCap(wallUuids: string[], boards: readonly OwnedSprayWallPinBoard[]): string[] {
+  let excess = wallUuids.length - MAX_OWNED_SPRAY_WALL_PINS;
+  if (excess <= 0) return wallUuids;
+  const inRoster = new Set(boards.map((board) => board.uuid));
+  const evicted = new Set<string>();
+  for (const wallUuid of wallUuids) {
+    if (excess === 0) break;
+    if (inRoster.has(wallUuid)) continue;
+    evicted.add(wallUuid);
+    excess -= 1;
+  }
+  for (const wallUuid of wallUuids) {
+    if (excess === 0) break;
+    if (evicted.has(wallUuid)) continue;
+    evicted.add(wallUuid);
+    excess -= 1;
+  }
+  return wallUuids.filter((wallUuid) => !evicted.has(wallUuid));
 }

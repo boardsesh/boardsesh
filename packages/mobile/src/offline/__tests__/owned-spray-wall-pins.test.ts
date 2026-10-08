@@ -126,3 +126,18 @@ describe('planOwnedSprayWallPins', () => {
     expect(result.ledger?.wallUuids).not.toContain('old-0');
   });
 });
+
+// Evicting a wall the roster still names would forget an owner's "keep it off".
+describe('planOwnedSprayWallPins at the cap', () => {
+  it('evicts walls the roster no longer names before ones it does', () => {
+    const offByOwner = 'old-0';
+    const full = Array.from({ length: MAX_OWNED_SPRAY_WALL_PINS }, (_unused, index) => `old-${index}`);
+    const result = plan([wall(offByOwner, 50, ME), wall('new-wall', 999, ME)], {
+      ledger: { userId: ME, wallUuids: full },
+    });
+    expect(result.pin.map((board) => board.uuid)).toEqual(['new-wall']);
+    expect(result.ledger?.wallUuids).toContain(offByOwner);
+    expect(result.ledger?.wallUuids).not.toContain('old-1');
+    expect(result.ledger?.wallUuids).toHaveLength(MAX_OWNED_SPRAY_WALL_PINS);
+  });
+});
