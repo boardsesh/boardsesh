@@ -1,5 +1,5 @@
 import { ReadableColumn } from '../../../src/components/ReadableColumn';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
@@ -79,19 +79,33 @@ export default function YouScreen() {
     filterSheetRef.current?.snapToIndex(0);
   }, []);
 
+  const renderLogbookHeader = useCallback(
+    (controls: ReactNode, onHeightChange: (height: number) => void) => (
+      <ProfileTopChrome activeTab="logbook" onSelectTab={handleSelectTab} onHeightChange={onHeightChange}>
+        {controls}
+      </ProfileTopChrome>
+    ),
+    [handleSelectTab],
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-      <ReadableColumn style={styles.page}>
-        {activeTab === 'progress' ? (
-          <ProgressTab data={youData} topInset={chromeHeight} userId={userId} onOpenFilters={openFilters} />
-        ) : null}
-        {activeTab === 'sessions' ? <SessionsTab userId={userId} topInset={chromeHeight} /> : null}
-        {activeTab === 'logbook' ? <LogbookTab userId={userId} topInset={chromeHeight} /> : null}
-        {activeTab === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={chromeHeight} /> : null}
-        {activeTab === 'social' ? <SocialTab userId={userId} topInset={chromeHeight} /> : null}
-      </ReadableColumn>
+      {activeTab === 'logbook' ? (
+        <LogbookTab userId={userId} renderHeader={renderLogbookHeader} />
+      ) : (
+        <ReadableColumn style={styles.page}>
+          {activeTab === 'progress' ? (
+            <ProgressTab data={youData} topInset={chromeHeight} userId={userId} onOpenFilters={openFilters} />
+          ) : null}
+          {activeTab === 'sessions' ? <SessionsTab userId={userId} topInset={chromeHeight} /> : null}
+          {activeTab === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={chromeHeight} /> : null}
+          {activeTab === 'social' ? <SocialTab userId={userId} topInset={chromeHeight} /> : null}
+        </ReadableColumn>
+      )}
 
-      <ProfileTopChrome activeTab={activeTab} onSelectTab={handleSelectTab} onHeightChange={setChromeHeight} />
+      {activeTab !== 'logbook' ? (
+        <ProfileTopChrome activeTab={activeTab} onSelectTab={handleSelectTab} onHeightChange={setChromeHeight} />
+      ) : null}
 
       <YouFilterSheet
         sheetRef={filterSheetRef}

@@ -7,15 +7,18 @@
 // they showed up fine when viewing someone else's profile. This test fails
 // on a revert of that wiring.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const ctrl = vi.hoisted(() => ({
   profileId: 'user-own-123' as string | undefined,
+  measureProfile: undefined as ((height: number) => void) | undefined,
+  measureLogbook: undefined as ((height: number) => void) | undefined,
+  logbookHeightChange: vi.fn(),
 }));
 
 const rendered = vi.hoisted(() => ({
-  progress: [] as Array<{ userId: string | undefined }>,
+  progress: [] as Array<{ userId: string | undefined; topInset: number }>,
   sessions: [] as Array<{ userId: string | undefined }>,
   logbook: [] as Array<{ userId: string | undefined }>,
   climbs: [] as Array<{ userId: string | undefined }>,
@@ -51,21 +54,35 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
 // drive tab selection the same way a real tap would, without pulling in the
 // real chrome's native segmented control / app bar machinery.
 vi.mock('../../../../src/components/you/ProfileTopChrome', () => ({
-  ProfileTopChrome: ({ activeTab, onSelectTab }: { activeTab: string; onSelectTab: (key: string) => void }) =>
-    createElement(
+  ProfileTopChrome: ({
+    activeTab,
+    onSelectTab,
+    onHeightChange,
+    children,
+  }: {
+    activeTab: string;
+    onSelectTab: (key: string) => void;
+    onHeightChange: (height: number) => void;
+    children?: ReactNode;
+  }) => {
+    if (activeTab === 'logbook') ctrl.measureLogbook = onHeightChange;
+    else ctrl.measureProfile = onHeightChange;
+    return createElement(
       'div',
       { 'data-chrome': 'true', 'data-active-tab': activeTab },
       ['progress', 'sessions', 'logbook', 'climbs', 'social'].map((key) =>
         createElement('button', { key, 'data-select-tab': key, onClick: () => onSelectTab(key) }, key),
       ),
-    ),
+      children,
+    );
+  },
 }));
 vi.mock('../../../../src/components/you/YouFilterSheet', () => ({
   YouFilterSheet: () => createElement('div', { 'data-filter-sheet': 'true' }),
 }));
 vi.mock('../../../../src/components/you/ProgressTab', () => ({
-  ProgressTab: ({ userId }: { userId: string | undefined }) => {
-    rendered.progress.push({ userId });
+  ProgressTab: ({ userId, topInset }: { userId: string | undefined; topInset: number }) => {
+    rendered.progress.push({ userId, topInset });
     return createElement('div', { 'data-tab': 'progress' });
   },
 }));
@@ -76,9 +93,19 @@ vi.mock('../../../../src/components/you/SessionsTab', () => ({
   },
 }));
 vi.mock('../../../../src/components/you/LogbookTab', () => ({
-  LogbookTab: ({ userId }: { userId: string | undefined }) => {
+  LogbookTab: ({
+    userId,
+    renderHeader,
+  }: {
+    userId: string | undefined;
+    renderHeader?: (controls: ReactNode, onHeightChange: (height: number) => void) => ReactNode;
+  }) => {
     rendered.logbook.push({ userId });
-    return createElement('div', { 'data-tab': 'logbook' });
+    return createElement(
+      'div',
+      { 'data-tab': 'logbook' },
+      renderHeader?.(createElement('div', { 'data-logbook-controls': 'true' }), ctrl.logbookHeightChange),
+    );
   },
 }));
 vi.mock('../../../../src/components/you/ProfileClimbsTab', () => ({
@@ -99,6 +126,9 @@ import YouScreen from '../index';
 describe('YouScreen (own profile)', () => {
   beforeEach(() => {
     ctrl.profileId = 'user-own-123';
+    ctrl.measureProfile = undefined;
+    ctrl.measureLogbook = undefined;
+    ctrl.logbookHeightChange.mockClear();
     rendered.progress = [];
     rendered.sessions = [];
     rendered.logbook = [];
@@ -124,5 +154,25 @@ describe('YouScreen (own profile)', () => {
 
     expect(container.querySelector('[data-tab="climbs"]')).not.toBeNull();
     expect(rendered.climbs).toEqual([{ userId: 'user-own-123' }]);
+  });
+
+  it('composes one Logbook chrome and preserves the profile inset when switching back', () => {
+    const { container } = render(<YouScreen />);
+    act(() => ctrl.measureProfile?.(72));
+    expect(rendered.progress.at(-1)?.topInset).toBe(72);
+
+    fireEvent.click(container.querySelector('[data-select-tab="logbook"]')!);
+    expect(container.querySelectorAll('[data-chrome]')).toHaveLength(1);
+    const logbookChrome = container.querySelector('[data-chrome][data-active-tab="logbook"]')!;
+    expect(logbookChrome.querySelector('[data-logbook-controls]')).not.toBeNull();
+
+    act(() => ctrl.measureLogbook?.(240));
+    expect(ctrl.logbookHeightChange).toHaveBeenLastCalledWith(240);
+    fireEvent.click(logbookChrome.querySelector('[data-select-tab="progress"]')!);
+
+    expect(container.querySelectorAll('[data-chrome]')).toHaveLength(1);
+    expect(container.querySelector('[data-logbook-controls]')).toBeNull();
+    expect(container.querySelector('[data-tab="logbook"]')).toBeNull();
+    expect(rendered.progress.at(-1)?.topInset).toBe(72);
   });
 });

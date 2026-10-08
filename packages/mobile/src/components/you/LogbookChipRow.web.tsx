@@ -5,7 +5,7 @@ import { Chip, Menu } from 'react-native-paper';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import { anyFilterActive, buildLogbookFacets } from './LogbookChipRow.logic';
+import { buildLogbookFacets } from './LogbookChipRow.logic';
 import type { LogbookChipRowProps } from './LogbookChipRow.types';
 
 type FacetChipProps = {
@@ -43,7 +43,6 @@ function FacetChip({ active, label, onPress }: FacetChipProps) {
 function LogbookChipRowComponent({
   sortPreset,
   onSelectPreset,
-  onOpenFilters,
   filters,
   grades,
   onToggleFacet,
@@ -77,7 +76,6 @@ function LogbookChipRowComponent({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.row}
     >
-      <FacetChip active={anyFilterActive(facets)} label={t('mobile.logbook.filter')} onPress={onOpenFilters} />
       <FacetChip
         active={sortPreset === 'recent'}
         label={t('mobile.logbook.preset.latest')}

@@ -3,7 +3,6 @@ import type { TFunction } from 'i18next';
 import type { Grade } from '@boardsesh/shared-schema';
 import { DEFAULT_LOGBOOK_FILTERS, type LogbookFilterState } from '@boardsesh/logbook';
 import {
-  anyFilterActive,
   angleChipLabel,
   buildLogbookFacets,
   dateChipLabel,
@@ -126,18 +125,6 @@ describe('buildLogbookFacets', () => {
     // The field is "set" (active), but the unparseable bound shows the placeholder.
     expect(date.active).toBe(true);
     expect(date.label).toBe('mobile.logbook.dateRange');
-  });
-});
-
-describe('anyFilterActive', () => {
-  it('is false when no facet is active', () => {
-    expect(anyFilterActive(buildLogbookFacets(DEFAULT_LOGBOOK_FILTERS, GRADES, formatGrade, t))).toBe(false);
-  });
-
-  it('is true when at least one facet is active', () => {
-    expect(anyFilterActive(buildLogbookFacets(withFilters({ benchmarkOnly: true }), GRADES, formatGrade, t))).toBe(
-      true,
-    );
   });
 });
 

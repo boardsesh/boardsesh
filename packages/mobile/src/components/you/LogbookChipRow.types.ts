@@ -11,8 +11,6 @@ export type LogbookChipRowProps = {
   sortPreset: LogbookSortPreset | null;
   /** Live-commit a preset when its chip is tapped (persists via setPreset). */
   onSelectPreset: (preset: LogbookSortPreset) => void;
-  /** Open the filter sheet — the Filter chip (full set / less-common controls). */
-  onOpenFilters: () => void;
   /** Committed filters → every facet chip's label + active flag. */
   filters: LogbookFilterState;
   /** Grade scale (difficultyId → name) for the grade chip's V/font label. Same
