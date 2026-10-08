@@ -67,16 +67,29 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../Text', () => ({ Text: ({ children }: RNProps) => createElement('span', {}, children) }));
-vi.mock('../../GlassSurface', () => ({
-  GlassSurface: ({ children }: RNProps) => createElement('div', {}, children),
-}));
 vi.mock('../OnboardingCard', () => ({
   OnboardingCard: ({ title, body, footnote }: { title: string; body: string; footnote?: string }) =>
     createElement('div', {}, `${title}|${body}|${footnote ?? ''}`),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
-    createElement('button', { 'data-button': title, onClick: onPress }),
+vi.mock('../../SheetTopBar', () => ({
+  // The top bar stub: its leading and trailing actions as clickable buttons.
+  SheetTopBar: ({
+    leading,
+    trailing,
+  }: {
+    leading?: { label?: string; onPress: () => void };
+    trailing?: { label: string; onPress: () => void };
+  }) =>
+    createElement(
+      'div',
+      null,
+      leading
+        ? createElement('button', { 'data-button': leading.label, onClick: leading.onPress }, leading.label)
+        : null,
+      trailing
+        ? createElement('button', { 'data-button': trailing.label, onClick: trailing.onPress }, trailing.label)
+        : null,
+    ),
 }));
 
 import { OnboardingLinkStep } from '../OnboardingLinkStep';
@@ -88,7 +101,6 @@ const button = (root: HTMLElement, title: string) =>
 const stepElement = (bodyColor = '#888') => (
   <OnboardingLinkStep
     boardType="tension"
-    accentColor="#6D28D9"
     iconColor="#6D28D9"
     bodyColor={bodyColor}
     backgroundColor="#000"
@@ -220,7 +232,7 @@ describe('OnboardingLinkStep', () => {
   it('the route records one declined answer on Android back, even if persistence fails', async () => {
     const storageError = new Error('storage unavailable');
     mocks.markAnswered.mockRejectedValueOnce(storageError);
-    render(<OnboardingLinkRoute accentColor="#6D28D9" iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
+    render(<OnboardingLinkRoute iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
     expect(mocks.shown).toHaveBeenCalledExactlyOnceWith('tension');
     expect(mocks.markAnswered).not.toHaveBeenCalled();
     act(() => {
@@ -241,7 +253,7 @@ describe('OnboardingLinkStep', () => {
   ])('direct navigation skips an unavailable link step: %j', ({ enabled, boardType }) => {
     mocks.linkEnabled = enabled;
     mocks.boardType = boardType;
-    render(<OnboardingLinkRoute accentColor="#6D28D9" iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
+    render(<OnboardingLinkRoute iconColor="#6D28D9" bodyColor="#888" backgroundColor="#000" />);
     expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith('/(tabs)/climbs');
     expect(mocks.shown).not.toHaveBeenCalled();
     expect(mocks.markAnswered).not.toHaveBeenCalled();

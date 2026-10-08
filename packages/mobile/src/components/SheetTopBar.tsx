@@ -41,16 +41,29 @@ const GLYPH_SIZE = 18;
  */
 const PROMINENT_FILLED = { liquidGlass: true, material: false } as const;
 
-export type SheetTopBarLeading = {
+/** What every leading action has, whatever it draws. */
+type SheetTopBarLeadingBase = {
+  onPress: () => void;
+  /** Overrides the default spoken label. */
+  accessibilityLabel?: string;
+  /** Dims the action and swallows taps, as on the trailing confirm. */
+  disabled?: boolean;
+};
+
+/** The leading way out of a sheet or screen. */
+export type SheetTopBarLeading = SheetTopBarLeadingBase & {
   /**
    * `close` is an xmark in a filled disc: leaving loses nothing (the iOS 26
    * system sheets use it). `cancel` is the word "Cancel": leaving throws away an
    * edit. `back` is a chevron, for step two onward of a multi-step sheet.
    */
   kind: 'cancel' | 'close' | 'back';
-  onPress: () => void;
-  /** Overrides the default spoken label ("Cancel", "Close", "Back"). */
-  accessibilityLabel?: string;
+  /**
+   * The word `cancel` shows instead of "Cancel", for a leading decline that is
+   * still a way out: onboarding's "Not now" or "Skip for now". Ignored by the
+   * glyphs.
+   */
+  label?: string;
 };
 
 /**
@@ -58,13 +71,9 @@ export type SheetTopBarLeading = {
  * filter sheet's "Reset" across from its Apply. Drawn like `cancel`, with its
  * own label. Sheets only: a screen's leading slot is its way back.
  */
-export type SheetTopBarTextLeading = {
+export type SheetTopBarTextLeading = SheetTopBarLeadingBase & {
   kind: 'text';
   label: string;
-  onPress: () => void;
-  /** Greys the label and swallows taps, e.g. Reset with nothing to reset. */
-  disabled?: boolean;
-  accessibilityLabel?: string;
 };
 
 export type SheetTopBarTrailing = {
@@ -112,13 +121,14 @@ type SheetTopBarProps = {
 const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
   leading: SheetTopBarLeading | SheetTopBarTextLeading,
 ) {
-  const { kind, onPress, accessibilityLabel } = leading;
+  const { kind, onPress, accessibilityLabel, disabled = false } = leading;
   const { t } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
+  // The trailing confirm's disabled look.
+  const disabledColor = disabled ? systemColors.tertiaryLabel : undefined;
 
   if (leading.kind === 'cancel' || leading.kind === 'text') {
-    const label = leading.kind === 'text' ? leading.label : t('actions.cancel');
-    const disabled = leading.kind === 'text' && leading.disabled === true;
+    const label = leading.label ?? t('actions.cancel');
     return (
       <PressableSurface
         testID="sheet-top-bar-leading"
@@ -132,7 +142,7 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
       >
         <Text
           variant="body"
-          color={disabled ? systemColors.tertiaryLabel : brandColors.primary}
+          color={disabledColor ?? brandColors.primary}
           numberOfLines={1}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
         >
@@ -147,16 +157,18 @@ const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingButton(
     <PressableSurface
       testID="sheet-top-bar-leading"
       onPress={onPress}
+      disabled={disabled}
       feedback="opacity"
       rippleBorderless
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? t(isClose ? 'ariaLabels.close' : 'ariaLabels.back')}
+      accessibilityState={{ disabled }}
       style={[styles.glyphTarget, isClose ? { backgroundColor: systemColors.fill } : null]}
     >
       <Icon
         name={isClose ? 'close' : 'back'}
         size={GLYPH_SIZE}
-        color={isClose ? systemColors.secondaryLabel : brandColors.primary}
+        color={disabledColor ?? (isClose ? systemColors.secondaryLabel : brandColors.primary)}
       />
     </PressableSurface>
   );

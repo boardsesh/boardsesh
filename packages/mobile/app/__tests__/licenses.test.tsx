@@ -79,10 +79,17 @@ vi.mock('../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'licenses-loading' }),
 }));
 
-vi.mock('../../src/components/Button', () => ({
-  Button: ({ onPress, title }: { onPress: () => void; title: string }) =>
-    createElement('button', { onClick: onPress, type: 'button' }, title),
+// The top bar stub: the title, and the trailing View source as a button.
+vi.mock('../../src/components/SheetTopBar', () => ({
+  SheetTopBar: ({ title, trailing }: { title: string; trailing?: { label: string; onPress: () => void } }) =>
+    createElement(
+      'div',
+      null,
+      createElement('span', null, title),
+      trailing ? createElement('button', { onClick: trailing.onPress, type: 'button' }, trailing.label) : null,
+    ),
 }));
+vi.mock('../../src/hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
 vi.mock('../../src/components/Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));

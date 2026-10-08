@@ -18,6 +18,12 @@ type MarkerProps = {
 const marker = vi.hoisted(() => ({ last: null as MarkerProps | null }));
 const renderRotatedPreview = vi.hoisted(() => vi.fn());
 const discardLocalPhoto = vi.hoisted(() => vi.fn());
+/** What the step last put in its header, through `useHeaderActions`. */
+type HeaderActions = {
+  leading?: { kind: string; onPress: () => void } | null;
+  trailing?: { label: string; onPress: () => void; disabled?: boolean; loading?: boolean } | null;
+};
+const header = vi.hoisted(() => ({ last: null as HeaderActions | null }));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -52,26 +58,12 @@ vi.mock('../SprayCropMarker', () => ({
     return createElement('div', { 'data-testid': 'crop', 'data-uri': props.photo.uri });
   },
 }));
-vi.mock('../SprayCornerFooter', () => ({
-  SprayCornerFooter: (props: {
-    primaryTitle: string;
-    onPrimary: () => void;
-    primaryDisabled: boolean;
-    canClear: boolean;
-    onClear: () => void;
-    clearTitle: string;
-    onBack: () => void;
-    backTitle: string;
-    backDisabled: boolean;
-  }) =>
-    createElement(
-      'footer',
-      null,
-      createElement('button', { onClick: props.onPrimary, disabled: props.primaryDisabled }, props.primaryTitle),
-      createElement('button', { onClick: props.onClear, disabled: !props.canClear }, props.clearTitle),
-      createElement('button', { onClick: props.onBack, disabled: props.backDisabled }, props.backTitle),
-    ),
+vi.mock('../../../hooks/use-header-actions', () => ({
+  useHeaderActions: (actions: HeaderActions) => {
+    header.last = actions;
+  },
 }));
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
 
 const { SprayPhotoAdjustStep } = await import('../SprayPhotoAdjustStep');
 
@@ -97,8 +89,16 @@ function renderStep(overrides: Partial<Parameters<typeof SprayPhotoAdjustStep>[0
   return { ...view, onDone, onCancel };
 }
 
+/** Done, in the header: checks the label, then presses it. */
+function pressDone() {
+  const trailing = header.last?.trailing;
+  expect(trailing?.label).toBe('sprayWizard.adjust.done');
+  act(() => trailing?.onPress());
+}
+
 beforeEach(() => {
   marker.last = null;
+  header.last = null;
   renderRotatedPreview
     .mockReset()
     .mockImplementation(async (_base: unknown, turns: number) => `file:///turn-${turns}.jpg`);
@@ -144,7 +144,7 @@ describe('SprayPhotoAdjustStep', () => {
     expect(turned?.right).toBeCloseTo(0.8, 12);
     expect(turned?.bottom).toBeCloseTo(0.7, 12);
 
-    fireEvent.click(screen.getByText('sprayWizard.adjust.done'));
+    pressDone();
     expect(onDone).toHaveBeenCalledWith({ quarterTurns: 1, crop: turned });
   });
 
@@ -168,13 +168,14 @@ describe('SprayPhotoAdjustStep', () => {
     await act(async () => {});
     fireEvent.click(screen.getByText('sprayWizard.adjust.reset'));
     expect(marker.last?.photo).toEqual(BASE);
-    fireEvent.click(screen.getByText('sprayWizard.adjust.done'));
+    pressDone();
     expect(onDone).toHaveBeenCalledWith({ quarterTurns: 0, crop: { left: 0, top: 0, right: 1, bottom: 1 } });
   });
 
-  it('cancels through the footer, and holds every button while the edit renders', () => {
+  it('cancels from the header, and holds every action while the edit renders', () => {
     const { onCancel, rerender, onDone } = renderStep();
-    fireEvent.click(screen.getByText('sprayWizard.adjust.cancel'));
+    expect(header.last?.leading?.kind).toBe('cancel');
+    act(() => header.last?.leading?.onPress());
     expect(onCancel).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -188,9 +189,11 @@ describe('SprayPhotoAdjustStep', () => {
         onCancel,
       }),
     );
-    expect(screen.getByText('sprayWizard.adjust.done').hasAttribute('disabled')).toBe(true);
-    expect(screen.getByText('sprayWizard.adjust.cancel').hasAttribute('disabled')).toBe(true);
+    expect(header.last?.trailing).toMatchObject({ disabled: true, loading: true });
+    act(() => header.last?.leading?.onPress());
+    expect(onCancel).toHaveBeenCalledTimes(1);
     expect(screen.getByText('sprayWizard.adjust.rotate').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('sprayWizard.adjust.reset').hasAttribute('disabled')).toBe(true);
   });
 
   it('says so when the render failed, and warns about a crop that leaves a small photo', () => {

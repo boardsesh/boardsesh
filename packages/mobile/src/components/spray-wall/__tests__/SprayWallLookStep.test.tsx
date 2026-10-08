@@ -9,6 +9,8 @@ const controls = vi.hoisted(() => ({
   unavailable: true,
   save: vi.fn(async (_input: unknown) => {}),
   art: { status: 'error' as 'pending' | 'error' | 'success', data: null as unknown },
+  /** The header's confirm, as the step last set it through `useHeaderActions`. */
+  headerTrailing: null as null | { label: string; onPress: () => void },
 }));
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
@@ -31,7 +33,12 @@ vi.mock('react-native', () => ({
   },
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
-vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 0 }));
+vi.mock('../../../hooks/use-header-actions', () => ({
+  useHeaderActions: ({ trailing }: { trailing?: { label: string; onPress: () => void } | null }) => {
+    if (trailing) controls.headerTrailing = trailing;
+  },
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { look: string }) => (options ? `${key}:${options.look}` : key),
@@ -140,6 +147,11 @@ import {
   boardLookOptionWallDefault,
 } from '../../../lib/board-render/board-look-options';
 const draft = { wallUuid: 'wall-1', layoutId: 9001, versionId: '12', versionNumber: 1, viewerCanEdit: true };
+/** The header's "Use <look>": checks the label, then presses it. */
+function pressHeaderTrailing(label: string) {
+  expect(controls.headerTrailing?.label).toBe(label);
+  controls.headerTrailing?.onPress();
+}
 function renderStep() {
   const onConfirmed = vi.fn();
   return {
@@ -161,6 +173,7 @@ beforeEach(() => {
   controls.unavailable = true;
   controls.preview = null;
   controls.art = { status: 'error', data: null };
+  controls.headerTrailing = null;
 });
 afterEach(cleanup);
 
@@ -172,14 +185,14 @@ describe('spray Look visibility and fallback', () => {
     expect(getByText('Step 5 of 6')).toBeTruthy();
   });
   it('offers every look without a preview and saves the selected non-default look', async () => {
-    const { getByRole, getByText, onConfirmed } = renderStep();
+    const { getByRole, onConfirmed } = renderStep();
     for (const option of SPRAY_WALL_LOOK_OPTIONS)
       expect(getByRole('radio', { name: option.labelI18nKey })).toBeTruthy();
     const alternative = SPRAY_WALL_LOOK_OPTIONS.find((option) => option.id !== DEFAULT_SPRAY_WALL_LOOK_OPTION_ID)!;
     fireEvent.click(getByRole('radio', { name: alternative.labelI18nKey }));
     expect(getByRole('radio', { name: alternative.labelI18nKey }).getAttribute('aria-checked')).toBe('true');
     await act(async () => {
-      fireEvent.click(getByText(`mobile.settings.boardLook.intro.saveNamed:${alternative.labelI18nKey}`));
+      pressHeaderTrailing(`mobile.settings.boardLook.intro.saveNamed:${alternative.labelI18nKey}`);
     });
     expect(controls.save).toHaveBeenCalledExactlyOnceWith({
       layoutId: draft.layoutId,
@@ -221,10 +234,10 @@ describe('spray Look wall background', () => {
   };
 
   it('hides the picker and sends no background to a backend without generated looks', async () => {
-    const { queryByTestId, getByText } = renderStep();
+    const { queryByTestId } = renderStep();
     expect(queryByTestId('background-picker')).toBeNull();
     await act(async () => {
-      fireEvent.click(getByText(saveButton()));
+      pressHeaderTrailing(saveButton());
     });
     expect(controls.save).toHaveBeenCalledExactlyOnceWith({
       layoutId: draft.layoutId,
@@ -235,10 +248,10 @@ describe('spray Look wall background', () => {
 
   it('suggests Wall only when the photo passes, and stores it', async () => {
     controls.art = artAnswer('GOOD');
-    const { getByTestId, getByText } = renderStep();
+    const { getByTestId } = renderStep();
     expect(getByTestId('background-picker').getAttribute('data-value')).toBe('wall-crop');
     await act(async () => {
-      fireEvent.click(getByText(saveButton()));
+      pressHeaderTrailing(saveButton());
     });
     expect(controls.save).toHaveBeenCalledExactlyOnceWith({
       layoutId: draft.layoutId,
@@ -253,7 +266,7 @@ describe('spray Look wall background', () => {
     fireEvent.click(getByText('bg:photo'));
     expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
     await act(async () => {
-      fireEvent.click(getByText(saveButton()));
+      pressHeaderTrailing(saveButton());
     });
     expect(controls.save).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ renderSettings: { ...defaultLook(), background: 'photo' } }),
@@ -262,9 +275,9 @@ describe('spray Look wall background', () => {
 
   it('sends no background for an untouched photo that fails the gate', async () => {
     controls.art = artAnswer('FAIL', 'no-pins');
-    const { getByText } = renderStep();
+    renderStep();
     await act(async () => {
-      fireEvent.click(getByText(saveButton()));
+      pressHeaderTrailing(saveButton());
     });
     expect(controls.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ renderSettings: defaultLook() }));
   });
@@ -276,7 +289,7 @@ describe('spray Look wall background', () => {
     expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
     fireEvent.click(getByText('bg:hold-cutouts'));
     await act(async () => {
-      fireEvent.click(getByText(saveButton()));
+      pressHeaderTrailing(saveButton());
     });
     // Picked, but the gate is shut: the save stores the photo, never the look.
     expect(controls.save).toHaveBeenCalledExactlyOnceWith(
@@ -293,10 +306,12 @@ describe('spray Look wall background', () => {
     });
     const { getByTestId, getByText } = renderStep();
     await act(async () => {
-      fireEvent.click(getByText(saveButton()));
+      pressHeaderTrailing(saveButton());
     });
     // Keystone: the "too angled" sentence, not the corner-pins one.
     expect(getByText('sprayBackground.notAvailable')).toBeTruthy();
     expect(getByTestId('background-picker').getAttribute('data-value')).toBe('photo');
+    // The way past a save that will not land, inline under the sentence.
+    expect(getByText('sprayWizard.look.publishWithout')).toBeTruthy();
   });
 });

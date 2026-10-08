@@ -1004,7 +1004,6 @@
       "rotateLabel": "Girar un cuarto de vuelta a la derecha",
       "done": "Listo",
       "reset": "Restablecer",
-      "cancel": "Cancelar",
       "handleTopLeft": "Esquina superior izquierda del recorte",
       "handleTop": "Borde superior del recorte",
       "handleTopRight": "Esquina superior derecha del recorte",
@@ -1024,8 +1023,8 @@
       "cornerTopRight": "Esquina superior derecha",
       "cornerBottomRight": "Esquina inferior derecha",
       "cornerBottomLeft": "Esquina inferior izquierda",
-      "use": "Usar estas esquinas",
-      "skip": "Saltar por ahora",
+      "next": "Siguiente",
+      "skip": "Saltar",
       "clear": "Empezar las esquinas de nuevo",
       "quality": {
         "good": "Bien de frente. El muro se enderezará limpio.",

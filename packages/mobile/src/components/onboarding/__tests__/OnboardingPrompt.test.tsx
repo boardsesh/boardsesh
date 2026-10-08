@@ -28,14 +28,25 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-// Button stub: a <button> carrying its title + onPress so the CTA is clickable.
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
-    createElement('button', { onClick: onPress }, title),
-}));
-
-vi.mock('../../GlassSurface', () => ({
-  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+vi.mock('../../SheetTopBar', () => ({
+  // The top bar stub: its leading and trailing actions as clickable buttons.
+  SheetTopBar: ({
+    leading,
+    trailing,
+  }: {
+    leading?: { label?: string; onPress: () => void };
+    trailing?: { label: string; onPress: () => void };
+  }) =>
+    createElement(
+      'div',
+      null,
+      leading
+        ? createElement('button', { 'data-button': leading.label, onClick: leading.onPress }, leading.label)
+        : null,
+      trailing
+        ? createElement('button', { 'data-button': trailing.label, onClick: trailing.onPress }, trailing.label)
+        : null,
+    ),
 }));
 
 vi.mock('../OnboardingCard', () => ({ OnboardingCard: () => null }));
@@ -62,15 +73,7 @@ vi.mock('../../../theme/variants', () => ({
 import { OnboardingPrompt } from '../OnboardingPrompt';
 
 function renderPrompt() {
-  return render(
-    <OnboardingPrompt
-      accentColor="#000"
-      iconColor="#000"
-      bodyColor="#000"
-      backgroundColor="#fff"
-      onContinue={() => {}}
-    />,
-  );
+  return render(<OnboardingPrompt iconColor="#000" bodyColor="#000" backgroundColor="#fff" onContinue={() => {}} />);
 }
 
 describe('OnboardingPrompt telemetry', () => {

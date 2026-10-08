@@ -31,23 +31,27 @@ type TintProps = {
 export const HeaderLeadingButton = React.memo(function HeaderLeadingButton({
   kind,
   onPress,
+  label: customLabel,
   accessibilityLabel,
+  disabled = false,
   tintColor,
 }: SheetTopBarLeading & TintProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
-  const color = tintColor ?? systemColors.label;
+  const color = disabled ? systemColors.tertiaryLabel : (tintColor ?? systemColors.label);
 
   if (kind === 'cancel') {
-    const label = t('actions.cancel');
+    const label = customLabel ?? t('actions.cancel');
     return (
       <PressableSurface
         testID="header-leading-action"
         onPress={onPress}
+        disabled={disabled}
         feedback="opacity"
         hitSlop={spacing[2]}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityState={{ disabled }}
         style={styles.textTarget}
       >
         <Text variant="body" color={color} numberOfLines={1} maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}>
@@ -62,11 +66,13 @@ export const HeaderLeadingButton = React.memo(function HeaderLeadingButton({
     <PressableSurface
       testID="header-leading-action"
       onPress={onPress}
+      disabled={disabled}
       feedback="opacity"
       hitSlop={spacing[2]}
       rippleBorderless
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? t(isClose ? 'ariaLabels.close' : 'ariaLabels.back')}
+      accessibilityState={{ disabled }}
       style={styles.glyphTarget}
     >
       <Icon name={isClose ? 'close' : 'back'} size={HEADER_GLYPH_SIZE} color={color} />
@@ -83,20 +89,20 @@ export const HeaderTrailingButton = React.memo(function HeaderTrailingButton({
   accessibilityLabel,
   tintColor,
 }: SheetTopBarTrailing & TintProps) {
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const inert = disabled || loading;
   const handlePress = useCallback(() => {
     if (!inert) onPress();
   }, [inert, onPress]);
-  // One look for every header confirm, the SprayEditorHeaderActions one: the
-  // neutral label colour in semibold. A plain action takes the header's tint.
+  // The iOS bar-button convention: the prominent confirm (Done, Save, Next) in
+  // the app's tint, semibold; a plain action in the header's tint.
   // Native prominent bar items (`unstable_headerRightItems`) were passed over:
   // the API is unstable and iOS-only, and it has no loading state, so a save
   // would swap a native item for a custom view mid-tap.
   const color = disabled
     ? systemColors.tertiaryLabel
     : prominent
-      ? systemColors.label
+      ? brandColors.primary
       : (tintColor ?? systemColors.label);
 
   return (

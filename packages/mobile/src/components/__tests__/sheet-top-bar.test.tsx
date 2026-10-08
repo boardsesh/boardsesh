@@ -108,6 +108,21 @@ describe('SheetTopBar', () => {
     expect(onSave).toHaveBeenCalledTimes(1);
   });
 
+  it('a cancel leading action shows a custom word in place of Cancel', () => {
+    const onDecline = vi.fn();
+    const { getByText, queryByText, getByTestId } = render(
+      createElement(SheetTopBar, {
+        title: '',
+        leading: { kind: 'cancel', label: 'Not now', onPress: onDecline },
+      }),
+    );
+    expect(getByText('Not now')).toBeTruthy();
+    expect(queryByText('t:actions.cancel')).toBeNull();
+    expect(getByTestId('sheet-top-bar-leading').getAttribute('aria-label')).toBe('Not now');
+    fireEvent.click(getByTestId('sheet-top-bar-leading'));
+    expect(onDecline).toHaveBeenCalledTimes(1);
+  });
+
   it('draws an X for close and a back glyph for back, with spoken labels', () => {
     const close = render(createElement(SheetTopBar, { title: 'Wall', leading: { kind: 'close', onPress: vi.fn() } }));
     expect(close.container.querySelector('[data-icon="close"]')).not.toBeNull();
@@ -152,6 +167,19 @@ describe('SheetTopBar', () => {
     const plain = render(createElement(SheetTopBar, { title: 'Climb' }));
     expect(plain.queryByTestId('sheet-top-bar-accent')).toBeNull();
     expect(styleOf(plain.getByText('Climb'))).toMatchObject({ textAlign: 'center' });
+  });
+
+  it('a disabled leading action swallows the tap, for every kind', () => {
+    for (const kind of ['back', 'close', 'cancel'] as const) {
+      const onLeave = vi.fn();
+      const { getByTestId, unmount } = render(
+        createElement(SheetTopBar, { title: 'Step 2', leading: { kind, onPress: onLeave, disabled: true } }),
+      );
+      expect(getByTestId('sheet-top-bar-leading').hasAttribute('disabled')).toBe(true);
+      fireEvent.click(getByTestId('sheet-top-bar-leading'));
+      expect(onLeave).not.toHaveBeenCalled();
+      unmount();
+    }
   });
 
   it('a disabled trailing action swallows the tap', () => {

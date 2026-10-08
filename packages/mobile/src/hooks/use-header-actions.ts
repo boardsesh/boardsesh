@@ -21,6 +21,14 @@ type HeaderActions = {
    * (`useMemo`): a new element each render re-sets the header each render.
    */
   trailingAccessory?: ReactNode;
+  /**
+   * On unmount, reset the slots this call wrote (`headerRight`, and
+   * `headerLeft` only if it wrote one). For a screen body that can be swapped
+   * out while the route stays, like a form replaced by a not-found state, so a
+   * stale Save is not left in the header. Off by default: the spray wizard and
+   * layout-owned slots rely on nothing being cleared.
+   */
+  clearOnUnmount?: boolean;
 };
 
 type HeaderSlotProps = { tintColor?: ColorValue };
@@ -31,8 +39,8 @@ type HeaderSlotProps = { tintColor?: ColorValue };
  * The same shape SheetTopBar takes, so a sheet and a screen say the same thing
  * the same way. See docs/mobile-sheets-vs-routes.md, "Where actions go".
  *
- * - **Only writes what you pass, never clears.** A slot left out (or `null`)
- *   is not touched, and nothing is reset on unmount: `setOptions` cannot give
+ * - **Only writes what you pass, never clears** (unless `clearOnUnmount`). A
+ *   slot left out (or `null`) is not touched, and nothing is reset on unmount: `setOptions` cannot give
  *   back the layout's own value, so clearing would wipe a layout's X. A flow
  *   that changes its leading action passes one on every step instead (the
  *   spray wizard: `close` on step 1, `back` after).
@@ -44,8 +52,32 @@ type HeaderSlotProps = { tintColor?: ColorValue };
  * - **Layout effect**, so the header is right on the first frame the screen
  *   paints rather than one frame later.
  */
-export function useHeaderActions({ leading, trailing, trailingAccessory }: HeaderActions): void {
+export function useHeaderActions({
+  leading,
+  trailing,
+  trailingAccessory,
+  clearOnUnmount = false,
+}: HeaderActions): void {
   const navigation = useNavigation();
+
+  // Which slots this call has written, and whether to give them back on
+  // unmount. Refs, so the unmount cleanup below runs once, on unmount only.
+  const wroteLeadingRef = useRef(false);
+  const wroteTrailingRef = useRef(false);
+  const clearOnUnmountRef = useRef(clearOnUnmount);
+  clearOnUnmountRef.current = clearOnUnmount;
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
+  useLayoutEffect(
+    () => () => {
+      if (!clearOnUnmountRef.current) return;
+      const cleared: Pick<NativeStackNavigationOptions, 'headerLeft' | 'headerRight'> = {};
+      if (wroteLeadingRef.current) cleared.headerLeft = undefined;
+      if (wroteTrailingRef.current) cleared.headerRight = undefined;
+      if (Object.keys(cleared).length > 0) navigationRef.current.setOptions(cleared);
+    },
+    [],
+  );
 
   const leadingPressRef = useRef(leading?.onPress);
   leadingPressRef.current = leading?.onPress;
@@ -55,7 +87,9 @@ export function useHeaderActions({ leading, trailing, trailingAccessory }: Heade
   const pressTrailing = useCallback(() => trailingPressRef.current?.(), []);
 
   const leadingKind = leading?.kind;
+  const leadingText = leading?.label;
   const leadingLabel = leading?.accessibilityLabel;
+  const leadingDisabled = leading?.disabled ?? false;
   useLayoutEffect(() => {
     if (!leadingKind) return;
     const options: Pick<NativeStackNavigationOptions, 'headerLeft'> = {
@@ -63,12 +97,15 @@ export function useHeaderActions({ leading, trailing, trailingAccessory }: Heade
         createElement(HeaderLeadingButton, {
           kind: leadingKind,
           onPress: pressLeading,
+          label: leadingText,
           accessibilityLabel: leadingLabel,
+          disabled: leadingDisabled,
           tintColor,
         }),
     };
     navigation.setOptions(options);
-  }, [navigation, leadingKind, leadingLabel, pressLeading]);
+    wroteLeadingRef.current = true;
+  }, [navigation, leadingKind, leadingText, leadingLabel, leadingDisabled, pressLeading]);
 
   const trailingLabel = trailing?.label;
   const trailingDisabled = trailing?.disabled ?? false;
@@ -94,6 +131,7 @@ export function useHeaderActions({ leading, trailing, trailingAccessory }: Heade
         createElement(HeaderTrailingGroup, { accessory: trailingAccessory, trailing: action, tintColor }),
     };
     navigation.setOptions(options);
+    wroteTrailingRef.current = true;
   }, [
     navigation,
     trailingLabel,

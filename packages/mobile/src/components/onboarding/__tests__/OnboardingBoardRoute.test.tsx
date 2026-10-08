@@ -89,7 +89,7 @@ const NUDGE_CONTEXT = {
 };
 
 function renderRoute() {
-  return render(<OnboardingBoardRoute accentColor="#6D28D9" bodyColor="#888" backgroundColor="#fff" />);
+  return render(<OnboardingBoardRoute bodyColor="#888" backgroundColor="#fff" />);
 }
 
 /** Run the `onBound` hook the route hands to `useActivateBoard`. */

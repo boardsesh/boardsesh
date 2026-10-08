@@ -1,5 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
+  AccessibilityInfo,
   View,
   ScrollView,
   StyleSheet,
@@ -13,8 +14,10 @@ import { useTranslation } from 'react-i18next';
 import { SUPPORTED_BOARDS } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useRouter } from 'expo-router';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useHeaderActions } from '../../hooks/use-header-actions';
+import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
 import { serialReuseDisclosure } from '../../lib/boards/serial-reuse';
 import type { useBoardBuilder } from './use-board-builder';
@@ -66,7 +69,7 @@ type BoardFormProps = {
    */
   lockedConfigReason?: LockedConfigReason;
   /**
-   * A submit failure, rendered inline above the action. The create/edit screens
+   * A submit failure, rendered in a reserved line at the top of the form. The create/edit screens
    * are `presentation: 'modal'` routes and the toast overlay draws behind those,
    * so a toast here would never be seen (#4166) — feedback lives in the form.
    */
@@ -83,7 +86,7 @@ type BoardFormProps = {
 /**
  * The board builder form — preview art, the board → layout → size → sets cascade,
  * angle picker, name, and a "More options" section (ownership, visibility,
- * location, serial), with a pinned primary action. Shared by the create and edit
+ * location, serial). The submit action sits in the native header (headerRight). Shared by the create and edit
  * screens; the only difference between them is the submit handler/label and
  * whether the config chips are locked. Owns its own location-permission flow.
  */
@@ -118,7 +121,6 @@ export function BoardForm({
   );
   const foreignSerialBoard = useForeignSerialBoard(builder.serialNumber, currentBoardUuid, serialConflictConfig);
   const foreignSerialDisclosure = foreignSerialBoard ? serialReuseDisclosure(foreignSerialBoard) : null;
-  const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -185,14 +187,71 @@ export function BoardForm({
   // Account for both the scroll content padding and the preview tile's padding.
   const previewMaxWidth = windowWidth - (spacing[4] + spacing[3]) * 2;
 
+  // The submit lives in the header, so it never moves with the keyboard. The
+  // create/edit screens are pushed onto the boards modal stack and keep the
+  // native back chevron; only when one opens as the stack's FIRST screen (the
+  // gym finder pushes `/boards/edit` straight into a fresh boards modal) is
+  // there no way out, so Cancel takes the leading slot then.
+  const router = useRouter();
+  const navigation = useNavigation();
+  const isStackRoot = (navigation.getState()?.index ?? 0) === 0;
+  // Counts Save taps, so a second failure with the same words still brings the
+  // error into view and says it again.
+  const [submitAttempt, setSubmitAttempt] = useState(0);
+  const submit = useCallback(() => {
+    setSubmitAttempt((attempt) => attempt + 1);
+    onSubmit();
+  }, [onSubmit]);
+  useHeaderActions({
+    leading: isStackRoot ? { kind: 'cancel', onPress: () => router.back() } : null,
+    trailing: {
+      label: submitLabel,
+      onPress: submit,
+      disabled: !builder.canCreate || submitting,
+      loading: submitting,
+      prominent: true,
+    },
+    // The form can be swapped for a not-found or no-access state while the
+    // route stays: take Save (and any Cancel) with it.
+    clearOnUnmount: true,
+  });
+
+  // A submit failure shows at the top of the form, so the form scrolls back up
+  // to it from wherever the climber was, and a screen reader hears it. The
+  // header inset is the rest offset under `automatic` on a glass header. Runs
+  // once per attempt, when the save has settled with an error.
+  const scrollRef = useRef<ScrollView>(null);
+  const headerInset = useTransparentHeaderInset();
+  const headerInsetRef = useRef(headerInset);
+  headerInsetRef.current = headerInset;
+  useEffect(() => {
+    if (!errorMessage || submitting) return;
+    scrollRef.current?.scrollTo({ y: -headerInsetRef.current, animated: true });
+    AccessibilityInfo.announceForAccessibility(errorMessage);
+  }, [errorMessage, submitting, submitAttempt]);
+
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
+        ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + spacing[16] }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Above everything, so it never pushes a control the climber is
+            looking at; the scroll above brings it into view. */}
+        {errorMessage ? (
+          <Text
+            variant="footnote"
+            color={iosSystemColors.systemRed}
+            style={styles.errorMessage}
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+          >
+            {errorMessage}
+          </Text>
+        ) : null}
         {/* Live board art — turns layout/size/set IDs into a recognizable wall. */}
         <View style={[styles.preview, { backgroundColor: systemColors.secondaryBackground }]}>
           {showPreview ? (
@@ -454,37 +513,6 @@ export function BoardForm({
           onDismiss={() => setGymPickerOpen(false)}
         />
       ) : null}
-
-      {/* Pinned, safe-area-aware primary action. */}
-      <View
-        style={[
-          styles.footer,
-          {
-            backgroundColor: systemColors.secondaryBackground,
-            borderTopColor: systemColors.separator,
-            paddingBottom: insets.bottom + spacing[3],
-          },
-        ]}
-      >
-        {errorMessage ? (
-          <Text
-            variant="footnote"
-            color={iosSystemColors.systemRed}
-            style={styles.errorMessage}
-            accessibilityLiveRegion="polite"
-          >
-            {errorMessage}
-          </Text>
-        ) : null}
-        <Button
-          title={submitLabel}
-          onPress={onSubmit}
-          variant="filled"
-          size="large"
-          disabled={!builder.canCreate || submitting}
-          loading={submitting}
-        />
-      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -622,13 +650,7 @@ const styles = StyleSheet.create({
   serialWarningText: {
     flex: 1,
   },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
   errorMessage: {
-    marginBottom: spacing[2],
     textAlign: 'center',
   },
 });

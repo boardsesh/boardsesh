@@ -1004,7 +1004,6 @@
       "rotateLabel": "Eine Vierteldrehung im Uhrzeigersinn drehen",
       "done": "Fertig",
       "reset": "Zurücksetzen",
-      "cancel": "Abbrechen",
       "handleTopLeft": "Obere linke Ecke des Ausschnitts",
       "handleTop": "Obere Kante des Ausschnitts",
       "handleTopRight": "Obere rechte Ecke des Ausschnitts",
@@ -1024,8 +1023,8 @@
       "cornerTopRight": "Ecke oben rechts",
       "cornerBottomRight": "Ecke unten rechts",
       "cornerBottomLeft": "Ecke unten links",
-      "use": "Diese Ecken nehmen",
-      "skip": "Erstmal überspringen",
+      "next": "Weiter",
+      "skip": "Überspringen",
       "clear": "Ecken neu setzen",
       "quality": {
         "good": "Schön frontal. Die Wand lässt sich sauber entzerren.",

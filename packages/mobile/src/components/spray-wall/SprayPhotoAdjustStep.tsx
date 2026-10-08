@@ -1,7 +1,8 @@
 // "Crop or rotate": the photo step's detour, shared by "Add a spray wall" and
 // "Reset a wall".
 //
-// A crop box over the photo and a Rotate button above it. Nothing here touches
+// A crop box over the photo, with Rotate and Reset above it the way Photos puts
+// them over its crop. Cancel and Done are in the header. Nothing here touches
 // the uploaded file: the step works on an edit (`photo-edit.ts`) over the BASE —
 // the first compressed, uncropped copy — and hands it to the screen on Done,
 // which renders it from the picker's original in one pass. Re-opening the step
@@ -15,8 +16,8 @@
 // the crop box only ever works in the space the climber sees.
 //
 // The page layout is the corner step's (`useFittedPhotoStage`): copy at the top,
-// the photo fitted into everything left over, and a footer whose height never
-// changes, so the photo is not re-fitted under a finger.
+// the photo fitted into everything left over. Nothing above or below it changes
+// height, so the photo is not re-fitted under a finger.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
@@ -26,6 +27,8 @@ import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useTheme } from '../../providers/theme-provider';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
+import { useHeaderActions } from '../../hooks/use-header-actions';
+import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { spacing } from '../../theme/tokens';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { reportError } from '../../lib/error-reporting';
@@ -45,7 +48,6 @@ import {
   type QuarterTurns,
   type WallPhotoEdit,
 } from '../../lib/spray/photo-edit';
-import { SprayCornerFooter } from './SprayCornerFooter';
 import { SprayCropMarker } from './SprayCropMarker';
 import { MIN_STAGE_HEIGHT, useFittedPhotoStage } from './use-fitted-photo-stage';
 
@@ -76,6 +78,7 @@ export function SprayPhotoAdjustStep({
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const headerInset = useTransparentHeaderInset();
+  const bottomInset = useWindowBottomInset();
   const fittedStage = useFittedPhotoStage();
 
   const base = photo.base;
@@ -177,88 +180,102 @@ export function SprayPhotoAdjustStep({
 
   const busy = processing || displayed == null;
 
+  // Cancel throws the edit away, so it is the word, not an X. It ignores a tap
+  // while the photo renders, as the old footer's disabled Cancel did.
+  const cancel = useCallback(() => {
+    if (!processing) onCancel();
+  }, [processing, onCancel]);
+  useHeaderActions({
+    leading: { kind: 'cancel', onPress: cancel },
+    trailing: {
+      label: t('sprayWizard.adjust.done'),
+      onPress: done,
+      disabled: busy,
+      loading: processing,
+      prominent: true,
+    },
+  });
+
   return (
-    <View style={styles.flex}>
-      <ScrollView
-        style={styles.flex}
-        contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[styles.content, { paddingTop: headerInset + spacing[4] }]}
-        {...fittedStage.scrollProps}
-        bounces={false}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text variant="title3">{title}</Text>
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {body}
-        </Text>
-        <View style={styles.rotateRow}>
-          <Button
-            title={t('sprayWizard.adjust.rotate')}
-            accessibilityLabel={t('sprayWizard.adjust.rotateLabel')}
-            icon="refresh"
-            variant="tonal"
-            size="small"
-            onPress={rotate}
-            disabled={busy}
+    <ScrollView
+      style={styles.flex}
+      contentInsetAdjustmentBehavior="never"
+      // Nothing is pinned under the page, so it pads only past the home indicator.
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: headerInset + spacing[4], paddingBottom: bottomInset + spacing[3] },
+      ]}
+      {...fittedStage.scrollProps}
+      bounces={false}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text variant="title3">{title}</Text>
+      <Text variant="subheadline" color={systemColors.secondaryLabel}>
+        {body}
+      </Text>
+      <View style={styles.rotateRow}>
+        <Button
+          title={t('sprayWizard.adjust.rotate')}
+          accessibilityLabel={t('sprayWizard.adjust.rotateLabel')}
+          icon="refresh"
+          variant="tonal"
+          size="small"
+          onPress={rotate}
+          disabled={busy}
+        />
+        <Button
+          title={t('sprayWizard.adjust.reset')}
+          icon="undo"
+          variant="tonal"
+          size="small"
+          onPress={resetEdit}
+          disabled={isIdentityEdit(edit) || processing}
+        />
+      </View>
+      <View style={styles.stage} onLayout={fittedStage.onStageLayout}>
+        {displayed ? (
+          <SprayCropMarker
+            photo={displayed}
+            maxWidth={fittedStage.maxPhotoWidth}
+            maxHeight={fittedStage.maxPhotoHeight}
+            value={edit.crop}
+            onChange={onCropChange}
+            minSize={minSize}
+            onDragActiveChange={fittedStage.onDragActiveChange}
           />
-        </View>
-        <View style={styles.stage} onLayout={fittedStage.onStageLayout}>
-          {displayed ? (
-            <SprayCropMarker
-              photo={displayed}
-              maxWidth={fittedStage.maxPhotoWidth}
-              maxHeight={fittedStage.maxPhotoHeight}
-              value={edit.crop}
-              onChange={onCropChange}
-              minSize={minSize}
-              onDragActiveChange={fittedStage.onDragActiveChange}
-            />
-          ) : previewFailed ? null : (
-            <ActivityIndicator />
-          )}
-        </View>
-        <View style={{ minHeight: Math.max(slotHeights.hint, slotHeights.small, slotHeights.failed) }}>
+        ) : previewFailed ? null : (
+          <ActivityIndicator />
+        )}
+      </View>
+      <View style={{ minHeight: Math.max(slotHeights.hint, slotHeights.small, slotHeights.failed) }}>
+        <Text
+          variant="footnote"
+          color={
+            hint === 'failed'
+              ? iosSystemColors.systemRed
+              : hint === 'small'
+                ? iosSystemColors.systemOrange
+                : systemColors.secondaryLabel
+          }
+          style={styles.hint}
+          accessibilityLiveRegion={hint === 'hint' ? 'none' : 'polite'}
+        >
+          {hintCopy[hint]}
+        </Text>
+        {(['hint', 'small', 'failed'] as const).map((key) => (
           <Text
+            key={key}
             variant="footnote"
-            color={
-              hint === 'failed'
-                ? iosSystemColors.systemRed
-                : hint === 'small'
-                  ? iosSystemColors.systemOrange
-                  : systemColors.secondaryLabel
-            }
-            style={styles.hint}
-            accessibilityLiveRegion={hint === 'hint' ? 'none' : 'polite'}
+            style={[styles.hint, styles.hintProbe]}
+            onLayout={probe(key)}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
           >
-            {hintCopy[hint]}
+            {hintCopy[key]}
           </Text>
-          {(['hint', 'small', 'failed'] as const).map((key) => (
-            <Text
-              key={key}
-              variant="footnote"
-              style={[styles.hint, styles.hintProbe]}
-              onLayout={probe(key)}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            >
-              {hintCopy[key]}
-            </Text>
-          ))}
-        </View>
-      </ScrollView>
-      <SprayCornerFooter
-        primaryTitle={t('sprayWizard.adjust.done')}
-        onPrimary={done}
-        primaryDisabled={busy}
-        primaryLoading={processing}
-        canClear={!isIdentityEdit(edit) && !processing}
-        onClear={resetEdit}
-        clearTitle={t('sprayWizard.adjust.reset')}
-        onBack={onCancel}
-        backTitle={t('sprayWizard.adjust.cancel')}
-        backDisabled={processing}
-      />
-    </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -269,12 +286,12 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing[4],
-    paddingBottom: spacing[3],
     gap: spacing[2],
   },
   rotateRow: {
     flexDirection: 'row',
     justifyContent: 'center',
+    gap: spacing[2],
   },
   stage: {
     flex: 1,

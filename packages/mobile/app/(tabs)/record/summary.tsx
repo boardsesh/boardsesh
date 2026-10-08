@@ -19,6 +19,7 @@ import { SessionRecapCard } from '../../../src/components/session/SessionRecapCa
 import { StackedBarChart } from '../../../src/components/you/YouCharts';
 import { buildSessionGradeBars, gradeBadgeColor } from '../../../src/components/you/profile-chart-colors';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useHeaderActions } from '../../../src/hooks/use-header-actions';
 import { useSessionSummary } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { renderBoardToPlaylistConfig } from '../../../src/lib/playlists/board-details-for-playlist';
@@ -57,6 +58,9 @@ export default function SessionSummaryScreen() {
   const { t } = useTranslation('session');
   const { systemColors, brandColors: brand } = useTheme();
   const router = useRouter();
+  // Done closes the modal from the header in every state, loading and error
+  // included, so the post-session screen never traps the climber.
+  useHeaderActions({ trailing: { label: t('summary.done'), onPress: () => router.back(), prominent: true } });
   const promptedSessionIdRef = useRef<string | null>(null);
   const reviewCandidateParam = Array.isArray(reviewCandidate) ? reviewCandidate[0] : reviewCandidate;
 
@@ -104,7 +108,6 @@ export default function SessionSummaryScreen() {
         </Text>
         <View style={styles.errorActions}>
           <Button title={t('summary.retry')} variant="text" onPress={() => void refetch()} />
-          <Button title={t('summary.done')} variant="filled" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -130,7 +133,6 @@ function SessionSummaryContent({
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { formatGrade } = useGradeFormat();
   const scrollViewRef = useRef<ScrollView>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -359,9 +361,6 @@ function SessionSummaryContent({
         <SaveToAppleHealthButton summary={summary} />
         <ShareToStravaButton sessionId={summary.sessionId} />
       </View>
-
-      {/* Done button */}
-      <Button title={t('summary.done')} variant="filled" onPress={() => router.back()} style={styles.doneButton} />
     </ScrollView>
   );
 }
@@ -449,8 +448,5 @@ const styles = StyleSheet.create({
   },
   integrationActions: {
     gap: spacing[3],
-  },
-  doneButton: {
-    marginTop: spacing[2],
   },
 });
