@@ -107,6 +107,9 @@ vi.mock('react-native', () => ({
     },
   },
 }));
+vi.mock('../../../../src/hooks/use-device-layout', () => ({
+  useDeviceLayout: () => ({ isPad: false, isTablet: false, widthClass: 'compact' }),
+}));
 
 vi.mock('@shopify/flash-list', () => ({
   FlashList: <Item,>({

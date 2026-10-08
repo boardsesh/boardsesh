@@ -222,7 +222,9 @@ const ActiveAwareClimbListRow = memo(function ActiveAwareClimbListRow(
 
 function ClimbListInner() {
   const { isPad, widthClass } = useDeviceLayout();
-  const gradeUsesPopover = isPad && widthClass === 'regular';
+  const [gradePresentation, setGradePresentation] = useState<'popover' | 'overlay' | null>(null);
+  const gradeUsesPopover =
+    gradePresentation === 'popover' || (gradePresentation === null && isPad && widthClass === 'regular');
   const nativeRootHeader = useNativeRootHeader();
   const router = useRouter();
   // Screenshot mode opens the first climb's board view via this deep-link param
@@ -345,6 +347,7 @@ function ClimbListInner() {
   const handleOpenFilters = useCallback(() => {
     blurSearchInputs();
     setShowGrade(false);
+    setGradePresentation(null);
     setShowFilters(true);
   }, [blurSearchInputs]);
   const handleDismissFilters = useCallback(() => {
@@ -353,9 +356,13 @@ function ClimbListInner() {
   const handleOpenGrade = useCallback(() => {
     blurSearchInputs();
     setShowFilters(false);
+    setGradePresentation(isPad && widthClass === 'regular' ? 'popover' : 'overlay');
     setShowGrade(true);
-  }, [blurSearchInputs]);
-  const handleDismissGrade = useCallback(() => setShowGrade(false), []);
+  }, [blurSearchInputs, isPad, widthClass]);
+  const handleDismissGrade = useCallback(() => {
+    setShowGrade(false);
+    setGradePresentation(null);
+  }, []);
 
   const applyVisibleSearchText = useCallback(
     (text: string) => {
