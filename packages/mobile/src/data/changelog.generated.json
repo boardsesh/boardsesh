@@ -1,6 +1,29 @@
 {
-  "generatedAt": "2026-10-08T05:51:14.108Z",
+  "generatedAt": "2026-10-08T06:31:23.387Z",
   "entries": [
+    {
+      "prNumber": 6215,
+      "category": "new",
+      "title": "See every look for your spray wall before you pick one",
+      "mergedAt": "2026-10-08T06:26:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6215",
+      "body": "Photo, Wall only and Holds only now show as previews of your own wall, right in the add-a-wall flow"
+    },
+    {
+      "prNumber": 6219,
+      "category": "new",
+      "title": "Adding a spray wall is calmer: Next and Back sit in the top bar and the keyboard no longer covers fields",
+      "mergedAt": "2026-10-08T06:26:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6219",
+      "body": "Save, Apply and Continue buttons now sit at the top of forms and onboarding"
+    },
+    {
+      "prNumber": 6216,
+      "category": "new",
+      "title": "Save, Submit and Cancel now sit at the top of sheets and stay put when the keyboard opens",
+      "mergedAt": "2026-10-08T06:15:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6216"
+    },
     {
       "prNumber": 6220,
       "category": "fixed",

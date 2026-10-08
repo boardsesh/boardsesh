@@ -8,6 +8,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- See every look for your spray wall before you pick one ([#6215](https://github.com/boardsesh/boardsesh/pull/6215))
+  Photo, Wall only and Holds only now show as previews of your own wall, right in the add-a-wall flow
+- Adding a spray wall is calmer: Next and Back sit in the top bar and the keyboard no longer covers fields ([#6219](https://github.com/boardsesh/boardsesh/pull/6219))
+  Save, Apply and Continue buttons now sit at the top of forms and onboarding
+- Save, Submit and Cancel now sit at the top of sheets and stay put when the keyboard opens ([#6216](https://github.com/boardsesh/boardsesh/pull/6216))
 - Your own spray walls are always on your phone: photo, holds and climbs, so they work in the garage with no signal ([#6222](https://github.com/boardsesh/boardsesh/pull/6222))
   Zooming in on your holds is instant the second time
 
