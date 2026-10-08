@@ -15,6 +15,7 @@ import { raceBrowserSignIn } from './auth-session-race';
 import { nativeSignInErrorCode } from './native-auth-analytics';
 import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL, WEB_BASE_URL } from './env';
+import { clientIdentityHeaders } from './client-identity';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -65,7 +66,7 @@ export async function oauthNativeSignIn(
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/oauth`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ provider, identityToken, nonce: extra?.nonce, name: extra?.name }),
       signal: createTimeoutSignal(15_000),
     });
@@ -222,7 +223,7 @@ async function exchangeTransferToken(transferToken: string): Promise<OAuthSignIn
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/exchange`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ transferToken }),
       signal: createTimeoutSignal(15_000),
     });
@@ -357,7 +358,7 @@ export async function signInWithCredentials(email: string, password: string): Pr
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/credentials`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ email, password }),
       signal: createTimeoutSignal(15_000),
     });
@@ -400,7 +401,7 @@ export async function registerWithCredentials(
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ email, password, ...(name ? { name } : {}) }),
       signal: createTimeoutSignal(15_000),
     });
@@ -516,7 +517,7 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
     // Best-effort server-side revocation — don't block on failure
     fetch(`${BACKEND_URL}/auth/native/revoke`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
       body: JSON.stringify({ refreshToken }),
     }).catch(() => {});
   }

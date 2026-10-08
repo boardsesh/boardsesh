@@ -3,6 +3,7 @@ import {
   type BaseClientOptions,
   type ExtendedClient,
 } from '@boardsesh/graphql-client';
+import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
 import { connectionManager } from './websocket-connection-manager';
 
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -63,9 +64,17 @@ export function createGraphQLClient(
     typeof urlOrOptions === 'string' ? { url: urlOrOptions, onReconnect } : urlOrOptions;
 
   const managerConnectionName = options.connectionName ?? 'primary';
+  const { authToken, ...baseOptions } = options;
 
   return createSharedGraphQLClient({
-    ...options,
+    ...baseOptions,
+    // Always a provider (rather than the shared client's static `authToken`)
+    // so the handshake also carries the client identity. Browsers cannot set
+    // headers on the upgrade, so connectionParams is the only channel.
+    connectionParams: async () => ({
+      ...(authToken ? { authToken } : {}),
+      ...webClientIdentityConnectionParams(),
+    }),
     webSocketImpl: SafeWebSocket,
     onClientCreated: (client) => {
       // graphql-ws dispose() is async and can reject with a raw DOM Event (ErrorEvent)

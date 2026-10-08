@@ -63,6 +63,9 @@ vi.mock('@react-native-google-signin/google-signin', () => ({
 }));
 vi.mock('../abort-timeout', () => ({ createTimeoutSignal: () => undefined }));
 vi.mock('../env', () => ({ BACKEND_URL: 'https://backend.test', WEB_BASE_URL: 'https://web.test' }));
+vi.mock('../client-identity', () => ({
+  clientIdentityHeaders: () => ({ 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' }),
+}));
 
 const storeTokensMock = vi.fn();
 const clearTokensForGenerationMock = vi.fn();

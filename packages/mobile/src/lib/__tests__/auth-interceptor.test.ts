@@ -37,6 +37,13 @@ vi.mock('../connectivity/connectivity-store', () => ({
   reportBackendOutcome: (outcome: unknown) => connectivity.reportBackendOutcome(outcome),
 }));
 
+// ── Mock the client identity (react-native + expo-application underneath) ──
+const { CLIENT_IDENTITY } = vi.hoisted(() => ({ CLIENT_IDENTITY: 'boardsesh-mobile/2.6.0 (ios; build 45)' }));
+vi.mock('../client-identity', () => ({
+  getClientIdentityHeaderValue: () => CLIENT_IDENTITY,
+  clientIdentityHeaders: () => ({ 'x-boardsesh-client': CLIENT_IDENTITY }),
+}));
+
 import {
   authenticatedFetch,
   deduplicatedRefresh,
@@ -111,7 +118,7 @@ describe('ensureFreshToken', () => {
       expect.stringContaining('/auth/native/refresh'),
       expect.objectContaining({
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-boardsesh-client': CLIENT_IDENTITY },
         body: JSON.stringify({ refreshToken: 'test-refresh-token' }),
       }),
     );
@@ -358,6 +365,8 @@ describe('authenticatedFetch', () => {
     const retryCall = mockFetch.mock.calls[2];
     const retryHeaders = retryCall[1].headers as Headers;
     expect(retryHeaders.get('Authorization')).toBe('Bearer new-jwt');
+    // ...and still says which app is calling.
+    expect(retryHeaders.get('x-boardsesh-client')).toBe(CLIENT_IDENTITY);
   });
 
   it('clears tokens and fires the forced-sign-out hook when 401 retry refresh fails', async () => {
@@ -518,6 +527,7 @@ describe('authenticatedFetch', () => {
     const headers = fetchCall[1].headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer my-jwt-token');
     expect(headers.get('X-Custom')).toBe('value');
+    expect(headers.get('x-boardsesh-client')).toBe(CLIENT_IDENTITY);
   });
 
   it('makes request without Authorization header when no token exists', async () => {
@@ -530,6 +540,8 @@ describe('authenticatedFetch', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const fetchCallHeaders = mockFetch.mock.calls[0][1].headers as Headers;
     expect(fetchCallHeaders.has('Authorization')).toBe(false);
+    // Anonymous requests identify the app too.
+    expect(fetchCallHeaders.get('x-boardsesh-client')).toBe(CLIENT_IDENTITY);
   });
 
   it('returns 401 directly without refresh attempt when no token exists', async () => {

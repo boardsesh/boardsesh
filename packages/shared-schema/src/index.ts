@@ -16,3 +16,4 @@ export * from './sync-error-codes';
 export * from './vote-summary-batching';
 export * from './spray-detection';
 export * from './client-platform';
+export * from './client-identity';

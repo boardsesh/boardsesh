@@ -6,6 +6,7 @@ import { randomUUID } from 'expo-crypto';
 import { Platform } from 'react-native';
 import { isSupportedLocale } from '@boardsesh/i18n';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
+import { clientIdentityHeaders } from '../lib/client-identity';
 import { getGraphQLHttpUrl } from '../lib/graphql/client';
 import i18n from '../lib/i18n/config';
 
@@ -27,11 +28,12 @@ async function installationId(): Promise<string> {
 }
 
 async function requestDevice(query: string, variables: Record<string, unknown>, bearer: string): Promise<void> {
-  // Capture this account's bearer. The normal interceptor can switch accounts
+  // Raw fetch, not authenticatedFetch, so the client identity header is added
+  // by hand. Capture this account's bearer. The normal interceptor can switch accounts
   // while a permission prompt or token lookup is awaiting a native response.
   const response = await fetch(getGraphQLHttpUrl(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bearer}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${bearer}`, ...clientIdentityHeaders() },
     body: JSON.stringify({ query, variables }),
     signal: AbortSignal.timeout(8000),
   });

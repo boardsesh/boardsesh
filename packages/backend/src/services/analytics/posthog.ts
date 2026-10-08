@@ -21,7 +21,10 @@ export type BackendAnalyticsEvent =
   | 'Tick Climb Not In Catalog'
   // The daily first-party DAU/WAU/MAU counts from user_activity_days. Counts
   // only, on one fixed system id. See docs/analytics-consent.md.
-  | 'Active Users Snapshot';
+  | 'Active Users Snapshot'
+  // Once-a-minute per-replica count of GraphQL operations per client app
+  // (services/client-usage.ts). One event per (client, version, transport).
+  | 'Client Usage Summary';
 
 /**
  * Backend events are operational telemetry sent under legitimate interest, not

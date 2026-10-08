@@ -31,6 +31,11 @@
       "import": "./src/sync-error-codes.ts",
       "default": "./src/sync-error-codes.ts"
     },
+    "./client-identity": {
+      "types": "./src/client-identity.ts",
+      "import": "./src/client-identity.ts",
+      "default": "./src/client-identity.ts"
+    },
     "./app-origins": {
       "types": "./src/app-origins.ts",
       "import": "./src/app-origins.ts",

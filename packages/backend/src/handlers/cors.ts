@@ -279,9 +279,12 @@ export function applyCorsHeaders(req: IncomingMessage, res: ServerResponse): boo
   // gzips the payload when CompressionStream is available, and the browser
   // lists "content-encoding" in the preflight's Access-Control-Request-Headers.
   // X-Boardsesh-Platform labels a request web/ios/android for the first-party
-  // active-user count (CLIENT_PLATFORM_HEADER, #2644); without it here a
-  // browser that sends it would fail its preflight.
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform');
+  // active-user count (CLIENT_PLATFORM_HEADER, #2644). X-Boardsesh-Client
+  // identifies the app. Browser clients need both allowed for preflight.
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform, X-Boardsesh-Client',
+  );
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);

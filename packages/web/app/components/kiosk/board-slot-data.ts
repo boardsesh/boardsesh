@@ -12,6 +12,7 @@ import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import type { BoardDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl, toFlatFrames } from '../board-renderer/util';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 /** The board-config subset a slot needs; satisfied by both `GymKioskBoard` and `UserBoard`. */
 export type BoardSlotSource = {
@@ -62,7 +63,7 @@ async function fetchInitialClimbs(boardId: number): Promise<BoardPresenceClimb[]
   try {
     const response = await fetch(getGraphQLHttpUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...webClientIdentityHeaders() },
       body: JSON.stringify({ query: BOARD_RECENT_CLIMBS, variables: { boardId } }),
       signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
       cache: 'no-store',

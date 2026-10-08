@@ -19,6 +19,8 @@ import {
   CLIENT_PLATFORM_HEADER,
   type ConnectionContext,
 } from '@boardsesh/shared-schema';
+import { CLIENT_IDENTITY_CONNECTION_PARAM, UNKNOWN_CLIENT } from '@boardsesh/shared-schema/client-identity';
+import { recordContextOperation, resolveClientIdentity } from '../services/client-usage';
 import { logger } from '../utils/logger';
 import { recordUserActivity, resolveActivityPlatform, type ActivityPlatform } from '../services/user-activity';
 
@@ -170,6 +172,14 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         const clientIp = resolveWebSocketClientIp(upgradeRequest);
         const socketPeerIp = resolveWebSocketSocketPeerIp(upgradeRequest);
 
+        // Which client app this is (identification only, gates nothing).
+        // Browsers cannot set headers on the upgrade request, so every platform
+        // sends it as a connectionParam; resolveClientIdentity ignores a
+        // non-string value the same way controllerMac does above.
+        const { clientIdentity, clientIdentityRaw } = resolveClientIdentity(
+          connectionParams?.[CLIENT_IDENTITY_CONNECTION_PARAM],
+        );
+
         // Create context on initial connection with auth info
         const context = createContext({
           isAuthenticated,
@@ -180,6 +190,8 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           controllerMac,
           clientIp,
           socketPeerIp,
+          clientIdentity,
+          clientIdentityRaw,
         });
 
         // Bound the COUNT of concurrent anonymous sockets per IP (issue #4035).
@@ -209,6 +221,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
               clientIp,
               socketPeerIp,
               userAgent: upgradeRequest?.headers['user-agent'],
+              client: clientIdentityRaw ?? UNKNOWN_CLIENT,
             });
             removeContext(context.connectionId);
             ctx.extra.socket.close(ANON_CONNECTION_CAP_CLOSE_CODE, 'Too many anonymous connections');
@@ -280,6 +293,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           // traffic; it is logged separately because it is the header-free
           // identity that backstops a direct-origin caller.
           socketPeerIp,
+          client: clientIdentityRaw ?? UNKNOWN_CLIENT,
         });
 
         // Store context in ctx.extra for access in other hooks
@@ -324,6 +338,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         if (latestContext.isAuthenticated && latestContext.userId) {
           void recordUserActivity(latestContext.userId, extra.activityPlatform ?? 'unknown');
         }
+        // One call per operation, so this is the WebSocket counter for the
+        // per-minute client usage summary (services/client-usage.ts).
+        recordContextOperation(latestContext, 'ws');
         return latestContext;
       },
       onDisconnect: async (ctx: ServerContext, code?: number) => {

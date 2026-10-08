@@ -6,6 +6,7 @@ import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-req
 import { sortObjectKeys } from '@/app/lib/cache-utils';
 import { compactErrorMessage } from '@/app/lib/observability/compact-error';
 import { getGraphQLHttpUrl } from './client';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import type { DiscoverablePlaylist, DiscoverPlaylistsQueryResponse } from '@boardsesh/graphql/operations/playlists';
 import type { GetCommunityStatsQueryResponse } from '@boardsesh/graphql/operations';
 import type {
@@ -34,6 +35,7 @@ export async function executeGraphQLInternal<T = unknown, V extends Variables = 
   const client = new GraphQLClient(url, {
     headers: {
       'Content-Type': 'application/json',
+      ...webClientIdentityHeaders(),
     },
     signal,
   });

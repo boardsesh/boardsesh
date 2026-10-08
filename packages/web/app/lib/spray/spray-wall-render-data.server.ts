@@ -9,6 +9,7 @@ import {
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
 import type { SprayWallArtChoice, SprayWallHoldGeometry } from './spray-climb-view';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 /**
  * The wall behind a spray climb page, read anonymously.
@@ -92,7 +93,7 @@ async function readSprayWallQuery<TData>(
 ): Promise<TData | null> {
   const response = await fetch(getGraphQLHttpUrl(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...webClientIdentityHeaders() },
     body: JSON.stringify({ query, variables: { uuid: wallUuid, ...extraVariables } }),
     signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
     next: { revalidate: 300 },

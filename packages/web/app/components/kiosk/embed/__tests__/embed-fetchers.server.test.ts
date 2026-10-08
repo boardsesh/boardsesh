@@ -141,7 +141,11 @@ describe('fetchBoardForEmbed — successful resolutions are ok', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [requestUrl, requestInit] = mockFetch.mock.calls[0] as [string, RequestInit & { next?: unknown }];
     expect(requestUrl).toBe('http://backend.test/graphql');
-    expect(requestInit.headers).toEqual({ 'Content-Type': 'application/json' });
+    // No Authorization header; only the content type and www's client identity.
+    expect(requestInit.headers).toEqual({
+      'Content-Type': 'application/json',
+      'x-boardsesh-client': 'boardsesh-web/0.1.0 (server)',
+    });
     expect(requestInit.next).toEqual({ revalidate: 300 });
   });
 });

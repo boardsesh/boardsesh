@@ -1,4 +1,5 @@
 import type { MoonBoardClimb } from '@boardsesh/moonboard-ocr/browser';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 /**
  * Upload OCR test data to S3 for training/testing purposes
@@ -38,6 +39,7 @@ export async function uploadOcrTestData(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${authToken}`,
+        ...webClientIdentityHeaders(),
       },
       body: formData,
     });

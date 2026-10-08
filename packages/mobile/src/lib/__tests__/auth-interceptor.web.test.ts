@@ -12,6 +12,9 @@ vi.mock('../error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledErrorMock(...args),
 }));
 
+// The real client-identity.web module runs; only its version source is pinned.
+vi.mock('expo-constants', () => ({ default: { expoConfig: { version: '2.6.0' } } }));
+
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
@@ -57,6 +60,9 @@ describe('authenticatedFetch on web', () => {
     const retryHeaders = fetchMock.mock.calls[3]?.[1]?.headers as Headers;
     expect(firstHeaders.get('Authorization')).toBe('Bearer old-jwe');
     expect(retryHeaders.get('Authorization')).toBe('Bearer new-jwe');
+    // Both the first attempt and the retry say which app is calling.
+    expect(firstHeaders.get('x-boardsesh-client')).toBe('boardsesh-mobile-web/2.6.0 (web)');
+    expect(retryHeaders.get('x-boardsesh-client')).toBe('boardsesh-mobile-web/2.6.0 (web)');
   });
 
   it('forces provider cleanup once when concurrent 401s confirm an anonymous cookie', async () => {

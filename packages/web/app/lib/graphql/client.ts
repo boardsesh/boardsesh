@@ -1,5 +1,6 @@
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl as _getGraphQLHttpUrl } from '@/app/lib/backend-url';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -20,6 +21,7 @@ export function createGraphQLHttpClient(authToken?: string | null): GraphQLClien
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...webClientIdentityHeaders(),
   };
 
   if (authToken) {

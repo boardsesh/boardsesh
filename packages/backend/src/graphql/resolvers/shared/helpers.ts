@@ -1,5 +1,6 @@
 import { canAccessResource, requireResourceAccess } from '../../../services/privacy';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { UNKNOWN_CLIENT } from '@boardsesh/shared-schema/client-identity';
 import { GraphQLError } from 'graphql';
 import { checkRateLimit, RateLimitError } from '../../../utils/rate-limiter';
 import { checkRateLimitRedis } from '../../../utils/redis-rate-limiter';
@@ -525,6 +526,16 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
     }
   } catch (error) {
     if (error instanceof RateLimitError) {
+      // Attribution only: `client` says which app hit the limit. The bucket
+      // keys above deliberately ignore it, so one user's budget is shared
+      // across every app they use.
+      logger.warn('[rate-limit] rejected', {
+        operation,
+        client: ctx.clientIdentityRaw ?? UNKNOWN_CLIENT,
+        userId: ctx.userId,
+        clientIp: ctx.clientIp,
+        transport: ctx.transport,
+      });
       throw new GraphQLError(error.message, {
         extensions: { code: 'RATE_LIMITED', operation, retryAfterSeconds: error.retryAfterSeconds },
       });

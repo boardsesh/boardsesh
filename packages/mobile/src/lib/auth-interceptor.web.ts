@@ -7,6 +7,8 @@ import {
 import { signOutForGeneration } from './auth.web';
 import { reportHandledError } from './error-reporting';
 import type { AuthRejectionResult } from './auth-rejection-result';
+import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
+import { getClientIdentityHeaderValue } from './client-identity.web';
 
 let onForcedSignOut: (() => void) | null = null;
 type WebRefreshResult =
@@ -119,6 +121,9 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
     throw new Error('Authentication session changed before the request could be sent');
   }
   const headers = new Headers(options.headers);
+  // Which app is calling (identification only). The 401 retry copies these
+  // headers, so it carries the identity too.
+  headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(url, { ...options, headers });

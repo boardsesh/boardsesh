@@ -25,6 +25,7 @@ import {
   RATE_LIMIT_SET_QUEUE_OP,
 } from '../graphql/resolvers/shared/helpers';
 import { RateLimitError } from '../utils/rate-limiter';
+import { logger } from '../utils/logger';
 
 function listResolverFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -236,6 +237,46 @@ describe('applyRateLimit key selection', () => {
     expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
   });
 
+  it('keeps every bucket key unchanged when a client identity is present', async () => {
+    // Client identity is attribution only. Keying on it would give one user a
+    // second budget per app, which the owner declined.
+    const identityFields: Pick<ConnectionContext, 'clientIdentity' | 'clientIdentityRaw'> = {
+      clientIdentity: { name: 'third-party-app', version: '9.9.9', platform: 'ios', build: '1' },
+      clientIdentityRaw: 'third-party-app/9.9.9 (ios; build 1)',
+    };
+    const contexts: ConnectionContext[] = [
+      { connectionId: 'ws-user', transport: 'ws', isAuthenticated: true, userId: 'user-42' },
+      { connectionId: 'http-anon', transport: 'http', isAuthenticated: false, clientIp: '203.0.113.50' },
+      {
+        connectionId: 'ws-anon',
+        transport: 'ws',
+        isAuthenticated: false,
+        clientIp: '203.0.113.50',
+        socketPeerIp: '10.0.0.8',
+      },
+      { connectionId: 'ws-no-ip', isAuthenticated: false },
+    ];
+
+    const callsFor = async (withIdentity: boolean) => {
+      vi.clearAllMocks();
+      for (const context of contexts) {
+        await applyRateLimit(withIdentity ? { ...context, ...identityFields } : context, 5, 'createSession');
+      }
+      return { local: [...mockCheckRateLimit.mock.calls], redis: [...mockCheckRateLimitRedis.mock.calls] };
+    };
+
+    const withoutIdentity = await callsFor(false);
+    const withIdentity = await callsFor(true);
+
+    expect(withIdentity).toEqual(withoutIdentity);
+    expect(withIdentity.local.map(([identity]) => identity)).toEqual([
+      'user-42:createSession',
+      'ip:203.0.113.50:createSession',
+      'ip:203.0.113.50:createSession',
+      'ws-no-ip',
+    ]);
+  });
+
   it('falls back to connectionId when no clientIp and not authenticated', async () => {
     const ctx: ConnectionContext = {
       connectionId: 'ws-anon-456',
@@ -299,6 +340,44 @@ describe('applyRateLimit structured RATE_LIMITED error (#2763)', () => {
     expect(mockCheckRateLimitRedis).toHaveBeenNthCalledWith(2, 'socket-peer:10.0.0.8', 'createSession', 600, 60_000, {
       fallbackToMemory: true,
     });
+  });
+
+  it('logs the rejecting client so a noisy app can be traced', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    mockCheckRateLimit.mockImplementationOnce(() => {
+      throw new RateLimitError(5);
+    });
+    const ctx: ConnectionContext = {
+      connectionId: 'http-1',
+      transport: 'http',
+      isAuthenticated: true,
+      userId: 'user-1',
+      clientIp: '203.0.113.9',
+      clientIdentity: { name: 'boardsesh-mobile', version: '2.6.0', platform: 'ios', build: '45' },
+      clientIdentityRaw: 'boardsesh-mobile/2.6.0 (ios; build 45)',
+    };
+
+    await applyRateLimit(ctx, 5, 'session').catch(() => undefined);
+
+    expect(warnSpy).toHaveBeenCalledWith('[rate-limit] rejected', {
+      operation: 'session',
+      client: 'boardsesh-mobile/2.6.0 (ios; build 45)',
+      userId: 'user-1',
+      clientIp: '203.0.113.9',
+      transport: 'http',
+    });
+  });
+
+  it('logs a rejection without a client identity as unknown', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    mockCheckRateLimit.mockImplementationOnce(() => {
+      throw new RateLimitError(5);
+    });
+    const ctx: ConnectionContext = { connectionId: 'ws-9', transport: 'ws', isAuthenticated: false };
+
+    await applyRateLimit(ctx, 5, 'session').catch(() => undefined);
+
+    expect(warnSpy).toHaveBeenCalledWith('[rate-limit] rejected', expect.objectContaining({ client: 'unknown' }));
   });
 
   it('passes non-rate-limit errors through untouched', async () => {

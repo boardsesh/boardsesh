@@ -8,6 +8,8 @@ import {
 } from './auth-store';
 import { signOutForGeneration } from './auth';
 import { getConnectivitySnapshot, reportBackendOutcome } from './connectivity/connectivity-store';
+import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
+import { clientIdentityHeaders, getClientIdentityHeaderValue } from './client-identity';
 import { BACKEND_URL } from './env';
 import { reportError, reportHandledError } from './error-reporting';
 import type { AuthRejectionResult } from './auth-rejection-result';
@@ -52,7 +54,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
     try {
       response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...clientIdentityHeaders() },
         body: JSON.stringify({ refreshToken: currentRefreshToken }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -186,6 +188,9 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
     throw new Error('Authentication session changed before the request could be sent');
   }
   const headers = new Headers(options.headers);
+  // Which app is calling (identification only). The 401 retry below reuses
+  // this same Headers object, so it carries the identity too.
+  headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }

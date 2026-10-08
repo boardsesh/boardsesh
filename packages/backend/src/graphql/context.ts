@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import type { ClientIdentity, ConnectionContext } from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
 
 const DEBUG = process.env.NODE_ENV === 'development';
@@ -28,6 +28,10 @@ export type CreateContextOptions = {
   clientIp?: string;
   /** TCP-peer backstop for anonymous WebSocket rate limiting. */
   socketPeerIp?: string;
+  /** Parsed client identity from connectionParams; identification only. */
+  clientIdentity?: ClientIdentity;
+  /** Trimmed raw client identity string as sent, for logs. */
+  clientIdentityRaw?: string;
 };
 
 /**
@@ -44,6 +48,8 @@ export function createContext({
   controllerMac,
   clientIp,
   socketPeerIp,
+  clientIdentity,
+  clientIdentityRaw,
 }: CreateContextOptions = {}): ConnectionContext {
   const id = connectionId || uuidv4();
   const context: ConnectionContext = {
@@ -58,6 +64,8 @@ export function createContext({
     controllerMac,
     clientIp,
     socketPeerIp,
+    clientIdentity,
+    clientIdentityRaw,
   };
   connections.set(id, context);
   if (DEBUG) {
