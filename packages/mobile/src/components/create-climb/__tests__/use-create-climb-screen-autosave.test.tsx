@@ -208,6 +208,26 @@ describe('useCreateClimbScreen autosave flush', () => {
     expect(draftStore.saveDraft.mock.calls[0]?.[1]?.name).toBe('WIP name');
   });
 
+  it('closing New climb and opening it again brings the draft back', async () => {
+    // The X (or Android back) pops the modal route, which unmounts the editor.
+    // Nothing asks first, because nothing is lost: the unmount flush writes the
+    // slot and the next open reads it back. One in-memory store across both.
+    const stored = new Map<string, Record<string, unknown>>();
+    draftStore.saveDraft.mockImplementation(async (key: string, draft: Record<string, unknown>) => {
+      stored.set(key, draft);
+    });
+    draftStore.loadDraft.mockImplementation(async (key: string) => stored.get(key) ?? null);
+
+    const first = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(draftStore.loadDraft).toHaveBeenCalled());
+    await act(async () => {});
+    act(() => first.result.current.setName('Crimp project'));
+    first.unmount();
+
+    const reopened = renderHook(() => useCreateClimbScreen({ board: BOARD }));
+    await waitFor(() => expect(reopened.result.current.name).toBe('Crimp project'));
+  });
+
   it('flushes the pending draft when the app is backgrounded', async () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useCreateClimbScreen({ board: BOARD }));

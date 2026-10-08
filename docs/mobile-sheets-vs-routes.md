@@ -26,8 +26,7 @@ native sheet window resizes for the keyboard, so the wrappers pad on both platfo
 | **`Sheet`** (`src/components/Sheet.tsx`)           | `BottomSheet`      | declaratively — its presence in the tree shows it                                  | Its lifetime is tied to parent state.                                                                                             |
 
 Examples: `QueueSheet`, `BoardSheet`, `LogAscentSheet`, `AngleSelectorSheet`,
-`ClimbActionsSheet`, `AddBetaVideoSheet` (sheet surfaces), `CreateDrawer` + `HoldRoleSheet`
-(declarative `Sheet`s).
+`ClimbActionsSheet`, `AddBetaVideoSheet` (sheet surfaces), `HoldRoleSheet` (a declarative `Sheet`).
 
 **Expo web implementation exception.** App and shared code still import
 `@expo/ui/community/bottom-sheet`, but Metro redirects that one module to
@@ -53,9 +52,9 @@ render in a higher iOS window via react-native-screens' `FullWindowOverlay` — 
 `ClimbReactionMenu` (the long-press context menu) floats above whatever's underneath. This does
 **not** work for a native `@expo/ui` sheet: a SwiftUI `.sheet` presents off the **key window**
 regardless of a `FullWindowOverlay` wrapper (the scar the player learned — see rule 1), so
-wrapping a sheet in one pushes it _under_ the overlay window, not above. Sibling native sheets
-instead stack via their own SwiftUI hosts — that's how `HoldRoleSheet` shows over the create
-drawer (they're siblings in the create-climb route, not one nested in the other). There is **no**
+wrapping a sheet in one pushes it _under_ the overlay window, not above. A native sheet mounted
+inside a modal route presents above that route instead — that's how `HoldRoleSheet` shows over
+the New climb editor. There is **no**
 `fullWindowOverlay` prop on `Sheet`; it was an inert no-op and has been removed.
 
 **Inline body instead of a nested sheet:** when a surface needs a secondary picker/form but a
@@ -94,12 +93,11 @@ the coordinator clears its desired-open flag and fires `onDisplaced`, which
 `useManagedSheet` delivers as the sheet's `onClose` (same contract as a user
 pan-down), so the parent clears the state that drove `open`. Never design a flow
 that expects a displaced sheet to come back by itself when the displacer closes —
-that implicit resume was the phantom-tick-sheet bug (PR #3595). Two exceptions, both documented in-file:
-`CreateDrawer` (a route-primary drawer that renders the raw `BottomSheet` without the
-coordinator — it opens once as the create-climb route's primary sheet, and its only sub-sheet,
-`HoldRoleSheet`, presents from its own sibling SwiftUI host, so the two never contend for the same
-presenter) and the `FullWindowOverlay` menus (e.g. `ClimbReactionMenu`), which are custom overlays
-in a higher window, not native sheets.
+that implicit resume was the phantom-tick-sheet bug (PR #3595). One exception: the
+`FullWindowOverlay` menus (e.g. `ClimbReactionMenu`), which are custom overlays in a higher
+window, not native sheets. (`CreateDrawer` used to be a second one, a raw `BottomSheet` as the
+create-climb route's primary sheet; New climb is a modal route now, so it has no sheet to
+coordinate.)
 
 **How a dismiss "settles."** The coordinator needs to know when a dismiss animation has
 really finished before it starts the next transition. On **iOS** that's the accurate native
@@ -228,8 +226,8 @@ work and native QA before claiming that contract works on Android.
 | `presentation`         | Looks like                                           | Use when                                                                                                                                 | Examples                                                                                                       |
 | ---------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` / `setters` filters                                                           |
-| **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`                                                                                 |
-| **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
+| **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`; **New climb** (`climbs/create`, swipe-down off — see the worked example) |
+| **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
 | **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | the spray-wall flows, **on iPad only** (see the worked example); nothing on a phone (`onboarding` moved to `transparentModal` in #5654) |
 
 ## The decision tree
@@ -247,6 +245,7 @@ Is it a secondary surface OVER the current screen, or its own full surface?
 └─ Its own full surface ──────────────────────► ROUTE
      ├─ Deep destination (back / URL)?            → pushed route
      ├─ Full-screen interactive board (pan/pinch)?→ pushed route  (NOT a modal — rule 3)
+     │    (a modal TASK with a board, like New climb → modal, gestureEnabled: false)
      ├─ Self-contained card flow from a tab?      → modal (pageSheet)
      ├─ Drawer that shows the live screen behind? → transparentModal
      └─ Immersive cover hosting many sub-sheets?  → transparentModal + opaque backing
@@ -342,7 +341,9 @@ Is it a secondary surface OVER the current screen, or its own full surface?
 
 3. **Board gestures and modal/sheet pan don't mix.** A full-screen board you pan/pinch (the
    `holds` and `zone` filters) is a **pushed** route, not a modal — a modal/sheet's own pan
-   gesture competes with the board's.
+   gesture competes with the board's. The one way to put a board in a modal is to switch that
+   pan off: `gestureEnabled: false`, with an X as the way out. New climb does this, because it
+   is a modal task (a draft you finish or leave), not a destination to push.
 
 4. **`ModalSheet` (imperative) vs `Sheet` (declarative) is about _how it opens_**, not how it
    looks: a ref you `.present()` (or its controlled `visible` prop) vs a component whose presence
@@ -418,12 +419,12 @@ the keyboard opens or closes). `no-bottom-footers.test.ts` fails if a new sheet 
 The in-tree-opener rule above is about sheets. Routes have their own version of it, and it
 bites the other way round.
 
-`/play` is a `transparentModal` in the **root** stack. `/(tabs)/climbs/create` is also a
-`transparentModal`, but it lives in the **climbs-tab** stack — a different navigator, mounted
-_beneath_ the root modal. So a `router.push('/(tabs)/climbs/create')` fired from inside the
-player pushes create into a navigator that is already covered: create stacks **under** the
-still-live player (two drawers visible at once), and `CreateDrawer`'s root-window
-`BottomSheet` strands a scrim over the search list once you navigate away.
+`/play` is a `transparentModal` in the **root** stack. `/(tabs)/climbs/create` is a `modal`,
+but it lives in the **climbs-tab** stack — a different navigator, mounted _beneath_ the root
+modal. So a `router.push('/(tabs)/climbs/create')` fired from inside the player pushes create
+into a navigator that is already covered: create stacks **under** the still-live player. (When
+create was a bottom-sheet drawer, it also stranded a scrim over the search list once you
+navigated away.)
 
 **The fix: finish each live surface in order, then push.** An edit/remix action claims a
 one-action guard synchronously, before closing its custom overlay. It then awaits the source
@@ -522,9 +523,31 @@ climb changes reuse the carousel without restarting the opening placeholder.
   `/play` is itself a root `transparentModal`, so a tab-stack push landed *beneath* the player (the
   rule-1 trap above). The deep-link param is `proposalUuid`, plus `climbUuid` / `boardType` when the
   caller has them.
-- **Create-climb** — a drawer that shows the dimmed climbs list behind it, with one sibling
-  sub-sheet (`HoldRoleSheet`, which stacks via its own SwiftUI host) → `transparentModal` route
-  hosting a `Sheet` (`CreateDrawer`). Correctly _not_ a full-screen cover.
+- **New climb** (`/(tabs)/climbs/create`) — a focused modal task, like Mail's compose or a new
+  reminder (HIG "Modality"), so a **`modal`** route: on iOS a pageSheet that covers the screen
+  with the climbs list scaled behind it, on Android an M3 full-screen dialog that slides up
+  (`animation: 'slide_from_bottom'`, Android only, so iOS keeps its own). It used to be a
+  `transparentModal` hosting a two-detent `@expo/ui` bottom sheet (`CreateDrawer`) with a
+  collapse chevron, which read like a music player's mini-player; that sheet is gone, and
+  `CreateDrawer` is now just the editor body. Four decisions carry it:
+  - **Swipe-down is off** (`gestureEnabled: false`). Painting and pinching the board are drags,
+    and a pageSheet's dismiss pan would fight them (rule 3). HIG allows switching interactive
+    dismissal off when it conflicts with the content's own gestures.
+  - **An X leads the top bar** (`SheetTopBarLeadingButton kind="close"`), not Cancel: leaving
+    loses nothing, because the autosave flushes the draft on unmount and the next open restores
+    it. Its accessibility hint says so. Android's back does the same close (a focus-gated
+    `BackHandler`), and both show the "draft kept" toast after the pop. Save is the trailing
+    confirm; the ⋯ menu sits before it.
+  - **The top bar is pinned above the scroll**, so the X and Save never move. The keyboard is
+    handled by the scroll: `automaticallyAdjustKeyboardInsets` on iOS, and on Android padding by
+    the keyboard height, because a modal route there ignores `adjustResize`.
+  - **Loading a draft or starting a new climb calls `router.setParams`**, never
+    `router.replace`: a replace drops the modal and presents a new one, so the sheet would slide
+    away and back. The editor is keyed on those params, so it still remounts cleanly.
+
+  `HoldRoleSheet` presents above the modal, like the player's sub-sheets, and the BLE device
+  picker is hosted inside the route (`DevicePickerSheetHost registerExternal`). Not
+  `fullScreenModal` (rule 2): the route is under `NativeTabs` on iPhone.
 - **Player (now-playing)** — immersive full-screen, hosts 5–6 sub-sheets that must stack above
   it → `transparentModal` + opaque backing route. The exception that proves rule 1.
 - **Boards picker / share-beta / join** — self-contained flows from a tab → `modal` card.

@@ -3,31 +3,43 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-// The drawer derives its peek snap-point from the MEASURED above-fold height, so
-// anything that mounts inside a measured region moves `peekHeight` and re-snaps
-// the sheet. That collapsed an expanded drawer the instant a banner appeared —
-// hiding the very climb the banner was asking the climber to discard.
-//
-// The status row solved the same problem by reserving a constant line box. The
-// banners can't: reserving ~100dp permanently for something rarely on screen
-// costs more above-fold budget than the board can spare. So they live BETWEEN the
-// two measured blocks and are measured by neither.
+// New climb is a full-height modal route now, not a bottom sheet with a peek.
+// What these cases pin: the top bar (X, name, Save) is pinned ABOVE the scroll,
+// so it never moves with the content or the keyboard; everything else scrolls
+// under it; and the editor pads for the status bar only where the modal draws
+// under it (Android), never inside an iOS pageSheet.
 
-type ViewMockProps = { children?: ReactNode; onLayout?: unknown; testID?: string };
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+type ViewMockProps = { children?: ReactNode; testID?: string; style?: unknown };
+const flatten = (style: unknown): Record<string, unknown> =>
+  Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : ((style as Record<string, unknown>) ?? {});
 vi.mock('react-native', () => ({
-  View: ({ children, onLayout, testID }: ViewMockProps) =>
-    createElement('div', { 'data-measured': onLayout ? 'true' : undefined, 'data-testid': testID }, children),
+  View: ({ children, testID, style }: ViewMockProps) =>
+    createElement(
+      'div',
+      { 'data-testid': testID, 'data-padding-top': flatten(style).paddingTop as number | undefined },
+      children,
+    ),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   useWindowDimensions: () => ({ width: 405, height: 900 }),
+  Platform: {
+    get OS() {
+      return platform.OS;
+    },
+  },
+  Keyboard: { addListener: () => ({ remove: () => undefined }) },
 }));
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 0 }) }));
 vi.mock('../../../hooks/use-window-bottom-inset', () => ({ useWindowBottomInset: () => 48 }));
-vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-}));
+type ScrollMockProps = { children?: ReactNode; automaticallyAdjustKeyboardInsets?: boolean };
 vi.mock('react-native-gesture-handler', () => ({
   GestureHandlerRootView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children, automaticallyAdjustKeyboardInsets }: ScrollMockProps) =>
+    createElement(
+      'div',
+      { 'data-scroll': 'true', 'data-keyboard-insets': automaticallyAdjustKeyboardInsets ? 'true' : undefined },
+      children,
+    ),
 }));
 // Records which namespace each lookup went through. Every other CreateDrawer
 // suite mocks `t` as a bare identity, which is exactly why a key looked up in
@@ -48,7 +60,6 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24 },
-  sheetStyles: { background: {} },
 }));
 // The heat layer pulls in the native renderer hook and the download flow; the
 // drawer's own layout is what these cases are about.
@@ -61,8 +72,12 @@ vi.mock('../../board/HeatmapDownloadLine', () => ({ HeatmapDownloadLine: () => n
 vi.mock('../InteractiveCreateBoard', () => ({
   InteractiveCreateBoard: () => createElement('div', { 'data-node': 'board' }),
 }));
+const header = vi.hoisted(() => ({ onClose: null as (() => void) | null }));
 vi.mock('../CreateDrawerHeader', () => ({
-  CreateDrawerHeader: () => createElement('div', { 'data-node': 'header' }),
+  CreateDrawerHeader: ({ onClose }: { onClose: () => void }) => {
+    header.onClose = onClose;
+    return createElement('div', { 'data-node': 'header' });
+  },
 }));
 vi.mock('../CreateDrawerActionBar', () => ({
   CreateDrawerActionBar: () => createElement('div', { 'data-node': 'action-bar' }),
@@ -150,43 +165,73 @@ function makeController(overrides: Record<string, unknown>): Controller {
   } as unknown as Controller;
 }
 
-function renderDrawer(overrides: Record<string, unknown>) {
+function renderDrawer(overrides: Record<string, unknown>, onClose: () => void = vi.fn()) {
   const { container } = render(
     createElement(CreateDrawer, {
       board,
       controller: makeController(overrides),
       boardHolds,
       onLongPressHold: vi.fn(),
-      subSheetOpen: false,
       onLoadDraft: vi.fn(),
-      onClose: vi.fn(),
+      onClose,
       onViewDuplicate: vi.fn(),
     }),
   );
+  const scroll = container.querySelector('[data-scroll="true"]');
   return {
     container,
-    measured: Array.from(container.querySelectorAll('[data-measured="true"]')),
+    scroll,
     node: (name: string) => container.querySelector(`[data-node="${name}"]`),
+    scrolls: (name: string) => scroll?.contains(container.querySelector(`[data-node="${name}"]`)) ?? false,
   };
 }
 
-const measuredNodeNames = (result: ReturnType<typeof renderDrawer>) =>
-  result.measured
-    .flatMap((block) => Array.from(block.querySelectorAll('[data-node]')))
-    .map((el) => el.getAttribute('data-node'))
-    .sort();
-
-describe('CreateDrawer measured above-fold region', () => {
+describe('CreateDrawer as a full-height modal', () => {
   beforeEach(() => {
     translateCalls.length = 0;
+    platform.OS = 'ios';
   });
 
-  it('measures the header and the board block, which is what sizes the peek', () => {
-    const { measured, node } = renderDrawer({});
-    expect(measured.length).toBe(2);
-    expect(measured.some((block) => block.contains(node('header')))).toBe(true);
-    expect(measured.some((block) => block.contains(node('board')))).toBe(true);
-    expect(measured.some((block) => block.contains(node('action-bar')))).toBe(true);
+  it('pins the top bar above the scroll, and scrolls the board, tools, form and drafts under it', () => {
+    const result = renderDrawer({});
+    expect(result.node('header')).toBeTruthy();
+    expect(result.scrolls('header')).toBe(false);
+    for (const name of ['board', 'route-slot', 'action-bar', 'form', 'drafts']) {
+      expect(result.scrolls(name), name).toBe(true);
+    }
+  });
+
+  it('hands the header X the route close, so leaving goes through the screen', () => {
+    const onClose = vi.fn();
+    renderDrawer({}, onClose);
+    header.onClose?.();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the transient banners in the scroll, under the pinned bar', () => {
+    const confirm = renderDrawer({ pendingNewClimb: true });
+    expect(confirm.scrolls('confirm-banner')).toBe(true);
+    const duplicate = renderDrawer({
+      publishDuplicateError: { existingClimbUuid: 'x', existingClimbName: 'Other climb' },
+    });
+    expect(duplicate.scrolls('duplicate-banner')).toBe(true);
+    const hint = renderDrawer({ nameMissingHint: true });
+    expect(hint.scrolls('name-required-hint')).toBe(true);
+  });
+
+  it('lets iOS lift the scroll over the keyboard', () => {
+    expect(renderDrawer({}).scroll?.getAttribute('data-keyboard-insets')).toBe('true');
+  });
+
+  it('adds no status-bar inset inside an iOS pageSheet, which already starts below it', () => {
+    const { container } = renderDrawer({});
+    expect(container.firstElementChild?.getAttribute('data-padding-top')).toBe('0');
+  });
+
+  it('clears the status bar on Android, where the full-screen dialog draws under it', () => {
+    platform.OS = 'android';
+    const { container } = renderDrawer({});
+    expect(container.firstElementChild?.getAttribute('data-padding-top')).toBe('24');
   });
 
   it('looks the wall-state chip up in the session namespace it actually lives in', () => {
@@ -216,52 +261,5 @@ describe('CreateDrawer measured above-fold region', () => {
   it('renders no wall-state chip while the creator still drives the wall', () => {
     renderDrawer({ handedOff: false });
     expect(translateCalls.some((call) => call.key === 'playView.wallState.onWall')).toBe(false);
-  });
-
-  it('measures the route slot in BOTH its states, so the peek covers it', () => {
-    // The slot is always on screen on a multi-frame board — an inert strip at
-    // one frame, the transport at two — and it sits above the action bar. Leave
-    // it out of the measured block and the peek stops short of the row the
-    // climber is meant to reach, which is the whole point of it being there.
-    const fresh = renderDrawer({ frameCount: 1 });
-    expect(fresh.node('route-slot')).toBeTruthy();
-    expect(fresh.measured.some((block) => block.contains(fresh.node('route-slot')))).toBe(true);
-
-    const route = renderDrawer({ frameCount: 2, currentFrameIndex: 1 });
-    expect(route.node('route-slot')).toBeTruthy();
-    expect(route.measured.some((block) => block.contains(route.node('route-slot')))).toBe(true);
-  });
-
-  it('keeps the transient banners out of the measured above-fold region', () => {
-    // Put either banner back inside a measured block and its mount changes
-    // `peekHeight`, which re-snaps the sheet out from under the climber.
-    const confirm = renderDrawer({ pendingNewClimb: true });
-    expect(confirm.node('confirm-banner')).toBeTruthy();
-    expect(confirm.measured.some((block) => block.contains(confirm.node('confirm-banner')))).toBe(false);
-
-    const duplicate = renderDrawer({
-      publishDuplicateError: { existingClimbUuid: 'x', existingClimbName: 'Other climb' },
-    });
-    expect(duplicate.node('duplicate-banner')).toBeTruthy();
-    expect(duplicate.measured.some((block) => block.contains(duplicate.node('duplicate-banner')))).toBe(false);
-  });
-
-  it('keeps the name-required line out of the measured region, and mounts it only after a blocked Save', () => {
-    const hidden = renderDrawer({});
-    expect(hidden.node('name-required-hint')).toBeNull();
-
-    const shown = renderDrawer({ nameMissingHint: true });
-    expect(shown.node('name-required-hint')).toBeTruthy();
-    expect(shown.measured.some((block) => block.contains(shown.node('name-required-hint')))).toBe(false);
-    expect(measuredNodeNames(shown)).toEqual(measuredNodeNames(hidden));
-  });
-
-  it('measures the same nodes whether or not a banner is showing', () => {
-    // The real invariant: the measured set is banner-independent, so the peek
-    // height cannot move when one appears.
-    const without = renderDrawer({});
-    const withBanner = renderDrawer({ pendingNewClimb: true });
-
-    expect(measuredNodeNames(withBanner)).toEqual(measuredNodeNames(without));
   });
 });

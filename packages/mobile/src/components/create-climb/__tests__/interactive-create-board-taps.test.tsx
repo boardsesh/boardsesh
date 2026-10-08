@@ -34,7 +34,6 @@ vi.mock('../../play-drawer/use-zoom-pan-gesture', () => ({
     pinchGesture: {},
     zoomPanGesture: {},
     isZoomed: zoomState.isZoomed,
-    isPinching: false,
     isPinchingSV: { value: false },
     scaleSV: { value: 1 },
     translateXSV: { value: 0 },
