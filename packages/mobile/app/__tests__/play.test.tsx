@@ -55,7 +55,11 @@ vi.mock('react-native-reanimated', async () => {
     runOnJS: (callback: () => void) => callback,
   };
 });
-vi.mock('expo-router', () => ({ useRouter: () => router, useNavigation: () => navigation }));
+vi.mock('expo-router', () => ({
+  useRouter: () => router,
+  useNavigation: () => navigation,
+  Link: { AppleZoomTarget: ({ children }: { children: ReactNode }) => children },
+}));
 vi.mock('../../src/components/ScreenBackground', () => ({
   ScreenBackground: () => createElement('div', { 'data-testid': 'background' }),
 }));

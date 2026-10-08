@@ -36,6 +36,21 @@ function styleDataValue(styleValue: unknown): string {
 // pulls expo-crypto's randomUUID — stub it so the native module isn't loaded.
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 
+vi.mock('../AccessoryPlayLink', () => ({
+  AccessoryPlayLink: ({
+    children,
+    accessibilityLabel,
+  }: {
+    children: ReactNode;
+    style?: unknown;
+    accessibilityLabel: string;
+  }) =>
+    createElement(
+      'div',
+      { 'aria-label': accessibilityLabel, 'data-role': 'button', 'data-actions': '', 'data-accessory-play-link': true },
+      children,
+    ),
+}));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   PlatformColor: (name: string) => name,

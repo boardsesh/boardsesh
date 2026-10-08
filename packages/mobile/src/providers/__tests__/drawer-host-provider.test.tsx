@@ -1008,6 +1008,21 @@ describe('DrawerHostProvider climb actions', () => {
 });
 
 describe('DrawerHostProvider play drawer open target', () => {
+  it('stages a Link target without a second navigation or leaking navigation options', async () => {
+    const hosts: Array<HostValue> = [];
+    const routes: Array<RouteValue> = [];
+    renderHost(
+      (host) => hosts.push(host),
+      (route) => routes.push(route),
+    );
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+    routerNavigate.mockClear();
+    const climb = makeQueueItem('zoom-head').climb as unknown as Climb;
+    act(() => hosts.at(-1)?.openPlayDrawer(climb, { navigate: false }));
+    await waitFor(() => expect(routes.at(-1)?.playTarget?.climb).toBe(climb));
+    expect(routerNavigate).not.toHaveBeenCalled();
+    expect(routes.at(-1)?.playTarget?.options).toEqual({});
+  });
   it('does not leak boardConfig into the open target', async () => {
     const hosts: Array<HostValue> = [];
     const routes: Array<RouteValue> = [];

@@ -1,5 +1,4 @@
 import { StyleSheet, View, type ColorValue } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
 import type { Climb } from '@boardsesh/queue';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { useTheme } from '../../providers/theme-provider';
@@ -12,6 +11,7 @@ import { MarqueeText } from '../MarqueeText';
 import { DraftChip } from '../DraftChip';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { AccessoryPlayLink } from './AccessoryPlayLink';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -90,7 +90,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
   const { boardConfig } = useDrawerHost();
   const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  const { openGesture } = useAccessoryClimbTap();
+  const { openPlay, preparePlay } = useAccessoryClimbTap();
 
   const showThumbnail = placement === 'regular' && boardConfig !== null;
   const rowHeight = placement === 'inline' ? glassSize.inline : glassSize.standard;
@@ -100,21 +100,24 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
 
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
-      <GestureDetector gesture={openGesture}>
+      <AccessoryPlayLink
+        style={styles.tapClip}
+        accessibilityLabel={climb.name}
+        onOpen={openPlay}
+        onPrepare={preparePlay}
+      >
         {/* tapClip reserves the leading slot via paddingLeft (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}
-        <View style={styles.tapClip} accessibilityRole="button" accessibilityLabel={climb.name}>
-          <View style={styles.labelSlot}>
-            <ClimbLabel
-              climb={climb}
-              labelColor={systemColors.label}
-              formattedGrade={currentFormattedGrade}
-              showThumbnail={showThumbnail}
-              boardConfig={boardConfig}
-            />
-          </View>
+        <View style={styles.labelSlot}>
+          <ClimbLabel
+            climb={climb}
+            labelColor={systemColors.label}
+            formattedGrade={currentFormattedGrade}
+            showThumbnail={showThumbnail}
+            boardConfig={boardConfig}
+          />
         </View>
-      </GestureDetector>
+      </AccessoryPlayLink>
       <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
         <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
       </View>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Animated from 'react-native-reanimated';
+import { Link } from 'expo-router';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ScreenBackground } from '../src/components/ScreenBackground';
 import { PlayDrawer } from '../src/components/play-drawer';
@@ -136,55 +137,57 @@ function PlayScreen() {
   });
 
   return (
-    <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
-      {/* Opaque background. The player is a transparentModal, so the live tabs
+    <Link.AppleZoomTarget>
+      <Animated.View style={[styles.root, animatedStyle]} onLayout={onLayout}>
+        {/* Opaque background. The player is a transparentModal, so the live tabs
           screen sits behind it and must not show through. On Liquid Glass it is
           plain secondarySystemBackground: HIG Materials keeps glass on the
           controls layer, not under the player's content. Material and Reduce
           Transparency keep their opaque tonal surface — see ScreenBackground,
           which also owns why that fill stays `level0` and untouchable (#4209).
           Rendered on the first frame so the present animates over it. */}
-      <ScreenBackground
-        color={systemColors.secondaryBackground}
-        role="low"
-        fallbackColor={systemColors.secondaryBackground}
-        tintColor={playDrawerMaterialTint[colorScheme]}
-      />
-      {contentMounted && activeBoardConfig ? (
-        <>
-          <PlayDrawer
-            swipeDismiss={swipeDismiss}
-            onClose={close}
-            boardConfig={activeBoardConfig}
-            onAngleChange={onAngleChange}
-            isAngleAdjustable={isAngleAdjustable}
-            onOpenQueue={presentQueue}
-            boardMismatch={boardMismatch}
-            reachableBoardKeys={reachableBoardKeys}
-            mismatchBoardLabel={mismatchBoardLabel}
-            onSwitchBoard={onSwitchBoard}
-            onOpenClimbActions={openPlayerClimbActions}
-            dismissPlayerAndWait={dismissPlayerAndWait}
-            openTarget={playTarget}
-          />
-          {queueBoard ? (
-            <QueueSheet
-              ref={queueSheetRef}
-              board={queueBoard}
-              onClose={requestCloseQueue}
-              onClimbPress={handleClimbPress}
-              onOpenActions={handleOpenActions}
-              onSuggestionPress={handleSuggestionPress}
-              onTickHistory={handleTickHistory}
+        <ScreenBackground
+          color={systemColors.secondaryBackground}
+          role="low"
+          fallbackColor={systemColors.secondaryBackground}
+          tintColor={playDrawerMaterialTint[colorScheme]}
+        />
+        {contentMounted && activeBoardConfig ? (
+          <>
+            <PlayDrawer
+              swipeDismiss={swipeDismiss}
+              onClose={close}
+              boardConfig={activeBoardConfig}
+              onAngleChange={onAngleChange}
+              isAngleAdjustable={isAngleAdjustable}
+              onOpenQueue={presentQueue}
+              boardMismatch={boardMismatch}
+              reachableBoardKeys={reachableBoardKeys}
+              mismatchBoardLabel={mismatchBoardLabel}
+              onSwitchBoard={onSwitchBoard}
+              onOpenClimbActions={openPlayerClimbActions}
+              dismissPlayerAndWait={dismissPlayerAndWait}
+              openTarget={playTarget}
             />
-          ) : null}
-        </>
-      ) : null}
-      {/* Host the BLE device picker from inside this route so a connect from the
+            {queueBoard ? (
+              <QueueSheet
+                ref={queueSheetRef}
+                board={queueBoard}
+                onClose={requestCloseQueue}
+                onClimbPress={handleClimbPress}
+                onOpenActions={handleOpenActions}
+                onSuggestionPress={handleSuggestionPress}
+                onTickHistory={handleTickHistory}
+              />
+            ) : null}
+          </>
+        ) : null}
+        {/* Host the BLE device picker from inside this route so a connect from the
           player's lightbulb (when disconnected) presents OVER the player. Claims
           the picker, suppressing the app-root instance while mounted. */}
-      <DevicePickerSheetHost registerExternal />
-    </Animated.View>
+        <DevicePickerSheetHost registerExternal />
+      </Animated.View>
+    </Link.AppleZoomTarget>
   );
 }
 

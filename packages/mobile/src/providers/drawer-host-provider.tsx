@@ -137,6 +137,8 @@ export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig |
 }
 
 export type OpenPlayDrawerOptions = PlayDrawerOpenOptions & {
+  /** A Link owns navigation when it supplies the native zoom source. */
+  navigate?: false;
   /** Switch the drawer to a different board config before opening (e.g. the
    *  caller is opening a climb that belongs to a board other than the user's
    *  default). The override is applied via state, so the actual open happens
@@ -551,7 +553,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const openPlayDrawer = useCallback((climb: Climb, options?: OpenPlayDrawerOptions) => {
     // Pull `boardConfig` out so it doesn't reach the open target.
-    const { boardConfig: override, ...openOptions } = options ?? {};
+    const { boardConfig: override, navigate = true, ...openOptions } = options ?? {};
     // Set the board override BEFORE navigating so the route reads the right board
     // from `activeBoardConfig` (reactive) on mount — no requestAnimationFrame /
     // pending-replay dance. Only set an override that genuinely differs from the
@@ -576,7 +578,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     // navigate is a no-op, but the new nonce re-applies the target in place.
     playTargetNonceRef.current += 1;
     setPlayTarget({ climb, options: openOptions, nonce: playTargetNonceRef.current });
-    router.navigate('/play');
+    if (navigate) router.navigate('/play');
   }, []);
 
   // Drop the pane's selected climb when the pane goes away (a resize into compact,
