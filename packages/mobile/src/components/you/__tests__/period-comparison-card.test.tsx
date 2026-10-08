@@ -20,7 +20,8 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { fill: '#eee', secondaryLabel: '#666', tertiaryLabel: '#999' },
+    variant: 'liquidGlass',
+    systemColors: { fill: '#eee', tertiaryFill: '#f5f5f5', secondaryLabel: '#666', tertiaryLabel: '#999' },
     brandColors: { success: '#0a0', error: '#a00' },
   }),
 }));

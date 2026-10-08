@@ -8,6 +8,7 @@ import { Card } from '../Card';
 import { SegmentedControl } from '../SegmentedControl';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useVariantValue } from '../../theme/variants';
 
 type PeriodComparisonCardProps = {
   periodComparison: RawPeriodComparison | null;
@@ -29,6 +30,7 @@ export const PeriodComparisonCard = memo(function PeriodComparisonCard({
 }: PeriodComparisonCardProps) {
   const { t } = useTranslation('profile');
   const { systemColors, brandColors } = useTheme();
+  const tileBackground = useVariantValue({ liquidGlass: systemColors.tertiaryFill, material: systemColors.fill });
 
   // Only the label strings are locale-derived; memoizing on `t` keeps this
   // array referentially stable across renders that don't change language, so
@@ -65,13 +67,13 @@ export const PeriodComparisonCard = memo(function PeriodComparisonCard({
         accessibilityLabel={t('stats.periodComparison.controlLabel')}
       />
       <View style={styles.tiles}>
-        <View style={[styles.tile, { backgroundColor: systemColors.fill }]}>
+        <View style={[styles.tile, { backgroundColor: tileBackground }]}>
           <Text variant="title2">{current.sends}</Text>
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('stats.periodComparison.sends')}
           </Text>
         </View>
-        <View style={[styles.tile, { backgroundColor: systemColors.fill }]}>
+        <View style={[styles.tile, { backgroundColor: tileBackground }]}>
           {hasComparison ? (
             <>
               <View style={styles.deltaRow}>

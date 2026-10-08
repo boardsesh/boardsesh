@@ -85,8 +85,16 @@ older iPhone is the variant with the chrome degraded, not Material.
     Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
     carries the current climb, positioned above whichever bar is on screen.
 - Surfaces degrade in `GlassSurface` via `useEffectiveSurfaceMode()`: `glass` (iOS 26) → `blur`
-  (iOS < 26 frosted) → `material`/`solid` (Android, Reduce Transparency). Buttons stay JS
-  (`PressableSurface`) on every path, so any phone on Liquid Glass falls back to JS buttons safely.
+  (iOS < 26 frosted) → `material`/`solid` (Android, Reduce Transparency). `Button` uses native
+  SwiftUI on iOS, native Compose on Android, and Paper on web; the iOS outlined/tonal tier explicitly
+  falls back to a bordered control when native glass is unavailable.
+
+**Glass material.** Custom toolbar islands over ordinary app content use `glassEffectStyle="regular"`.
+[HIG Materials](https://developer.apple.com/design/human-interface-guidelines/materials) reserves clear
+Liquid Glass for controls over visually rich backgrounds; being a floating toolbar is not enough.
+Keep UIKit-owned headers and tabs native, and avoid adding glass behind content cards or layering it
+inside an existing glass surface. Older-iOS blur, Material and Reduce Transparency fallbacks retain
+their existing surfaces.
 
 **Component routing rule.** Cross-variant components expose one public prop API and route internally
 on `theme.variant`; call sites never change. Don't hand-write the `variant === '…'` branch — use the
@@ -96,7 +104,7 @@ its `README.md`):
 ```tsx
 // Whole subtree differs → createVariantComponent (renders the chosen impl as JSX,
 // so each gets its own fiber/hook list and a live variant flip can't crash).
-export const Button = createVariantComponent('Button', { liquidGlass: ButtonGlass, material: ButtonMaterial });
+export const Card = createVariantComponent('Card', { liquidGlass: CardGlass, material: CardMaterial });
 
 // A single value differs → selectByVariant (a typed Record<UiVariant, T>; a new
 // variant is a compile error at the call site).
@@ -269,17 +277,18 @@ export function Text({ variant = 'body', color, style, ...props }: TextProps) {
   const theme = useOptionalTheme();
   const resolvedColor = color ?? theme?.systemColors.label;
   const typeStyle = theme?.textStyles[variant] ?? variantStyles[variant];
-  return <RNText allowFontScaling maxFontSizeMultiplier={1.5} style={[typeStyle /* color */, , style]} {...props} />;
+  return <RNText allowFontScaling maxFontSizeMultiplier={0} style={[typeStyle /* color */, style]} {...props} />;
 }
 ```
 
-**Dynamic Type.** `Text` defaults `maxFontSizeMultiplier` to `1.5`. Fixed-height glass chrome (the
-queue capsule, the iOS 26 bottom accessory) caps labels at `CHROME_LABEL_MAX_FONT_SCALE` = `1.2` so
-single-line names don't clip against rigid heights. Surfaces that grow with their content keep `1.5`.
-Every `Button` is capped too: `1.5` by default, or the caller's own cap (the tick bar's `1.3`).
-On iOS the cap is a Dynamic Type step, so the default stops at `xxxLarge` (body 23pt, about
-1.35x; the next step is 1.65x) and `1.3` at `xxLarge` (1.24x). Android holds the exact multiple. Count badges set the count in `caption2` (11pt, the HIG floor) in a min-size box
-capped at `1.3` (`count-badge-style.ts`).
+**Dynamic Type.** Content `Text` and native `Button` default to an uncapped font scale (`0`) and
+accept the full accessibility text range. Grow and wrap content rather than introducing a blanket
+cap. Fixed-height chrome opts into an explicit cap: the queue capsule and iOS 26 bottom accessory
+use `CHROME_LABEL_MAX_FONT_SCALE` = `1.2`, with a native Large Content Viewer for their climb labels.
+Only wrap chrome that has no competing long-press gesture; the viewer reveals the full name and
+grade, then opens the player on release. Binaries without that native module keep the ordinary view.
+Explicit native button caps resolve to a Dynamic Type step on iOS and the requested scale on
+Android. Count badges use `caption2` in a min-size box capped at `1.3` (`count-badge-style.ts`).
 
 **Tabular figures.** A number that changes in place (a slider readout, a stepper, a leaderboard or
 chart column) takes `<Text numeric>`, which sets `fontVariant: ['tabular-nums']` so digits don't
@@ -371,6 +380,23 @@ modal screens call `useHeaderActions` to fill the native header. Nothing pinned 
 or form, because a bottom bar moves with the keyboard and the inset. The exceptions are `LogAscentSheet`
 (Attempt / Save stay in thumb reach), composers such as `CommentSheet`, and tool palettes and FABs. Full
 rules: `docs/mobile-sheets-vs-routes.md`, "Where actions go".
+
+### Content hierarchy and brand accents
+
+Boardsesh keeps the native tab bar and toolbar symbols neutral while climbing content supplies
+colour through grade labels, board drawings, photos and primary actions. [HIG
+Color](https://developer.apple.com/design/human-interface-guidelines/color) supports adaptive
+monochrome chrome and purposeful colour; it also permits coloured selected tabs. Neutral tabs are
+our product treatment, not a prohibition on selected-tab colour.
+
+On Liquid Glass, Profile's all-board send total uses adaptive `systemColors.accent`, and its board
+comparison initially shows one row before "Show all". Material keeps a neutral total and three
+collapsed rows. These are Boardsesh hierarchy choices, not an Apple-prescribed row count; expansion
+stays virtualized and the all-board total remains independent of progress filters.
+
+Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
+on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
+keeps `systemColors.fill`. Do not apply a violet background to every content card.
 
 ### Top-bar buttons
 
@@ -608,7 +634,10 @@ typo'd SF Symbol fails `vp run typecheck:mobile`.
 
 **Liquid Glass chrome icon colour.** Bottom tabs, neutral glass header controls and ordinary
 action-sheet row icons should use adaptive neutral glyphs: `systemColors.label` for selected or
-primary actions, `systemColors.secondaryLabel` for inactive actions. Carry state with icon shape,
+enabled actions, `systemColors.secondaryLabel` for inactive actions. Enabled neutral drawer-action
+glyphs, including Share, use `label` on Liquid Glass; Material retains its existing colours.
+Explicit semantic/selected colours, disabled dimming and uncoloured busy spinners keep their own
+treatment. Carry state with icon shape,
 labels, badges, filled surfaces or selection affordances before reaching for brand colour. Keep
 semantic colour for cases where colour is the content: destructive actions, warnings/errors, success
 status summaries, connected-light state, grade colours, chart series, filled primary buttons and

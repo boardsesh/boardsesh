@@ -6,6 +6,7 @@ import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import { getCachedNumberFormat } from '../../lib/intl-formatter-cache';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { useVariantValue } from '../../theme/variants';
 import { gradeBadgeColor } from './profile-chart-colors';
 
 /** The authoritative all-board total is independent of the progress filters. */
@@ -18,13 +19,14 @@ export const ProfileBoardOverview = memo(function ProfileBoardOverview({
 }) {
   const { t, i18n } = useTranslation('profile');
   const { systemColors } = useTheme();
+  const totalColor = useVariantValue({ liquidGlass: systemColors.accent, material: systemColors.label });
   return (
     <View style={styles.header} testID="profile-board-overview" accessible>
       <Text variant="title2" style={styles.heading}>
         {isOwnProfile ? t('stats.boardOverview.title') : t('stats.boardOverview.publicTitle')}
       </Text>
       <View style={styles.totalRow}>
-        <Text variant="largeTitle" style={styles.total}>
+        <Text variant="largeTitle" color={totalColor} style={styles.total}>
           {getCachedNumberFormat(i18n.language).format(summary.totalAscents)}
         </Text>
         <View style={styles.totalCaption}>

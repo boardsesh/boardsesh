@@ -207,8 +207,8 @@ export function CollapsingTopChrome({
         ]}
       >
         <GlassSurface
-          // `clear` (lighter, content-forward) to match the other floating islands.
-          glassEffectStyle="clear"
+          // Regular glass matches the other toolbar islands over app content.
+          glassEffectStyle="regular"
           fallbackColor={systemColors.elevatedSurface}
           borderRadius={TOP_TOOLBAR_RADIUS}
           style={StyleSheet.absoluteFill}

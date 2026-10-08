@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
-import { createElement, useImperativeHandle, type ReactNode, type ComponentProps, type Ref } from 'react';
+import {
+  createContext,
+  createElement,
+  useContext,
+  useImperativeHandle,
+  type ReactNode,
+  type ComponentProps,
+  type Ref,
+} from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildStatisticsSummary } from '@boardsesh/profile-stats';
 
 const scrollToOffset = vi.hoisted(() => vi.fn());
+const ThemeVariantContext = createContext<'liquidGlass' | 'material'>('liquidGlass');
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: (options: { android?: unknown }) => options.android },
@@ -55,8 +64,10 @@ vi.mock('react-i18next', () => ({
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
+    variant: useContext(ThemeVariantContext),
     systemColors: {
       label: '#fff',
+      accent: '#a78bfa',
       secondaryLabel: '#ccc',
       secondaryBackground: '#222',
       separator: '#333',
@@ -173,24 +184,64 @@ afterEach(() => {
 });
 
 describe('all-board profile overview', () => {
-  it('uses authoritative distinct totals and expands every named layout without losing them on collapse', () => {
-    const { getByText, getByTestId, queryByText } = render(
-      <ProgressTab data={makeData()} topInset={100} onOpenFilters={vi.fn()} />,
+  it.each(['liquidGlass', 'material'] as const)(
+    'preserves authoritative totals through expansion and collapse in %s',
+    (variant) => {
+      const { getByText, getByTestId, queryByText } = render(
+        <ThemeVariantContext.Provider value={variant}>
+          <ProgressTab data={makeData()} topInset={100} />
+        </ThemeVariantContext.Provider>,
+      );
+      expect(getByText('254')).toBeTruthy();
+      expect(getByText('stats.boardOverview.layouts:4')).toBeTruthy();
+      expect(getByText('MoonBoard Masters 2017')).toBeTruthy();
+      expect(getByText('stats.boardOverview.climbs:38')).toBeTruthy();
+      expect(getByText('V8')).toBeTruthy();
+      expect(queryByText('Kilter Homewall') !== null).toBe(variant === 'material');
+      expect(queryByText('MoonBoard Masters 2019') !== null).toBe(variant === 'material');
+      expect(queryByText('Tension 2 Mirror')).toBeNull();
+      fireEvent.click(getByTestId('profile-board-expand'));
+      expect(scrollToOffset).not.toHaveBeenCalled();
+      expect(getByText('Tension 2 Mirror')).toBeTruthy();
+      expect(getByTestId('profile-board-expand').getAttribute('aria-expanded')).toBe('true');
+      fireEvent.click(getByTestId('profile-board-expand'));
+      expect(scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 0, animated: false });
+      expect(queryByText('Tension 2 Mirror')).toBeNull();
+      expect(queryByText('Kilter Homewall') !== null).toBe(variant === 'material');
+      expect(getByText('254')).toBeTruthy();
+    },
+  );
+
+  it('updates collapsed rows and the expansion control when the visual variant changes', () => {
+    const summary = buildStatisticsSummary({ totalDistinctClimbs: 72, layoutStats: layoutInputs.slice(0, 2) });
+    const profileData = makeData({ statisticsSummary: summary });
+    const { rerender, getByTestId, queryByTestId } = render(
+      <ThemeVariantContext.Provider value="liquidGlass">
+        <ProgressTab data={profileData} topInset={0} />
+      </ThemeVariantContext.Provider>,
     );
-    expect(getByText('254')).toBeTruthy();
-    expect(getByText('stats.boardOverview.layouts:4')).toBeTruthy();
-    expect(getByText('MoonBoard Masters 2017')).toBeTruthy();
-    expect(getByText('stats.boardOverview.climbs:38')).toBeTruthy();
-    expect(getByText('V8')).toBeTruthy();
-    expect(queryByText('Tension 2 Mirror')).toBeNull();
+    expect(getByTestId('profile-board-row-moonboard-4')).toBeTruthy();
+    expect(queryByTestId('profile-board-row-kilter-8')).toBeNull();
+    expect(getByTestId('profile-board-expand').getAttribute('aria-expanded')).toBe('false');
+
+    rerender(
+      <ThemeVariantContext.Provider value="material">
+        <ProgressTab data={profileData} topInset={0} />
+      </ThemeVariantContext.Provider>,
+    );
+    expect(getByTestId('profile-board-row-kilter-8')).toBeTruthy();
+    expect(queryByTestId('profile-board-expand')).toBeNull();
+
+    rerender(
+      <ThemeVariantContext.Provider value="liquidGlass">
+        <ProgressTab data={profileData} topInset={0} />
+      </ThemeVariantContext.Provider>,
+    );
+    expect(queryByTestId('profile-board-row-kilter-8')).toBeNull();
     fireEvent.click(getByTestId('profile-board-expand'));
-    expect(scrollToOffset).not.toHaveBeenCalled();
-    expect(getByText('Tension 2 Mirror')).toBeTruthy();
-    expect(getByTestId('profile-board-expand').getAttribute('aria-expanded')).toBe('true');
+    expect(getByTestId('profile-board-row-kilter-8')).toBeTruthy();
     fireEvent.click(getByTestId('profile-board-expand'));
-    expect(scrollToOffset).toHaveBeenCalledExactlyOnceWith({ offset: 0, animated: false });
-    expect(queryByText('Tension 2 Mirror')).toBeNull();
-    expect(getByText('254')).toBeTruthy();
+    expect(queryByTestId('profile-board-row-kilter-8')).toBeNull();
   });
 
   it('leaves lifetime board records visible under narrowed progress filters and opens the scoped filter', () => {

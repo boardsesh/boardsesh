@@ -7,6 +7,7 @@ import { gradeBadgeColor } from '../you/profile-chart-colors';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useVariantValue } from '../../theme/variants';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 
 /**
@@ -18,8 +19,9 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 /** Neutral tile — no colour tint, so only the grade tile stands out. */
 export function StatTile({ value, label, icon }: { value: number; label: string; icon: IconName }) {
   const { systemColors } = useTheme();
+  const tileBackground = useVariantValue({ liquidGlass: systemColors.tertiaryFill, material: systemColors.fill });
   return (
-    <View style={[styles.tile, { backgroundColor: systemColors.fill }]}>
+    <View style={[styles.tile, { backgroundColor: tileBackground }]}>
       <View style={styles.valueRow}>
         <Icon name={icon} size={14} color={systemColors.secondaryLabel} />
         <Text variant="title2" color={systemColors.label}>
