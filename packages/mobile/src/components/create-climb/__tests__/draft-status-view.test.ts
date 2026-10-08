@@ -41,6 +41,12 @@ describe('deriveDraftStatusView', () => {
     }
   });
 
+  it('lets the sign-in note give its line to the heatmap, empty or not', () => {
+    for (const hasContent of [false, true]) {
+      expect(deriveDraftStatusView({ ...base, hasContent, signedOut: true }, identity)?.yieldsToHeatmap).toBe(true);
+    }
+  });
+
   it('keeps storage truth and failures ahead of the sign-in note', () => {
     expect(deriveDraftStatusView({ ...base, signedOut: true, localPersistenceAvailable: false }, identity)?.text).toBe(
       'mobile.create.autosave.notStored',

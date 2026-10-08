@@ -71,7 +71,9 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   // An empty editor has no work to report on, only the two things the header's
   // Save is waiting for. Neither is announced: both are up from the first frame.
   if (!state.hasContent) {
-    if (state.signedOut) return { text: t('mobile.create.save.login'), tone: 'muted', announce: false };
+    if (state.signedOut) {
+      return { text: t('mobile.create.save.login'), tone: 'muted', announce: false, yieldsToHeatmap: true };
+    }
     if (state.noHolds) return { text: t('mobile.create.save.needsHold'), tone: 'muted', announce: false };
     return null;
   }
@@ -108,8 +110,9 @@ export function deriveDraftStatusView(state: DraftStatusState, t: TranslateDraft
   // Signed out, the header's Save goes to sign-in. Said here, in muted tone,
   // in place of the on-device line: the draft is kept on the phone either way,
   // and the close button's hint already says so.
+  // Gives its box to the heat line: signed out is a standing state, not news.
   if (state.signedOut) {
-    return { text: t('mobile.create.save.login'), tone: 'muted', announce: false };
+    return { text: t('mobile.create.save.login'), tone: 'muted', announce: false, yieldsToHeatmap: true };
   }
 
   const savingAsDraft = state.isDraft ?? true;

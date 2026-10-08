@@ -7,8 +7,16 @@ import { createElement, type ReactNode } from 'react';
 type PressMockProps = { children?: ReactNode; onPress?: () => void; accessibilityLabel?: string };
 const announceSpy = vi.hoisted(() => vi.fn());
 vi.mock('react-native', () => ({
-  View: ({ children, testID }: { children?: ReactNode; testID?: string }) =>
-    createElement('div', { 'data-testid': testID }, children),
+  View: ({ children, testID, style }: { children?: ReactNode; testID?: string; style?: unknown }) => {
+    // Flattened so a test can read the row's resolved gap.
+    const flat = [style]
+      .flat(2)
+      .reduce<Record<string, unknown>>(
+        (merged, part) => (part && typeof part === 'object' ? { ...merged, ...part } : merged),
+        {},
+      );
+    return createElement('div', { 'data-testid': testID, 'data-gap': flat.gap }, children);
+  },
   Pressable: ({ children, onPress, accessibilityLabel }: PressMockProps) =>
     createElement('button', { onClick: onPress, 'data-label': accessibilityLabel }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
@@ -45,7 +53,7 @@ vi.mock('../../drawer-action-bar/DrawerActionBar', () => ({
       'data-value': accessibilityValueText,
     }),
   SIZES: { lg: { dim: 56, icon: 28 }, sm: { dim: 44, icon: 22 } },
-  drawerActionBarStyles: { container: {}, rowSecondary: {}, spacer: {} },
+  drawerActionBarStyles: { container: {}, rowSecondary: { gap: 8 }, spacer: {} },
 }));
 vi.mock('../../ble/BleLightbulbButton', () => ({
   BleLightbulbButton: ({
@@ -136,6 +144,12 @@ describe('CreateDrawerActionBar', () => {
     expect(bulb?.getAttribute('data-size')).toBe('44');
     expect(bulb?.getAttribute('data-connected')).toBe('true');
     expect(bulb?.previousElementSibling?.getAttribute('data-action')).toBe('queue');
+  });
+
+  it('drops the shared 8dp gap so six tools fit 320pt', () => {
+    // 6 x 44 + 32 padding = 296dp; the inherited gap would add 40 and clip the bulb.
+    const { toolRow } = renderBar(1);
+    expect(toolRow.getAttribute('data-gap')).toBe('0');
   });
 
   it('leaves the bulb out when the board has nothing to light', () => {

@@ -80,8 +80,10 @@ type CreateDrawerActionBarProps = {
  *
  * Save is not here. It is the sheet's confirm, so it sits at the trailing end of
  * the header (docs/mobile-sheets-vs-routes.md, "Where actions go"). Without the
- * pill the row holds at most six 44dp icon buttons, 264dp plus 32dp of side
- * padding, which fits a 320pt screen, so the horizontal scroller that used to
+ * pill the row holds at most six 44dp icon buttons: 264dp plus 32dp of side
+ * padding is 296dp, which fits a 320pt screen because the row drops the shared
+ * 8dp gap (5 x 8 more would be 336dp) and lets space-between spread the tools.
+ * So the horizontal scroller that used to
  * keep Save on screen went with it. The lightbulb moved here from the header,
  * where it took 44pt from the name field.
  *
@@ -354,10 +356,13 @@ const styles = StyleSheet.create({
   chipLabel: {
     fontWeight: '600',
   },
-  // Up to six tools spread across the width. The status row carries the bar's
+  // Up to six tools spread across the width. `gap: 0` overrides rowSecondary's
+  // 8dp: with it, six tools need 336dp and the last one clips at 320pt.
+  // space-between does the spacing instead. The status row carries the bar's
   // bottom padding, so the line sits 4dp under the tools rather than a full gap
   // below them.
   toolRow: {
+    gap: 0,
     justifyContent: 'space-between',
     paddingBottom: spacing[1],
   },
