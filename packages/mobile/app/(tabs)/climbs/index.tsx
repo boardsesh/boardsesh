@@ -505,7 +505,6 @@ function ClimbListInner() {
         .catch(() => {});
       return () => {
         cancelled = true;
-        setRevealTipResolved(false);
       };
     }, []),
   );
@@ -534,7 +533,6 @@ function ClimbListInner() {
         .catch(() => {});
       return () => {
         cancelled = true;
-        setQuickActionsTipResolved(false);
       };
     }, []),
   );

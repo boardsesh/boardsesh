@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Platform } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -10,7 +10,7 @@ import {
 import { parseNumericVersion, type MobileStoreRelease } from '@boardsesh/shared-schema/mobile-store-release';
 import { getHttpClient } from '../graphql/client';
 import { getPreference, setPreference } from '../preference-store';
-import { useIsAppActive } from '../app-visibility';
+import { useIsAppActive, useIsAppBackgrounded } from '../app-visibility';
 import { readConnectStepBuild } from '../onboarding/connect-step-build';
 import { useLaunchReady } from '../../providers/launch-ready-context';
 import { useQueueSessionId } from '../../providers/queue-provider';
@@ -29,6 +29,7 @@ const REMINDERS_OFF_KEY = 'storeUpdateRemindersOffV1';
 export function useStoreUpdateNudge(enabled: boolean) {
   const focused = useIsFocused();
   const active = useIsAppActive();
+  const backgrounded = useIsAppBackgrounded();
   const launchReady = useLaunchReady();
   const { sessionId } = useQueueSessionId();
   const build = readConnectStepBuild();
@@ -38,7 +39,11 @@ export function useStoreUpdateNudge(enabled: boolean) {
   const allowedBuild =
     Platform.OS !== 'web' &&
     (qaStage !== null || (build.productionBuild && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1'));
-  const eligible = enabled && focused && active && launchReady && sessionId === null && allowedBuild;
+  // Strict `active` gates the first appearance only. Once shown, the card rides
+  // out iOS `inactive` (Control Center, Face ID, a call) and leaves on background.
+  const [shown, setShown] = useState(false);
+  const foreground = active || (shown && !backgrounded);
+  const eligible = enabled && focused && foreground && launchReady && sessionId === null && allowedBuild;
   const preferenceKey = qaStage ? `${ACKNOWLEDGMENT_KEY}:qa:${qaStage}` : ACKNOWLEDGMENT_KEY;
   const remindersOffKey = qaStage ? `${REMINDERS_OFF_KEY}:qa:${qaStage}` : REMINDERS_OFF_KEY;
   const [acknowledgment, setAcknowledgment] = useState<StoreUpdateAcknowledgment | null>();
@@ -47,30 +52,42 @@ export function useStoreUpdateNudge(enabled: boolean) {
   const [openingStore, setOpeningStore] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(Date.now);
+  // This hook is the only writer of both keys, so one successful read per key
+  // pair stays true until a write fails. Refocus must not re-read and blink.
+  const storedStateLoaded = useRef(false);
 
   useEffect(() => {
-    if (!eligible) return;
-    let cancelled = false;
+    storedStateLoaded.current = false;
     setAcknowledgment(undefined);
     setRemindersOff(undefined);
-    setCurrentTimeMs(Date.now());
+  }, [preferenceKey, remindersOffKey]);
+
+  useEffect(() => {
+    if (!eligible || storedStateLoaded.current) return;
+    let cancelled = false;
     setStorageFailed(false);
     void Promise.all([getPreference<unknown>(preferenceKey), getPreference<unknown>(remindersOffKey)])
       .then(([storedAcknowledgment, storedRemindersOff]) => {
         if (cancelled) return;
+        storedStateLoaded.current = true;
         setAcknowledgment(parseStoreUpdateAcknowledgment(storedAcknowledgment));
         setRemindersOff(storedRemindersOff === true);
       })
       .catch(() => {
         if (!cancelled) setStorageFailed(true);
       });
-    // Re-evaluate age, freshness and cooldown without requiring a remount.
-    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 60_000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
     };
   }, [eligible, preferenceKey, remindersOffKey]);
+
+  useEffect(() => {
+    if (!eligible) return;
+    // Re-evaluate age, freshness and cooldown without requiring a remount.
+    setCurrentTimeMs(Date.now());
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [eligible]);
 
   const queryEnabled =
     eligible && remindersOff === false && qaStage === null && parseNumericVersion(nativeVersion) !== null;
@@ -99,6 +116,9 @@ export function useStoreUpdateNudge(enabled: boolean) {
     eligible && !storageFailed && acknowledgment !== undefined && remindersOff === false
       ? getStoreUpdateStage({ release, nativeVersion, acknowledgment, nowMs: currentTimeMs })
       : null;
+  useEffect(() => {
+    setShown(stage !== null);
+  }, [stage]);
 
   const acknowledge = useCallback(() => {
     const installed = parseNumericVersion(nativeVersion);
@@ -106,13 +126,19 @@ export function useStoreUpdateNudge(enabled: boolean) {
     const next = { nativeVersion: installed.join('.'), lastAcknowledgedAtMs: Date.now() };
     setAcknowledgment(next);
     setOpenFailed(false);
-    void setPreference(preferenceKey, next).catch(() => setStorageFailed(true));
+    void setPreference(preferenceKey, next).catch(() => {
+      storedStateLoaded.current = false;
+      setStorageFailed(true);
+    });
   }, [nativeVersion, preferenceKey]);
 
   const turnOffReminders = useCallback(() => {
     setRemindersOff(true);
     setOpenFailed(false);
-    void setPreference(remindersOffKey, true).catch(() => setStorageFailed(true));
+    void setPreference(remindersOffKey, true).catch(() => {
+      storedStateLoaded.current = false;
+      setStorageFailed(true);
+    });
   }, [remindersOffKey]);
 
   const openStore = useCallback(async () => {

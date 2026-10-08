@@ -10,6 +10,7 @@ import { DAY_MS } from '../nudge-policy';
 const controls = vi.hoisted(() => ({
   focused: true,
   active: true,
+  backgrounded: false,
   launchReady: true,
   sessionId: null as string | null,
   platform: 'ios',
@@ -32,7 +33,10 @@ vi.mock('react-native', () => ({
   Linking: { openURL: mocks.openURL },
 }));
 vi.mock('expo-router', () => ({ useIsFocused: () => controls.focused }));
-vi.mock('../../app-visibility', () => ({ useIsAppActive: () => controls.active }));
+vi.mock('../../app-visibility', () => ({
+  useIsAppActive: () => controls.active,
+  useIsAppBackgrounded: () => controls.backgrounded,
+}));
 vi.mock('../../../providers/launch-ready-context', () => ({ useLaunchReady: () => controls.launchReady }));
 vi.mock('../../../providers/queue-provider', () => ({ useQueueSessionId: () => ({ sessionId: controls.sessionId }) }));
 vi.mock('../../onboarding/connect-step-build', () => ({
@@ -70,6 +74,7 @@ beforeEach(() => {
   Object.assign(controls, {
     focused: true,
     active: true,
+    backgrounded: false,
     launchReady: true,
     sessionId: null,
     platform: 'ios',
@@ -95,7 +100,7 @@ afterEach(() => {
 });
 
 describe('store update hook lifecycle', () => {
-  it.each(['focused', 'active', 'launchReady'] as const)('waits until %s becomes true', async (gate) => {
+  it.each(['focused', 'launchReady'] as const)('waits until %s becomes true', async (gate) => {
     controls[gate] = false;
     const hook = mount();
     expect(hook.result.current.stage).toBeNull();
@@ -106,6 +111,49 @@ describe('store update hook lifecycle', () => {
     controls[gate] = false;
     hook.rerender({ allow: true });
     expect(hook.result.current.stage).toBeNull();
+  });
+
+  it('waits for a strictly active app before the first appearance', async () => {
+    controls.active = false;
+    const hook = mount();
+    await act(async () => {});
+    expect(hook.result.current.stage).toBeNull();
+    expect(mocks.request).not.toHaveBeenCalled();
+    controls.active = true;
+    hook.rerender({ allow: true });
+    await waitFor(() => expect(hook.result.current.stage).toBe('weekly'));
+  });
+
+  it('keeps a shown card through iOS inactive and hides it on background', async () => {
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.stage).toBe('weekly'));
+    controls.active = false;
+    hook.rerender({ allow: true });
+    expect(hook.result.current.stage).toBe('weekly');
+    controls.backgrounded = true;
+    hook.rerender({ allow: true });
+    expect(hook.result.current.stage).toBeNull();
+    // Back through inactive: the card waits for active again.
+    controls.backgrounded = false;
+    hook.rerender({ allow: true });
+    await act(async () => {});
+    expect(hook.result.current.stage).toBeNull();
+    controls.active = true;
+    hook.rerender({ allow: true });
+    expect(hook.result.current.stage).toBe('weekly');
+  });
+
+  it('reads stored state once and keeps the card through a refocus', async () => {
+    const hook = mount();
+    await waitFor(() => expect(hook.result.current.stage).toBe('weekly'));
+    const reads = mocks.getPreference.mock.calls.length;
+    controls.focused = false;
+    hook.rerender({ allow: true });
+    expect(hook.result.current.stage).toBeNull();
+    controls.focused = true;
+    hook.rerender({ allow: true });
+    expect(hook.result.current.stage).toBe('weekly');
+    expect(mocks.getPreference).toHaveBeenCalledTimes(reads);
   });
 
   it('waits for onboarding priority and suppresses both solo and shared sessions', async () => {
