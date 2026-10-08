@@ -36,6 +36,12 @@ import { useReachableBoardKeys } from './queue/use-reachable-board-keys';
 import { formatActiveBoardLabel } from '../lib/boards/active-board-label';
 import { track } from '../lib/analytics';
 import { ClimbReactionMenu } from '../components/climb-actions/ClimbReactionMenu';
+import { ClimbActionRunner, type ClimbActionRunRequest } from '../components/climb-actions/ClimbActionRunner';
+import {
+  ClimbMenuViewerContext,
+  takeClimbActionIntent,
+  type ClimbMenuViewer,
+} from '../components/climb-actions/climb-menu-intent';
 import { AddBetaVideoSheet } from '../components/AddBetaVideoSheet';
 import { ReportClimbSheet } from '../components/report-climb/ReportClimbSheet';
 import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
@@ -452,7 +458,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     onOpenQueue?: () => void;
     dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
     dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
+    /** 'playlist' opens straight onto the inline playlist picker: the iOS native
+     *  context menu's "Add to playlist" (ClimbContextMenu). */
+    initialView?: 'menu' | 'playlist';
   } | null>(null);
+  // An action picked in the iOS native context menu, run headlessly by
+  // ClimbActionRunner with the options its surface passed to openClimbActions.
+  const [climbActionRun, setClimbActionRun] = useState<ClimbActionRunRequest | null>(null);
+  const climbActionRunNonceRef = useRef(0);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
@@ -679,10 +692,21 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const openClimbActions = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
       const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
+      // Read before the early return, so an intent can never outlive this call.
+      const intent = takeClimbActionIntent();
       if (!boardConfig) return;
+      // A pick in the iOS native context menu: run that one action with this
+      // surface's options instead of opening the overlay. "Add to playlist"
+      // still needs a picker, so it opens the overlay straight onto it.
+      if (intent && intent !== 'playlist') {
+        climbActionRunNonceRef.current += 1;
+        setClimbActionRun({ nonce: climbActionRunNonceRef.current, actionId: intent, climb, boardConfig, options });
+        return;
+      }
       setClimbActions({
         climb,
         boardConfig,
+        initialView: intent === 'playlist' ? 'playlist' : 'menu',
         queueItemUuid: options?.queueItemUuid,
         onEditEntry: options?.onEditEntry,
         onAddBetaVideo: options?.onAddBetaVideo,
@@ -698,6 +722,29 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
 
   const closeClimbActions = useCallback(() => {
     setClimbActions(null);
+  }, []);
+
+  // Only clears the run it belongs to: a second pick may already have replaced it.
+  const finishClimbActionRun = useCallback((nonce: number) => {
+    setClimbActionRun((current) => (current?.nonce === nonce ? null : current));
+  }, []);
+
+  const showClimbActionsOverlay = useCallback((request: ClimbActionRunRequest, initialView: 'menu' | 'playlist') => {
+    setClimbActionRun((current) => (current?.nonce === request.nonce ? null : current));
+    const { climb, boardConfig, options } = request;
+    setClimbActions({
+      climb,
+      boardConfig,
+      initialView,
+      queueItemUuid: options?.queueItemUuid,
+      onEditEntry: options?.onEditEntry,
+      onAddBetaVideo: options?.onAddBetaVideo,
+      onTick: options?.onTick,
+      onReportClimb: options?.onReportClimb,
+      onOpenQueue: options?.onOpenQueue,
+      dismissSourceSheet: options?.dismissSourceSheet,
+      dismissPlayerAndWait: options?.dismissPlayerAndWait,
+    });
   }, []);
 
   const openAddToPlaylist = useCallback(
@@ -1151,141 +1198,159 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  const climbMenuViewer = useMemo<ClimbMenuViewer>(
+    () => ({ currentUserId: profile?.id ?? null, isAuthenticated }),
+    [profile?.id, isAuthenticated],
+  );
+
   return (
     <DrawerHostContext.Provider value={value}>
-      <PreviewedClimbContext.Provider value={previewedClimbValue}>
-        <PlayDrawerRouteContext.Provider value={routeValue}>
-          {children}
-          {logAscentData ? (
-            <LogAscentSheet
-              visible={logAscentVisible}
-              onClose={closeLogAscentSheet}
-              onFullyDismissed={clearLogAscentSheet}
-              climbUuid={logAscentData.climbUuid}
-              climbName={logAscentData.climbName}
-              boardName={logAscentData.boardName}
-              angle={logAscentData.angle}
-              isMirror={logAscentData.isMirror}
-              isBenchmark={logAscentData.isBenchmark}
-              baseAscensionistCount={logAscentData.baseAscensionistCount}
-              layoutId={logAscentData.layoutId}
-              sizeId={logAscentData.sizeId}
-              setIds={logAscentData.setIds}
-              sessionId={logAscentData.sessionId}
-              consensusGradeName={logAscentData.consensusGradeName}
+      <ClimbMenuViewerContext.Provider value={climbMenuViewer}>
+        <PreviewedClimbContext.Provider value={previewedClimbValue}>
+          <PlayDrawerRouteContext.Provider value={routeValue}>
+            {children}
+            {logAscentData ? (
+              <LogAscentSheet
+                visible={logAscentVisible}
+                onClose={closeLogAscentSheet}
+                onFullyDismissed={clearLogAscentSheet}
+                climbUuid={logAscentData.climbUuid}
+                climbName={logAscentData.climbName}
+                boardName={logAscentData.boardName}
+                angle={logAscentData.angle}
+                isMirror={logAscentData.isMirror}
+                isBenchmark={logAscentData.isBenchmark}
+                baseAscensionistCount={logAscentData.baseAscensionistCount}
+                layoutId={logAscentData.layoutId}
+                sizeId={logAscentData.sizeId}
+                setIds={logAscentData.setIds}
+                sessionId={logAscentData.sessionId}
+                consensusGradeName={logAscentData.consensusGradeName}
+              />
+            ) : null}
+            {betaVideoData ? (
+              <AddBetaVideoSheet
+                visible={betaVideoVisible}
+                climb={betaVideoData.climb}
+                boardName={betaVideoData.boardConfig.boardName as BoardName}
+                layoutId={betaVideoData.boardConfig.layoutId}
+                angle={betaVideoData.boardConfig.angle}
+                onClose={closeAddBetaVideo}
+                onFullyDismissed={clearBetaVideoSheet}
+              />
+            ) : null}
+            {reportClimbData ? (
+              <ReportClimbSheet
+                visible={reportClimbVisible}
+                climb={reportClimbData.climb}
+                boardName={reportClimbData.boardConfig.boardName as BoardName}
+                layoutId={reportClimbData.boardConfig.layoutId}
+                sizeId={reportClimbData.boardConfig.sizeId}
+                setIds={reportClimbData.boardConfig.setIds}
+                angle={reportClimbData.boardConfig.angle}
+                onClose={closeReportClimb}
+                onFullyDismissed={clearReportClimbSheet}
+              />
+            ) : null}
+            {playlistData ? (
+              <AddToPlaylistSheet
+                visible={playlistVisible}
+                climb={playlistData.climb}
+                boardName={playlistData.boardConfig.boardName as BoardName}
+                layoutId={playlistData.boardConfig.layoutId}
+                sizeId={playlistData.boardConfig.sizeId}
+                setIds={playlistData.boardConfig.setIds}
+                angle={playlistData.boardConfig.angle}
+                onClose={closeAddToPlaylist}
+                onFullyDismissed={clearPlaylistSheet}
+              />
+            ) : null}
+            {queueBoard ? (
+              <QueueSheet
+                ref={queueSheetRef}
+                board={queueBoard}
+                onClose={requestCloseQueueSheet}
+                onClimbPress={handleQueueClimbPress}
+                onOpenActions={handleQueueOpenActions}
+                onSuggestionPress={handleQueueSuggestionPress}
+                onTickHistory={handleQueueTickHistory}
+              />
+            ) : null}
+            <BoardSheet
+              ref={boardSheetRef}
+              boardLabel={boardSheetLabel}
+              boardConfig={storedActiveBoardConfig}
+              onClose={requestCloseBoardSheet}
+              onSwitchBoard={handleSwitchBoardFromSheet}
+              activeBoard={activeBoard ?? null}
+              onOpenSprayMaintenance={sprayWallActions.openMaintenance}
+              onShareSprayWall={sprayWallActions.openShare}
+              viewerUserId={sprayViewerUserId}
+              onSelectGymWall={handleSelectGymWall}
+              onClimbPress={handleBoardSheetClimbPress}
+              onAddToQueue={handleBoardSheetAddToQueue}
+              onOpenPlaylist={handleBoardSheetOpenPlaylist}
+              onOpenActions={handleBoardSheetModalOpenActions}
             />
-          ) : null}
-          {betaVideoData ? (
-            <AddBetaVideoSheet
-              visible={betaVideoVisible}
-              climb={betaVideoData.climb}
-              boardName={betaVideoData.boardConfig.boardName as BoardName}
-              layoutId={betaVideoData.boardConfig.layoutId}
-              angle={betaVideoData.boardConfig.angle}
-              onClose={closeAddBetaVideo}
-              onFullyDismissed={clearBetaVideoSheet}
-            />
-          ) : null}
-          {reportClimbData ? (
-            <ReportClimbSheet
-              visible={reportClimbVisible}
-              climb={reportClimbData.climb}
-              boardName={reportClimbData.boardConfig.boardName as BoardName}
-              layoutId={reportClimbData.boardConfig.layoutId}
-              sizeId={reportClimbData.boardConfig.sizeId}
-              setIds={reportClimbData.boardConfig.setIds}
-              angle={reportClimbData.boardConfig.angle}
-              onClose={closeReportClimb}
-              onFullyDismissed={clearReportClimbSheet}
-            />
-          ) : null}
-          {playlistData ? (
-            <AddToPlaylistSheet
-              visible={playlistVisible}
-              climb={playlistData.climb}
-              boardName={playlistData.boardConfig.boardName as BoardName}
-              layoutId={playlistData.boardConfig.layoutId}
-              sizeId={playlistData.boardConfig.sizeId}
-              setIds={playlistData.boardConfig.setIds}
-              angle={playlistData.boardConfig.angle}
-              onClose={closeAddToPlaylist}
-              onFullyDismissed={clearPlaylistSheet}
-            />
-          ) : null}
-          {queueBoard ? (
-            <QueueSheet
-              ref={queueSheetRef}
-              board={queueBoard}
-              onClose={requestCloseQueueSheet}
-              onClimbPress={handleQueueClimbPress}
-              onOpenActions={handleQueueOpenActions}
-              onSuggestionPress={handleQueueSuggestionPress}
-              onTickHistory={handleQueueTickHistory}
-            />
-          ) : null}
-          <BoardSheet
-            ref={boardSheetRef}
-            boardLabel={boardSheetLabel}
-            boardConfig={storedActiveBoardConfig}
-            onClose={requestCloseBoardSheet}
-            onSwitchBoard={handleSwitchBoardFromSheet}
-            activeBoard={activeBoard ?? null}
-            onOpenSprayMaintenance={sprayWallActions.openMaintenance}
-            onShareSprayWall={sprayWallActions.openShare}
-            viewerUserId={sprayViewerUserId}
-            onSelectGymWall={handleSelectGymWall}
-            onClimbPress={handleBoardSheetClimbPress}
-            onAddToQueue={handleBoardSheetAddToQueue}
-            onOpenPlaylist={handleBoardSheetOpenPlaylist}
-            onOpenActions={handleBoardSheetModalOpenActions}
-          />
-          {sprayWallActions.shareSnapshot ? (
-            <BoardShareSheet
-              visible={sprayWallActions.shareVisible}
-              onDismiss={sprayWallActions.closeShare}
-              onFullyDismissed={sprayWallActions.clearShareSnapshot}
-              shareUrl={sprayWallActions.shareSnapshot.url}
-              wallName={sprayWallActions.shareSnapshot.wallName}
-              visibility={sprayWallActions.shareSnapshot.visibility}
-            />
-          ) : null}
-          {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
+            {sprayWallActions.shareSnapshot ? (
+              <BoardShareSheet
+                visible={sprayWallActions.shareVisible}
+                onDismiss={sprayWallActions.closeShare}
+                onFullyDismissed={sprayWallActions.clearShareSnapshot}
+                shareUrl={sprayWallActions.shareSnapshot.url}
+                wallName={sprayWallActions.shareSnapshot.wallName}
+                visibility={sprayWallActions.shareSnapshot.visibility}
+              />
+            ) : null}
+            {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
           later sibling and floats above them when a row inside those sheets is
           long-pressed (RN-screens doesn't strictly guarantee cross-overlay z-order). */}
-          {climbActions ? (
-            <ClimbReactionMenu
-              key={climbActions.climb.uuid}
-              climb={climbActions.climb}
-              boardConfig={climbActions.boardConfig}
-              queueItemUuid={climbActions.queueItemUuid}
-              currentUserId={profile?.id ?? null}
-              isAuthenticated={isAuthenticated}
-              onEditEntry={climbActions.onEditEntry}
-              onAddBetaVideo={climbActions.onAddBetaVideo}
-              onTick={climbActions.onTick}
-              onReportClimb={climbActions.onReportClimb}
-              onOpenQueue={climbActions.onOpenQueue}
-              dismissSourceSheet={climbActions.dismissSourceSheet}
-              dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
-              reduceMotion={reduceMotion}
-              onClose={closeClimbActions}
+            {climbActions ? (
+              <ClimbReactionMenu
+                key={`${climbActions.climb.uuid}:${climbActions.initialView ?? 'menu'}`}
+                climb={climbActions.climb}
+                boardConfig={climbActions.boardConfig}
+                queueItemUuid={climbActions.queueItemUuid}
+                currentUserId={profile?.id ?? null}
+                isAuthenticated={isAuthenticated}
+                onEditEntry={climbActions.onEditEntry}
+                onAddBetaVideo={climbActions.onAddBetaVideo}
+                onTick={climbActions.onTick}
+                onReportClimb={climbActions.onReportClimb}
+                onOpenQueue={climbActions.onOpenQueue}
+                dismissSourceSheet={climbActions.dismissSourceSheet}
+                dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
+                initialView={climbActions.initialView}
+                reduceMotion={reduceMotion}
+                onClose={closeClimbActions}
+              />
+            ) : null}
+            {climbActionRun ? (
+              <ClimbActionRunner
+                key={climbActionRun.nonce}
+                request={climbActionRun}
+                currentUserId={profile?.id ?? null}
+                isAuthenticated={isAuthenticated}
+                onDone={finishClimbActionRun}
+                onShowOverlay={showClimbActionsOverlay}
+              />
+            ) : null}
+            <QueueAddedSnackbar
+              visible={snackbarVisible}
+              nonce={snackbarNonce}
+              queueAdded={snackbarQueueAdded}
+              onDismiss={dismissSnackbar}
+              onOpen={handleSnackbarOpen}
             />
-          ) : null}
-          <QueueAddedSnackbar
-            visible={snackbarVisible}
-            nonce={snackbarNonce}
-            queueAdded={snackbarQueueAdded}
-            onDismiss={dismissSnackbar}
-            onOpen={handleSnackbarOpen}
-          />
-          <UndoWallChangeSnackbar
-            visible={undoWallChangeVisible}
-            nonce={undoWallChangeNonce}
-            onDismiss={dismissUndoWallChangeSnackbar}
-            onUndo={handleUndoWallChange}
-          />
-        </PlayDrawerRouteContext.Provider>
-      </PreviewedClimbContext.Provider>
+            <UndoWallChangeSnackbar
+              visible={undoWallChangeVisible}
+              nonce={undoWallChangeNonce}
+              onDismiss={dismissUndoWallChangeSnackbar}
+              onUndo={handleUndoWallChange}
+            />
+          </PlayDrawerRouteContext.Provider>
+        </PreviewedClimbContext.Provider>
+      </ClimbMenuViewerContext.Provider>
     </DrawerHostContext.Provider>
   );
 }

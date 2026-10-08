@@ -41,6 +41,11 @@ const climbActions = vi.hoisted(() => ({
   props: null as null | Record<string, unknown>,
 }));
 
+const actionRunner = vi.hoisted(() => ({
+  props: null as null | Record<string, unknown>,
+}));
+const readActionRunnerProps = (): Record<string, unknown> | null => actionRunner.props;
+
 const playlistSheet = vi.hoisted(() => ({
   props: null as null | Record<string, unknown>,
 }));
@@ -181,6 +186,12 @@ vi.mock('../../components/play-drawer/QueueSheet', async () => {
 
 vi.mock('../../components/LogAscentSheet', () => ({
   LogAscentSheet: () => createElement('div', { 'data-log-ascent': 'true' }),
+}));
+vi.mock('../../components/climb-actions/ClimbActionRunner', () => ({
+  ClimbActionRunner: (props: Record<string, unknown>) => {
+    actionRunner.props = props;
+    return createElement('div', { 'data-action-runner': 'true' });
+  },
 }));
 vi.mock('../../components/climb-actions/ClimbReactionMenu', () => ({
   ClimbReactionMenu: (props: Record<string, unknown>) => {
@@ -351,6 +362,7 @@ import {
   type BoardConfig,
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
+import { withClimbActionIntent } from '../../components/climb-actions/climb-menu-intent';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
@@ -958,6 +970,75 @@ describe('DrawerHostProvider climb actions', () => {
       hosts.at(-1)?.closeClimbActions();
     });
     await waitFor(() => expect(container.querySelector('[data-climb-actions]')).toBeNull());
+  });
+
+  // HIG context menus: a pick in the iOS native menu reaches openClimbActions
+  // through the surface's own callback, wrapped in an intent. The provider runs
+  // that one action with the surface's options instead of opening the overlay.
+  it('runs a native-menu pick with the options its surface passed, without the overlay', async () => {
+    actionRunner.props = null;
+    const hosts: Array<HostValue> = [];
+    const { container } = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    const onEditEntry = vi.fn();
+    act(() => {
+      withClimbActionIntent('tick', () => hosts.at(-1)?.openClimbActions(climb, undefined, { onEditEntry }));
+    });
+
+    await waitFor(() => expect(container.querySelector('[data-action-runner]')).not.toBeNull());
+    expect(container.querySelector('[data-climb-actions]')).toBeNull();
+    const runnerProps = readActionRunnerProps();
+    expect(runnerProps?.request).toMatchObject({
+      actionId: 'tick',
+      climb,
+      boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+      options: { onEditEntry },
+    });
+
+    // The runner reports done for its own run, which unmounts it.
+    const { nonce } = runnerProps?.request as { nonce: number };
+    act(() => {
+      (runnerProps?.onDone as (doneNonce: number) => void)(nonce);
+    });
+    await waitFor(() => expect(container.querySelector('[data-action-runner]')).toBeNull());
+  });
+
+  it('opens the overlay straight onto the playlist picker for a native-menu "Add to playlist"', async () => {
+    const hosts: Array<HostValue> = [];
+    const { container } = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    act(() => {
+      withClimbActionIntent('playlist', () => hosts.at(-1)?.openClimbActions(climb));
+    });
+
+    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
+    expect(climbActions.props).toMatchObject({ climb, initialView: 'playlist' });
+    expect(container.querySelector('[data-action-runner]')).toBeNull();
+  });
+
+  it('opens the overlay on its action list for a plain long-press, and an intent never leaks into one', async () => {
+    const hosts: Array<HostValue> = [];
+    const { container } = renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'climb-x').climb as unknown as Climb;
+    // An intent set around a call that throws is still cleared afterwards.
+    expect(() =>
+      withClimbActionIntent('share', () => {
+        throw new Error('surface failed');
+      }),
+    ).toThrow('surface failed');
+    act(() => {
+      hosts.at(-1)?.openClimbActions(climb);
+    });
+
+    await waitFor(() => expect(container.querySelector('[data-climb-actions]')).not.toBeNull());
+    expect(climbActions.props).toMatchObject({ climb, initialView: 'menu' });
+    expect(container.querySelector('[data-action-runner]')).toBeNull();
   });
 
   it('opens add-to-playlist against the active board snapshot', async () => {
