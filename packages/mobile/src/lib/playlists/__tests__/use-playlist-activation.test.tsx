@@ -6,6 +6,7 @@ import { computeNavigationStateWithSuggestions } from '@boardsesh/play-view';
 import type { UsePlaylistClimbActivationOptions } from '@boardsesh/playlists-react';
 import { MAX_PLAYLIST_QUEUE_REPLACE_PAGES } from '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs';
 import { usePlaylistActivation, _resetEmptyBoardFetchReportsForTests } from '../use-playlist-activation';
+import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
 
 // The shared `usePlaylistClimbActivation` is exercised by @boardsesh/playlists-react's
 // own tests. Here we mock it to capture the options the mobile wrapper builds —
@@ -1631,5 +1632,147 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       await waitFor(() => expect(mocks.appendQueueItems).toHaveBeenCalledTimes(1));
       expect(mocks.appendQueueItems.mock.calls[0][0].map((item) => item.climb.uuid)).toEqual(['a']);
     });
+  });
+});
+
+describe('privacy withdrawal during playlist activation', () => {
+  it('keeps old loaded rows withdrawn across rerenders and shallow array copies', async () => {
+    const withdrawn = makeClimb('withdrawn');
+    const options = { allClimbs: [withdrawn], viewOnlyBoard: VIEW_ONLY_BOARD };
+    const { result, rerender } = renderActivation(vi.fn(), options);
+    act(() => invalidatePrivacySnapshots());
+    await act(async () => {
+      await result.current.activate(withdrawn);
+    });
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+
+    options.allClimbs = [...options.allClimbs];
+    rerender();
+    await act(async () => {
+      await result.current.activate(withdrawn);
+    });
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+
+    const allowed = makeClimb('fresh-authorized');
+    options.allClimbs = [allowed];
+    rerender();
+    await act(async () => {
+      await result.current.activate(withdrawn);
+      await result.current.activate({ ...withdrawn });
+    });
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.activate(allowed);
+    });
+    expect(mocks.openPlayDrawer).toHaveBeenCalledTimes(1);
+    expect(mocks.openPlayDrawer.mock.calls[0][0].uuid).toBe(allowed.uuid);
+  });
+
+  it('rejects captured activation and shared refresh callbacks before React rerenders', async () => {
+    const climb = makeClimb('withdrawn');
+    const { result } = renderActivation();
+    const oldActivate = result.current.activate;
+    const oldQueueApi = captured().queueApi!;
+    const source = {
+      playlistUuid: 'playlist:pl-1',
+      activatedClimbUuid: climb.uuid,
+      boardKey: 'kilter:1:2:3',
+      climbs: [climb],
+    };
+
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      expect(await oldQueueApi.setCurrentClimb(climb, { playlistSuggestionSource: source })).toBeNull();
+      oldQueueApi.refreshPlaylistSuggestionSource(source);
+      await oldActivate(climb);
+    });
+
+    expect(mocks.setCurrentClimb).not.toHaveBeenCalled();
+    expect(mocks.refreshPlaylistSuggestionSource).not.toHaveBeenCalled();
+    expect(mocks.openPlayDrawer).not.toHaveBeenCalled();
+    // A fresh authorized result can still activate after the boundary.
+    await act(async () => {
+      await captured().queueApi!.setCurrentClimb(makeClimb('allowed'), { playlistSuggestionSource: null });
+    });
+    expect(mocks.setCurrentClimb).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a delayed append page after access changes', async () => {
+    let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+    const fetchPage = vi.fn(
+      () =>
+        new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+          releaseFetch = resolve;
+        }),
+    );
+    const { result } = renderActivation(fetchPage);
+    act(() => result.current.addToQueue.append?.());
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
+    });
+
+    await waitFor(() => expect(result.current.addToQueue.isAppending).toBe(false));
+    expect(mocks.appendQueueItems).not.toHaveBeenCalled();
+    expect(mocks.showQueueAddedSnackbar).not.toHaveBeenCalled();
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('discards a delayed replacement page without restoring the seeded content', async () => {
+    let releaseFetch: (page: { climbs: Climb[]; hasMore: boolean }) => void = () => {};
+    const fetchPage = vi.fn(
+      () =>
+        new Promise<{ climbs: Climb[]; hasMore: boolean }>((resolve) => {
+          releaseFetch = resolve;
+        }),
+    );
+    const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+    let activation: Promise<void> = Promise.resolve();
+    act(() => {
+      activation = result.current.activate(makeClimb('withdrawn'));
+    });
+    expect(mocks.setQueue).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      mocks.setQueue.mockClear();
+      mocks.setPlaylistSuggestionSource.mockClear();
+      releaseFetch({ climbs: [makeClimb('withdrawn')], hasMore: false });
+      await activation;
+    });
+
+    expect(mocks.setQueue).not.toHaveBeenCalled();
+    expect(mocks.setPlaylistSuggestionSource).not.toHaveBeenCalled();
+  });
+
+  it('cancels an already-open replacement prompt when access changes', async () => {
+    const current = makeQueueItem('current-slot', 'current');
+    mocks.queueState = { queue: [current, makeQueueItem('future-slot', 'future')], currentClimbQueueItem: current };
+    let answerPrompt: (answer: string) => void = () => {};
+    mocks.choose.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          answerPrompt = resolve;
+        }),
+    );
+    const fetchPage = vi.fn();
+    const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+    let activation: Promise<void> = Promise.resolve();
+    act(() => {
+      activation = result.current.activate(makeClimb('withdrawn'));
+    });
+    expect(mocks.choose).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      invalidatePrivacySnapshots();
+      answerPrompt('replace');
+      await activation;
+    });
+
+    expect(fetchPage).not.toHaveBeenCalled();
+    expect(mocks.setQueue).not.toHaveBeenCalled();
+    expect(mocks.appendQueueItems).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import type { PrivacyPublicationInput } from '@boardsesh/shared-schema';
 import { gql } from 'graphql-request';
 
 // Fragment for playlist fields
@@ -318,6 +319,7 @@ export type GetPlaylistsForClimbsQueryResponse = {
 };
 
 export type CreatePlaylistInput = {
+  privacy?: PrivacyPublicationInput;
   uuid?: string;
   boardType: string;
   layoutId: number;
@@ -336,6 +338,7 @@ export type CreatePlaylistMutationResponse = {
 };
 
 export type UpdatePlaylistInput = {
+  privacy?: PrivacyPublicationInput;
   playlistId: string;
   name?: string;
   description?: string;

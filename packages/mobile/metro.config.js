@@ -9,6 +9,7 @@ const path = require('path');
 const { configureWatchman } = require('./metro-watchman.cjs');
 const { applyExpoWebResponseHeaders } = require('./expo-web-response-headers.cjs');
 const { resolveWebRuntimeModulePath } = require('./metro-web-runtime-resolution.cjs');
+const { filterWebStartupModules } = require('./metro-web-startup-modules.cjs');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
@@ -32,6 +33,8 @@ config.watchFolders = [monorepoRoot];
 // does put cacheVersion into every transform cache key, so fold both files'
 // contents in there: editing the wrapper or upgrading Expo's worker misses.
 if (process.env.BOARDSESH_WEB === '1') {
+  const getStartupModules = config.serializer.getModulesRunBeforeMainModule;
+  config.serializer.getModulesRunBeforeMainModule = (...args) => filterWebStartupModules(getStartupModules(...args));
   const webTransformerPath = require.resolve('./metro-web-deterministic-transform-worker.cjs');
   const workerDigest = crypto.createHash('sha1');
   for (const workerPath of [webTransformerPath, config.transformerPath]) {

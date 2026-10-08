@@ -1,3 +1,5 @@
+import { duplicateDisclosureCondition, projectDuplicateIdentity } from './duplicate-privacy';
+import { contentVisibilityCondition } from '../../../services/privacy';
 import { sql } from 'drizzle-orm';
 import type { SQL, SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -32,7 +34,7 @@ export { parseFramesToHoldEntries, type NormalizedHold, type NormalizedHoldRow }
 import type { NormalizedHold } from '@boardsesh/db/queries';
 
 export type ExactDuplicateMatch = {
-  uuid: string;
+  uuid: string | null;
   name: string | null;
   setterUsername: string | null;
   angle: number | null;
@@ -178,6 +180,7 @@ function sizeScopeSql(sizeId: number | undefined, compatibleSizeIds: SQLWrapper)
 }
 
 type FindExactDuplicateArgs = {
+  viewerUserId?: string | null;
   boardType: BoardName;
   layoutId: number;
   signature: string;
@@ -215,6 +218,7 @@ type FindExactDuplicateArgs = {
  * when several exist, so the error message points at the canonical version.
  */
 export async function findExactDuplicateMatch({
+  viewerUserId,
   boardType,
   layoutId,
   signature,
@@ -230,10 +234,12 @@ export async function findExactDuplicateMatch({
     name: string | null;
     setter_username: string | null;
     angle: number | null;
+    can_view_details: boolean;
   }>(
     executor ?? db,
     sql`
       SELECT
+        ${duplicateDisclosureCondition(viewerUserId)} AS can_view_details,
         ${dbSchema.boardClimbs.uuid} AS uuid,
         ${dbSchema.boardClimbs.name} AS name,
         ${dbSchema.boardClimbs.setterUsername} AS setter_username,
@@ -288,14 +294,14 @@ export async function findExactDuplicateMatch({
   const match = rows[0];
   if (!match) return null;
   return {
-    uuid: match.uuid,
-    name: match.name,
-    setterUsername: match.setter_username,
-    angle: match.angle,
+    ...projectDuplicateIdentity({ ...match, canViewDetails: match.can_view_details }),
+    setterUsername: match.can_view_details === true ? match.setter_username : null,
+    angle: match.can_view_details === true ? match.angle : null,
   };
 }
 
 type FindSimilarClimbsArgs = {
+  viewerUserId?: string;
   boardType: BoardName;
   layoutId: number;
   holds: ReadonlyArray<NormalizedHold>;
@@ -340,6 +346,7 @@ type FindSimilarClimbsArgs = {
  * thread it through to `executeRows` (same pattern as the gate function).
  */
 export async function findSimilarClimbs({
+  viewerUserId,
   boardType,
   layoutId,
   holds,
@@ -467,7 +474,8 @@ export async function findSimilarClimbs({
       LEFT JOIN ${dbSchema.boardDifficultyGrades} bdg
         ON bdg.board_type = c.board_type
        AND bdg.difficulty = ROUND(${dbSchema.boardClimbStats.displayDifficulty})
-      WHERE (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
+      WHERE ${contentVisibilityCondition('climb', sql`c.uuid`, sql`c.user_id`, viewerUserId)}
+        AND (o.shared::float / (${targetSize} + cs.n - o.shared)) >= ${safeThreshold}
       ORDER BY jaccard DESC, COALESCE(${dbSchema.boardClimbStats.ascensionistCount}, 0) DESC, c.uuid ASC
       LIMIT ${safeLimit}
       `,

@@ -55,7 +55,10 @@ import { SHARED_EVENTS, boardTypeProperty } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { getHttpClient } from '../lib/graphql/client';
+import { sanitizeQueueSnapshot } from '../lib/queue-privacy';
+import { invalidateStoredQueueSnapshot } from '../lib/queue-snapshot-store';
 import { restoreRemovedQueueItems, type QueueContentSnapshot } from '../lib/queue-undo';
+import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../lib/privacy/privacy-cache';
 import {
   GET_SESSION_QUEUE_STATE,
   type SessionLiveStatsEvent,
@@ -527,6 +530,30 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     authenticatedUserIdRef.current = null;
   }
   lastObservedAuthenticationRef.current = isAuthenticated;
+  const subscribeToQueuePrivacy = useCallback(
+    (notify: () => void) =>
+      subscribeToPrivacyRevocations(() => {
+        // Imperative readers and delayed mutation callbacks must lose the copied
+        // payload before React's next commit. Keep list order and current selection.
+        resetQueueMutationLane();
+        invalidateStoredQueueSnapshot();
+        const snapshot = sanitizeQueueSnapshot(stateRef.current);
+        stateRef.current = snapshot;
+        playlistSuggestionSourceRef.current = null;
+        pendingUnsyncedCurrentRef.current = null;
+        dispatch({ type: 'UPDATE_QUEUE', payload: snapshot });
+        setPlaylistSuggestionSourceState(null);
+        setLiveStats(null);
+        setSessionRuntimeState(createEmptySessionRuntimeState());
+        notify();
+      }),
+    [resetQueueMutationLane],
+  );
+  const privacyRevocationGeneration = useSyncExternalStore(
+    subscribeToQueuePrivacy,
+    getPrivacyRevocationGeneration,
+    getPrivacyRevocationGeneration,
+  );
   const undoScopeIdentity = JSON.stringify([
     sessionId,
     activeBoardKey,
@@ -538,7 +565,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     undoScopeIdentityRef.current = { identity: undoScopeIdentity, revision: undoScopeIdentityRef.current.revision + 1 };
   }
   // A switch away and back still retires an already queued Undo.
-  const undoScope = JSON.stringify([undoScopeIdentity, undoScopeIdentityRef.current.revision]);
+  const undoScope = JSON.stringify([
+    undoScopeIdentity,
+    undoScopeIdentityRef.current.revision,
+    privacyRevocationGeneration,
+  ]);
   const undoScopeRef = useRef(undoScope);
   undoScopeRef.current = undoScope;
   const identityRef = useRef<{ username: string | undefined; avatarUrl: string | undefined }>({
@@ -713,6 +744,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           return buildSessionBoardPath(activeBoard);
         },
         execute: async ({ sessionId: sid, boardPath }) => {
+          const privacyGeneration = getPrivacyRevocationGeneration();
           // Snapshot identity at the moment we build the payload. If the profile
           // resolves while JOIN is in flight, we must record the values we
           // actually sent — not identityRef.current's newer ones — so the
@@ -736,6 +768,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
               avatarUrl: sentIdentity.avatarUrl,
             },
           });
+          if (privacyGeneration !== getPrivacyRevocationGeneration()) throw new Error('Queue authorization changed');
           // Remember what we announced so the re-announce effect only fires if
           // the identity changes after this join (profile loaded late / edited).
           announcedIdentityRef.current = sentIdentity;
@@ -940,6 +973,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
   useQueuePersistence({
+    authenticatedUserId,
+    identityReady: !isAuthenticated || !!authenticatedUserId,
+    privacyRevocationGeneration,
     dispatch,
     sessionIdRef,
     setSessionId,
@@ -1109,6 +1145,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // angle-follow, and the 60s hash watchdog. See useSessionRealtime.
   useSessionRealtime({
     authTransportRevision,
+    privacyRevocationGeneration,
     sessionId,
     dispatch,
     coordinator,
@@ -1193,6 +1230,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Self-healing re-grade: refetch angle-specific grades for queued climbs and
   // the displayed playlist peek whenever the active angle drifts. See useQueueRegrade.
   useQueueRegrade({
+    privacyRevocationGeneration,
     activeBoard,
     queue: state.queue,
     currentClimbQueueItem: state.currentClimbQueueItem,
@@ -1207,7 +1245,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Re-fetch it by uuid at the live angle and patch it in place so the row shows
   // the real name/grade/thumbnail instead of an "Unknown Climb" placeholder. See
   // useQueueResolveClimbs (#2527).
-  useQueueResolveClimbs({ activeBoard, queue: state.queue, dispatch });
+  useQueueResolveClimbs({
+    activeBoard,
+    queue: state.queue,
+    currentClimbQueueItem: state.currentClimbQueueItem,
+    privacyRevocationGeneration,
+    dispatch,
+  });
 
   // The reducer raises `needsResync` when it filters corrupted (null) items out
   // of a server FullSync/UPDATE_QUEUE — the local queue is now known-stale.
@@ -1294,6 +1338,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    */
   const addToQueue = useCallback(
     async (rawItem: ClimbQueueItem, options?: { placement?: QueueAddPlacement }): Promise<'added' | 'cancelled'> => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return 'cancelled';
       const activeBoard = activeBoardRef.current;
       const activeConfig = toActiveBoardCompatibilityConfig(activeBoard);
       // `stateRef.current` is reassigned during render, so between a dispatch
@@ -1320,7 +1365,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           climbLayoutId: decision.climbLayoutId,
           activeBoardName: activeBoard?.boardType,
         });
-        if (result.outcome === 'cancel') return 'cancelled';
+        if (privacyRevocationGeneration !== getPrivacyRevocationGeneration() || result.outcome === 'cancel')
+          return 'cancelled';
         if (result.outcome === 'switch') {
           // The queue followed them onto the new board, so peers must too — a
           // local-only switch would leave the session's board path (and every
@@ -1341,7 +1387,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       commitQueueAdd(rawItem, options?.placement ?? 'end');
       return 'added';
     },
-    [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath],
+    [commitQueueAdd, requestCrossBoardAdd, setSessionBoardPath, privacyRevocationGeneration],
   );
 
   const removeFromQueue = useCallback(
@@ -1377,6 +1423,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   const reorderQueue = useCallback(
     (uuid: string, oldIndex: number, newIndex: number, options?: { source?: QueueReorderSource }) => {
+      const origin = captureQueueMutationOrigin();
       // Optimistic local reorder; the reducer re-validates uuid-at-oldIndex so
       // the server's QueueReordered echo is a safe no-op.
       const previousQueue = stateRef.current.queue;
@@ -1392,6 +1439,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         source: options?.source ?? 'drag',
       });
       mutations.reorderQueueItem(uuid, oldIndex, newIndex).catch((error) => {
+        if (!isQueueMutationOriginCurrent(origin)) return;
         if (__DEV__) console.warn('[queue] reorderQueueItem sync failed; rolling back', error);
         // Unlike add/remove (idempotent, converge on next sync), a failed reorder
         // would leave this client's order silently diverged from peers. Roll back
@@ -1401,7 +1449,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         showQueueMutationErrorToast(error, t, showToast);
       });
     },
-    [mutations, showToast, t],
+    [mutations, showToast, t, captureQueueMutationOrigin, isQueueMutationOriginCurrent],
   );
 
   /**
@@ -1591,18 +1639,21 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // session mutations.
   const setQueue = useCallback(
     (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
       invalidateQueuedQueueMutations();
       applyQueueSnapshot(queue, currentClimbQueueItem, captureQueueMutationOrigin());
     },
-    [applyQueueSnapshot, captureQueueMutationOrigin, invalidateQueuedQueueMutations],
+    [applyQueueSnapshot, captureQueueMutationOrigin, invalidateQueuedQueueMutations, privacyRevocationGeneration],
   );
 
   const restoreQueueItems = useCallback(
     (before: QueueContentSnapshot, removedUuids: ReadonlySet<string>, scope: string) => {
-      if (scope !== undoScopeRef.current) return;
+      const isCurrent = () =>
+        scope === undoScopeRef.current && privacyRevocationGeneration === getPrivacyRevocationGeneration();
+      if (!isCurrent()) return;
       const origin = captureQueueMutationOrigin();
       applyQueueSnapshot(before.queue, before.currentClimbQueueItem, origin, () => {
-        if (scope !== undoScopeRef.current) return null;
+        if (!isCurrent()) return null;
         // A removal failure may have a pre-Undo HTTP snapshot still in flight.
         // Retire its ownership when this queued restore applies, so neither it
         // nor a coalesced trailing read can overwrite Undo. Keep the mutation
@@ -1616,7 +1667,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         });
       });
     },
-    [applyQueueSnapshot, captureQueueMutationOrigin],
+    [applyQueueSnapshot, captureQueueMutationOrigin, privacyRevocationGeneration],
   );
 
   // Stable live read of the queue + current climb (see QueueContextValue). Reads
@@ -1642,6 +1693,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // can confirm an honest count.
   const appendQueueItems = useCallback(
     (items: ClimbQueueItem[], options?: { activateFirstWhenIdle?: boolean }): number => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return 0;
       // Nothing to append: don't broadcast a SET_QUEUE that changes nothing.
       if (items.length === 0) return 0;
       const { queue, currentClimbQueueItem } = stateRef.current;
@@ -1721,6 +1773,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       return appended.length;
     },
     [
+      privacyRevocationGeneration,
       applyQueueSnapshot,
       attributeNewItem,
       captureQueueMutationOrigin,
@@ -1823,6 +1876,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       insertAfterCurrent?: boolean,
       suppliedCorrelationId?: string,
     ) => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
       // Activating a climb that isn't in the queue yet (shouldAddToQueue, or the
       // playlist peek minted in nextClimb) introduces it — stamp it before the
       // dispatch so state and broadcast agree. Navigating onto an item already in
@@ -1906,6 +1960,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       });
     },
     [
+      privacyRevocationGeneration,
       attributeNewItem,
       captureQueueMutationOrigin,
       coordinator,
@@ -1928,9 +1983,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // peer-held wall LED link (which follows THEIR local current, updated solely by
   // our broadcast) to advance. Without it they stay on the old climb until the
   // next navigation.
+  const pendingUnsyncedCurrent = pendingUnsyncedCurrentRef.current;
   useEffect(() => {
-    const pending = pendingUnsyncedCurrentRef.current;
-    if (!pending) return;
+    const pending = pendingUnsyncedCurrent;
+    // An older passive effect must not retire a newer activation that has not
+    // committed yet (for example during cold-start persistence completion).
+    if (!pending || pending !== pendingUnsyncedCurrentRef.current) return;
     // Room changed since we deferred (a session join/switch/leave). Read
     // sessionIdRef, not `sessionId` state: joinSession / createSessionWithConfig
     // write the ref synchronously before setSessionId, so this pending effect can
@@ -1964,10 +2022,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // deferral ref, no-ops in solo via the shared coalescer, and reuses the same
     // failure handling. shouldAddToQueue is false: the slot is already queued.
     dispatchSetCurrent(current, false);
-  }, [state.currentClimbQueueItem, dispatchSetCurrent]);
+  }, [state.currentClimbQueueItem, dispatchSetCurrent, pendingUnsyncedCurrent]);
 
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
       // Source is client-only provider state (see note above) — set it whenever
       // the caller passes options. Activation passes a source; a fresh
       // climb-list/search open passes null to clear playlist context; re-opening
@@ -2012,14 +2071,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // climb) is preserved.
       dispatchSetCurrent(item, true, options?.playlistSuggestionSource, true);
     },
-    [dispatchSetCurrent],
+    [dispatchSetCurrent, privacyRevocationGeneration],
   );
 
   // The editor saved a climb that is already in the queue. See the reducer's
   // REFRESH_AUTHORED_CLIMB for why this is not folded into setCurrentClimb.
-  const refreshAuthoredClimb = useCallback((climbUuid: string, patch: ClimbAuthoredPatch) => {
-    dispatch({ type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
-  }, []);
+  const refreshAuthoredClimb = useCallback(
+    (climbUuid: string, patch: ClimbAuthoredPatch) => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      dispatch({ type: 'REFRESH_AUTHORED_CLIMB', payload: { climbUuid, patch } });
+    },
+    [privacyRevocationGeneration],
+  );
 
   // One skip run gets one notice. A held swipe can fire nextClimb twice for the
   // same current item before the dispatch commits — that is one run — so latch
@@ -2244,19 +2307,29 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // When the track the climber is currently walking was selected. Only the
   // dormancy event below reads it, to say how long the track stayed live (#5402).
   const suggestionSourceSelectedAtRef = useRef<number | null>(null);
-  const setPlaylistSuggestionSource = useCallback((source: PlaylistSuggestionSource | null) => {
-    suggestionSourceSelectedAtRef.current = source ? Date.now() : null;
-    setPlaylistSuggestionSourceState(source);
-  }, []);
+  const setPlaylistSuggestionSource = useCallback(
+    (source: PlaylistSuggestionSource | null) => {
+      if (privacyRevocationGeneration !== getPrivacyRevocationGeneration()) return;
+      suggestionSourceSelectedAtRef.current = source ? Date.now() : null;
+      setPlaylistSuggestionSourceState(source);
+    },
+    [privacyRevocationGeneration],
+  );
 
   // No-op unless the incoming source matches the active one (same playlist +
   // activated climb + board) — so a late async refresh can't clobber a newer
   // activation. Mirrors the reducer's REFRESH semantics.
-  const refreshPlaylistSuggestionSource = useCallback((source: PlaylistSuggestionSource) => {
-    setPlaylistSuggestionSourceState((current) =>
-      playlistSuggestionSourceMatches(current, source) ? source : current,
-    );
-  }, []);
+  const refreshPlaylistSuggestionSource = useCallback(
+    (source: PlaylistSuggestionSource) => {
+      setPlaylistSuggestionSourceState((current) =>
+        privacyRevocationGeneration === getPrivacyRevocationGeneration() &&
+        playlistSuggestionSourceMatches(current, source)
+          ? source
+          : current,
+      );
+    },
+    [privacyRevocationGeneration],
+  );
 
   // Moving off the list hands swipes back to the queue. Swipes are list-first
   // (issue #4829): while the current climb is in `playlistSuggestionSource.climbs`

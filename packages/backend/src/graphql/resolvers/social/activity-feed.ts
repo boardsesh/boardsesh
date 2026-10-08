@@ -11,6 +11,12 @@ import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
+import { contentVisibilityCondition } from '../../../services/privacy';
+import {
+  socialEntityPrivacyCondition,
+  commentPrivacyCondition,
+  tickPrivacyCondition,
+} from '../shared/activity-privacy';
 
 function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect, commentCount = 0) {
   const meta = row.metadata || {};
@@ -46,7 +52,10 @@ function mapFeedItemToGraphQL(row: typeof dbSchema.feedItems.$inferSelect, comme
   };
 }
 
-async function getCommentCountMap(rows: (typeof dbSchema.feedItems.$inferSelect)[]): Promise<Map<string, number>> {
+async function getCommentCountMap(
+  rows: (typeof dbSchema.feedItems.$inferSelect)[],
+  viewerId: string,
+): Promise<Map<string, number>> {
   const countableRows = rows.filter((row) => row.entityType === 'tick' || row.entityType === 'climb');
   if (countableRows.length === 0) return new Map();
 
@@ -60,6 +69,7 @@ async function getCommentCountMap(rows: (typeof dbSchema.feedItems.$inferSelect)
     .where(
       and(
         isNull(dbSchema.comments.deletedAt),
+        commentPrivacyCondition(viewerId),
         or(
           ...countableRows.map((row) =>
             and(eq(dbSchema.comments.entityType, row.entityType), eq(dbSchema.comments.entityId, row.entityId)),
@@ -145,7 +155,16 @@ export const activityFeedQueries = {
     const limit = validatedInput.limit ?? 20;
 
     // Build base conditions
-    const conditions = [eq(dbSchema.feedItems.recipientId, myUserId)];
+    const conditions = [
+      eq(dbSchema.feedItems.recipientId, myUserId),
+      contentVisibilityCondition(
+        dbSchema.feedItems.entityType,
+        dbSchema.feedItems.entityId,
+        dbSchema.feedItems.actorId,
+        myUserId,
+      ),
+      socialEntityPrivacyCondition(dbSchema.feedItems.entityType, dbSchema.feedItems.entityId, myUserId),
+    ];
 
     // Rows fanned out before a climb was hidden by the community still sit in
     // feed_items; every tick / climb / proposal row carries the climb's uuid in
@@ -228,7 +247,7 @@ export const activityFeedQueries = {
 
     const hasMore = rows.length > limit;
     const resultRows = hasMore ? rows.slice(0, limit) : rows;
-    const commentCountMap = await getCommentCountMap(resultRows);
+    const commentCountMap = await getCommentCountMap(resultRows, myUserId);
     const items = resultRows.map((row) =>
       mapFeedItemToGraphQL(row, commentCountMap.get(`${row.entityType}:${row.entityId}`) ?? 0),
     );
@@ -252,7 +271,10 @@ export const activityFeedQueries = {
     const limit = validatedInput.limit ?? 20;
 
     // Build conditions - only successful ascents for trending
-    const conditions = [sql`${dbSchema.boardseshTicks.status} IN ('flash', 'send')`];
+    const conditions = [
+      sql`${dbSchema.boardseshTicks.status} IN ('flash', 'send')`,
+      tickPrivacyCondition(ctx.isAuthenticated ? ctx.userId : null),
+    ];
 
     // Board filter: require an active board and scope to ticks recorded for it.
     let layoutIdFilter: number | null = null;

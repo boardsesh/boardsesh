@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import { users, playlistOwnership } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
@@ -77,6 +78,15 @@ describe('playlistClimbs / setterClimbsFull — size filter skips non-size-scope
       VALUES (1, ${MOON_PLAYLIST_UUID}, 'moonboard', 1, 'Moon circuit', true),
              (2, ${KILTER_PLAYLIST_UUID}, 'kilter', 1, 'Kilter circuit', true)
     `);
+    // Public discovery still requires a real owner whose account permits it.
+    const ownerId = 'playlist-climbs-moonboard-size-filter-owner';
+    await db
+      .insert(users)
+      .values({ id: ownerId, email: `${ownerId}@test.invalid` })
+      .onConflictDoNothing();
+    await db
+      .insert(playlistOwnership)
+      .values([1, 2].map((playlistId) => ({ playlistId: BigInt(playlistId), userId: ownerId, role: 'owner' })));
     await db.execute(sql`
       INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
       VALUES (1, 'moon-climb-1', 40, 0), (1, 'moon-climb-2', 40, 1),

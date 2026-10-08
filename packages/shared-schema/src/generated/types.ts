@@ -143,6 +143,7 @@ export type AddCommentInput = {
   entityType: SocialEntityType;
   /** Parent comment UUID for replies */
   parentCommentUuid?: InputMaybe<Scalars['String']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
 };
 
 /** Input for adding a climb to favorites (idempotent, sync-safe). */
@@ -422,6 +423,7 @@ export type AttachBetaLinkInput = {
   climbUuid: Scalars['String']['input'];
   /** Instagram or TikTok video URL */
   link: Scalars['String']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Optional tick UUID this beta video belongs to */
   tickUuid?: InputMaybe<Scalars['ID']['input']>;
 };
@@ -566,7 +568,7 @@ export type BoardClimbRecentSender = {
   /** ISO 8601 timestamp of this climber's latest successful tick for the climb */
   lastSentAt: Scalars['String']['output'];
   /** Boardsesh user id, for linking the avatar to their profile */
-  userId: Scalars['ID']['output'];
+  userId?: Maybe<Scalars['ID']['output']>;
 };
 
 /** Event: a climb was set (lit) on the wall. */
@@ -711,7 +713,7 @@ export type BoardLeaderboardEntry = {
   /** Display name */
   userDisplayName?: Maybe<Scalars['String']['output']>;
   /** User ID */
-  userId: Scalars['ID']['output'];
+  userId?: Maybe<Scalars['ID']['output']>;
 };
 
 /** Input for board leaderboard query. */
@@ -785,7 +787,7 @@ export type BoardPresenceHardestSend = {
   /** Display name of the climber */
   sentByDisplayName?: Maybe<Scalars['String']['output']>;
   /** Boardsesh user id of the climber */
-  sentByUserId: Scalars['String']['output'];
+  sentByUserId?: Maybe<Scalars['String']['output']>;
 };
 
 /**
@@ -1844,6 +1846,7 @@ export type CreateBoardInput = {
   allowDuplicateSerial?: InputMaybe<Scalars['Boolean']['input']>;
   /** Default angle for this board (default 40) */
   angle?: InputMaybe<Scalars['Int']['input']>;
+  audience?: InputMaybe<PrivacyResourceAudience>;
   /** Board type */
   boardType: Scalars['String']['input'];
   /** Optional description */
@@ -1866,6 +1869,7 @@ export type CreateBoardInput = {
   latitude?: InputMaybe<Scalars['Float']['input']>;
   /** Layout ID */
   layoutId: Scalars['Int']['input'];
+  locationAudience?: InputMaybe<PrivacyLocationAudience>;
   /** Location name */
   locationName?: InputMaybe<Scalars['String']['input']>;
   /** GPS longitude */
@@ -1937,6 +1941,7 @@ export type CreatePlaylistInput = {
   layoutId: Scalars['Int']['input'];
   /** Playlist name */
   name: Scalars['String']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Optional client-generated UUID for offline idempotent replay */
   uuid?: InputMaybe<Scalars['ID']['input']>;
 };
@@ -1952,6 +1957,7 @@ export type CreateProposalInput = {
 
 /** Input for creating a new climbing session. */
 export type CreateSessionInput = {
+  audience?: InputMaybe<PrivacyResourceAudience>;
   /** Board entity IDs for multi-board sessions */
   boardIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Board configuration path (e.g., 'kilter/1/1/1,2/40') */
@@ -3925,6 +3931,8 @@ export type Mutation = {
    * Optional position parameter for inserting at specific index.
    */
   addQueueItem: ClimbQueueItem;
+  approveFollowRequest: Scalars['Boolean']['output'];
+  approveResourceAccess: Scalars['Boolean']['output'];
   /**
    * Attach an Instagram or TikTok video as beta for a climb. Idempotent on
    * (boardType, climbUuid, link).
@@ -3938,6 +3946,7 @@ export type Mutation = {
    */
   attachBoardToGym: Scalars['Boolean']['output'];
   authorizeControllerForSession: Scalars['Boolean']['output'];
+  cancelFollowRequest: Scalars['Boolean']['output'];
   /**
    * Confirm which board a (non-unique) serial routes to after the user picks
    * from a disambiguation prompt. Remembers the choice per user so the prompt
@@ -4022,6 +4031,7 @@ export type Mutation = {
    * anchors were tapped. There are no user-entered wall dimensions. Owner only.
    */
   createSprayWallVersion: SprayWallVersion;
+  declineFollowRequest: Scalars['Boolean']['output'];
   /**
    * Delete the current user's account.
    * Deletes draft climbs, optionally removes setter name from published climbs,
@@ -4125,6 +4135,7 @@ export type Mutation = {
   grantGymWriteAccess: Scalars['Boolean']['output'];
   /** Grant a community role to a user (admin only). */
   grantRole: CommunityRoleAssignment;
+  inviteResourceMember: Scalars['Boolean']['output'];
   /**
    * Join an existing session or create it if it doesn't exist.
    * Returns the session with current state.
@@ -4242,6 +4253,7 @@ export type Mutation = {
    * no-op) so the offline mutation queue can safely retry. Always returns true.
    */
   removeFavorite: Scalars['Boolean']['output'];
+  removeFollower: Scalars['Boolean']['output'];
   /** Remove a member from a gym. */
   removeGymMember: Scalars['Boolean']['output'];
   /** Remove a climb from the queue by its queue item UUID. */
@@ -4306,6 +4318,7 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  requestFollow: PrivacyRelationship;
   /**
    * Request ownership of a gym. With a matching work email at the gym's website
    * domain, a verification email is sent and clicking it transfers ownership.
@@ -4319,6 +4332,7 @@ export type Mutation = {
    * Rate limited to 5 requests a minute.
    */
   requestProviderSync: ProviderSyncRequest;
+  requestResourceAccess: Scalars['Boolean']['output'];
   requestSprayWallDetection: SprayWallDetection;
   /** Prepare a weekly climbing archive and, where supported, its Aurora companion. */
   requestUserDataExport: UserDataExportStatus;
@@ -4389,6 +4403,7 @@ export type Mutation = {
    * never a gym admin or plain member. Same authorization as grantGymWriteAccess.
    */
   revokeGymWriteAccess: Scalars['Boolean']['output'];
+  revokeResourceAccess: Scalars['Boolean']['output'];
   /** Revoke a community role from a user (admin only). */
   revokeRole: Scalars['Boolean']['output'];
   /**
@@ -4406,6 +4421,7 @@ export type Mutation = {
   setClimbFromLedPositions: ClimbMatchResult;
   /** Set a community setting (admin/leader only). */
   setCommunitySettings: CommunitySetting;
+  setContentAudience: Scalars['Boolean']['output'];
   /**
    * Set the currently displayed climb.
    * Optionally adds it to the queue if not already present.
@@ -4556,11 +4572,13 @@ export type Mutation = {
   updatePlaylist: Playlist;
   /** Update only lastAccessedAt for a playlist (does not update updatedAt). */
   updatePlaylistLastAccessed: Scalars['Boolean']['output'];
+  updatePrivacySettings: PrivacySettings;
   /**
    * Update current user's profile.
    * Requires authentication.
    */
   updateProfile: UserProfile;
+  updateResourcePrivacy: ResourcePrivacySettings;
   /**
    * Update a session's title and/or recap notes. Creator only. Works on both
    * active and ended sessions. Publishes SessionNameChanged to live
@@ -4625,6 +4643,18 @@ export type MutationAddQueueItemArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationApproveFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationApproveResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationAttachBetaLinkArgs = {
   input: AttachBetaLinkInput;
 };
@@ -4638,6 +4668,11 @@ export type MutationAttachBoardToGymArgs = {
 export type MutationAuthorizeControllerForSessionArgs = {
   controllerId: Scalars['ID']['input'];
   sessionId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationCancelFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4710,6 +4745,11 @@ export type MutationCreateSprayWallArgs = {
 /** Root mutation type for all write operations. */
 export type MutationCreateSprayWallVersionArgs = {
   input: CreateSprayWallVersionInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeclineFollowRequestArgs = {
+  userId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -4852,6 +4892,13 @@ export type MutationGrantRoleArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationInviteResourceMemberArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationJoinSessionArgs = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   boardPath: Scalars['String']['input'];
@@ -4976,6 +5023,11 @@ export type MutationRemoveFavoriteArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRemoveFollowerArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRemoveGymMemberArgs = {
   input: RemoveGymMemberInput;
 };
@@ -5036,6 +5088,11 @@ export type MutationReportSprayWallArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestFollowArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRequestGymClaimArgs = {
   input: RequestGymClaimInput;
 };
@@ -5043,6 +5100,12 @@ export type MutationRequestGymClaimArgs = {
 /** Root mutation type for all write operations. */
 export type MutationRequestProviderSyncArgs = {
   boardType: Scalars['String']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
 };
 
 /** Root mutation type for all write operations. */
@@ -5114,6 +5177,13 @@ export type MutationRevokeGymWriteAccessArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRevokeResourceAccessArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
 export type MutationRevokeRoleArgs = {
   input: RevokeRoleInput;
 };
@@ -5153,6 +5223,11 @@ export type MutationSetClimbFromLedPositionsArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSetCommunitySettingsArgs = {
   input: SetCommunitySettingInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetContentAudienceArgs = {
+  input: SetContentAudienceInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5324,8 +5399,18 @@ export type MutationUpdatePlaylistLastAccessedArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpdatePrivacySettingsArgs = {
+  input: UpdatePrivacySettingsInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUpdateProfileArgs = {
   input: UpdateProfileInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateResourcePrivacyArgs = {
+  input: UpdateResourcePrivacyInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5855,6 +5940,65 @@ export type PopularBoardConfigsInput = {
   offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
+export type PrivacyAudience = 'followers' | 'only_me' | 'public';
+
+export type PrivacyContentAudience = {
+  __typename?: 'PrivacyContentAudience';
+  audience: PrivacyAudience;
+  canEdit: Scalars['Boolean']['output'];
+  isExplicit: Scalars['Boolean']['output'];
+};
+
+export type PrivacyContentType = 'beta' | 'climb' | 'comment' | 'playlist' | 'session' | 'tick';
+
+export type PrivacyFollowRequest = {
+  __typename?: 'PrivacyFollowRequest';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  displayName?: Maybe<Scalars['String']['output']>;
+  recipientId: Scalars['ID']['output'];
+  requesterId: Scalars['ID']['output'];
+};
+
+export type PrivacyGrantStatus = 'approved' | 'pending' | 'revoked';
+
+export type PrivacyLocationAudience = 'followers' | 'members' | 'only_me' | 'public';
+
+export type PrivacyPublicationInput = {
+  audience: PrivacyAudience;
+  privacyRevision: Scalars['Int']['input'];
+};
+
+export type PrivacyRelationship = {
+  __typename?: 'PrivacyRelationship';
+  isFollowing: Scalars['Boolean']['output'];
+  isPrivate: Scalars['Boolean']['output'];
+  requestPending: Scalars['Boolean']['output'];
+  userId: Scalars['ID']['output'];
+};
+
+export type PrivacyResourceAudience = 'followers' | 'invite_only' | 'only_me' | 'public' | 'unlisted';
+
+export type PrivacyResourceGrant = {
+  __typename?: 'PrivacyResourceGrant';
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  displayName?: Maybe<Scalars['String']['output']>;
+  invitedBy?: Maybe<Scalars['ID']['output']>;
+  status: PrivacyGrantStatus;
+  userId: Scalars['ID']['output'];
+};
+
+export type PrivacyResourceKind = 'board' | 'session';
+
+export type PrivacySettings = {
+  __typename?: 'PrivacySettings';
+  defaultSessionAudience: PrivacyResourceAudience;
+  enabled: Scalars['Boolean']['output'];
+  isPrivate: Scalars['Boolean']['output'];
+  privacyOnboardingVersion: Scalars['Int']['output'];
+  privacyRevision: Scalars['Int']['output'];
+};
+
 /** Aggregated profile statistics across all boards. */
 export type ProfileStats = {
   __typename?: 'ProfileStats';
@@ -5890,7 +6034,7 @@ export type Proposal = {
   proposedValue: Scalars['String']['output'];
   proposerAvatarUrl?: Maybe<Scalars['String']['output']>;
   proposerDisplayName?: Maybe<Scalars['String']['output']>;
-  proposerId: Scalars['ID']['output'];
+  proposerId?: Maybe<Scalars['ID']['output']>;
   reason?: Maybe<Scalars['String']['output']>;
   requiredUpvotes: Scalars['Int']['output'];
   resolvedAt?: Maybe<Scalars['String']['output']>;
@@ -5956,6 +6100,7 @@ export type PublicUserProfile = {
   __typename?: 'PublicUserProfile';
   /** Avatar URL */
   avatarUrl?: Maybe<Scalars['String']['output']>;
+  canViewActivity: Scalars['Boolean']['output'];
   /** Display name */
   displayName?: Maybe<Scalars['String']['output']>;
   /** Number of followers */
@@ -5968,6 +6113,7 @@ export type PublicUserProfile = {
   instagramUrl?: Maybe<Scalars['String']['output']>;
   /** Whether the current user follows this user */
   isFollowedByMe: Scalars['Boolean']['output'];
+  isPrivate: Scalars['Boolean']['output'];
 };
 
 export type PublishSprayWallVersionInput = {
@@ -6279,6 +6425,7 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
+  contentAudience: PrivacyContentAudience;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -6439,6 +6586,7 @@ export type Query = {
    * board). Read-only; the editor renders both and offers a revert.
    */
   holdOutlines: BoardHoldOutlines;
+  incomingFollowRequests: Array<PrivacyFollowRequest>;
   /**
    * Resolve scraped Instagram posts against Boardsesh: which beta videos are
    * missing, already linked, ambiguous, or unmatched. Read-only — the client
@@ -6538,6 +6686,8 @@ export type Query = {
   playlistsForClimbs: Array<ClimbPlaylistMembership>;
   /** Get popular board configurations ranked by climb count. */
   popularBoardConfigs: PopularBoardConfigConnection;
+  privacyRelationship: PrivacyRelationship;
+  privacySettings: PrivacySettings;
   /**
    * Get the currently authenticated user's profile.
    * Returns null if not authenticated.
@@ -6591,6 +6741,8 @@ export type Query = {
    * @deprecated Remix after a reset was retired. Always null.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  resourceAccessRequests: Array<PrivacyResourceGrant>;
+  resourcePrivacy?: Maybe<ResourcePrivacySettings>;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -7083,6 +7235,12 @@ export type QueryCommunitySettingsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryContentAudienceArgs = {
+  entityId: Scalars['ID']['input'];
+  entityType: PrivacyContentType;
+};
+
+/** Root query type for all read operations. */
 export type QueryCrewFeedArgs = {
   input?: InputMaybe<CrewFeedInput>;
 };
@@ -7318,6 +7476,11 @@ export type QueryPopularBoardConfigsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryPrivacyRelationshipArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
 export type QueryProposeSprayWallResetArgs = {
   input: ProposeSprayWallResetInput;
 };
@@ -7344,6 +7507,18 @@ export type QueryRecentBetaLinksArgs = {
 export type QueryRemixClimbArgs = {
   parentUuid: Scalars['ID']['input'];
   sprayWallUuid?: InputMaybe<Scalars['ID']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryResourceAccessRequestsArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryResourcePrivacyArgs = {
+  kind: PrivacyResourceKind;
+  resourceId: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8045,6 +8220,17 @@ export type ResolvedBoard = {
   sizeId: Scalars['Int']['output'];
 };
 
+export type ResourcePrivacySettings = {
+  __typename?: 'ResourcePrivacySettings';
+  audience: PrivacyResourceAudience;
+  inheritFollowers: Scalars['Boolean']['output'];
+  kind: PrivacyResourceKind;
+  locationAudience: PrivacyLocationAudience;
+  ownerId?: Maybe<Scalars['ID']['output']>;
+  resourceId: Scalars['ID']['output'];
+  revision: Scalars['Int']['output'];
+};
+
 /** Input for an admin reviewing a pending gym claim. */
 export type ReviewGymClaimInput = {
   /** Claim ID to review */
@@ -8093,6 +8279,7 @@ export type SaveClimbInput = {
   name: Scalars['String']['input'];
   /** Matching disallowed. Wins over the legacy 'No match' description prefix; null or omitted falls back to that prefix and otherwise means false. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /**
    * Accepted and ignored. Remix after a reset was retired, and no lineage is written.
    * @deprecated Remix after a reset was retired. Accepted and ignored.
@@ -8138,6 +8325,7 @@ export type SaveMoonBoardClimbInput = {
   /** MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default. */
   method?: InputMaybe<MoonBoardMethod>;
   name: Scalars['String']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
 };
@@ -8170,6 +8358,7 @@ export type SaveTickInput = {
   isMirror: Scalars['Boolean']['input'];
   /** Layout ID for board resolution */
   layoutId?: InputMaybe<Scalars['Int']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
   /** Session ID if in a session */
@@ -8663,7 +8852,7 @@ export type SessionParticipant = {
   /** Total sends (flash + send) */
   sends: Scalars['Int']['output'];
   /** User ID */
-  userId: Scalars['String']['output'];
+  userId?: Maybe<Scalars['String']['output']>;
 };
 
 /**
@@ -8787,6 +8976,13 @@ export type SetCommunitySettingInput = {
   scope: Scalars['String']['input'];
   scopeKey: Scalars['String']['input'];
   value: Scalars['String']['input'];
+};
+
+export type SetContentAudienceInput = {
+  audience: PrivacyAudience;
+  entityId: Scalars['ID']['input'];
+  entityType: PrivacyContentType;
+  privacyRevision: Scalars['Int']['input'];
 };
 
 export type SetSprayWallHiddenInput = {
@@ -9895,6 +10091,7 @@ export type Subscription = {
    * Requires authentication.
    */
   notificationReceived: NotificationEvent;
+  privacyChanged: Scalars['Boolean']['output'];
   /** Subscribe to queue changes (items added/removed/reordered, current climb changes). */
   queueUpdates: QueueEvent;
   /** Subscribe to real-time session events (membership, lifecycle, and live stats). */
@@ -10212,6 +10409,7 @@ export type UpdateClimbInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /** Matching disallowed. Null or omitted preserves the stored value, so an old client cannot clear it. When set it wins over the legacy 'No match' description prefix in the same call. */
   noMatch?: InputMaybe<Scalars['Boolean']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** Physical board size, where it is part of the climb's identity (Woods). Immutable — a size that differs from the stored one is rejected. Null or omitted keeps the stored size. */
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /**
@@ -10257,6 +10455,7 @@ export type UpdateCommentInput = {
   body: Scalars['String']['input'];
   /** UUID of the comment to update */
   commentUuid: Scalars['ID']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
 };
 
 /** Input for updating a gym. */
@@ -10328,6 +10527,13 @@ export type UpdatePlaylistInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /** Playlist ID to update */
   playlistId: Scalars['ID']['input'];
+  privacy?: InputMaybe<PrivacyPublicationInput>;
+};
+
+export type UpdatePrivacySettingsInput = {
+  defaultSessionAudience?: InputMaybe<PrivacyResourceAudience>;
+  isPrivate?: InputMaybe<Scalars['Boolean']['input']>;
+  privacyOnboardingVersion?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Input for updating user profile. */
@@ -10336,6 +10542,14 @@ export type UpdateProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   /** New display name */
   displayName?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type UpdateResourcePrivacyInput = {
+  audience: PrivacyResourceAudience;
+  inheritFollowers?: InputMaybe<Scalars['Boolean']['input']>;
+  kind: PrivacyResourceKind;
+  locationAudience?: InputMaybe<PrivacyLocationAudience>;
+  resourceId: Scalars['ID']['input'];
 };
 
 /**
@@ -10412,6 +10626,7 @@ export type UpdateTickInput = {
   difficulty?: InputMaybe<Scalars['Int']['input']>;
   /** Whether this is a benchmark ascent */
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
+  privacy?: InputMaybe<PrivacyPublicationInput>;
   /** User's quality rating (1-5) */
   quality?: InputMaybe<Scalars['Int']['input']>;
   /** Result of the attempt */
@@ -10497,7 +10712,7 @@ export type UserBoard = {
   /** Owner display name */
   ownerDisplayName?: Maybe<Scalars['String']['output']>;
   /** Owner user ID */
-  ownerId: Scalars['ID']['output'];
+  ownerId?: Maybe<Scalars['ID']['output']>;
   /** Controller box serial number */
   serialNumber?: Maybe<Scalars['String']['output']>;
   /** Comma-separated set IDs */
@@ -11140,6 +11355,18 @@ export type ResolversTypes = ResolversObject<{
   PopularBoardConfig: ResolverTypeWrapper<PopularBoardConfig>;
   PopularBoardConfigConnection: ResolverTypeWrapper<PopularBoardConfigConnection>;
   PopularBoardConfigsInput: PopularBoardConfigsInput;
+  PrivacyAudience: PrivacyAudience;
+  PrivacyContentAudience: ResolverTypeWrapper<PrivacyContentAudience>;
+  PrivacyContentType: PrivacyContentType;
+  PrivacyFollowRequest: ResolverTypeWrapper<PrivacyFollowRequest>;
+  PrivacyGrantStatus: PrivacyGrantStatus;
+  PrivacyLocationAudience: PrivacyLocationAudience;
+  PrivacyPublicationInput: PrivacyPublicationInput;
+  PrivacyRelationship: ResolverTypeWrapper<PrivacyRelationship>;
+  PrivacyResourceAudience: PrivacyResourceAudience;
+  PrivacyResourceGrant: ResolverTypeWrapper<PrivacyResourceGrant>;
+  PrivacyResourceKind: PrivacyResourceKind;
+  PrivacySettings: ResolverTypeWrapper<PrivacySettings>;
   ProfileStats: ResolverTypeWrapper<ProfileStats>;
   Proposal: ResolverTypeWrapper<Proposal>;
   ProposalConnection: ResolverTypeWrapper<ProposalConnection>;
@@ -11193,6 +11420,7 @@ export type ResolversTypes = ResolversObject<{
   ResolveBoardResult: ResolverTypeWrapper<ResolveBoardResult>;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolverTypeWrapper<ResolvedBoard>;
+  ResourcePrivacySettings: ResolverTypeWrapper<ResourcePrivacySettings>;
   ReviewGymClaimInput: ReviewGymClaimInput;
   RevokeGymWriteAccessInput: RevokeGymWriteAccessInput;
   RevokeRoleInput: RevokeRoleInput;
@@ -11234,6 +11462,7 @@ export type ResolversTypes = ResolversObject<{
   SessionSummary: ResolverTypeWrapper<SessionSummary>;
   SessionUser: ResolverTypeWrapper<SessionUser>;
   SetCommunitySettingInput: SetCommunitySettingInput;
+  SetContentAudienceInput: SetContentAudienceInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
   SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
   SetterClimb: ResolverTypeWrapper<SetterClimb>;
@@ -11314,7 +11543,9 @@ export type ResolversTypes = ResolversObject<{
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
+  UpdatePrivacySettingsInput: UpdatePrivacySettingsInput;
   UpdateProfileInput: UpdateProfileInput;
+  UpdateResourcePrivacyInput: UpdateResourcePrivacyInput;
   UpdateSessionInput: UpdateSessionInput;
   UpdateSessionResult: ResolverTypeWrapper<UpdateSessionResult>;
   UpdateSprayWallInput: UpdateSprayWallInput;
@@ -11605,6 +11836,12 @@ export type ResolversParentTypes = ResolversObject<{
   PopularBoardConfig: PopularBoardConfig;
   PopularBoardConfigConnection: PopularBoardConfigConnection;
   PopularBoardConfigsInput: PopularBoardConfigsInput;
+  PrivacyContentAudience: PrivacyContentAudience;
+  PrivacyFollowRequest: PrivacyFollowRequest;
+  PrivacyPublicationInput: PrivacyPublicationInput;
+  PrivacyRelationship: PrivacyRelationship;
+  PrivacyResourceGrant: PrivacyResourceGrant;
+  PrivacySettings: PrivacySettings;
   ProfileStats: ProfileStats;
   Proposal: Proposal;
   ProposalConnection: ProposalConnection;
@@ -11651,6 +11888,7 @@ export type ResolversParentTypes = ResolversObject<{
   ResolveBoardResult: ResolveBoardResult;
   ResolveProposalInput: ResolveProposalInput;
   ResolvedBoard: ResolvedBoard;
+  ResourcePrivacySettings: ResourcePrivacySettings;
   ReviewGymClaimInput: ReviewGymClaimInput;
   RevokeGymWriteAccessInput: RevokeGymWriteAccessInput;
   RevokeRoleInput: RevokeRoleInput;
@@ -11690,6 +11928,7 @@ export type ResolversParentTypes = ResolversObject<{
   SessionSummary: SessionSummary;
   SessionUser: SessionUser;
   SetCommunitySettingInput: SetCommunitySettingInput;
+  SetContentAudienceInput: SetContentAudienceInput;
   SetSprayWallHiddenInput: SetSprayWallHiddenInput;
   SetSprayWallRenderSettingsInput: SetSprayWallRenderSettingsInput;
   SetterClimb: SetterClimb;
@@ -11757,7 +11996,9 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
+  UpdatePrivacySettingsInput: UpdatePrivacySettingsInput;
   UpdateProfileInput: UpdateProfileInput;
+  UpdateResourcePrivacyInput: UpdateResourcePrivacyInput;
   UpdateSessionInput: UpdateSessionInput;
   UpdateSessionResult: UpdateSessionResult;
   UpdateSprayWallInput: UpdateSprayWallInput;
@@ -12062,7 +12303,7 @@ export type BoardClimbRecentSenderResolvers<
   avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   lastSentAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12180,7 +12421,7 @@ export type BoardLeaderboardEntryResolvers<
   totalSessions?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   userAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   userDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12227,7 +12468,7 @@ export type BoardPresenceHardestSendResolvers<
   sentAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   sentByAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   sentByDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  sentByUserId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sentByUserId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -13796,6 +14037,18 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationAddQueueItemArgs, 'item'>
   >;
+  approveFollowRequest?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationApproveFollowRequestArgs, 'userId'>
+  >;
+  approveResourceAccess?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationApproveResourceAccessArgs, 'kind' | 'resourceId' | 'userId'>
+  >;
   attachBetaLink?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -13813,6 +14066,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationAuthorizeControllerForSessionArgs, 'controllerId' | 'sessionId'>
+  >;
+  cancelFollowRequest?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCancelFollowRequestArgs, 'userId'>
   >;
   chooseBoardForSerial?: Resolver<
     ResolversTypes['ResolvedBoard'],
@@ -13892,6 +14151,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationCreateSprayWallVersionArgs, 'input'>
+  >;
+  declineFollowRequest?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeclineFollowRequestArgs, 'userId'>
   >;
   deleteAccount?: Resolver<
     ResolversTypes['Boolean'],
@@ -14055,6 +14320,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationGrantRoleArgs, 'input'>
   >;
+  inviteResourceMember?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationInviteResourceMemberArgs, 'kind' | 'resourceId' | 'userId'>
+  >;
   joinSession?: Resolver<
     ResolversTypes['Session'],
     ParentType,
@@ -14184,6 +14455,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRemoveFavoriteArgs, 'input'>
   >;
+  removeFollower?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRemoveFollowerArgs, 'userId'>
+  >;
   removeGymMember?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -14251,6 +14528,12 @@ export type MutationResolvers<
     RequireFields<MutationReportSprayWallArgs, 'input'>
   >;
   reportWallDisconnect?: Resolver<ResolversTypes['Session'], ParentType, ContextType>;
+  requestFollow?: Resolver<
+    ResolversTypes['PrivacyRelationship'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestFollowArgs, 'userId'>
+  >;
   requestGymClaim?: Resolver<
     ResolversTypes['RequestGymClaimResult'],
     ParentType,
@@ -14262,6 +14545,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationRequestProviderSyncArgs, 'boardType'>
+  >;
+  requestResourceAccess?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestResourceAccessArgs, 'kind' | 'resourceId'>
   >;
   requestSprayWallDetection?: Resolver<
     ResolversTypes['SprayWallDetection'],
@@ -14332,6 +14621,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationRevokeGymWriteAccessArgs, 'input'>
   >;
+  revokeResourceAccess?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRevokeResourceAccessArgs, 'kind' | 'resourceId' | 'userId'>
+  >;
   revokeRole?: Resolver<
     ResolversTypes['Boolean'],
     ParentType,
@@ -14374,6 +14669,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationSetCommunitySettingsArgs, 'input'>
+  >;
+  setContentAudience?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationSetContentAudienceArgs, 'input'>
   >;
   setCurrentClimb?: Resolver<
     Maybe<ResolversTypes['ClimbQueueItem']>,
@@ -14562,11 +14863,23 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdatePlaylistLastAccessedArgs, 'playlistId'>
   >;
+  updatePrivacySettings?: Resolver<
+    ResolversTypes['PrivacySettings'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdatePrivacySettingsArgs, 'input'>
+  >;
   updateProfile?: Resolver<
     ResolversTypes['UserProfile'],
     ParentType,
     ContextType,
     RequireFields<MutationUpdateProfileArgs, 'input'>
+  >;
+  updateResourcePrivacy?: Resolver<
+    ResolversTypes['ResourcePrivacySettings'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateResourcePrivacyArgs, 'input'>
   >;
   updateSession?: Resolver<
     ResolversTypes['UpdateSessionResult'],
@@ -14882,6 +15195,63 @@ export type PopularBoardConfigConnectionResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type PrivacyContentAudienceResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PrivacyContentAudience'] = ResolversParentTypes['PrivacyContentAudience'],
+> = ResolversObject<{
+  audience?: Resolver<ResolversTypes['PrivacyAudience'], ParentType, ContextType>;
+  canEdit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isExplicit?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PrivacyFollowRequestResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PrivacyFollowRequest'] = ResolversParentTypes['PrivacyFollowRequest'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  recipientId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  requesterId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PrivacyRelationshipResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PrivacyRelationship'] = ResolversParentTypes['PrivacyRelationship'],
+> = ResolversObject<{
+  isFollowing?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isPrivate?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  requestPending?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PrivacyResourceGrantResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PrivacyResourceGrant'] = ResolversParentTypes['PrivacyResourceGrant'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  invitedBy?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['PrivacyGrantStatus'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type PrivacySettingsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['PrivacySettings'] = ResolversParentTypes['PrivacySettings'],
+> = ResolversObject<{
+  defaultSessionAudience?: Resolver<ResolversTypes['PrivacyResourceAudience'], ParentType, ContextType>;
+  enabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isPrivate?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  privacyOnboardingVersion?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  privacyRevision?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type ProfileStatsResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['ProfileStats'] = ResolversParentTypes['ProfileStats'],
@@ -14915,7 +15285,7 @@ export type ProposalResolvers<
   proposedValue?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   proposerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   proposerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  proposerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  proposerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   reason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   requiredUpvotes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   resolvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -14966,12 +15336,14 @@ export type PublicUserProfileResolvers<
   ParentType extends ResolversParentTypes['PublicUserProfile'] = ResolversParentTypes['PublicUserProfile'],
 > = ResolversObject<{
   avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  canViewActivity?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   followerCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   followingCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   instagramUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   isFollowedByMe?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  isPrivate?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -15262,6 +15634,12 @@ export type QueryResolvers<
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
   communityStats?: Resolver<ResolversTypes['CommunityStats'], ParentType, ContextType>;
+  contentAudience?: Resolver<
+    ResolversTypes['PrivacyContentAudience'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryContentAudienceArgs, 'entityId' | 'entityType'>
+  >;
   crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
@@ -15412,6 +15790,7 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryHoldOutlinesArgs, 'input'>
   >;
+  incomingFollowRequests?: Resolver<Array<ResolversTypes['PrivacyFollowRequest']>, ParentType, ContextType>;
   instagramBetaScan?: Resolver<
     ResolversTypes['InstagramBetaScanResult'],
     ParentType,
@@ -15512,6 +15891,13 @@ export type QueryResolvers<
     ContextType,
     Partial<QueryPopularBoardConfigsArgs>
   >;
+  privacyRelationship?: Resolver<
+    ResolversTypes['PrivacyRelationship'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryPrivacyRelationshipArgs, 'userId'>
+  >;
+  privacySettings?: Resolver<ResolversTypes['PrivacySettings'], ParentType, ContextType>;
   profile?: Resolver<Maybe<ResolversTypes['UserProfile']>, ParentType, ContextType>;
   proposeSprayWallReset?: Resolver<
     Maybe<ResolversTypes['SprayWallResetProposal']>,
@@ -15542,6 +15928,18 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryRemixClimbArgs, 'parentUuid'>
+  >;
+  resourceAccessRequests?: Resolver<
+    Array<ResolversTypes['PrivacyResourceGrant']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryResourceAccessRequestsArgs, 'kind' | 'resourceId'>
+  >;
+  resourcePrivacy?: Resolver<
+    Maybe<ResolversTypes['ResourcePrivacySettings']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryResourcePrivacyArgs, 'kind' | 'resourceId'>
   >;
   searchBoards?: Resolver<
     ResolversTypes['UserBoardConnection'],
@@ -16071,6 +16469,20 @@ export type ResolvedBoardResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ResourcePrivacySettingsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ResourcePrivacySettings'] = ResolversParentTypes['ResourcePrivacySettings'],
+> = ResolversObject<{
+  audience?: Resolver<ResolversTypes['PrivacyResourceAudience'], ParentType, ContextType>;
+  inheritFollowers?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['PrivacyResourceKind'], ParentType, ContextType>;
+  locationAudience?: Resolver<ResolversTypes['PrivacyLocationAudience'], ParentType, ContextType>;
+  ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  resourceId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  revision?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SaveClimbResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SaveClimbResult'] = ResolversParentTypes['SaveClimbResult'],
@@ -16423,7 +16835,7 @@ export type SessionParticipantResolvers<
   displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   flashes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   sends?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
-  userId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16971,6 +17383,7 @@ export type SubscriptionResolvers<
     ParentType,
     ContextType
   >;
+  privacyChanged?: SubscriptionResolver<ResolversTypes['Boolean'], 'privacyChanged', ParentType, ContextType>;
   queueUpdates?: SubscriptionResolver<
     ResolversTypes['QueueEvent'],
     'queueUpdates',
@@ -17157,7 +17570,7 @@ export type UserBoardResolvers<
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   ownerAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   ownerDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
-  ownerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  ownerId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   serialNumber?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   setNames?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
@@ -17492,6 +17905,11 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   PlaylistCreator?: PlaylistCreatorResolvers<ContextType>;
   PopularBoardConfig?: PopularBoardConfigResolvers<ContextType>;
   PopularBoardConfigConnection?: PopularBoardConfigConnectionResolvers<ContextType>;
+  PrivacyContentAudience?: PrivacyContentAudienceResolvers<ContextType>;
+  PrivacyFollowRequest?: PrivacyFollowRequestResolvers<ContextType>;
+  PrivacyRelationship?: PrivacyRelationshipResolvers<ContextType>;
+  PrivacyResourceGrant?: PrivacyResourceGrantResolvers<ContextType>;
+  PrivacySettings?: PrivacySettingsResolvers<ContextType>;
   ProfileStats?: ProfileStatsResolvers<ContextType>;
   Proposal?: ProposalResolvers<ContextType>;
   ProposalConnection?: ProposalConnectionResolvers<ContextType>;
@@ -17518,6 +17936,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   RequestGymClaimResult?: RequestGymClaimResultResolvers<ContextType>;
   ResolveBoardResult?: ResolveBoardResultResolvers<ContextType>;
   ResolvedBoard?: ResolvedBoardResolvers<ContextType>;
+  ResourcePrivacySettings?: ResourcePrivacySettingsResolvers<ContextType>;
   SaveClimbResult?: SaveClimbResultResolvers<ContextType>;
   SearchPlaylistsResult?: SearchPlaylistsResultResolvers<ContextType>;
   SendDeviceLogsResponse?: SendDeviceLogsResponseResolvers<ContextType>;

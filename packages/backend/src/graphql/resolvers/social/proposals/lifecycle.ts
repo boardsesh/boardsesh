@@ -3,7 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { getGradeLabel, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { getGradeLabel, sprayClimbVisibilityCondition, contentVisibilityCondition } from '@boardsesh/db/queries';
 import { logger } from '../../../../utils/logger';
 import { publishSocialEvent } from '../../../../events/index';
 import { notifyClimbRevalidated } from '../../../../lib/web-revalidate';
@@ -131,6 +131,7 @@ export async function loadTargetClimb(
     .where(
       and(
         eq(dbSchema.boardClimbs.uuid, climbUuid),
+        contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
         sprayClimbVisibilityCondition(
           { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
           viewerUserId,

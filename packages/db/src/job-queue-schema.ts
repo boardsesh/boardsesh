@@ -251,7 +251,18 @@ const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'users', privileges: ['SELECT'], columns: ['id', 'name', 'email', 'created_at'] },
   // The shared spray visibility predicate reads only access-control fields.
   { table: 'spray_walls', privileges: ['SELECT'], columns: ['board_uuid', 'layout_id', 'deleted_at', 'hidden_at'] },
-  { table: 'user_boards', privileges: ['SELECT'], columns: ['uuid', 'owner_id', 'gym_id', 'is_public', 'deleted_at'] },
+  {
+    table: 'user_boards',
+    privileges: ['SELECT'],
+    columns: ['uuid', 'owner_id', 'gym_id', 'is_public', 'is_unlisted', 'deleted_at'],
+  },
+  {
+    table: 'resource_privacy',
+    privileges: ['SELECT'],
+    columns: ['kind', 'resource_id', 'audience', 'inherit_followers'],
+  },
+  { table: 'resource_grants', privileges: ['SELECT'], columns: ['kind', 'resource_id', 'user_id', 'status'] },
+  { table: 'user_follows', privileges: ['SELECT'], columns: ['follower_id', 'following_id'] },
   { table: 'gym_members', privileges: ['SELECT'], columns: ['gym_id', 'user_id'] },
   {
     table: 'boardsesh_ticks',
@@ -384,6 +395,14 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots.
   batch: [
+    // Public recommendation cohorts must apply current account/item privacy.
+    // No private profile text or follower identities are read by this job.
+    { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'is_private', 'privacy_revision'] },
+    {
+      table: 'content_privacy',
+      privileges: ['SELECT'],
+      columns: ['entity_type', 'entity_id', 'owner_id', 'audience', 'public_consent_revision'],
+    },
     // Catalog and history the jobs scan.
     { table: 'board_climbs', privileges: ['SELECT'] },
     { table: 'board_climb_stats', privileges: ['SELECT'] },
@@ -455,9 +474,9 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
     { table: 'board_kits', privileges: ['SELECT'] },
     { table: 'board_difficulty_grades', privileges: ['SELECT'] },
     { table: 'board_attempts', privileges: ['SELECT'] },
-    // Every column except the three the catalogue drops
-    // (CATALOG_SNAPSHOT_EXCLUDED_COLUMNS: who attached a link, and to which tick
-    // and wall). The catalogue lists columns through information_schema.columns,
+    // Origin columns let the exporter exclude user-attached links from the
+    // immutable public catalogue. CATALOG_SNAPSHOT_EXCLUDED_COLUMNS also drops
+    // those columns from the output. The catalogue lists columns through information_schema.columns,
     // which shows only granted ones, so a new column must be added here or the
     // export silently leaves it out; job-queue-roles-snapshots.test.ts compares the
     // restricted column lists with the owner's.
@@ -475,6 +494,9 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
         'created_at',
         'shortcode',
         'video_identity',
+        'created_by_user_id',
+        'tick_uuid',
+        'board_id',
       ],
     },
   ],

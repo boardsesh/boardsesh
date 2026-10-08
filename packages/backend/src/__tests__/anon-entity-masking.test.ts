@@ -13,16 +13,9 @@ import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/share
  * the same way the gym-kiosk epic's reads already did, so holding a uuid or slug
  * can't confirm a private gym/board exists or disclose its name.
  *
- * The two masking rules are deliberately DIFFERENT, and this suite pins both:
- *  - gym / gymBySlug mask for anyone without gym EDIT access (authenticated
- *    non-editors included), matching gymBoards + gymKiosk.
- *  - board(boardUuid) masks for ANONYMOUS callers only, matching
- *    requireAnonReadableBoard and the board-presence family — a signed-in
- *    climber still resolves a gym's private board by uuid (BLE connect flow,
- *    boardsBySerialNumbers).
- *  - boardBySlug uses the same anonymous-only mask. The server-rendered web
- *    lookup forwards a signed-in user's token and keeps that response out of
- *    the shared cache, so private direct links still work without leaking.
+ * Gym reads require gym edit access. Private board reads require the current
+ * viewer's resource access, even after sign-in. An unlisted board's UUID is its
+ * link capability; slugs remain discovery identifiers and cannot grant access.
  *
  * Masking is expressed as `null` rather than a thrown NOT_FOUND because these
  * SDL fields are nullable — `null` already means "no such entity", so it is the
@@ -246,15 +239,9 @@ describe('board(boardUuid) anonymous masking', () => {
     expect(board?.boardId).toBe(privateBoard.id);
   });
 
-  it('ASYMMETRY PIN: still returns a PRIVATE board to an authenticated non-owner', async () => {
-    // Deliberately NOT masked for signed-in callers — matches
-    // requireAnonReadableBoard and keeps the BLE connect flow
-    // (bluetooth-provider resolves a gym's private board by uuid) and
-    // boardsBySerialNumbers working. Changing this breaks those flows.
+  it('masks a PRIVATE board from an authenticated non-owner', async () => {
     const board = await socialBoardQueries.board(null, { boardUuid: privateBoard.uuid }, authCtx(STRANGER));
-    expect(board?.name).toBe('Private Wall');
-    // The presence-channel id stays gated even so.
-    expect(board?.boardId).toBeNull();
+    expect(board).toBeNull();
   });
 
   it('keeps an UNLISTED but public board readable anonymously by uuid', async () => {
@@ -271,7 +258,7 @@ describe('board(boardUuid) anonymous masking', () => {
 });
 
 // ============================================================================
-// boardBySlug — same anonymous-only mask as board(boardUuid)
+// boardBySlug — resource authorization without an unlisted link capability
 // ============================================================================
 
 describe('boardBySlug anonymous masking', () => {
@@ -285,7 +272,6 @@ describe('boardBySlug anonymous masking', () => {
 
   it.each([
     ['PUBLIC', () => publicBoard, 'Public Wall'],
-    ['UNLISTED but public', () => unlistedBoard, 'Unlisted Wall'],
     ['non-public SYSTEM-owned', () => systemPrivateBoard, 'Shared MoonBoard Config'],
   ] as const)('keeps a %s board readable anonymously', async (_label, getBoard, expectedName) => {
     const board = getBoard();
@@ -299,10 +285,14 @@ describe('boardBySlug anonymous masking', () => {
     expect(board?.canEdit).toBe(true);
   });
 
-  it('returns a PRIVATE board to an authenticated non-owner', async () => {
+  it('masks a PRIVATE board from an authenticated non-owner', async () => {
     const board = await socialBoardQueries.boardBySlug(null, { slug: privateBoard.slug }, authCtx(STRANGER));
-    expect(board?.name).toBe('Private Wall');
-    expect(board?.boardId).toBeNull();
+    expect(board).toBeNull();
+  });
+
+  it('does not treat an unlisted slug as a link capability', async () => {
+    const board = await socialBoardQueries.boardBySlug(null, { slug: unlistedBoard.slug }, anonCtx());
+    expect(board).toBeNull();
   });
 });
 

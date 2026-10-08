@@ -1,3 +1,5 @@
+import { pubsub } from '../../../pubsub';
+import { setContentPrivacy } from '../../../services/privacy';
 import { eq, and, asc, inArray, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
@@ -162,7 +164,7 @@ export const playlistMutations = {
           layoutId: validatedInput.layoutId,
           name: validatedInput.name,
           description: validatedInput.description || null,
-          isPublic: false, // Always private initially
+          isPublic: validatedInput.privacy?.audience === 'public',
           color: validatedInput.color || null,
           icon: validatedInput.icon || null,
           createdAt: now,
@@ -182,6 +184,15 @@ export const playlistMutations = {
         createdAt: now,
       });
 
+      if (validatedInput.privacy)
+        await setContentPrivacy(
+          tx,
+          userId,
+          'playlist',
+          uuid,
+          validatedInput.privacy.audience,
+          validatedInput.privacy.privacyRevision,
+        );
       return insertedPlaylist;
     });
 
@@ -257,12 +268,49 @@ export const playlistMutations = {
     if (validatedInput.color !== undefined) updateData.color = validatedInput.color || null;
     if (validatedInput.icon !== undefined) updateData.icon = validatedInput.icon || null;
 
-    // Update playlist
-    const [updated] = await db
-      .update(dbSchema.playlists)
-      .set(updateData)
-      .where(eq(dbSchema.playlists.id, playlistId))
-      .returning();
+    if (validatedInput.privacy) updateData.isPublic = validatedInput.privacy.audience === 'public';
+    const [updated] = await db.transaction(async (tx) => {
+      const [currentOwner] = await tx
+        .select({ userId: dbSchema.playlistOwnership.userId, isPublic: dbSchema.playlists.isPublic })
+        .from(dbSchema.playlistOwnership)
+        .innerJoin(dbSchema.playlists, eq(dbSchema.playlists.id, dbSchema.playlistOwnership.playlistId))
+        .where(
+          and(
+            eq(dbSchema.playlistOwnership.playlistId, playlistId),
+            eq(dbSchema.playlistOwnership.userId, userId),
+            eq(dbSchema.playlistOwnership.role, 'owner'),
+          ),
+        )
+        .for('update');
+      if (!currentOwner) throw new Error('Playlist not found or access denied');
+      if (!validatedInput.privacy && validatedInput.isPublic === false && currentOwner.isPublic) {
+        // An old client's Public -> Private switch withdraws explicit public
+        // consent too. Keep restrictive policies and legacy collaborator access;
+        // omitted/unchanged booleans must not reinterpret a newer audience.
+        await tx
+          .delete(dbSchema.contentPrivacy)
+          .where(
+            and(
+              eq(dbSchema.contentPrivacy.entityType, 'playlist'),
+              eq(dbSchema.contentPrivacy.entityId, validatedInput.playlistId),
+              eq(dbSchema.contentPrivacy.ownerId, userId),
+              eq(dbSchema.contentPrivacy.audience, 'public'),
+            ),
+          );
+      }
+      if (validatedInput.privacy)
+        await setContentPrivacy(
+          tx,
+          userId,
+          'playlist',
+          validatedInput.playlistId,
+          validatedInput.privacy.audience,
+          validatedInput.privacy.privacyRevision,
+        );
+      return tx.update(dbSchema.playlists).set(updateData).where(eq(dbSchema.playlists.id, playlistId)).returning();
+    });
+
+    if (validatedInput.privacy || validatedInput.isPublic !== undefined) pubsub.publishPrivacyChanged();
 
     // Get climb count and follow stats
     const climbCount = await db
@@ -749,22 +797,7 @@ export const playlistMutations = {
     const validatedInput = validateInput(FollowPlaylistInputSchema, input, 'input');
     const userId = ctx.userId!;
 
-    // Verify playlist exists and is public
-    const [playlist] = await db
-      .select({
-        uuid: dbSchema.playlists.uuid,
-        isPublic: dbSchema.playlists.isPublic,
-      })
-      .from(dbSchema.playlists)
-      .where(eq(dbSchema.playlists.uuid, validatedInput.playlistUuid))
-      .limit(1);
-
-    if (!playlist) {
-      throw new Error('Playlist not found');
-    }
-    if (!playlist.isPublic) {
-      throw new Error('Cannot follow a private playlist');
-    }
+    await verifyPlaylistAccess(validatedInput.playlistUuid, userId);
 
     await db
       .insert(dbSchema.playlistFollows)

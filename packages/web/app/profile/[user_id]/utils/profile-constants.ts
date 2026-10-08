@@ -22,6 +22,8 @@ export { BOARD_TYPES, difficultyMapping, getDifficultyMapping, sortGrades, getLa
 export type { LogbookEntry, UnifiedTimeframeType };
 
 export type UserProfile = {
+  isPrivate?: boolean;
+  canViewActivity?: boolean;
   id: string;
   email: string | undefined;
   name: string | null;

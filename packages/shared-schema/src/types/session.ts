@@ -40,7 +40,7 @@ export type SessionHardestClimb = {
 };
 
 export type SessionParticipant = {
-  userId: string;
+  userId: string | null;
   displayName?: string | null;
   avatarUrl?: string | null;
   sends: number;

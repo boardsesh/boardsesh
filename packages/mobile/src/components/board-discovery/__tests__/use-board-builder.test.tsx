@@ -6,6 +6,25 @@ import { useBoardBuilder } from '../use-board-builder';
 // Kilter layout 1 = "Original"; selecting it auto-picks a default size + all its
 // sets, which is the behaviour that lets the per-set toggles stay behind Advanced.
 describe('useBoardBuilder', () => {
+  it('submits the untouched invite-only audience once privacy controls are enabled', () => {
+    const { result, rerender } = renderHook(({ privacyEnabled }) => useBoardBuilder(null, { privacyEnabled }), {
+      initialProps: { privacyEnabled: false },
+    });
+    act(() => result.current.selectLayout(1));
+    expect(result.current.buildCreateInput()).not.toHaveProperty('audience');
+
+    rerender({ privacyEnabled: true });
+    expect(result.current.privacyAudience).toBe('invite_only');
+    expect(result.current.buildCreateInput()).toMatchObject({
+      audience: 'invite_only',
+      isPublic: false,
+      hideLocation: true,
+    });
+
+    act(() => result.current.setPrivacyAudience('followers'));
+    rerender({ privacyEnabled: true });
+    expect(result.current.buildCreateInput()?.audience).toBe('followers');
+  });
   it('auto-selects a size and all its sets when a layout is picked, satisfying canCreate', () => {
     const { result } = renderHook(() => useBoardBuilder());
     expect(result.current.canCreate).toBe(false);

@@ -15,6 +15,8 @@ import {
   sprayReferenceVisibilityCondition,
 } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
+import { tickPrivacyCondition, betaPrivacyCondition } from '../shared/activity-privacy';
+import { canViewUserActivity, contentVisibilityCondition } from '../../../services/privacy';
 import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import { fetchOwnerBoards, toTickBoardCandidate } from '../shared/render-board';
@@ -121,6 +123,7 @@ function buildAscentTickConditions(validated: AscentFeedFilterInput, userId: str
 /** Conditions that need the canonical board_climbs join (layout + name search). */
 function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUserId: string | null | undefined) {
   return [
+    tickPrivacyCondition(viewerUserId),
     // These feeds are unauthenticated and take `boardTypes` / `layoutIds` from the
     // caller, so without this anyone could read a climber's ticks on their own
     // private spray wall — climb name, frames and the wall's layout id — which is
@@ -156,7 +159,12 @@ function buildAscentClimbConditions(validated: AscentFeedFilterInput, viewerUser
  * (the profile beta shelf). One profile lookup + one links query per call.
  * Returns `boardType:climbUuid` keys.
  */
-async function fetchUserBetaClimbKeys(userId: string, climbUuids: string[], tickUuids: string[]): Promise<Set<string>> {
+async function fetchUserBetaClimbKeys(
+  userId: string,
+  climbUuids: string[],
+  tickUuids: string[],
+  viewerId?: string | null,
+): Promise<Set<string>> {
   if (climbUuids.length === 0) return new Set();
   const profileRows = await db
     .select({ instagramUrl: dbSchema.userProfiles.instagramUrl })
@@ -175,7 +183,13 @@ async function fetchUserBetaClimbKeys(userId: string, climbUuids: string[], tick
   const betaLinkRows = await db
     .select({ boardType: dbSchema.boardBetaLinks.boardType, climbUuid: dbSchema.boardBetaLinks.climbUuid })
     .from(dbSchema.boardBetaLinks)
-    .where(and(inArray(dbSchema.boardBetaLinks.climbUuid, climbUuids), or(...ownershipConditions)));
+    .where(
+      and(
+        inArray(dbSchema.boardBetaLinks.climbUuid, climbUuids),
+        or(...ownershipConditions),
+        betaPrivacyCondition(viewerId),
+      ),
+    );
   return new Set(betaLinkRows.map((row) => `${row.boardType}:${row.climbUuid}`));
 }
 
@@ -413,6 +427,7 @@ export const tickQueries = {
       // for spray, where a missing climb means a hard-deleted one: only the
       // climber who logged it keeps seeing the entry.
       sprayTickClimbExistsCondition(viewerUserId),
+      tickPrivacyCondition(viewerUserId, dbSchema.boardseshTicks, true),
     ];
 
     // Fetch ticks with layoutId from unified board_climbs table. We surface
@@ -456,6 +471,15 @@ export const tickQueries = {
           and(
             sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
             eq(dbSchema.boardClimbs.boardType, boardType),
+            contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
+            or(
+              viewerUserId ? eq(dbSchema.boardClimbs.userId, viewerUserId) : sql`false`,
+              and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true)),
+            ),
+            sprayClimbVisibilityCondition(
+              { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+              viewerUserId,
+            ),
           ),
         )
         .leftJoin(
@@ -521,6 +545,7 @@ export const tickQueries = {
   userTickCountsByBoard: async (
     _: unknown,
     { userId }: { userId: string },
+    ctx?: ConnectionContext,
   ): Promise<Array<{ boardType: string; count: number }>> => {
     if (!userId || typeof userId !== 'string' || userId.trim() === '') return [];
 
@@ -529,7 +554,13 @@ export const tickQueries = {
       .from(dbSchema.boardseshTicks)
       // Aurora's own duplicate ascents count once (#3535), so the inferred
       // default board matches what the logbook actually shows.
-      .where(and(eq(dbSchema.boardseshTicks.userId, userId), notAuroraTwinDuplicate(dbSchema.boardseshTicks)))
+      .where(
+        and(
+          eq(dbSchema.boardseshTicks.userId, userId),
+          notAuroraTwinDuplicate(dbSchema.boardseshTicks),
+          tickPrivacyCondition(ctx?.isAuthenticated ? ctx.userId : null, dbSchema.boardseshTicks, true),
+        ),
+      )
       .groupBy(dbSchema.boardseshTicks.boardType);
 
     return rows.map((row) => ({ boardType: row.boardType, count: Number(row.tickCount) }));
@@ -770,6 +801,7 @@ export const tickQueries = {
         userId,
         Array.from(new Set(results.map(({ tick }) => tick.climbUuid))),
         results.map(({ tick }) => tick.uuid),
+        ctx?.userId,
       ),
       fetchOwnerBoards([userId]),
     ]);
@@ -1177,6 +1209,7 @@ export const tickQueries = {
         userId,
         climbUuidsInPage,
         tickRows.map(({ tick }) => tick.uuid),
+        ctx?.userId,
       ),
       fetchOwnerBoards([userId]),
     ]);
@@ -1346,6 +1379,10 @@ export const tickQueries = {
   userClimbPercentile: async (_: unknown, { userId }: { userId: string }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, 10, 'userClimbPercentile');
 
+    if (!(await canViewUserActivity(ctx.isAuthenticated ? ctx.userId : null, userId))) {
+      return { totalDistinctClimbs: 0, percentile: 0, totalActiveUsers: 0 };
+    }
+
     if (!userId || typeof userId !== 'string' || userId.trim() === '') {
       return { totalDistinctClimbs: 0, percentile: 0, totalActiveUsers: 0 };
     }
@@ -1432,15 +1469,19 @@ export const tickQueries = {
       >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`;
 
       const baseConditions = and(
+        tickPrivacyCondition(viewerUserId, dbSchema.boardseshTicks, true),
         eq(dbSchema.boardseshTicks.userId, userId),
         eq(dbSchema.boardseshTicks.boardType, boardType),
         ne(dbSchema.boardseshTicks.status, 'attempt'),
         // REFERENCE form, not the column form: `baseConditions` is shared with the
         // third query below, which selects distinct climb uuids straight off
         // `boardsesh_ticks` and joins `board_climbs` not at all.
-        sprayReferenceVisibilityCondition(
-          { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
-          viewerUserId,
+        or(
+          viewerUserId ? eq(dbSchema.boardseshTicks.userId, viewerUserId) : sql`false`,
+          sprayReferenceVisibilityCondition(
+            { boardType: dbSchema.boardseshTicks.boardType, climbUuid: dbSchema.boardseshTicks.climbUuid },
+            viewerUserId,
+          ),
         ),
         // A spray send whose climb row has been hard-deleted (`deleteDraftClimb`,
         // account deletion) passes the reference form for everybody and would
@@ -1493,6 +1534,20 @@ export const tickQueries = {
               and(
                 sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
                 eq(dbSchema.boardClimbs.boardType, boardType),
+                contentVisibilityCondition(
+                  'climb',
+                  dbSchema.boardClimbs.uuid,
+                  dbSchema.boardClimbs.userId,
+                  viewerUserId,
+                ),
+                or(
+                  viewerUserId ? eq(dbSchema.boardClimbs.userId, viewerUserId) : sql`false`,
+                  and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true)),
+                ),
+                sprayClimbVisibilityCondition(
+                  { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+                  viewerUserId,
+                ),
               ),
             )
             .leftJoin(
@@ -1524,6 +1579,20 @@ export const tickQueries = {
               and(
                 sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
                 eq(dbSchema.boardClimbs.boardType, boardType),
+                contentVisibilityCondition(
+                  'climb',
+                  dbSchema.boardClimbs.uuid,
+                  dbSchema.boardClimbs.userId,
+                  viewerUserId,
+                ),
+                or(
+                  viewerUserId ? eq(dbSchema.boardClimbs.userId, viewerUserId) : sql`false`,
+                  and(eq(dbSchema.boardClimbs.isDraft, false), eq(dbSchema.boardClimbs.isListed, true)),
+                ),
+                sprayClimbVisibilityCondition(
+                  { boardType: dbSchema.boardClimbs.boardType, layoutId: dbSchema.boardClimbs.layoutId },
+                  viewerUserId,
+                ),
               ),
             )
             .where(baseConditions)

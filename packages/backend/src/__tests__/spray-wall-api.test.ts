@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   feedItems,
+  resourcePrivacy,
   syncDeletions,
   userBoards,
   sprayWallHolds,
@@ -107,7 +108,8 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 const { db } = await import('../db/client');
-const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
+const { sprayWallQueries, sprayWallMutations, updateSprayResourcePrivacy } =
+  await import('../graphql/resolvers/board/spray-walls');
 const { climbMutations } = await import('../graphql/resolvers/climbs/mutations');
 const { sprayWallFullPhotoKey, sprayWallPhotoKey } = await import('../handlers/spray-wall-photos');
 const { climbQueries } = await import('../graphql/resolvers/climbs/queries');
@@ -2278,11 +2280,11 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     // The summary is keyed on a session id alone and returns the hardest send's
     // climb NAME. It establishes no viewer at all, so the gate is deliberately the
     // strict one: only PUBLIC walls appear.
-    const { climbUuid } = await wallWithAClimb();
+    const { wall, climbUuid } = await wallWithAClimb();
     const sessionId = uuidv4();
     await db.execute(sql`
       INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
-      VALUES (${sessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+      VALUES (${sessionId}, ${`spray/${wall.layoutId}/${wall.sizeId}/1/40`}, ${OWNER}, now() - interval '1 hour', now(), now(), now())
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
@@ -2298,7 +2300,7 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     const publicSessionId = uuidv4();
     await db.execute(sql`
       INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
-      VALUES (${publicSessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+      VALUES (${publicSessionId}, ${`spray/${publicWall.wall.layoutId}/${publicWall.wall.sizeId}/1/40`}, ${OWNER}, now() - interval '1 hour', now(), now(), now())
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)
@@ -2603,12 +2605,7 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
     expect(asOwner.totalCount).toBe(2);
   });
 
-  it('keeps a tick whose climb row is MISSING — the "Unknown Climb" case', async () => {
-    // Four callers AND this predicate onto a LEFT-JOINed `board_climbs`, and a tick
-    // with no climb row is a case they deliberately render as "Unknown Climb". With
-    // a plain `<>`, `NULL <> 'spray'` is NULL and the row vanishes — and
-    // `sessionDetail`, which returns null when it finds no ticks, loses the whole
-    // session. Hence `IS DISTINCT FROM`.
+  it('retains a missing-climb tick in its author’s logbook, excluding enriched feeds', async () => {
     const orphanUuid = 'ORPHANTICKCLIMBUUID0000000000001';
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climbed_at, created_at, updated_at)
@@ -2624,15 +2621,16 @@ describe('a private wall\u2019s climbs are not readable through the climb API', 
       { sessionId: `daily:${OWNER}:${day}` },
       ctxFor(OWNER),
     )) as { ticks?: Array<{ climbUuid?: string }> } | null;
-    expect(detail).not.toBeNull();
-    expect((detail?.ticks ?? []).map((tick) => tick.climbUuid)).toContain(orphanUuid);
+    expect((detail?.ticks ?? []).map((tick) => tick.climbUuid)).not.toContain(orphanUuid);
+    const ownTicks = await tickQueries.userTicks({}, { userId: OWNER, boardType: 'kilter' }, ctxFor(OWNER));
+    expect(ownTicks).toEqual(expect.arrayContaining([expect.objectContaining({ climbUuid: orphanUuid })]));
 
     const global = (await socialFeedQueries.globalAscentsFeed(
       {},
       { input: { limit: 50, offset: 0 } },
       ctxFor(null),
     )) as { items: Array<{ climbUuid?: string }> };
-    expect(global.items.map((item) => item.climbUuid)).toContain(orphanUuid);
+    expect(global.items.map((item) => item.climbUuid)).not.toContain(orphanUuid);
   });
 
   it('lets a GYM MEMBER read a gym wall\u2019s climbs', async () => {
@@ -3657,6 +3655,115 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     return row?.public_photo_key ?? null;
   };
 
+  it.each(['followers', 'invite_only', 'only_me'] as const)(
+    'keeps %s privacy when an old app submits public or unlisted flags',
+    async (audience) => {
+      const { wall } = await createPublishedWall(OWNER);
+      await updateSprayResourcePrivacy(
+        wall.uuid,
+        { audience, locationAudience: 'members', inheritFollowers: false },
+        ctxFor(OWNER),
+      );
+      const { copyObjectBetweenBuckets } = await import('../storage/s3');
+      vi.mocked(copyObjectBetweenBuckets).mockClear();
+
+      for (const isUnlisted of [false, true]) {
+        const updated = (await sprayWallMutations.updateSprayWall(
+          {},
+          { input: { uuid: wall.uuid, name: 'Renamed from an old app', isPublic: true, isUnlisted } },
+          ctxFor(OWNER),
+        )) as { publicPhotoUrl: string | null };
+        expect(updated.publicPhotoUrl).toBeNull();
+      }
+
+      const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+      expect(policy).toMatchObject({ audience, locationAudience: 'members', inheritFollowers: false });
+      const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+      expect(board).toMatchObject({
+        name: 'Renamed from an old app',
+        isPublic: false,
+        isUnlisted: false,
+        hideLocation: true,
+      });
+      expect(copyObjectBetweenBuckets).not.toHaveBeenCalled();
+      expect(publicBucketObjects.size).toBe(0);
+      expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    },
+  );
+
+  it('keeps followers when an old app echoes unchanged private flags during a rename', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'followers', locationAudience: 'members', inheritFollowers: true },
+      ctxFor(OWNER),
+    );
+    await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Still shared with followers', isPublic: false, isUnlisted: false } },
+      ctxFor(OWNER),
+    );
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy).toMatchObject({ audience: 'followers', locationAudience: 'members', inheritFollowers: true });
+  });
+
+  it('allows an explicit privacy control to publish a protected wall and its photo', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'only_me', locationAudience: 'only_me', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+    await updateSprayResourcePrivacy(
+      wall.uuid,
+      { audience: 'public', locationAudience: 'members', inheritFollowers: false },
+      ctxFor(OWNER),
+    );
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy).toMatchObject({ audience: 'public', locationAudience: 'members' });
+    const publicKey = await publicPhotoKeyOf(wall.layoutId);
+    expect(publicKey).not.toBeNull();
+    expect(publicBucketObjects.has(publicKey!)).toBe(true);
+  });
+
+  it('discards a staged public photo when privacy becomes restricted during the copy', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    const { copyObjectBetweenBuckets } = await import('../storage/s3');
+    let stagedKey: string | null = null;
+    vi.mocked(copyObjectBetweenBuckets).mockImplementationOnce(
+      async (_source, sourceKey, _destination, destinationKey) => {
+        await updateSprayResourcePrivacy(
+          wall.uuid,
+          { audience: 'only_me', locationAudience: 'only_me', inheritFollowers: false },
+          ctxFor(OWNER),
+        );
+        publicBucketObjects.set(destinationKey, sourceKey);
+        stagedKey = destinationKey;
+        return { key: destinationKey };
+      },
+    );
+
+    const updated = (await sprayWallMutations.updateSprayWall(
+      {},
+      { input: { uuid: wall.uuid, name: 'Rename survives the race', isPublic: true } },
+      ctxFor(OWNER),
+    )) as { publicPhotoUrl: string | null };
+    const [policy] = await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid));
+    expect(policy).toMatchObject({ audience: 'only_me', locationAudience: 'only_me' });
+    const [board] = await db.select().from(userBoards).where(eq(userBoards.uuid, wall.uuid));
+    expect(board).toMatchObject({
+      name: 'Rename survives the race',
+      isPublic: false,
+      isUnlisted: false,
+      hideLocation: true,
+    });
+    expect(updated.publicPhotoUrl).toBeNull();
+    expect(await publicPhotoKeyOf(wall.layoutId)).toBeNull();
+    expect(stagedKey).not.toBeNull();
+    expect(deletedPublicKeys).toContain(stagedKey);
+    expect(publicBucketObjects.size).toBe(0);
+  });
+
   it('copies the photo into the public bucket on promotion and serves a stable URL', async () => {
     const { wall } = await createPublishedWall(OWNER);
 
@@ -3676,6 +3783,20 @@ describe('sharing a wall: public promotion, demotion and gym listing', () => {
     expect(publicKey).toMatch(new RegExp(`^spray-walls/${wall.uuid}/[0-9a-f]{32}\\.jpg$`));
     expect(await publicPhotoKeyOf(wall.layoutId)).toBe(publicKey);
     expect(promoted.publicPhotoUrl).toBe(`https://media.example/${publicKey}`);
+  });
+
+  it('keeps legacy public/private/public switches working without a modern policy', async () => {
+    const { wall } = await createPublishedWall(OWNER);
+    for (const isPublic of [true, false, true]) {
+      const updated = (await sprayWallMutations.updateSprayWall(
+        {},
+        { input: { uuid: wall.uuid, isPublic } },
+        ctxFor(OWNER),
+      )) as { publicPhotoUrl: string | null };
+      expect(updated.publicPhotoUrl !== null).toBe(isPublic);
+      expect(publicBucketObjects.size).toBe(isPublic ? 1 : 0);
+    }
+    expect(await db.select().from(resourcePrivacy).where(eq(resourcePrivacy.resourceId, wall.uuid))).toEqual([]);
   });
 
   it('deletes the public copy — and retracts the feed — when the wall goes private again', async () => {
@@ -4666,17 +4787,22 @@ describe('activityFeed and a wall that went private after the fan-out', () => {
     expect(await read(OWNER)).toContain(wall.climbUuid);
   });
 
-  it('leaves a row with no climb uuid alone', async () => {
-    // Follows and session summaries carry no `climbUuid`, so the reference form
-    // matches nothing for them and they must pass straight through.
+  it('authorizes the session even when the feed row has no climb uuid', async () => {
+    const sessionId = uuidv4();
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, is_public)
+      VALUES (${sessionId}, 'kilter/1/1/1/40', ${OWNER}, true)
+    `);
     await db.execute(sql`
       INSERT INTO feed_items (recipient_id, actor_id, type, entity_type, entity_id, metadata, created_at)
-      VALUES (${STRANGER}, ${OWNER}, 'session_summary', 'session', ${uuidv4()}, ${'{}'}::jsonb, now())
+      VALUES (${STRANGER}, ${OWNER}, 'session_summary', 'session', ${sessionId}, ${'{}'}::jsonb, now())
     `);
     const items = (await activityFeedQueries.activityFeed({}, { input: { limit: 20 } }, ctxFor(STRANGER))) as {
       items: Array<{ entityType: string }>;
     };
     expect(items.items.map((item) => item.entityType)).toEqual(['session']);
+    await db.execute(sql`UPDATE board_sessions SET is_public = false WHERE id = ${sessionId}`);
+    expect(await read(STRANGER)).toEqual([]);
   });
 });
 
@@ -5367,11 +5493,11 @@ describe('the owner’s own session summary', () => {
     // context and wrong for `sessionSummary` and `endSession`, where the viewer IS
     // known: the hardest send of a garage session is usually on the garage wall, and
     // the owner was shown "Unknown climb" for their own climb.
-    const { climbUuid } = await wallWithAClimb();
+    const { wall, climbUuid } = await wallWithAClimb();
     const sessionId = uuidv4();
     await db.execute(sql`
       INSERT INTO board_sessions (id, board_path, created_by_user_id, started_at, ended_at, created_at, last_activity)
-      VALUES (${sessionId}, '/spray/session', ${OWNER}, now() - interval '1 hour', now(), now(), now())
+      VALUES (${sessionId}, ${`spray/${wall.layoutId}/${wall.sizeId}/1/40`}, ${OWNER}, now() - interval '1 hour', now(), now(), now())
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, session_id, climbed_at, created_at, updated_at)

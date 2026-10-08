@@ -60,14 +60,18 @@ describe('Metro browser/native resolution boundary', () => {
         return {
           getSentryExpoConfig: (_root: string, options?: Record<string, unknown>) => {
             sdkOptions = options;
-            return { resolver: {}, transformerPath: join(mobileRoot, 'metro.config.js') };
+            return {
+              resolver: {},
+              serializer: { getModulesRunBeforeMainModule: () => [] },
+              transformerPath: join(mobileRoot, 'metro.config.js'),
+            };
           },
         };
       }
       if (moduleName === './metro-watchman.cjs') return { configureWatchman: () => {} };
       if (moduleName === './expo-web-response-headers.cjs') return { applyExpoWebResponseHeaders: () => {} };
       if (moduleName === './metro-web-runtime-resolution.cjs') return { resolveWebRuntimeModulePath };
-      return require(moduleName);
+      return require(moduleName.startsWith('.') ? join(mobileRoot, moduleName) : moduleName);
     };
     mockRequire.resolve = (moduleName: string) =>
       require.resolve(moduleName.startsWith('.') ? join(mobileRoot, moduleName) : moduleName);

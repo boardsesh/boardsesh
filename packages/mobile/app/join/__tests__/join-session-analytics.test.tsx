@@ -45,6 +45,7 @@ const slugBoardQuery = vi.hoisted(() => ({ data: null as unknown }));
 // Capture the confirmation card's Join button so the test can press it.
 const buttons = vi.hoisted(() => ({ joinPress: null as (() => void) | null }));
 
+vi.mock('../../../src/components/privacy/RequestResourceAccess', () => ({ RequestResourceAccess: () => null }));
 vi.mock('../../../src/lib/analytics', () => ({ track: analytics.track }));
 
 // The launch hold is covered by its own suite; here the screen renders as is.

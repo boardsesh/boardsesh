@@ -2,6 +2,8 @@ import { useScopedSheetError } from '../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from './InlineSheetError';
 import { useUnsavedSheetGuard } from '../hooks/use-unsaved-sheet-guard';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from './AccessibleBottomSheetTextInput';
+import { usePublicationAudience } from './privacy/use-publication-audience';
+import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 // "Share your beta" modal — the outbound half of the beta-video flow. It hands
 // the climber a ready-to-paste, board-aware caption (with the climb name baked
 // in so the share-back auto-match can recover the climb), copies it, opens
@@ -113,6 +115,7 @@ export function AddBetaVideoSheet({
     else if (usedFallback) showToast(t('mobile.betaVideos.instagramNotInstalled'), 'info');
   }, [caption, climb, boardName, showToast, t, setSubmitError]);
 
+  const privacy = usePublicationAudience(climb?.uuid ?? '', visible);
   const trimmed = url.trim();
   const hasInput = trimmed.length > 0;
   const isValid = hasInput && isBetaVideoUrl(trimmed);
@@ -123,7 +126,13 @@ export function AddBetaVideoSheet({
     if (!climb || !isValid || attach.isPending) return;
     setSubmitError(null);
     attach.mutate(
-      { boardType: boardName, climbUuid: climb.uuid, link: trimmed, angle },
+      {
+        boardType: boardName,
+        climbUuid: climb.uuid,
+        link: trimmed,
+        angle,
+        ...(privacy.publication ? { privacy: privacy.publication } : {}),
+      },
       {
         onSuccess: () => {
           let platform: 'TikTok' | 'Instagram' | 'Unknown' = 'Unknown';
@@ -139,7 +148,7 @@ export function AddBetaVideoSheet({
         },
       },
     );
-  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose, setSubmitError]);
+  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose, setSubmitError, privacy.publication]);
 
   // A form: large, so the field and its keyboard both fit (HIG Sheets).
   const snapPoints = LARGE_SNAP_POINTS;
@@ -173,6 +182,7 @@ export function AddBetaVideoSheet({
     >
       <View style={styles.container}>
         <InlineSheetError message={submitError} visible={visible} scope={climb?.uuid ?? 'beta'} />
+        <PublicationAudiencePicker privacy={privacy} disabled={attach.isPending} />
         <StepRow index={1} title={t('mobile.betaVideos.step1Title')}>
           <View style={[styles.captionBox, { borderColor: systemColors.separator }]}>
             <Text variant="subheadline" color={systemColors.secondaryLabel}>

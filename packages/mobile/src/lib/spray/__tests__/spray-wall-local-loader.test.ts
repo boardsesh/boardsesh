@@ -3,6 +3,8 @@ import { IDENTITY_HOMOGRAPHY } from '@boardsesh/spray-wall-geometry';
 
 const fixture = vi.hoisted(() => ({
   userId: 'viewer' as string | undefined,
+  catalogReadable: true,
+  catalogEpoch: 1,
   storedPath: '/photos/wall.jpg' as string | null,
   viewerGeneration: 1,
   removalGeneration: 1,
@@ -12,6 +14,11 @@ const fixture = vi.hoisted(() => ({
   remembered: null as { archivedAt: string; replacedByWallUuid: string | null } | null,
   previous: null as unknown,
   artOnDisk: true,
+}));
+vi.mock('../../../offline/catalog-access', () => ({
+  canReadPrivateCatalog: async () => fixture.catalogReadable,
+  captureCatalogReadEpoch: () => fixture.catalogEpoch,
+  isCatalogReadCurrent: (epoch: number) => fixture.catalogReadable && epoch === fixture.catalogEpoch,
 }));
 vi.mock('react-native', () => ({ Image: { getSize: fixture.getSize } }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => ({}) }));
@@ -50,6 +57,8 @@ const wall = {
 beforeEach(() => {
   vi.clearAllMocks();
   fixture.userId = 'viewer';
+  fixture.catalogReadable = true;
+  fixture.catalogEpoch = 1;
   fixture.storedPath = '/photos/wall.jpg';
   fixture.viewerGeneration = 1;
   fixture.removalGeneration = 1;
@@ -120,6 +129,13 @@ describe('offline published wall hydration', () => {
     },
   );
 
+  it('refuses a failed catalogue withdrawal even when the wall and photo remain on disk', async () => {
+    fixture.catalogReadable = false;
+    expect(await loadLocalSprayWall(4, 1, 1)).toBe(false);
+    expect(fixture.read).not.toHaveBeenCalled();
+    expect(fixture.register).not.toHaveBeenCalled();
+  });
+
   it('refuses a missing durable photo', async () => {
     fixture.storedPath = null;
     expect(await loadLocalSprayWall(4, 1, 1)).toBe(false);
@@ -135,7 +151,7 @@ describe('offline published wall hydration', () => {
     expect(fixture.register).not.toHaveBeenCalled();
   });
 
-  it.each(['viewer', 'removal', 'owner'] as const)(
+  it.each(['viewer', 'removal', 'owner', 'catalogRevoked', 'catalogRevalidated'] as const)(
     'never resurrects private geometry after %s changes during image decoding',
     async (change) => {
       let finish: ((width: number, height: number) => void) | undefined;
@@ -147,6 +163,8 @@ describe('offline published wall hydration', () => {
       if (change === 'viewer') fixture.viewerGeneration++;
       if (change === 'removal') fixture.removalGeneration++;
       if (change === 'owner') fixture.userId = 'another';
+      if (change === 'catalogRevoked') fixture.catalogReadable = false;
+      if (change === 'catalogRevalidated') fixture.catalogEpoch++;
       finish?.(1200, 900);
       expect(await loading).toBe(false);
       expect(fixture.register).not.toHaveBeenCalled();

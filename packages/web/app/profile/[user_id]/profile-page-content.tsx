@@ -52,6 +52,7 @@ export default function ProfilePageContent({
 }: ProfilePageContentProps) {
   const { gradeFormat } = useGradeFormat();
   const { t } = useTranslation('profile');
+  const { t: tSettings } = useTranslation('settings');
 
   const { loading, notFound, profile, setProfile, isOwnProfile, statisticsSummary, allBoardsTicks } = useProfileData(
     userId,
@@ -97,6 +98,18 @@ export default function ProfilePageContent({
         <ProfileHeaderShareInjector displayName={null} isActive={false} />
         <Box component="main" className={styles.content}>
           <EmptyState description={t('empty.userNotFound')} />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (profile?.canViewActivity === false) {
+    return (
+      <Box className={styles.layout}>
+        <ProfileHeaderShareInjector displayName={sharedDisplayName} isActive={false} />
+        <Box component="main" className={styles.content}>
+          <UserCard userId={userId} profile={profile} isOwnProfile={isOwnProfile} onProfileUpdate={setProfile} />
+          <EmptyState description={tSettings('privacy.privateProfile')} />
         </Box>
       </Box>
     );

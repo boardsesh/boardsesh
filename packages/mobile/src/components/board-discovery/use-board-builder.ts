@@ -1,3 +1,4 @@
+import type { PrivacyResourceAudience, PrivacyLocationAudience } from '@boardsesh/graphql/operations/privacy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardName, CreateBoardInput, UpdateBoardInput } from '@boardsesh/shared-schema';
 import {
@@ -52,6 +53,8 @@ function parseSetIds(setIds: string): number[] {
 }
 
 export type BoardBuilderOptions = {
+  /** Submit the audience shown by the server-enabled privacy controls. */
+  privacyEnabled?: boolean;
   /**
    * The setup to preselect for a board type, when the builder should open with
    * one chosen instead of waiting for a layout tap (#5654, "My own board"). It
@@ -104,11 +107,14 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
   // can't clobber edits. Create / Popular omit them, so the home-board defaults apply.
   const [name, setName] = useState(seed?.name ?? '');
 
-  // "More options" / advanced. Owned + public default to the home-board case.
+  // New home boards start private with their exact location hidden.
   const [isOwned, setIsOwned] = useState(seed?.isOwned ?? true);
-  const [isPublic, setIsPublic] = useState(seed?.isPublic ?? true);
+  const [isPublic, setIsPublic] = useState(seed?.isPublic ?? false);
   const [isUnlisted, setIsUnlisted] = useState(seed?.isUnlisted ?? false);
-  const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? false);
+  const [hideLocation, setHideLocation] = useState(seed?.hideLocation ?? true);
+  const [selectedPrivacyAudience, setPrivacyAudience] = useState<PrivacyResourceAudience | undefined>();
+  const privacyAudience = selectedPrivacyAudience ?? (options?.privacyEnabled ? 'invite_only' : undefined);
+  const [privacyLocationAudience, setPrivacyLocationAudience] = useState<PrivacyLocationAudience | undefined>();
   // Most home boards with a kicker tilt are adjustable; default on.
   const [isAngleAdjustable, setIsAngleAdjustable] = useState(seed?.isAngleAdjustable ?? true);
   // Nearly every Kilter/Tension wall ships with a light kit; default on so the
@@ -273,6 +279,8 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
       name: name.trim() || fallbackName?.trim() || cleanLayoutName(rawLayoutName, boardName),
       angle,
       isOwned,
+      ...(privacyAudience ? { audience: privacyAudience } : {}),
+      ...(privacyLocationAudience ? { locationAudience: privacyLocationAudience } : {}),
       isPublic,
       isUnlisted,
       hideLocation,
@@ -353,6 +361,10 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null, options?: BoardB
     sizeId,
     setIds,
     angle,
+    privacyAudience,
+    setPrivacyAudience,
+    privacyLocationAudience,
+    setPrivacyLocationAudience,
     // meta
     name,
     isOwned,

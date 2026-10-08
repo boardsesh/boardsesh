@@ -174,7 +174,7 @@ function buildArtifact(spec: ArtifactSpec): void {
         (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    const formatVersion = spec.formatVersion ?? 1;
+    const formatVersion = spec.formatVersion ?? SNAPSHOT_MANIFEST_FORMAT_VERSION;
     const schemaVersion = spec.schemaVersion ?? LATEST_SCHEMA_VERSION;
     const builtAt = spec.builtAt ?? '2026-06-01T00:00:00.000Z';
     meta.run(
@@ -224,7 +224,7 @@ function makeEntry(overrides: Partial<SnapshotManifestEntry> = {}): SnapshotMani
 }
 
 function makeManifest(entries: SnapshotManifestEntry[]): SnapshotManifest {
-  return { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries };
+  return { formatVersion: 2, generatedAt: '2026-06-01T00:00:00.000Z', entries };
 }
 
 /** A recording fake of the injected snapshot I/O. */
@@ -506,6 +506,28 @@ describe('getBootstrapMetadataByScope', () => {
 // ---------------------------------------------------------------------------
 
 describe('bootstrapScopeFromSnapshot', () => {
+  it('replays authenticated rows omitted by privacy-safe public artifacts from epoch', async () => {
+    const filePath = join(workDir, 'privacy-artifact.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'public-catalog', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'public-catalog', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: SCOPE_KILTER_5,
+      scopeKey: 'kilter:1:5',
+      filePath,
+      replayFromEpoch: true,
+    });
+    const epoch = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
+    expect(await countRows('board_climbs')).toBe(1);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(epoch);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(epoch);
+  });
+
   it('imports the size-matched climbs + their stats and stamps both checkpoints at the watermarks', async () => {
     const filePath = join(workDir, 'artifact.db');
     buildArtifact({
@@ -1429,7 +1451,7 @@ describe('pullSync snapshot bootstrap', () => {
       statsWatermark: STATS_WATERMARK,
     });
     const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
-    source.fetchManifest.mockResolvedValueOnce({ formatVersion: 1, generatedAt: 'not-a-date', entries: [] });
+    source.fetchManifest.mockResolvedValueOnce({ formatVersion: 2, generatedAt: 'not-a-date', entries: [] });
     const firstRun = makeGraphqlFetch();
     const onBootstrapRetryDue = vi.fn();
 
@@ -4243,7 +4265,7 @@ function buildGradesArtifact(spec: {
         spec.rowCountOverride ?? spec.grades.length,
         '2026-06-01T00:00:00.000Z',
         spec.schemaVersion ?? LATEST_SCHEMA_VERSION,
-        1,
+        SNAPSHOT_MANIFEST_FORMAT_VERSION,
       );
   } finally {
     artifactDb.close();

@@ -1,5 +1,5 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/client';
 import { newClimbSubscriptionResolvers } from '../graphql/resolvers/social/new-climb-subscriptions';
@@ -65,7 +65,7 @@ async function insertSessionWithSend(sessionId: string, climbUuid: string, climb
     INSERT INTO boardsesh_ticks
       (uuid, user_id, board_type, board_id, climb_uuid, angle, status, attempt_count, difficulty, climbed_at, session_id)
     VALUES (${`${sessionId}-tick`}, ${OWNER_ID}, 'kilter', ${boardId}, ${climbUuid}, 40, 'send', 1, 20, ${climbedAt}, ${sessionId})
-    ON CONFLICT (uuid) DO NOTHING
+    ON CONFLICT (uuid) DO UPDATE SET session_id = excluded.session_id
   `);
 }
 
@@ -105,7 +105,10 @@ describe('no-match payloads read characteristics, not just the description (#512
     await insertClimb(CLIMB_NULL_ARRAY, null, TRAILING_NO_MATCH);
     // The rule is on, and the description says nothing about it.
     await insertClimb(CLIMB_EXPLICIT_TRUE, '{no_match}', 'Crimpy start, big move off the gaston');
+  });
 
+  beforeEach(async () => {
+    // The shared setup clears sessions before each test; keep real authorized parents.
     await insertSessionWithSend(SESSION_EXPLICIT_FALSE, CLIMB_EXPLICIT_FALSE, '2026-02-01 10:00:00');
     await insertSessionWithSend(SESSION_NULL_ARRAY, CLIMB_NULL_ARRAY, '2026-02-02 10:00:00');
   });

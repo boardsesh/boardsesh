@@ -49,6 +49,7 @@ vi.mock('react-native', () => ({
 
 import { resetActiveBoardSelfHealValidationCache } from '../active-board-self-heal-validation-cache';
 import { useActiveBoardSelfHeal, resetActiveBoardSelfHealForTests } from '../use-active-board-self-heal';
+import { invalidatePrivacySnapshots } from '../../privacy/privacy-cache';
 
 function board(uuid: string): UserBoard {
   return { uuid, boardType: 'kilter', layoutId: 1, sizeId: 2, setIds: '3,4', name: 'Wall' } as unknown as UserBoard;
@@ -390,5 +391,49 @@ describe('useActiveBoardSelfHeal', () => {
 
     expect(mocks.setActiveBoard).not.toHaveBeenCalled();
     expect(mocks.clearActiveBoard).not.toHaveBeenCalled();
+  });
+
+  it('refreshes redacted location and identity for the same board while preserving local angle', async () => {
+    mocks.activeBoard = { ...board('same-wall'), angle: 25, ownerId: 'owner', gymName: 'Private gym', latitude: 52 };
+    const authorized = { ...board('same-wall'), angle: 40, ownerId: null, gymName: null, latitude: null };
+    mocks.fetchBoardByUuid.mockResolvedValue(authorized);
+    renderHook(() => useActiveBoardSelfHeal());
+    await waitFor(() => expect(mocks.setActiveBoard).toHaveBeenCalledWith({ ...authorized, angle: 25 }));
+  });
+
+  it('reauthorizes an already validated board on revocation and clears denied access', async () => {
+    mocks.activeBoard = board('private-wall');
+    mocks.fetchBoardByUuid.mockResolvedValueOnce(mocks.activeBoard).mockResolvedValueOnce(null);
+    renderHook(() => useActiveBoardSelfHeal());
+    await waitFor(() => expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      invalidatePrivacySnapshots();
+    });
+    await waitFor(() => expect(mocks.clearActiveBoard).toHaveBeenCalledTimes(1));
+    expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards a pre-revocation response and retries under current authorization', async () => {
+    let completeOldRequest: ((board: UserBoard) => void) | undefined;
+    mocks.activeBoard = { ...board('private-wall'), angle: 25 };
+    mocks.fetchBoardByUuid
+      .mockImplementationOnce(
+        () =>
+          new Promise<UserBoard>((resolve) => {
+            completeOldRequest = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(null);
+    renderHook(() => useActiveBoardSelfHeal());
+    await waitFor(() => expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      invalidatePrivacySnapshots();
+    });
+    await act(async () => {
+      completeOldRequest?.({ ...board('private-wall'), name: 'Withdrawn location', angle: 40 });
+    });
+    await waitFor(() => expect(mocks.clearActiveBoard).toHaveBeenCalledTimes(1));
+    expect(mocks.setActiveBoard).not.toHaveBeenCalled();
+    expect(mocks.fetchBoardByUuid).toHaveBeenCalledTimes(2);
   });
 });

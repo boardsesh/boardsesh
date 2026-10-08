@@ -8,6 +8,7 @@ import {
 } from '@boardsesh/db/queries';
 import { db } from '../../../db/client';
 import { effectiveQualityExpr } from '../shared/sql-expressions';
+import { tickPrivacyCondition } from '../shared/activity-privacy';
 
 /**
  * The rules every "logs on one climb" reader shares: `followingClimbAscents`
@@ -100,6 +101,7 @@ export function climbLogConditions({
   ticks?: TicksTable;
 }): SQL[] {
   return [
+    tickPrivacyCondition(viewerUserId, ticks),
     eq(ticks.boardType, boardType),
     climbUuidCondition(ticks, boardType, canonicalClimbUuid),
     // Worked out once from this climb's own rows, not probed per row: a twin

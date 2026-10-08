@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -8,6 +8,7 @@ import { pubsub } from '../../../pubsub/index';
 import type { ConnectionContext, UpdateSessionResult } from '@boardsesh/shared-schema';
 import { republishBoardQueuePreviewsForSession } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
+import { legacyResourceAudience } from '../../../services/privacy';
 
 type UpdateSessionInput = { sessionId: string; name?: string | null; notes?: string | null; isPublic?: boolean | null };
 
@@ -92,11 +93,9 @@ export const sessionEditMutations = {
    * Publishes SessionNameChanged to live participants when the title actually
    * changes on an active session.
    *
-   * Visibility (`isPublic`) gates exactly two surfaces: the live-sessions
-   * listings (`followedLiveSessions` / `boardLiveSessions`) and the anonymous
-   * board queue preview. Joining by invite link is unaffected. A flip on an
-   * active session re-drives the preview so kiosks follow it: private clears
-   * them (tombstone), public re-seeds them.
+   * Legacy visibility edits retain newer restrictive resource audiences. Safe
+   * narrowing still re-drives the live listings and board queue preview; the
+   * explicit audience control is required to widen a protected session.
    *
    * `lastActivity` moves only when the title or notes change. It is the
    * live-sessions dormancy clock, so a visibility-only edit on a dormant
@@ -142,7 +141,7 @@ export const sessionEditMutations = {
 
     const nextName = hasName ? normalizeSessionText(validated.name) : session.name;
     const nextNotes = hasNotes ? normalizeSessionText(validated.notes) : session.notes;
-    const nextIsPublic = typeof validated.isPublic === 'boolean' ? validated.isPublic : session.isPublic;
+    let nextIsPublic = typeof validated.isPublic === 'boolean' ? validated.isPublic : session.isPublic;
 
     if (hasName || hasNotes || hasIsPublic) {
       const updates: Partial<typeof dbSchema.boardSessions.$inferInsert> = {};
@@ -150,7 +149,34 @@ export const sessionEditMutations = {
       if (hasName) updates.name = nextName;
       if (hasNotes) updates.notes = nextNotes;
       if (hasIsPublic) updates.isPublic = nextIsPublic;
-      await db.update(dbSchema.boardSessions).set(updates).where(eq(dbSchema.boardSessions.id, validated.sessionId));
+      await db.transaction(async (transaction) => {
+        const [locked] = await transaction
+          .select({ ownerId: dbSchema.boardSessions.createdByUserId, isPublic: dbSchema.boardSessions.isPublic })
+          .from(dbSchema.boardSessions)
+          .where(eq(dbSchema.boardSessions.id, validated.sessionId))
+          .for('update');
+        if (!locked || locked.ownerId !== userId) throw new Error('Only the session creator can update this session');
+        if (hasIsPublic && nextIsPublic !== locked.isPublic) {
+          const policyCondition = and(
+            eq(dbSchema.resourcePrivacy.kind, 'session'),
+            eq(dbSchema.resourcePrivacy.resourceId, validated.sessionId),
+          );
+          const [policy] = await transaction.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+          const audience = legacyResourceAudience(policy?.audience, nextIsPublic ? 'public' : 'invite_only');
+          nextIsPublic = audience === 'public';
+          updates.isPublic = nextIsPublic;
+          if (policy && audience !== policy.audience) {
+            await transaction
+              .update(dbSchema.resourcePrivacy)
+              .set({ audience, revision: sql`${dbSchema.resourcePrivacy.revision} + 1`, updatedAt: new Date() })
+              .where(policyCondition);
+          }
+        }
+        await transaction
+          .update(dbSchema.boardSessions)
+          .set(updates)
+          .where(eq(dbSchema.boardSessions.id, validated.sessionId));
+      });
     }
 
     // Kiosks showing this session's queue must follow a visibility flip: the
@@ -159,6 +185,7 @@ export const sessionEditMutations = {
     // binding AND the durable board_id fallback — so each kiosk ends up on
     // whatever the preview gates now allow. Best-effort: a failed kiosk update
     // must not fail the edit the creator asked for.
+    if (hasIsPublic) pubsub.publishPrivacyChanged();
     if (hasIsPublic && nextIsPublic !== session.isPublic && session.status === 'active') {
       await republishBoardQueuePreviewsForSession(validated.sessionId, session.boardId).catch((error: unknown) => {
         // error, not warn: after a flip to private, a failed republish leaves

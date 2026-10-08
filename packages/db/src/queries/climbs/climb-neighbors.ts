@@ -1,3 +1,4 @@
+import { climbReferenceVisibilityCondition, contentVisibilityCondition } from '../privacy';
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { boardClimbNeighbors, boardClimbs, boardClimbStats, boardDifficultyGrades } from '../../schema/index';
 import { rowsOf } from '../util/rows';
@@ -202,6 +203,7 @@ export type MaterializedSimilarClimb = {
 };
 
 export type MaterializedSimilarClimbsArgs = {
+  viewerUserId?: string;
   boardType: string;
   layoutId: number;
   climbUuid: string;
@@ -244,7 +246,7 @@ type MaterializedRow = {
  */
 export async function getMaterializedSimilarClimbs(
   executor: ExecuteConnection,
-  { boardType, layoutId, climbUuid, threshold, limit, sizeId, statsAngle }: MaterializedSimilarClimbsArgs,
+  { boardType, layoutId, climbUuid, threshold, limit, sizeId, statsAngle, viewerUserId }: MaterializedSimilarClimbsArgs,
 ): Promise<MaterializedSimilarClimb[]> {
   const safeThreshold = Math.max(0, Math.min(1, threshold));
   const safeLimit = Math.max(1, Math.min(200, limit));
@@ -285,6 +287,8 @@ export async function getMaterializedSimilarClimbs(
       AND ${boardClimbs.isListed} IS NOT FALSE
       AND ${boardClimbs.isHidden} = FALSE
       ${sizeId !== undefined ? sql`AND COALESCE(${boardClimbs.compatibleSizeIds}, '{}'::int[]) @> ARRAY[${sizeId}]::int[]` : sql``}
+      AND ${contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, viewerUserId)}
+      AND ${climbReferenceVisibilityCondition({ boardType: sql`${boardType}`, climbUuid: sql`${climbUuid}` }, viewerUserId)}
       AND ${similarity} >= ${safeThreshold}
     ORDER BY similarity DESC, COALESCE(${boardClimbStats.ascensionistCount}, 0) DESC, ${boardClimbs.uuid} ASC
     LIMIT ${safeLimit}

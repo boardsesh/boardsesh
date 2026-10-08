@@ -363,6 +363,8 @@ describe('batch worker grants', () => {
 
       // Nothing beyond the list: no user data it does not need, no catalog writes.
       await expect(restricted`SELECT email FROM users LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT display_name FROM user_profiles LIMIT 1`).rejects.toThrow('permission denied');
+      await expect(restricted`SELECT follower_id FROM user_follows LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT comment FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT session_id FROM boardsesh_ticks LIMIT 1`).rejects.toThrow('permission denied');
       await expect(restricted`SELECT name FROM user_boards LIMIT 1`).rejects.toThrow('permission denied');

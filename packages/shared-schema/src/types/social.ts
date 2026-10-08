@@ -1,6 +1,8 @@
 // Social / Follow types
 
 export type PublicUserProfile = {
+  isPrivate?: boolean;
+  canViewActivity?: boolean;
   id: string;
   displayName?: string;
   avatarUrl?: string;

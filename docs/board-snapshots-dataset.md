@@ -45,7 +45,8 @@ only care about one size.
 
 ## Manifest format
 
-`formatVersion: 1`. Each entry:
+`formatVersion: 2`. Older app versions use paged sync instead of importing this
+privacy-filtered dataset with incompatible cursor assumptions. Each entry:
 
 | Field                                                   | Meaning                                                                                         |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -55,6 +56,7 @@ only care about one size.
 | `bytes`                                                 | Stored size                                                                                     |
 | `contentEncoding`                                       | `identity` (a plain SQLite file) or `gzip` (gunzip before opening)                              |
 | `builtAt`                                               | When the export built this artifact                                                             |
+| `privacyVersion`                                       | Must be `1`: external catalog only; older artifacts cannot be installed by privacy-aware clients |
 | `schemaVersion`                                         | SQLite schema revision of the tables inside                                                     |
 | `tables.<name>.rowCount`                                | Row counts, for sanity-checking a download                                                      |
 | `tables.<name>.watermarkUpdatedAt` / `watermarkSyncSeq` | Sync cursors (app-internal; irrelevant for dataset use)                                         |
@@ -79,8 +81,9 @@ native frame string), `is_draft`, `is_listed`, `created_at`, `published_at`, `us
 `required_set_ids` / `compatible_size_ids` / `characteristics` (JSON arrays), `hold_fingerprint`,
 and sync bookkeeping (`updated_at`, `sync_seq`).
 
-Drafts and unlisted climbs **are** included — filter on `is_listed` / `is_draft` yourself if you
-only want the public catalog. There is no size filter either: a layout's artifact spans every wall
+Only imported climbs without a linked Boardsesh author are distributed. Personal climbs and beta
+are fetched through the viewer-authorized API, so account privacy changes can revoke access.
+Imported draft and listing flags retain their source values; filter them for a public-only browse. There is no size filter either: a layout's artifact spans every wall
 size, so filter with `compatible_size_ids`.
 
 **`board_climb_stats`** — community stats per `(climb, angle)`: `ascensionist_count`,

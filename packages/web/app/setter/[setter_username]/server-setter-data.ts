@@ -1,8 +1,13 @@
+import {
+  contentVisibilityCondition,
+  sprayClimbVisibilityCondition,
+  userActivityVisibilityCondition,
+} from '@boardsesh/db/queries';
 import 'server-only';
 import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { getClimbStars, getGradeLabel, withSerialPlan, type SerialPlanDb } from '@boardsesh/db/queries';
-import { dbzRead, executeRows } from '@/app/lib/db/db';
+import { dbz, executeRows } from '@/app/lib/db/db';
 import { boardClimbs, boardClimbStats } from '@/app/lib/db/schema';
 import { publishableAngleWhere, publishedAngleOrderBy } from '@/app/lib/seo/sitemap/published-angle';
 import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
@@ -74,6 +79,8 @@ function visibleSetterClimbsWhere(username: string): SQL | undefined {
   return and(
     eq(boardClimbs.setterUsername, username),
     eq(boardClimbs.isListed, true),
+    contentVisibilityCondition('climb', boardClimbs.uuid, boardClimbs.userId, null),
+    sprayClimbVisibilityCondition({ boardType: boardClimbs.boardType, layoutId: boardClimbs.layoutId }, null),
     eq(boardClimbs.isDraft, false),
     eq(boardClimbs.isHidden, false),
   );
@@ -208,7 +215,7 @@ async function fetchSetterIdentity(username: string): Promise<SetterIdentity> {
     avatar_url: string | null;
     follower_count: number | string | null;
   }>(
-    dbzRead,
+    dbz,
     sql`
     SELECT
       profile.name,
@@ -222,6 +229,7 @@ async function fetchSetterIdentity(username: string): Promise<SetterIdentity> {
       JOIN users u ON u.id = ubm.user_id
       LEFT JOIN user_profiles p ON p.user_id = ubm.user_id
       WHERE ubm.board_username = ${username}
+        AND ${userActivityVisibilityCondition(sql`ubm.user_id`, null)}
       -- Deterministic, and the setters shard sorts identically. The unique
       -- index is (user_id, board_type), so two different users can share a
       -- setter name; a bare LIMIT 1 renders whichever the planner happened to
@@ -279,7 +287,7 @@ function toClimbRow(row: Awaited<ReturnType<typeof buildSetterClimbsQuery>>[numb
 export async function getSetterPageData(username: string, page: number): Promise<SetterPageData | null> {
   const offset = Math.max(0, page - 1) * SETTER_PAGE_SIZE;
 
-  const [boardTypeRows, climbRows] = await withSerialPlan(dbzRead, async (tx) => [
+  const [boardTypeRows, climbRows] = await withSerialPlan(dbz, async (tx) => [
     await buildSetterProfileQuery(tx, username),
     await buildSetterClimbsQuery(tx, username, offset, SETTER_PAGE_SIZE),
   ]);

@@ -10,6 +10,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionMutations } from '../graphql/resolvers/sessions/mutations';
+import { db } from '../db/client';
+import * as privacy from '../services/privacy';
 
 // Mock dependencies
 vi.mock('../services/room-manager', () => ({
@@ -42,8 +44,8 @@ vi.mock('uuid', () => ({
   v4: () => 'test-uuid-1234',
 }));
 
-vi.mock('../db/client', () => ({
-  db: {
+vi.mock('../db/client', () => {
+  const database = {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
@@ -52,8 +54,14 @@ vi.mock('../db/client', () => ({
     values: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
-  },
-}));
+  };
+  return {
+    db: {
+      ...database,
+      transaction: vi.fn((callback: (tx: typeof database) => Promise<unknown>) => callback(database)),
+    },
+  };
+});
 
 vi.mock('./session-summary', () => ({
   generateSessionSummary: vi.fn().mockResolvedValue(null),
@@ -101,6 +109,31 @@ describe('createSession authentication', () => {
     vi.clearAllMocks();
   });
 
+  it.each(['public', 'followers', 'invite_only'] as const)(
+    'preserves account session audience %s for a legacy explicit Public input during rollback',
+    async (defaultSessionAudience) => {
+      vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', '0');
+      const settingsSpy = vi.spyOn(privacy, 'getPrivacySettings').mockResolvedValue({
+        isPrivate: defaultSessionAudience !== 'public',
+        defaultSessionAudience,
+        privacyRevision: 2,
+        privacyOnboardingVersion: 1,
+        enabled: false,
+      });
+      try {
+        const result = await sessionMutations.createSession(
+          undefined,
+          { input: { ...validDiscoverableInput, isPublic: true } },
+          makeAuthenticatedCtx(),
+        );
+        expect(result.isPublic).toBe(defaultSessionAudience === 'public');
+      } finally {
+        settingsSpy.mockRestore();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   it('allows anonymous users to create non-discoverable sessions', async () => {
     const ctx = makeAnonymousCtx('192.168.1.1');
 
@@ -117,6 +150,7 @@ describe('createSession authentication', () => {
     await expect(sessionMutations.createSession(undefined, { input: validDiscoverableInput }, ctx)).rejects.toThrow(
       'Authentication required',
     );
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it('allows authenticated users to create discoverable sessions', async () => {

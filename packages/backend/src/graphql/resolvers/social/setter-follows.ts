@@ -1,3 +1,9 @@
+import { requestPrivacyFollow, removePrivacyFollow } from '../privacy';
+import {
+  canViewUserActivity,
+  userActivityVisibilityCondition,
+  contentVisibilityCondition,
+} from '../../../services/privacy';
 import { eq, and, count, sql, ilike, inArray } from 'drizzle-orm';
 import { isSizeScopedBoard, resolveRenderBoard } from '@boardsesh/board-config';
 import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
@@ -35,6 +41,7 @@ const DEFAULT_ANGLE = 40;
  */
 function visibleSetterClimbConditions(username: string, viewerUserId: string | null | undefined) {
   return [
+    contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
     eq(dbSchema.boardClimbs.setterUsername, username),
     eq(dbSchema.boardClimbs.isListed, true),
     eq(dbSchema.boardClimbs.isDraft, false),
@@ -121,7 +128,12 @@ export const setterFollowQueries = {
       .from(dbSchema.userBoardMappings)
       .innerJoin(dbSchema.users, eq(dbSchema.userBoardMappings.userId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.userBoardMappings.userId, dbSchema.userProfiles.userId))
-      .where(eq(dbSchema.userBoardMappings.boardUsername, username))
+      .where(
+        and(
+          eq(dbSchema.userBoardMappings.boardUsername, username),
+          userActivityVisibilityCondition(dbSchema.userBoardMappings.userId, ctx.isAuthenticated ? ctx.userId : null),
+        ),
+      )
       .limit(1);
 
     const linkedUser = linkedUsers[0];
@@ -548,6 +560,8 @@ export const setterFollowQueries = {
     const validatedInput = validateInput(UserClimbsInputSchema, input, 'input');
     const { userId, sortBy, limit, offset } = validatedInput;
 
+    if (!(await canViewUserActivity(ctx.userId, userId))) return { climbs: [], totalCount: 0, hasMore: false };
+
     // 1. Look up linked Aurora usernames
     const mappings = await db
       .select({
@@ -588,6 +602,7 @@ export const setterFollowQueries = {
     // wall. The condition is a no-op on the other eight board types.
     const whereCondition = and(
       ownershipCondition,
+      contentVisibilityCondition('climb', tables.climbs.uuid, tables.climbs.userId, ctx.userId),
       eq(tables.climbs.isDraft, false),
       sprayClimbVisibilityCondition(
         { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
@@ -671,6 +686,7 @@ export const setterFollowQueries = {
           c.created_at
         FROM board_climbs c
         WHERE ${ownershipSql} AND c.is_draft = false
+          AND ${contentVisibilityCondition('climb', sql`c.uuid`, sql`c.user_id`, ctx.userId)}
           -- The row list is built by this CTE, not by the drizzle whereCondition
           -- used for the count above — so the spray rule has to be stated here too
           -- or the count hides a private wall's climbs while the list returns them.
@@ -1011,14 +1027,7 @@ export const setterFollowMutations = {
         .limit(1);
 
       if (linkedUsers.length > 0 && linkedUsers[0].userId !== myUserId) {
-        // Also create user_follows entry
-        await db
-          .insert(dbSchema.userFollows)
-          .values({
-            followerId: myUserId,
-            followingId: linkedUsers[0].userId,
-          })
-          .onConflictDoNothing();
+        await requestPrivacyFollow(myUserId, linkedUsers[0].userId);
       }
 
       publishSocialEvent({
@@ -1062,16 +1071,7 @@ export const setterFollowMutations = {
       .where(eq(dbSchema.userBoardMappings.boardUsername, setterUsername))
       .limit(1);
 
-    if (linkedUsers.length > 0) {
-      await db
-        .delete(dbSchema.userFollows)
-        .where(
-          and(
-            eq(dbSchema.userFollows.followerId, myUserId),
-            eq(dbSchema.userFollows.followingId, linkedUsers[0].userId),
-          ),
-        );
-    }
+    if (linkedUsers.length > 0) await removePrivacyFollow(myUserId, linkedUsers[0].userId);
 
     return true;
   },

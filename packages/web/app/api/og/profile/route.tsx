@@ -1,13 +1,13 @@
+import { createPrivateOgImageHeaders as createOgImageHeaders } from '@/app/lib/seo/private-og-headers';
 import React from 'react';
 import { ImageResponse } from '@vercel/og';
 import type { NextRequest } from 'next/server';
-import { getReadPool, rowsFromResult } from '@/app/lib/db/db';
 // This card renders on a WHITE ground, so it reads the light-surface tokens
 // deliberately — see the printSurfaceTokens doc comment in theme-config.
 import { printSurfaceTokens } from '@/app/theme/theme-config';
 import { FONT_GRADE_COLORS, getGradeColorWithOpacity } from '@/app/lib/grade-colors';
 import { BOULDER_GRADES } from '@/app/lib/board-data';
-import { createOgImageHeaders, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
+import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getProfileOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { ogErrorResponse } from '@/app/lib/seo/og-error';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
@@ -36,28 +36,9 @@ export async function GET(request: NextRequest) {
     }
 
     const dbT0 = performance.now();
-    const sql = getReadPool();
-    // The grade-count query is passed unawaited so both reads below actually
-    // start together — an `await` here (the old shape) would resolve before
-    // `Promise.all`/`withReadDeadline` ever runs, defeating the deadline for
-    // this query.
-    const [summary, gradeResult] = await withReadDeadline(
-      'og-profile',
-      Promise.all([
-        getProfileOgSummary(userId),
-        sql`
-        SELECT difficulty, COUNT(DISTINCT climb_uuid) as cnt
-        FROM boardsesh_ticks
-        WHERE user_id = ${userId}
-          AND status IN ('flash', 'send')
-          AND difficulty IS NOT NULL
-        GROUP BY difficulty
-        ORDER BY difficulty
-      `,
-      ]),
-    );
+    const summary = await withReadDeadline('og-profile', getProfileOgSummary(userId));
     const dbMs = performance.now() - dbT0;
-    const gradeRows = rowsFromResult<{ difficulty: number; cnt: number }>(gradeResult);
+    const gradeRows = summary?.gradeRows ?? [];
 
     if (!summary) {
       return new Response('User not found', { status: 404 });

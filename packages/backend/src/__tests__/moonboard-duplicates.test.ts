@@ -25,12 +25,14 @@ describe('moonboard duplicate helpers', () => {
     mockDb.execute
       .mockResolvedValueOnce([
         {
+          can_view_details: true,
           uuid: 'popular-climb',
           name: 'Popular Moon',
           ascensionist_count: 42,
           signature: '1:STARTING,13:HAND,25:FINISH',
         },
         {
+          can_view_details: true,
           uuid: 'older-climb',
           name: 'Older Moon',
           ascensionist_count: 4,
@@ -69,6 +71,7 @@ describe('moonboard duplicate helpers', () => {
 
     mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
+        can_view_details: true,
         uuid: 'legacy-climb',
         name: 'Legacy Moon',
         frames: encodeMoonBoardHoldsToFrames(holds),
@@ -90,6 +93,27 @@ describe('moonboard duplicate helpers', () => {
       existingClimbName: 'Legacy Moon',
     });
   });
+
+  it.each(['exact', 'legacy'] as const)(
+    'conceals private %s matches while retaining the duplicate gate',
+    async (kind) => {
+      const holds = { start: ['A1'], hand: ['B2'], finish: ['C3'] };
+      const row = {
+        uuid: 'private-uuid',
+        name: 'Private Moon',
+        can_view_details: false,
+        ascensionist_count: 1,
+        signature: '1:STARTING,13:HAND,25:FINISH',
+        frames: encodeMoonBoardHoldsToFrames(holds),
+      };
+      mockDb.execute
+        .mockResolvedValueOnce(kind === 'exact' ? [row] : [])
+        .mockResolvedValueOnce(kind === 'legacy' ? [row] : []);
+      const [match] = await findMoonBoardDuplicateMatches(2, 40, [{ clientKey: 'mine', holds }], 'stranger');
+      expect(match).toEqual({ clientKey: 'mine', exists: true, existingClimbUuid: null, existingClimbName: null });
+      expect(buildMoonBoardDuplicateError(match.existingClimbName)).not.toContain('Private Moon');
+    },
+  );
 
   it('normalizes hold rows and duplicate error text', () => {
     expect(

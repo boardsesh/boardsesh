@@ -40,6 +40,7 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
     schemaVersion: LATEST_SCHEMA_VERSION,
+    privacyVersion: 1,
     tables: {
       board_climbs: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 5 },
       board_climb_stats: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '7', rowCount: 3 },
@@ -48,7 +49,7 @@ function manifestEntryFixture(boardType: string, layoutId: number, key: string):
 }
 
 function manifestFixture(entries: SnapshotManifestEntry[]): SnapshotManifest {
-  return { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries };
+  return { formatVersion: 2, generatedAt: '2026-06-01T00:00:00.000Z', entries };
 }
 
 /** Serves `manifest` as the previous manifest through the getFromS3Strict mock. */
@@ -123,6 +124,7 @@ function withGradesArtifact(
       contentEncoding: 'gzip',
       builtAt: entry.builtAt,
       schemaVersion,
+      privacyVersion: 1,
       tables: {
         board_climb_grades: {
           watermarkUpdatedAt: '2026-05-01T00:00:00Z',
@@ -709,7 +711,7 @@ describe('runExport — board_climb_grades artifacts', () => {
     expect(entry.grades?.tables.board_climb_grades.rowCount).toBe(1);
     // The whole-layout entry's own fields are untouched.
     expect(Object.keys(entry.tables).sort()).toEqual(['board_climb_stats', 'board_climbs']);
-    expect(manifest.formatVersion).toBe(1);
+    expect(manifest.formatVersion).toBe(2);
 
     const gradesUpload = vi.mocked(uploadToS3).mock.calls.find(([, , key]) => String(key).endsWith('-grades.db'))!;
     expect(gradesUpload[4]).toEqual({ contentEncoding: 'gzip' });
@@ -778,6 +780,7 @@ describe('runExport — board_climb_grades artifacts', () => {
         contentEncoding: 'gzip',
         builtAt: '2026-06-01T00:00:00.000Z',
         schemaVersion: LATEST_SCHEMA_VERSION,
+        privacyVersion: 1,
         tables: {
           board_climb_grades: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '9', rowCount: 4 },
         },

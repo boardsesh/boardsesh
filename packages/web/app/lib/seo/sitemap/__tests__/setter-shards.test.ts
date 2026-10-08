@@ -4,6 +4,8 @@ import { SETTER_URLS_PER_SHARD } from '../sitemap-xml';
 import type { SitemapItem } from '../entries';
 
 vi.mock('server-only', () => ({}));
+// Authorization is exercised separately in privacy-filter.test.ts.
+vi.mock('../privacy-filter', () => ({ filterPublicSitemapItems: async <Item>(items: Item[]) => items }));
 
 const KILTER_CONFIG: PopularBoardConfig = {
   boardType: 'kilter',

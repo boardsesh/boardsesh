@@ -57,17 +57,19 @@ export default function UserCard({ userId, profile, isOwnProfile, onProfileUpdat
                 />
               )}
             </Box>
-            <FollowerCount
-              userId={userId}
-              followerCount={profile.followerCount}
-              followingCount={profile.followingCount}
-            />
+            {profile.canViewActivity !== false && (
+              <FollowerCount
+                userId={userId}
+                followerCount={profile.followerCount}
+                followingCount={profile.followingCount}
+              />
+            )}
             {isOwnProfile && (
               <Typography variant="body2" component="span" color="text.secondary">
                 {profile.email}
               </Typography>
             )}
-            {instagramUrl && (
+            {instagramUrl && profile.canViewActivity !== false && (
               <a
                 href={instagramUrl.startsWith('http') ? instagramUrl : `https://${instagramUrl}`}
                 target="_blank"

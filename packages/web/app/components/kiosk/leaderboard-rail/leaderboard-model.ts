@@ -61,10 +61,13 @@ export function mergePeriodLeaderboards(
 
   for (const leaderboard of leaderboards) {
     for (const entry of leaderboard.entries) {
-      const existing = rowsByUserId.get(entry.userId);
+      // Combine anonymous contributions without inventing an identity that
+      // could link a private climber across boards or time windows.
+      const key = entry.userId ? `user:${entry.userId}` : 'private-climbers';
+      const existing = rowsByUserId.get(key);
       if (existing === undefined) {
-        rowsByUserId.set(entry.userId, {
-          key: `user:${entry.userId}`,
+        rowsByUserId.set(key, {
+          key,
           displayName: entry.userDisplayName ?? null,
           avatarUrl: entry.userAvatarUrl ?? null,
           sendCount: entry.totalSends,

@@ -57,6 +57,8 @@ export type SnapshotTableStats = {
  * checkpoints past rows it never imported.
  */
 export type SnapshotGradesArtifact = {
+  /** Authored climbs and mutable personal attribution are excluded. */
+  privacyVersion?: 1;
   // S3 object key, e.g. `board-snapshots/v1-gzip/kilter/1/<iso>-grades.db`.
   key: string;
   url: string;
@@ -69,6 +71,8 @@ export type SnapshotGradesArtifact = {
 };
 
 export type SnapshotManifestEntry = {
+  /** Authored climbs and mutable personal attribution are excluded. */
+  privacyVersion?: 1;
   boardType: string;
   layoutId: number;
   // S3 object key of the artifact, e.g. `board-snapshots/v1/kilter/8/<iso>.db`.
@@ -104,20 +108,20 @@ export type SnapshotManifestEntry = {
   schemaVersion: number;
   tables: Record<SnapshotTableName, SnapshotTableStats>;
   // The layout's separate grades artifact, when it has grade rows. ADDITIVE:
-  // `formatVersion` stays 1 because the shipped validator only rejects
-  // missing/mistyped KNOWN fields, so a binary that predates this field parses
-  // the manifest unchanged and takes today's path.
+  // The optional grades block keeps the same per-entry shape. Format 2
+  // marks the privacy-filtered dataset: format-1 clients must use paged sync
+  // because they cannot replay authored rows omitted from these artifacts.
   grades?: SnapshotGradesArtifact;
 };
 
 export type SnapshotManifest = {
-  formatVersion: 1;
+  formatVersion: 2;
   // ISO-8601 UTC — when the run that produced this manifest finished.
   generatedAt: string;
   entries: SnapshotManifestEntry[];
 };
 
-export const SNAPSHOT_MANIFEST_FORMAT_VERSION = 1 as const;
+export const SNAPSHOT_MANIFEST_FORMAT_VERSION = 2 as const;
 
 const SNAPSHOT_TABLE_NAMES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
 const SNAPSHOT_GRADES_TABLE_NAMES: readonly SnapshotGradesTableName[] = ['board_climb_grades'];

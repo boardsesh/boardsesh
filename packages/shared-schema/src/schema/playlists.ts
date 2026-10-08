@@ -82,6 +82,7 @@ export const playlistsTypeDefs = /* GraphQL */ `
   Input for creating a playlist.
   """
   input CreatePlaylistInput {
+    privacy: PrivacyPublicationInput
     "Optional client-generated UUID for offline idempotent replay"
     uuid: ID
     "Board type"
@@ -102,6 +103,7 @@ export const playlistsTypeDefs = /* GraphQL */ `
   Input for updating a playlist.
   """
   input UpdatePlaylistInput {
+    privacy: PrivacyPublicationInput
     "Playlist ID to update"
     playlistId: ID!
     "New name"

@@ -5,6 +5,8 @@ import { type Client, createClient } from 'graphql-ws';
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { startServer } from '../server';
+import { db } from '../db/client';
+import { boardClimbs } from '@boardsesh/db/schema';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 
 type JoinSessionResult = {
@@ -127,8 +129,17 @@ function expectTypename<T extends { __typename: string }, K extends T['__typenam
 }
 
 // Helper to wait for a specific event from a subscription
-function waitForEvent<T>(client: Client, query: string, predicate: (event: T) => boolean, timeout = 5000): Promise<T> {
-  return new Promise((resolve, reject) => {
+function waitForEvent<T>(
+  client: Client,
+  query: string,
+  predicate: (event: T) => boolean,
+  timeout = 5000,
+): Promise<T> & { ready: Promise<void> } {
+  let markReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const pending = new Promise<T>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error(`Timeout waiting for event (${timeout}ms)`));
     }, timeout);
@@ -139,6 +150,7 @@ function waitForEvent<T>(client: Client, query: string, predicate: (event: T) =>
         next: (data) => {
           const d = data.data as Record<string, T> | null | undefined;
           const event = d?.queueUpdates || d?.sessionUpdates;
+          if (event) markReady();
           if (event && predicate(event)) {
             clearTimeout(timeoutId);
             unsubscribe();
@@ -153,6 +165,7 @@ function waitForEvent<T>(client: Client, query: string, predicate: (event: T) =>
       },
     );
   });
+  return Object.assign(pending, { ready });
 }
 
 // Helper to collect multiple events from a subscription
@@ -169,7 +182,7 @@ function collectEvents<T>(client: Client, query: string, count: number, timeout 
         next: (data) => {
           const d = data.data as Record<string, T> | null | undefined;
           const event = d?.queueUpdates || d?.sessionUpdates;
-          if (event) {
+          if (event && (event as { __typename?: string }).__typename !== 'SessionRosterSnapshot') {
             events.push(event);
             if (events.length >= count) {
               clearTimeout(timeoutId);
@@ -204,6 +217,34 @@ describe('Daemon Integration Tests', () => {
   };
 
   beforeAll(async () => {
+    // Queue payloads refer to real public catalogue entries; missing/deleted
+    // content is intentionally redacted by the GraphQL privacy projector.
+    await db.insert(boardClimbs).values(
+      [
+        'test-climb-1',
+        'current-test',
+        'mirror-test',
+        'to-remove',
+        'item-0',
+        'item-1',
+        'item-2',
+        'sync-test',
+        'current-sync',
+        'reorder-0',
+        'reorder-1',
+        'cleanup-test',
+        'persist-test',
+      ].map((label) => ({
+        uuid: `climb-${label}`,
+        boardType: 'kilter',
+        layoutId: 1,
+        name: `Test Climb ${label}`,
+        frames: 'test-frames',
+        angle: 40,
+        isListed: true,
+        isDraft: false,
+      })),
+    );
     process.env.PORT = '0';
     server = await startServer();
     if (!server.httpServer.listening) await once(server.httpServer, 'listening');
@@ -610,6 +651,8 @@ describe('Daemon Integration Tests', () => {
         (e) => e.__typename === 'LeaderChanged',
       );
 
+      await eventPromise.ready;
+
       // Client 1 disconnects
       await client1.dispose();
       // Remove from activeClients so afterEach doesn't try to dispose again
@@ -645,6 +688,8 @@ describe('Daemon Integration Tests', () => {
         `subscription { sessionUpdates(sessionId: "${sessionId}") { __typename ... on UserLeft { userId } ... on LeaderChanged { leaderId leaderConnectionId } } }`,
         (e) => e.__typename === 'UserLeft',
       );
+
+      await eventPromise.ready;
 
       // Client 2 disconnects
       await client2.dispose();

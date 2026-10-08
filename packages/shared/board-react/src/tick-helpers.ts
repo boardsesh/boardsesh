@@ -4,6 +4,7 @@ import type { LogbookEntry, TickStatus } from './logbook-keys';
 // sites can pass an explicit "no rating" without juggling undefined — both
 // the optimistic cache entry and the GraphQL input treat null as absent.
 export type SaveTickOptions = {
+  privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   climbUuid: string;
   angle: number;
   isMirror: boolean;

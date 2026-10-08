@@ -22,6 +22,13 @@ replay backend, and mobile test setup fetch automatically. A verified local cach
 works offline; altered extracted bytes are restored from the checked archive.
 A corrupt or unavailable snapshot fails instead of silently skipping drift tests.
 
+Replay has one narrow compatibility adapter for the pinned `GetBoard` and
+`GetMyBoards` manufacturer-board recordings: the exact nullable `sprayImport`
+selection receives `null` for known non-spray boards. It changes no artifact bytes
+or hashes. Spray boards, unknown board types, non-null import state and every
+other document change still fail the drift check; selection coverage checks the
+same adapted response the replay server sends.
+
 Recordings still go to ignored `packages/mobile/screenshot-fixtures/`, or an explicit
 `--fixtures-dir`. Downloads never touch that directory. Publish a sanitized merged
 recording with `vp run mobile:screenshot-fixtures-publish -- [recording-directory]`,

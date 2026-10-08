@@ -1,8 +1,15 @@
+import { buildSessionStatsUpdatedEvent } from './live-session-stats';
+import { canAccessResource } from '../../../services/privacy';
+import {
+  redactSessionUsers,
+  sessionParticipantId,
+  sessionEventParticipantId,
+} from '../../../services/board-session-privacy';
 import type { ConnectionContext, SessionEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
 import { requireSessionMember } from '../shared/helpers';
-import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 
 export const sessionSubscriptions = {
@@ -35,7 +42,7 @@ export const sessionSubscriptions = {
       await requireSessionMember(ctx, sessionId);
 
       const asyncIterable = await lifetime.own(
-        createEagerAsyncIterator<SessionEvent>(
+        createPrivacyAwareIterator<SessionEvent>(
           (push) => pubsub.subscribeSession(sessionId, push),
           `sessionUpdates:${sessionId}`,
         ),
@@ -56,10 +63,15 @@ export const sessionSubscriptions = {
           roomManager.getSessionUsers(sessionId),
           roomManager.getSessionById(sessionId),
         ]);
+        if (!(await canAccessResource('session', sessionId, ctx.userId))) return;
+        const protocolIds = new Map(
+          users.map((user) => [user.id, user.userId ? sessionParticipantId(sessionId, user.userId) : user.id]),
+        );
+        const protocolId = (id: string) => sessionEventParticipantId(sessionId, id, protocolIds);
         yield {
           sessionUpdates: {
             __typename: 'SessionRosterSnapshot',
-            users,
+            users: await redactSessionUsers(users, ctx.userId, sessionId),
             // boardPath is String! on the wire. Emit the empty-string sentinel
             // (not null) in the unreachable session-vanished-mid-subscribe case:
             // a null would raise a non-null-field violation that nulls the entire
@@ -70,7 +82,50 @@ export const sessionSubscriptions = {
         };
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
-          yield { sessionUpdates: result.value };
+          if (!(await canAccessResource('session', sessionId, ctx.userId))) return;
+          if (result.value === null) {
+            const roster = await redactSessionUsers(
+              await roomManager.getSessionUsers(sessionId),
+              ctx.userId,
+              sessionId,
+            );
+            yield {
+              sessionUpdates: {
+                __typename: 'SessionRosterSnapshot' as const,
+                users: roster,
+                boardPath: (await roomManager.getSessionById(sessionId))?.boardPath ?? '',
+              },
+            };
+            continue;
+          }
+          const event = result.value;
+          if (event.__typename === 'UserJoined' || event.__typename === 'UserPresenceChanged') {
+            protocolIds.set(
+              event.user.id,
+              event.user.userId ? sessionParticipantId(sessionId, event.user.userId) : event.user.id,
+            );
+            yield {
+              sessionUpdates: {
+                ...event,
+                user: (
+                  await redactSessionUsers(
+                    [{ ...event.user, avatarUrl: event.user.avatarUrl ?? undefined }],
+                    ctx.userId,
+                    sessionId,
+                  )
+                )[0],
+              },
+            };
+          } else if (event.__typename === 'UserLeft') {
+            yield { sessionUpdates: { ...event, userId: protocolId(event.userId) } };
+          } else if (event.__typename === 'LeaderChanged') {
+            yield { sessionUpdates: { ...event, leaderId: protocolId(event.leaderId) } };
+          } else if (event.__typename === 'SessionStatsUpdated') {
+            const visibleStats = await buildSessionStatsUpdatedEvent(sessionId, ctx);
+            if (visibleStats) yield { sessionUpdates: visibleStats };
+          } else {
+            yield { sessionUpdates: result.value };
+          }
         }
       } finally {
         // The lifetime wrapper closes immediately on disconnect, even during

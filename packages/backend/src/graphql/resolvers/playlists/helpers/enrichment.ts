@@ -1,3 +1,4 @@
+import { playlistVisibilityCondition } from '@boardsesh/db/queries';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -109,40 +110,13 @@ export function formatPublicPlaylist(p: PublicPlaylistRow) {
  * Check if a user has access to a playlist. Returns the numeric playlist ID.
  * Throws if playlist not found or user lacks access to a private playlist.
  */
+export { playlistVisibilityCondition, playlistPrivacyCondition } from '@boardsesh/db/queries';
 export async function verifyPlaylistAccess(playlistUuid: string, userId: string | null): Promise<bigint> {
-  const playlistResult = await db
-    .select({
-      id: dbSchema.playlists.id,
-      isPublic: dbSchema.playlists.isPublic,
-    })
+  const [playlist] = await db
+    .select({ id: dbSchema.playlists.id })
     .from(dbSchema.playlists)
-    .where(eq(dbSchema.playlists.uuid, playlistUuid))
+    .where(and(eq(dbSchema.playlists.uuid, playlistUuid), playlistVisibilityCondition(userId)))
     .limit(1);
-
-  if (playlistResult.length === 0) {
-    throw new Error('Playlist not found or access denied');
-  }
-
-  if (!playlistResult[0].isPublic) {
-    if (!userId) {
-      throw new Error('Playlist not found or access denied');
-    }
-
-    const ownershipResult = await db
-      .select({ role: dbSchema.playlistOwnership.role })
-      .from(dbSchema.playlistOwnership)
-      .where(
-        and(
-          eq(dbSchema.playlistOwnership.playlistId, playlistResult[0].id),
-          eq(dbSchema.playlistOwnership.userId, userId),
-        ),
-      )
-      .limit(1);
-
-    if (ownershipResult.length === 0) {
-      throw new Error('Playlist not found or access denied');
-    }
-  }
-
-  return playlistResult[0].id;
+  if (!playlist) throw new Error('Playlist not found or access denied');
+  return playlist.id;
 }

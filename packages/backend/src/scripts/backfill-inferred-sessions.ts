@@ -1,3 +1,4 @@
+import { pubsub } from '../pubsub';
 /**
  * Backfill historical ticks with the live session reconciler. Dry-run by default.
  *
@@ -179,6 +180,7 @@ export async function runBackfill(options: Options): Promise<number> {
               }),
             { isolationLevel: 'serializable' },
           );
+          if (applied?.privacyChanged) pubsub.publishPrivacyChanged();
           if (applied) sessionsCreated += applied.runs.filter((run) => run.sessionId === null).length;
           await sleep(options.delayMs);
         }

@@ -31,10 +31,11 @@ const trackMock = vi.hoisted(() => vi.fn());
 
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string | undefined>,
+  privacyEnabled: undefined as boolean | undefined,
 }));
 const popularConfigs = vi.hoisted(() => ({ configs: [{ boardType: 'moonboard', layoutId: 3 }] }));
 const presetBoardConfigMock = vi.hoisted(() => vi.fn());
-type BuilderOptions = { preset?: (boardName: string) => unknown } | undefined;
+type BuilderOptions = { preset?: (boardName: string) => unknown; privacyEnabled?: boolean } | undefined;
 const builderCalls = vi.hoisted(() => ({ options: [] as BuilderOptions[] }));
 
 const existingBoard = {
@@ -219,6 +220,7 @@ const { default: CreateBoard } = await import('../create');
 beforeEach(() => {
   vi.clearAllMocks();
   state.params = {};
+  state.privacyEnabled = undefined;
   builderCalls.options = [];
   builderState.presetKept = false;
   createBoardMock.mockResolvedValue({ uuid: 'new-uuid', name: 'Klimmuur MoonBoard' } as unknown as UserBoard);
@@ -228,6 +230,14 @@ beforeEach(() => {
 });
 
 describe('CreateBoard', () => {
+  it('enables the builder privacy defaults when server settings arrive', () => {
+    const rendered = render(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.privacyEnabled).toBeUndefined();
+    state.privacyEnabled = true;
+    rendered.rerender(createElement(CreateBoard));
+    expect(builderCalls.options.at(-1)?.privacyEnabled).toBe(true);
+  });
+
   it('always calls the server, even when the config matches an owned board', async () => {
     // The #4166 repro: previously an owned config match short-circuited here and
     // the mutation was never reached.
@@ -389,7 +399,7 @@ describe('CreateBoard from "My own board"', () => {
 
   it('opens the builder empty without the param', () => {
     render(createElement(CreateBoard));
-    expect(builderCalls.options.at(-1)).toBeUndefined();
+    expect(builderCalls.options.at(-1)?.preset).toBeUndefined();
   });
 
   // A Popular card is the climber's own pick; a preset must not replace it.
@@ -402,7 +412,7 @@ describe('CreateBoard from "My own board"', () => {
       seedSetIds: '5,6',
     };
     render(createElement(CreateBoard));
-    expect(builderCalls.options.at(-1)).toBeUndefined();
+    expect(builderCalls.options.at(-1)?.preset).toBeUndefined();
   });
 });
 
@@ -504,3 +514,7 @@ describe('Board Builder Abandoned', () => {
     expect(abandonedEvents()).toEqual([]);
   });
 });
+
+vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
+  usePrivacySettings: () => ({ data: { enabled: state.privacyEnabled } }),
+}));

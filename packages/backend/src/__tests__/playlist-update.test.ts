@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 const { mockDb } = vi.hoisted(() => {
+  vi.resetModules();
   const mockDb = {
     execute: vi.fn(),
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
+    transaction: vi.fn(),
   };
   return { mockDb };
 });
@@ -38,7 +40,7 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 
 function createMockChain(resolveValue: unknown = []): Record<string, unknown> {
   const chain: Record<string, unknown> = {};
-  const methods = ['select', 'from', 'where', 'innerJoin', 'limit', 'set', 'update', 'returning'];
+  const methods = ['select', 'from', 'where', 'innerJoin', 'limit', 'set', 'update', 'returning', 'for'];
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolveValue).then(resolve);
   for (const method of methods) chain[method] = vi.fn((..._args: unknown[]) => chain);
   return chain;
@@ -61,6 +63,7 @@ const updatedRow = {
 /** Mock the resolver's db sequence: ownership select → update → climbCount select → pin select. */
 function primeDb() {
   mockDb.select.mockReturnValueOnce(createMockChain([{ playlists: { id: 1 } }])); // ownership
+  mockDb.select.mockReturnValueOnce(createMockChain([{ userId: 'user-123' }])); // owner lock
   const updateChain = createMockChain([updatedRow]);
   mockDb.update.mockReturnValueOnce(updateChain);
   mockDb.select.mockReturnValueOnce(createMockChain([{ count: 0 }])); // climbCount
@@ -69,7 +72,12 @@ function primeDb() {
 }
 
 describe('updatePlaylist mutation — clearing optional fields', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockDb.transaction.mockImplementation(async (body: (transaction: typeof mockDb) => Promise<unknown>) =>
+      body(mockDb),
+    );
+  });
 
   it("normalizes the '' clear signal to NULL for description/colour/icon", async () => {
     const ctx = makeCtx();

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { SessionDetail } from '@boardsesh/shared-schema';
+import type { ConnectionContext, SessionDetail } from '@boardsesh/shared-schema';
 import { buildSessionStatsUpdatedEvent } from '../graphql/resolvers/sessions/live-session-stats';
 
 const { sessionDetailMock } = vi.hoisted(() => ({
@@ -84,14 +84,16 @@ describe('buildSessionStatsUpdatedEvent', () => {
     const result = await buildSessionStatsUpdatedEvent('session-1');
 
     expect(result).toBeNull();
-    expect(sessionDetailMock).toHaveBeenCalledWith(null, { sessionId: 'session-1' });
+    expect(sessionDetailMock).toHaveBeenCalledWith(null, { sessionId: 'session-1', aggregateOnly: true }, undefined);
   });
 
   it('maps party session detail into SessionStatsUpdated with ticks', async () => {
     const detail = makeSessionDetail();
     sessionDetailMock.mockResolvedValue(detail);
 
-    const result = await buildSessionStatsUpdatedEvent('session-1');
+    const viewer: ConnectionContext = { connectionId: 'viewer-connection', userId: 'user-1', isAuthenticated: true };
+    const result = await buildSessionStatsUpdatedEvent('session-1', viewer);
+    expect(sessionDetailMock).toHaveBeenCalledWith(null, { sessionId: 'session-1', aggregateOnly: false }, viewer);
 
     expect(result).toEqual({
       __typename: 'SessionStatsUpdated',

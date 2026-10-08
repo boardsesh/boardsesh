@@ -22,6 +22,7 @@ type DrizzleExecutor = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /** The editable state of a climb at one moment, read under the row lock. */
 export type ClimbEditState = {
+  userId: string | null;
   isDraft: boolean;
   publishedAt: string | null;
   name: string | null;
@@ -64,6 +65,7 @@ export async function lockClimbForEdit(
 ): Promise<ClimbEditState | null> {
   const [row] = await executor
     .select({
+      userId: dbSchema.boardClimbs.userId,
       isDraft: dbSchema.boardClimbs.isDraft,
       publishedAt: dbSchema.boardClimbs.publishedAt,
       name: dbSchema.boardClimbs.name,

@@ -1,3 +1,4 @@
+import { invalidatePrivacySnapshots } from './privacy/privacy-cache';
 import {
   createOnceRunner,
   deferredReconcileKeys,
@@ -30,6 +31,7 @@ export function subscribeAuthCredentialGenerationChanges(listener: (generation: 
 
 function advanceCredentialGeneration(): number {
   credentialGeneration += 1;
+  invalidatePrivacySnapshots('credential');
   for (const listener of credentialGenerationListeners) listener(credentialGeneration);
   return credentialGeneration;
 }
@@ -98,13 +100,19 @@ export function retryDeferredCredentialReconcile(): Promise<void> {
 }
 
 async function getStoredCredential(key: string): Promise<string | null> {
+  const generation = credentialGeneration;
   // Best-effort. A keychain that refuses the migration refuses the read below
   // too, which is exactly today's behaviour — the migration must never change
   // the outcome of the read it precedes.
   await ensureAuthCredentialsMigrated().catch(() => undefined);
+  // A boundary notification can trigger a new request before SecureStore writes
+  // settle. Never read the preceding account's JWT under the new generation.
+  await credentialMutationQueue;
+  if (generation !== credentialGeneration) return null;
   // readSecureValue already maps SECURE_STORE_TOMBSTONE to null, in whichever
   // namespace it lands, so there is nothing left to translate here.
-  return readSecureValue(key);
+  const credential = await readSecureValue(key);
+  return generation === credentialGeneration ? credential : null;
 }
 
 /**

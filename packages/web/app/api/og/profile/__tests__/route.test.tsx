@@ -107,41 +107,27 @@ describe('api/og/profile route', () => {
     profileRouteState.capturedElement = null;
   });
 
-  it('passes the grade-count query into Promise.all unresolved, so both reads race under one og-profile deadline', async () => {
-    let resolveGradeRows: (rows: unknown[]) => void = () => {};
-    const gradeRowsPromise = new Promise<unknown[]>((resolve) => {
-      resolveGradeRows = resolve;
-    });
-    profileRouteState.sqlTagMock.mockReturnValue(gradeRowsPromise);
-    profileRouteState.getProfileOgSummaryMock.mockResolvedValue({
-      displayName: 'Alex',
-      avatarUrl: null,
-      fallbackImageUrl: null,
-    });
-
-    const responsePromise = GET(makeRequest({ user_id: 'user-1' }));
-
-    // Deliberately asserted before resolving the grade query and before ever
-    // awaiting the route. Calling an async function runs its body
-    // synchronously up to its first `await`, and our `withReadDeadline` mock
-    // records its label before it awaits anything — so 'og-profile' is only
-    // recorded here if the grade-count query was handed into `Promise.all`
-    // still pending. A regression that reintroduces `await sql\`...\`` inside
-    // the array literal would pause GET on that await *before* it ever
-    // reaches `withReadDeadline`, leaving this empty since `sqlTagMock`'s
-    // promise is deliberately never resolved above this line.
+  it('keeps the authorized backend read under the OG deadline', async () => {
+    let resolveSummary: (summary: unknown) => void = () => {};
+    profileRouteState.getProfileOgSummaryMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSummary = resolve;
+      }),
+    );
+    const pending = GET(makeRequest({ user_id: 'user-1', v: 'old-public-version' }));
     expect(profileRouteState.recordedReads.map((read) => read.label)).toEqual(['og-profile']);
-
-    resolveGradeRows([]);
-    const response = await responsePromise;
-
+    resolveSummary({ displayName: 'Alex', avatarUrl: null, fallbackImageUrl: null, gradeRows: [] });
+    const response = await pending;
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(profileRouteState.sqlTagMock).not.toHaveBeenCalled();
   });
 
   it('renders a 200 PNG with the profile summary and grade bars', async () => {
     profileRouteState.sqlTagMock.mockResolvedValue([{ difficulty: 10, cnt: 3 }]);
     profileRouteState.getProfileOgSummaryMock.mockResolvedValue({
       displayName: 'Alex',
+      gradeRows: [{ difficulty: 10, cnt: 3 }],
       avatarUrl: null,
       fallbackImageUrl: null,
     });

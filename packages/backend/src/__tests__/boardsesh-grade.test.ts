@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
-// Mock the read client: capture what the resolver selects and feed it canned
-// rows. The chain mirrors dbRead.select().from().leftJoin().where().limit().
-const { selectRows, dbReadMock } = vi.hoisted(() => {
+// Protected reads use the primary: a replica must not restore revoked access.
+// Capture what the resolver selects and feed it canned rows. The chain mirrors db.select().from().leftJoin().where().limit().
+const { selectRows, primaryDbMock } = vi.hoisted(() => {
   const state: { rows: unknown[] } = { rows: [] };
   const chain = {
     from: vi.fn(() => chain),
@@ -12,13 +12,17 @@ const { selectRows, dbReadMock } = vi.hoisted(() => {
   };
   return {
     selectRows: state,
-    dbReadMock: { select: vi.fn(() => chain) },
+    primaryDbMock: { select: vi.fn(() => chain) },
   };
 });
 
 vi.mock('../db/client', () => ({
-  db: {},
-  dbRead: dbReadMock,
+  db: primaryDbMock,
+  dbRead: {
+    select: vi.fn(() => {
+      throw new Error('Privacy reads must use the primary');
+    }),
+  },
 }));
 
 // Spy on the shared rate-limit helper (keep validateInput and everything else
@@ -107,7 +111,7 @@ describe('boardseshGrade resolver', () => {
     const result = await callResolver('kilter', 'CLIMB-NONE', 40);
 
     expect(result).toBeNull();
-    expect(dbReadMock.select).toHaveBeenCalledTimes(1);
+    expect(primaryDbMock.select).toHaveBeenCalledTimes(1);
   });
 
   it('applies a 60/min rate limit for this operation before querying', async () => {
@@ -120,16 +124,16 @@ describe('boardseshGrade resolver', () => {
     applyRateLimitMock.mockRejectedValueOnce(new Error('RATE_LIMITED'));
 
     await expect(callResolver('kilter', 'CLIMB-1', 40)).rejects.toThrow('RATE_LIMITED');
-    expect(dbReadMock.select).not.toHaveBeenCalled();
+    expect(primaryDbMock.select).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown board name', async () => {
     await expect(callResolver('notaboard', 'CLIMB-1', 40)).rejects.toThrow();
-    expect(dbReadMock.select).not.toHaveBeenCalled();
+    expect(primaryDbMock.select).not.toHaveBeenCalled();
   });
 
   it('rejects an empty climb uuid', async () => {
     await expect(callResolver('kilter', '', 40)).rejects.toThrow();
-    expect(dbReadMock.select).not.toHaveBeenCalled();
+    expect(primaryDbMock.select).not.toHaveBeenCalled();
   });
 });

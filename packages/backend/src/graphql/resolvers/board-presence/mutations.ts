@@ -89,7 +89,8 @@ type DurableBoardClimbEventInput = {
   climbUuid: string;
   angle: number;
   userId: string;
-  sessionId: null;
+  sessionId: string | null;
+  identityPolicyVersion?: number;
   frames: string | null;
   name: string | null;
   grade: string | null;
@@ -142,7 +143,7 @@ function toBoardCandidate(
   return {
     boardId: candidate.id,
     boardUuid: candidate.uuid,
-    boardName: candidate.name,
+    boardName: showLocation ? candidate.name : candidate.boardType,
     boardType: candidate.boardType,
     layoutId: candidate.layoutId,
     sizeId: candidate.sizeId,
@@ -626,7 +627,7 @@ export const boardPresenceMutations = {
     if (!board) {
       throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
     }
-    const resolved = toResolvedBoard(board);
+    const resolved = toResolvedBoard(board, true);
     await pubsub.stampBoardMembership(String(resolved.boardId), emitterId);
     return resolved;
   },
@@ -806,6 +807,7 @@ export const boardPresenceMutations = {
       throw new GraphQLError('Unknown climb for this board');
     }
 
+    const reportingSessionId = roomManager.getClient(ctx.connectionId)?.sessionId ?? null;
     const sentAt = new Date().toISOString();
 
     // Logged-in senders with sustained presence get durable history. Reserve
@@ -827,7 +829,8 @@ export const boardPresenceMutations = {
               climbUuid,
               angle: effectiveAngle,
               userId: durableUserId,
-              sessionId: null,
+              sessionId: reportingSessionId,
+              identityPolicyVersion: 1,
               frames: catalogClimb.frames ?? null,
               name: catalogClimb.name ?? null,
               grade: catalogClimb.grade ?? null,
@@ -857,6 +860,8 @@ export const boardPresenceMutations = {
     }
 
     const presenceClimb: BoardPresenceClimb = {
+      sessionId: reportingSessionId,
+      identityPolicyVersion: 1,
       climbUuid,
       queueItemUuid: validatedClimb.uuid,
       name: catalogClimb.name ?? null,
@@ -884,8 +889,6 @@ export const boardPresenceMutations = {
     // one), so the APNs Live Activity path can resolve the board's holder for a
     // session — QueueState/push-token rows carry sessionId but not boardId. Best-
     // effort: a solo (no-session) sender just doesn't establish a mapping.
-    const reportingSessionId = roomManager.getClient(ctx.connectionId)?.sessionId ?? null;
-
     // One Redis pipeline: durable FIFO history append, connection-holder
     // handoff (atomic SET..GET), the A2 dedup marker, and the session→board
     // mapping. Non-fatal on failure (see commitBoardClimb's contract).

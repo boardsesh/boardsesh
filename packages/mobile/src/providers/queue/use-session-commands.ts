@@ -118,6 +118,7 @@ export function useSessionCommands({
               longitude: 0,
               discoverable: config?.discoverable ?? false,
               ...(config?.name ? { name: config.name } : {}),
+              ...(config?.audience ? { audience: config.audience } : {}),
               ...(config?.goal ? { goal: config.goal } : {}),
               ...(config?.color ? { color: config.color } : {}),
               ...(config?.isPermanent ? { isPermanent: config.isPermanent } : {}),

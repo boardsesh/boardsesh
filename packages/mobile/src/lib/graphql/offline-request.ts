@@ -1,3 +1,5 @@
+import { canReadPrivateCatalog, captureCatalogReadEpoch, isCatalogReadCurrent } from '../../offline/catalog-access';
+import { needsPrivacyRevalidation, waitForPrivacyRevalidation } from '../../offline/privacy-revalidation';
 import { onlineManager } from '@tanstack/react-query';
 import type { Variables } from 'graphql-request';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -476,7 +478,9 @@ function offlineReadLane(): OfflineReadLane {
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
+  if (operation && needsPrivacyRevalidation()) await waitForPrivacyRevalidation();
   if (operation?.networkPolicy === 'local-only') return localOnlyRequest<TResponse>(operation, variables);
+  const catalogEpoch = captureCatalogReadEpoch();
   // Carry a local source we already resolved on the way to the network so the
   // network-failure catch below can reuse it instead of re-probing. Only set on
   // the online miss-retry path — the one path that reaches the network with a
@@ -493,7 +497,12 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
       // without variables degrade to HTTP rather than throw in a destructure;
       // the offline fallback below still applies either way. `as never` re-narrows
       // the storage-erased generics — see the OFFLINE_OPERATIONS declaration.
-      if (localDb && variables !== undefined && (await operation.canServeLocal(localDb, variables as never))) {
+      if (
+        localDb &&
+        variables !== undefined &&
+        (await canReadPrivateCatalog(localDb)) &&
+        (await operation.canServeLocal(localDb, variables as never))
+      ) {
         localServiceable = true;
         const localResponse = (await operation.resolveLocal(localDb, variables as never)) as TResponse;
         // A known-key miss falls through to the network while online — the row
@@ -518,7 +527,9 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
               boardName: operation.boardNameOf(variables as never),
             });
           }
-          return localResponse;
+          return (await canReadPrivateCatalog(localDb)) && isCatalogReadCurrent(catalogEpoch)
+            ? localResponse
+            : (operation.offlineFallback() as TResponse);
         }
       } else if (!isOnline) {
         const input = (variables as { input?: { onlyFollowedAuthors?: boolean } } | undefined)?.input;
@@ -568,7 +579,11 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
       // Reuse the db + canServeLocal result from the miss-retry path when we have
       // them; otherwise (flag off, or db not resolved above) probe now.
       const db = localDb ?? getDatabaseHandle();
-      if (db && (localServiceable || (await operation.canServeLocal(db, variables as never)))) {
+      if (
+        db &&
+        (await canReadPrivateCatalog(db)) &&
+        (localServiceable || (await operation.canServeLocal(db, variables as never)))
+      ) {
         const rescued = (await operation.resolveLocal(db, variables as never)) as TResponse;
         // Real offline value that `onlineManager` called online — counted as its
         // own lane so the north-star doesn't lose captive-portal / dead-upstream
@@ -585,7 +600,9 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
             boardName: operation.boardNameOf(variables as never),
           });
         }
-        return rescued;
+        return (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
+          ? rescued
+          : (operation.offlineFallback() as TResponse);
       }
     }
     throw networkError;
@@ -619,10 +636,11 @@ async function enrichNetworkResponse<TResponse>(
   variables: Variables | undefined,
   networkResponse: TResponse,
 ): Promise<TResponse> {
+  const catalogEpoch = captureCatalogReadEpoch();
   if (!operation?.enrichNetworkResponse || variables === undefined) return networkResponse;
   if (!isOfflineEngineEnabled()) return networkResponse;
   const db = resolvedDb ?? getDatabaseHandle();
-  if (!db) return networkResponse;
+  if (!db || !(await canReadPrivateCatalog(db))) return networkResponse;
 
   let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const budget = new Promise<TResponse>((resolve) => {
@@ -637,7 +655,8 @@ async function enrichNetworkResponse<TResponse>(
     // A read that loses the race still settles later. Swallow its rejection so
     // it cannot surface as an unhandled one.
     enriched.catch(() => undefined);
-    return await Promise.race([enriched, budget]);
+    const result = await Promise.race([enriched, budget]);
+    return (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch) ? result : networkResponse;
   } catch {
     return networkResponse;
   } finally {
@@ -662,16 +681,24 @@ async function localOnlyRequest<TResponse>(
   operation: OfflineOperation<never, unknown>,
   variables: Variables | undefined,
 ): Promise<TResponse> {
+  const catalogEpoch = captureCatalogReadEpoch();
   const isOnline = onlineManager.isOnline();
   const db = getDatabaseHandle();
-  if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
+  if (
+    db &&
+    variables !== undefined &&
+    (await canReadPrivateCatalog(db)) &&
+    (await operation.canServeLocal(db, variables as never))
+  ) {
     const localResponse = (await operation.resolveLocal(db, variables as never)) as TResponse;
     recordOfflineRead({
       lane: isOnline ? 'online_local' : offlineReadLane(),
       surface: operation.surface,
       boardName: operation.boardNameOf(variables as never),
     });
-    return localResponse;
+    return (await canReadPrivateCatalog(db)) && isCatalogReadCurrent(catalogEpoch)
+      ? localResponse
+      : (operation.offlineFallback() as TResponse);
   }
   if (!isOnline && variables !== undefined) {
     recordOfflineReadUnavailable({

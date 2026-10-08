@@ -55,8 +55,8 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
     transport: 'ws',
     sessionId: 'session-1',
     participantId: 'participant-1',
-    userId: undefined,
-    isAuthenticated: false,
+    userId: 'user-1',
+    isAuthenticated: true,
     ...overrides,
   };
 }
@@ -143,7 +143,7 @@ describe('buildSessionPayload — override short-circuits', () => {
     const payload = await buildSessionPayload('session-1', makeCtx(), { users: prefetched });
 
     expect(getSessionUsersMock).not.toHaveBeenCalled();
-    expect(payload.users).toBe(prefetched);
+    expect(payload.users).toEqual(prefetched);
   });
 
   it('skips getQueueState when inputs.queueState is supplied', async () => {
@@ -263,9 +263,14 @@ describe('buildSessionPayload — name / boardPath / participantId fallthrough',
   // creator/leader server-side) — but a wrong value here either strands a
   // creator or dangles an action the server will refuse.
   describe('createdByUserId', () => {
-    it('comes from the session row by default', async () => {
+    it('comes from the session row for its authenticated creator', async () => {
       const payload = await buildSessionPayload('session-1', makeCtx());
       expect(payload.createdByUserId).toBe('user-1');
+    });
+
+    it('withholds a creator when the viewer cannot read the session identity', async () => {
+      const payload = await buildSessionPayload('session-1', makeCtx({ userId: undefined, isAuthenticated: false }));
+      expect(payload.createdByUserId).toBeNull();
     });
 
     it('is null when the session row has vanished (cleanup race) or the creator was anonymous', async () => {

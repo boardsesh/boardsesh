@@ -18,6 +18,13 @@ import { roomManager } from '../services/room-manager';
 import { updateContext } from '../graphql/context';
 import { pubsub } from '../pubsub/index';
 
+// These cases isolate connection/leader authorization. Resource access is
+// independently exercised with real policies by the privacy integration suites.
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  requireResourceAccess: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../services/room-manager', () => ({
   roomManager: {
     joinSession: vi.fn().mockResolvedValue({
@@ -83,8 +90,8 @@ vi.mock('uuid', () => ({
   v4: () => 'test-session-uuid',
 }));
 
-vi.mock('../db/client', () => ({
-  db: {
+vi.mock('../db/client', () => {
+  const database = {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
@@ -93,8 +100,14 @@ vi.mock('../db/client', () => ({
     values: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
-  },
-}));
+  };
+  return {
+    db: {
+      ...database,
+      transaction: vi.fn((callback: (tx: typeof database) => Promise<unknown>) => callback(database)),
+    },
+  };
+});
 
 function makeWsAuthenticatedCtx(userId: string): ConnectionContext {
   return {

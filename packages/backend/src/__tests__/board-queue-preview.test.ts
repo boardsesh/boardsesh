@@ -448,9 +448,14 @@ describe('board-queue-preview privacy gates', () => {
       ownerNext = owner.next();
       strangerNext = stranger.next();
       pubsub.publishBoardQueuePreview(boardKey, preview);
-      // The stranger's stream ends on the first event after the hide; the owner's
-      // carries on.
-      expect((await strangerNext).done).toBe(true);
+      // Clear a previously rendered queue before ending the stranger's stream.
+      // The owner's stream carries on.
+      expect((await strangerNext).value?.boardQueuePreview).toMatchObject({
+        current: null,
+        upNext: [],
+        queueLength: 0,
+      });
+      expect((await stranger.next()).done).toBe(true);
       const ownerResult = await ownerNext;
       expect(ownerResult.done).toBe(false);
       expect((ownerResult.value as { boardQueuePreview: BoardQueuePreview }).boardQueuePreview.boardId).toBe(boardId);
@@ -512,6 +517,114 @@ describe('board-queue-preview privacy gates', () => {
     expect(preview!.current?.climbUuid).toBe('climb-1');
     expect(preview!.upNext).toHaveLength(2);
     expect(JSON.stringify(preview)).not.toContain(SECRET_USER_ID);
+  });
+
+  it('redacts authored climbs in both current and upcoming live producer items', async () => {
+    const boardId = await makeBoard({ isPublic: true });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    const queue = [makeQueueItem(91001), makeQueueItem(91002)];
+    await db.insert(dbSchema.boardClimbs).values(
+      queue.map((item) => ({
+        uuid: item.climb.uuid,
+        boardType: 'kilter',
+        layoutId: 1,
+        userId: TEST_USER_ID,
+        name: item.climb.name,
+        isDraft: false,
+        isListed: true,
+      })),
+    );
+    await db.insert(dbSchema.contentPrivacy).values(
+      queue.map((item) => ({
+        entityType: 'climb' as const,
+        entityId: item.climb.uuid,
+        ownerId: TEST_USER_ID,
+        audience: 'only_me' as const,
+      })),
+    );
+    await seedQueueState(sessionId, queue, queue[0]);
+    await bindSessionToBoard(sessionId, boardId);
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+    try {
+      await publishBoardQueuePreviewForSession(sessionId);
+      expect(received).toHaveLength(1);
+      expect(received[0].current).toMatchObject({
+        climbUuid: queue[0].climb.uuid,
+        name: null,
+        frames: null,
+        setter: null,
+        grade: null,
+      });
+      expect(received[0].upNext[0]).toMatchObject({
+        climbUuid: queue[1].climb.uuid,
+        name: null,
+        frames: null,
+        setter: null,
+        grade: null,
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('withdraws copied metadata from events buffered before a climb became private', async () => {
+    const boardId = await makeBoard({ isPublic: true });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    const current = makeQueueItem(91003);
+    await db.insert(dbSchema.boardClimbs).values({
+      uuid: current.climb.uuid,
+      boardType: 'kilter',
+      layoutId: 1,
+      userId: TEST_USER_ID,
+      name: current.climb.name,
+      isDraft: false,
+      isListed: true,
+    });
+    await seedQueueState(sessionId, [current], current);
+    await bindSessionToBoard(sessionId, boardId);
+    const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
+    try {
+      const initial = await iterator.next();
+      expect(initial.value?.boardQueuePreview.current?.name).toBe(current.climb.name);
+
+      // Buffer a previously authorized payload while the generator is paused.
+      pubsub.publishBoardQueuePreview(
+        boardId.toString(),
+        buildBoardQueuePreview(boardId, makeQueueState([current], current)),
+      );
+      await db.insert(dbSchema.contentPrivacy).values({
+        entityType: 'climb',
+        entityId: current.climb.uuid,
+        ownerId: TEST_USER_ID,
+        audience: 'only_me',
+      });
+      const withdrawn = await iterator.next();
+      expect(withdrawn.value?.boardQueuePreview.current?.name).toBeNull();
+      expect(JSON.stringify(withdrawn.value)).not.toContain(current.climb.frames);
+      expect(JSON.stringify(withdrawn.value)).not.toContain(current.climb.setter_username);
+    } finally {
+      await iterator.return?.(undefined);
+    }
+  });
+
+  it('sends an empty snapshot on quiet session revocation and ignores buffered public copies', async () => {
+    const { boardId, sessionId } = await makePreviewableSession();
+    const iterator = boardQueuePreviewSubscriptions.boardQueuePreview.subscribe(undefined, { boardId }, anonCtx());
+    try {
+      const initial = await iterator.next();
+      expect(initial.value?.boardQueuePreview.queueLength).toBe(2);
+      await db.update(dbSchema.boardSessions).set({ isPublic: false }).where(eq(dbSchema.boardSessions.id, sessionId));
+      pubsub.publishPrivacyChanged();
+      const withdrawn = await iterator.next();
+      expect(withdrawn.value?.boardQueuePreview).toMatchObject({ current: null, upNext: [], queueLength: 0 });
+
+      pubsub.publishBoardQueuePreview(String(boardId), initial.value!.boardQueuePreview);
+      const staleEvent = await iterator.next();
+      expect(staleEvent.value?.boardQueuePreview).toMatchObject({ current: null, upNext: [], queueLength: 0 });
+    } finally {
+      await iterator.return?.(undefined);
+    }
   });
 
   it('is_public=false bound session → query returns null and the producer publishes nothing', async () => {

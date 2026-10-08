@@ -1,4 +1,5 @@
 import type { WindowAnchorPoint } from '../navigation/AnchoredPopover.types';
+import { PublicationAudiencePicker } from '../privacy/PublicationAudiencePicker';
 import {
   useCallback,
   useEffect,
@@ -346,6 +347,7 @@ export function CreateDrawer({
     >
       {/* Pinned above the scroll, like every modal task's top bar: the X and
           Save never move with the content or the keyboard. */}
+      <PublicationAudiencePicker privacy={controller.privacy} />
       <CreateDrawerHeader
         name={controller.name}
         onChangeName={controller.setName}

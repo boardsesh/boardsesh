@@ -1,4 +1,5 @@
 import { GraphQLError } from 'graphql';
+import { canAccessResource, canAccessResourceWithoutLink, getResourcePrivacy } from '../../../services/privacy';
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
 import { createHash } from 'crypto';
@@ -44,10 +45,10 @@ export type ActivePresenceBoard = Pick<
  */
 export type PresenceBoardIdentity = Pick<typeof dbSchema.userBoards.$inferSelect, 'ownerId' | 'slug'>;
 
-export function toResolvedBoard(board: ActivePresenceBoard): ResolvedBoard {
+export function toResolvedBoard(board: ActivePresenceBoard, revealName = false): ResolvedBoard {
   return {
     boardId: Number(board.id),
-    boardName: board.name,
+    boardName: revealName ? board.name : defaultBoardName(board.boardType),
     boardType: board.boardType,
     layoutId: Number(board.layoutId),
     sizeId: Number(board.sizeId),
@@ -158,7 +159,7 @@ export async function findActiveBoardsBySerial(
     // A board that opts into hiding its location is treated as location-private
     // even when the board itself is public.
     locationName: row.hideLocation ? null : row.locationName,
-    gymName: row.gymName ?? null,
+    gymName: row.hideLocation ? null : (row.gymName ?? null),
   }));
 }
 
@@ -507,7 +508,7 @@ export async function requireActiveBoardById(boardId: number): Promise<ActivePre
   return board;
 }
 
-export type BoardVisibility = Pick<typeof dbSchema.userBoards.$inferSelect, 'isPublic' | 'ownerId'>;
+export type BoardVisibility = Pick<typeof dbSchema.userBoards.$inferSelect, 'uuid' | 'isPublic' | 'ownerId'>;
 
 /**
  * THE anonymous board-visibility rule, applied to a board row already in hand:
@@ -537,11 +538,19 @@ export function isRowAnonReadable(board: BoardVisibility): boolean {
 export async function isBoardAnonReadable(boardId: number): Promise<boolean> {
   assertValidBoardId(boardId);
   const [board] = await db
-    .select({ isPublic: dbSchema.userBoards.isPublic, ownerId: dbSchema.userBoards.ownerId })
+    .select({
+      uuid: dbSchema.userBoards.uuid,
+      isPublic: dbSchema.userBoards.isPublic,
+      ownerId: dbSchema.userBoards.ownerId,
+    })
     .from(dbSchema.userBoards)
     .where(and(eq(dbSchema.userBoards.id, boardId), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
-  return Boolean(board && isRowAnonReadable(board));
+  return Boolean(
+    board &&
+    (await getResourcePrivacy('board', board.uuid))?.audience === 'public' &&
+    (await canAccessResource('board', board.uuid, null)),
+  );
 }
 
 /**
@@ -566,11 +575,11 @@ export async function requireAnonReadableBoard(
   viewerUserId: string | null | undefined,
 ): Promise<boolean> {
   assertValidBoardId(boardId);
-  if (viewerUserId) return false;
-  if (!(await isBoardAnonReadable(boardId))) {
+  const board = await requireActiveBoardWithVisibilityById(boardId);
+  if (!(await canAccessResourceWithoutLink('board', board.uuid, viewerUserId))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
-  return true;
+  return !viewerUserId && isRowAnonReadable(board);
 }
 
 /**
@@ -597,6 +606,7 @@ export async function requireReadablePresenceBoard(
   assertValidBoardId(boardId);
   const [row] = await db
     .select({
+      uuid: dbSchema.userBoards.uuid,
       isPublic: dbSchema.userBoards.isPublic,
       ownerId: dbSchema.userBoards.ownerId,
       boardType: dbSchema.userBoards.boardType,
@@ -607,7 +617,7 @@ export async function requireReadablePresenceBoard(
     .where(eq(dbSchema.userBoards.id, boardId))
     .limit(1);
 
-  if (!viewerUserId && !(row && row.deletedAt === null && isRowAnonReadable(row))) {
+  if (!row || row.deletedAt !== null || !(await canAccessResourceWithoutLink('board', row.uuid, viewerUserId))) {
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
   if (!row) return { anonReadableVerified: !viewerUserId, board: null };
@@ -646,6 +656,7 @@ export async function requireActiveBoardWithVisibilityById(
       setIds: dbSchema.userBoards.setIds,
       serialNumber: dbSchema.userBoards.serialNumber,
       angle: dbSchema.userBoards.angle,
+      uuid: dbSchema.userBoards.uuid,
       isPublic: dbSchema.userBoards.isPublic,
       ownerId: dbSchema.userBoards.ownerId,
     })
@@ -666,11 +677,12 @@ export async function requireActiveBoardWithVisibilityById(
  * masking behaviour: no-op for logged-in callers, NOT_FOUND for anonymous
  * callers on a non-public board that isn't system-owned.
  */
-export function assertAnonReadableBoard(board: BoardVisibility, viewerUserId: string | null | undefined): void {
-  if (viewerUserId) return;
-  if (!isRowAnonReadable(board)) {
+export async function assertAnonReadableBoard(
+  board: BoardVisibility,
+  viewerUserId: string | null | undefined,
+): Promise<void> {
+  if (!(await canAccessResourceWithoutLink('board', board.uuid, viewerUserId)))
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
-  }
 }
 
 /**
@@ -942,7 +954,7 @@ export async function resolveSharedBoardForConfig(
     .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
     .limit(1);
   if (existing) {
-    return toResolvedBoard(existing);
+    return toResolvedBoard(existing, true);
   }
 
   if (!allowCreate) {
@@ -971,7 +983,7 @@ export async function resolveSharedBoardForConfig(
         isOwned: false,
       })
       .returning();
-    return toResolvedBoard(created);
+    return toResolvedBoard(created, true);
   } catch (error) {
     if (!isUniqueViolation(error, 'user_boards_unique_slug')) {
       throw error;
@@ -983,7 +995,7 @@ export async function resolveSharedBoardForConfig(
       .where(and(eq(dbSchema.userBoards.slug, slug), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1);
     if (winner) {
-      return toResolvedBoard(winner);
+      return toResolvedBoard(winner, true);
     }
     throw error;
   }

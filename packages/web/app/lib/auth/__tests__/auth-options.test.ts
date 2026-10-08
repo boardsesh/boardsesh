@@ -55,6 +55,7 @@ vi.mock('bcryptjs', () => ({
 
 // --- DB mock ---
 // We need to be able to swap return values per-test, so keep a mutable reference.
+const mockDbInsertValues = vi.fn(() => ({ onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }));
 const mockDbUpdate = vi.fn();
 const mockDbSet = vi.fn();
 const mockDbUpdateWhere = vi.fn();
@@ -65,6 +66,7 @@ const mockDbLimit = vi.fn();
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
+    insert: () => ({ values: mockDbInsertValues }),
     update: (...args: unknown[]) => mockDbUpdate(...args),
     select: (...args: unknown[]) => mockDbSelect(...args),
   }),
@@ -988,5 +990,23 @@ describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
     await import('../auth-options');
 
     expect(process.env.NEXTAUTH_URL).toBe('http://localhost:3000');
+  });
+});
+
+describe('OAuth registration privacy rollout', () => {
+  it.each(['0', '1'])('creates manageable defaults with privacy controls enabled=%s', async (flag) => {
+    vi.stubEnv('BOARDSESH_PRIVACY_ENABLED', flag);
+    try {
+      await authOptions.events?.createUser?.({
+        user: { id: 'oauth-rollout-user', email: 'rollout@example.com' },
+      });
+      expect(mockDbInsertValues).toHaveBeenLastCalledWith({
+        userId: 'oauth-rollout-user',
+        isPrivate: flag === '1',
+        defaultSessionAudience: flag === '1' ? 'followers' : 'public',
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

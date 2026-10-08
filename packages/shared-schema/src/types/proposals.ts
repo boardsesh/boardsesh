@@ -9,7 +9,7 @@ export type Proposal = {
   climbUuid: string;
   boardType: string;
   angle?: number | null;
-  proposerId: string;
+  proposerId: string | null;
   proposerDisplayName?: string | null;
   proposerAvatarUrl?: string | null;
   type: ProposalType;

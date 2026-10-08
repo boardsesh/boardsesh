@@ -10,11 +10,13 @@
 //
 // The queryFn returns `UserBoard | null`.
 
-import { useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getStoredActiveBoard, setStoredActiveBoard, clearStoredActiveBoard } from '../active-board-store';
 import { getCurrentUserStorageOwner, type UserStorageOwner } from '../user-storage-owner';
+import { authorizeActiveBoardProjection, currentActiveBoardProjection } from '../active-board-privacy';
+import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../privacy/privacy-cache';
 
 export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 
@@ -29,6 +31,9 @@ export const ACTIVE_BOARD_QUERY_KEY = ['activeBoard'] as const;
 //    queued behind it and therefore remains the final persisted value.
 let activeBoardWriteGeneration = 0;
 let activeBoardWriteQueue: Promise<void> = Promise.resolve();
+subscribeToPrivacyRevocations(() => {
+  activeBoardWriteGeneration += 1;
+});
 
 type ActiveBoardStorageWrite = () => Promise<void>;
 
@@ -45,8 +50,11 @@ function enqueueActiveBoardWrite(
   generation: number,
   writeStorage: ActiveBoardStorageWrite,
   commitCache: () => void,
+  retireOnPrivacyChange = true,
 ): Promise<boolean> {
+  const privacyGeneration = getPrivacyRevocationGeneration();
   const operation = activeBoardWriteQueue.then(async () => {
+    if (retireOnPrivacyChange && privacyGeneration !== getPrivacyRevocationGeneration()) return false;
     // Always execute queued storage operations in intent order. In particular,
     // auth cleanup may target the previous user's scoped key and must not be
     // skipped merely because the next user already selected a board.
@@ -54,7 +62,8 @@ function enqueueActiveBoardWrite(
 
     // A newer intent may have arrived while AsyncStorage was in flight. Its
     // write is queued next, so do not briefly roll the React Query cache back.
-    if (generation !== activeBoardWriteGeneration) return false;
+    if (generation !== activeBoardWriteGeneration || privacyGeneration !== getPrivacyRevocationGeneration())
+      return false;
     commitCache();
     return true;
   });
@@ -91,6 +100,7 @@ export async function clearStoredActiveBoardCoordinated(owner?: UserStorageOwner
     generation,
     () => clearStoredActiveBoard(owner),
     () => {},
+    false,
   );
 }
 
@@ -105,9 +115,13 @@ export function resetActiveBoardWriteCoordinatorForTests(): void {
  * picked one yet — callers surface the board picker rather than defaulting.
  */
 export function useActiveBoard() {
-  return useQuery({
+  useSyncExternalStore(subscribeToPrivacyRevocations, getPrivacyRevocationGeneration, getPrivacyRevocationGeneration);
+  const query = useQuery({
     queryKey: ACTIVE_BOARD_QUERY_KEY,
     queryFn: () => getStoredActiveBoard(),
+    // Authorization is attached to the actual returned projection. Structural
+    // sharing must not mint an untracked copy or retain withdrawn optional fields.
+    structuralSharing: false,
     // This read and its bounded retries only touch local storage. A transient
     // disk failure must still recover when the phone has no connection.
     networkMode: 'always',
@@ -116,6 +130,7 @@ export function useActiveBoard() {
     // no value in background refetching here.
     staleTime: Infinity,
   });
+  return { ...query, data: query.data ? currentActiveBoardProjection(query.data) : query.data };
 }
 
 /**
@@ -125,17 +140,26 @@ export function useActiveBoard() {
  */
 export function useSetActiveBoard() {
   const queryClient = useQueryClient();
+  const privacyGeneration = useSyncExternalStore(
+    subscribeToPrivacyRevocations,
+    getPrivacyRevocationGeneration,
+    getPrivacyRevocationGeneration,
+  );
   return useCallback(
     async (board: UserBoard) => {
+      if (privacyGeneration !== getPrivacyRevocationGeneration()) return;
       const generation = beginActiveBoardWrite();
       const owner = getCurrentUserStorageOwner();
       await enqueueActiveBoardWrite(
         generation,
         () => setStoredActiveBoard(board, owner),
-        () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
+        () => {
+          const cached = queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);
+          if (cached) authorizeActiveBoardProjection(cached);
+        },
       );
     },
-    [queryClient],
+    [queryClient, privacyGeneration],
   );
 }
 
@@ -152,7 +176,10 @@ export function useSetActiveBoardIfCurrentGeneration() {
       return enqueueCurrentGenerationWrite(
         expectedGeneration,
         () => setStoredActiveBoard(board, owner),
-        () => queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board),
+        () => {
+          const cached = queryClient.setQueryData<UserBoard | null>(ACTIVE_BOARD_QUERY_KEY, board);
+          if (cached) authorizeActiveBoardProjection(cached);
+        },
       );
     },
     [queryClient],

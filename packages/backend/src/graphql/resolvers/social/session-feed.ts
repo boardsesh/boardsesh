@@ -1,3 +1,6 @@
+import { commentPrivacyCondition, tickPrivacyCondition } from '../shared/activity-privacy';
+import { alias } from 'drizzle-orm/pg-core';
+import { canAccessResource, canViewActivityIdentity, resourceAccessCondition } from '../../../services/privacy';
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -128,7 +131,11 @@ export async function getSessionFeed(
     if (!ctx) throw new Error('Authentication required to perform this operation');
     requireAuthenticated(ctx);
   }
-  const viewerUserId = followingOnly ? (ctx?.userId ?? null) : null;
+  const viewerUserId = ctx?.userId ?? null;
+  if (userId && !(await canViewActivityIdentity(userId, viewerUserId)))
+    return { sessions: [], cursor: null, hasMore: false };
+  if (validatedInput.boardUuid && !(await canAccessResource('board', validatedInput.boardUuid, viewerUserId)))
+    return { sessions: [], cursor: null, hasMore: false };
 
   const offset = !pagination && validatedInput.cursor ? (decodeOffsetCursor(validatedInput.cursor) ?? 0) : 0;
 
@@ -154,6 +161,8 @@ export async function getSessionFeed(
   let sessionRows;
   try {
     const sessionBoardFilter = sql`
+        AND (t.session_id IS NULL OR ${resourceAccessCondition('session', sql`t.session_id`, viewerUserId)})
+        ${userId ? sql`AND ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}` : sql``}
         ${boardIdFilter !== null ? sql`AND t.board_id = ${boardIdFilter}` : sql``}
         ${pagination ? sql`AND t.climbed_at <= ${pagination.snapshotAt}::timestamptz AT TIME ZONE 'UTC'` : sql``}
       `;
@@ -276,7 +285,7 @@ export async function getSessionFeed(
           LEFT JOIN (
             SELECT entity_id, COUNT(*) AS comment_count
             FROM comments
-            WHERE entity_type = 'tick' AND deleted_at IS NULL
+            WHERE entity_type = 'tick' AND deleted_at IS NULL AND ${commentPrivacyCondition(ctx?.userId)}
             GROUP BY entity_id
           ) cc ON cc.entity_id = dh.uuid
         ),
@@ -399,7 +408,7 @@ export async function getSessionFeed(
           LEFT JOIN (
             SELECT entity_id, COUNT(*) AS comment_count
             FROM comments
-            WHERE entity_type = 'session' AND deleted_at IS NULL
+            WHERE entity_type = 'session' AND deleted_at IS NULL AND ${commentPrivacyCondition(ctx?.userId)}
             GROUP BY entity_id
           ) cc ON cc.entity_id = sb.session_id
         ),
@@ -451,7 +460,7 @@ export async function getSessionFeed(
     dailyHardestSendMap,
     featuredBetaMap,
   ] = await Promise.all([
-    fetchParticipantsBatch(sessionIds, filterOptions),
+    fetchParticipantsBatch(sessionIds, filterOptions, ctx?.userId),
     fetchGradeDistributionBatch(sessionIds, filterOptions),
     fetchDailyGradeDistributionBatch(dailyHighlightKeys, filterOptions),
     fetchSessionMetaBatch(sessionIds),
@@ -461,62 +470,93 @@ export async function getSessionFeed(
     fetchFeaturedBetaBatch(sessionIds, dailyHighlightKeys, filterOptions, ctx?.userId),
   ]);
 
-  const sessions: SessionFeedItem[] = resultRows.map((row) => {
-    const isDailyHighlight = row.session_type === 'daily_highlight';
-    const participants = isDailyHighlight ? buildDailyParticipants(row) : (participantMap.get(row.session_id) ?? []);
-    const gradeDistribution = isDailyHighlight
-      ? (dailyGradeDistMap.get(row.session_id) ?? [])
-      : (gradeDistMap.get(row.session_id) ?? []);
-    const sessionMeta = metaMap.get(row.session_id) ?? null;
-    const boardTypes = isDailyHighlight ? (row.daily_board_types ?? []) : (boardTypesMap.get(row.session_id) ?? []);
-    const hardestSend = isDailyHighlight
-      ? // The highlight is only a *send* when something was sent. On a day spent
-        // projecting it is the hardest attempt, which anchors the card's votes and
-        // comments but must not be reported as an ascent.
-        row.highlight_is_send
-        ? (dailyHardestSendMap.get(row.highlight_tick_uuid ?? '') ?? null)
-        : null
-      : (hardestSendMap.get(row.session_id) ?? null);
-    const featuredBeta = featuredBetaMap.get(row.session_id) ?? null;
+  const sessions: SessionFeedItem[] = await Promise.all(
+    resultRows.map(async (row) => {
+      const isDailyHighlight = row.session_type === 'daily_highlight';
+      const participants = isDailyHighlight ? buildDailyParticipants(row) : (participantMap.get(row.session_id) ?? []);
+      const gradeDistribution = isDailyHighlight
+        ? (dailyGradeDistMap.get(row.session_id) ?? [])
+        : (gradeDistMap.get(row.session_id) ?? []);
+      const sessionMeta = metaMap.get(row.session_id) ?? null;
+      const boardTypes = isDailyHighlight ? (row.daily_board_types ?? []) : (boardTypesMap.get(row.session_id) ?? []);
+      const hardestSend = isDailyHighlight
+        ? // The highlight is only a *send* when something was sent. On a day spent
+          // projecting it is the hardest attempt, which anchors the card's votes and
+          // comments but must not be reported as an ascent.
+          row.highlight_is_send
+          ? (dailyHardestSendMap.get(row.highlight_tick_uuid ?? '') ?? null)
+          : null
+        : (hardestSendMap.get(row.session_id) ?? null);
+      const featuredBeta = featuredBetaMap.get(row.session_id) ?? null;
 
-    const firstTime = new Date(row.session_first_tick).getTime();
-    const lastTime = new Date(row.session_last_tick).getTime();
-    const durationMinutes = Math.round((lastTime - firstTime) / 60000) || null;
+      const firstTime = new Date(row.session_first_tick).getTime();
+      const lastTime = new Date(row.session_last_tick).getTime();
+      const durationMinutes = Math.round((lastTime - firstTime) / 60000) || null;
 
-    return {
-      sessionId: row.session_id,
-      sessionType: isDailyHighlight ? 'daily_highlight' : 'party',
-      sessionName: isDailyHighlight ? null : sessionMeta?.name || null,
-      ownerUserId: isDailyHighlight ? row.daily_user_id : sessionMeta?.ownerUserId || null,
-      participants,
-      totalSends: Number(row.total_sends),
-      totalFlashes: Number(row.total_flashes),
-      totalAttempts: Number(row.total_attempts),
-      tickCount: Number(row.tick_count),
-      gradeDistribution,
-      boardTypes,
-      hardestGrade: hardestSend?.difficultyName ?? (gradeDistribution.length > 0 ? gradeDistribution[0].grade : null),
-      hardestSend,
-      featuredBeta,
-      socialEntityType: isDailyHighlight ? 'tick' : 'session',
-      socialEntityId: isDailyHighlight ? (row.highlight_tick_uuid ?? row.session_id) : row.session_id,
-      firstTickAt:
-        typeof row.session_first_tick === 'object'
-          ? (row.session_first_tick as unknown as Date).toISOString()
-          : String(row.session_first_tick),
-      lastTickAt:
-        typeof row.session_last_tick === 'object'
-          ? (row.session_last_tick as unknown as Date).toISOString()
-          : String(row.session_last_tick),
-      durationMinutes,
-      goal: isDailyHighlight ? null : sessionMeta?.goal || null,
-      notes: isDailyHighlight ? null : sessionMeta?.notes || null,
-      upvotes: Number(row.vote_up),
-      downvotes: Number(row.vote_down),
-      voteScore: Number(row.vote_score),
-      commentCount: Number(row.comment_count),
-    };
-  });
+      return {
+        sessionId: row.session_id,
+        sessionType: isDailyHighlight ? 'daily_highlight' : 'party',
+        sessionName: isDailyHighlight ? null : sessionMeta?.name || null,
+        ownerUserId:
+          (isDailyHighlight ? row.daily_user_id : sessionMeta?.ownerUserId) &&
+          (await canViewActivityIdentity(
+            (isDailyHighlight ? row.daily_user_id : sessionMeta?.ownerUserId)!,
+            viewerUserId,
+          ))
+            ? isDailyHighlight
+              ? row.daily_user_id
+              : sessionMeta?.ownerUserId
+            : null,
+        participants: (
+          await Promise.all(
+            participants.map(async (participant) =>
+              (await canViewActivityIdentity(participant.userId, viewerUserId)) ? participant : null,
+            ),
+          )
+        ).filter((participant): participant is SessionFeedParticipant => participant !== null),
+        totalSends: Number(row.total_sends),
+        totalFlashes: Number(row.total_flashes),
+        totalAttempts: Number(row.total_attempts),
+        tickCount: Number(row.tick_count),
+        gradeDistribution,
+        boardTypes,
+        hardestGrade: hardestSend?.difficultyName ?? (gradeDistribution.length > 0 ? gradeDistribution[0].grade : null),
+        hardestSend:
+          hardestSend &&
+          (await canViewActivityIdentity(hardestSend.userId, viewerUserId, {
+            entityType: 'tick',
+            entityId: hardestSend.uuid,
+          }))
+            ? hardestSend
+            : null,
+        featuredBeta:
+          featuredBeta &&
+          (await canViewActivityIdentity(featuredBeta.tick.userId, viewerUserId, {
+            entityType: 'tick',
+            entityId: featuredBeta.tick.uuid,
+          }))
+            ? featuredBeta
+            : null,
+        socialEntityType: isDailyHighlight ? 'tick' : 'session',
+        socialEntityId: isDailyHighlight ? (row.highlight_tick_uuid ?? row.session_id) : row.session_id,
+        firstTickAt:
+          typeof row.session_first_tick === 'object'
+            ? (row.session_first_tick as unknown as Date).toISOString()
+            : String(row.session_first_tick),
+        lastTickAt:
+          typeof row.session_last_tick === 'object'
+            ? (row.session_last_tick as unknown as Date).toISOString()
+            : String(row.session_last_tick),
+        durationMinutes,
+        goal: isDailyHighlight ? null : sessionMeta?.goal || null,
+        notes: isDailyHighlight ? null : sessionMeta?.notes || null,
+        upvotes: Number(row.vote_up),
+        downvotes: Number(row.vote_down),
+        voteScore: Number(row.vote_score),
+        commentCount: Number(row.comment_count),
+      };
+    }),
+  );
 
   const nextCursor = !pagination && hasMore ? encodeOffsetCursor(offset + limit) : null;
 
@@ -532,11 +572,14 @@ export const sessionFeedQueries = {
    */
   sessionDetail: async (
     _: unknown,
-    { sessionId }: { sessionId: string },
+    { sessionId, aggregateOnly = false }: { sessionId: string; aggregateOnly?: boolean },
     ctx?: ConnectionContext,
   ): Promise<SessionDetail | null> => {
     if (!sessionId) return null;
     const dailySession = parseDailySessionId(sessionId);
+    if (dailySession) {
+      if (!(await canViewActivityIdentity(dailySession.userId, ctx?.userId))) return null;
+    } else if (!aggregateOnly && !(await canAccessResource('session', sessionId, ctx?.userId))) return null;
 
     const [partySession] = dailySession
       ? []
@@ -652,6 +695,13 @@ export const sessionFeedQueries = {
 
     // Batch-fetch tick vote counts
     const tickUuids = tickRows.map((r) => r.tick.uuid);
+    const readableTickRows = aggregateOnly
+      ? []
+      : await dbRead
+          .select({ uuid: dbSchema.boardseshTicks.uuid })
+          .from(dbSchema.boardseshTicks)
+          .where(and(inArray(dbSchema.boardseshTicks.uuid, tickUuids), tickPrivacyCondition(ctx?.userId)));
+    const readableTickIds = new Set(readableTickRows.map((row) => row.uuid));
     const tickVoteCounts =
       tickUuids.length > 0
         ? await dbRead
@@ -770,7 +820,7 @@ export const sessionFeedQueries = {
             AND t.climb_uuid = c.climb_uuid
             AND t.board_type = c.board_type
             AND t.angle = c.angle::int
-          WHERE t.status IN ('flash', 'send')
+          WHERE t.status IN ('flash', 'send') AND ${tickPrivacyCondition(ctx?.userId, alias(dbSchema.boardseshTicks, 't'))}
           GROUP BY t.user_id, t.climb_uuid, t.board_type, t.angle
         ),
         attempts_since AS (
@@ -791,7 +841,7 @@ export const sessionFeedQueries = {
             AND t.climb_uuid = ls.climb_uuid
             AND t.board_type = ls.board_type
             AND t.angle = ls.angle
-          WHERE t.climbed_at >= COALESCE(ls.last_success_at, '1970-01-01'::timestamp)
+          WHERE t.climbed_at >= COALESCE(ls.last_success_at, '1970-01-01'::timestamp) AND ${tickPrivacyCondition(ctx?.userId, alias(dbSchema.boardseshTicks, 't'))}
           GROUP BY t.user_id, t.climb_uuid, t.board_type, t.angle
         )
         SELECT * FROM attempts_since
@@ -826,7 +876,7 @@ export const sessionFeedQueries = {
 
     const participants = dailySession
       ? await fetchDailyDetailParticipants(dailySession.userId, totalSends, totalFlashes, totalAttempts)
-      : await fetchParticipants(sessionId, userIds);
+      : await fetchParticipants(sessionId, userIds, ctx?.userId);
     const gradeDistribution = buildGradeDistributionFromTicks(tickRows);
 
     // Timestamps
@@ -872,6 +922,7 @@ export const sessionFeedQueries = {
               sql`${dbSchema.comments.entityType} = 'session'`,
               eq(dbSchema.comments.entityId, sessionId),
               isNull(dbSchema.comments.deletedAt),
+              commentPrivacyCondition(ctx?.userId),
             ),
           );
 
@@ -899,8 +950,9 @@ export const sessionFeedQueries = {
       sessionId,
       sessionType: dailySession ? 'daily_highlight' : 'party',
       sessionName,
-      ownerUserId,
-      participants,
+      ownerUserId:
+        !aggregateOnly && ownerUserId && (await canViewActivityIdentity(ownerUserId, ctx?.userId)) ? ownerUserId : null,
+      participants: aggregateOnly ? [] : participants,
       totalSends,
       totalFlashes,
       totalAttempts,
@@ -913,7 +965,7 @@ export const sessionFeedQueries = {
       durationMinutes,
       goal,
       notes,
-      ticks,
+      ticks: ticks.filter((tick) => readableTickIds.has(tick.uuid)),
       upvotes: voteData ? Number(voteData.upvotes) : 0,
       downvotes: voteData ? Number(voteData.downvotes) : 0,
       voteScore: voteData ? Number(voteData.score) : 0,
@@ -926,7 +978,11 @@ export const sessionFeedQueries = {
 /**
  * Fetch participant info for a session
  */
-async function fetchParticipants(sessionId: string, userIds: string[]): Promise<SessionFeedParticipant[]> {
+async function fetchParticipants(
+  sessionId: string,
+  userIds: string[],
+  viewerId?: string,
+): Promise<SessionFeedParticipant[]> {
   if (userIds.length === 0) return [];
 
   const participantRows = await dbRead.execute(sql`
@@ -944,6 +1000,7 @@ async function fetchParticipants(sessionId: string, userIds: string[]): Promise<
     LEFT JOIN users u ON u.id = t.user_id
     LEFT JOIN user_profiles up ON up.user_id = t.user_id
     WHERE t.session_id = ${sessionId}
+      AND ${tickPrivacyCondition(viewerId, alias(dbSchema.boardseshTicks, 't'))}
     GROUP BY t.user_id, up.display_name, u.name, up.avatar_url, u.image
     ORDER BY sends DESC
   `);
@@ -1007,6 +1064,7 @@ async function fetchDailyDetailParticipants(
 async function fetchParticipantsBatch(
   sessionIds: string[],
   { boardIdFilter, snapshotAt }: SessionFeedFilterOptions,
+  viewerId?: string,
 ): Promise<Map<string, SessionFeedParticipant[]>> {
   if (sessionIds.length === 0) return new Map();
 
@@ -1032,6 +1090,7 @@ async function fetchParticipantsBatch(
       sql`, `,
     )})`}
       ${batchTickFilter}
+      AND ${tickPrivacyCondition(viewerId, alias(dbSchema.boardseshTicks, 't'))}
     GROUP BY t.session_id, t.user_id, up.display_name, u.name, up.avatar_url, u.image
     ORDER BY sends DESC
   `);

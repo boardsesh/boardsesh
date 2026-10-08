@@ -1,9 +1,11 @@
+import type { PrivacyPublicationInput } from '@boardsesh/graphql/operations/privacy';
 import { normalizePlaylistColor } from '@boardsesh/shared-schema';
 
 export const NAME_MAX = 100;
 export const DESCRIPTION_MAX = 500;
 
 export type PlaylistFormValues = {
+  privacy?: PrivacyPublicationInput;
   name: string;
   description?: string;
   color?: string;

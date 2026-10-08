@@ -48,3 +48,5 @@ export * from './climb-stats-recompute-pending';
 export * from './climb-revisions';
 
 export * from './notification-devices';
+
+export * from './privacy';

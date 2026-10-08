@@ -1,3 +1,4 @@
+import { playlistVisibilityCondition } from '../helpers/enrichment';
 import { eq, and, or, isNull, inArray, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -15,7 +16,7 @@ export const playlist = async (
   { playlistId }: { playlistId: string },
   ctx: ConnectionContext,
 ): Promise<unknown> => {
-  const userId = ctx.userId;
+  const userId = ctx.isAuthenticated ? ctx.userId : null;
 
   // LEFT JOIN userPlaylistPins scoped to the current user so isPinnedByMe
   // rides on the same query — saves a round-trip vs. a separate lookup.
@@ -48,7 +49,7 @@ export const playlist = async (
             sql`false`,
       ),
     )
-    .where(eq(dbSchema.playlists.uuid, playlistId))
+    .where(and(eq(dbSchema.playlists.uuid, playlistId), playlistVisibilityCondition(userId)))
     .limit(1);
 
   if (playlistResult.length === 0) return null;
@@ -67,11 +68,6 @@ export const playlist = async (
     if (ownershipResult.length > 0) {
       userRole = ownershipResult[0].role;
     }
-  }
-
-  // If playlist is private and user is not an owner/member, deny access
-  if (!p.isPublic && !userRole) {
-    return null;
   }
 
   // Get climb count

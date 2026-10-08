@@ -222,3 +222,7 @@ describe('create-board serial reuse privacy', () => {
     expect(screen.getByTestId('error').textContent).toBe('mobile.create.createError');
   });
 });
+
+vi.mock('../../../src/lib/graphql/hooks/use-privacy', () => ({
+  usePrivacySettings: () => ({ data: undefined }),
+}));

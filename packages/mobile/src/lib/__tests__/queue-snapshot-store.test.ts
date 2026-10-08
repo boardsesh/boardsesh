@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { BOARD_FEED_SUGGESTION_SOURCE_ID } from '../playlists/board-feed-suggestion-source';
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
@@ -58,16 +57,18 @@ describe('queue-snapshot-store', () => {
     (await getStorageMock()).__reset();
   });
 
-  it('round-trips queue, current item, and suggestion source', async () => {
+  it('keeps queue order and current selection without copied content or suggestions', async () => {
     const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
     const queue = [makeQueueItem('a'), makeQueueItem('b')];
     const source = makeSuggestionSource(3, 1);
     await setStoredQueueSnapshot({ queue, currentClimbQueueItem: queue[0], playlistSuggestionSource: source });
 
     const stored = await getStoredQueueSnapshot();
-    expect(stored?.queue).toEqual(queue);
-    expect(stored?.currentClimbQueueItem).toEqual(queue[0]);
-    expect(stored?.playlistSuggestionSource).toEqual(source);
+    expect(stored?.queue.map((item) => item.uuid)).toEqual(['a', 'b']);
+    expect(stored?.queue.map((item) => item.climb.uuid)).toEqual(['climb-a', 'climb-b']);
+    expect(stored?.queue.every((item) => item.climb.name === '' && item.climb.frames === '')).toBe(true);
+    expect(stored?.currentClimbQueueItem?.uuid).toBe('a');
+    expect(stored?.playlistSuggestionSource).toBeNull();
     expect(typeof stored?.savedAt).toBe('string');
   });
 
@@ -98,54 +99,108 @@ describe('queue-snapshot-store', () => {
     await expect(getStoredQueueSnapshot()).resolves.toBeNull();
   });
 
-  it('caps an oversized suggestion source to a window around the activated climb', async () => {
-    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
-    const source = makeSuggestionSource(500, 250);
-    await setStoredQueueSnapshot({ queue: [], currentClimbQueueItem: null, playlistSuggestionSource: source });
-
-    const stored = await getStoredQueueSnapshot();
-    const persistedClimbs = stored?.playlistSuggestionSource?.climbs ?? [];
-    expect(persistedClimbs.length).toBe(100);
-    // The activated climb survives the cap so the swipe-through anchor holds.
-    expect(persistedClimbs.some((climb) => climb.uuid === 'climb-250')).toBe(true);
-    // Identity fields ride along untouched.
-    expect(stored?.playlistSuggestionSource?.activatedClimbUuid).toBe('climb-250');
+  it('never writes copied climb details or attribution to storage', async () => {
+    const { setStoredQueueSnapshot } = await import('../queue-snapshot-store');
+    const item = {
+      ...makeQueueItem('private'),
+      addedBy: 'private-user',
+      addedByUser: { id: 'private-user', username: 'Secret climber' },
+      tickedBy: ['private-user'],
+      climb: { ...makeQueueItem('private').climb, frames: 'secret-frames', description: 'Secret notes' },
+    };
+    await setStoredQueueSnapshot({
+      queue: [item],
+      currentClimbQueueItem: item,
+      playlistSuggestionSource: makeSuggestionSource(500, 250),
+    });
+    const storage = (await import('@react-native-async-storage/async-storage')).default;
+    const serialized = vi.mocked(storage.setItem).mock.calls.at(-1)?.[1] ?? '';
+    expect(serialized).not.toContain('Secret');
+    expect(serialized).not.toContain('secret-frames');
+    expect(serialized).not.toContain('private-user');
+    expect(serialized).not.toContain('playlist-1');
+    expect(JSON.parse(serialized).queue[0].uuid).toBe('private');
   });
 
-  it('keeps a small suggestion source intact (no needless slicing)', async () => {
-    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
-    const source = makeSuggestionSource(10, 9);
-    await setStoredQueueSnapshot({ queue: [], currentClimbQueueItem: null, playlistSuggestionSource: source });
-    const stored = await getStoredQueueSnapshot();
-    expect(stored?.playlistSuggestionSource?.climbs).toHaveLength(10);
+  it('sanitizes legacy snapshots and preserves current-only, mirror and routing references', async () => {
+    const { getStoredQueueSnapshot } = await import('../queue-snapshot-store');
+    const current = {
+      ...makeQueueItem('current'),
+      climb: { ...makeQueueItem('current').climb, mirrored: true, boardType: 'spray', layoutId: 42 },
+    };
+    (await getStorageMock()).__rawSet(
+      'boardsesh_local_queue_snapshot_v1',
+      JSON.stringify({
+        queue: [makeQueueItem('a')],
+        currentClimbQueueItem: current,
+        playlistSuggestionSource: makeSuggestionSource(3, 1),
+        savedAt: 'legacy',
+      }),
+    );
+    const snapshot = await getStoredQueueSnapshot({ userId: 'new-owner', authSessionId: '' });
+    expect(snapshot?.queue.map((item) => item.uuid)).toEqual(['a']);
+    expect(snapshot?.currentClimbQueueItem).toMatchObject({
+      uuid: 'current',
+      climb: {
+        uuid: 'climb-current',
+        name: '',
+        frames: '',
+        mirrored: true,
+        boardType: 'spray',
+        layoutId: 42,
+        angle: 40,
+      },
+    });
+    expect(snapshot?.playlistSuggestionSource).toBeNull();
   });
 
-  // Issue #5403: up to 2.5.0 a board switch replaced the climber's own list with
-  // the board's unfiltered popular-by-ascents feed, and THAT replacement is what
-  // got persisted. Restoring one after the upgrade would reinstall the swipe bug
-  // for exactly the people who hit it, so the read path drops it — the queue
-  // itself is untouched, only the stale track.
-  it('drops a persisted board-feed source on read, keeping the queue and current item', async () => {
-    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
-    const queue = [makeQueueItem('a'), makeQueueItem('b')];
-    const source = { ...makeSuggestionSource(3, 1), playlistUuid: BOARD_FEED_SUGGESTION_SOURCE_ID };
-    await setStoredQueueSnapshot({ queue, currentClimbQueueItem: queue[0], playlistSuggestionSource: source });
-
-    const stored = await getStoredQueueSnapshot();
-    expect(stored?.playlistSuggestionSource).toBeNull();
-    expect(stored?.queue).toEqual(queue);
-    expect(stored?.currentClimbQueueItem).toEqual(queue[0]);
+  it('keeps a thin or missing legacy climb as an unresolved queue slot', async () => {
+    const { getStoredQueueSnapshot } = await import('../queue-snapshot-store');
+    (await getStorageMock()).__rawSet(
+      'boardsesh_local_queue_snapshot_v1',
+      JSON.stringify({
+        queue: [
+          { uuid: 'missing', climb: null },
+          { uuid: 'thin', climb: { uuid: 'climb-thin' } },
+        ],
+        currentClimbQueueItem: { uuid: 'current-only' },
+        playlistSuggestionSource: null,
+        savedAt: 'legacy',
+      }),
+    );
+    const snapshot = await getStoredQueueSnapshot();
+    expect(snapshot?.queue.map((item) => item.uuid)).toEqual(['missing', 'thin']);
+    expect(snapshot?.queue.map((item) => item.climb.uuid)).toEqual(['', 'climb-thin']);
+    expect(snapshot?.currentClimbQueueItem).toMatchObject({
+      uuid: 'current-only',
+      climb: { uuid: '', name: '', frames: '' },
+    });
   });
 
-  it('leaves a persisted climblist source untouched on read', async () => {
-    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store');
-    const queue = [makeQueueItem('a')];
-    const source = { ...makeSuggestionSource(3, 1), playlistUuid: 'climblist' };
-    await setStoredQueueSnapshot({ queue, currentClimbQueueItem: queue[0], playlistSuggestionSource: source });
+  it('restores a stamped native snapshot only to its owner', async () => {
+    const store = await import('../queue-snapshot-store');
+    const owner = { userId: 'a', authSessionId: '' };
+    await store.setStoredQueueSnapshot(
+      { queue: [makeQueueItem('a')], currentClimbQueueItem: null, playlistSuggestionSource: null },
+      owner,
+    );
+    expect((await store.getStoredQueueSnapshot(owner))?.queue[0].uuid).toBe('a');
+    expect(await store.getStoredQueueSnapshot({ userId: 'b', authSessionId: '' })).toBeNull();
+    expect(await store.getStoredQueueSnapshot(null)).toBeNull();
+  });
 
-    const stored = await getStoredQueueSnapshot();
-    expect(stored?.playlistSuggestionSource).toEqual(source);
-    expect(stored?.queue).toEqual(queue);
+  it('adopts sanitized anonymous references without exposing legacy content', async () => {
+    const store = await import('../queue-snapshot-store');
+    await store.setStoredQueueSnapshot({
+      queue: [makeQueueItem('a')],
+      currentClimbQueueItem: null,
+      playlistSuggestionSource: null,
+    });
+    const owner = { userId: 'a', authSessionId: '' };
+    const snapshot = await store.getStoredQueueSnapshot(owner);
+    expect(snapshot?.queue[0].climb.name).toBe('');
+    await store.setStoredQueueSnapshot(snapshot!, owner);
+    expect(await store.getStoredQueueSnapshot({ userId: 'b', authSessionId: '' })).toBeNull();
   });
 });
 
@@ -199,5 +254,24 @@ describe('queue snapshot removal ordering', () => {
     finishSave?.();
     await Promise.all([saving, clearing]);
     expect(await getStoredQueueSnapshot()).toBeNull();
+  });
+});
+
+describe('privacy invalidation without logical queue deletion', () => {
+  it('fences a pending write while retaining the saved queue references', async () => {
+    const store = await import('../queue-snapshot-store');
+    await store.setStoredQueueSnapshot({
+      queue: [makeQueueItem('keep')],
+      currentClimbQueueItem: null,
+      playlistSuggestionSource: null,
+    });
+    const oldGeneration = store.getQueueSnapshotGeneration();
+    store.invalidateStoredQueueSnapshot();
+    await store.setStoredQueueSnapshot(
+      { queue: [makeQueueItem('stale')], currentClimbQueueItem: null, playlistSuggestionSource: null },
+      undefined,
+      oldGeneration,
+    );
+    expect((await store.getStoredQueueSnapshot())?.queue.map((item) => item.uuid)).toEqual(['keep']);
   });
 });

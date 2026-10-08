@@ -1,3 +1,5 @@
+import { boardSessionPrivacyResolvers } from './shared/board-session-privacy';
+import { privacyQueries, notifyingPrivacyMutations, privacyProfileFields, privacySubscriptions } from './privacy';
 import { notificationDeviceMutations } from './social/notification-devices';
 // eslint-disable-next-line import/no-named-as-default -- `graphql-type-json` exports both default and named `GraphQLJSON`; default is the canonical scalar.
 import GraphQLJSON from 'graphql-type-json';
@@ -93,6 +95,7 @@ export const resolvers = {
 
   // Root operation types
   Query: {
+    ...privacyQueries,
     ...sessionQueries,
     ...liveSessionQueries,
     ...boardQueries,
@@ -147,6 +150,7 @@ export const resolvers = {
   },
 
   Mutation: {
+    ...notifyingPrivacyMutations,
     ...sessionMutations,
     ...holdOutlineMutations,
     ...sprayWallMutations,
@@ -190,6 +194,7 @@ export const resolvers = {
   },
 
   Subscription: {
+    ...privacySubscriptions,
     ...sessionSubscriptions,
     ...queueSubscriptions,
     ...controllerSubscriptions,
@@ -199,6 +204,9 @@ export const resolvers = {
     ...boardPresenceResolvers.Subscription,
     ...climbStatsSubscriptions,
   },
+
+  ...boardSessionPrivacyResolvers,
+  PublicUserProfile: privacyProfileFields,
 
   // Field-level resolvers
   ClimbSearchResult: climbFieldResolvers,

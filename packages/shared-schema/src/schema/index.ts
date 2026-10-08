@@ -1,3 +1,4 @@
+import { privacyTypeDefs } from './privacy';
 import { scalarTypeDefs } from './scalars';
 import { climbTypeDefs } from './climb';
 import { queueTypeDefs } from './queue';
@@ -36,6 +37,7 @@ import { sprayDetectionTypeDefs } from './spray-detection';
 import { userDataExportTypeDefs } from './user-data-export';
 
 export const typeDefs = [
+  privacyTypeDefs,
   scalarTypeDefs,
   climbTypeDefs,
   queueTypeDefs,

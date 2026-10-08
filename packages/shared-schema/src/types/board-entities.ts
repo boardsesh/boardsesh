@@ -1,11 +1,12 @@
 import type { SprayWallImportProgress } from '../spray-detection';
+import type { PrivacyLocationAudience, PrivacyResourceAudience } from '../generated/types';
 
 // Board entity types
 
 export type UserBoard = {
   uuid: string;
   slug: string;
-  ownerId: string;
+  ownerId: string | null;
   ownerDisplayName?: string;
   ownerAvatarUrl?: string;
   boardType: string;
@@ -66,7 +67,7 @@ export type UserBoardConnection = {
 };
 
 export type BoardLeaderboardEntry = {
-  userId: string;
+  userId: string | null;
   userDisplayName?: string;
   userAvatarUrl?: string;
   rank: number;
@@ -86,6 +87,8 @@ export type BoardLeaderboard = {
 };
 
 export type CreateBoardInput = {
+  audience?: PrivacyResourceAudience;
+  locationAudience?: PrivacyLocationAudience;
   boardType: string;
   layoutId: number;
   sizeId: number;

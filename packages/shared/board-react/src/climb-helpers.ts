@@ -1,10 +1,11 @@
 import { GraphQLOperationError, isClimbDuplicateExtension } from '@boardsesh/graphql-client';
-import type { BoardName, SaveClimbInput } from '@boardsesh/shared-schema';
+import type { BoardName, SaveClimbInput, PrivacyPublicationInput } from '@boardsesh/shared-schema';
 
 // Mirrors the subset of web's `SaveClimbOptions` (aurora types) that the save
 // mutation actually maps. snake_case is preserved so form payloads can be
 // forwarded unchanged from existing create-climb forms on both platforms.
 export type SaveClimbOptions = {
+  privacy?: PrivacyPublicationInput;
   layout_id: number;
   /**
    * The board size the climb was painted on. Optional because the Aurora forms
@@ -72,6 +73,7 @@ export type UpdateClimbResponse = {
 export function toSaveClimbInput(boardName: BoardName, options: SaveClimbOptions): SaveClimbInput {
   return {
     boardType: boardName,
+    ...(options.privacy ? { privacy: options.privacy } : {}),
     layoutId: options.layout_id,
     sizeId: options.size_id,
     name: options.name,

@@ -1,3 +1,4 @@
+import { canReadSocialEntity } from '../shared/activity-privacy';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -13,6 +14,7 @@ export async function validateEntityExists(
   entityId: string,
   viewerUserId?: string,
 ): Promise<void> {
+  if (!(await canReadSocialEntity(entityType, entityId, viewerUserId))) throw new Error('Content not available');
   switch (entityType) {
     case 'climb': {
       const [climb] = await db

@@ -1,11 +1,12 @@
+import { GraphQLError } from 'graphql';
 import type { ConnectionContext, BoardQueuePreview } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
-import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
-import { requireReadablePresenceBoard } from './shared';
+import { requireReadablePresenceBoard, isBoardAnonReadable } from './shared';
 import { sprayStreamGate } from '../climbs/spray-read-access';
-import { getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
+import { buildEmptyBoardQueuePreview, getBoardQueuePreviewSnapshot } from '../../../services/board-queue-preview';
 
 export const boardQueuePreviewQueries = {
   /**
@@ -53,10 +54,8 @@ export const boardQueuePreviewSubscriptions = {
    * channel subscribe before we compute the seed snapshot, so a producer
    * publish landing during setup queues in the iterator instead of being
    * dropped (pub/sub has no replay — the seed is the only initial state a
-   * kiosk gets). A publish that lands between the subscribe and the seed
-   * compute can deliver a snapshot slightly older than the seed right after
-   * it; accepted — snapshots are self-contained and the next mutation's
-   * publish converges (same accepted race as boardNowPlaying's backfill).
+   * kiosk gets). Buffered publishes only trigger a fresh authorized snapshot;
+   * their copied content cannot bypass a restriction applied after publication.
    */
   boardQueuePreview: {
     subscribe: withSubscriptionCleanup(async function* (
@@ -78,7 +77,7 @@ export const boardQueuePreviewSubscriptions = {
       const boardKey = String(boardId);
 
       const asyncIterable = await lifetime.own(
-        createEagerAsyncIterator<BoardQueuePreview>(
+        createPrivacyAwareIterator<BoardQueuePreview>(
           (push) => pubsub.subscribeBoardQueuePreview(boardKey, push),
           `boardQueuePreview:${boardId}`,
         ),
@@ -97,8 +96,26 @@ export const boardQueuePreviewSubscriptions = {
         }
 
         for (let result = await eagerIterator.next(); !result.done; result = await eagerIterator.next()) {
-          if (gate && !(await gate())) return;
-          yield { boardQueuePreview: result.value };
+          // Withdraw the last snapshot before closing: older kiosks do not
+          // subscribe to privacyChanged and retain their last rendered queue.
+          try {
+            await requireReadablePresenceBoard(boardId, ctx.userId);
+          } catch (error) {
+            if (error instanceof GraphQLError && ['NOT_FOUND', 'FORBIDDEN'].includes(String(error.extensions.code))) {
+              yield { boardQueuePreview: buildEmptyBoardQueuePreview(boardId) };
+              return;
+            }
+            throw error;
+          }
+          if (!(await isBoardAnonReadable(boardId)) || (gate && !(await gate()))) {
+            yield { boardQueuePreview: buildEmptyBoardQueuePreview(boardId) };
+            return;
+          }
+          // A buffered event may predate a restriction or board hand-off.
+          // Treat it as a wake-up, never as permission to deliver its copy.
+          // Empty snapshots also clear older clients when a session is withdrawn.
+          const refreshed = await getBoardQueuePreviewSnapshot(boardId);
+          yield { boardQueuePreview: refreshed ?? buildEmptyBoardQueuePreview(boardId) };
         }
       } finally {
         // The lifetime wrapper closes immediately on disconnect, even during

@@ -298,7 +298,9 @@ export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<Layou
   const rows = await sqlClient<{ board_type: string; layout_id: number }[]>`
     SELECT DISTINCT board_type, layout_id
     FROM board_climbs
-    WHERE ${boardCondition} AND ${layoutCondition}
+    WHERE ${boardCondition} AND ${layoutCondition} AND user_id IS NULL AND NOT is_boardsesh_authored
+      AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+        WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
     ORDER BY board_type, layout_id
   `;
   // Filtered here rather than in the SQL predicate so an explicit
@@ -319,12 +321,18 @@ function assertSafeColumns(columns: readonly string[]): void {
 // Scope predicates matching the resolvers exactly. `now()` is transaction-start
 // time and constant across the whole export transaction, so the streamed rows and
 // the watermark query below apply the identical stability boundary.
-const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND updated_at < now() - make_interval(secs => $3)`;
+const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND user_id IS NULL AND NOT is_boardsesh_authored
+    AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+      WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = board_climbs.uuid)
+    AND updated_at < now() - make_interval(secs => $3)`;
 
 const STATS_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
+        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
+        AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+          WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
     )
     AND updated_at < now() - make_interval(secs => $3)`;
 
@@ -336,6 +344,9 @@ const GRADES_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_grades.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
+        AND bc.user_id IS NULL AND NOT bc.is_boardsesh_authored
+        AND NOT EXISTS (SELECT 1 FROM content_privacy snapshot_privacy
+          WHERE snapshot_privacy.entity_type = 'climb' AND snapshot_privacy.entity_id = bc.uuid)
     )
     AND computed_at < now() - make_interval(secs => $3)`;
 
@@ -450,7 +461,7 @@ async function hasSmallLayoutDeltaAtThreshold(params: {
   return rows.length >= threshold;
 }
 
-type RefreshReason = SnapshotTableName | SnapshotGradesTableName | 'missing-entry' | 'stale-schema';
+type RefreshReason = SnapshotTableName | SnapshotGradesTableName | 'missing-entry' | 'stale-schema' | 'stale-privacy';
 
 /** Return the first reason this pair needs a new artifact, or null when current. */
 async function layoutRefreshReason(params: {
@@ -462,6 +473,8 @@ async function layoutRefreshReason(params: {
 }): Promise<RefreshReason | null> {
   const { sqlClient, pair, previousEntry, threshold, includeGrades } = params;
   if (!previousEntry) return 'missing-entry';
+  if (previousEntry.privacyVersion !== 1 || (previousEntry.grades && previousEntry.grades.privacyVersion !== 1))
+    return 'stale-privacy';
   if (previousEntry.schemaVersion < LATEST_SCHEMA_VERSION) return 'stale-schema';
   if (includeGrades && previousEntry.grades && previousEntry.grades.schemaVersion < LATEST_SCHEMA_VERSION) {
     return 'stale-schema';
@@ -1150,6 +1163,7 @@ function buildManifestEntry(
           contentEncoding: gradesUpload.contentEncoding,
           builtAt: result.builtAt,
           schemaVersion: result.schemaVersion,
+          privacyVersion: 1,
           tables: { board_climb_grades: result.grades.tables.board_climb_grades },
         }
       : undefined;
@@ -1163,6 +1177,7 @@ function buildManifestEntry(
     contentEncoding: upload.contentEncoding,
     builtAt: result.builtAt,
     schemaVersion: result.schemaVersion,
+    privacyVersion: 1,
     tables: {
       board_climbs: result.tables.board_climbs,
       board_climb_stats: result.tables.board_climb_stats,
@@ -1195,6 +1210,8 @@ export function mergeManifestEntries(params: {
 
   const merged = new Map<string, SnapshotManifestEntry>();
   for (const previousEntry of params.previousEntries) {
+    if (previousEntry.privacyVersion !== 1 || (previousEntry.grades && previousEntry.grades.privacyVersion !== 1))
+      continue;
     const entryKey = pairKey(previousEntry.boardType, previousEntry.layoutId);
     // Layout vanished from the DB — drop its entry (unfiltered runs only). A
     // failed layout is still discovered, so its previous entry survives here.

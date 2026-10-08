@@ -4,6 +4,8 @@ import { CLIMB_URLS_PER_SHARD, MAX_SHARD_BYTES, pagedShardByteBudget } from '../
 import type { SitemapItem } from '../entries';
 
 vi.mock('server-only', () => ({}));
+// Authorization is exercised separately in privacy-filter.test.ts.
+vi.mock('../privacy-filter', () => ({ filterPublicSitemapItems: async <Item>(items: Item[]) => items }));
 
 const KILTER_CONFIG: PopularBoardConfig = {
   boardType: 'kilter',
@@ -158,7 +160,7 @@ describe('the paged climbs shard', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('application/xml; charset=utf-8');
-    expect(response.headers.get('cache-control')).toBe('public, s-maxage=21600, stale-while-revalidate=604800');
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(await response.text()).toContain('<urlset');
   });
 

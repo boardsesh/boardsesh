@@ -91,6 +91,13 @@ Uploads happen in two paths, both through
   Authorization is one atomic query: creator-or-has-tick via an EXISTS
   subquery on the session SELECT.
 
+Auto-sync finds participants from their durable session ticks and builds a
+separate authorized summary for each recipient. Private accounts and sessions
+still export to their own opted-in integration; an anonymous feed or another
+participant's permissions cannot remove them from the export list. Current
+session access is checked before each export, and protected climb details are
+only included when that recipient can read them.
+
 The two paths can race (the share button appears seconds after auto-sync
 starts), so dedupe is a **claim row**, not a SELECT check:
 `integration_exports` has a unique index on

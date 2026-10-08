@@ -129,9 +129,9 @@ describe('syncClimbStats — scoping via correlated board_climbs EXISTS', () => 
     await insertStat({ boardType: 'kilter', climbUuid: 'k-orphan', angle: 40 });
   });
 
-  it('returns all stats for the board type when unscoped (back-compat)', async () => {
+  it('returns authorized catalog stats when unscoped, excluding missing climbs', async () => {
     const result = await callSyncClimbStats({ boardType: 'kilter' });
-    expect(statKeysOf(result)).toEqual(['k-l1-s5@40', 'k-l1-s7@40', 'k-l2-s5@40', 'k-orphan@40']);
+    expect(statKeysOf(result)).toEqual(['k-l1-s5@40', 'k-l1-s7@40', 'k-l2-s5@40']);
   });
 
   it('scopes stats to the climbs of the given layout', async () => {

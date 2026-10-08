@@ -23,6 +23,8 @@ import { logger } from '../utils/logger';
 // ---------------------------------------------------------------------------
 
 const participantRows = vi.fn<() => Array<{ sessionId: string }>>(() => []);
+const requireResourceAccessMock = vi.fn(async () => undefined);
+vi.mock('../services/privacy', () => ({ requireResourceAccess: requireResourceAccessMock }));
 const existingTokenRows = vi.fn<() => Array<{ sessionId: string }>>(() => []);
 const countRows = vi.fn<() => Array<{ value: number }>>(() => [{ value: 0 }]);
 const oldestTokenRows = vi.fn<() => Array<{ token: string }>>(() => []);
@@ -156,6 +158,7 @@ function anonCtx(): ConnectionContext {
 
 function resetAllMocks(): void {
   vi.clearAllMocks();
+  requireResourceAccessMock.mockReset().mockResolvedValue(undefined);
   __resetPushTokenRateLimitForTests();
   participantRows.mockReturnValue([{ sessionId: SESSION_ID }]);
   existingTokenRows.mockReturnValue([]);
@@ -177,6 +180,19 @@ afterAll(() => {
 describe('registerActivityPushToken', () => {
   beforeEach(() => {
     resetAllMocks();
+  });
+
+  it('rejects a former participant whose current session access was revoked', async () => {
+    requireResourceAccessMock.mockRejectedValueOnce(new Error('Not found'));
+    await expect(
+      pushTokenMutations.registerActivityPushToken(
+        undefined,
+        { sessionId: SESSION_ID, token: VALID_TOKEN },
+        authedCtx(),
+      ),
+    ).rejects.toThrow('Not found');
+    expect(requireResourceAccessMock).toHaveBeenCalledWith('session', SESSION_ID, USER_ID);
+    expect(insertReturn.values).not.toHaveBeenCalled();
   });
 
   it('rejects unauthenticated callers', async () => {

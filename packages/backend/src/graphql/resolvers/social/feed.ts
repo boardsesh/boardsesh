@@ -5,6 +5,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { sprayTickClimbExistsCondition } from '../shared/spray-tick-visibility';
+import { tickPrivacyCondition } from '../shared/activity-privacy';
 import { requireAuthenticated, applyRateLimit, validateInput, resolveClimbNoMatch } from '../shared/helpers';
 import {
   difficultyNameWithFallbackExpr,
@@ -113,6 +114,7 @@ export const socialFeedQueries = {
       .where(
         and(
           inArray(dbSchema.boardseshTicks.userId, followedUserIds),
+          tickPrivacyCondition(myUserId),
           // A community-hidden climb drops out of the feed along with every tick
           // logged on it — the feed is a browse surface. `IS NOT TRUE` rather
           // than `= false` because `board_climbs` is LEFT JOINed here: a tick
@@ -255,6 +257,7 @@ export const socialFeedQueries = {
             ctx?.userId,
           ),
           sprayTickClimbExistsCondition(ctx?.userId),
+          tickPrivacyCondition(ctx?.isAuthenticated ? ctx.userId : null),
         ),
       )
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt))

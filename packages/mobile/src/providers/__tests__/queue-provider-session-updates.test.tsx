@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getQueueBoardKey, isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
+import { invalidatePrivacyQueries } from '../../lib/privacy/privacy-cache';
 
 // The preview-first gate is flagged. Default it ON here so these tests exercise
 // the roster logic rather than the rollout switch; one test below flips it off
@@ -85,6 +86,7 @@ const sessionStore = vi.hoisted(() => ({
 }));
 
 const queueSnapshotStore = vi.hoisted(() => ({
+  invalidateStoredQueueSnapshot: vi.fn(),
   getStoredQueueSnapshot: vi.fn(async () => null),
   getQueueSnapshotGeneration: () => 0,
   setStoredQueueSnapshot: vi.fn(async () => {}),
@@ -2389,7 +2391,7 @@ describe('QueueProvider mutation-failure resync', () => {
     if (!snapshot) throw new Error('queue snapshot was not captured');
 
     act(() => {
-      snapshot.addToQueue(makeQueueItem('local-add', 'climb-local'));
+      void snapshot.addToQueue(makeQueueItem('local-add', 'climb-local'));
     });
 
     await waitFor(() => {
@@ -3640,6 +3642,50 @@ describe('QueueProvider mutation-failure resync', () => {
       expect(sentQueue.map((item) => item.uuid)).toEqual(['bulk-one', 'bulk-two', 'peer-first', 'peer-last']);
       expect(sentCurrent?.uuid).toBe('peer-first');
     });
+  });
+
+  it('discards a queued Undo when privacy changes while its removal is still in flight', async () => {
+    const snapshots: Snapshot[] = [];
+    routeHttpRequest(queueStateResponse([]));
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      void prepared.addToQueue(makeQueueItem('private-item', 'withdrawn-climb'));
+    });
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['private-item']));
+
+    let finishRemoval!: () => void;
+    const removal = new Promise<void>((resolve) => (finishRemoval = resolve));
+    queueMutations.removeQueueItem.mockImplementation(async () => removal);
+    queueMutations.removeQueueItem.mockClear();
+    queueMutations.setQueue.mockClear();
+    const beforeRemove = snapshots.at(-1);
+    if (!beforeRemove) throw new Error('queue snapshot was not captured');
+    act(() => beforeRemove.removeQueueItems(['private-item']));
+    await waitFor(() => expect(snapshots.at(-1)?.state.queue).toEqual([]));
+    await waitFor(() => expect(queueMutations.removeQueueItem).toHaveBeenCalledOnce());
+
+    const afterRemove = snapshots.at(-1);
+    if (!afterRemove) throw new Error('queue snapshot was not captured');
+    act(() => {
+      afterRemove.restoreQueueItems(
+        { queue: beforeRemove.state.queue, currentClimbQueueItem: null },
+        new Set(['private-item']),
+        afterRemove.undoScope,
+      );
+    });
+    await act(async () => {
+      await invalidatePrivacyQueries(testQueryClient);
+      finishRemoval();
+      await removal;
+    });
+
+    expect(snapshots.at(-1)?.undoScope).not.toBe(afterRemove.undoScope);
+    expect(snapshots.at(-1)?.state.queue).toEqual([]);
+    expect(queueMutations.setQueue).not.toHaveBeenCalled();
   });
 
   // N concurrent removes contend on the backend's single-key CAS (three retries,

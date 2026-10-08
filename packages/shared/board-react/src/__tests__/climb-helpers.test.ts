@@ -32,6 +32,12 @@ describe('toSaveClimbInput', () => {
     });
   });
 
+  it('keeps privacy consent in the create request so publication is atomic', () => {
+    expect(
+      toSaveClimbInput('kilter', { ...options, privacy: { audience: 'followers', privacyRevision: 3 } }).privacy,
+    ).toEqual({ audience: 'followers', privacyRevision: 3 });
+  });
+
   it('carries the board size a Woods climb was painted on', () => {
     // Woods numbers each size's holds from its own origin, so the same frames
     // string means different holds on the 8x10 and the 12x12.

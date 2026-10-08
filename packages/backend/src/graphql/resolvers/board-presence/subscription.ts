@@ -1,7 +1,8 @@
+import { redactBoardEvent } from '../../../services/board-session-privacy';
 import type { ConnectionContext, BoardPresenceEvent } from '@boardsesh/shared-schema';
 import { pubsub } from '../../../pubsub/index';
 import { kilterLiveSync } from '../../../services/kilter-live-sync';
-import { createEagerAsyncIterator } from '../shared/async-iterators';
+import { createPrivacyAwareIterator } from '../shared/privacy-iterator';
 import { withSubscriptionCleanup } from '../shared/managed-subscription';
 import { applyRateLimit } from '../shared/helpers';
 import { requireAnonReadableBoard } from './shared';
@@ -61,7 +62,7 @@ export const boardPresenceSubscriptions = {
       const boardKey = String(boardId);
 
       const asyncIterator = await lifetime.own(
-        createEagerAsyncIterator<BoardPresenceEvent>(async (push) => {
+        createPrivacyAwareIterator<BoardPresenceEvent>(async (push) => {
           const unsubscribe = await pubsub.subscribeBoardPresence(boardKey, push);
           // The managed lifetime closes late setup and idle subscriptions.
           // Keep the polling lease in the same owned source as its listener.
@@ -82,8 +83,9 @@ export const boardPresenceSubscriptions = {
       // page — no error naming a wall the caller may no longer see.
       const gate = sprayStreamGate(presenceBoard?.boardType, presenceBoard?.layoutId, ctx.userId);
       for await (const event of asyncIterator) {
+        await requireAnonReadableBoard(boardId, ctx.userId);
         if (gate && !(await gate())) return;
-        yield { boardNowPlaying: event };
+        if (event !== null) yield { boardNowPlaying: await redactBoardEvent(event, boardId, ctx.userId) };
       }
     }),
   },

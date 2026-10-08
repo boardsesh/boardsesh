@@ -136,9 +136,25 @@ function buildArtifact(filePath: string, shape: ArtifactShape): void {
         (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    meta.run('board_climbs', WATERMARK_AT, WATERMARK_SEQ, shape.climbs.length, BUILT_AT, LATEST_SCHEMA_VERSION, 1);
-    meta.run('board_climb_stats', WATERMARK_AT, WATERMARK_SEQ, shape.stats.length, BUILT_AT, LATEST_SCHEMA_VERSION, 1);
-    meta.run('sync_deletions', WATERMARK_AT, '0', 0, BUILT_AT, LATEST_SCHEMA_VERSION, 1);
+    meta.run(
+      'board_climbs',
+      WATERMARK_AT,
+      WATERMARK_SEQ,
+      shape.climbs.length,
+      BUILT_AT,
+      LATEST_SCHEMA_VERSION,
+      SNAPSHOT_MANIFEST_FORMAT_VERSION,
+    );
+    meta.run(
+      'board_climb_stats',
+      WATERMARK_AT,
+      WATERMARK_SEQ,
+      shape.stats.length,
+      BUILT_AT,
+      LATEST_SCHEMA_VERSION,
+      SNAPSHOT_MANIFEST_FORMAT_VERSION,
+    );
+    meta.run('sync_deletions', WATERMARK_AT, '0', 0, BUILT_AT, LATEST_SCHEMA_VERSION, SNAPSHOT_MANIFEST_FORMAT_VERSION);
   } finally {
     artifact.close();
   }

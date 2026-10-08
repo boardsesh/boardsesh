@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useSyncExternalStore } from 'react';
 import { useWindowDimensions } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import type { Climb } from '@boardsesh/queue';
@@ -9,6 +9,7 @@ import {
   NATIVE_BOTTOM_ACCESSORY_SCREEN_GUTTER,
 } from '../../theme/layout';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
+import { getPrivacyRevocationGeneration, subscribeToPrivacyRevocations } from '../../lib/privacy/privacy-cache';
 
 /**
  * Hold the last shown climb while this component stays mounted. The mount itself
@@ -22,9 +23,19 @@ import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
  * construction: the host unmount is the single thing that finally clears it.
  */
 function useRetainedAccessoryClimb(currentClimb: Climb | null): Climb | null {
-  const lastClimbRef = useRef<Climb | null>(currentClimb);
-  if (currentClimb) lastClimbRef.current = currentClimb;
-  return currentClimb ?? lastClimbRef.current;
+  const generation = useSyncExternalStore(
+    subscribeToPrivacyRevocations,
+    getPrivacyRevocationGeneration,
+    getPrivacyRevocationGeneration,
+  );
+  const retained = useRef({ generation, climb: currentClimb, withdrawn: null as Climb | null });
+  if (retained.current.generation !== generation) {
+    // The provider may not have painted its cleared queue yet. Do not adopt
+    // that same old object again while the sticky UIKit host remains mounted.
+    retained.current = { generation, climb: null, withdrawn: currentClimb };
+  }
+  if (currentClimb && currentClimb !== retained.current.withdrawn) retained.current.climb = currentClimb;
+  return retained.current.climb;
 }
 
 /**

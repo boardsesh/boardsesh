@@ -3,7 +3,7 @@ import { type ConnectionContext, type Climb, type BoardName, SUPPORTED_BOARDS } 
 import { isSizeScopedBoard, parseSetIds } from '@boardsesh/board-config';
 import { db } from '../../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
+import { contentVisibilityCondition, sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
 import { validateInput } from '../../shared/helpers';
 import { GetPlaylistClimbsInputSchema } from '../../../../validation/schemas';
 import { UNIFIED_TABLES, isValidBoardName } from '../../../../db/queries/util/table-select';
@@ -43,6 +43,7 @@ function buildSpecificBoardClimbJoinConditions(
 ) {
   const climbJoinConditions = [
     eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
+    contentVisibilityCondition('climb', tables.climbs.uuid, tables.climbs.userId, viewerUserId),
     eq(tables.climbs.boardType, boardName),
     // A PUBLIC playlist would otherwise substitute its own visibility for the wall's:
     // add a private spray wall's climb to one and anybody who can open the playlist
@@ -219,6 +220,7 @@ async function fetchAllBoardsClimbs(
         // 20-row page arriving with 17) and the count inflated by rows the caller
         // can never reach. The specific-board path applies it in the join for the
         // same reason.
+        contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
         sprayClimbVisibilityCondition(
           { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
           viewerUserId,
@@ -244,6 +246,7 @@ async function fetchAllBoardsClimbs(
         // 20-row page arriving with 17) and the count inflated by rows the caller
         // can never reach. The specific-board path applies it in the join for the
         // same reason.
+        contentVisibilityCondition('climb', dbSchema.boardClimbs.uuid, dbSchema.boardClimbs.userId, viewerUserId),
         sprayClimbVisibilityCondition(
           { boardType: tables.climbs.boardType, layoutId: tables.climbs.layoutId },
           viewerUserId,

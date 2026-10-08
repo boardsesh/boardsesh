@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boardSessions, boardseshTicks, boardBetaLinks, userFollows, users } from '@boardsesh/db/schema';
+import { boardClimbs, boardSessions, boardseshTicks, boardBetaLinks, userFollows, users } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { getSessionFeed } from '../graphql/resolvers/social/session-feed';
@@ -36,6 +36,18 @@ describe('Crew session snapshot enrichment', () => {
         difficulty: later ? 25 : 16,
         climbedAt: later ? '2026-09-01T13:00:00Z' : '2026-09-01T10:00:00Z',
       }));
+      await db.insert(boardClimbs).values(
+        tickRows.map((tick) => ({
+          uuid: tick.climbUuid,
+          boardType: tick.boardType,
+          layoutId: 1,
+          name: tick.climbUuid,
+          setterUsername: 'snapshot-setter',
+          frames: 'p1080r12',
+          isDraft: false,
+          isListed: true,
+        })),
+      );
       await db.insert(boardseshTicks).values(tickRows);
       await db.insert(boardBetaLinks).values(
         tickRows.map((tick) => ({

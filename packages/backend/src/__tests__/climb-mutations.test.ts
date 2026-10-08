@@ -1582,6 +1582,7 @@ describe('climb mutations', () => {
         {
           uuid: 'existing-uuid',
           name: 'Already There',
+          can_view_details: true,
           ascensionist_count: 12,
           signature: '1:STARTING,13:HAND,25:FINISH',
         },

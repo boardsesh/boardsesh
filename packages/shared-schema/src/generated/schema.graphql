@@ -1,3 +1,131 @@
+enum PrivacyAudience {
+  public
+  followers
+  only_me
+}
+enum PrivacyResourceAudience {
+  public
+  unlisted
+  followers
+  invite_only
+  only_me
+}
+enum PrivacyLocationAudience {
+  public
+  followers
+  members
+  only_me
+}
+enum PrivacyResourceKind {
+  board
+  session
+}
+enum PrivacyContentType {
+  tick
+  session
+  comment
+  climb
+  playlist
+  beta
+}
+enum PrivacyGrantStatus {
+  pending
+  approved
+  revoked
+}
+input PrivacyPublicationInput {
+  audience: PrivacyAudience!
+  privacyRevision: Int!
+}
+type PrivacySettings {
+  isPrivate: Boolean!
+  privacyRevision: Int!
+  privacyOnboardingVersion: Int!
+  defaultSessionAudience: PrivacyResourceAudience!
+  enabled: Boolean!
+}
+input UpdatePrivacySettingsInput {
+  isPrivate: Boolean
+  defaultSessionAudience: PrivacyResourceAudience
+  privacyOnboardingVersion: Int
+}
+type PrivacyFollowRequest {
+  requesterId: ID!
+  recipientId: ID!
+  createdAt: String!
+  displayName: String
+  avatarUrl: String
+}
+type PrivacyRelationship {
+  userId: ID!
+  isPrivate: Boolean!
+  isFollowing: Boolean!
+  requestPending: Boolean!
+}
+type PrivacyContentAudience {
+  audience: PrivacyAudience!
+  isExplicit: Boolean!
+  canEdit: Boolean!
+}
+input SetContentAudienceInput {
+  entityType: PrivacyContentType!
+  entityId: ID!
+  audience: PrivacyAudience!
+  privacyRevision: Int!
+}
+type ResourcePrivacySettings {
+  kind: PrivacyResourceKind!
+  resourceId: ID!
+  ownerId: ID
+  audience: PrivacyResourceAudience!
+  locationAudience: PrivacyLocationAudience!
+  inheritFollowers: Boolean!
+  revision: Int!
+}
+input UpdateResourcePrivacyInput {
+  kind: PrivacyResourceKind!
+  resourceId: ID!
+  audience: PrivacyResourceAudience!
+  locationAudience: PrivacyLocationAudience
+  inheritFollowers: Boolean
+}
+type PrivacyResourceGrant {
+  displayName: String
+  avatarUrl: String
+  userId: ID!
+  status: PrivacyGrantStatus!
+  invitedBy: ID
+}
+extend type PublicUserProfile {
+  isPrivate: Boolean!
+  canViewActivity: Boolean!
+}
+extend type Subscription {
+  privacyChanged: Boolean!
+}
+extend type Query {
+  privacySettings: PrivacySettings!
+  incomingFollowRequests: [PrivacyFollowRequest!]!
+  privacyRelationship(userId: ID!): PrivacyRelationship!
+  contentAudience(entityType: PrivacyContentType!, entityId: ID!): PrivacyContentAudience!
+  resourcePrivacy(kind: PrivacyResourceKind!, resourceId: ID!): ResourcePrivacySettings
+  resourceAccessRequests(kind: PrivacyResourceKind!, resourceId: ID!): [PrivacyResourceGrant!]!
+}
+extend type Mutation {
+  updatePrivacySettings(input: UpdatePrivacySettingsInput!): PrivacySettings!
+  requestFollow(userId: ID!): PrivacyRelationship!
+  cancelFollowRequest(userId: ID!): Boolean!
+  approveFollowRequest(userId: ID!): Boolean!
+  declineFollowRequest(userId: ID!): Boolean!
+  removeFollower(userId: ID!): Boolean!
+  setContentAudience(input: SetContentAudienceInput!): Boolean!
+  updateResourcePrivacy(input: UpdateResourcePrivacyInput!): ResourcePrivacySettings!
+  requestResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!): Boolean!
+  approveResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
+  revokeResourceAccess(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
+  inviteResourceMember(kind: PrivacyResourceKind!, resourceId: ID!, userId: ID!): Boolean!
+}
+
 """
 Arbitrary JSON data
 """
@@ -638,6 +766,7 @@ type DiscoverableSession {
 Input for creating a new climbing session.
 """
 input CreateSessionInput {
+  audience: PrivacyResourceAudience
   "Board configuration path (e.g., 'kilter/1/1/1,2/40')"
   boardPath: String!
   "GPS latitude for session discovery"
@@ -710,7 +839,7 @@ Participant stats in a session summary.
 """
 type SessionParticipant {
   "User ID"
-  userId: String!
+  userId: String
   "Display name"
   displayName: String
   "Avatar URL"
@@ -1343,6 +1472,7 @@ type Tick {
 Input for recording a climb attempt.
 """
 input SaveTickInput {
+  privacy: PrivacyPublicationInput
   "Optional client-generated UUID for offline idempotent replay"
   uuid: ID
   "Board type"
@@ -1390,6 +1520,7 @@ Input for updating an existing tick.
 All fields are optional — only provided fields are updated.
 """
 input UpdateTickInput {
+  privacy: PrivacyPublicationInput
   "Result of the attempt"
   status: TickStatus
   "Number of attempts"
@@ -1434,6 +1565,7 @@ type BoardTickCount {
 Input for attaching an Instagram or TikTok video as beta for a climb.
 """
 input AttachBetaLinkInput {
+  privacy: PrivacyPublicationInput
   "Board type"
   boardType: String!
   "Climb UUID"
@@ -2356,6 +2488,7 @@ type PlaylistClimb {
 Input for creating a playlist.
 """
 input CreatePlaylistInput {
+  privacy: PrivacyPublicationInput
   "Optional client-generated UUID for offline idempotent replay"
   uuid: ID
   "Board type"
@@ -2376,6 +2509,7 @@ input CreatePlaylistInput {
 Input for updating a playlist.
 """
 input UpdatePlaylistInput {
+  privacy: PrivacyPublicationInput
   "Playlist ID to update"
   playlistId: ID!
   "New name"
@@ -2857,7 +2991,7 @@ type UserBoard {
   "URL slug for this board"
   slug: String!
   "Owner user ID"
-  ownerId: ID!
+  ownerId: ID
   "Owner display name"
   ownerDisplayName: String
   "Owner avatar URL"
@@ -2977,7 +3111,7 @@ A leaderboard entry for a board.
 """
 type BoardLeaderboardEntry {
   "User ID"
-  userId: ID!
+  userId: ID
   "Display name"
   userDisplayName: String
   "Avatar URL"
@@ -3016,6 +3150,8 @@ type BoardLeaderboard {
 Input for creating a board.
 """
 input CreateBoardInput {
+  audience: PrivacyResourceAudience
+  locationAudience: PrivacyLocationAudience
   "Board type"
   boardType: String!
   "Layout ID"
@@ -4619,7 +4755,7 @@ type Proposal {
   climbUuid: String!
   boardType: String!
   angle: Int
-  proposerId: ID!
+  proposerId: ID
   proposerDisplayName: String
   proposerAvatarUrl: String
   type: ProposalType!
@@ -5223,6 +5359,7 @@ type VoteSummary {
 Input for adding a comment.
 """
 input AddCommentInput {
+  privacy: PrivacyPublicationInput
   "Entity type to comment on"
   entityType: SocialEntityType!
   "Entity ID to comment on"
@@ -5237,6 +5374,7 @@ input AddCommentInput {
 Input for updating a comment.
 """
 input UpdateCommentInput {
+  privacy: PrivacyPublicationInput
   "UUID of the comment to update"
   commentUuid: ID!
   "New body text"
@@ -5392,6 +5530,7 @@ type NewClimbCreatedEvent {
 }
 
 input SaveClimbInput {
+  privacy: PrivacyPublicationInput
   boardType: String!
   layoutId: Int!
   name: String!
@@ -5443,6 +5582,7 @@ enum MoonBoardMethod {
 }
 
 input SaveMoonBoardClimbInput {
+  privacy: PrivacyPublicationInput
   boardType: String!
   layoutId: Int!
   name: String!
@@ -5474,6 +5614,7 @@ updated by its setter within 24 hours of its first publish, on every board,
 spray walls included. The edit is made in place; no revision is recorded.
 """
 input UpdateClimbInput {
+  privacy: PrivacyPublicationInput
   uuid: ID!
   boardType: String!
   name: String
@@ -9977,7 +10118,7 @@ board. Results are ordered by each climber's latest successful tick.
 """
 type BoardClimbRecentSender {
   "Boardsesh user id, for linking the avatar to their profile"
-  userId: ID!
+  userId: ID
   "Profile display name, falling back to the auth-account name"
   displayName: String
   "Profile avatar URL, falling back to the auth-account image"
@@ -10077,7 +10218,7 @@ type BoardPresenceHardestSend {
   "Grade name (e.g. V6 / 7A+)"
   grade: String!
   "Boardsesh user id of the climber"
-  sentByUserId: String!
+  sentByUserId: String
   "Display name of the climber"
   sentByDisplayName: String
   "Avatar URL of the climber"

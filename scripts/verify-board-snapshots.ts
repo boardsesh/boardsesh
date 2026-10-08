@@ -14,6 +14,7 @@ import { CATALOG_SNAPSHOT_TABLES } from '../packages/db/src/catalog-snapshot';
 import { ARTIFACT_SCHEMA_VERSION } from '../packages/shared/offline-sync/src/db/migrations';
 import {
   parseSnapshotManifest,
+  SNAPSHOT_MANIFEST_FORMAT_VERSION,
   type SnapshotManifest,
   type SnapshotTableStats,
 } from '../packages/shared/offline-sync/src/sync/snapshot-manifest';
@@ -359,7 +360,7 @@ export function verifySqlite(
       const expected = artifact.tables[tableName];
       requireCondition(meta && expected, `${artifact.key}: missing metadata for ${tableName}`);
       requireCondition(
-        meta.format_version === 1 &&
+        meta.format_version === (catalog ? 1 : SNAPSHOT_MANIFEST_FORMAT_VERSION) &&
           meta.schema_version === artifact.schemaVersion &&
           timestampMicros(String(meta.built_at)) === timestampMicros(artifact.builtAt),
         `${artifact.key}: format/schema/build mismatch for ${tableName}`,
@@ -410,7 +411,7 @@ export function verifySqlite(
           allowedTables.includes('board_climbs') &&
           replay.row_count === 0 &&
           String(replay.watermark_sync_seq) === '0' &&
-          replay.format_version === 1 &&
+          replay.format_version === SNAPSHOT_MANIFEST_FORMAT_VERSION &&
           replay.schema_version === artifact.schemaVersion &&
           timestampMicros(String(replay.built_at)) === timestampMicros(artifact.builtAt) &&
           timestampMicros(String(replay.watermark_updated_at)) <= timestampMicros(artifact.builtAt),

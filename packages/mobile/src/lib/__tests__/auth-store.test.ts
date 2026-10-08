@@ -65,6 +65,38 @@ describe('auth-store', () => {
     }
   });
 
+  it('waits for the new credential before rebuilding a privacy snapshot', async () => {
+    const store = await secureStore();
+    const { storeTokens, getAuthToken } = await import('../auth-store');
+    const { subscribeToPrivacyRevocations } = await import('../privacy/privacy-cache');
+    await storeTokens('old-jwt', 'old-refresh', '2026-10-01T00:00:00.000Z');
+    // Complete the migration before this transition, matching a running app.
+    await getAuthToken();
+    let release!: () => void;
+    const heldWrite = new Promise<void>((resolve) => (release = resolve));
+    store.setItemAsync.mockImplementationOnce(() => heldWrite);
+    let rebuiltToken: Promise<string | null> | undefined;
+    const unsubscribe = subscribeToPrivacyRevocations(() => {
+      rebuiltToken = getAuthToken();
+    });
+    try {
+      const login = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
+      let settled = false;
+      void rebuiltToken?.then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      release();
+      await login;
+      await expect(rebuiltToken).resolves.toBe('new-jwt');
+    } finally {
+      release();
+      unsubscribe();
+    }
+  });
+
   it('notifies credential owners synchronously before clearing stored credentials', async () => {
     const store = await secureStore();
     const {

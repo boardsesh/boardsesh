@@ -112,6 +112,7 @@ export function useSaveTick(boardName: BoardName | null) {
           boardUuid: options.boardUuid,
           ...(options.boardId != null ? { boardId: options.boardId } : {}),
           videoUrl: options.videoUrl,
+          privacy: options.privacy,
         },
       };
 

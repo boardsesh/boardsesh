@@ -1,4 +1,5 @@
 import { PressableSurface } from '../PressableSurface';
+import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { memo, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 // The play drawer's outer scroll is a react-native-gesture-handler ScrollView, so
@@ -118,7 +119,10 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
           snapToAlignment="start"
         >
           {links.map((link) => (
-            <BetaVideoCard key={betaLinkIdentity(link.link)} link={link} />
+            <View key={betaLinkIdentity(link.link)}>
+              <BetaVideoCard link={link} />
+              <ContentAudienceControl entityType="beta" entityId={`${boardName}:${link.climb_uuid}:${link.link}`} />
+            </View>
           ))}
         </ScrollView>
       )}

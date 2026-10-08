@@ -1,8 +1,12 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 
 const {
   selectMock,
+  authorizeCandidatesMock,
+  canViewActivityMock,
   recentSelectMock,
   offsetSpy,
   executeMock,
@@ -20,6 +24,8 @@ const {
   redisIncrMock,
 } = vi.hoisted(() => ({
   selectMock: vi.fn(),
+  authorizeCandidatesMock: vi.fn(),
+  canViewActivityMock: vi.fn(),
   recentSelectMock: vi.fn(),
   offsetSpy: vi.fn(),
   executeMock: vi.fn(),
@@ -63,6 +69,9 @@ vi.mock('../db/client', () => ({
           }),
         };
       }
+      if ('boardType' in selection && 'climbUuid' in selection && 'link' in selection) {
+        return { from: () => ({ where: authorizeCandidatesMock }) };
+      }
       if ('climbName' in selection || 'instagramUrl' in selection) {
         const chain = {
           from: () => chain,
@@ -92,6 +101,25 @@ vi.mock('../db/client', () => ({
     }),
   },
 }));
+
+vi.mock('../services/privacy', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/privacy')>()),
+  canViewUserActivity: canViewActivityMock,
+}));
+
+// This harness models the fresh authorization read separately from the cache.
+// Real SQL audience behavior is exercised in privacy-read-boundaries.test.ts.
+beforeEach(() => {
+  canViewActivityMock.mockReset().mockResolvedValue(true);
+  authorizeCandidatesMock.mockReset().mockImplementation((predicate: SQL) => {
+    const { params } = new PgDialect().sqlToQuery(predicate);
+    const rows: Array<{ boardType: unknown; climbUuid: unknown; link: unknown }> = [];
+    for (let index = 0; ['kilter', 'tension', 'moonboard', 'spray'].includes(String(params[index])); index += 3) {
+      rows.push({ boardType: params[index], climbUuid: params[index + 1], link: params[index + 2] });
+    }
+    return Promise.resolve(rows);
+  });
+});
 
 vi.mock('../lib/instagram-meta', async () => {
   const shared = await vi.importActual<typeof import('@boardsesh/shared-schema')>('@boardsesh/shared-schema');
@@ -427,7 +455,7 @@ describe('recentBetaLinks resolver', () => {
     expect(result[0]?.betaLink.link).toBe('https://www.instagram.com/reel/ABC/');
   });
 
-  it('tolerates a null climbName (beta link arrived before the climb synced)', async () => {
+  it('tolerates a null name on an authorized climb', async () => {
     executeMock.mockReturnValueOnce([cteRow({}, null)]);
 
     const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 20 }, ANON_CTX);
@@ -540,6 +568,12 @@ describe('userBetaLinks resolver', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ climbName: 'Project', betaLink: { foreignUsername: 'someoneelse' } });
+  });
+
+  it('withholds profile beta before looking up links when account access is denied', async () => {
+    canViewActivityMock.mockResolvedValueOnce(false);
+    expect(await betaLinkQueries.userBetaLinks(undefined, { userId: 'private-owner' }, ANON_CTX)).toEqual([]);
+    expect(recentSelectMock).not.toHaveBeenCalled();
   });
 
   it('falls back gracefully when the user has no profile row at all', async () => {
@@ -677,6 +711,20 @@ describe('recentBetaLinks Redis cache', () => {
     expect(result[0]?.betaLink.link).toBe('https://www.instagram.com/p/CACHE/');
     expect(executeMock).not.toHaveBeenCalled();
     expect(redisSetMock).not.toHaveBeenCalled();
+  });
+
+  it('reauthorizes cached candidates and replaces a newly private clip', async () => {
+    redisGetMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(JSON.stringify([cachedRow({ link: 'https://www.instagram.com/p/PRIVATE/' })]));
+    authorizeCandidatesMock.mockResolvedValueOnce([]);
+    executeMock.mockReturnValueOnce([cachedRow({ link: 'https://www.instagram.com/p/PUBLIC/' })]);
+
+    const result = await betaLinkQueries.recentBetaLinks(undefined, { limit: 1 }, ANON_CTX);
+
+    expect(result.map((entry) => entry.betaLink.link)).toEqual(['https://www.instagram.com/p/PUBLIC/']);
+    expect(authorizeCandidatesMock).toHaveBeenCalledTimes(1);
+    expect(executeMock).toHaveBeenCalledTimes(1);
   });
 
   it('runs the CTE on miss and writes the result back to Redis', async () => {

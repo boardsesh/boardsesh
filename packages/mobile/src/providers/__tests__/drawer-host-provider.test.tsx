@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from '@testing-library/react';
-import { createElement, useEffect, type ReactNode } from 'react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -183,7 +183,16 @@ vi.mock('../../components/play-drawer/QueueSheet', async () => {
 });
 
 vi.mock('../../components/LogAscentSheet', () => ({
-  LogAscentSheet: () => createElement('div', { 'data-log-ascent': 'true' }),
+  LogAscentSheet: ({ climbUuid, climbName }: { climbUuid: string; climbName?: string }) => {
+    const [note, setNote] = useState('');
+    return createElement('input', {
+      'data-log-ascent': 'true',
+      'data-climb-name': climbName ?? '',
+      'data-climb-uuid': climbUuid,
+      value: note,
+      onChange: (event: ChangeEvent<HTMLInputElement>) => setNote(event.target.value),
+    });
+  },
 }));
 vi.mock('../../components/climb-actions/ClimbReactionMenu', () => ({
   ClimbReactionMenu: (props: Record<string, unknown>) => {
@@ -355,6 +364,7 @@ import {
 } from '../drawer-host-provider';
 import type { BoardSheetClimbAction } from '../../components/board-presence/BoardSheet';
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
+import { invalidatePrivacySnapshots } from '../../lib/privacy/privacy-cache';
 
 const routerPush = router.push as unknown as ReturnType<typeof vi.fn>;
 const routerNavigate = router.navigate as unknown as ReturnType<typeof vi.fn>;
@@ -403,6 +413,59 @@ function Probe({ onHost, onRoute }: { onHost: (host: HostValue) => void; onRoute
 function renderHost(onHost: (host: HostValue) => void, onRoute: (route: RouteValue) => void = () => {}) {
   return render(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute })));
 }
+
+describe('drawer copied content withdrawal', () => {
+  it('preserves an unsaved tick note while hiding copied metadata, then isolates a credential change', async () => {
+    const hosts: HostValue[] = [];
+    const view = renderHost((host) => hosts.push(host));
+    const target = {
+      climbUuid: 'private',
+      climbName: 'Private climb',
+      boardName: 'kilter',
+      angle: 40,
+      isMirror: false,
+      isBenchmark: false,
+      baseAscensionistCount: 12,
+    };
+    act(() => hosts.at(-1)!.openLogAscent(target));
+    const input = view.container.querySelector('[data-log-ascent]') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'My unsaved note' } });
+    act(() => invalidatePrivacySnapshots());
+    expect(view.container.querySelector('[data-log-ascent]')).toBe(input);
+    expect(input.value).toBe('My unsaved note');
+    expect(input.getAttribute('data-climb-uuid')).toBe('private');
+    expect(input.getAttribute('data-climb-name')).toBe('');
+    act(() => invalidatePrivacySnapshots('credential'));
+    expect(view.container.querySelector('[data-log-ascent]')).toBeNull();
+    act(() => hosts.at(-1)!.openLogAscent(target));
+    expect((view.container.querySelector('[data-log-ascent]') as HTMLInputElement).value).toBe('');
+  });
+
+  it.each(['compact', 'regular'] as const)(
+    'masks %s targets and rejects an opener captured before revocation',
+    async (widthClass) => {
+      layoutCfg.widthClass = widthClass;
+      const hosts: HostValue[] = [];
+      const routes: RouteValue[] = [];
+      renderHost(
+        (host) => hosts.push(host),
+        (route) => routes.push(route),
+      );
+      const currentTarget = () =>
+        widthClass === 'compact' ? routes.at(-1)?.playTarget : hosts.at(-1)?.playDrawerPaneProps?.openTarget;
+      const climb = makeQueueItem('private').climb as Climb;
+      const staleOpen = hosts.at(-1)!.openPlayDrawer;
+      act(() => staleOpen(climb));
+      await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('private'));
+      act(() => invalidatePrivacySnapshots());
+      await waitFor(() => expect(currentTarget()).toBeNull());
+      act(() => staleOpen(climb));
+      expect(currentTarget()).toBeNull();
+      act(() => hosts.at(-1)!.openPlayDrawer(makeQueueItem('fresh').climb as Climb));
+      await waitFor(() => expect(currentTarget()?.climb.uuid).toBe('fresh'));
+    },
+  );
+});
 
 beforeEach(() => {
   activeBoard.stored = { ...activeBoard.defaultStored };
@@ -779,6 +842,7 @@ describe('DrawerHostProvider spray-wall sheet wiring', () => {
       photoExpiresAt: '2099-01-01T00:00:00.000Z',
       holds: [],
     });
+    if (!sprayWall.ownerId) throw new Error('Expected the fixture to have an owner');
     viewerProfile.current = { id: sprayWall.ownerId };
   });
 

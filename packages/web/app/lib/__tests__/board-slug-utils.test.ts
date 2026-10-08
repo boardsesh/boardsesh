@@ -67,7 +67,7 @@ describe('resolveBoardBySlug', () => {
     getServerAuthTokenMock.mockResolvedValue(undefined);
   });
 
-  it('shares public anonymous lookups without sending an authorization header', async () => {
+  it('reauthorizes public anonymous lookups without sending an authorization header', async () => {
     fetchMock.mockResolvedValueOnce(graphQlResponse(publicBoard));
 
     await expect(resolveBoardBySlug(publicBoard.slug)).resolves.toEqual(publicBoard);
@@ -77,9 +77,9 @@ describe('resolveBoardBySlug', () => {
     expect(new Headers(requestInit?.headers).get('Authorization')).toBeNull();
     expect(requestInit).toMatchObject({
       method: 'POST',
-      next: { revalidate: 300 },
+      cache: 'no-store',
     });
-    expect(requestInit).not.toHaveProperty('cache');
+    expect(requestInit).not.toHaveProperty('next');
   });
 
   it('keeps an anonymously masked private lookup as not found', async () => {
@@ -89,7 +89,7 @@ describe('resolveBoardBySlug', () => {
 
     const [, requestInit] = fetchMock.mock.calls[0];
     expect(new Headers(requestInit?.headers).get('Authorization')).toBeNull();
-    expect(requestInit).toMatchObject({ next: { revalidate: 300 } });
+    expect(requestInit).toMatchObject({ cache: 'no-store' });
   });
 
   it('forwards the session token for private boards and disables shared caching', async () => {
@@ -115,7 +115,7 @@ describe('resolveBoardBySlug', () => {
     const [, authenticatedRequest] = fetchMock.mock.calls[0];
     const [, anonymousRequest] = fetchMock.mock.calls[1];
     expect(authenticatedRequest).toMatchObject({ cache: 'no-store' });
-    expect(anonymousRequest).toMatchObject({ next: { revalidate: 300 } });
+    expect(anonymousRequest).toMatchObject({ cache: 'no-store' });
     expect(new Headers(anonymousRequest?.headers).get('Authorization')).toBeNull();
   });
 
@@ -225,7 +225,7 @@ describe('resolveBoardBySlug', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [, anonymousRequest] = fetchMock.mock.calls[0];
     const [, authenticatedRequest] = fetchMock.mock.calls[1];
-    expect(anonymousRequest).toMatchObject({ next: { revalidate: 300 } });
+    expect(anonymousRequest).toMatchObject({ cache: 'no-store' });
     expect(new Headers(anonymousRequest?.headers).get('Authorization')).toBeNull();
     expect(authenticatedRequest).toMatchObject({ cache: 'no-store' });
     expect(authenticatedRequest).not.toHaveProperty('next');

@@ -3,8 +3,13 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import * as dbSchema from '@boardsesh/db/schema';
 import { validateInput } from '../../shared/helpers';
 import { SearchPlaylistsInputSchema } from '../../../../validation/schemas';
-import { formatPublicPlaylist } from '../helpers/enrichment';
-import { PUBLIC_PLAYLIST_GROUP_BY, publicPlaylistBaseQuery, publicPlaylistCountQuery } from './discover';
+import { formatPublicPlaylist, playlistVisibilityCondition } from '../helpers/enrichment';
+import {
+  PUBLIC_PLAYLIST_GROUP_BY,
+  publicPlaylistBaseQuery,
+  publicPlaylistCountQuery,
+  playlistCreatorVisibilityCondition,
+} from './discover';
 import { escapeLikePattern } from '../../../../utils/like-pattern';
 
 /**
@@ -21,7 +26,10 @@ export const searchPlaylists = async (
   const limit = validatedInput.limit ?? 20;
   const offset = validatedInput.offset ?? 0;
 
-  const conditions = [eq(dbSchema.playlists.isPublic, true)];
+  const conditions = [
+    eq(dbSchema.playlists.isPublic, true),
+    playlistVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
+  ];
 
   // Name filter (required, ILIKE partial match)
   const escapedQuery = escapeLikePattern(validatedInput.query);
@@ -31,7 +39,11 @@ export const searchPlaylists = async (
     conditions.push(eq(dbSchema.playlists.boardType, validatedInput.boardType));
   }
 
-  const whereClause = and(...conditions, eq(dbSchema.playlistOwnership.role, 'owner'));
+  const whereClause = and(
+    ...conditions,
+    eq(dbSchema.playlistOwnership.role, 'owner'),
+    playlistCreatorVisibilityCondition(_ctx.isAuthenticated ? _ctx.userId : null),
+  );
 
   const countResult = await publicPlaylistCountQuery().where(whereClause);
   const totalCount = countResult[0]?.count || 0;

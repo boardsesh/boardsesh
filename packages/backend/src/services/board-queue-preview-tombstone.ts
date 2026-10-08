@@ -1,3 +1,4 @@
+import { canAccessResource } from './privacy';
 import { eq } from 'drizzle-orm';
 import type { BoardQueuePreview } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -32,7 +33,9 @@ export async function readBoardSessionPreviewGate(sessionId: string): Promise<Bo
     .from(dbSchema.boardSessions)
     .where(eq(dbSchema.boardSessions.id, sessionId))
     .limit(1);
-  return session ?? null;
+  return session
+    ? { ...session, isPublic: session.isPublic && (await canAccessResource('session', sessionId, null)) }
+    : null;
 }
 
 /** Whether this session may be previewed on public displays (gate 2). */

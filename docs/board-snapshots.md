@@ -1698,3 +1698,29 @@ fleet was never regressed while transparent decode was unverified:
 
 **Rollback**: point the seven workflows back at `v1` (identity is still published nightly) — a one-commit
 revert, no export change needed.
+
+## Account privacy and snapshot rollout
+
+Public artifacts now contain only imported climbs with `user_id IS NULL`, their
+stats and grades, and imported beta without an account/tick/board association.
+Numeric aggregate stats still include every eligible tick. Manufacturer FA names
+remain intact; Boardsesh-owned climb FA is served by the authenticated live API.
+New manifests stamp `privacyVersion: 1` on layout and grades artifacts and use
+`formatVersion: 2` (including SQLite `snapshot_meta.format_version`). The URL
+namespace stays unchanged so installed format-1 clients see an unsupported
+contract and use their existing paged-sync fallback without an app update. They
+must not import the filtered dataset with their old high-watermark logic: that
+would permanently skip older authorized authored rows. The separate reference
+catalog manifest retains its own format version. Old entries
+are rebuilt and excluded from manifest merges until rebuilt. Clients reject older
+artifacts and replay live scope sync from epoch after import so the snapshot
+watermark cannot skip older authorized authored climbs. This temporarily duplicates
+reference downloads; a separate authored-content cursor can optimize it later.
+
+Before enabling `BOARDSESH_PRIVACY_ENABLED`, regenerate every artifact and remove or
+expire previously published layout, grades and catalog artifacts plus CDN copies.
+Removing a manifest entry does not revoke its immutable URL. Existing downloaded
+copies cannot be recalled from third-party consumers. Storage deletion requires
+operator authorization; code deployment alone does not complete this rollout gate.
+Policy reads use the primary database. Replicas must not make privacy decisions
+unless a verified replication watermark proves the latest revocation is visible.

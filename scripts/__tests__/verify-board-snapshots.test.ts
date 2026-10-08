@@ -67,12 +67,20 @@ async function sqliteFixture(kind: 'main' | 'grades' | 'catalog'): Promise<Buffe
     }
     database
       .prepare('INSERT INTO snapshot_meta VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(tableName, 1, BUILD_TIME, kind === 'catalog' ? 1 : ARTIFACT_SCHEMA_VERSION, 1, WATERMARK_TIME, SEQUENCE);
+      .run(
+        tableName,
+        1,
+        BUILD_TIME,
+        kind === 'catalog' ? 1 : ARTIFACT_SCHEMA_VERSION,
+        kind === 'catalog' ? 1 : 2,
+        WATERMARK_TIME,
+        SEQUENCE,
+      );
   }
   if (kind === 'main')
     database
       .prepare('INSERT INTO snapshot_meta VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('sync_deletions', 0, BUILD_TIME, ARTIFACT_SCHEMA_VERSION, 1, WATERMARK_TIME, '0');
+      .run('sync_deletions', 0, BUILD_TIME, ARTIFACT_SCHEMA_VERSION, 2, WATERMARK_TIME, '0');
   database.close();
   return readFile(filePath);
 }
@@ -129,7 +137,7 @@ async function fixture() {
   } as SnapshotManifestEntry;
   const catalogArtifact = artifact('board-snapshots/v1-catalog', catalog, 'catalog');
   const manifest = (entry: SnapshotManifestEntry): SnapshotManifest => ({
-    formatVersion: 1,
+    formatVersion: 2,
     generatedAt: BUILD_TIME,
     entries: [entry],
   });

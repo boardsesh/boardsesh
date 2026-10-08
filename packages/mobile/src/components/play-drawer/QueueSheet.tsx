@@ -21,6 +21,9 @@ import {
 import { useTheme } from '../../providers/theme-provider';
 import { hapticWarning } from '../../lib/haptics';
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
+import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
+import { usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
+import { sanitizeQueueSnapshot } from '../../lib/queue-privacy';
 import { UndoSnackbar } from '../UndoSnackbar';
 import { brandColors } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -36,6 +39,7 @@ type PendingQueueUndo = {
   kind: 'cleared' | 'removed';
   /** The session the removal happened in; the offer dies with it. */
   scope: string;
+  privacyGeneration: number;
   before: QueueContentSnapshot;
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   removedUuids: ReadonlySet<string>;
@@ -109,7 +113,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // in the sheet, not a root portal: the native sheet would cover a portal.
   const [pendingUndo, setPendingUndo] = useState<PendingQueueUndo | null>(null);
   const undoNonceRef = useRef(0);
-  // Session, board and account changes retire the offer, including solo mode.
+  // Session, board, account and privacy changes retire the offer, including solo mode.
   // Otherwise Undo would write the prior queue into the new climbing context.
   useEffect(() => {
     setPendingUndo((pending) => (pending && pending.scope !== undoScope ? null : pending));
@@ -123,9 +127,9 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // buildQueueListModel on every queue nav elsewhere; the visible sheet tracks live.
   // Derive-during-render (compiler-safe) — no ref writes, no effect lag.
   const activeOrPresented = isActive || isPresented;
-  const [snapshot, setSnapshot] = useState(liveQueueData);
+  const [snapshot, setSnapshot] = usePrivacyScopedState(liveQueueData, sanitizeQueueSnapshot);
   if (activeOrPresented && snapshot !== liveQueueData) setSnapshot(liveQueueData);
-  const { queue, currentClimbQueueItem } = snapshot;
+  const { queue, currentClimbQueueItem } = snapshot ?? sanitizeQueueSnapshot(liveQueueData);
 
   const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
 
@@ -215,6 +219,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
         nonce: undoNonceRef.current,
         kind,
         scope: undoScope,
+        privacyGeneration: getPrivacyRevocationGeneration(),
         before,
         playlistSuggestionSource,
         removedUuids,
@@ -246,7 +251,12 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // The provider composes the restore when the removal lane finishes. Crew
   // additions, removals and reorders made during that wait stay in the payload.
   const handleUndo = useCallback(() => {
-    if (!pendingUndo || pendingUndo.scope !== undoScope) return;
+    if (
+      !pendingUndo ||
+      pendingUndo.scope !== undoScope ||
+      pendingUndo.privacyGeneration !== getPrivacyRevocationGeneration()
+    )
+      return;
     // Merge at wire-send time, after the removal lane finishes. A peer may
     // change the queue between this tap and then.
     restoreQueueItems(pendingUndo.before, pendingUndo.removedUuids, pendingUndo.scope);

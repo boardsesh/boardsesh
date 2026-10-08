@@ -1,3 +1,4 @@
+import { filterPublicSitemapItems } from './privacy-filter';
 import 'server-only';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { getBoardsShardConfigsOrThrow } from './board-config-source';
@@ -276,7 +277,7 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
       throw emptiness;
     }
 
-    const urls = expandForShard(items, shard.expansion ?? 'all-locales');
+    const urls = expandForShard(await filterPublicSitemapItems(items, id), shard.expansion ?? 'all-locales');
     const overBudget = overBudgetError(shard, urls.length);
     if (overBudget) {
       throw overBudget;
@@ -292,7 +293,7 @@ export async function shardRouteHandler(id: ShardId): Promise<Response> {
     return unavailableResponse();
   }
 
-  return xmlResponse(body);
+  return xmlResponse(body, id === 'playlists' ? 'private, no-store' : undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -522,7 +523,7 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
       );
     }
 
-    const urls = expandForShard(items, shard.expansion);
+    const urls = expandForShard(await filterPublicSitemapItems(items, id), shard.expansion);
     if (urls.length > shard.urlsPerShard) {
       throw new Error(
         `[sitemap] paged shard "${shard.id}" page ${page} built ${urls.length} URLs, past its ${shard.urlsPerShard} budget`,
@@ -551,7 +552,7 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return unavailableResponse();
   }
 
-  return xmlResponse(body, shard.cacheControl, sourceHeaders(shard, source));
+  return xmlResponse(body, 'private, no-store', sourceHeaders(shard, source));
 }
 
 /** `{ 'X-Sitemap-Climbs-Source': 'live' }`, or nothing when the shard reported none. */

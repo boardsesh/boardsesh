@@ -16,6 +16,8 @@ import WS from 'ws';
 import { createGraphQLClient, execute, GraphQLOperationError } from '@boardsesh/graphql-client';
 import { EVENTS_REPLAY } from '@boardsesh/graphql/operations/queue-session';
 import { HeadlessParticipant, startTestBackend, type TestBackend } from './helpers/headless-queue-client';
+import { db } from '../db/client';
+import { boardSessions } from '@boardsesh/db/schema';
 
 describe('Subscription/replay authorization ↔ real backend', () => {
   let backend: TestBackend;
@@ -44,6 +46,8 @@ describe('Subscription/replay authorization ↔ real backend', () => {
   it('denies an unjoined connection with a typed NOT_SESSION_MEMBER extension', async () => {
     // Anonymous client, never joins. eventsReplay runs requireSessionMember,
     // which exhausts its retry backoff (~6.4s) and rejects with the typed code.
+    const sessionId = randomUUID();
+    await db.insert(boardSessions).values({ id: sessionId, boardPath: '/kilter/1/2/3/40', isPublic: true });
     const client = createGraphQLClient({
       url: backend.url,
       connectionName: 'stranger',
@@ -56,7 +60,7 @@ describe('Subscription/replay authorization ↔ real backend', () => {
       try {
         await execute(client, {
           query: EVENTS_REPLAY,
-          variables: { sessionId: randomUUID(), sinceSequence: 0 },
+          variables: { sessionId, sinceSequence: 0 },
         });
       } catch (error) {
         caught = error;

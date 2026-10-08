@@ -1,3 +1,9 @@
+import {
+  canAccessResource,
+  canAccessResourceWithoutLink,
+  getResourcePrivacy,
+  legacyResourceAudience,
+} from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
 import { and, asc, count, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -339,7 +345,24 @@ export async function viewerCanSeeSprayWall(
   userId: string | null | undefined,
 ): Promise<boolean> {
   if (wall.hiddenAt != null) return board.ownerId === userId;
-  if (board.isPublic || board.isUnlisted) return true;
+  if (userId && userId !== board.ownerId) {
+    const [revoked] = await db
+      .select({ userId: dbSchema.resourceGrants.userId })
+      .from(dbSchema.resourceGrants)
+      .where(
+        and(
+          eq(dbSchema.resourceGrants.kind, 'board'),
+          eq(dbSchema.resourceGrants.resourceId, board.uuid),
+          eq(dbSchema.resourceGrants.userId, userId),
+          eq(dbSchema.resourceGrants.status, 'revoked'),
+        ),
+      )
+      .limit(1);
+    if (revoked) return false;
+  }
+  const privacy = await getResourcePrivacy('board', board.uuid);
+  if (privacy?.hasOverride) return canAccessResource('board', board.uuid, userId);
+  if (board.isPublic || board.isUnlisted) return canAccessResource('board', board.uuid, userId);
   return viewerIsWallPrincipal(board, userId);
 }
 
@@ -357,7 +380,24 @@ export async function viewerCanSeeSprayWallByLayout(
   isGymMember: GymMembershipResolver = viewerIsGymMember,
 ): Promise<boolean> {
   if (wall.hiddenAt != null) return board.ownerId === userId;
-  if (board.isPublic) return true;
+  if (userId && userId !== board.ownerId) {
+    const [revoked] = await db
+      .select({ userId: dbSchema.resourceGrants.userId })
+      .from(dbSchema.resourceGrants)
+      .where(
+        and(
+          eq(dbSchema.resourceGrants.kind, 'board'),
+          eq(dbSchema.resourceGrants.resourceId, board.uuid),
+          eq(dbSchema.resourceGrants.userId, userId),
+          eq(dbSchema.resourceGrants.status, 'revoked'),
+        ),
+      )
+      .limit(1);
+    if (revoked) return false;
+  }
+  const privacy = await getResourcePrivacy('board', board.uuid);
+  if (privacy?.hasOverride) return canAccessResourceWithoutLink('board', board.uuid, userId);
+  if (board.isPublic) return canAccessResourceWithoutLink('board', board.uuid, userId);
   return viewerIsWallPrincipal(board, userId, isGymMember);
 }
 
@@ -2621,281 +2661,8 @@ export const sprayWallMutations = {
     return toGraphQLVersion(version);
   },
 
-  updateSprayWall: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
-    requireAuthenticated(ctx);
-    await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'updateSprayWall');
-
-    const validated = validateInput(UpdateSprayWallInputSchema, input, 'input');
-    const loaded = await loadEditableWall(ctx, validated.uuid);
-    const { wall, board } = loaded;
-
-    // Everything else on this mutation follows `requireBoardEditAccess`, which a
-    // gym owner/admin and a community leader also pass. Visibility does not: this
-    // is the switch that puts a photograph of somebody's home on the open web and
-    // starts announcing their climbs, and the person who took the photograph is
-    // the only one who gets to throw it. A gym admin can still edit the gym's
-    // wall — they cannot publish it to the world.
-    //
-    // BOTH halves, not just `isPublic`. `is_unlisted` is not the lesser flag it
-    // looks like: on a wall it is the SHARE LINK, and `viewerCanSeeSprayWall` and
-    // `viewerCanWriteSprayClimbs` both honour a presented uuid the moment it is
-    // set. Guarding only `isPublic` would let a gym admin flip a member's private
-    // wall to unlisted and mint a capability over the photograph of their garage —
-    // quieter than making it public and exactly as far from private.
-    if ((validated.isPublic !== undefined || validated.isUnlisted !== undefined) && board.ownerId !== ctx.userId) {
-      throw new GraphQLError('Only the climber who set this wall up can change who can see it', {
-        extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
-      });
-    }
-
-    // The angle is the one field a published wall cannot change. `board_climb_stats`
-    // is keyed by angle and every tick recorded so far sits at the old one, so
-    // moving it would orphan the wall's whole history — the climbs would still be
-    // there and their grades and ascents would not. Refused rather than cascaded:
-    // rewriting stats across angles is a migration, not an edit.
-    const changingAngle = validated.angle !== undefined && validated.angle !== Number(board.angle);
-    if (changingAngle && wall.currentVersionId != null) {
-      throw new GraphQLError(
-        "A published wall's angle cannot change — its climbs' grades and ascents are recorded at " +
-          `${board.angle}°. Create a new wall at ${validated.angle}° instead.`,
-        { extensions: { code: SPRAY_WALL_CODES.anglePublished, wallAngle: Number(board.angle) } },
-      );
-    }
-
-    // The shared gate: a gym owner/admin, or a nearby public gym the caller is
-    // adding their own wall to. `null` detaches, which needs no permission — you
-    // may always take your own wall off a gym.
-    let nextGymId: number | null | undefined;
-    if (validated.gymUuid !== undefined) {
-      if (validated.gymUuid === null) {
-        nextGymId = null;
-      } else {
-        const gym = await requireBoardGymLinkAccess({
-          ctx,
-          gymUuid: validated.gymUuid,
-          userId: ctx.userId!,
-          boardLatitude: board.latitude,
-          boardLongitude: board.longitude,
-        });
-        nextGymId = gym.id;
-      }
-    }
-
-    const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
-    if (validated.name !== undefined) updates.name = validated.name;
-    if (validated.description !== undefined) updates.description = validated.description;
-    if (validated.isPublic !== undefined) updates.isPublic = validated.isPublic;
-    if (validated.isUnlisted !== undefined) updates.isUnlisted = validated.isUnlisted;
-    if (nextGymId !== undefined) updates.gymId = nextGymId;
-    if (validated.angle !== undefined) updates.angle = validated.angle;
-
-    // Losing public status has to RETRACT what was already fanned out, not just
-    // stop future fan-out — see `purgeSprayWallFeedItems`. `is_unlisted` is not a
-    // trigger: an unlisted wall is still shared, just not listed.
-    //
-    // Whether the wall IS public is decided under the lock, not here: a climb
-    // created between a concurrent update that made the wall public and this one
-    // announces itself (the announce decision is taken under the same lock), and a
-    // `board.isPublic` captured before that would read false and skip the purge,
-    // leaving the announcement in the feed for a wall that is now private.
-    const goingPrivate = validated.isPublic === false;
-
-    // The copy into the public bucket happens BEFORE the transaction, on purpose:
-    // it is a round-trip to object storage, and making it while holding the wall's
-    // advisory lock would block every concurrent hold edit on somebody else's
-    // upload bandwidth. What that order costs is an orphaned object when the
-    // transaction then fails, which the catch below cleans up. The other order
-    // costs a public wall whose photo never got copied, which nothing cleans up.
-    //
-    // A wall that is already public but has no public copy is copied again, on ANY
-    // update that does not make it private — a rename heals it as well as a
-    // re-stated "public". That state is reachable: a publish commits the flag and
-    // makes the copy afterwards, best effort (it retries once, see
-    // `refreshPublicWallPhoto`), so a failed copy leaves a public wall with no
-    // photo to show. A resumed wizard run never re-states public after its
-    // publish, so the heal cannot wait for that one call. Costs one read and one
-    // copy, and only on a wall that is in that broken state.
-    //
-    // Never for an admin-hidden wall (#5797): it reads as private to everybody but
-    // its owner, so its photo has no business in the world-readable bucket even
-    // when the owner flips the flag. Re-checked under the lock below, since a hide
-    // can land while the copy is in flight.
-    const promoting = validated.isPublic === true && !board.isPublic;
-    const healing = board.isPublic && validated.isPublic !== false && wall.publicPhotoKey == null;
-    const promotedPhotoKey =
-      wall.hiddenAt == null && (promoting || healing)
-        ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
-        : null;
-
-    // Objects that outlived the row pointing at them. Deleted AFTER the commit —
-    // never before, or a rolled-back demotion would leave a still-public wall
-    // pointing at bytes that are gone.
-    const orphanedPublicKeys: string[] = [];
-
-    try {
-      await db.transaction(async (tx) => {
-        await lockWallForWrite(tx, wall.id);
-
-        // Re-read the published version under the lock. The check above is a fast
-        // path with a nicer error; a publish landing between it and here would
-        // otherwise let an angle change through on a wall that has just acquired a
-        // published generation — and every tick already recorded sits at the old
-        // angle.
-        if (changingAngle) {
-          const [wallNow] = await tx
-            .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
-            .from(dbSchema.sprayWalls)
-            .where(eq(dbSchema.sprayWalls.id, wall.id))
-            .limit(1);
-          if (wallNow?.currentVersionId != null) {
-            throw new GraphQLError(
-              "A published wall's angle cannot change — its climbs' grades and ascents are recorded at " +
-                `${board.angle}°. Create a new wall at ${validated.angle}° instead.`,
-              { extensions: { code: SPRAY_WALL_CODES.anglePublished, wallAngle: Number(board.angle) } },
-            );
-          }
-        }
-
-        const [boardNow] = await tx
-          .select({
-            isPublic: dbSchema.userBoards.isPublic,
-            deletedAt: dbSchema.userBoards.deletedAt,
-            ownerId: dbSchema.userBoards.ownerId,
-          })
-          .from(dbSchema.userBoards)
-          .where(eq(dbSchema.userBoards.id, board.id))
-          .limit(1);
-        const losingPublic = goingPrivate && boardNow?.isPublic === true;
-
-        const [wallNow] = await tx
-          .select({
-            publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
-            hiddenAt: dbSchema.sprayWalls.hiddenAt,
-            pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
-            pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
-            deletedAt: dbSchema.sprayWalls.deletedAt,
-            resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
-          })
-          .from(dbSchema.sprayWalls)
-          .where(eq(dbSchema.sprayWalls.id, wall.id))
-          .limit(1);
-
-        // A copy was staged outside the lock. Account or wall deletion may have
-        // withdrawn ownership while it was copying; catch below erases the copy.
-        if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
-          throw notFoundError();
-        }
-        if (Object.keys(updates).length > 0) {
-          await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
-        }
-
-        if (losingPublic) {
-          const retracted = await purgeSprayWallFeedItems(tx, wall.layoutId);
-          if (retracted > 0) {
-            logger.info('Spray wall went private; retracted its feed rows', {
-              layoutId: wall.layoutId,
-              feedItemsDeleted: retracted,
-            });
-          }
-        }
-
-        // The catalogue rows carry the wall's name so a psql session can read them,
-        // so a rename has to reach them too or they drift from the wall forever.
-        // Still `is_listed = false` — nothing here makes a wall listable.
-        if (validated.name !== undefined) {
-          await tx
-            .update(dbSchema.boardLayouts)
-            .set({ name: validated.name })
-            .where(and(eq(dbSchema.boardLayouts.boardType, 'spray'), eq(dbSchema.boardLayouts.id, wall.layoutId)));
-          await tx
-            .update(dbSchema.boardProductSizes)
-            .set({ name: validated.name })
-            .where(
-              and(
-                eq(dbSchema.boardProductSizes.boardType, 'spray'),
-                eq(dbSchema.boardProductSizes.id, spraySizeIdForLayout(wall.layoutId)),
-              ),
-            );
-        }
-
-        // The public copy tracks the flag, in the same transaction as the flag:
-        // `public_photo_key` non-null is what makes `publicPhotoUrl` answer, so a
-        // window where the two disagree is a window where a private wall's photo
-        // has a world-readable URL.
-        const wallUpdates: Partial<typeof dbSchema.sprayWalls.$inferInsert> = { updatedAt: new Date() };
-        // An explicit visibility change supersedes what the climber picked at
-        // creation (#5513) — field by field. Each flag this call states replaces
-        // its half of the pending pair; a flag it leaves out keeps the creation-time
-        // choice, exactly as the board row keeps a flag the update does not name.
-        // Without the first half, a wall made private again before its first
-        // publish would be flipped back by that publish; without the second,
-        // `{ isUnlisted: false }` alone would silently drop a pending public.
-        // Only while something is pending: there is nothing to merge into after
-        // the first publish, which clears the pair.
-        //
-        // A reset clone is different: its pair is the OLD wall's audience, parked
-        // when the reset started, and the first publish narrows it to whatever the
-        // old wall has by then. Once the owner states a visibility for the clone
-        // themselves, that is a choice, not a stale copy, so the pair is dropped:
-        // the board row this call writes is what publishes, unnarrowed, whatever
-        // order the owner edited the two walls in.
-        const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
-        const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
-        if (hasPending && statesVisibility && wallNow?.resetFromWallId != null) {
-          wallUpdates.pendingIsPublic = null;
-          wallUpdates.pendingIsUnlisted = null;
-        } else if (hasPending && statesVisibility) {
-          const merged = pendingVisibilityColumns({
-            isPublic: validated.isPublic ?? wallNow?.pendingIsPublic === true,
-            isUnlisted: validated.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
-          });
-          wallUpdates.pendingIsPublic = merged.pendingIsPublic;
-          wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
-        }
-        // A copy made for a HEAL (the board already public, this call not stating
-        // it) has to find the board still public under the lock: a demotion that
-        // committed after the read above would otherwise get a world-readable photo
-        // key written onto a wall that is now private.
-        const stillPublic = validated.isPublic === true || boardNow?.isPublic === true;
-        if (promotedPhotoKey && (wallNow?.hiddenAt != null || !stillPublic)) {
-          // Hidden, or no longer public, while the copy was in flight: the copy is
-          // attached to nothing and goes on the post-commit delete list with the
-          // other orphans.
-          orphanedPublicKeys.push(promotedPhotoKey);
-        } else if (promotedPhotoKey) {
-          wallUpdates.publicPhotoKey = promotedPhotoKey;
-          // A wall promoted twice without an intervening demotion would strand the
-          // first copy; the old key goes on the sweep list rather than being left.
-          if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
-        } else if (losingPublic) {
-          wallUpdates.publicPhotoKey = null;
-          if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
-        }
-
-        await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));
-      });
-    } catch (error) {
-      // The row never took the key, so the copy is unreachable by anything. Drop
-      // it rather than leave a photograph of somebody's wall in a public bucket
-      // because their rename hit a constraint.
-      await deletePublicWallPhoto(promotedPhotoKey);
-      throw error;
-    }
-
-    for (const orphanedKey of orphanedPublicKeys) {
-      await deletePublicWallPhoto(orphanedKey);
-    }
-
-    logger.info('Spray wall updated', {
-      layoutId: wall.layoutId,
-      userId: ctx.userId,
-      fields: Object.keys(updates),
-    });
-
-    const reloaded = await loadWall('uuid', validated.uuid);
-    if (!reloaded) throw notFoundError();
-    return toGraphQLWall(reloaded, ctx.userId, true);
-  },
+  updateSprayWall: (_: unknown, args: { input: unknown }, ctx: ConnectionContext) =>
+    runUpdateSprayWall(args.input, ctx),
 
   /**
    * Store or clear the wall's default look.
@@ -3589,3 +3356,358 @@ export const sprayWallMutations = {
     return true;
   },
 };
+
+type SprayResourcePrivacyUpdate = {
+  audience: 'public' | 'unlisted' | 'followers' | 'invite_only' | 'only_me';
+  locationAudience: 'public' | 'followers' | 'members' | 'only_me';
+  inheritFollowers: boolean;
+};
+/** Shared wall transaction preserves the public-photo lifecycle for new controls. */
+export async function updateSprayResourcePrivacy(
+  boardUuid: string,
+  settings: SprayResourcePrivacyUpdate,
+  ctx: ConnectionContext,
+): Promise<void> {
+  await runUpdateSprayWall(
+    { uuid: boardUuid, isPublic: settings.audience === 'public', isUnlisted: settings.audience === 'unlisted' },
+    ctx,
+    settings,
+  );
+}
+
+function legacySprayAudience(
+  audience: SprayResourcePrivacyUpdate['audience'],
+  board: { isPublic: boolean; isUnlisted: boolean },
+  input: { isPublic?: boolean; isUnlisted?: boolean },
+): SprayResourcePrivacyUpdate['audience'] {
+  const changed =
+    (input.isPublic !== undefined && input.isPublic !== board.isPublic) ||
+    (input.isUnlisted !== undefined && input.isUnlisted !== board.isUnlisted);
+  if (!changed) return audience;
+  const requested =
+    (input.isUnlisted ?? board.isUnlisted) ? 'unlisted' : (input.isPublic ?? board.isPublic) ? 'public' : 'invite_only';
+  return legacyResourceAudience(audience, requested);
+}
+
+async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privacyUpdate?: SprayResourcePrivacyUpdate) {
+  requireAuthenticated(ctx);
+  await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'updateSprayWall');
+
+  const validated = validateInput(UpdateSprayWallInputSchema, input, 'input');
+  const loaded = await loadEditableWall(ctx, validated.uuid);
+  const { wall, board } = loaded;
+
+  // Everything else on this mutation follows `requireBoardEditAccess`, which a
+  // gym owner/admin and a community leader also pass. Visibility does not: this
+  // is the switch that puts a photograph of somebody's home on the open web and
+  // starts announcing their climbs, and the person who took the photograph is
+  // the only one who gets to throw it. A gym admin can still edit the gym's
+  // wall — they cannot publish it to the world.
+  //
+  // BOTH halves, not just `isPublic`. `is_unlisted` is not the lesser flag it
+  // looks like: on a wall it is the SHARE LINK, and `viewerCanSeeSprayWall` and
+  // `viewerCanWriteSprayClimbs` both honour a presented uuid the moment it is
+  // set. Guarding only `isPublic` would let a gym admin flip a member's private
+  // wall to unlisted and mint a capability over the photograph of their garage —
+  // quieter than making it public and exactly as far from private.
+  if ((validated.isPublic !== undefined || validated.isUnlisted !== undefined) && board.ownerId !== ctx.userId) {
+    throw new GraphQLError('Only the climber who set this wall up can change who can see it', {
+      extensions: { code: SPRAY_WALL_CODES.visibilityOwnerOnly },
+    });
+  }
+
+  const policyCondition = and(
+    eq(dbSchema.resourcePrivacy.kind, 'board'),
+    eq(dbSchema.resourcePrivacy.resourceId, board.uuid),
+  );
+  const [initialPolicy] = privacyUpdate
+    ? []
+    : await db.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+  const initialAudience = initialPolicy ? legacySprayAudience(initialPolicy.audience, board, validated) : null;
+  // Clamp before staging any world-readable copy; stale full-form booleans
+  // are not consent to publish a wall protected by the new audience control.
+  const stagedVisibility = initialAudience
+    ? { isPublic: initialAudience === 'public', isUnlisted: initialAudience === 'unlisted' }
+    : validated;
+
+  // The angle is the one field a published wall cannot change. `board_climb_stats`
+  // is keyed by angle and every tick recorded so far sits at the old one, so
+  // moving it would orphan the wall's whole history — the climbs would still be
+  // there and their grades and ascents would not. Refused rather than cascaded:
+  // rewriting stats across angles is a migration, not an edit.
+  const changingAngle = validated.angle !== undefined && validated.angle !== Number(board.angle);
+  if (changingAngle && wall.currentVersionId != null) {
+    throw new GraphQLError(
+      "A published wall's angle cannot change — its climbs' grades and ascents are recorded at " +
+        `${board.angle}°. Create a new wall at ${validated.angle}° instead.`,
+      { extensions: { code: SPRAY_WALL_CODES.anglePublished, wallAngle: Number(board.angle) } },
+    );
+  }
+
+  // The shared gate: a gym owner/admin, or a nearby public gym the caller is
+  // adding their own wall to. `null` detaches, which needs no permission — you
+  // may always take your own wall off a gym.
+  let nextGymId: number | null | undefined;
+  if (validated.gymUuid !== undefined) {
+    if (validated.gymUuid === null) {
+      nextGymId = null;
+    } else {
+      const gym = await requireBoardGymLinkAccess({
+        ctx,
+        gymUuid: validated.gymUuid,
+        userId: ctx.userId!,
+        boardLatitude: board.latitude,
+        boardLongitude: board.longitude,
+      });
+      nextGymId = gym.id;
+    }
+  }
+
+  const updates: Partial<typeof dbSchema.userBoards.$inferInsert> = {};
+  if (validated.name !== undefined) updates.name = validated.name;
+  if (validated.description !== undefined) updates.description = validated.description;
+  if (stagedVisibility.isPublic !== undefined) updates.isPublic = stagedVisibility.isPublic;
+  if (stagedVisibility.isUnlisted !== undefined) updates.isUnlisted = stagedVisibility.isUnlisted;
+  if (nextGymId !== undefined) updates.gymId = nextGymId;
+  if (validated.angle !== undefined) updates.angle = validated.angle;
+  if (privacyUpdate) updates.hideLocation = privacyUpdate.locationAudience !== 'public';
+
+  // Losing public status has to RETRACT what was already fanned out, not just
+  // stop future fan-out — see `purgeSprayWallFeedItems`. `is_unlisted` is not a
+  // trigger: an unlisted wall is still shared, just not listed.
+  //
+  // Whether the wall IS public is decided under the lock, not here: a climb
+  // created between a concurrent update that made the wall public and this one
+  // announces itself (the announce decision is taken under the same lock), and a
+  // `board.isPublic` captured before that would read false and skip the purge,
+  // leaving the announcement in the feed for a wall that is now private.
+
+  // The copy into the public bucket happens BEFORE the transaction, on purpose:
+  // it is a round-trip to object storage, and making it while holding the wall's
+  // advisory lock would block every concurrent hold edit on somebody else's
+  // upload bandwidth. What that order costs is an orphaned object when the
+  // transaction then fails, which the catch below cleans up. The other order
+  // costs a public wall whose photo never got copied, which nothing cleans up.
+  //
+  // A wall that is already public but has no public copy is copied again, on ANY
+  // update that does not make it private — a rename heals it as well as a
+  // re-stated "public". That state is reachable: a publish commits the flag and
+  // makes the copy afterwards, best effort (it retries once, see
+  // `refreshPublicWallPhoto`), so a failed copy leaves a public wall with no
+  // photo to show. A resumed wizard run never re-states public after its
+  // publish, so the heal cannot wait for that one call. Costs one read and one
+  // copy, and only on a wall that is in that broken state.
+  //
+  // Never for an admin-hidden wall (#5797): it reads as private to everybody but
+  // its owner, so its photo has no business in the world-readable bucket even
+  // when the owner flips the flag. Re-checked under the lock below, since a hide
+  // can land while the copy is in flight.
+  const promoting = stagedVisibility.isPublic === true && !board.isPublic;
+  const healing = board.isPublic && stagedVisibility.isPublic !== false && wall.publicPhotoKey == null;
+  const promotedPhotoKey =
+    wall.hiddenAt == null && (promoting || healing)
+      ? await copyWallPhotoToPublicBucket(board.uuid, await publishedPhotoKey(wall))
+      : null;
+
+  // Objects that outlived the row pointing at them. Deleted AFTER the commit —
+  // never before, or a rolled-back demotion would leave a still-public wall
+  // pointing at bytes that are gone.
+  const orphanedPublicKeys: string[] = [];
+
+  try {
+    await db.transaction(async (tx) => {
+      await lockWallForWrite(tx, wall.id);
+
+      // Re-read the published version under the lock. The check above is a fast
+      // path with a nicer error; a publish landing between it and here would
+      // otherwise let an angle change through on a wall that has just acquired a
+      // published generation — and every tick already recorded sits at the old
+      // angle.
+      if (changingAngle) {
+        const [wallNow] = await tx
+          .select({ currentVersionId: dbSchema.sprayWalls.currentVersionId })
+          .from(dbSchema.sprayWalls)
+          .where(eq(dbSchema.sprayWalls.id, wall.id))
+          .limit(1);
+        if (wallNow?.currentVersionId != null) {
+          throw new GraphQLError(
+            "A published wall's angle cannot change — its climbs' grades and ascents are recorded at " +
+              `${board.angle}°. Create a new wall at ${validated.angle}° instead.`,
+            { extensions: { code: SPRAY_WALL_CODES.anglePublished, wallAngle: Number(board.angle) } },
+          );
+        }
+      }
+
+      const [boardNow] = await tx
+        .select({
+          isPublic: dbSchema.userBoards.isPublic,
+          isUnlisted: dbSchema.userBoards.isUnlisted,
+          deletedAt: dbSchema.userBoards.deletedAt,
+          ownerId: dbSchema.userBoards.ownerId,
+        })
+        .from(dbSchema.userBoards)
+        .where(eq(dbSchema.userBoards.id, board.id))
+        .limit(1);
+
+      const [wallNow] = await tx
+        .select({
+          publicPhotoKey: dbSchema.sprayWalls.publicPhotoKey,
+          hiddenAt: dbSchema.sprayWalls.hiddenAt,
+          pendingIsPublic: dbSchema.sprayWalls.pendingIsPublic,
+          pendingIsUnlisted: dbSchema.sprayWalls.pendingIsUnlisted,
+          deletedAt: dbSchema.sprayWalls.deletedAt,
+          resetFromWallId: dbSchema.sprayWalls.resetFromWallId,
+        })
+        .from(dbSchema.sprayWalls)
+        .where(eq(dbSchema.sprayWalls.id, wall.id))
+        .limit(1);
+
+      // A copy was staged outside the lock. Account or wall deletion may have
+      // withdrawn ownership while it was copying; catch below erases the copy.
+      if (!boardNow || !wallNow || boardNow.deletedAt || wallNow.deletedAt || boardNow.ownerId !== board.ownerId) {
+        throw notFoundError();
+      }
+      let effectiveVisibility: { isPublic?: boolean; isUnlisted?: boolean } = validated;
+      if (privacyUpdate) {
+        const settings = {
+          ownerId: boardNow.ownerId,
+          audience: privacyUpdate.audience,
+          locationAudience: privacyUpdate.locationAudience,
+          inheritFollowers: privacyUpdate.inheritFollowers,
+          updatedAt: new Date(),
+        };
+        await tx
+          .insert(dbSchema.resourcePrivacy)
+          .values({ kind: 'board', resourceId: board.uuid, ...settings, revision: 1 })
+          .onConflictDoUpdate({
+            target: [dbSchema.resourcePrivacy.kind, dbSchema.resourcePrivacy.resourceId],
+            set: { ...settings, revision: sql`${dbSchema.resourcePrivacy.revision} + 1` },
+          });
+      } else {
+        // A new restriction may have committed while the photo was copying.
+        // Decide again under the wall lock before attaching that copy or flags.
+        const [policy] = await tx.select().from(dbSchema.resourcePrivacy).where(policyCondition).limit(1);
+        if (policy) {
+          const audience = legacySprayAudience(policy.audience, boardNow, validated);
+          effectiveVisibility = { isPublic: audience === 'public', isUnlisted: audience === 'unlisted' };
+          updates.isPublic = effectiveVisibility.isPublic;
+          updates.isUnlisted = effectiveVisibility.isUnlisted;
+          if (audience !== policy.audience)
+            await tx
+              .update(dbSchema.resourcePrivacy)
+              .set({ audience, revision: sql`${dbSchema.resourcePrivacy.revision} + 1`, updatedAt: new Date() })
+              .where(policyCondition);
+        }
+      }
+      const losingPublic = effectiveVisibility.isPublic === false && boardNow.isPublic;
+      if (Object.keys(updates).length > 0) {
+        await tx.update(dbSchema.userBoards).set(updates).where(eq(dbSchema.userBoards.id, board.id));
+      }
+
+      if (losingPublic) {
+        const retracted = await purgeSprayWallFeedItems(tx, wall.layoutId);
+        if (retracted > 0) {
+          logger.info('Spray wall went private; retracted its feed rows', {
+            layoutId: wall.layoutId,
+            feedItemsDeleted: retracted,
+          });
+        }
+      }
+
+      // The catalogue rows carry the wall's name so a psql session can read them,
+      // so a rename has to reach them too or they drift from the wall forever.
+      // Still `is_listed = false` — nothing here makes a wall listable.
+      if (validated.name !== undefined) {
+        await tx
+          .update(dbSchema.boardLayouts)
+          .set({ name: validated.name })
+          .where(and(eq(dbSchema.boardLayouts.boardType, 'spray'), eq(dbSchema.boardLayouts.id, wall.layoutId)));
+        await tx
+          .update(dbSchema.boardProductSizes)
+          .set({ name: validated.name })
+          .where(
+            and(
+              eq(dbSchema.boardProductSizes.boardType, 'spray'),
+              eq(dbSchema.boardProductSizes.id, spraySizeIdForLayout(wall.layoutId)),
+            ),
+          );
+      }
+
+      // The public copy tracks the flag, in the same transaction as the flag:
+      // `public_photo_key` non-null is what makes `publicPhotoUrl` answer, so a
+      // window where the two disagree is a window where a private wall's photo
+      // has a world-readable URL.
+      const wallUpdates: Partial<typeof dbSchema.sprayWalls.$inferInsert> = { updatedAt: new Date() };
+      // An explicit visibility change supersedes what the climber picked at
+      // creation (#5513) — field by field. Each flag this call states replaces
+      // its half of the pending pair; a flag it leaves out keeps the creation-time
+      // choice, exactly as the board row keeps a flag the update does not name.
+      // Without the first half, a wall made private again before its first
+      // publish would be flipped back by that publish; without the second,
+      // `{ isUnlisted: false }` alone would silently drop a pending public.
+      // Only while something is pending: there is nothing to merge into after
+      // the first publish, which clears the pair.
+      //
+      // A reset clone is different: its pair is the OLD wall's audience, parked
+      // when the reset started, and the first publish narrows it to whatever the
+      // old wall has by then. Once the owner states a visibility for the clone
+      // themselves, that is a choice, not a stale copy, so the pair is dropped:
+      // the board row this call writes is what publishes, unnarrowed, whatever
+      // order the owner edited the two walls in.
+      const hasPending = wallNow?.pendingIsPublic != null || wallNow?.pendingIsUnlisted != null;
+      const statesVisibility = validated.isPublic !== undefined || validated.isUnlisted !== undefined;
+      if (hasPending && statesVisibility && wallNow?.resetFromWallId != null) {
+        wallUpdates.pendingIsPublic = null;
+        wallUpdates.pendingIsUnlisted = null;
+      } else if (hasPending && statesVisibility) {
+        const merged = pendingVisibilityColumns({
+          isPublic: effectiveVisibility.isPublic ?? wallNow?.pendingIsPublic === true,
+          isUnlisted: effectiveVisibility.isUnlisted ?? wallNow?.pendingIsUnlisted === true,
+        });
+        wallUpdates.pendingIsPublic = merged.pendingIsPublic;
+        wallUpdates.pendingIsUnlisted = merged.pendingIsUnlisted;
+      }
+      // A copy made for a HEAL (the board already public, this call not stating
+      // it) has to find the board still public under the lock: a demotion that
+      // committed after the read above would otherwise get a world-readable photo
+      // key written onto a wall that is now private.
+      const stillPublic = effectiveVisibility.isPublic ?? boardNow.isPublic;
+      if (promotedPhotoKey && (wallNow?.hiddenAt != null || !stillPublic)) {
+        // Hidden, or no longer public, while the copy was in flight: the copy is
+        // attached to nothing and goes on the post-commit delete list with the
+        // other orphans.
+        orphanedPublicKeys.push(promotedPhotoKey);
+      } else if (promotedPhotoKey) {
+        wallUpdates.publicPhotoKey = promotedPhotoKey;
+        // A wall promoted twice without an intervening demotion would strand the
+        // first copy; the old key goes on the sweep list rather than being left.
+        if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
+      } else if (losingPublic) {
+        wallUpdates.publicPhotoKey = null;
+        if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
+      }
+
+      await tx.update(dbSchema.sprayWalls).set(wallUpdates).where(eq(dbSchema.sprayWalls.id, wall.id));
+    });
+  } catch (error) {
+    // The row never took the key, so the copy is unreachable by anything. Drop
+    // it rather than leave a photograph of somebody's wall in a public bucket
+    // because their rename hit a constraint.
+    await deletePublicWallPhoto(promotedPhotoKey);
+    throw error;
+  }
+
+  for (const orphanedKey of orphanedPublicKeys) {
+    await deletePublicWallPhoto(orphanedKey);
+  }
+
+  logger.info('Spray wall updated', {
+    layoutId: wall.layoutId,
+    userId: ctx.userId,
+    fields: Object.keys(updates),
+  });
+
+  const reloaded = await loadWall('uuid', validated.uuid);
+  if (!reloaded) throw notFoundError();
+  return toGraphQLWall(reloaded, ctx.userId, true);
+}

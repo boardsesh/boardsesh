@@ -1,24 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { BoardDiscoveryBoard } from '@boardsesh/shared-schema';
 import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
 
 vi.mock('server-only', () => ({}));
 const captureException = vi.hoisted(() => vi.fn());
 vi.mock('@sentry/nextjs', () => ({ captureException }));
-const cacheState = vi.hoisted(() => ({
-  snapshot: null as { boards: BoardDiscoveryBoard[]; fetchedAt: number } | null,
-  options: null as { revalidate: number } | null,
-}));
-vi.mock('next/cache', () => ({
-  unstable_cache: (
-    callback: (...args: unknown[]) => Promise<unknown>,
-    _keys: string[],
-    options: { revalidate: number },
-  ) => {
-    cacheState.options = options;
-    return (...args: unknown[]) => cacheState.snapshot ?? callback(...args);
-  },
-}));
 const executeGraphQLInternal = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/graphql/server-cached-client', () => ({ executeGraphQLInternal }));
 const { getBoardDiscovery } = await import('../server-board-discovery');
@@ -27,7 +12,6 @@ describe('public board discovery snapshots', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-19T00:00:00Z'));
-    cacheState.snapshot = null;
     captureException.mockReset();
     executeGraphQLInternal.mockReset().mockResolvedValue({ boardDiscovery: [discoveryBoard()] });
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -37,14 +21,13 @@ describe('public board discovery snapshots', () => {
     vi.restoreAllMocks();
   });
 
-  it('asks for eight ranked physical boards with a short anonymous cache', async () => {
+  it('asks for eight ranked physical boards with fresh anonymous authorization', async () => {
     expect(await getBoardDiscovery()).toEqual([discoveryBoard()]);
     expect(executeGraphQLInternal).toHaveBeenCalledWith(
       expect.anything(),
       { input: { limit: 8 } },
       expect.any(AbortSignal),
     );
-    expect(cacheState.options?.revalidate).toBe(30);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -57,15 +40,11 @@ describe('public board discovery snapshots', () => {
     ]);
   });
 
-  it('discards indefinitely stale Next cache entries after one minute', async () => {
-    cacheState.snapshot = {
-      boards: [discoveryBoard({ currentClimb: { uuid: 'old', name: 'Old climb', frames: 'p100r42', angle: 40 } })],
-      fetchedAt: Date.now(),
-    };
+  it('reauthorizes a board after its owner withdraws public access', async () => {
     expect(await getBoardDiscovery()).toHaveLength(1);
-    vi.setSystemTime(Date.now() + 60_001);
+    executeGraphQLInternal.mockResolvedValueOnce({ boardDiscovery: [] });
     expect(await getBoardDiscovery()).toEqual([]);
-    expect(executeGraphQLInternal).not.toHaveBeenCalled();
+    expect(executeGraphQLInternal).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a null selected climb null instead of inventing a fallback', async () => {

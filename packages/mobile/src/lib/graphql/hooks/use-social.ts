@@ -1,3 +1,4 @@
+import { REQUEST_FOLLOW, type PrivacyRelationship, type PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 import { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -137,12 +138,23 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
   return useMutation({
     networkMode: 'always',
     mutationFn: async ({ userId, isFollowedByMe }: { userId: string; isFollowedByMe: boolean }) => {
-      return authorFollow.mutateAsync({ kind: 'user', identifier: userId, follow: !isFollowedByMe });
+      const privacy = queryClient.getQueryData<PrivacySettings>(['privacySettings', currentUserId]);
+      if (privacy?.enabled && !isFollowedByMe) {
+        const response = await getHttpClient().request<{ requestFollow: PrivacyRelationship }>(REQUEST_FOLLOW, {
+          userId,
+        });
+        return { queued: false, viewerId: currentUserId, approved: response.requestFollow.isFollowing };
+      }
+      return {
+        ...(await authorFollow.mutateAsync({ kind: 'user', identifier: userId, follow: !isFollowedByMe })),
+        approved: !isFollowedByMe,
+      };
     },
-    onSuccess: async ({ queued, viewerId }, variables) => {
+    onSuccess: async ({ queued, viewerId, approved }, variables) => {
       const { readLocalUserId } = await import('../../local-user-id');
-      if ((await readLocalUserId()) !== viewerId) return;
-      updateUserFollowCaches(queryClient, variables.userId, !variables.isFollowedByMe, viewerId);
+      if (!viewerId || (await readLocalUserId()) !== viewerId) return;
+      updateUserFollowCaches(queryClient, variables.userId, approved, viewerId);
+      void queryClient.invalidateQueries({ queryKey: ['privacyRelationship'] });
       if (queued) return;
       void queryClient.invalidateQueries({ queryKey: ['publicProfile', variables.userId] });
       if (currentUserId) void queryClient.invalidateQueries({ queryKey: ['publicProfile', currentUserId] });

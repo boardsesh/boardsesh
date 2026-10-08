@@ -1,6 +1,15 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq, inArray } from 'drizzle-orm';
-import { activityPushTokens, boardSessions } from '@boardsesh/db/schema/app';
+import {
+  activityPushTokens,
+  boardSessions,
+  boardSessionParticipants,
+  boardClimbs,
+  contentPrivacy,
+  resourcePrivacy,
+  resourceGrants,
+  userProfiles,
+} from '@boardsesh/db/schema';
 import { users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import type { LiveActivityContentState } from '../services/apns';
@@ -80,6 +89,12 @@ interface ApnsModule {
   __setApnsTimingForTests: (opts: { debounceMs?: number; dbRetryDelaysMs?: readonly number[] }) => void;
   isApnsConfigured: () => boolean;
   hasPendingSend: (sessionId: string) => boolean;
+  invalidateApnsPrivacy: () => void;
+  sendLiveActivityUpdateToTokens: (
+    sessionId: string,
+    registrations: Array<{ token: string; userId: string | null }>,
+    contentState: LiveActivityContentState,
+  ) => Promise<void>;
   sendLiveActivityUpdate: (sessionId: string, contentState: LiveActivityContentState) => void;
   endLiveActivity: (sessionId: string) => Promise<void>;
   setSessionHolderResolver: (resolver: ((sessionId: string) => Promise<BoardHolder | null>) | null) => void;
@@ -175,6 +190,32 @@ describe('APNs Live Activity service', () => {
     // share the same SUT instance and rely on __resetApnsForTests for cleanup.
     vi.resetModules();
     apns = await loadApns();
+    await insertUser('apns-private-owner');
+    await insertUser('apns-private-viewer');
+    await db.insert(userProfiles).values({ userId: 'apns-private-owner', isPrivate: true });
+    await db.insert(boardClimbs).values([
+      {
+        uuid: sampleContentState.climbUuid,
+        boardType: 'kilter',
+        layoutId: 1,
+        name: sampleContentState.climbName,
+        isListed: true,
+      },
+      {
+        uuid: 'apns-private-climb',
+        boardType: 'kilter',
+        layoutId: 1,
+        name: 'Private project',
+        userId: 'apns-private-owner',
+        isListed: true,
+      },
+    ]);
+    await db.insert(contentPrivacy).values({
+      entityType: 'climb',
+      entityId: 'apns-private-climb',
+      ownerId: 'apns-private-owner',
+      audience: 'only_me',
+    });
   });
 
   beforeEach(() => {
@@ -208,6 +249,166 @@ describe('APNs Live Activity service', () => {
   });
 
   describe('sendLiveActivityUpdate', () => {
+    it('discards a prepared authorized projection after a privacy change', async () => {
+      const sessionId = 'apns-projection-race';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      const privacy = await import('../services/apns/privacy');
+      const projectContent = privacy.projectLiveActivityContent;
+      let releaseProjection = () => {};
+      const projectionHeld = new Promise<void>((resolve) => {
+        releaseProjection = resolve;
+      });
+      let prepared = false;
+      const projectionSpy = vi.spyOn(privacy, 'projectLiveActivityContent').mockImplementationOnce(async (...args) => {
+        const projection = await projectContent(...args);
+        prepared = true;
+        await projectionHeld;
+        return projection;
+      });
+      const registrations = [{ token: 'projection-race-token', userId: 'apns-private-viewer' }];
+      const staleSend = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
+      try {
+        await vi.waitFor(() => expect(prepared).toBe(true));
+        await db.insert(resourcePrivacy).values({
+          kind: 'session',
+          resourceId: sessionId,
+          ownerId: 'apns-private-owner',
+          audience: 'only_me',
+        });
+        apns.invalidateApnsPrivacy();
+        const withdrawal = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
+        releaseProjection();
+        await Promise.all([staleSend, withdrawal]);
+        expect(mockSend).toHaveBeenCalledTimes(1);
+        expect(mockSend.mock.calls[0]?.[0].aps).toMatchObject({
+          event: 'end',
+          'content-state': { climbName: '', climbUuid: '' },
+        });
+      } finally {
+        releaseProjection();
+        await staleSend;
+        projectionSpy.mockRestore();
+      }
+    });
+
+    it('delivers withdrawal after an already dispatched update settles', async () => {
+      const sessionId = 'apns-delivery-race';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      let releaseSend = () => {};
+      const sendHeld = new Promise<void>((resolve) => {
+        releaseSend = resolve;
+      });
+      mockSend.mockImplementationOnce(async () => {
+        await sendHeld;
+        return { sent: [], failed: [] };
+      });
+      const registrations = [{ token: 'delivery-race-token', userId: 'apns-private-viewer' }];
+      const previousSend = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
+      try {
+        await vi.waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
+        await db.insert(resourcePrivacy).values({
+          kind: 'session',
+          resourceId: sessionId,
+          ownerId: 'apns-private-owner',
+          audience: 'only_me',
+        });
+        apns.invalidateApnsPrivacy();
+        const withdrawal = apns.sendLiveActivityUpdateToTokens(sessionId, registrations, sampleContentState);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(mockSend).toHaveBeenCalledTimes(1);
+        releaseSend();
+        await Promise.all([previousSend, withdrawal]);
+        expect(mockSend).toHaveBeenCalledTimes(2);
+        expect(mockSend.mock.calls[1]?.[0].aps).toMatchObject({
+          event: 'end',
+          'dismissal-date': expect.any(Number),
+          'content-state': { climbName: '', climbUuid: '' },
+        });
+      } finally {
+        releaseSend();
+        await previousSend;
+      }
+    });
+
+    it('withdraws revoked recipients at delivery without changing the installed ContentState contract', async () => {
+      const sessionId = 'apns-private-revocation';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await db
+        .insert(resourcePrivacy)
+        .values({ kind: 'session', resourceId: sessionId, ownerId: 'apns-private-owner', audience: 'invite_only' });
+      await db
+        .insert(resourceGrants)
+        .values({ kind: 'session', resourceId: sessionId, userId: 'apns-private-viewer', status: 'approved' });
+      await insertTokenForUser(sessionId, 'revoked-token', 'apns-private-viewer');
+      apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+      await waitForSettle();
+      expect(contentStateForToken(mockSend.mock.calls, 'revoked-token')?.climbName).toBe(sampleContentState.climbName);
+
+      await db.update(resourceGrants).set({ status: 'revoked' }).where(eq(resourceGrants.resourceId, sessionId));
+      await db.insert(boardSessionParticipants).values({ sessionId, userId: 'apns-private-viewer' });
+      const { pushTokenMutations } = await import('../graphql/resolvers/sessions/push-tokens');
+      await expect(
+        pushTokenMutations.registerActivityPushToken(
+          undefined,
+          { sessionId, token: 'e'.repeat(64) },
+          {
+            connectionId: 'apns-revoked-client',
+            userId: 'apns-private-viewer',
+            isAuthenticated: true,
+          },
+        ),
+      ).rejects.toThrow('Not found');
+      mockSend.mockClear();
+      apns.sendLiveActivityUpdate(sessionId, sampleContentState);
+      await waitForSettle();
+      const aps = mockSend.mock.calls[0]?.[0].aps;
+      expect(aps).toMatchObject({
+        event: 'end',
+        'dismissal-date': expect.any(Number),
+        'content-state': { climbName: '', climbUuid: '', totalClimbs: 0, hasNext: false },
+      });
+      expect(JSON.stringify(aps)).not.toContain(sampleContentState.climbName);
+    });
+
+    it('hides private climbs and holder names from other recipients while retaining owner access', async () => {
+      const sessionId = 'apns-private-projections';
+      setApnsEnv();
+      apns.initializeApns();
+      await insertSession(sessionId);
+      await insertTokenForUser(sessionId, 'private-owner-token', 'apns-private-owner');
+      await insertTokenForUser(sessionId, 'private-peer-token', 'apns-private-viewer');
+      await insertTokenForUser(sessionId, 'private-legacy-token', null);
+      apns.setSessionHolderResolver(async () => ({
+        holderUserId: 'apns-private-owner',
+        holderDisplayName: 'Private holder',
+      }));
+      apns.sendLiveActivityUpdate(sessionId, {
+        ...sampleContentState,
+        climbUuid: 'apns-private-climb',
+        climbName: 'Private project',
+      });
+      await waitForSettle();
+      expect(contentStateForToken(mockSend.mock.calls, 'private-owner-token')).toMatchObject({
+        climbName: 'Private project',
+        climbUuid: 'apns-private-climb',
+        boardConnection: 'connectedByMe',
+      });
+      for (const token of ['private-peer-token', 'private-legacy-token']) {
+        expect(contentStateForToken(mockSend.mock.calls, token)).toMatchObject({
+          climbName: '',
+          climbDifficulty: '',
+          climbUuid: '',
+          holderDisplayName: '',
+          boardConnection: 'heldByPeer',
+        });
+      }
+    });
     it('is a no-op when APNs is not configured', async () => {
       apns.sendLiveActivityUpdate('session-noconfig', sampleContentState);
       await waitForSettle();
@@ -350,6 +551,10 @@ describe('APNs Live Activity service', () => {
       const [notification] = mockSend.mock.calls[0];
       const aps = notification.aps as { event?: string };
       expect(aps.event).toBe('end');
+      expect(aps).toMatchObject({
+        'dismissal-date': expect.any(Number),
+        'content-state': { climbName: '', climbUuid: '', hasNext: false },
+      });
     });
 
     it('cleans up all push tokens for the session after the end push', async () => {
@@ -403,7 +608,7 @@ describe('APNs Live Activity service', () => {
       expect(mockSend).toHaveBeenCalledTimes(1);
       const state = contentStateForToken(mockSend.mock.calls, 'group-none-1');
       expect(state?.boardConnection).toBeUndefined();
-      expect(state?.holderDisplayName).toBeUndefined();
+      expect(state?.holderDisplayName).toBe('');
     });
 
     it('splits into connectedByMe (holder) and heldByPeer (others) groups', async () => {
@@ -430,7 +635,7 @@ describe('APNs Live Activity service', () => {
 
       const holderState = contentStateForToken(mockSend.mock.calls, 'holder-token');
       expect(holderState?.boardConnection).toBe('connectedByMe');
-      expect(holderState?.holderDisplayName).toBeUndefined();
+      expect(holderState?.holderDisplayName).toBe('');
 
       const peerState = contentStateForToken(mockSend.mock.calls, 'peer-token');
       expect(peerState?.boardConnection).toBe('heldByPeer');
@@ -460,7 +665,7 @@ describe('APNs Live Activity service', () => {
       expect(mockSend).toHaveBeenCalledTimes(1);
       const state = contentStateForToken(mockSend.mock.calls, 'disc-token-1');
       expect(state?.boardConnection).toBe('disconnected');
-      expect(state?.holderDisplayName).toBeUndefined();
+      expect(state?.holderDisplayName).toBe('');
     });
 
     it('falls back to a single boardConnection-omitted send when the resolver throws', async () => {

@@ -15,7 +15,11 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { EventEmitter } from 'node:events';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
-import { boardSessionParticipants } from '../db/schema';
+import { activityPushTokens, boardSessionParticipants, boardSessions, resourceGrants } from '@boardsesh/db/schema';
+
+// setup.ts loads privacy.ts through roomManager before these DB mocks exist.
+// Reload that graph so the real policy service uses this file's fixture rows.
+vi.hoisted(() => vi.resetModules());
 
 type TokenRow = { sessionId: string; userId: string | null };
 
@@ -29,6 +33,11 @@ const tokenLookupRows = vi.fn<() => TokenRow[]>(() => []);
 // default participant. Separate from tokenLookupRows so a test can simulate
 // "token row exists but user isn't a participant".
 const participantRows = vi.fn<() => Array<{ sessionId: string }>>(() => [{ sessionId: 'participant-row' }]);
+// The resource policy reads a real-shaped session independently of the token.
+const privacySessionRows = vi.fn(() => [
+  { id: 'session-widget-test', createdByUserId: 'session-host', isPublic: true, boardPath: 'kilter/1/1/1/40' },
+]);
+const resourceGrantRows = vi.fn<() => Array<{ status: 'approved' | 'revoked' }>>(() => []);
 // Durable session row used by the guard's ended-session check. Default active.
 const getSessionByIdMock = vi.fn<() => Promise<{ status: string; endedAt: Date | null } | null>>(async () => ({
   status: 'active',
@@ -54,9 +63,14 @@ vi.mock('../db/client', () => {
       return chain;
     });
     chain.where = vi.fn(() => chain);
-    chain.limit = vi.fn(async (_n: number) =>
-      table === boardSessionParticipants ? participantRows() : tokenLookupRows(),
-    );
+    chain.limit = vi.fn(async (_n: number) => {
+      if (table === activityPushTokens) return tokenLookupRows();
+      if (table === boardSessionParticipants) return participantRows();
+      if (table === boardSessions) return privacySessionRows();
+      if (table === resourceGrants) return resourceGrantRows();
+      // No resource override or approved-follow relationship in these fixtures.
+      return [];
+    });
     return chain;
   }
   return {
@@ -174,6 +188,10 @@ describe('handleWidgetTakeControl (re-assert)', () => {
     __resetWidgetRateLimitForTests();
     tokenLookupRows.mockReturnValue([]);
     participantRows.mockReturnValue([{ sessionId: 'participant-row' }]);
+    privacySessionRows.mockReturnValue([
+      { id: SESSION_ID, createdByUserId: 'session-host', isPublic: true, boardPath: 'kilter/1/1/1/40' },
+    ]);
+    resourceGrantRows.mockReturnValue([]);
     getSessionByIdMock.mockResolvedValue({ status: 'active', endedAt: null });
     getQueueStateMock.mockResolvedValue({ queue: [], currentClimbQueueItem: null });
     setCurrentClimbAndPublishMock.mockResolvedValue({
@@ -224,6 +242,20 @@ describe('handleWidgetTakeControl (re-assert)', () => {
     const parsed = JSON.parse(res.body) as { success: boolean; error: string };
     expect(parsed.success).toBe(false);
     expect(parsed.error).toContain('re-register');
+    expect(setCurrentClimbAndPublishMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a revoked session grant even when the token user remains a durable participant', async () => {
+    tokenLookupRows.mockReturnValue([{ sessionId: SESSION_ID, userId: USER_ID }]);
+    resourceGrantRows.mockReturnValue([{ status: 'revoked' }]);
+    const req = makeRequest({
+      method: 'POST',
+      authHeader: `Bearer ${REGISTERED_TOKEN}`,
+      body: { sessionId: SESSION_ID },
+    });
+    const res = makeResponse();
+    await handleWidgetTakeControl(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(403);
     expect(setCurrentClimbAndPublishMock).not.toHaveBeenCalled();
   });
 

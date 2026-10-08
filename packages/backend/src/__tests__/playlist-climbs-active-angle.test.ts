@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import { users, playlistOwnership } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
@@ -98,6 +99,15 @@ describe('playlistClimbs — active-angle override (real DB)', () => {
       INSERT INTO playlists (id, uuid, board_type, layout_id, name, is_public)
       VALUES (1, ${PLAYLIST_UUID}, 'kilter', 1, 'Active angle', true)
     `);
+    // Public discovery still requires a real owner whose account permits it.
+    const ownerId = 'playlist-climbs-active-angle-owner';
+    await db
+      .insert(users)
+      .values({ id: ownerId, email: `${ownerId}@test.invalid` })
+      .onConflictDoNothing();
+    await db
+      .insert(playlistOwnership)
+      .values([1].map((playlistId) => ({ playlistId: BigInt(playlistId), userId: ownerId, role: 'owner' })));
     await db.execute(sql`
       INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
       VALUES (1, 'climb-a', 50, 0), (1, 'climb-b', 50, 1), (1, 'climb-c', 30, 2), (1, 'climb-d', 60, 3)

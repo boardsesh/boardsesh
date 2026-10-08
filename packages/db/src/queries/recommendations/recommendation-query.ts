@@ -1,3 +1,5 @@
+import { contentVisibilityCondition } from '../privacy';
+import { sprayClimbVisibilityCondition } from '../climbs/spray-visibility';
 import { sql, type SQL } from 'drizzle-orm';
 import {
   latestTickOnCurrentHoldsSql,
@@ -90,14 +92,15 @@ export function recommendationStatsConditions(bounds: RecommendationStatsBounds,
 
 /**
  * The `board_climbs` half of the filter, shared by every shape: base listing
- * rules, size and sets, and FRESH's publication window. Nothing here reads
- * `board_climb_stats` or the viewer.
+ * rules, current viewer authorization, size and sets, and FRESH's publication window.
  */
 function catalogConditions(params: RecommendationQueryParams): SQL[] {
   const { type, target, freshWindowDays } = params;
   const { boardType, layoutId, sizeId, setIds } = target;
 
+  const viewerId = params.viewerUserId === undefined ? params.excludeUserId : params.viewerUserId;
   const conditions: SQL[] = [
+    contentVisibilityCondition('climb', sql`bc.uuid`, sql`bc.user_id`, viewerId),
     sql`bc.board_type = ${boardType}`,
     sql`bc.layout_id = ${layoutId}`,
     sql`bc.is_listed = true`,
@@ -108,6 +111,13 @@ function catalogConditions(params: RecommendationQueryParams): SQL[] {
     // `@>` (rather than `= ANY`) so the GIN index on compatible_size_ids applies.
     sql`bc.compatible_size_ids @> ${intArray([sizeId])}`,
   ];
+  // board_type is constrained above; catalogue-only batch jobs should not need
+  // private wall membership grants just to rank a Kilter or Tension cohort.
+  if (boardType === 'spray') {
+    conditions.push(
+      sprayClimbVisibilityCondition({ boardType: sql`bc.board_type`, layoutId: sql`bc.layout_id` }, viewerId),
+    );
+  }
 
   // Only recommend climbs the owner can actually build with their sets.
   if (setIds && setIds.length > 0) {
@@ -229,8 +239,8 @@ export function buildRecommendationRefsSql(params: RecommendationQueryParams, pa
  * when ~385 qualify), so on some configs the planner still hash-joins the whole
  * slice. Replica, warm, viewer excluded: AT_LEVEL on Kilter 1/10 {1,20} 46.7k ->
  * 4.4k buffers and the Kilter homewall 117k -> 21k, but CROWD on Kilter 1/10
- * {1,20} only 47k -> 43k. The card count is cached (`rec-count`), so there
- * only a miss pays this; the playlist hero count pays it every time.
+ * {1,20} only 47k -> 43k. Counts are read fresh so an audience change or
+ * follower removal takes effect without waiting for a shared cache to expire.
  * HIDDEN_GEMS stays catalog-driven: its 5-50 ascent range is wide enough that
  * the CTE read 2.5x more buffers than the shipped plan.
  *
@@ -271,14 +281,14 @@ export function buildRecommendationCountSql(params: RecommendationQueryParams): 
  * How many of a variant's candidates `userId` has already sent (flash/send) at
  * the target angle.
  *
- * `buildRecommendationCountSql` without `excludeUserId`, minus this, is exactly
- * the count with it: the viewer-free count is |S|, this is |S ∩ sent|, and the
+ * `buildRecommendationCountSql` without `excludeUserId` and the SAME viewer,
+ * minus this, is exactly the count with it: the readable count is |S|, this is |S ∩ sent|, and the
  * NOT EXISTS form is |S \ sent|. `board_climbs.uuid` is the primary key and the
  * stats join is on the stats primary key, so each candidate counts at most once.
  *
  * It is driven from the viewer's own ticks, so it costs a few primary-key probes
- * per distinct sent climb instead of a scan of the layout. That is what lets the
- * viewer-free half be cached across users (`rec-count` in the backend).
+ * per distinct sent climb instead of a scan of the layout. Both halves must
+ * use current authorization; neither may be reused across different viewers.
  *
  * FRESH has no stats bounds, so it skips the stats join entirely: a LEFT JOIN on
  * the stats primary key reads no column and cannot change the count.

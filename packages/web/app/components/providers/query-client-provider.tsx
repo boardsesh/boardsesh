@@ -4,6 +4,8 @@ import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'rea
 import { QueryClient, type Query, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
+import { PrivacySyncBridge } from './privacy-sync-bridge';
+import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 
 type QueryClientProviderProps = {
@@ -48,6 +50,7 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
       <SessionCacheBuster persister={persister} sessionUserId={sessionUserId} />
+      <PrivacySyncBridge persister={persister} />
       {children}
     </PersistQueryClientProvider>
   );
@@ -80,7 +83,12 @@ export function SessionCacheBuster({ persister, sessionUserId }: SessionCacheBus
     if (previous === sessionUserId) return;
     if (previous === null) return;
 
-    queryClient.removeQueries({ predicate: (query) => query.meta?.persist === true });
+    // Every query may contain viewer-specific authorization, even when it is
+    // not persisted. Cancel before clearing to reject old-account responses.
+    void queryClient.cancelQueries().then(() => {
+      void revokeWebPrivacySnapshots(queryClient);
+      queryClient.clear();
+    });
     // The persister already swallows IDB errors internally, but log anything
     // that escapes so a failed sign-out wipe is observable instead of silent.
     // removeClient() is typed as Promisable<void>, so wrap to normalise.

@@ -1,3 +1,4 @@
+import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
 import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
@@ -116,6 +117,7 @@ function rosterStateSignature(state: MobileSessionRuntimeState): string {
 
 type UseSessionRealtimeParams = {
   authTransportRevision: number;
+  privacyRevocationGeneration?: number;
   sessionId: string | null;
   dispatch: React.Dispatch<QueueAction>;
   coordinator: { clientId: string };
@@ -170,6 +172,7 @@ type UseSessionRealtimeParams = {
  */
 export function useSessionRealtime({
   authTransportRevision,
+  privacyRevocationGeneration,
   sessionId,
   dispatch,
   coordinator,
@@ -230,6 +233,8 @@ export function useSessionRealtime({
     const gate = createQueueSyncGate();
     queueSyncGateRef.current = gate;
     let disposed = false;
+    const privacyGeneration = getPrivacyRevocationGeneration();
+    const isCurrent = () => !disposed && privacyGeneration === getPrivacyRevocationGeneration();
     let subscriptionStartToken = 0;
     let queueUpdatesCleanup: (() => void) | null = null;
     let sessionUpdatesCleanup: (() => void) | null = null;
@@ -273,7 +278,7 @@ export function useSessionRealtime({
         .current(queue, currentClimbQueueItem ?? undefined)
         .then(() => {
           reSeedInFlight = false;
-          if (sessionIdRef.current !== sessionId) return;
+          if (!isCurrent() || sessionIdRef.current !== sessionId) return;
           const { queue: latestQueue, currentClimbQueueItem: latestCurrent } = stateRef.current;
           const latestHash = computeQueueStateHashOrdered(latestQueue, latestCurrent?.uuid ?? null);
           if (latestHash !== pushedHash) {
@@ -348,7 +353,7 @@ export function useSessionRealtime({
         const nextNamedAngle = named.angle;
         void (async () => {
           const stored = await getStoredActiveBoard();
-          if (sessionIdRef.current !== sessionId) return;
+          if (!isCurrent() || sessionIdRef.current !== sessionId) return;
           if (!stored || stored.angle === nextNamedAngle) return;
           if (stored.isAngleAdjustable === false) return;
           if (!stored.slug || stored.slug !== named.slug) return;
@@ -361,7 +366,7 @@ export function useSessionRealtime({
       const nextAngle = parsed.angle;
       void (async () => {
         const stored = await getStoredActiveBoard();
-        if (sessionIdRef.current !== sessionId) return;
+        if (!isCurrent() || sessionIdRef.current !== sessionId) return;
         if (!stored || stored.angle === nextAngle) return;
         // Never override a fixed-angle board (mirrors handleAngleChange's local
         // guard) — a peer can't change an angle the board can't be set to.
@@ -389,12 +394,13 @@ export function useSessionRealtime({
       joinRetryCount++;
       joinRetryTimer = setTimeout(() => {
         joinRetryTimer = null;
-        if (disposed || failedStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
+        if (!isCurrent() || failedStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
         void startJoinedSubscriptions(preserveExistingSubscriptions);
       }, retryDelayMs);
     };
 
     const startJoinedSubscriptions = async (preserveExistingSubscriptions = false) => {
+      if (!isCurrent()) return;
       // While backgrounded the socket is suspended: defer the join instead of
       // firing one that can only time out (#3605). Supersede any in-flight join
       // (bump the token), tear down subscriptions, and let the AppState listener
@@ -444,7 +450,7 @@ export function useSessionRealtime({
       try {
         await ensureJoined(sessionId);
       } catch (joinError) {
-        if (disposed || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
+        if (!isCurrent() || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
         // A join in flight when the app backgrounds can't complete over the
         // suspended socket and hits the 30s timeout (#3605). That's expected,
         // not a defect: skip the toast + error report and defer — the AppState
@@ -495,7 +501,7 @@ export function useSessionRealtime({
         return;
       }
 
-      if (disposed || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
+      if (!isCurrent() || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
       joinRetryCount = 0;
 
       queueUpdatesCleanup = subscribe<{ queueUpdates: QueueUpdateEvent }>(
@@ -506,6 +512,7 @@ export function useSessionRealtime({
         },
         {
           next: (data) => {
+            if (!isCurrent()) return;
             if (!data?.queueUpdates) return;
             const event = data.queueUpdates;
             // PlaybackStateChanged is a first-class wire variant but carries no
@@ -683,6 +690,7 @@ export function useSessionRealtime({
             }
           },
           error: (subscriptionError) => {
+            if (!isCurrent()) return;
             // The server denied our queue subscription because this connection
             // isn't a member of the session (NOT_SESSION_MEMBER). Post-#3695 an
             // authenticated member reconnecting is re-authorized instantly, so
@@ -720,9 +728,10 @@ export function useSessionRealtime({
         },
         {
           next: (data) => {
+            if (!isCurrent()) return;
             const event = data?.sessionUpdates;
             if (!event) return;
-            if (sessionIdRef.current !== sessionId) return;
+            if (!isCurrent() || sessionIdRef.current !== sessionId) return;
 
             // Live analytics push: flashes + flash/send/attempt grade split +
             // per-participant breakdown. Drives the in-session analytics view and
@@ -790,8 +799,8 @@ export function useSessionRealtime({
             if (runtimeEvent) {
               // Keep the functional updater so rapid consecutive deltas each
               // apply on the truly-latest roster (not a stale render snapshot).
-              setSessionRuntimeState(
-                (prev) => applySessionRuntimeEvent(prev, runtimeEvent) ?? createEmptySessionRuntimeState(),
+              setSessionRuntimeState((prev) =>
+                isCurrent() ? (applySessionRuntimeEvent(prev, runtimeEvent) ?? createEmptySessionRuntimeState()) : prev,
               );
               // Best-effort drift telemetry: a SessionRosterSnapshot is the only
               // event that can silently heal a dropped roster delta. Detect a
@@ -839,6 +848,7 @@ export function useSessionRealtime({
             }
           },
           error: (sessionSubscriptionError) => {
+            if (!isCurrent()) return;
             // Session-update stream errors were swallowed. Surface them for
             // triage (the retained subscription still drives its own reconnect).
             reportHandledError(sessionSubscriptionError);
@@ -957,7 +967,7 @@ export function useSessionRealtime({
       // ref would otherwise suppress every snapshot angle-follow in session B.
       pendingLocalBoardPathRef.current = null;
     };
-  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision]);
+  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision, privacyRevocationGeneration]);
 
   // Periodic local-vs-server hash watchdog (mirrors web's 60s interval in
   // use-session-subscriptions.ts, ported into the shared gate's

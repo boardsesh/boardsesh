@@ -127,7 +127,7 @@ describe('api/og/session route', () => {
     sessionRouteState.capturedElement = null;
   });
 
-  it('renders the join variant with immutable PNG headers', async () => {
+  it('renders the join variant with non-cacheable PNG headers', async () => {
     sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
       sessionType: 'party',
       sessionName: 'Lunch Laps',
@@ -150,7 +150,7 @@ describe('api/og/session route', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(response.headers.get('Cache-Control')).toContain('immutable');
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(textContent).toContain('Join Alex on the wall');
     expect(textContent).toContain('Lunch Laps');
     expect(textContent).toContain('Kilter Original 12x12');

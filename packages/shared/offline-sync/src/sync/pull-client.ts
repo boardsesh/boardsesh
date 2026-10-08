@@ -1795,6 +1795,7 @@ async function runBootstrapPhase(params: {
         scope,
         scopeKey: scope.scopeKey,
         filePath: gradesDownload.filePath,
+        replayFromEpoch: entry.privacyVersion === 1,
         onSchemaDrift,
       });
       // The artifact's own row count, reported alongside the paged crawl's
@@ -2590,6 +2591,7 @@ async function runBootstrapPhase(params: {
             scope,
             scopeKey: scope.scopeKey,
             filePath: download.filePath,
+            replayFromEpoch: entry.privacyVersion === 1,
             onSchemaDrift,
             // Arms the watermark-regression guard on the heal path: the artifact
             // may not stamp a checkpoint BELOW what this scope already crawled.

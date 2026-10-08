@@ -13,6 +13,7 @@ import { buildContentStateFromQueueState } from '../../../services/apns/content-
 import { roomManager } from '../../../services/room-manager';
 import { trackLiveActivityEnded, trackLiveActivityStarted } from '../../../services/analytics/live-activity';
 import { logger } from '../../../utils/logger';
+import { requireResourceAccess } from '../../../services/privacy';
 
 /**
  * APNs device tokens are hex-encoded byte blobs. Classic remote-notification
@@ -202,6 +203,8 @@ export const pushTokenMutations = {
       );
       throw new Error('Unauthorized: not a participant in this session');
     }
+
+    await requireResourceAccess('session', sessionId, ctx.userId);
 
     // Bound the number of tokens per session and detect rebinding.
     //

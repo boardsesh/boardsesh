@@ -1,8 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
 vi.mock('expo-router', () => ({ router: undefined, useRouter: vi.fn() }));
 import { publishNavigationScope, resolveScopedDestination } from '../scoped-navigation';
 
 describe('navigation keeps the originating tab', () => {
+  it.each(['home', 'climbs', 'record', 'discover', 'profile', 'wall', 'account'])(
+    'resolves privacy settings to registered routes from %s',
+    (scope) => {
+      publishNavigationScope(scope === 'account' ? ['account'] : ['(tabs)', scope]);
+      for (const route of ['privacy', 'privacy-access', 'privacy-onboarding']) {
+        const destination = resolveScopedDestination({
+          pathname: `/settings/${route}`,
+          params: { kind: 'board', resourceId: 'home-board' },
+        });
+        const expectedPath = `${scope === 'account' ? '/account' : `/(tabs)/${scope}`}/settings/${route}`;
+        expect(destination).toEqual({
+          pathname: expectedPath,
+          params: { kind: 'board', resourceId: 'home-board' },
+        });
+        expect(existsSync(new URL(`../../../../app${expectedPath}.tsx`, import.meta.url))).toBe(true);
+      }
+    },
+  );
   it('scopes user drilling and Settings into each existing tab stack', () => {
     for (const tab of ['home', 'climbs', 'record', 'discover', 'profile', 'wall']) {
       publishNavigationScope(['(tabs)', tab]);

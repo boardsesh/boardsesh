@@ -1,3 +1,4 @@
+import { usePrivacySettings } from '../../src/lib/graphql/hooks/use-privacy';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, View, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -105,6 +106,7 @@ export default function EditBoard() {
 }
 
 function EditBoardForm({ board }: { board: UserBoard }) {
+  const { data: privacySettings } = usePrivacySettings();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
@@ -253,8 +255,12 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       // guard would fire on a save that changed nothing but the name.
       const nextIsPublic = builder.isPublic;
       const nextIsUnlisted = builder.isUnlisted;
-      const visibilityChanged = isSprayWall && (nextIsPublic !== board.isPublic || nextIsUnlisted !== board.isUnlisted);
-      if (isSprayWall) {
+      const visibilityChanged =
+        !privacySettings?.enabled &&
+        isSprayWall &&
+        (nextIsPublic !== board.isPublic || nextIsUnlisted !== board.isUnlisted);
+      if (privacySettings?.enabled) delete input.hideLocation;
+      if (isSprayWall || privacySettings?.enabled) {
         delete input.isPublic;
         delete input.isUnlisted;
       }
@@ -407,6 +413,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       board.gymUuid,
       board.boardType,
       board.isPublic,
+      privacySettings?.enabled,
       board.isUnlisted,
       isSprayWall,
       updateSprayWall,

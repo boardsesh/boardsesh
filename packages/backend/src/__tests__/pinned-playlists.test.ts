@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { sqlText } from '@boardsesh/db/test-utils';
 import { playlistMutations } from '../graphql/resolvers/playlists/mutations';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
 
@@ -102,7 +103,7 @@ function makePinnedRow(overrides: Record<string, unknown> = {}) {
 
 describe('pinPlaylist mutation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('rejects unauthenticated users', async () => {
@@ -125,16 +126,14 @@ describe('pinPlaylist mutation', () => {
 
   it('rejects pinning a private playlist owned by someone else', async () => {
     const ctx = makeCtx();
-    // verifyPlaylistAccess: playlist found, not public.
-    const { chain: playlistLookup } = createMockChain([{ id: BigInt(42), isPublic: false }]);
+    // verifyPlaylistAccess applies authorization in SQL, before returning a row.
+    const { chain: playlistLookup, calls } = createMockChain([]);
     mockDb.select.mockReturnValueOnce(playlistLookup);
-    // verifyPlaylistAccess: ownership check returns empty (not owner).
-    const { chain: ownership } = createMockChain([]);
-    mockDb.select.mockReturnValueOnce(ownership);
 
     await expect(playlistMutations.pinPlaylist(null, { input: { playlistUuid: 'pl-1' } }, ctx)).rejects.toThrow(
       'Playlist not found or access denied',
     );
+    expect(sqlText(calls.where[0][0])).toContain('public_consent_revision');
   });
 
   it('pins a public playlist owned by another user (idempotent)', async () => {
@@ -160,9 +159,6 @@ describe('pinPlaylist mutation', () => {
     // private playlist
     const { chain: playlistLookup } = createMockChain([{ id: BigInt(99), isPublic: false }]);
     mockDb.select.mockReturnValueOnce(playlistLookup);
-    // ownership check: user IS owner
-    const { chain: ownership } = createMockChain([{ role: 'owner' }]);
-    mockDb.select.mockReturnValueOnce(ownership);
 
     const { chain: insertChain } = createMockChain([]);
     mockDb.insert.mockReturnValueOnce(insertChain);
@@ -174,7 +170,7 @@ describe('pinPlaylist mutation', () => {
 
 describe('unpinPlaylist mutation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('rejects unauthenticated users', async () => {
@@ -226,7 +222,7 @@ describe('unpinPlaylist mutation', () => {
 
 describe('myPinnedPlaylists query', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('rejects unauthenticated users', async () => {

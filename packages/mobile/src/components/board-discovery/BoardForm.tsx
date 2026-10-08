@@ -1,5 +1,8 @@
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { PressableSurface } from '../PressableSurface';
+import { AudiencePicker, BOARD_AUDIENCES } from '../privacy/AudiencePicker';
+import { ResourcePrivacyControl } from '../privacy/ResourcePrivacyControl';
+import { usePrivacySettings } from '../../lib/graphql/hooks/use-privacy';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AccessibilityInfo,
@@ -105,6 +108,8 @@ export function BoardForm({
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
   const { t } = useTranslation('boards');
+  const { data: privacySettings } = usePrivacySettings();
+  const { t: tSettings } = useTranslation('settings');
   const { systemColors } = useTheme();
   // Only warn on a same-config foreign board — cross-model serial reuse is
   // legitimate (see useForeignSerialBoard). Config is null until the form has
@@ -375,11 +380,43 @@ export function BoardForm({
                 public" reachable, which is a state nobody meant to pick. */}
             {isSprayWall ? (
               <>
-                <SprayWallVisibilityField builder={builder} />
+                {!privacySettings?.enabled ? <SprayWallVisibilityField builder={builder} /> : null}
                 {sprayBackgroundSection}
               </>
             ) : null}
           </>
+        ) : null}
+
+        {privacySettings?.enabled && currentBoardUuid ? (
+          <ResourcePrivacyControl kind="board" resourceId={currentBoardUuid} />
+        ) : null}
+
+        {privacySettings?.enabled && !currentBoardUuid ? (
+          <View style={{ gap: spacing[3] }}>
+            <AudiencePicker
+              resource
+              confirmPublic={privacySettings.isPrivate}
+              audience={builder.privacyAudience ?? 'invite_only'}
+              options={BOARD_AUDIENCES}
+              disabled={submitting}
+              label={tSettings('privacy.boardAudience')}
+              onChange={(audience) => {
+                builder.setPrivacyAudience(audience);
+                builder.setIsPublic(audience === 'public');
+                builder.setIsUnlisted(audience === 'unlisted');
+              }}
+            />
+            <SwitchRow
+              label={tSettings('privacy.locationAudience')}
+              description={tSettings('privacy.locationMembers')}
+              value={builder.privacyLocationAudience === 'public'}
+              disabled={submitting}
+              onValueChange={(visible) => {
+                builder.setPrivacyLocationAudience(visible ? 'public' : 'only_me');
+                builder.setHideLocation(!visible);
+              }}
+            />
+          </View>
         ) : null}
 
         {/* Advanced — hold sets (default all), visibility, location, serial. */}
@@ -408,7 +445,9 @@ export function BoardForm({
             ) : null}
 
             <SwitchRow label={t('mobile.create.ownBoard')} value={builder.isOwned} onValueChange={builder.setIsOwned} />
-            <BoardVisibilityFields builder={builder} hideVisibilitySwitches={isSprayWall} />
+            {!privacySettings?.enabled ? (
+              <BoardVisibilityFields builder={builder} hideVisibilitySwitches={isSprayWall} />
+            ) : null}
 
             {/* Lights heads the group the serial belongs to — both describe the
                 LED hardware on the wall. Nothing below is hidden when the toggle

@@ -566,3 +566,5 @@ describe('LogbookEditSheet', () => {
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 });
+
+vi.mock('../../privacy/ContentAudienceControl', () => ({ ContentAudienceControl: () => null }));

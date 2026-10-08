@@ -1,3 +1,5 @@
+import { pubsub } from '../../../pubsub';
+import { setContentPrivacy, canViewContent } from '../../../services/privacy';
 import crypto from 'crypto';
 import { GraphQLError } from 'graphql';
 import { and, eq, sql } from 'drizzle-orm';
@@ -298,12 +300,22 @@ export const climbMutations = {
     const gateRuleSignature = buildStoredRuleSignature(boardType, storedCharacteristics, storedDescription);
     const gateSizeId = woodsShape?.sizeId;
     await db.transaction(async (tx) => {
+      if (validated.privacy)
+        await setContentPrivacy(
+          tx,
+          ctx.userId!,
+          'climb',
+          uuid,
+          validated.privacy.audience,
+          validated.privacy.privacyRevision,
+        );
       if (shouldGate) {
         await acquireDuplicateGateLock(tx, boardType, validated.layoutId, gateSignature, {
           ruleSignature: gateRuleSignature,
           sizeId: gateSizeId,
         });
         const existing = await findExactDuplicateMatch({
+          viewerUserId: ctx.userId,
           boardType,
           layoutId: validated.layoutId,
           signature: gateSignature,
@@ -484,7 +496,7 @@ export const climbMutations = {
     // somebody's home wall to people who cannot open it. Public walls only
     // (epic decision 2026-09-14: private-wall ticks are the owner's logbook).
     const mayAnnounce = !sprayTarget || sprayMayAnnounce;
-    if (!validated.isDraft && mayAnnounce) {
+    if (!validated.isDraft && mayAnnounce && (await canViewContent(null, 'climb', uuid, ctx.userId!))) {
       await publishSocialEvent({
         type: 'climb.created',
         actorId: ctx.userId!,
@@ -559,7 +571,12 @@ export const climbMutations = {
     // with the unified CLIMB_IS_DUPLICATE extension so the frontend's
     // duplicate-UX handler can react the same way across boards.
     if (!isDraft) {
-      const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.angle, validated.holds);
+      const duplicateMatch = await findMoonBoardDuplicateMatch(
+        validated.layoutId,
+        validated.angle,
+        validated.holds,
+        ctx.userId,
+      );
       if (duplicateMatch) {
         throw new GraphQLError(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName), {
           extensions: {
@@ -573,92 +590,103 @@ export const climbMutations = {
 
     const frames = encodeMoonBoardHoldsToFrames(validated.holds);
 
-    await db.insert(UNIFIED_TABLES.climbs).values({
-      boardType: validated.boardType,
-      uuid,
-      layoutId: validated.layoutId,
-      userId: ctx.userId!,
-      setterId: null,
-      setterUsername: preferredSetter,
-      name: validated.name,
-      description: validated.description ?? '',
-      angle: validated.angle,
-      framesCount: 1,
-      framesPace: 0,
-      frames,
-      isDraft,
-      isListed,
-      createdAt: now,
-      publishedAt,
-      synced: false,
-      syncError: null,
-      characteristics,
+    await db.transaction(async (tx) => {
+      if (validated.privacy)
+        await setContentPrivacy(
+          tx,
+          ctx.userId!,
+          'climb',
+          uuid,
+          validated.privacy.audience,
+          validated.privacy.privacyRevision,
+        );
+      await tx.insert(UNIFIED_TABLES.climbs).values({
+        boardType: validated.boardType,
+        uuid,
+        layoutId: validated.layoutId,
+        userId: ctx.userId!,
+        setterId: null,
+        setterUsername: preferredSetter,
+        name: validated.name,
+        description: validated.description ?? '',
+        angle: validated.angle,
+        framesCount: 1,
+        framesPace: 0,
+        frames,
+        isDraft,
+        isListed,
+        createdAt: now,
+        publishedAt,
+        synced: false,
+        syncError: null,
+        characteristics,
+      });
+
+      const holdRows = buildMoonBoardClimbHoldRows(uuid, validated.holds);
+      if (holdRows.length > 0) {
+        await tx.insert(dbSchema.boardClimbHolds).values(holdRows).onConflictDoNothing();
+      }
+
+      // Seed a stats row so the climb is visible to the global search, which
+      // uses an INNER JOIN against board_climb_stats.
+      //
+      // Drafts: search already filters by `is_draft = false` (create-climb-filters
+      // baseConditions), so a stats row on a draft is not directly search-visible.
+      // The seed is still important when the user supplied a grade — board_climb_stats
+      // is the only place we persist the resolved difficulty, and skipping the row
+      // would lose the grade through draft → publish (updateClimb's stats seed has
+      // no grade source to reconstruct it from). So:
+      //   - draft + grade  → seed the row (preserves grade; search filter masks the draft)
+      //   - draft + no grade → skip the seed (matches saveClimb's gate; updateClimb
+      //                        will create a barebones row at publish time)
+      //   - non-draft + grade → seed with grade (current behaviour)
+      //   - non-draft + no grade → seed barebones (current behaviour)
+      // The uuid is freshly generated per call, so the inserts can never conflict —
+      // both branches use `onConflictDoNothing` for consistency with saveClimb.
+      const difficultyId = await resolveDifficultyId(validated.boardType, validated.userGrade);
+      if (difficultyId !== null) {
+        await tx
+          .insert(dbSchema.boardClimbStats)
+          .values({
+            boardType: validated.boardType,
+            climbUuid: uuid,
+            angle: validated.angle,
+            displayDifficulty: difficultyId,
+            benchmarkDifficulty: validated.isBenchmark ? difficultyId : null,
+            ascensionistCount: 0,
+            difficultyAverage: difficultyId,
+            qualityAverage: null,
+            faUsername: validated.setter || null,
+            faAt: null,
+          })
+          .onConflictDoNothing({
+            target: [
+              dbSchema.boardClimbStats.boardType,
+              dbSchema.boardClimbStats.climbUuid,
+              dbSchema.boardClimbStats.angle,
+            ],
+          });
+      } else if (!isDraft) {
+        await tx
+          .insert(dbSchema.boardClimbStats)
+          .values({
+            boardType: validated.boardType,
+            climbUuid: uuid,
+            angle: validated.angle,
+            ascensionistCount: 0,
+            faUsername: validated.setter || null,
+          })
+          .onConflictDoNothing({
+            target: [
+              dbSchema.boardClimbStats.boardType,
+              dbSchema.boardClimbStats.climbUuid,
+              dbSchema.boardClimbStats.angle,
+            ],
+          });
+      }
     });
 
-    const holdRows = buildMoonBoardClimbHoldRows(uuid, validated.holds);
-    if (holdRows.length > 0) {
-      await db.insert(dbSchema.boardClimbHolds).values(holdRows).onConflictDoNothing();
-    }
-
-    // Seed a stats row so the climb is visible to the global search, which
-    // uses an INNER JOIN against board_climb_stats.
-    //
-    // Drafts: search already filters by `is_draft = false` (create-climb-filters
-    // baseConditions), so a stats row on a draft is not directly search-visible.
-    // The seed is still important when the user supplied a grade — board_climb_stats
-    // is the only place we persist the resolved difficulty, and skipping the row
-    // would lose the grade through draft → publish (updateClimb's stats seed has
-    // no grade source to reconstruct it from). So:
-    //   - draft + grade  → seed the row (preserves grade; search filter masks the draft)
-    //   - draft + no grade → skip the seed (matches saveClimb's gate; updateClimb
-    //                        will create a barebones row at publish time)
-    //   - non-draft + grade → seed with grade (current behaviour)
-    //   - non-draft + no grade → seed barebones (current behaviour)
-    // The uuid is freshly generated per call, so the inserts can never conflict —
-    // both branches use `onConflictDoNothing` for consistency with saveClimb.
-    const difficultyId = await resolveDifficultyId(validated.boardType, validated.userGrade);
-    if (difficultyId !== null) {
-      await db
-        .insert(dbSchema.boardClimbStats)
-        .values({
-          boardType: validated.boardType,
-          climbUuid: uuid,
-          angle: validated.angle,
-          displayDifficulty: difficultyId,
-          benchmarkDifficulty: validated.isBenchmark ? difficultyId : null,
-          ascensionistCount: 0,
-          difficultyAverage: difficultyId,
-          qualityAverage: null,
-          faUsername: validated.setter || null,
-          faAt: null,
-        })
-        .onConflictDoNothing({
-          target: [
-            dbSchema.boardClimbStats.boardType,
-            dbSchema.boardClimbStats.climbUuid,
-            dbSchema.boardClimbStats.angle,
-          ],
-        });
-    } else if (!isDraft) {
-      await db
-        .insert(dbSchema.boardClimbStats)
-        .values({
-          boardType: validated.boardType,
-          climbUuid: uuid,
-          angle: validated.angle,
-          ascensionistCount: 0,
-          faUsername: validated.setter || null,
-        })
-        .onConflictDoNothing({
-          target: [
-            dbSchema.boardClimbStats.boardType,
-            dbSchema.boardClimbStats.climbUuid,
-            dbSchema.boardClimbStats.angle,
-          ],
-        });
-    }
-
-    if (!isDraft) {
+    if (!isDraft && (await canViewContent(null, 'climb', uuid, ctx.userId!))) {
       await publishSocialEvent({
         type: 'climb.created',
         actorId: ctx.userId!,
@@ -1008,6 +1036,7 @@ export const climbMutations = {
           sizeId: woodsSizeId,
         });
         const existingMatch = await findExactDuplicateMatch({
+          viewerUserId: ctx.userId,
           boardType,
           layoutId: existing.layoutId,
           signature: gateSignature,
@@ -1051,6 +1080,16 @@ export const climbMutations = {
       if (!beforeEdit) {
         throw new Error('Climb not found');
       }
+      if (beforeEdit.userId !== ctx.userId) throw new Error('Climb not found or access denied');
+      if (validated.privacy)
+        await setContentPrivacy(
+          tx,
+          ctx.userId!,
+          'climb',
+          validated.uuid,
+          validated.privacy.audience,
+          validated.privacy.privacyRevision,
+        );
       // Everything decided above (who may edit, whether this publishes, whether
       // the holds or the rules changed, what the duplicate gate checked) was
       // decided for the row `existing` held. If another edit committed in
@@ -1278,7 +1317,12 @@ export const climbMutations = {
     //
     // The actor is the caller, which is right because only the setter can edit,
     // and so publish, a climb.
-    if (transitioningToPublished && (!sprayTarget || sprayMayAnnounce)) {
+    if (validated.privacy) pubsub.publishPrivacyChanged();
+    if (
+      transitioningToPublished &&
+      (!sprayTarget || sprayMayAnnounce) &&
+      (await canViewContent(null, 'climb', validated.uuid, ctx.userId!))
+    ) {
       const { displayName, name, avatarUrl } = await getUserProfile(ctx.userId!);
       const preferredSetter = displayName || name || null;
       await publishSocialEvent({

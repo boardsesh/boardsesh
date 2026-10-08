@@ -50,6 +50,7 @@ export type VoteSummary = {
 };
 
 export type AddCommentInput = {
+  privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   entityType: SocialEntityType;
   entityId: string;
   parentCommentUuid?: string;
@@ -57,6 +58,7 @@ export type AddCommentInput = {
 };
 
 export type UpdateCommentInput = {
+  privacy?: { audience: 'public' | 'followers' | 'only_me'; privacyRevision: number };
   commentUuid: string;
   body: string;
 };
@@ -93,6 +95,10 @@ export type CommentUpdated = {
 };
 
 export type CommentDeleted = {
+  /** Internal delivery authorization only; not exposed in GraphQL. */
+  authorUserId?: string;
+  /** Preserves ancestor authorization after the deleted row is gone. */
+  parentCommentId?: number | null;
   __typename: 'CommentDeleted';
   commentUuid: string;
   entityType: SocialEntityType;

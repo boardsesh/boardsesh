@@ -16,7 +16,9 @@ const validateTokenMock = vi.fn<(token: string) => Promise<{ userId: string; isA
 // reads boardPath without a second getSessionById round-trip.
 type SessionRow = { boardPath: string; status: string; endedAt: Date | null };
 const SESSION_ROW: SessionRow = { boardPath: 'kilter/8/17/20,21/40', status: 'active', endedAt: null };
-type GuardResult = { ok: true; session: SessionRow } | { ok: false; status: 410 | 403; error: string };
+type GuardResult =
+  | { ok: true; session: SessionRow }
+  | { ok: false; status: 410 | 403; error: string; reason?: 'privacy-denied' };
 const verifyWidgetSessionMock = vi.fn<() => Promise<GuardResult>>(async () => ({ ok: true, session: SESSION_ROW }));
 
 type MockClimb = {
@@ -43,6 +45,11 @@ type ResolvedNamedBoard = {
   angle: number;
 };
 const resolveBoardBySlugMock = vi.fn<(slug: string) => Promise<ResolvedNamedBoard | null>>(async () => null);
+const canReadClimbContentMock = vi.fn<(climbUuid: string, userId: string) => Promise<boolean>>(async () => true);
+
+vi.mock('../services/board-session-privacy', () => ({
+  canReadClimbContent: canReadClimbContentMock,
+}));
 
 vi.mock('../graphql/resolvers/shared/board-lookup', () => ({
   resolveBoardBySlug: resolveBoardBySlugMock,
@@ -152,6 +159,7 @@ describe('handleSessionState', () => {
     verifyWidgetSessionMock.mockResolvedValue({ ok: true, session: SESSION_ROW });
     getQueueStateMock.mockResolvedValue(makeQueueState());
     resolveBoardBySlugMock.mockReset().mockResolvedValue(null);
+    canReadClimbContentMock.mockReset().mockResolvedValue(true);
   });
 
   it('returns 405 for non-GET methods', async () => {
@@ -182,6 +190,43 @@ describe('handleSessionState', () => {
     const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
     expect(res.statusCode).toBe(403);
     expect(resolveBoardBySlugMock).not.toHaveBeenCalled();
+  });
+
+  it('changes the shipped watch redraw version when permissions withdraw the current climb', async () => {
+    const visible = JSON.parse((await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID })).body);
+    canReadClimbContentMock.mockResolvedValueOnce(false);
+    const hidden = JSON.parse((await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID })).body);
+    expect(visible.sequence).toBe(42);
+    expect(hidden.sequence).toBe(-43);
+    expect(hidden.climb).toBeNull();
+    expect(hidden.sequence).not.toBe(visible.sequence);
+  });
+
+  it.each([0, 0x7fffffff, 0x80000000])(
+    'keeps visibility redraw versions in signed 32-bit bounds at sequence %s',
+    async (sequence) => {
+      getQueueStateMock.mockResolvedValue({ ...makeQueueState(), sequence });
+      const visible = JSON.parse((await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID })).body);
+      canReadClimbContentMock.mockResolvedValueOnce(false);
+      const hidden = JSON.parse((await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID })).body);
+      expect(visible.sequence).toBeGreaterThanOrEqual(0);
+      expect(visible.sequence).toBeLessThanOrEqual(0x7fffffff);
+      expect(hidden.sequence).toBeGreaterThanOrEqual(-0x80000000);
+      expect(hidden.sequence).toBeLessThan(0);
+      expect(hidden.sequence).not.toBe(visible.sequence);
+    },
+  );
+
+  it('ends the shipped watch screen when its session privacy access is revoked', async () => {
+    verifyWidgetSessionMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      error: 'Session access is no longer available',
+      reason: 'privacy-denied',
+    });
+    const res = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+    expect(res.statusCode).toBe(410);
+    expect(res.body).not.toContain('Zombie Slayer');
   });
 
   it('returns the slim current-climb payload with board resolution from boardPath', async () => {
@@ -244,6 +289,26 @@ describe('handleSessionState', () => {
       setIds: '20,21',
       angle,
     });
+  });
+
+  it('withdraws a restricted climb even when the viewer still belongs to the session', async () => {
+    const allowed = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+    expect(JSON.parse(allowed.body).climb.name).toBe('Zombie Slayer');
+
+    canReadClimbContentMock.mockResolvedValue(false);
+    const withdrawn = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+    expect(withdrawn.statusCode).toBe(200);
+    expect(JSON.parse(withdrawn.body)).toMatchObject({ climb: null, currentIndex: 1, queueLength: 2 });
+    expect(withdrawn.body).not.toContain('Zombie Slayer');
+    expect(withdrawn.body).not.toContain('climb-uuid-2');
+    expect(canReadClimbContentMock).toHaveBeenLastCalledWith('climb-uuid-2', USER_ID);
+  });
+
+  it('fails closed when current climb authorization cannot be checked', async () => {
+    canReadClimbContentMock.mockRejectedValue(new Error('privacy read failed'));
+    const response = await run({ method: 'GET', authHeader: bearer, sessionId: SESSION_ID });
+    expect(response.statusCode).toBe(500);
+    expect(JSON.parse(response.body)).toEqual({ error: 'Internal server error' });
   });
 
   it('returns null board metadata when a named board no longer resolves', async () => {

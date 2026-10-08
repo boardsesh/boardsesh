@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useIsRestoring, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -15,6 +15,7 @@ import {
   type GetUserClimbPercentileQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import {
   type UserProfile,
@@ -70,6 +71,7 @@ const PROFILE_GC_TIME_MS = PERSIST_MAX_AGE_MS;
 
 export function useProfileData(userId: string, initialData?: InitialData) {
   const { data: session } = useSession();
+  const { token } = useWsAuthToken();
   const { showMessage } = useSnackbar();
   const { gradeFormat } = useGradeFormat();
   const queryClient = useQueryClient();
@@ -98,8 +100,8 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const profileInitial = initialData?.initialProfile;
   const profileQuery = useQuery<UserProfile>({
     queryKey: ['userProfile', userId],
-    queryFn: async () => {
-      const response = await fetch(`/api/internal/profile/${userId}`);
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/internal/profile/${userId}`, { signal });
       if (response.status === 404) throw new ProfileNotFoundError();
       if (!response.ok) throw new Error('Failed to fetch profile');
       const body = await response.json();
@@ -113,6 +115,8 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         followerCount: body.followerCount ?? 0,
         followingCount: body.followingCount ?? 0,
         isFollowedByMe: body.isFollowedByMe ?? false,
+        isPrivate: body.isPrivate,
+        canViewActivity: body.canViewActivity,
       } satisfies UserProfile;
     },
     enabled: !initialData?.initialNotFound,
@@ -124,6 +128,17 @@ export function useProfileData(userId: string, initialData?: InitialData) {
     initialDataUpdatedAt: profileInitial ? Date.now() : undefined,
     meta: { persist: isOwnProfile },
   });
+
+  // RSC refreshes bring new authorization decisions without remounting this
+  // client component. Only new props replace the cache; never reinstall the
+  // original SSR snapshot after the revocation bridge has cleared it.
+  const previousProfileSeed = useRef(profileInitial);
+  useEffect(() => {
+    if (profileInitial !== previousProfileSeed.current) {
+      previousProfileSeed.current = profileInitial;
+      if (profileInitial) queryClient.setQueryData(['userProfile', userId], profileInitial);
+    }
+  }, [profileInitial, queryClient, userId]);
 
   const profileError = profileQuery.error;
   const notFound = (initialData?.initialNotFound ?? false) || profileError instanceof ProfileNotFoundError;
@@ -142,13 +157,18 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const ticksInitial = initialData?.initialAllBoardsTicks;
   const ticksQuery = useQuery<BoardTicks>({
     queryKey: ['userTicks', userId],
-    queryFn: async () => {
-      const client = createGraphQLHttpClient(null);
+    enabled: !session?.user?.id || !!token,
+    queryFn: async ({ signal }) => {
+      const client = createGraphQLHttpClient(token);
       const collected: BoardTicks = {};
       await Promise.all(
         BOARD_TYPES.map(async (boardType) => {
           const variables: GetUserTicksQueryVariables = { userId, boardType };
-          const response = await client.request<GetUserTicksQueryResponse>(GET_USER_TICKS, variables);
+          const response = await client.request<GetUserTicksQueryResponse>({
+            document: GET_USER_TICKS,
+            variables,
+            signal,
+          });
           collected[boardType] = response.userTicks.map((tick) => ({
             climbed_at: tick.climbedAt,
             difficulty: tick.difficulty,
@@ -175,10 +195,15 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const profileStatsInitial = initialData?.initialProfileStats;
   const profileStatsQuery = useQuery<GetUserProfileStatsQueryResponse['userProfileStats']>({
     queryKey: ['userProfileStats', userId],
-    queryFn: async () => {
-      const client = createGraphQLHttpClient(null);
+    enabled: !session?.user?.id || !!token,
+    queryFn: async ({ signal }) => {
+      const client = createGraphQLHttpClient(token);
       const variables: GetUserProfileStatsQueryVariables = { userId };
-      const response = await client.request<GetUserProfileStatsQueryResponse>(GET_USER_PROFILE_STATS, variables);
+      const response = await client.request<GetUserProfileStatsQueryResponse>({
+        document: GET_USER_PROFILE_STATS,
+        variables,
+        signal,
+      });
       return response.userProfileStats;
     },
     staleTime: PROFILE_STALE_TIME_MS,
@@ -197,10 +222,13 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   const percentileInitial = initialData?.initialPercentile;
   const percentileQuery = useQuery<GetUserClimbPercentileQueryResponse['userClimbPercentile'] | null>({
     queryKey: ['userClimbPercentile', userId],
-    queryFn: async () => {
-      const client = createGraphQLHttpClient(null);
-      const response = await client.request<GetUserClimbPercentileQueryResponse>(GET_USER_CLIMB_PERCENTILE, {
-        userId,
+    enabled: !session?.user?.id || !!token,
+    queryFn: async ({ signal }) => {
+      const client = createGraphQLHttpClient(token);
+      const response = await client.request<GetUserClimbPercentileQueryResponse>({
+        document: GET_USER_CLIMB_PERCENTILE,
+        variables: { userId },
+        signal,
       });
       return response.userClimbPercentile;
     },

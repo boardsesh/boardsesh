@@ -1,3 +1,4 @@
+import { getPrivacyRevocationGeneration } from '../../lib/privacy/privacy-cache';
 import { useEffect, useRef } from 'react';
 import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, ClimbRegradePatch, PlaylistSuggestionSource, QueueAction } from '@boardsesh/queue';
@@ -7,6 +8,7 @@ import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
 
 type UseQueueRegradeParams = {
+  privacyRevocationGeneration?: number;
   /** The active board (angle source of truth). Undefined until the React Query cache hydrates. */
   activeBoard: UserBoard | null | undefined;
   queue: ClimbQueueItem[];
@@ -33,6 +35,7 @@ type UseQueueRegradeParams = {
  * patching, climb.angle === angle, so the effect no-ops on its own re-run.
  */
 export function useQueueRegrade({
+  privacyRevocationGeneration,
   activeBoard,
   queue,
   currentClimbQueueItem,
@@ -45,16 +48,17 @@ export function useQueueRegrade({
   // Keyed by angle (not a plain Set) so a fetch already running for a STALE
   // angle doesn't block a fresh fetch when the angle changes again mid-flight —
   // otherwise that climb could strand at the old grade.
-  const regradeInFlightRef = useRef<Map<string, number>>(new Map());
+  const regradeInFlightRef = useRef<Map<string, { angle: number; token: symbol }>>(new Map());
   useEffect(() => {
     if (!activeBoard) return undefined;
+    const privacyGeneration = getPrivacyRevocationGeneration();
     const { boardType, layoutId, sizeId, setIds, angle } = activeBoard;
     const uuids = new Set<string>();
     const consider = (item: ClimbQueueItem | null | undefined) => {
       if (!item?.climb) return;
       // Re-grade when the display angle differs AND we aren't already fetching
       // this climb for the CURRENT angle (a fetch for a prior angle re-enqueues).
-      if (item.climb.angle !== angle && regradeInFlightRef.current.get(item.climb.uuid) !== angle) {
+      if (item.climb.angle !== angle && regradeInFlightRef.current.get(item.climb.uuid)?.angle !== angle) {
         uuids.add(item.climb.uuid);
       }
     };
@@ -94,7 +98,8 @@ export function useQueueRegrade({
     if (uuids.size === 0) return undefined;
 
     const targetUuids = [...uuids];
-    targetUuids.forEach((uuid) => regradeInFlightRef.current.set(uuid, angle));
+    const requestToken = Symbol('queue-hydration');
+    targetUuids.forEach((uuid) => regradeInFlightRef.current.set(uuid, { angle, token: requestToken }));
 
     let cancelled = false;
     void (async () => {
@@ -129,13 +134,13 @@ export function useQueueRegrade({
           } finally {
             // Only clear our own marker — a newer run may have re-targeted this
             // uuid to a different angle, and must keep its in-flight claim.
-            if (regradeInFlightRef.current.get(climbUuid) === angle) {
+            if (regradeInFlightRef.current.get(climbUuid)?.token === requestToken) {
               regradeInFlightRef.current.delete(climbUuid);
             }
           }
         }),
       );
-      if (cancelled) return;
+      if (cancelled || privacyGeneration !== getPrivacyRevocationGeneration()) return;
       const grades: Record<string, ClimbRegradePatch> = {};
       for (const entry of patches) {
         if (entry) grades[entry[0]] = entry[1];
@@ -149,7 +154,7 @@ export function useQueueRegrade({
         // climbs already at the live angle, and preserves the prev reference when
         // nothing changes so this never churns the source state.
         setPlaylistSuggestionSourceState((prev) => {
-          if (!prev) return prev;
+          if (!prev || privacyGeneration !== getPrivacyRevocationGeneration()) return prev;
           let changed = false;
           const climbs = prev.climbs.map((climb) => {
             const patch = grades[climb.uuid];
@@ -163,7 +168,12 @@ export function useQueueRegrade({
     })();
 
     return () => {
+      for (const climbUuid of targetUuids) {
+        if (regradeInFlightRef.current.get(climbUuid)?.token === requestToken) {
+          regradeInFlightRef.current.delete(climbUuid);
+        }
+      }
       cancelled = true;
     };
-  }, [queue, currentClimbQueueItem, activeBoard, playlistSuggestionSource]);
+  }, [queue, currentClimbQueueItem, activeBoard, playlistSuggestionSource, privacyRevocationGeneration]);
 }

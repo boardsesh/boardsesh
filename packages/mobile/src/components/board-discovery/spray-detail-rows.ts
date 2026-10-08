@@ -34,7 +34,7 @@ export type SprayDetailRowBoard = {
   boardType: string;
   canEdit?: boolean;
   /** The wall owner's user id. Reset is offered only when it is the viewer's. */
-  ownerId?: string;
+  ownerId?: string | null;
 };
 
 /**

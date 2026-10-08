@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vite-plus/test';
 import { sql } from 'drizzle-orm';
+import { users, playlistOwnership } from '@boardsesh/db/schema';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { playlistQueries } from '../graphql/resolvers/playlists/queries';
@@ -115,6 +116,15 @@ describe('playlistClimbs — board-scoped size and hold-set filtering (real DB)'
              (2, ${KILTER_PLAYLIST_UUID}, 'kilter', 1, 'Kilter sizes', true),
              (3, ${MOONBOARD_SETS_PLAYLIST_UUID}, 'moonboard', 7, 'Wooden hold session', true)
     `);
+    // Public discovery still requires a real owner whose account permits it.
+    const ownerId = 'playlist-climbs-board-scope-owner';
+    await db
+      .insert(users)
+      .values({ id: ownerId, email: `${ownerId}@test.invalid` })
+      .onConflictDoNothing();
+    await db
+      .insert(playlistOwnership)
+      .values([1, 2, 3].map((playlistId) => ({ playlistId: BigInt(playlistId), userId: ownerId, role: 'owner' })));
     await db.execute(sql`
       INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
       VALUES (1, 'moon-1', 40, 0), (1, 'moon-2', 40, 1),

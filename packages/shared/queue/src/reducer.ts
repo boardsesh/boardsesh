@@ -364,7 +364,7 @@ function reduceQueue<TSearchParams extends QueueSearchParams>(
       const itemIndex = state.queue.findIndex((qItem) => qItem.uuid === uuid);
 
       if (itemIndex === -1) {
-        return state;
+        return state.currentClimbQueueItem?.uuid === uuid ? { ...state, currentClimbQueueItem: item } : state;
       }
 
       const newQueue = [...state.queue];

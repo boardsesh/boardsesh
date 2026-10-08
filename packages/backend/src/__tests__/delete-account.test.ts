@@ -40,6 +40,14 @@ vi.mock('../db/client', () => ({
 vi.mock('../graphql/resolvers/users/delete-account-spray-walls', () => ({
   deleteAccountSprayWalls: vi.fn(async () => []),
 }));
+// Withdrawal and its durable FK behavior are exercised against real PostgreSQL.
+vi.mock('../graphql/resolvers/users/delete-account-privacy', () => ({
+  withdrawDeletedAccountContent: vi.fn(async () => undefined),
+  retryAccountDeletion: (transaction: () => Promise<unknown>) => transaction(),
+}));
+vi.mock('../graphql/resolvers/users/delete-account-boards', () => ({
+  deleteAccountBoards: vi.fn(async () => undefined),
+}));
 
 function makeAuthCtx(userId = 'user-1'): ConnectionContext {
   return {

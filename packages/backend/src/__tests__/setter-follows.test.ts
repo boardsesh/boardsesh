@@ -3,7 +3,7 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { setterFollowMutations, setterFollowQueries } from '../graphql/resolvers/social/setter-follows';
 
 // All mock variables must be inside vi.hoisted() to avoid "Cannot access before initialization" errors
-const { mockDb } = vi.hoisted(() => {
+const { mockDb, requestFollowMock, removeFollowMock } = vi.hoisted(() => {
   const mockDb = {
     execute: vi.fn(),
     select: vi.fn(),
@@ -12,11 +12,19 @@ const { mockDb } = vi.hoisted(() => {
     update: vi.fn(),
   };
 
-  return { mockDb };
+  return {
+    mockDb,
+    requestFollowMock: vi.fn().mockResolvedValue(true),
+    removeFollowMock: vi.fn().mockResolvedValue(true),
+  };
 });
 
 vi.mock('../db/client', () => ({
   db: mockDb,
+}));
+vi.mock('../graphql/resolvers/privacy', () => ({
+  requestPrivacyFollow: requestFollowMock,
+  removePrivacyFollow: removeFollowMock,
 }));
 
 // `userClimbs` resolves which board to draw each climb on via its own helper,
@@ -189,7 +197,7 @@ describe('followSetter mutation', () => {
     expect(mockDb.insert).toHaveBeenCalledTimes(1);
   });
 
-  it('should create user_follows when setter has linked Boardsesh account', async () => {
+  it('routes linked account follows through the approval-aware privacy service', async () => {
     const ctx = makeCtx();
 
     // 1. Setter exists
@@ -204,15 +212,11 @@ describe('followSetter mutation', () => {
     const linkedChain = createMockChain([{ userId: 'linked-user-456' }]);
     mockDb.select.mockReturnValueOnce(linkedChain);
 
-    // 4. user_follows insert
-    const userFollowInsertChain = createMockChain(undefined);
-    mockDb.insert.mockReturnValueOnce(userFollowInsertChain);
-
     const result = await setterFollowMutations.followSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
 
     expect(result).toBe(true);
-    // Insert called twice: once for setter_follows, once for user_follows
-    expect(mockDb.insert).toHaveBeenCalledTimes(2);
+    expect(mockDb.insert).toHaveBeenCalledTimes(1);
+    expect(requestFollowMock).toHaveBeenCalledWith('user-123', 'linked-user-456');
   });
 });
 
@@ -256,15 +260,11 @@ describe('unfollowSetter mutation', () => {
     const linkedChain = createMockChain([{ userId: 'linked-user-456' }]);
     mockDb.select.mockReturnValueOnce(linkedChain);
 
-    // Delete user_follows
-    const deleteUserFollowChain = createMockChain(undefined);
-    mockDb.delete.mockReturnValueOnce(deleteUserFollowChain);
-
     const result = await setterFollowMutations.unfollowSetter(null, { input: { setterUsername: 'setter1' } }, ctx);
 
     expect(result).toBe(true);
-    // Delete called twice: setter_follows and user_follows
-    expect(mockDb.delete).toHaveBeenCalledTimes(2);
+    expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    expect(removeFollowMock).toHaveBeenCalledWith('user-123', 'linked-user-456');
   });
 });
 

@@ -6,6 +6,8 @@ import { playlistRowsToItems } from '../playlist-entries';
 import { CLIMB_URLS_PER_SHARD, MAX_ITEMS_PER_SHARD, MAX_SHARD_BYTES, renderUrlset } from '../sitemap-xml';
 
 vi.mock('server-only', () => ({}));
+// Authorization is exercised separately in privacy-filter.test.ts.
+vi.mock('../privacy-filter', () => ({ filterPublicSitemapItems: async <Item>(items: Item[]) => items }));
 
 const FULL_CACHE_CONTROL = 'public, s-maxage=3600, stale-while-revalidate=86400';
 const DEGRADED_CACHE_CONTROL = 'public, s-maxage=60, must-revalidate';

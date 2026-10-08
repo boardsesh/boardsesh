@@ -8,6 +8,7 @@ import { runBackfill, parseArgs } from '../scripts/backfill-inferred-sessions';
 import { logger } from '../utils/logger';
 import { vi } from 'vite-plus/test';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { canReadSocialEntity } from '../graphql/resolvers/shared/activity-privacy';
 
 vi.mock('../events', () => ({ publishSocialEvent: vi.fn(async () => undefined) }));
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
@@ -112,6 +113,7 @@ const reconcileAt = (epochMs: number) =>
 
 async function cleanup() {
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+  await db.delete(dbSchema.userProfiles).where(eq(dbSchema.userProfiles.userId, USER_ID));
   await db.execute(sql`DELETE FROM votes WHERE entity_type = 'session'`);
   await db.execute(sql`DELETE FROM comments WHERE entity_type = 'session' AND user_id = ${USER_ID}`);
   await db.execute(sql`DELETE FROM board_sessions WHERE created_by_user_id = ${USER_ID}`);
@@ -206,6 +208,67 @@ describe('reconcileInferredSessions (real DB)', () => {
     expect(sessions.find((session) => session.id === survivingTick.sessionId)?.startedAt?.getTime()).toBe(
       operation === 'delete' ? touchedAt + 20 * MINUTE : touchedAt,
     );
+  });
+
+  it('inherits the account audience for a newly inferred session', async () => {
+    await db
+      .insert(dbSchema.userProfiles)
+      .values({ userId: USER_ID, isPrivate: true, defaultSessionAudience: 'followers' });
+    await insertTick(BASE);
+    await reconcileAt(BASE);
+    const [session] = await sessionsForUser();
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
+    expect(privacy.audience).toBe('followers');
+  });
+
+  it('preserves restricted source privacy when a bridge merges sessions', async () => {
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await reconcileAt(BASE);
+    await reconcileAt(BASE + 10 * HOUR);
+    const [morning] = await sessionsForUser();
+    await db
+      .update(dbSchema.resourcePrivacy)
+      .set({ audience: 'only_me' })
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, morning.id)));
+    await insertTick(BASE + 5 * HOUR);
+    await reconcileAt(BASE + 5 * HOUR);
+    const [merged] = await sessionsForUser();
+    const [privacy] = await db
+      .select()
+      .from(dbSchema.resourcePrivacy)
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, merged.id)));
+    expect(privacy.audience).toBe('only_me');
+    expect(await ticksForUser()).toHaveLength(3);
+  });
+
+  it('copies the source audience when editing a tick splits its session', async () => {
+    await insertTick(BASE);
+    const moved = await insertTick(BASE + 30 * MINUTE);
+    await reconcileAt(BASE);
+    const [original] = await sessionsForUser();
+    await db
+      .update(dbSchema.resourcePrivacy)
+      .set({ audience: 'only_me' })
+      .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, original.id)));
+    await db
+      .update(dbSchema.boardseshTicks)
+      .set({ climbedAt: iso(BASE + 24 * HOUR) })
+      .where(eq(dbSchema.boardseshTicks.id, BigInt(moved)));
+    await reconcileAt(BASE + 24 * HOUR);
+    const sessions = await sessionsForUser();
+    expect(sessions).toHaveLength(2);
+    for (const session of sessions) {
+      const [privacy] = await db
+        .select()
+        .from(dbSchema.resourcePrivacy)
+        .where(and(eq(dbSchema.resourcePrivacy.kind, 'session'), eq(dbSchema.resourcePrivacy.resourceId, session.id)));
+      expect(privacy.audience).toBe('only_me');
+    }
+    expect(await ticksForUser()).toHaveLength(2);
   });
 
   it('creates one session per run and assigns every tick', async () => {
@@ -343,6 +406,97 @@ describe('reconcileInferredSessions (real DB)', () => {
     // No inferred session is left standing beside it.
     const inferred = (await sessionsForUser()).filter((session) => session.origin === 'inferred');
     expect(inferred).toHaveLength(0);
+  });
+
+  it.each([false, true])(
+    'retains a source revocation when explicit absorption already denies that viewer: %s',
+    async (destinationRevoked) => {
+      const revokedUserId = 'user-123';
+      await db.update(dbSchema.userBoards).set({ isPublic: true }).where(eq(dbSchema.userBoards.id, boardId));
+      const movedTickId = await insertTick(BASE);
+      await reconcileAt(BASE);
+      const [source] = await sessionsForUser();
+      await db.insert(dbSchema.resourceGrants).values({
+        kind: 'session',
+        resourceId: source.id,
+        userId: revokedUserId,
+        status: 'revoked',
+      });
+      const [movedTick] = await db
+        .select()
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.id, BigInt(movedTickId)));
+      expect(await canReadSocialEntity('tick', movedTick.uuid, revokedUserId)).toBe(false);
+
+      const explicitId = uuidv4();
+      await db.insert(dbSchema.boardSessions).values({
+        id: explicitId,
+        boardPath: '/kilter/1/10/1,20/40',
+        createdByUserId: USER_ID,
+        status: 'ended',
+        isPublic: true,
+      });
+      if (destinationRevoked)
+        await db.insert(dbSchema.resourceGrants).values({
+          kind: 'session',
+          resourceId: explicitId,
+          userId: revokedUserId,
+          status: 'revoked',
+        });
+      const existingTickId = await insertTick(BASE + 15 * MINUTE, explicitId);
+
+      await reconcileAt(BASE);
+
+      expect((await ticksForUser()).every((tick) => tick.sessionId === explicitId)).toBe(true);
+      expect(await canReadSocialEntity('tick', movedTick.uuid, revokedUserId)).toBe(false);
+      expect(await canReadSocialEntity('tick', movedTick.uuid, USER_ID)).toBe(true);
+      const policies = await db
+        .select()
+        .from(dbSchema.contentPrivacy)
+        .where(
+          and(eq(dbSchema.contentPrivacy.entityType, 'tick'), eq(dbSchema.contentPrivacy.entityId, movedTick.uuid)),
+        );
+      expect(policies.map((policy) => policy.audience)).toEqual(destinationRevoked ? [] : ['only_me']);
+      const [existingTick] = await db
+        .select()
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.id, BigInt(existingTickId)));
+      expect(await canReadSocialEntity('tick', existingTick.uuid, revokedUserId)).toBe(!destinationRevoked);
+    },
+  );
+
+  it('keeps a moved comment restricted by the merged public session revocation', async () => {
+    const revokedUserId = 'user-123';
+    await insertTick(BASE);
+    await insertTick(BASE + 10 * HOUR);
+    await reconcileAt(BASE);
+    await reconcileAt(BASE + 10 * HOUR);
+    const [morning, evening] = await sessionsForUser();
+    await db.insert(dbSchema.resourceGrants).values({
+      kind: 'session',
+      resourceId: evening.id,
+      userId: revokedUserId,
+      status: 'revoked',
+    });
+    const commentUuid = uuidv4();
+    await db.insert(dbSchema.comments).values({
+      uuid: commentUuid,
+      userId: USER_ID,
+      entityType: 'session',
+      entityId: evening.id,
+      body: 'Protected discussion',
+    });
+    expect(await canReadSocialEntity('comment', commentUuid, revokedUserId)).toBe(false);
+
+    await insertTick(BASE + 4 * HOUR);
+    await insertTick(BASE + 7 * HOUR);
+    await reconcileAt(BASE + 4 * HOUR);
+
+    const [comment] = await db.select().from(dbSchema.comments).where(eq(dbSchema.comments.uuid, commentUuid));
+    expect(comment.entityId).toBe(morning.id);
+    expect(await canReadSocialEntity('comment', commentUuid, revokedUserId)).toBe(false);
+    expect(await canReadSocialEntity('comment', commentUuid, USER_ID)).toBe(true);
+    expect(await canReadSocialEntity('comment', commentUuid, null)).toBe(true);
   });
 
   it('refuses a duplicate session for the same anchor', async () => {

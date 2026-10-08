@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { canAccessResource } from '../services/privacy';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
 
 // Mock db + dependencies before importing resolver.
@@ -36,6 +37,21 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 vi.mock('../events/index', () => ({
   publishSocialEvent: vi.fn().mockResolvedValue(undefined),
 }));
+
+// Exercise hardware lookup independently from the policy database adapter.
+// Authenticated strangers receive no private metadata; owners retain details.
+vi.mock('../services/privacy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/privacy')>();
+  return {
+    ...actual,
+    canAccessResource: vi.fn(async (_kind: string, _id: string, viewerId?: string) => viewerId === 'owner-123'),
+    canAccessResourceWithoutLink: vi.fn(
+      async (_kind: string, _id: string, viewerId?: string) => viewerId === 'owner-123',
+    ),
+    canViewResourceLocation: vi.fn(async (_id: string, viewerId?: string) => viewerId === 'owner-123'),
+    canViewActivityIdentity: vi.fn(async (ownerId: string, viewerId?: string) => ownerId === viewerId),
+  };
+});
 
 // Minimal DB row matching the userBoards schema shape
 function makeDbBoard(overrides: Record<string, unknown> = {}) {
@@ -240,7 +256,7 @@ describe('boardsBySerialNumbers privacy', () => {
 
       const result = results[0];
       expect(result.uuid).toBe('board-uuid-1');
-      expect(result.slug).toBe('my-board');
+      expect(result.slug).toBe('');
       expect(result.boardType).toBe('kilter');
       expect(result.layoutId).toBe(1);
       expect(result.sizeId).toBe(10);
@@ -297,7 +313,20 @@ describe('boardsBySerialNumbers privacy', () => {
   });
 
   describe('authenticated callers', () => {
-    it('returns full board data including owner and stats', async () => {
+    it('keeps controller and timer configuration for an authorized non-editor', async () => {
+      vi.mocked(canAccessResource).mockResolvedValueOnce(true);
+      setupDbSelectSequence([[makeDbBoard({ isPublic: true, timerName: 'Rogue Gym Timer' })]]);
+      const results = await socialBoardQueries.boardsBySerialNumbers(
+        null,
+        { serialNumbers: ['SERIAL001'] },
+        makeAuthCtx('gym-climber'),
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ canEdit: false, serialNumber: 'SERIAL001', timerName: 'Rogue Gym Timer' });
+      expect(results[0].ownerId).toBeNull();
+    });
+
+    it('returns full board data including owner and stats to the owner', async () => {
       const board = makeDbBoard({
         isPublic: false,
         name: 'Secret Wall',
@@ -321,7 +350,7 @@ describe('boardsBySerialNumbers privacy', () => {
       const results = await socialBoardQueries.boardsBySerialNumbers(
         null,
         { serialNumbers: ['SERIAL001'] },
-        makeAuthCtx('user-1'),
+        makeAuthCtx('owner-123'),
       );
 
       expect(results).toHaveLength(1);

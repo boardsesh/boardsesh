@@ -1,3 +1,5 @@
+import { canReadClimbContent } from './board-session-privacy';
+import { canAccessResource } from './privacy';
 import { and, desc, eq } from 'drizzle-orm';
 import type { BoardQueuePreview, BoardQueuePreviewItem, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
@@ -144,7 +146,7 @@ export async function resolvePublicPreviewSessionForBoard(
     )
     .orderBy(desc(dbSchema.boardSessions.lastActivity))
     .limit(1);
-  return row?.id ?? null;
+  return row?.id && (await canAccessResource('session', row.id, null)) ? row.id : null;
 }
 
 /**
@@ -160,7 +162,25 @@ export async function getBoardQueuePreviewSnapshot(
   const sessionId = await resolvePublicPreviewSessionForBoard(boardId, options);
   if (!sessionId) return null;
   const queueState = await roomManager.getQueueState(sessionId);
-  return buildBoardQueuePreview(boardId, queueState);
+  const preview = buildBoardQueuePreview(boardId, queueState);
+  const redact = async (item: BoardQueuePreviewItem): Promise<BoardQueuePreviewItem> =>
+    (await canReadClimbContent(item.climbUuid, null))
+      ? item
+      : {
+          queueItemUuid: item.queueItemUuid,
+          climbUuid: item.climbUuid,
+          name: null,
+          frames: null,
+          setter: null,
+          grade: null,
+          gradeColor: null,
+          angle: null,
+        };
+  return {
+    ...preview,
+    current: preview.current ? await redact(preview.current) : null,
+    upNext: await Promise.all(preview.upNext.map(redact)),
+  };
 }
 
 /**
@@ -220,8 +240,10 @@ export async function publishBoardQueuePreviewForSession(sessionId: string): Pro
   if (!(await isBoardAnonReadable(Number(boardId)))) return;
   if (!(await isPublicActiveSession(sessionId))) return;
 
-  const queueState = await roomManager.getQueueState(sessionId);
-  pubsub.publishBoardQueuePreview(boardId, buildBoardQueuePreview(Number(boardId), queueState));
+  // Queue copies can outlive an item's audience. Use the same current climb
+  // authorization as the initial query instead of publishing copied metadata.
+  const snapshot = await getBoardQueuePreviewSnapshot(Number(boardId));
+  if (snapshot) pubsub.publishBoardQueuePreview(boardId, snapshot);
 }
 
 /**

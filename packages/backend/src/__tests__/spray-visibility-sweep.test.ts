@@ -611,6 +611,8 @@ const NOT_APPLICABLE: Record<string, string> = {
   'Query.followers': 'the follow graph, users only',
   'Query.following': 'the follow graph, users only',
   'Query.isFollowing': 'one boolean about two users',
+  'Query.privacyRelationship': 'follow-request and account-privacy flags for a supplied user id; no climb metadata',
+  'Query.contentAudience': 'audience and edit-permission flags for a supplied entity id; no climb metadata',
   'Query.publicProfile': 'profile fields; the climb lists are their own resolvers, swept separately',
   'Query.setterProfile': "a setter's name and totals; `setterClimbs` is the reader that names climbs",
   'Query.notificationActors': 'the users behind a notification',
@@ -693,12 +695,8 @@ const NOT_APPLICABLE: Record<string, string> = {
 
   // --- subscriptions the sweep cannot separate --------------------------------
   // A subscription is "exercised" when the owner's stream stays open and both
-  // other viewers' close. These four do not gate at subscribe time at all — they
-  // gate on the payload, or on state the sweep does not create.
-  'Subscription.sessionUpdates':
-    'gated on session membership, which is checked as events arrive; the sweep publishes none',
-  'Subscription.queueUpdates': 'same: a queue stream gated per event',
-  'Subscription.commentUpdates': 'comment events for an entity id; gated at the write, and the sweep publishes none',
+  // other viewers' close. Controller events depend on state the sweep does not
+  // create; session, queue and comment subscriptions are swept at subscribe time.
   'Subscription.controllerEvents': 'controller events for a session; the sweep publishes none',
 };
 
@@ -790,6 +788,7 @@ type Outcome = { data: unknown; errorMessages: string[]; subscribed: boolean };
  * to outlast a few awaits — it is not a race against a network.
  */
 const SUBSCRIPTION_SETTLE_MS = 150;
+const SESSION_SUBSCRIPTION_TIMEOUT_MS = 8_000;
 
 /**
  * Per-field deadline on the query path.
@@ -802,17 +801,14 @@ const SUBSCRIPTION_SETTLE_MS = 150;
  */
 const QUERY_TIMEOUT_MS = 30_000;
 
-/** Reject with `label` if `work` has not settled in `QUERY_TIMEOUT_MS`. */
-async function withQueryDeadline<T>(work: Promise<T>, label: string): Promise<T> {
+/** Reject with `label` if `work` has not settled before its deadline. */
+async function withQueryDeadline<T>(work: Promise<T>, label: string, timeoutMs = QUERY_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`${label} did not answer within ${QUERY_TIMEOUT_MS} ms`)),
-          QUERY_TIMEOUT_MS,
-        );
+        timer = setTimeout(() => reject(new Error(`${label} did not answer within ${timeoutMs} ms`)), timeoutMs);
       }),
     ]);
   } finally {
@@ -834,10 +830,17 @@ async function runRow(row: SweepRow, ctx: ConnectionContext): Promise<Outcome> {
         // open a moment later. Nothing is published during the sweep, so a stream
         // that stays open is one the gate let through.
         const iterator = result as AsyncIterableIterator<unknown>;
-        const first = await Promise.race([
-          iterator.next().then((step) => (step.done === true ? 'closed' : 'event')),
-          new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), SUBSCRIPTION_SETTLE_MS)),
-        ]);
+        const firstRead = iterator.next().then((step) => (step.done === true ? 'closed' : 'event'));
+        // These streams emit an initial snapshot after membership authorization.
+        // A caller without membership first waits through the join retry window
+        // (~6.35s), so the quiet-stream probe would mistake that wait for access.
+        const emitsInitialSnapshot = row.fieldName === 'sessionUpdates' || row.fieldName === 'queueUpdates';
+        const first = emitsInitialSnapshot
+          ? await withQueryDeadline(firstRead, row.key, SESSION_SUBSCRIPTION_TIMEOUT_MS)
+          : await Promise.race([
+              firstRead,
+              new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), SUBSCRIPTION_SETTLE_MS)),
+            ]);
         // NOT awaited. A resolver that gates by ending its stream is an async
         // GENERATOR, and by now it is suspended inside its own `for await` on a
         // pubsub push that this sweep never sends. `return()` on a generator in
@@ -1437,15 +1440,16 @@ describe('the spray-wall visibility sweep', () => {
  *
  * So this block seeds a draft on the private wall, hangs one of each reference
  * off it, deletes the draft through the real mutation, and asks each reader.
- * These are explicit cases rather than more sentinels in the generic scan,
- * because the scan would also turn the logbook readers red, and those are a
- * separate change.
+ * The owner's raw logbook and summaries retain their own records. Enriched
+ * ascent feeds and session-detail ticks require a readable parent climb even
+ * for the owner, so stale climb metadata cannot escape through those readers.
  */
 const ORPHAN_TICK_COMMENT = 'Zqx Orphan Tick Comment Zqx';
 const ORPHAN_SESSION_TICK_COMMENT = 'Zqx Orphan Session Tick Comment Zqx';
 const DAILY_PRIVATE_TICK_COMMENT = 'Zqx Daily Private Tick Comment Zqx';
 const DAILY_PRIVATE_BETA_LINK = 'https://beta.example/ZqxDailyPrivateBetaZqx';
-const GHOST_KILTER_SEND_COMMENT = 'Zqx Ghost Kilter Send Comment Zqx';
+const PUBLIC_KILTER_SEND_COMMENT = 'Zqx Public Kilter Send Comment Zqx';
+const PUBLIC_KILTER_TICK_COMMENT = 'Zqx Public Kilter Tick Comment Zqx';
 const GHOST_KILTER_TICK_COMMENT = 'Zqx Ghost Kilter Tick Comment Zqx';
 const ORPHAN_COMMENT_BODY = 'Zqx Orphan Comment Body Zqx';
 const ORPHAN_PROPOSAL_REASON = 'Zqx Orphan Proposal Reason Zqx';
@@ -1475,6 +1479,8 @@ describe('references to a hard-deleted spray climb', () => {
   const orphanHideCommentUuid = uuidv4();
   const orphanTickUuid = uuidv4();
   const orphanOnlySessionId = uuidv4();
+  const publicSessionId = uuidv4();
+  const publicClimbUuid = 'sweep-public-kilter-climb';
   const proposalTotalBefore = new Map<ViewerName, number>();
   const profileStatsBefore = new Map<ViewerName, ProfileStatsAnswer>();
 
@@ -1540,19 +1546,34 @@ describe('references to a hard-deleted spray climb', () => {
         ON CONFLICT DO NOTHING
       `);
     }
+    await db.execute(sql`
+      INSERT INTO board_sessions (id, board_path, created_by_user_id, name, is_public, status, started_at, created_at, last_activity)
+      VALUES (${publicSessionId}, ${`kilter/1/1/1/${ANGLE}`}, ${OWNER}, 'Public Kilter session',
+              true, 'active', now() - interval '1 hour', now(), now())
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await db.execute(sql`
+      INSERT INTO board_session_participants (session_id, user_id, joined_at) VALUES (${publicSessionId}, ${OWNER}, now())
+      ON CONFLICT DO NOTHING
+    `);
   }
 
   beforeAll(async () => {
-    // A send on ANOTHER board in the sweep's session, easier than everything on
-    // the wall. It is what a stranger should be shown as the session's hardest
-    // send once the wall's own sends are not candidates, and it is the positive
-    // control that a log on a missing climb of another board still reaches
-    // everybody. Seeded before the "before" answers so no later count moves.
+    // Readable parent climbs and public sessions are separate positive controls:
+    // a missing catalogue row or a private session must never grant feed access.
+    // Seed before the "before" answers so these sends do not move later counts.
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed)
+      VALUES (${publicClimbUuid}, 'kilter', 1, 'Public Kilter climb', 'p1r12p2r13', false, true)
+    `);
+    await reseedSessionRows();
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty,
                                    attempt_count, is_mirror, is_benchmark, session_id, comment, climbed_at, created_at, updated_at)
-      VALUES (${uuidv4()}, ${OWNER}, 'sweep-ghost-kilter-send', 'kilter', ${ANGLE}, 'send', 10,
-              1, false, false, ${world.sessionId}, ${GHOST_KILTER_SEND_COMMENT}, now(), now(), now())
+      VALUES (${uuidv4()}, ${OWNER}, ${publicClimbUuid}, 'kilter', ${ANGLE}, 'send', 10,
+              1, false, false, ${publicSessionId}, ${PUBLIC_KILTER_SEND_COMMENT}, now(), now(), now()),
+             (${uuidv4()}, ${OWNER}, ${publicClimbUuid}, 'kilter', ${ANGLE}, 'attempt', NULL,
+              1, false, false, NULL, ${PUBLIC_KILTER_TICK_COMMENT}, now(), now(), now())
     `);
 
     // The answers BEFORE the orphan exists. A count is a leak the sentinel scan
@@ -1594,9 +1615,11 @@ describe('references to a hard-deleted spray climb', () => {
       INSERT INTO board_sessions (id, board_path, created_by_user_id, name, board_id, status, started_at, created_at, last_activity)
       VALUES (${orphanOnlySessionId}, ${`spray/${world.layoutId}/${world.sizeId}/1/${ANGLE}`}, ${OWNER}, 'Orphan-only session',
               ${world.boardId}, 'active', now() - interval '1 hour', now(), now())
+      ON CONFLICT (id) DO NOTHING
     `);
     await db.execute(sql`
       INSERT INTO board_session_participants (session_id, user_id, joined_at) VALUES (${orphanOnlySessionId}, ${OWNER}, now())
+      ON CONFLICT DO NOTHING
     `);
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, difficulty, quality,
@@ -1607,10 +1630,9 @@ describe('references to a hard-deleted spray climb', () => {
               ${ORPHAN_SESSION_TICK_COMMENT}, now(), now(), now())
     `);
 
-    // The positive control. On every other board a log whose climb row is
-    // missing is a supported case ("Unknown Climb": an Aurora tick can arrive
-    // before its climb), and it must keep reaching everybody. An attempt, so no
-    // profile count moves.
+    // A catalogue tick can arrive before its climb. Keep it in the author's raw
+    // logbook, but deny enriched/public reads until the parent is available.
+    // An attempt, so no profile count moves.
     await db.execute(sql`
       INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status,
                                    attempt_count, is_mirror, is_benchmark, comment, climbed_at, created_at, updated_at)
@@ -1795,6 +1817,9 @@ describe('references to a hard-deleted spray climb', () => {
   });
 
   it('userProfileStats counts the log for its author and for nobody else', async () => {
+    // Keep the same public session parent that existed for the baseline counts;
+    // setup.ts removed it before this test, independently of the orphaned climb.
+    await reseedSessionRows();
     for (const viewer of ['anonymous', 'stranger'] as const) {
       // Not one number moves: no `spray-unknown` bucket, no extra distinct climb.
       expect(await profileStats(viewer), viewer).toEqual(profileStatsBefore.get(viewer));
@@ -1857,18 +1882,13 @@ describe('references to a hard-deleted spray climb', () => {
       expect(leaks).toEqual([]);
     });
 
-    it('still shows it to the climber who logged it', () => {
+    it('keeps the author’s raw logbook entry but omits it from enriched ascent feeds', () => {
       const seenByOwner = rows
         .filter((row) => findSentinels(orphanOutcomes.get(row.key)!.owner.data, orphanSentinels).length > 0)
         .map((row) => row.key);
-      // Their own logbook keeps the entry, as "Unknown Climb".
-      for (const key of [
-        'Query.userTicks',
-        'Query.userAscentsFeed',
-        'Query.userGroupedAscentsFeed',
-        'Query.sessionDetail',
-      ]) {
-        expect(seenByOwner, key).toContain(key);
+      expect(seenByOwner).toContain('Query.userTicks');
+      for (const key of ['Query.userAscentsFeed', 'Query.userGroupedAscentsFeed', 'Query.sessionDetail']) {
+        expect(seenByOwner, key).not.toContain(key);
       }
     });
 
@@ -1914,25 +1934,29 @@ describe('references to a hard-deleted spray climb', () => {
           { viewer, hits: findSentinels(sessions, [...sentinels, ...orphanSentinels].filter(isSecretSentinel)) },
           'a session card must not carry a log or a beta link from a wall the viewer cannot see',
         ).toEqual({ viewer, hits: [] });
-        // The sweep's session still has a card, and its hardest send is the
-        // Kilter one: the next send down that they may see.
-        const sweepSession = sessions.find((session) => session.sessionId === world.sessionId);
-        expect(sweepSession?.hardestSend, viewer).toMatchObject({
+        // The private wall's sessions stay hidden. A separate public session
+        // proves this reader still delivers an authorized send.
+        expect(
+          sessions.find((session) => session.sessionId === world.sessionId),
+          viewer,
+        ).toBeUndefined();
+        expect(sessions.find((session) => session.sessionId === publicSessionId)?.hardestSend, viewer).toMatchObject({
           boardType: 'kilter',
-          comment: GHOST_KILTER_SEND_COMMENT,
+          comment: PUBLIC_KILTER_SEND_COMMENT,
         });
-        // A session of nothing but the deleted climb's log has no send to show.
-        const orphanOnly = sessions.find((session) => session.sessionId === orphanOnlySessionId);
-        expect(orphanOnly?.hardestSend ?? null, `${viewer}: orphan-only session`).toBeNull();
+        expect(
+          sessions.find((session) => session.sessionId === orphanOnlySessionId),
+          `${viewer}: orphan-only session`,
+        ).toBeUndefined();
       }
 
       const own = await cards('owner');
       expect(own.find((session) => session.sessionId === world.sessionId)?.hardestSend?.comment).toBe(
         ORPHAN_TICK_COMMENT,
       );
-      expect(own.find((session) => session.sessionId === orphanOnlySessionId)?.hardestSend?.comment).toBe(
-        ORPHAN_SESSION_TICK_COMMENT,
-      );
+      // A user-scoped feed requires at least one readable parent climb to select
+      // the session. The raw logbook and numeric summary remain covered above.
+      expect(own.find((session) => session.sessionId === orphanOnlySessionId)).toBeUndefined();
     });
 
     it('the daily highlight card never anchors on a log the viewer may not see', async () => {
@@ -1988,30 +2012,34 @@ describe('references to a hard-deleted spray climb', () => {
       const feed = await ascentsFeed('followingAscentsFeed', 'stranger');
       expect(orphanHits(feed)).toEqual([]);
       // The feed itself is not empty: the owner's logs on other boards arrive.
-      expect(JSON.stringify(feed)).toContain(GHOST_KILTER_TICK_COMMENT);
+      expect(JSON.stringify(feed)).toContain(PUBLIC_KILTER_TICK_COMMENT);
     });
 
-    it('globalAscentsFeed carries it to its author and to nobody else', async () => {
-      for (const viewer of ['anonymous', 'stranger'] as const) {
-        expect({ viewer, hits: orphanHits(await ascentsFeed('globalAscentsFeed', viewer)) }).toEqual({
-          viewer,
+    it('globalAscentsFeed requires a readable parent even for the tick author', async () => {
+      for (const viewer of VIEWERS) {
+        const feed = await ascentsFeed('globalAscentsFeed', viewer.name);
+        expect({ viewer: viewer.name, hits: orphanHits(feed) }).toEqual({
+          viewer: viewer.name,
           hits: [],
         });
+        expect(JSON.stringify(feed), viewer.name).toContain(PUBLIC_KILTER_TICK_COMMENT);
       }
-      expect(orphanHits(await ascentsFeed('globalAscentsFeed', 'owner')).length).toBeGreaterThan(0);
     });
 
-    it('sessionDetail answers null for a session of nothing but that log, except to its author', async () => {
+    it('sessionDetail keeps the owner’s counts without enriching a missing-climb tick', async () => {
+      await reseedSessionRows();
       const detail = (viewer: ViewerName) =>
         ask(
           viewer,
-          'query Orphan($sessionId: ID!) { sessionDetail(sessionId: $sessionId) { sessionId ticks { uuid comment } } }',
+          'query Orphan($sessionId: ID!) { sessionDetail(sessionId: $sessionId) { sessionId tickCount ticks { uuid comment } } }',
           { sessionId: orphanOnlySessionId },
         );
       for (const viewer of ['anonymous', 'stranger'] as const) {
         expect(await detail(viewer), viewer).toEqual({ sessionDetail: null });
       }
-      expect(JSON.stringify(await detail('owner'))).toContain(ORPHAN_SESSION_TICK_COMMENT);
+      expect(await detail('owner')).toEqual({
+        sessionDetail: { sessionId: orphanOnlySessionId, tickCount: 1, ticks: [] },
+      });
     });
 
     it('the session summary names the deleted climb as the hardest send to its author only', async () => {
@@ -2047,29 +2075,44 @@ describe('references to a hard-deleted spray climb', () => {
       expect(feed.userAscentsFeed.totalCount).toBe(feed.userAscentsFeed.items.length);
     });
 
-    it('keeps a log on a missing climb of any other board, for everybody', async () => {
+    it('keeps missing catalogue-climb logs only in the author’s raw logbook', async () => {
       for (const viewer of VIEWERS) {
         const ticks = await ask(
           viewer.name,
           'query Ghost($userId: ID!, $boardType: String!) { userTicks(userId: $userId, boardType: $boardType) { climbUuid comment } }',
           { userId: OWNER, boardType: 'kilter' },
         );
-        expect(JSON.stringify(ticks), `${viewer.name}: userTicks`).toContain(GHOST_KILTER_TICK_COMMENT);
+        expect(JSON.stringify(ticks).includes(GHOST_KILTER_TICK_COMMENT), `${viewer.name}: userTicks`).toBe(
+          viewer.name === 'owner',
+        );
+        expect(JSON.stringify(ticks), `${viewer.name}: userTicks positive control`).toContain(
+          PUBLIC_KILTER_TICK_COMMENT,
+        );
         const feed = await ask(
           viewer.name,
           'query Ghost($userId: ID!) { userAscentsFeed(userId: $userId) { items { climbName comment } } }',
           { userId: OWNER },
         );
-        expect(JSON.stringify(feed), `${viewer.name}: userAscentsFeed`).toContain(GHOST_KILTER_TICK_COMMENT);
+        expect(JSON.stringify(feed), `${viewer.name}: userAscentsFeed`).not.toContain(GHOST_KILTER_TICK_COMMENT);
+        expect(JSON.stringify(feed), `${viewer.name}: userAscentsFeed positive control`).toContain(
+          PUBLIC_KILTER_TICK_COMMENT,
+        );
         const grouped = await ask(
           viewer.name,
           'query Ghost($userId: ID!) { userGroupedAscentsFeed(userId: $userId) { groups { climbUuid latestComment } } }',
           { userId: OWNER },
         );
-        expect(JSON.stringify(grouped), `${viewer.name}: userGroupedAscentsFeed`).toContain('sweep-ghost-kilter-climb');
+        expect(JSON.stringify(grouped), `${viewer.name}: userGroupedAscentsFeed`).not.toContain(
+          'sweep-ghost-kilter-climb',
+        );
+        expect(JSON.stringify(grouped), `${viewer.name}: userGroupedAscentsFeed positive control`).toContain(
+          publicClimbUuid,
+        );
       }
-      expect(JSON.stringify(await ascentsFeed('globalAscentsFeed', 'anonymous'))).toContain(GHOST_KILTER_TICK_COMMENT);
-      expect(JSON.stringify(await ascentsFeed('followingAscentsFeed', 'stranger'))).toContain(
+      expect(JSON.stringify(await ascentsFeed('globalAscentsFeed', 'anonymous'))).not.toContain(
+        GHOST_KILTER_TICK_COMMENT,
+      );
+      expect(JSON.stringify(await ascentsFeed('followingAscentsFeed', 'stranger'))).not.toContain(
         GHOST_KILTER_TICK_COMMENT,
       );
     });

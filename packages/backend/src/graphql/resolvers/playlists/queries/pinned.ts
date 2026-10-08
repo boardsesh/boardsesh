@@ -1,3 +1,4 @@
+import { playlistVisibilityCondition } from '../helpers/enrichment';
 import { eq, and, or, isNull, desc, sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../../db/client';
@@ -35,7 +36,7 @@ export const myPinnedPlaylists = async (
 
   const userId = ctx.userId!;
 
-  const conditions = [eq(dbSchema.userPlaylistPins.userId, userId)];
+  const conditions = [eq(dbSchema.userPlaylistPins.userId, userId), playlistVisibilityCondition(userId)];
 
   if (input.boardType) {
     conditions.push(eq(dbSchema.playlists.boardType, input.boardType));

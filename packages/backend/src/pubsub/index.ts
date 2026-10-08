@@ -66,6 +66,22 @@ const EVENT_BUFFER_TTL = 300; // 5 minutes
  * top in this class, documented at their call sites below.
  */
 class PubSub {
+  private readonly privacyChannel = new PubSubChannel<{ invalidated: true }>({
+    label: 'privacy',
+    redisSubscribe: () => this.redisAdapter?.subscribePrivacyChannel() ?? Promise.resolve(),
+    redisUnsubscribe: () => this.redisAdapter?.unsubscribePrivacyChannel() ?? Promise.resolve(),
+    redisPublish: () => this.redisAdapter?.publishPrivacyChanged() ?? Promise.resolve(),
+    isRedisRequired: () => this.redisRequired,
+    logger,
+  });
+  async subscribePrivacy(callback: () => void): Promise<() => void> {
+    this.ensureRedisIfRequired();
+    return this.privacyChannel.subscribe('global', callback);
+  }
+  publishPrivacyChanged(): void {
+    this.privacyChannel.publish('global', { invalidated: true });
+  }
+
   // No `redisPublish` here: queue publishes don't go through `channel.publish()`.
   // `publishQueueEvent` issues the Redis publish explicitly so the replay-buffer
   // LPUSH can be ordered before the fan-out PUBLISH on the wire (see its docstring).
@@ -254,6 +270,8 @@ class PubSub {
 
   private setupRedisMessageHandlers(): void {
     if (!this.redisAdapter) return;
+
+    this.redisAdapter.onPrivacyMessage(() => this.privacyChannel.dispatchLocal('global', { invalidated: true }));
 
     this.redisAdapter.onQueueMessage((sessionId, event) => {
       this.queueChannel.dispatchLocal(sessionId, event);

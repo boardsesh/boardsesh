@@ -9,6 +9,7 @@ import { GetClimbProposalsInputSchema, BrowseProposalsInputSchema } from '../../
 import { resolveCommunitySetting } from '../community-settings';
 import { batchEnrichProposals } from './enrichment';
 import { analyzeGradeOutlier } from './grade-analysis';
+import { proposalClimbVisibilityCondition } from './privacy';
 
 export const socialProposalQueries = {
   climbProposals: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
@@ -37,6 +38,7 @@ export const socialProposalQueries = {
     }
 
     const conditions = [
+      proposalClimbVisibilityCondition(dbSchema.climbProposals, authenticatedUserId),
       eq(dbSchema.climbProposals.climbUuid, climbUuid),
       eq(dbSchema.climbProposals.boardType, boardType),
     ];
@@ -100,6 +102,7 @@ export const socialProposalQueries = {
     // reason (#5981). Nobody is exempt: with the climb gone there is nothing
     // left to vote on.
     const conditions: SQL[] = [
+      proposalClimbVisibilityCondition(dbSchema.climbProposals, authenticatedUserId),
       sprayReferenceVisibilityCondition(
         { boardType: dbSchema.climbProposals.boardType, climbUuid: dbSchema.climbProposals.climbUuid },
         authenticatedUserId,
