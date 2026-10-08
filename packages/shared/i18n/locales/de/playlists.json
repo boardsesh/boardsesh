@@ -194,8 +194,7 @@
       "privateHint": "Private Playlists siehst nur du"
     },
     "actions": {
-      "save": "Speichern",
-      "saving": "Wird gespeichert ..."
+      "save": "Speichern"
     },
     "validation": {
       "nameRequired": "Gib der Playlist einen Namen",
@@ -210,7 +209,6 @@
   "create": {
     "drawerTitle": "Playlist erstellen",
     "submit": "Erstellen",
-    "submitting": "Wird erstellt ...",
     "fields": {
       "name": "Name",
       "namePlaceholder": "z. B. Fiese Leisten",

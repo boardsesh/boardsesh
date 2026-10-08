@@ -41,9 +41,10 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, footer }: { children?: ReactNode; footer?: ReactNode }) =>
-    createElement('div', { 'data-sheet': 'true' }, children, footer),
+  Sheet: ({ children, header }: { children?: ReactNode; header?: ReactNode }) =>
+    createElement('div', { 'data-sheet': 'true' }, header, children),
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
 vi.mock('@boardsesh/shared-schema', () => ({ SESSION_NAME_MAX_LENGTH: 100, SESSION_NOTES_MAX_LENGTH: 2000 }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: { SessionRenamed: 'Session Renamed' } }));
@@ -62,10 +63,6 @@ vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
 vi.mock('../../Text', () => ({
   Text: ({ children }: ChildrenProps) => createElement('span', { 'data-text': 'true' }, children),
 }));
-vi.mock('../../Button', () => ({
-  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
-    createElement('button', { onClick: onPress, 'data-button': title }),
-}));
 
 import { SessionEditSheet } from '../SessionEditSheet';
 
@@ -73,9 +70,8 @@ const inputByPlaceholder = (root: HTMLElement, placeholder: string) =>
   root.querySelector(`[data-placeholder="${placeholder}"]`) as HTMLInputElement | null;
 const nameInput = (root: HTMLElement) => inputByPlaceholder(root, 'creation.form.sessionNamePlaceholder');
 const recapInput = (root: HTMLElement) => inputByPlaceholder(root, 'summary.commentPlaceholder');
-const button = (root: HTMLElement, title: string) =>
-  root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
-const save = (root: HTMLElement) => fireEvent.click(button(root, 'detail.editSave')!);
+const save = (root: HTMLElement) =>
+  fireEvent.click(root.querySelector('[data-testid="sheet-top-bar-trailing"]') as HTMLButtonElement);
 
 describe('SessionEditSheet', () => {
   beforeEach(() => {

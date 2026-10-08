@@ -636,7 +636,6 @@
     },
     "report": {
       "title": "Reportar bloque",
-      "close": "Cerrar el reporte",
       "kind": {
         "label": "¿Qué falla?",
         "hide": "Ocultar este bloque",

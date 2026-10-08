@@ -10,10 +10,10 @@ import {
   GYM_CLAIM_SUPPORT_EMAIL,
 } from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
-import { PressableSurface } from '../PressableSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useRequestGymClaim } from '../../lib/graphql/hooks';
@@ -134,6 +134,37 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
     </View>
   );
 
+  const inDomainForm = !confirmation && mode === 'domain' && canUseDomain && Boolean(domain);
+  const header = (
+    <SheetTopBar
+      title={t('mobile.gymClaim.title', { gym: gym.name })}
+      leading={confirmation ? undefined : { kind: 'cancel', onPress: dismiss }}
+      trailing={
+        confirmation
+          ? { label: t('mobile.gymClaim.done'), onPress: dismiss, prominent: true }
+          : inDomainForm
+            ? {
+                label: t('mobile.gymClaim.domain.submitShort'),
+                accessibilityLabel: t('mobile.gymClaim.domain.submit'),
+                onPress: () => void submit({ claimEmail: trimmedEmail }),
+                disabled: !canSubmitDomain || requestClaim.isPending,
+                loading: requestClaim.isPending,
+                prominent: true,
+              }
+            : {
+                label: t('mobile.gymClaim.admin.submitShort'),
+                accessibilityLabel: t('mobile.gymClaim.admin.submit'),
+                onPress: () => void submit({ message: message.trim() || undefined }),
+                disabled: requestClaim.isPending,
+                loading: requestClaim.isPending,
+                prominent: true,
+              }
+      }
+      error={confirmation ? null : errorMessage}
+      reserveErrorSlot
+    />
+  );
+
   return (
     <ModalSheet
       ref={sheetRef}
@@ -141,23 +172,8 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
       scrollable
       contentContainerStyle={styles.content}
       onFullyDismissed={handleFullyDismissed}
+      header={header}
     >
-      <View style={styles.headerRow}>
-        <Text variant="title3" style={styles.title}>
-          {t('mobile.gymClaim.title', { gym: gym.name })}
-        </Text>
-        <PressableSurface
-          onPress={dismiss}
-          feedback="opacity"
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.gymClaim.close')}
-          style={styles.closeButton}
-        >
-          <Icon name="close" size={20} color={systemColors.secondaryLabel} />
-        </PressableSurface>
-      </View>
-
       {confirmation ? (
         <View style={styles.confirmation}>
           <Icon name="checkmark.circle.fill" size={44} color={brandColors.success} />
@@ -181,12 +197,6 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
               {manageError}
             </Text>
           ) : null}
-          <Button
-            title={t('mobile.gymClaim.done')}
-            onPress={dismiss}
-            variant={confirmation.status === 'approved' ? 'text' : 'filled'}
-            size="large"
-          />
         </View>
       ) : mode === 'domain' && canUseDomain && domain ? (
         <>
@@ -212,20 +222,6 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
             autoCapitalize="none"
             autoCorrect={false}
             maxLength={200}
-          />
-          {errorMessage ? (
-            <Text variant="footnote" color={brandColors.error} style={styles.errorText}>
-              {errorMessage}
-            </Text>
-          ) : null}
-          <Button
-            title={t('mobile.gymClaim.domain.submit')}
-            onPress={() => void submit({ claimEmail: trimmedEmail })}
-            variant="filled"
-            size="large"
-            disabled={!canSubmitDomain || requestClaim.isPending}
-            loading={requestClaim.isPending}
-            style={styles.submitButton}
           />
           <Button
             title={t('mobile.gymClaim.switchToAdmin')}
@@ -261,20 +257,6 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
             maxLength={GYM_CLAIM_MESSAGE_MAX_LENGTH}
             textAlignVertical="top"
           />
-          {errorMessage ? (
-            <Text variant="footnote" color={brandColors.error} style={styles.errorText}>
-              {errorMessage}
-            </Text>
-          ) : null}
-          <Button
-            title={t('mobile.gymClaim.admin.submit')}
-            onPress={() => void submit({ message: message.trim() || undefined })}
-            variant="filled"
-            size="large"
-            disabled={requestClaim.isPending}
-            loading={requestClaim.isPending}
-            style={styles.submitButton}
-          />
           {canUseDomain ? (
             <Button
               title={t('mobile.gymClaim.switchToDomain')}
@@ -294,24 +276,9 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
     paddingBottom: spacing[6],
     gap: spacing[3],
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-  },
-  title: {
-    flex: 1,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   description: {
     marginTop: -spacing[1],
@@ -332,9 +299,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     marginTop: -spacing[1],
-  },
-  submitButton: {
-    marginTop: spacing[1],
   },
   protections: {
     gap: spacing[2],

@@ -6,12 +6,13 @@ import { useUpdateTick, useDeleteTick } from '@boardsesh/board-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
-import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { track } from '../../lib/analytics';
 import type { AscentFeedItem, UpdateTickInput } from '@boardsesh/graphql/operations';
 import { Text } from '../Text';
+import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
 import { Sheet } from '../Sheet';
+import { SheetTopBar } from '../SheetTopBar';
 import { StarRating } from '../StarRating';
 import { SegmentedControl } from '../SegmentedControl';
 import { GradeSingleSelectRail } from '../grade';
@@ -21,13 +22,11 @@ import {
   TICK_ANGLE_ROW_HEIGHT,
   TICK_RAIL_ROW_HEIGHT,
   TICK_RAIL_TRAIL_INSET,
-  TickActionBar,
   TickCountRail,
   TickDateRow,
   TickDestructiveRow,
   TickFormRow,
   TickNoteField,
-  TickSheetHeader,
 } from '../tick';
 import { clampToNow, toEditableDate, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
@@ -49,8 +48,8 @@ type LogbookEditSheetProps = {
  * Edit (status / grade / angle / stars / tries / note) or delete a logged ascent.
  *
  * Shares its whole chassis with the create sheet (LogAscentSheet/QuickTickBar):
- * the same `TickSheetHeader`, the same `TickFormRow` beat and two vertical seams,
- * the same chips, stars and pinned `TickActionBar`. Row labels come from the
+ * the same `TickFormRow` beat and two vertical seams, the same chips and stars.
+ * Cancel and Save sit in a `SheetTopBar` (the create sheet keeps its bottom bar). Row labels come from the
  * shared `mobile.tick.*` family in `climbs` for the same reason — a climber who
  * logs a send and then edits it should not see the form redrawn.
  */
@@ -80,8 +79,8 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
   const [maximumClimbedAtDate, setMaximumClimbedAtDate] = useState(() => new Date());
   const [comment, setComment] = useState('');
   const [angle, setAngle] = useState(0);
-  // A failed save or delete prints here, in the action bar's always-reserved
-  // slot, instead of a toast the sheet itself covers.
+  // A failed save or delete prints here, in the top bar's always-reserved
+  // error slot, instead of a toast the sheet itself covers.
   const [lastError, setLastError] = useState<string | null>(null);
 
   // Valid angles come from the static per-board table (what web and the
@@ -140,9 +139,9 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     sheetRef.current?.close();
   }, [sheetRef]);
 
-  // The grade the header's identity bar paints from: what the climber has picked
-  // right now, falling back to the grade the ascent was logged at while the
-  // board's grade list is still loading.
+  // The header's grade stripe paints from what the climber has picked right now,
+  // falling back to the grade the ascent was logged at while the board's grade
+  // list is still loading.
   const selectedGradeName = useMemo(
     () => grades.find((grade) => grade.difficultyId === difficulty)?.name,
     [grades, difficulty],
@@ -227,30 +226,26 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
       snapPoints={EDIT_TICK_SNAP_POINTS}
       scrollable
       surface="solid"
-      footerSurface="flush"
       // See the identical fix on the create-tick sheet (`LogAscentSheet`,
-      // #4723 / #4720): the edit sheet has the same pinned-footer-over-a-tall-
-      // form shape, so it gets the same Android content-fitting opt-in.
+      // #4723 / #4720): the edit sheet is the same tall form, so it gets the
+      // same Android content-fitting opt-in.
       androidContentSized
       onClose={onClose}
       header={
-        <TickSheetHeader
+        <SheetTopBar
           title={ascent?.climbName ?? t('mobile.logbook.editTitle')}
           subtitle={ascent ? formatBoardDisplayName(ascent.boardType) : undefined}
-          gradeColor={getGradeColor(selectedGradeName ?? ascent?.difficultyName)}
-          onClose={handleClose}
-          closeAccessibilityLabel={tTick('mobile.tick.closeAria')}
-        />
-      }
-      footer={
-        <TickActionBar
-          error={lastError}
-          primary={{
-            title: tTick('mobile.tick.save'),
+          accentColor={getGradeColor(selectedGradeName ?? ascent?.difficultyName) ?? null}
+          leading={{ kind: 'cancel', onPress: handleClose }}
+          trailing={{
+            label: tTick('mobile.tick.save'),
             onPress: save,
             loading: updateTick.isPending,
             disabled: isMutating,
+            prominent: true,
           }}
+          error={lastError}
+          reserveErrorSlot
         />
       }
     >

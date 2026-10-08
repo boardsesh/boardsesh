@@ -5,10 +5,10 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { Button } from '../../Button';
 import { Icon } from '../../Icon';
 import { ListRow } from '../../ListRow';
 import { ModalSheet } from '../../ModalSheet';
+import { SheetTopBar } from '../../SheetTopBar';
 import { SectionHeader } from '../../SectionHeader';
 import { SegmentedControl } from '../../SegmentedControl';
 import { SwitchRow } from '../../SwitchRow';
@@ -517,15 +517,20 @@ function HoldColorPickerSheet({
     onSave(role, mode === 'default' ? null : userColor, shape);
   }, [mode, onSave, role, shape, userColor]);
 
-  const footer = <Button title={t('mobile.settings.accessibility.save')} onPress={handleSave} size="large" />;
+  const header = (
+    <SheetTopBar
+      title={role ? labelForRole(t, role) : t('mobile.settings.accessibility.title')}
+      leading={{ kind: 'cancel', onPress: onClose }}
+      trailing={{ label: t('mobile.settings.accessibility.save'), onPress: handleSave, prominent: true }}
+    />
+  );
 
   return (
-    <ModalSheet visible={role != null} snapPoints={['95%']} onClose={onClose} footer={footer} scrollable>
+    <ModalSheet visible={role != null} snapPoints={['95%']} onClose={onClose} header={header} scrollable>
       <View style={styles.pickerBody}>
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={previewColor} shape={shape} size={shapeSize} />
           <View style={styles.pickerTitleColumn}>
-            <Text variant="headline">{role ? labelForRole(t, role) : t('mobile.settings.accessibility.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('mobile.settings.accessibility.pickerSubtitle')}
             </Text>
@@ -615,15 +620,20 @@ function BrushThicknessSheet({ open, value, shapeSize, onSave, onClose }: BrushT
     onClose();
   }, [draftValue, onClose, onSave]);
 
-  const footer = <Button title={t('mobile.settings.accessibility.brush.save')} onPress={handleSave} size="large" />;
+  const header = (
+    <SheetTopBar
+      title={t('mobile.settings.accessibility.brush.title')}
+      leading={{ kind: 'cancel', onPress: onClose }}
+      trailing={{ label: t('mobile.settings.accessibility.brush.save'), onPress: handleSave, prominent: true }}
+    />
+  );
 
   return (
-    <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} footer={footer} scrollable>
+    <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} header={header} scrollable>
       <View style={styles.pickerBody}>
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={systemColors.accent} shape="circle" thickness={draftValue} size={shapeSize} />
           <View style={styles.pickerTitleColumn}>
-            <Text variant="headline">{t('mobile.settings.accessibility.brush.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('mobile.settings.accessibility.brush.subtitle')}
             </Text>
@@ -673,15 +683,20 @@ function ShapeSizeSheet({ open, value, brushThickness, onSave, onClose }: ShapeS
     onClose();
   }, [draftValue, onClose, onSave]);
 
-  const footer = <Button title={t('mobile.settings.accessibility.size.save')} onPress={handleSave} size="large" />;
+  const header = (
+    <SheetTopBar
+      title={t('mobile.settings.accessibility.size.title')}
+      leading={{ kind: 'cancel', onPress: onClose }}
+      trailing={{ label: t('mobile.settings.accessibility.size.save'), onPress: handleSave, prominent: true }}
+    />
+  );
 
   return (
-    <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} footer={footer} scrollable>
+    <ModalSheet visible={open} snapPoints={['48%', '80%']} onClose={onClose} header={header} scrollable>
       <View style={styles.pickerBody}>
         <View style={styles.pickerHeader}>
           <MarkerSwatch color={systemColors.accent} shape="diamond" thickness={brushThickness} size={draftValue} />
           <View style={styles.pickerTitleColumn}>
-            <Text variant="headline">{t('mobile.settings.accessibility.size.title')}</Text>
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('mobile.settings.accessibility.size.subtitle')}
             </Text>

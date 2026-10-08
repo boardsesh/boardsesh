@@ -636,7 +636,6 @@
     },
     "report": {
       "title": "Boulder melden",
-      "close": "Meldung schließen",
       "kind": {
         "label": "Was stimmt nicht?",
         "hide": "Diesen Boulder ausblenden",

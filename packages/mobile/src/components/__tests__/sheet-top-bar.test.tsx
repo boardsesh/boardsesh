@@ -137,6 +137,23 @@ describe('SheetTopBar', () => {
     expect(onReset).toHaveBeenCalledTimes(1);
   });
 
+  it('paints the accent bar before a left-aligned title, and falls back to the separator tone', () => {
+    const coloured = render(createElement(SheetTopBar, { title: 'Climb', accentColor: '#FF0000' }));
+    const bar = styleOf(coloured.getByTestId('sheet-top-bar-accent'));
+    expect(bar).toMatchObject({ width: 4, height: 32, backgroundColor: '#FF0000' });
+    expect(bar.borderRadius).toBeDefined();
+    expect(styleOf(coloured.getByText('Climb'))).toMatchObject({ textAlign: 'left' });
+    coloured.unmount();
+
+    const ungraded = render(createElement(SheetTopBar, { title: 'Climb', accentColor: null }));
+    expect(styleOf(ungraded.getByTestId('sheet-top-bar-accent')).backgroundColor).toBeDefined();
+    ungraded.unmount();
+
+    const plain = render(createElement(SheetTopBar, { title: 'Climb' }));
+    expect(plain.queryByTestId('sheet-top-bar-accent')).toBeNull();
+    expect(styleOf(plain.getByText('Climb'))).toMatchObject({ textAlign: 'center' });
+  });
+
   it('a disabled trailing action swallows the tap', () => {
     const onSave = vi.fn();
     const { getByTestId } = render(

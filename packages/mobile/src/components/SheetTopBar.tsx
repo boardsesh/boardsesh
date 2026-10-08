@@ -92,6 +92,13 @@ type SheetTopBarProps = {
   trailing?: SheetTopBarTrailing;
   /** Drawn before the trailing action, e.g. a "?" help button. */
   trailingAccessory?: ReactNode;
+  /**
+   * Paints a 4x32 rounded bar before the title (the grade colour of a climb), as
+   * TickSheetHeader does, and sets the title flush left beside it instead of
+   * centred. `null` paints the bar in the separator tone, for an ungraded climb;
+   * leave it undefined for no bar and a centred title.
+   */
+  accentColor?: string | null;
   /** Shown in a one-line slot under the bar. */
   error?: string | null;
   /**
@@ -233,11 +240,13 @@ export const SheetTopBar = React.memo(function SheetTopBar({
   leading,
   trailing,
   trailingAccessory,
+  accentColor,
   error,
   reserveErrorSlot = false,
   testID,
 }: SheetTopBarProps) {
-  const { systemColors, brandColors, spacing, textStyles } = useTheme();
+  const { systemColors, brandColors, spacing, textStyles, borderRadius } = useTheme();
+  const hasAccent = accentColor !== undefined;
   const { fontScale } = useWindowDimensions();
   const [leadingWidth, onLeadingLayout] = useMeasuredWidth();
   const [trailingWidth, onTrailingLayout] = useMeasuredWidth();
@@ -255,18 +264,41 @@ export const SheetTopBar = React.memo(function SheetTopBar({
         <View testID="sheet-top-bar-leading-flank" style={styles.flank} onLayout={onLeadingLayout}>
           {leading ? <SheetTopBarLeadingButton {...leading} /> : null}
         </View>
-        <View style={[styles.balance, { width: Math.max(0, trailingWidth - leadingWidth) }]} />
-        <View testID="sheet-top-bar-title" style={[styles.titles, { marginHorizontal: spacing[2] }]}>
-          <Text variant="headline" numberOfLines={1} accessibilityRole="header" style={styles.centredText}>
+        {hasAccent ? (
+          <View
+            testID="sheet-top-bar-accent"
+            style={[
+              styles.accent,
+              { borderRadius: borderRadius.sm, backgroundColor: accentColor ?? systemColors.separator },
+            ]}
+          />
+        ) : (
+          <View style={[styles.balance, { width: Math.max(0, trailingWidth - leadingWidth) }]} />
+        )}
+        <View
+          testID="sheet-top-bar-title"
+          style={[styles.titles, hasAccent ? styles.startAligned : null, { marginHorizontal: spacing[2] }]}
+        >
+          <Text
+            variant="headline"
+            numberOfLines={1}
+            accessibilityRole="header"
+            style={hasAccent ? styles.startText : styles.centredText}
+          >
             {title}
           </Text>
           {subtitle ? (
-            <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1} style={styles.centredText}>
+            <Text
+              variant="footnote"
+              color={systemColors.secondaryLabel}
+              numberOfLines={1}
+              style={hasAccent ? styles.startText : styles.centredText}
+            >
               {subtitle}
             </Text>
           ) : null}
         </View>
-        <View style={[styles.balance, { width: Math.max(0, leadingWidth - trailingWidth) }]} />
+        {hasAccent ? null : <View style={[styles.balance, { width: Math.max(0, leadingWidth - trailingWidth) }]} />}
         <View
           testID="sheet-top-bar-trailing-flank"
           style={[styles.flank, styles.trailingRow, { gap: spacing[2] }]}
@@ -332,6 +364,16 @@ const styles = StyleSheet.create({
   },
   centredText: {
     textAlign: 'center',
+  },
+  startAligned: {
+    alignItems: 'flex-start',
+  },
+  startText: {
+    textAlign: 'left',
+  },
+  accent: {
+    width: 4,
+    height: 32,
   },
   textTarget: {
     minHeight: SHEET_TOP_BAR_TARGET,

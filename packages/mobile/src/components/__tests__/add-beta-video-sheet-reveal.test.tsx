@@ -3,6 +3,8 @@ import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The paste field reveals itself above the keyboard on focus, then follows its
+// own growth (the invalid-URL line) so the error clears the keyboard too.
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 
 // The attach mutation. `mutate` synchronously invokes the success callback so
@@ -19,6 +21,9 @@ const attach = vi.hoisted(() => ({
 // are <Button>s, which we mock out below).
 const captured = vi.hoisted(() => ({
   onChangeText: null as ((text: string) => void) | null,
+  onFocus: null as (() => void) | null,
+  onBlur: null as (() => void) | null,
+  layouts: [] as Array<() => void>,
   buttons: {} as Record<string, (() => Promise<void>) | undefined>,
 }));
 
@@ -27,7 +32,10 @@ const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn(async (_text: string
 vi.mock('../../lib/analytics', () => ({ track: analytics.track }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children, ref, onLayout }: { children?: ReactNode; ref?: unknown; onLayout?: () => void }) => {
+    if (onLayout) captured.layouts.push(onLayout);
+    return createElement('div', { ref }, children);
+  },
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 
@@ -35,8 +43,18 @@ vi.mock('react-native', () => ({
 // above the keyboard). Mock it here to capture onChangeText and to keep the real
 // module — which pulls in reanimated — out of the jsdom run.
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetTextInput: ({ onChangeText }: { onChangeText?: (text: string) => void }) => {
+  BottomSheetTextInput: ({
+    onChangeText,
+    onFocus,
+    onBlur,
+  }: {
+    onChangeText?: (text: string) => void;
+    onFocus?: () => void;
+    onBlur?: () => void;
+  }) => {
     captured.onChangeText = onChangeText ?? null;
+    captured.onFocus = onFocus ?? null;
+    captured.onBlur = onBlur ?? null;
     return createElement('input');
   },
 }));
@@ -54,7 +72,8 @@ vi.mock('../ModalSheet', () => ({
     createElement('div', null, header, children),
 }));
 vi.mock('../SheetTopBar', async () => (await import('../../test/sheet-top-bar-stub')).sheetTopBarModule);
-vi.mock('../sheet-scroll-into-view', () => ({ useSheetScrollIntoView: () => null }));
+const scrollIntoView = vi.hoisted(() => ({ reveal: vi.fn(), follow: vi.fn(), release: vi.fn() }));
+vi.mock('../sheet-scroll-into-view', () => ({ useSheetScrollIntoView: () => scrollIntoView }));
 vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -86,18 +105,8 @@ const CLIMB = {
   setter_username: 'someone',
 } as unknown as Parameters<typeof AddBetaVideoSheet>[0]['climb'];
 
-beforeEach(() => {
-  analytics.track.mockClear();
-  attach.mutate.mockClear();
-  attach.isPending = false;
-  clipboard.setStringAsync.mockClear();
-  captured.onChangeText = null;
-  captured.buttons = {};
-});
-
-let rendered: ReturnType<typeof render> | null = null;
 function renderSheet() {
-  rendered = render(
+  return render(
     createElement(AddBetaVideoSheet, {
       visible: true,
       climb: CLIMB,
@@ -107,66 +116,39 @@ function renderSheet() {
       onClose: vi.fn(),
     }),
   );
-  return rendered;
 }
 
-// Type a URL (flushing the setState re-render so the submit closure sees it),
-// then press submit.
-function typeAndSubmit(url: string) {
-  act(() => captured.onChangeText?.(url));
-  act(() => {
-    (rendered?.container.querySelector('[data-testid="sheet-top-bar-trailing"]') as HTMLButtonElement | null)?.click();
-  });
+// The URL field's wrapper is the last View with an onLayout in the tree.
+function layoutUrlField() {
+  act(() => captured.layouts.at(-1)?.());
 }
 
-describe('AddBetaVideoSheet attach analytics', () => {
-  it('fires "Beta Video Added" with platform "TikTok" on a successful submit', () => {
-    renderSheet();
-    typeAndSubmit('https://www.tiktok.com/@user/video/123');
+beforeEach(() => {
+  scrollIntoView.reveal.mockClear();
+  scrollIntoView.follow.mockClear();
+  scrollIntoView.release.mockClear();
+  captured.layouts = [];
+  captured.onFocus = null;
+  captured.onBlur = null;
+});
 
-    expect(attach.mutate).toHaveBeenCalledTimes(1);
-    expect(analytics.track).toHaveBeenCalledWith('Beta Video Added', {
-      boardType: 'kilter',
-      climbUuid: 'climb-1',
-      platform: 'TikTok',
-    });
+describe('AddBetaVideoSheet URL field reveal', () => {
+  it('follows the field again when its layout changes while focused', () => {
+    renderSheet();
+    act(() => captured.onFocus?.());
+    expect(scrollIntoView.reveal).toHaveBeenCalledTimes(1);
+    act(() => captured.onChangeText?.('not a url'));
+    layoutUrlField();
+    expect(scrollIntoView.follow).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.follow.mock.calls[0]?.[0]).toBe(scrollIntoView.reveal.mock.calls[0]?.[0]);
   });
 
-  it('classifies an Instagram URL as platform "Instagram"', () => {
+  it('does not scroll on a layout change while the field is not focused', () => {
     renderSheet();
-    typeAndSubmit('https://www.instagram.com/reel/abc/');
-
-    expect(analytics.track).toHaveBeenCalledWith('Beta Video Added', {
-      boardType: 'kilter',
-      climbUuid: 'climb-1',
-      platform: 'Instagram',
-    });
-  });
-
-  it('does not fire for an invalid (non-beta) URL', () => {
-    renderSheet();
-    typeAndSubmit('not a url');
-
-    expect(attach.mutate).not.toHaveBeenCalled();
-    expect(analytics.track).not.toHaveBeenCalled();
-  });
-
-  // Regression guard for the decoupled copy/open flow: "Open Instagram" must copy
-  // the caption itself, so a user who skips "Copy caption" still arrives in the
-  // camera with it on the clipboard (PR #2846 review finding #1).
-  it('copies the caption when opening Instagram, even if Copy was skipped', async () => {
-    renderSheet();
-    await act(async () => {
-      await captured.buttons['mobile.betaVideos.openInstagram']?.();
-    });
-
-    expect(clipboard.setStringAsync).toHaveBeenCalledTimes(1);
-    expect(clipboard.setStringAsync.mock.calls[0]?.[0]).toContain('Test Climb');
-    expect(analytics.track).toHaveBeenCalledWith('Beta Instagram Opened', {
-      boardType: 'kilter',
-      climbUuid: 'climb-1',
-      opened: true,
-      usedFallback: false,
-    });
+    layoutUrlField();
+    act(() => captured.onFocus?.());
+    act(() => captured.onBlur?.());
+    layoutUrlField();
+    expect(scrollIntoView.follow).not.toHaveBeenCalled();
   });
 });

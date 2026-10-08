@@ -17,9 +17,7 @@ import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
-import { Button } from '../Button';
-import { PressableSurface } from '../PressableSurface';
+import { SheetTopBar } from '../SheetTopBar';
 import { SegmentedControl } from '../SegmentedControl';
 import { ClimbPreviewCard } from '../ClimbPreviewCard';
 import { GradeSingleSelectRail } from '../grade';
@@ -187,39 +185,19 @@ export function ReportClimbSheet({
   const submitDisabled = !built?.ok || isPending;
 
   const header = (
-    <View style={styles.header}>
-      <Text variant="title3" style={styles.headerTitle}>
-        {t('mobile.report.title')}
-      </Text>
-      <PressableSurface
-        onPress={onClose}
-        feedback="opacity"
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={t('mobile.report.close')}
-        style={styles.closeButton}
-      >
-        <Icon name="close" size={20} color={systemColors.secondaryLabel} />
-      </PressableSurface>
-    </View>
-  );
-
-  const footer = (
-    <View style={styles.footer}>
-      {errorMessage ? (
-        <Text variant="footnote" color={brandColors.error}>
-          {errorMessage}
-        </Text>
-      ) : null}
-      <Button
-        title={t('mobile.report.submit')}
-        onPress={handleSubmit}
-        variant="filled"
-        size="large"
-        disabled={submitDisabled}
-        loading={isPending}
-      />
-    </View>
+    <SheetTopBar
+      title={t('mobile.report.title')}
+      leading={{ kind: 'cancel', onPress: onClose }}
+      trailing={{
+        label: t('mobile.report.submit'),
+        onPress: handleSubmit,
+        disabled: submitDisabled,
+        loading: isPending,
+        prominent: true,
+      }}
+      error={errorMessage}
+      reserveErrorSlot
+    />
   );
 
   return (
@@ -232,7 +210,6 @@ export function ReportClimbSheet({
       onClose={onClose}
       onFullyDismissed={handleFullyDismissed}
       header={header}
-      footer={footer}
     >
       {climb ? (
         <ClimbPreviewCard
@@ -283,7 +260,7 @@ export function ReportClimbSheet({
         {/* The shared tick note field, not a raw input: it caps itself at 160pt
             because the iOS keyboard-up sheet body is only ~162pt — a field
             taller than the visible body can never scroll fully into view, and
-            the pinned Send bar ends up over it (QA-declined on #5188). Its vertical
+            the Send action's bar ends up over it (QA-declined on #5188). Its vertical
             padding is load-bearing on Android (#4642); see the component. */}
         <TickNoteField
           value={reason}
@@ -302,24 +279,6 @@ export function ReportClimbSheet({
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  headerTitle: {
-    flex: 1,
-    fontWeight: '700',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   body: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
@@ -331,8 +290,5 @@ const styles = StyleSheet.create({
   },
   counter: {
     marginTop: -spacing[2],
-  },
-  footer: {
-    gap: spacing[2],
   },
 });

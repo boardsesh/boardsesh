@@ -636,7 +636,6 @@
     },
     "report": {
       "title": "Signaler le bloc",
-      "close": "Fermer le signalement",
       "kind": {
         "label": "Qu'est-ce qui cloche ?",
         "hide": "Masquer ce bloc",

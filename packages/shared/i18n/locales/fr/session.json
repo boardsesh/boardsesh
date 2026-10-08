@@ -349,7 +349,6 @@
       "addButton": "Joindre une video beta",
       "urlPlaceholder": "Collez un lien TikTok ou Instagram",
       "submitButton": "Joindre",
-      "submitting": "En cours...",
       "attachSuccess": "Video beta jointe",
       "attachError": "Echec du chargement de la video",
       "errorTitle": "Impossible de charger les videos beta",

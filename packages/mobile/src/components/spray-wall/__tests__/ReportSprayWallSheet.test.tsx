@@ -37,32 +37,14 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, footer }: { children: ReactNode; footer: ReactNode }) =>
-    createElement('div', null, children, footer),
+  ModalSheet: ({ children, header }: { children: ReactNode; header: ReactNode }) =>
+    createElement('div', null, header, children),
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
-vi.mock('../../Button', () => ({
-  Button: ({
-    title,
-    onPress,
-    disabled,
-    loading,
-  }: {
-    title: string;
-    onPress: () => void;
-    disabled?: boolean;
-    loading?: boolean;
-  }) =>
-    createElement(
-      'button',
-      { onClick: onPress, disabled: disabled || loading },
-      loading ? createElement('span', { role: 'progressbar' }) : null,
-      title,
-    ),
-}));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, radii: { button: 10 }, chartColors: { label: '#16111F' } }),
 }));

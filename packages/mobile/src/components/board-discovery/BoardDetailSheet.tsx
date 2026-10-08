@@ -6,7 +6,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
-import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { Avatar } from '../Avatar';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useTheme } from '../../providers/theme-provider';
@@ -45,17 +45,22 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
   }, [board, shareTarget]);
   const closeShare = useCallback(() => setShareSnapshot(null), []);
 
-  const footer = board ? (
-    isActiveBoard(board, activeBoard?.uuid) ? (
-      <View style={[styles.activePill, { backgroundColor: systemColors.tertiaryBackground }]}>
-        <Icon name="tick" size={16} color={systemColors.secondaryLabel} />
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {t('mobile.boardDetail.alreadyActive')}
-        </Text>
-      </View>
-    ) : (
-      <Button title={t('mobile.boardDetail.setActive')} size="large" onPress={() => onSetActive(board)} />
-    )
+  const isActive = board ? isActiveBoard(board, activeBoard?.uuid) : false;
+  const header = board ? (
+    <SheetTopBar
+      title={board.name}
+      leading={{ kind: 'close', onPress: onClose }}
+      trailing={
+        isActive
+          ? undefined
+          : {
+              label: t('mobile.boardDetail.setActiveShort'),
+              accessibilityLabel: t('mobile.boardDetail.setActive'),
+              onPress: () => onSetActive(board),
+              prominent: true,
+            }
+      }
+    />
   ) : null;
 
   return (
@@ -66,11 +71,12 @@ export function BoardDetailSheet({ board, visible, onClose, onSetActive }: Board
         onClose={onClose}
         scrollable
         contentContainerStyle={styles.content}
-        footer={footer}
+        header={header}
       >
         {board ? (
           <BoardDetailBody
             board={board}
+            isActive={isActive}
             systemColors={systemColors}
             t={t}
             shareTarget={shareTarget}
@@ -103,6 +109,7 @@ type TFn = ReturnType<typeof useTranslation>['t'];
 
 function BoardDetailBody({
   board,
+  isActive,
   systemColors,
   t,
   shareTarget,
@@ -111,6 +118,7 @@ function BoardDetailBody({
   onOpenReport,
 }: {
   board: UserBoard;
+  isActive: boolean;
   systemColors: SystemColors;
   t: TFn;
   shareTarget: SprayShareTarget | null;
@@ -123,7 +131,14 @@ function BoardDetailBody({
   return (
     <>
       <View style={styles.header}>
-        <Text variant="title1">{board.name}</Text>
+        {isActive ? (
+          <View style={[styles.activePill, { backgroundColor: systemColors.tertiaryBackground }]}>
+            <Icon name="tick" size={16} color={systemColors.secondaryLabel} />
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {t('mobile.boardDetail.alreadyActive')}
+            </Text>
+          </View>
+        ) : null}
         {subLocation ? (
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {subLocation}

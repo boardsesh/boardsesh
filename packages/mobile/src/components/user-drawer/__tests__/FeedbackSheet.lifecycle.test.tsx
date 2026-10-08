@@ -15,14 +15,15 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-type ModalSheetMockProps = { children?: ReactNode; visible?: boolean; onClose?: () => void };
+type ModalSheetMockProps = { children?: ReactNode; header?: ReactNode; visible?: boolean; onClose?: () => void };
 const nativeSheet = vi.hoisted(() => ({ close: undefined as (() => void) | undefined }));
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, visible, onClose }: ModalSheetMockProps) => {
+  ModalSheet: ({ children, header, visible, onClose }: ModalSheetMockProps) => {
     nativeSheet.close = onClose;
-    return createElement('div', { 'data-modal-sheet': String(visible) }, children);
+    return createElement('div', { 'data-modal-sheet': String(visible) }, header, children);
   },
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 
 type TextMockProps = { children?: ReactNode };
 vi.mock('../../Text', () => ({

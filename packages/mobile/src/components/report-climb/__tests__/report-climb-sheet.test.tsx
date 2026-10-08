@@ -21,14 +21,14 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-haptics', () => ({ notificationAsync: vi.fn(), NotificationFeedbackType: { Success: 1, Error: 2 } }));
 vi.mock('../../ModalSheet', () => ({
-  ModalSheet: ({ children, footer }: { children?: ReactNode; footer?: ReactNode }) =>
-    createElement('div', null, children, footer),
+  ModalSheet: ({ children, header }: { children?: ReactNode; header?: ReactNode }) =>
+    createElement('div', null, header, children),
 }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
-vi.mock('../../Button', () => ({ Button: () => createElement('button', { 'data-testid': 'submit' }) }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('../../PressableSurface', () => ({ PressableSurface: passthrough }));
 vi.mock('../../SegmentedControl', () => ({
   SegmentedControl: ({ selectedKey }: { selectedKey: string }) =>

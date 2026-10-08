@@ -212,6 +212,7 @@
     },
     "boardDetail": {
       "setActive": "Usar este plafón",
+      "setActiveShort": "Activar",
       "alreadyActive": "Plafón activo",
       "stats": {
         "ascents": "ascensiones",
@@ -317,7 +318,6 @@
     },
     "gymClaim": {
       "title": "Reclamar {{gym}}",
-      "close": "Cerrar",
       "done": "Listo",
       "sectionTitle": "¿Es tuyo este rocódromo?",
       "sectionDescription": "Reclámalo para mantener la ficha y los plafones al día.",
@@ -330,6 +330,7 @@
         "emailLabel": "Correo de trabajo",
         "emailPlaceholder": "tu@{{domain}}",
         "submit": "Enviar correo de verificación",
+        "submitShort": "Enviar",
         "sent": "Revisa tu bandeja en {{email}} y toca el enlace para terminar."
       },
       "admin": {
@@ -337,6 +338,7 @@
         "messageLabel": "Mensaje (opcional)",
         "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este rocódromo",
         "submit": "Solicitar revisión",
+        "submitShort": "Solicitar",
         "sent": "Tu solicitud está en la cola de revisión. Te escribiremos en cuanto se decida."
       },
       "approved": {

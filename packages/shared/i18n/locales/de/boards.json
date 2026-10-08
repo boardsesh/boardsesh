@@ -212,6 +212,7 @@
     },
     "boardDetail": {
       "setActive": "Als aktives Board setzen",
+      "setActiveShort": "Aktivieren",
       "alreadyActive": "Aktives Board",
       "stats": {
         "ascents": "Begehungen",
@@ -317,7 +318,6 @@
     },
     "gymClaim": {
       "title": "{{gym}} beanspruchen",
-      "close": "Schließen",
       "done": "Fertig",
       "sectionTitle": "Gehört dir diese Halle?",
       "sectionDescription": "Beanspruche sie, damit Eintrag und Boards stimmen.",
@@ -330,6 +330,7 @@
         "emailLabel": "Arbeits-E-Mail",
         "emailPlaceholder": "du@{{domain}}",
         "submit": "Bestätigungs-E-Mail senden",
+        "submitShort": "Senden",
         "sent": "Schau in dein Postfach bei {{email}} und tipp auf den Link, um fertig zu werden."
       },
       "admin": {
@@ -337,6 +338,7 @@
         "messageLabel": "Nachricht (optional)",
         "messagePlaceholder": "Alles, was uns hilft zu prüfen, dass du diese Halle leitest",
         "submit": "Prüfung anfragen",
+        "submitShort": "Anfragen",
         "sent": "Dein Anspruch liegt in der Prüf-Warteschlange. Wir schreiben dir, sobald entschieden ist."
       },
       "approved": {

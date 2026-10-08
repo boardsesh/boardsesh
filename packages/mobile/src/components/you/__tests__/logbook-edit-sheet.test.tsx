@@ -120,6 +120,7 @@ vi.mock('../../Sheet', () => ({
     return createElement('div', null, header, children, footer);
   },
 }));
+vi.mock('../../SheetTopBar', async () => (await import('../../../test/sheet-top-bar-stub')).sheetTopBarModule);
 vi.mock('../../Button', () => ({
   Button: ({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) =>
     createElement('button', { disabled, onClick: onPress }, title),
@@ -538,7 +539,7 @@ describe('LogbookEditSheet', () => {
     expect(firstUpdateVariables().input.angle).toBe(25);
   });
 
-  it('prints a failed save in the action bar instead of a toast the sheet covers', () => {
+  it('prints a failed save in the top bar instead of a toast the sheet covers', () => {
     mutations.updateMutate.mockImplementation((_variables: unknown, handlers: { onError: () => void }) =>
       handlers.onError(),
     );

@@ -636,7 +636,6 @@
     },
     "report": {
       "title": "Report climb",
-      "close": "Close report",
       "kind": {
         "label": "What's wrong?",
         "hide": "Hide this climb",

@@ -6,7 +6,7 @@ import { SESSION_NAME_MAX_LENGTH, SESSION_NOTES_MAX_LENGTH } from '@boardsesh/sh
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Sheet } from '../Sheet';
 import { Text } from '../Text';
-import { Button } from '../Button';
+import { SheetTopBar } from '../SheetTopBar';
 import { useTheme } from '../../providers/theme-provider';
 import { useUpdateSession } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
@@ -132,14 +132,23 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
     );
   }, [sessionId, name, recap, currentName, currentNotes, updateSession, onClose, clearCloseTimer]);
 
-  // Buttons live in the BODY, not the Sheet footer slot: on Android's M3 sheet
-  // the pinned footer lays out against the expanded height and lands off-screen
-  // below the partial sheet (emulator-verified; see SessionTitleSheet).
-  return (
-    <Sheet visible={visible} snapPoints={['70%']} scrollable onClose={onClose}>
-      <View style={styles.body}>
-        <Text variant="title2">{t('detail.editSession')}</Text>
+  const header = (
+    <SheetTopBar
+      title={t('detail.editSession')}
+      leading={{ kind: 'cancel', onPress: onClose, accessibilityLabel: t('detail.editCancel') }}
+      trailing={{
+        label: t('detail.editSave'),
+        onPress: handleSave,
+        loading: updateSession.isPending,
+        disabled: !sessionId || justSaved,
+        prominent: true,
+      }}
+    />
+  );
 
+  return (
+    <Sheet visible={visible} snapPoints={['70%']} scrollable onClose={onClose} header={header}>
+      <View style={styles.body}>
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.label}>
           {t('detail.editNameLabel')}
         </Text>
@@ -178,17 +187,6 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
             {t('detail.editSaveFailed')}
           </Text>
         ) : null}
-
-        <View style={styles.actions}>
-          <Button title={t('detail.editCancel')} variant="text" onPress={onClose} />
-          <Button
-            title={t('detail.editSave')}
-            variant="filled"
-            loading={updateSession.isPending}
-            disabled={!sessionId || justSaved}
-            onPress={handleSave}
-          />
-        </View>
       </View>
     </Sheet>
   );
@@ -221,11 +219,5 @@ const styles = StyleSheet.create({
   },
   feedback: {
     marginTop: spacing[2],
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: spacing[2],
   },
 });
