@@ -48,6 +48,7 @@ const capturedEditRows = vi.hoisted(() => [] as CapturedPlaylistEditClimbRowProp
 
 // ── React Native ──────────────────────────────────────────────────────────────
 vi.mock('react-native', () => ({
+  RefreshControl: () => null,
   View: ({
     children,
     pointerEvents,
@@ -136,10 +137,12 @@ vi.mock('@shopify/flash-list', () => ({
   },
 }));
 
+const navigation = vi.hoisted(() => ({ setOptions: vi.fn() }));
 vi.mock('expo-router', () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ username: 'tester' }),
   useRouter: () => ({ back: ctrl.back, push: vi.fn() }),
+  useNavigation: () => navigation,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({
@@ -372,7 +375,7 @@ vi.mock('../../../../src/components/playlist', async () => ({
       '../../../../src/components/playlist/PlaylistDetailView',
     )
   ).PlaylistDetailView,
-  PlaylistBackFab: () => createElement('button', null, 'Back'),
+  PlaylistStateHeader: () => null,
 }));
 vi.mock('../../../../src/components/SetterFollowButton', () => ({
   SetterFollowButton: () => createElement('span', null, 'Follow'),

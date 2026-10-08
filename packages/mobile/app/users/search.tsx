@@ -1,11 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { Stack, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { PublicUserProfile } from '@boardsesh/shared-schema';
-import { Text } from '../../src/components/Text';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { OfflineState } from '../../src/components/OfflineState';
 import { SearchField } from '../../src/components/SearchField';
@@ -26,10 +25,8 @@ import { spacing } from '../../src/theme/tokens';
 const EMPTY_PEOPLE: SocialPerson[] = [];
 
 export default function ClimberSearchScreen() {
-  const { t: tCommon } = useTranslation('common');
   const { t } = useTranslation('you');
-  const { systemColors, brandColors } = useTheme();
-  const router = useRouter();
+  const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const paddingBottom = insets.bottom + spacing[4];
 
@@ -44,8 +41,8 @@ export default function ClimberSearchScreen() {
   const search = useSearchUsers(debouncedSearchQuery, canUseSearchQuery);
   const toggleFollow = useToggleUserFollow(currentUserId);
 
-  // Focus the field once the modal has finished presenting — autoFocus alone
-  // races the slide-up and the keyboard can fail to appear.
+  // Focus the field once the push has finished — autoFocus alone races the
+  // transition and the keyboard can fail to appear.
   useFocusEffect(
     useCallback(() => {
       const handle = setTimeout(() => inputRef.current?.focus(), 350);
@@ -96,33 +93,29 @@ export default function ClimberSearchScreen() {
   const visiblePeople = showInitialSpinner || showHint || showError || showOffline ? EMPTY_PEOPLE : people;
 
   return (
-    <View style={[styles.flex, { backgroundColor: systemColors.background, paddingTop: insets.top }]}>
-      {/* Full-screen takeover (presented modally in the root stack) so the tab bar
-          is out of the way; we render our own search bar + Cancel instead of the
-          native header. */}
-      <Stack.Screen options={{ headerShown: false }} />
+    <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
+      {/* A push over the tabs (the root stack), so it takes the NATIVE header
+          (HIG Navigation bars): the system back button keeps its long-press
+          history menu and the edge swipe, which the old in-body Cancel could
+          not. Opaque, so the search field lays out below the bar. */}
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          headerTransparent: false,
+          headerBlurEffect: undefined,
+          title: t('mobile.social.searchTitle'),
+        }}
+      />
 
       <View style={styles.searchRow}>
-        <View style={styles.searchFieldWrap}>
-          <SearchField
-            ref={inputRef}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder={t('mobile.social.searchPlaceholder')}
-            clearAccessibilityLabel={t('mobile.social.clearSearch')}
-            autoFocus
-          />
-        </View>
-        <Pressable
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          hitSlop={8}
-          style={({ pressed }) => [styles.cancelButton, pressed && styles.cancelPressed]}
-        >
-          <Text variant="body" color={brandColors.primary}>
-            {tCommon('actions.cancel')}
-          </Text>
-        </Pressable>
+        <SearchField
+          ref={inputRef}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={t('mobile.social.searchPlaceholder')}
+          clearAccessibilityLabel={t('mobile.social.clearSearch')}
+          autoFocus
+        />
       </View>
 
       <FlashList
@@ -160,23 +153,9 @@ export default function ClimberSearchScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
     paddingBottom: spacing[2],
-  },
-  searchFieldWrap: {
-    flex: 1,
-  },
-  cancelButton: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingLeft: spacing[1],
-  },
-  cancelPressed: {
-    opacity: 0.6,
   },
   footer: {
     paddingVertical: spacing[5],

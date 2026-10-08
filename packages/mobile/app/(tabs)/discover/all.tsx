@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, TextInput, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useUserPlaylists } from '@boardsesh/playlists-react';
@@ -17,6 +17,7 @@ import { useDrainAllPages } from '../../../src/hooks/use-drain-all-pages';
 import { sortAndFilterPlaylists } from '../../../src/lib/sort-filter-playlists';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
+import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 
 /**
  * "My Playlists" — the full, vertical, alphabetical list of the signed-in user's
@@ -49,6 +50,7 @@ export default function AllPlaylistsScreen() {
   // Drain every page so the alphabetical sort + title filter see the whole
   // library, not just the first page.
   useDrainAllPages({ hasMore, isLoading, isLoadingMore, loadMore });
+  const pullRefresh = usePullRefresh(refetch, isLoading);
 
   // Refresh on return so an edit/delete made on a pushed detail screen lands here
   // (this list uses its own useState store, not the react-query cache the picker
@@ -181,6 +183,15 @@ export default function AllPlaylistsScreen() {
           contentContainerStyle={{ paddingBottom: bottomChrome.scrollBottomPadding + spacing[6] }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          // Pull to refresh (HIG Refresh content controls). `refetch` reports
+          // progress through `isLoading`, so the spinner holds until it clears.
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefresh.refreshing}
+              onRefresh={pullRefresh.onRefresh}
+              tintColor={brandColors.primary}
+            />
+          }
           ListEmptyComponent={
             <View style={[styles.centered, styles.emptyBlock]}>
               <Icon name="playlist" size={48} color={iosSystemColors.systemGray4} />

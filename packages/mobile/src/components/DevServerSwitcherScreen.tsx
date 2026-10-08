@@ -28,6 +28,7 @@ import { hapticLight, hapticError } from '../lib/haptics';
 import { discoverBundlers, type DiscoveredBundler } from '../lib/metro-discovery';
 import { addSavedMetroTarget, getSavedMetroTargets, removeSavedMetroTarget } from '../lib/metro-target-store';
 import { expoDevLauncher, isDevLauncherAvailable } from '../lib/dev-launcher';
+import { MEDIUM_LARGE_SNAP_POINTS } from './sheet-snap-points';
 
 function getTailscaleHosts(): string[] {
   const hosts = Constants.expoConfig?.extra?.tailscaleHosts;
@@ -417,7 +418,7 @@ export function DevServerSwitcherScreen() {
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
-      <Sheet ref={infoSheetRef} snapPoints={['55%', '90%']}>
+      <Sheet ref={infoSheetRef} snapPoints={MEDIUM_LARGE_SNAP_POINTS}>
         {selectedBundler ? (
           <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
             {/* i18n-ignore-next-line */}

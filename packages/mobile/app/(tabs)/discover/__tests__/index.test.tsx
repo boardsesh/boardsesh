@@ -157,7 +157,10 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  ScrollView: ({ children, refreshControl }: { children?: ReactNode; refreshControl?: ReactNode }) =>
+    createElement('div', null, refreshControl, children),
+  RefreshControl: ({ refreshing, onRefresh }: { refreshing?: boolean; onRefresh?: () => void }) =>
+    createElement('button', { 'data-refresh-control': String(!!refreshing), onClick: onRefresh }, 'pull-to-refresh'),
   Pressable: ({
     children,
     onPress,
@@ -978,5 +981,50 @@ describe('DiscoverLibrary create flow', () => {
     fireEvent.click(getByLabelText('open-create'));
     // Reopened with a clean slate — no stale error from the previous attempt.
     expect(container.querySelector('[data-create-error="true"]')).toBeNull();
+  });
+});
+
+// HIG Refresh content controls: a pull refetches every shelf on the hub.
+describe('DiscoverLibrary pull to refresh', () => {
+  function pull(container: HTMLElement) {
+    fireEvent.click(container.querySelector('[data-refresh-control]') as HTMLElement);
+  }
+  function spinnerOn(container: HTMLElement) {
+    return container.querySelector('[data-refresh-control]')?.getAttribute('data-refresh-control');
+  }
+  function hub() {
+    return (
+      <QueryClientProvider client={new QueryClient()}>
+        <DiscoverLibrary />
+      </QueryClientProvider>
+    );
+  }
+
+  it('refetches owned, pinned, community, smart and setter shelves on a pull', async () => {
+    followedSettersHook.data = [{ setterUsername: 'setter', climbCount: 3 }];
+    const { container } = renderHub();
+
+    await act(async () => pull(container));
+
+    expect(userHook.refetch).toHaveBeenCalledTimes(1);
+    expect(pinnedHook.refetch).toHaveBeenCalledTimes(1);
+    expect(communityHook.refetch).toHaveBeenCalledTimes(1);
+    expect(smartCountsHook.refetch).toHaveBeenCalledTimes(1);
+    expect(followedSettersHook.refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the spinner until the playlist shelves finish loading', async () => {
+    // Like the real hook: a refetch flips the shelf's loading flag at once.
+    userHook.refetch.mockImplementationOnce(() => {
+      userHook.isLoading = true;
+    });
+    const { container, rerender } = render(hub());
+
+    await act(async () => pull(container));
+    expect(spinnerOn(container)).toBe('true');
+
+    userHook.isLoading = false;
+    rerender(hub());
+    expect(spinnerOn(container)).toBe('false');
   });
 });

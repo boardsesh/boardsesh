@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ViewStyle } from 'react-native';
 
 const hostCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+const swiftButtonCalls = vi.hoisted(() => ({ modifiers: [] as { kind: string; args: unknown[] }[][] }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
@@ -23,7 +24,17 @@ vi.mock('@expo/ui', () => ({
 }));
 vi.mock('@expo/ui/swift-ui', () => {
   const passthrough = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
-  return { Button: passthrough, HStack: passthrough, Image: () => null, ProgressView: () => null, Text: passthrough };
+  const Button = ({
+    children,
+    modifiers,
+  }: {
+    children?: ReactNode;
+    modifiers?: { kind: string; args: unknown[] }[];
+  }) => {
+    swiftButtonCalls.modifiers.push(modifiers ?? []);
+    return createElement('div', null, children);
+  };
+  return { Button, HStack: passthrough, Image: () => null, ProgressView: () => null, Text: passthrough };
 });
 vi.mock('@expo/ui/swift-ui/modifiers', () => {
   const modifier =
@@ -51,6 +62,7 @@ vi.mock('../../providers/theme-provider', async () => {
 });
 
 import { Button } from '../Button.ios';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import type { ButtonVariant } from '../Button.types';
 
 function lastHostProps(): Record<string, unknown> {
@@ -61,6 +73,45 @@ function lastHostProps(): Record<string, unknown> {
 
 beforeEach(() => {
   hostCalls.props = [];
+  swiftButtonCalls.modifiers = [];
+});
+
+function lastButtonStyle(): unknown {
+  const modifiers = swiftButtonCalls.modifiers.at(-1);
+  if (!modifiers) throw new Error('SwiftUI Button was never rendered');
+  return modifiers.find((modifier) => modifier.kind === 'buttonStyle')?.args[0];
+}
+
+// HIG Materials: glass never sits on glass. Inside a region that is already
+// Liquid Glass the middle tier draws a bordered capsule instead of its own glass.
+describe('iOS Button surface', () => {
+  it.each<ButtonVariant>(['tonal', 'outlined'])('%s is glass on an ordinary surface', (variant) => {
+    render(<Button title="Refine" onPress={vi.fn()} variant={variant} />);
+    expect(lastButtonStyle()).toBe('glass');
+  });
+
+  it.each<ButtonVariant>(['tonal', 'outlined'])('%s is bordered inside a glass region', (variant) => {
+    render(
+      <ButtonSurfaceProvider surface="glass">
+        <Button title="Refine" onPress={vi.fn()} variant={variant} />
+      </ButtonSurfaceProvider>,
+    );
+    expect(lastButtonStyle()).toBe('bordered');
+  });
+
+  it('honours a per-button over="glass"', () => {
+    render(<Button title="Clear" onPress={vi.fn()} variant="outlined" over="glass" />);
+    expect(lastButtonStyle()).toBe('bordered');
+  });
+
+  it('keeps the filled CTA solid inside a glass region', () => {
+    render(
+      <ButtonSurfaceProvider surface="glass">
+        <Button title="Save" onPress={vi.fn()} variant="filled" />
+      </ButtonSurfaceProvider>,
+    );
+    expect(lastButtonStyle()).toBe('borderedProminent');
+  });
 });
 
 describe('iOS Button host', () => {

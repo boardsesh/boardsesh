@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import { parseTickTime } from '@boardsesh/profile-stats';
 import { displayedAttemptCount, normalizeLogbookQuality } from '@boardsesh/logbook';
-import { androidSafeSnapPoints } from '../sheet-snap-points';
+import { MEDIUM_SNAP_POINTS, androidSafeSnapPoints } from '../sheet-snap-points';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
@@ -52,7 +52,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
   const windowInsetBottom = useWindowBottomInset();
   const sheetRef = useRef<ComponentRef<typeof BottomSheetModal>>(null);
   const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['45%']), []);
+  const snapPoints = useMemo(() => androidSafeSnapPoints(MEDIUM_SNAP_POINTS), []);
 
   const handlePick = useCallback(
     (entry: AscentFeedItem) => {

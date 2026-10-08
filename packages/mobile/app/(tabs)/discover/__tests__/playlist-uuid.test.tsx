@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Climb } from '@boardsesh/queue';
@@ -46,11 +46,15 @@ vi.mock('../../../../src/lib/graphql/client', () => ({
 const commentsMock = vi.hoisted(() => ({
   calls: [] as Array<{ entityType: string; entityId: string | undefined; enabled: boolean }>,
   totalCount: 0,
+  refetch: vi.fn(),
 }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({
   useComments: (entityType: string, entityId: string | undefined, enabled = true) => {
     commentsMock.calls.push({ entityType, entityId, enabled });
-    return { data: enabled && entityId ? { comments: [], totalCount: commentsMock.totalCount } : undefined };
+    return {
+      data: enabled && entityId ? { comments: [], totalCount: commentsMock.totalCount } : undefined,
+      refetch: commentsMock.refetch,
+    };
   },
 }));
 
@@ -63,6 +67,7 @@ const detailViewProps = vi.hoisted(() => ({
     emptyAction: { label: string } | null;
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    onRefresh?: () => unknown;
   } | null,
 }));
 const snapToIndex = vi.hoisted(() => vi.fn());
@@ -190,6 +195,7 @@ vi.mock('../../../../src/components/playlist', () => ({
     emptyAction,
     onAddAllToQueue,
     isAddingAllToQueue,
+    onRefresh,
   }: {
     hero: { name: string };
     headerSlot?: ReactNode;
@@ -198,12 +204,14 @@ vi.mock('../../../../src/components/playlist', () => ({
     emptyAction?: { label: string; onPress: () => void };
     onAddAllToQueue?: () => void;
     isAddingAllToQueue?: boolean;
+    onRefresh?: () => unknown;
   }) => {
     detailViewProps.current = {
       editMode: !!editMode,
       emptyAction: emptyAction ?? null,
       onAddAllToQueue,
       isAddingAllToQueue,
+      onRefresh,
     };
     return createElement(
       'div',
@@ -212,7 +220,10 @@ vi.mock('../../../../src/components/playlist', () => ({
         'data-hero-name': hero.name,
         'data-edit-mode': String(!!editMode),
       },
-      actions?.(false),
+      // Both forms: the expanded header controls, and the collapsed form the
+      // header switches to once the hero scrolls away.
+      createElement('div', { 'data-actions-expanded': 'true' }, actions?.(false)),
+      createElement('div', { 'data-actions-collapsed': 'true' }, actions?.(true)),
       headerSlot,
       emptyAction
         ? createElement(
@@ -257,23 +268,20 @@ vi.mock('../../../../src/components/playlist', () => ({
         'form-submit',
       ),
     ),
-  // The overflow menu's rows are the regression surface for #3966: each callback
-  // gets its own button so a test can fire it WITHOUT ever calling `onClose`
-  // (which the real sheet coordinator suppresses on a controlled close).
+  // The overflow menu's rows: each callback gets its own button so a test can
+  // fire it the way a tap on the native menu row does.
   PlaylistActionsMenu: ({
     onTogglePin,
     onAddClimbs,
     onEditDetails,
     onEdit,
     onDelete,
-    onClose,
   }: {
     onTogglePin?: () => void;
     onAddClimbs?: () => void;
     onEditDetails?: () => void;
     onEdit?: () => void;
     onDelete?: () => void;
-    onClose?: () => void;
   }) =>
     createElement(
       'div',
@@ -283,7 +291,6 @@ vi.mock('../../../../src/components/playlist', () => ({
       createElement('button', { 'data-menu-edit-details': 'true', onClick: onEditDetails }),
       createElement('button', { 'data-menu-edit-climbs': 'true', onClick: onEdit }),
       createElement('button', { 'data-menu-delete': 'true', onClick: onDelete }),
-      createElement('button', { 'data-menu-close': 'true', onClick: onClose }),
     ),
   PlaylistFollowButton: () => null,
   PlaylistEditDoneButton: () => null,
@@ -291,7 +298,7 @@ vi.mock('../../../../src/components/playlist', () => ({
   // glass toolbar.
   PlaylistOwnerToolbar: ({ onEdit }: { onEdit?: () => void }) =>
     createElement('button', { 'data-owner-edit': 'true', onClick: onEdit }, 'edit-climbs'),
-  PlaylistBackFab: () => createElement('div', { 'data-back-fab': 'true' }),
+  PlaylistStateHeader: () => createElement('div', { 'data-state-header': 'true' }),
 }));
 
 import PlaylistDetail from '../[playlist_uuid]';
@@ -557,12 +564,9 @@ describe('PlaylistDetail discussion thread', () => {
   });
 });
 
-// #3966. Every overflow-menu row used to defer its work to the menu's `onClose`,
-// which the sheet coordinator deliberately suppresses on a controlled
-// `visible: true -> false` (see the 'a coordinator-driven dismiss does NOT fire
-// onClose (selfDismissRef gate)' test in sheet-presentation-provider.test.tsx).
-// These tests fire each row WITHOUT calling `onClose` — the exact sequence a
-// real tap produces — so a row that goes back to deferring fails here.
+// The owner's overflow is a native menu (HIG Pull-down buttons), the collapsed
+// form of the header controls. Each row acts directly; there is no sheet whose
+// `onClose` it could wait on (#3966).
 describe('PlaylistDetail owner overflow menu', () => {
   async function renderOwnerDetail(playlistOverrides: Record<string, unknown> = {}) {
     requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'owner', ...playlistOverrides }) });
@@ -582,13 +586,16 @@ describe('PlaylistDetail owner overflow menu', () => {
     );
   });
 
-  it('does not enter edit mode when the menu is only swiped away', async () => {
+  it('is the collapsed form only: the expanded header keeps the owner toolbar', async () => {
     const { container } = await renderOwnerDetail();
 
-    fireEvent.click(container.querySelector('[data-menu-close="true"]') as HTMLButtonElement);
-
-    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
-    expect(container.querySelector('[data-detail-view="true"]')?.getAttribute('data-edit-mode')).toBe('false');
+    const expanded = container.querySelector('[data-actions-expanded="true"]');
+    const collapsed = container.querySelector('[data-actions-collapsed="true"]');
+    expect(expanded?.querySelector('[data-owner-edit="true"]')).not.toBeNull();
+    expect(expanded?.querySelector('[data-actions-menu="true"]')).toBeNull();
+    expect(collapsed?.querySelector('[data-actions-menu="true"]')).not.toBeNull();
+    // No sheet is mounted for it any more.
+    expect(container.querySelectorAll('[data-actions-menu="true"]')).toHaveLength(1);
   });
 
   it('opens the edit-details sheet from the menu (rename has its own row now)', async () => {
@@ -635,6 +642,7 @@ describe('PlaylistDetail owner overflow menu', () => {
     const { container } = renderDetail();
 
     await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    expect(container.querySelector('[data-actions-menu="true"]')).toBeNull();
     expect(detailViewProps.current?.emptyAction).toBeNull();
   });
 
@@ -649,5 +657,26 @@ describe('PlaylistDetail owner overflow menu', () => {
     await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
     expect(detailViewProps.current?.onAddAllToQueue).toBe(playlistMocks.appendToQueue);
     expect(detailViewProps.current?.isAddingAllToQueue).toBe(false);
+  });
+});
+
+// HIG Refresh content controls: a pull refetches what the screen shows.
+describe('PlaylistDetail pull to refresh', () => {
+  it('refetches the playlist details and its climbs', async () => {
+    requestMock.mockResolvedValue({ playlist: makePlaylist({ userRole: 'viewer', isPublic: true }) });
+    const { container } = renderDetail();
+    await waitFor(() => expect(container.querySelector('[data-detail-view="true"]')).not.toBeNull());
+    const callsBefore = requestMock.mock.calls.length;
+    climbsRefetch.mockClear();
+    commentsMock.refetch.mockClear();
+
+    await act(async () => {
+      await detailViewProps.current?.onRefresh?.();
+    });
+
+    expect(climbsRefetch).toHaveBeenCalledTimes(1);
+    expect(requestMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    // A public playlist has a discussion thread, so its count refreshes too.
+    expect(commentsMock.refetch).toHaveBeenCalledTimes(1);
   });
 });

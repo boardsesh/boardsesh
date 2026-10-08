@@ -8,6 +8,7 @@ import type { BackgroundVariant } from '../../lib/background-image-cache';
 import type { BoardRenderSettings } from '../../lib/board-render-settings';
 import type { HoldColorOverrides } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 type BoardPreviewSheetProps = {
   visible: boolean;
@@ -70,7 +71,13 @@ export function BoardPreviewSheet({
   const { systemColors } = useTheme();
 
   return (
-    <ModalSheet visible={visible} snapPoints={['85%']} onClose={onClose} onFullyDismissed={onFullyDismissed} scrollable>
+    <ModalSheet
+      visible={visible}
+      snapPoints={LARGE_SNAP_POINTS}
+      onClose={onClose}
+      onFullyDismissed={onFullyDismissed}
+      scrollable
+    >
       {title != null ? (
         <View style={styles.body}>
           <Text variant="headline">{title}</Text>

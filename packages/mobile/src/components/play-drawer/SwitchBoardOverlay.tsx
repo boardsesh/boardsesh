@@ -1,11 +1,9 @@
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../Button';
-import { ButtonSurfaceProvider } from '../Button.surface';
-import { GlassSurface } from '../GlassSurface';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
-import { withAlpha } from '../../theme/colors';
+import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, overlays, spacing } from '../../theme/tokens';
 
 type SwitchBoardOverlayProps = {
@@ -29,35 +27,31 @@ type SwitchBoardOverlayProps = {
  * binds that board and connects, which is the same thing a "move to it" prompt
  * would have asked them to confirm first.
  *
- * The message sits on glass rather than straight on the scrim. The scrim alone
- * is a 60% fill, so the controls it covers read right through the words on top
- * of it — the card is what makes them recede. Everything inside is centred.
+ * The message sits on an opaque card rather than straight on the scrim. The
+ * scrim alone is a 60% fill, so the controls it covers read right through the
+ * words on top of it — the card is what makes them recede. It is NOT glass: the
+ * card is content, and HIG Materials keeps Liquid Glass on the controls layer
+ * (it used to be a glass card inside the glass player — glass on glass).
+ * Everything inside is centred.
  *
  * Uses climb-scoped `session.boardMismatch.*` copy (the playlist-detail screen
  * has its own banner with playlist-worded copy).
  */
 export function SwitchBoardOverlay({ boardLabel, onSwitchBoard }: SwitchBoardOverlayProps) {
   const { t } = useTranslation('session');
+  const { systemColors } = useTheme();
   return (
     <View style={styles.scrim} accessibilityViewIsModal>
-      <GlassSurface style={styles.card} borderRadius={borderRadius.lg} glassEffectStyle="regular">
-        <Icon name="lock" size={22} color={overlays.onScrim} />
-        <Text variant="headline" color={overlays.onScrim} style={styles.centered}>
+      <View testID="switch-board-card" style={[styles.card, { backgroundColor: systemColors.elevatedSurface }]}>
+        <Icon name="lock" size={22} color={systemColors.label} />
+        <Text variant="headline" color={systemColors.label} style={styles.centered}>
           {t('boardMismatch.title', { board: boardLabel })}
         </Text>
-        <Text variant="subheadline" color={withAlpha(overlays.onScrim, 0.82)} style={styles.centered}>
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.centered}>
           {t('boardMismatch.subtitle', { board: boardLabel })}
         </Text>
-        <ButtonSurfaceProvider surface="content">
-          <Button
-            title={t('boardMismatch.cta')}
-            icon="transfer"
-            variant="filled"
-            size="medium"
-            onPress={onSwitchBoard}
-          />
-        </ButtonSurfaceProvider>
-      </GlassSurface>
+        <Button title={t('boardMismatch.cta')} icon="transfer" variant="filled" size="medium" onPress={onSwitchBoard} />
+      </View>
     </View>
   );
 }
@@ -77,6 +71,7 @@ const styles = StyleSheet.create({
   },
   card: {
     alignSelf: 'stretch',
+    borderRadius: borderRadius.lg,
     alignItems: 'center',
     gap: spacing[2],
     paddingVertical: spacing[4],

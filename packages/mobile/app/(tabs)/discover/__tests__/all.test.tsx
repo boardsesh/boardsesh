@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type PlaylistItem = { uuid: string; name: string; climbCount: number; color?: string; icon?: string };
@@ -62,20 +62,25 @@ vi.mock('react-native', () => ({
       'aria-label': accessibilityLabel,
       onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
     }),
+  RefreshControl: ({ refreshing, onRefresh }: { refreshing?: boolean; onRefresh?: () => void }) =>
+    createElement('button', { 'data-refresh-control': String(!!refreshing), onClick: onRefresh }, 'pull-to-refresh'),
   FlatList: ({
     data,
     renderItem,
     ListEmptyComponent,
     ListFooterComponent,
+    refreshControl,
   }: {
     data?: PlaylistItem[];
     renderItem: (info: { item: PlaylistItem; index: number }) => ReactNode;
     ListEmptyComponent?: ReactNode;
     ListFooterComponent?: ReactNode;
+    refreshControl?: ReactNode;
   }) =>
     createElement(
       'div',
       { 'data-list': 'true' },
+      refreshControl,
       data && data.length > 0
         ? data.map((item, index) => createElement('div', { key: item.uuid }, renderItem({ item, index })))
         : ListEmptyComponent,
@@ -181,5 +186,28 @@ describe('AllPlaylistsScreen', () => {
     // there lands here.
     focusEffect.cb?.();
     expect(hook.refetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// HIG Refresh content controls.
+describe('AllPlaylistsScreen pull to refresh', () => {
+  it('refetches on a pull and spins until the reload finishes', async () => {
+    hook.playlists = [{ uuid: 'p-1', name: 'Projects', climbCount: 3 }];
+    // Like the real hook: a refetch flips `isLoading` at once.
+    hook.refetch.mockImplementationOnce(() => {
+      hook.isLoading = true;
+    });
+    const { container, rerender } = render(<AllPlaylistsScreen />);
+    const spinnerOn = () => container.querySelector('[data-refresh-control]')?.getAttribute('data-refresh-control');
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('[data-refresh-control]') as HTMLElement);
+    });
+    expect(hook.refetch).toHaveBeenCalledTimes(1);
+    expect(spinnerOn()).toBe('true');
+
+    hook.isLoading = false;
+    rerender(<AllPlaylistsScreen />);
+    expect(spinnerOn()).toBe('false');
   });
 });

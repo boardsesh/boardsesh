@@ -14,6 +14,7 @@ import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 type CommentSheetProps = {
   sheetRef: RefObject<BottomSheet | null>;
@@ -65,7 +66,7 @@ export function CommentSheet({
   return (
     <Sheet
       ref={sheetRef}
-      snapPoints={['60%', '90%']}
+      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       scrollable
       onClose={onClose}
       footer={

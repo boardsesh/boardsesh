@@ -19,8 +19,9 @@ import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
-const SNAP_POINTS = ['72%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 // "Kilter Board", "Tension Board", "MoonBoard": the product name a climber
 // knows, never the serial (#5658). The suffix is the one the board-account card

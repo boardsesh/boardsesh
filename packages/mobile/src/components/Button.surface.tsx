@@ -5,6 +5,10 @@
 // existing call site is unchanged. The filled CTA is solid on every surface and
 // never reads this — this only protects outlined/tonal/text over busy art.
 //
+// `surface="glass"` marks a region that is already Liquid Glass (a glass panel,
+// a native iOS 26 bar item). Buttons inside draw a bordered capsule and every
+// GlassSurface inside drops its own glass, so glass never sits on glass.
+//
 // Pure React (no @expo/ui imports), so both platform Button files can read it.
 
 import { createContext, useContext, type ReactNode } from 'react';

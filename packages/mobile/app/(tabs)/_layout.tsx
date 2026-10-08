@@ -47,6 +47,18 @@ const materialTabIcon =
     <MaterialCommunityIcons name={focused ? active : inactive} color={color} size={size} />
   );
 
+// HIG Tab bars: a selected tab shows the filled variant of its SF Symbol, an
+// unselected one the outline. Climbs keeps the plain magnifying glass: it is the
+// search-role tab and the symbol has no fill variant. The Android JS bar fills
+// its Material icons on focus already (`materialTabIcon`).
+const TAB_SF_SYMBOLS = {
+  home: { default: 'house', selected: 'house.fill' },
+  climbs: 'magnifyingglass',
+  record: { default: 'record.circle', selected: 'record.circle.fill' },
+  discover: { default: 'bookmark', selected: 'bookmark.fill' },
+  profile: { default: 'person.crop.circle', selected: 'person.crop.circle.fill' },
+} as const;
+
 // The iPad shell hides the Tabs navigator's own bar (the glass sidebar carries
 // navigation), while the navigator still owns routing + per-tab state.
 const renderHiddenTabBar = () => null;
@@ -365,17 +377,17 @@ export default function TabLayout() {
       ) : null}
 
       <NativeTabs.Trigger name="home">
-        <NativeTabs.Trigger.Icon sf="house" md="home" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.home} md="home" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.home')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="climbs" role="search">
-        <NativeTabs.Trigger.Icon sf="magnifyingglass" md="search" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.climbs} md="search" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.climbs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="record">
-        <NativeTabs.Trigger.Icon sf="record.circle" md="radio_button_checked" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.record} md="radio_button_checked" />
         <NativeTabs.Trigger.Label>{tSession('mobile.session.recordTab')}</NativeTabs.Trigger.Label>
         {showRecordBadge ? (
           <NativeTabs.Trigger.Badge selectedBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}>
@@ -390,12 +402,12 @@ export default function TabLayout() {
       <NativeTabs.Trigger name="wall" hidden />
 
       <NativeTabs.Trigger name="discover">
-        <NativeTabs.Trigger.Icon sf="bookmark" md="bookmarks" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.discover} md="bookmarks" />
         <NativeTabs.Trigger.Label>{tPlaylists('bottomTabBar.discover')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Icon sf="person.crop.circle" md="account_circle" />
+        <NativeTabs.Trigger.Icon sf={TAB_SF_SYMBOLS.profile} md="account_circle" />
         <NativeTabs.Trigger.Label>{t('mobile.nav.profile')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>

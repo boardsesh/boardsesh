@@ -22,6 +22,7 @@ import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 export type PickedGym = {
   uuid: string;
@@ -47,7 +48,7 @@ type GymPickerSheetProps = {
   onDismiss: () => void;
 };
 
-const SNAP_POINTS = ['75%'];
+const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
 const keyExtractor = (gym: Gym) => gym.uuid;
 

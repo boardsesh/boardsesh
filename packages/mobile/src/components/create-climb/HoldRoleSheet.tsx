@@ -12,6 +12,7 @@ import { getEffectiveHoldStateShape, useHoldColorOverrides } from '../../lib/hol
 import { spacing, borderRadius } from '../../theme/tokens';
 import { brushRoleColor, getPaintRoles, useBrushRoleLabels, type BrushRole } from './brush-roles';
 import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 
 type HoldRoleSheetProps = {
   /** The long-pressed hold, or null when the sheet is closed. */
@@ -60,7 +61,7 @@ export function HoldRoleSheet({
 
   const currentState: HoldState | undefined = holdId != null ? litUpHoldsMap[holdId]?.state : undefined;
 
-  const snapPoints = useMemo(() => ['52%', '90%'], []);
+  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
   const paintRoles = useMemo(() => getPaintRoles(boardName), [boardName]);
 
   const handleSelect = (role: BrushRole) => {

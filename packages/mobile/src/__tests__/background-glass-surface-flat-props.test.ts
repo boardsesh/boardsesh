@@ -17,9 +17,12 @@ import { join } from 'node:path';
 //
 // Each fixture file is asserted to have exactly one `<GlassSurface` JSX usage
 // (a background fill) so the extracted opening tag is unambiguous.
+//
+// The player (app/play.tsx) and the Record tab draw their full-screen fill
+// through ScreenBackground, which keeps the GlassSurface path for Material and
+// Reduce Transparency only, so that one call site carries the props for both.
 const BACKGROUND_GLASS_SURFACE_SITES = [
-  join(__dirname, '../../app/play.tsx'),
-  join(__dirname, '../../app/(tabs)/record/index.tsx'),
+  join(__dirname, '../components/ScreenBackground.tsx'),
   join(__dirname, '../components/navigation/IpadSidebar.tsx'),
 ];
 
