@@ -66,6 +66,7 @@ jobs:
               path === 'scripts/lib/ota-branch-probe.ts' ||
               path === 'scripts/lib/eoas.ts' ||
               path === 'scripts/mobile-ota-boot-check.ts' ||
+              path === 'scripts/mobile-ota-boot-fixture.gradle' ||
               path === 'scripts/mobile-ota-boot-preview.ts' ||
               path === 'scripts/lib/ota-boot-check.ts' ||
               path === 'scripts/lib/ota-preview-boot-receipt.ts' ||

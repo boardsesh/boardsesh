@@ -63,6 +63,7 @@ on:
     paths:
       - '.github/workflows/mobile-ota-boot-check.yml'
       - 'scripts/mobile-ota-boot-check.ts'
+      - 'scripts/mobile-ota-boot-fixture.gradle'
       - 'scripts/lib/ota-boot-check.ts'
       - 'scripts/mobile-ota-boot-preview.ts'
       - 'scripts/lib/ota-preview-boot-receipt.ts'
@@ -327,7 +328,7 @@ jobs:
       # branch header is baked before Gradle runs and cannot be changed after.
       - name: Compute the binary cache key
         id: key
-        run: echo "key=${{ runner.os }}-boot-check-android-v1-${{ env.UPDATE_BRANCH }}-${{ needs.resolve.outputs.android_runtime }}-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', '.github/actions/android-rn-setup/**') }}" >> "$GITHUB_OUTPUT"
+        run: echo "key=${{ runner.os }}-boot-check-android-v2-${{ env.UPDATE_BRANCH }}-${{ needs.resolve.outputs.android_runtime }}-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', '.github/actions/android-rn-setup/**', 'scripts/mobile-ota-boot-fixture.gradle', 'scripts/lib/ota-boot-check.ts') }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore the release APK
         id: cache
@@ -357,11 +358,16 @@ jobs:
       - name: Build the release APK
         if: steps.cache.outputs.cache-hit != 'true'
         working-directory: packages/mobile/android
+        env:
+          BOOT_CHECK_SCRIPT: ${{ github.workspace }}/.boot-check/scripts/mobile-ota-boot-check.ts
         run: |
           set -euo pipefail
-          ./gradlew assembleRelease -PreactNativeArchitectures=x86_64 -PboardseshAbiFilters=x86_64 --no-daemon --console=plain --stacktrace
+          ./gradlew assembleRelease --init-script "$GITHUB_WORKSPACE/.boot-check/scripts/mobile-ota-boot-fixture.gradle" -PreactNativeArchitectures=x86_64 -PboardseshAbiFilters=x86_64 --no-daemon --console=plain --stacktrace
           mkdir -p "$GITHUB_WORKSPACE/boot-check-binary"
           cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/boot-check-binary/app-release.apk"
+
+      - name: Verify the prepared APK fixture
+        run: node --experimental-strip-types .boot-check/scripts/mobile-ota-boot-check.ts verify-android-fixture --apk boot-check-binary/app-release.apk
 
       - name: Save the release APK
         if: steps.cache.outputs.cache-hit != 'true'

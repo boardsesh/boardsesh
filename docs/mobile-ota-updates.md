@@ -1640,7 +1640,9 @@ gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch
    has nothing for that runtime version.
 3. **Gets a release binary of the commit's native tree**, from the cache or by building it. It is
    built from the commit under test, with `EXPO_UPDATES_FINGERPRINT_OVERRIDE` set to the update's
-   runtime version, the same way a store build takes its own.
+   runtime version, the same way a store build takes its own. The embedded fixture timestamp is
+   set to 2000-01-01 before installation or APK packaging, preserving the actual JS, assets and
+   runtime. This fixture represents an already-installed binary; it is not an unmodified store build.
 4. **Installs it fresh, pinned to the branch, and launches it twice.** Launch 1 runs the embedded
    bundle and downloads the update. Launch 2 is a cold start, which is when a downloaded update runs.
 5. **Reads what expo-updates wrote down**: its `updates` table and its log file, copied off the
@@ -1666,17 +1668,28 @@ override, which is how a phone is pinned, but the app clears that override on a 
 launch (`OtaBranchSurfingInitializer`), so an override written from outside does not survive.
 
 - **iOS:** the cached `.app` is the product build with `xprem-branch: ''`. At test time the script
-  copies it and sets `EXUpdatesRequestHeaders.xprem-branch` in the copy's `Expo.plist`. The simulator
-  does not check the bundle's seal, so nothing is re-signed. One cached binary serves any branch.
+  copies it and sets `EXUpdatesRequestHeaders.xprem-branch` in the copy's `Expo.plist`. It changes
+  only the copied embedded `app.manifest` ordering timestamp, verifies the JS bytes are unchanged,
+  and signs the copy ad hoc while preserving its existing entitlements. The cached app remains
+  unchanged. One cached binary serves any branch.
 - **Android:** an APK's manifest is compiled, so the edit happens between `expo prebuild` and Gradle,
   in the generated `android/` folder (`pin-android-project`). The branch is part of the cache key, and
-  a run against another branch builds again.
+  a run against another branch builds again. A boot-only Gradle init hook stamps the generated
+  `app.manifest` after Expo resource generation and before normal packaging/signing. The workflow
+  verifies the final APK timestamp before caching or installing it; the APK signing process stays
+  unchanged. Production builds do not load this hook.
 
 The binary also has to be one a phone could hold when the update reaches it. expo-updates only
 downloads an update newer than the bundle it is running, by `commitTime`: a binary's embedded bundle
-carries its commit's date and an update carries its publish time. A binary built from a commit made
-after the update was published would be told "no update available", so the script reads the embedded
-`app.manifest` first and fails with that explanation.
+uses `app.manifest.commitTime` and an update uses its published `createdAt`. Stock Expo stamps the
+build clock; Boardsesh's existing production SDK patch uses HEAD's committer date. Either can
+outrank a previously published update reused by content deduplication. Boot fixtures therefore use
+the fixed historical date 2000-01-01, independently of the candidate. The script still reads the
+prepared `app.manifest` and refuses a remote update that is not strictly newer. It never force-loads
+remote JS or changes the candidate manifest. Evidence records the prepared binary identity and
+timestamp; iOS also records the original timestamp, and Android build logs record the rewrite.
+Successful first-screen timings describe this prepared fixture and its exact remote update, not
+the original store binary or physical-device performance.
 
 ### What it sends, and to whom
 

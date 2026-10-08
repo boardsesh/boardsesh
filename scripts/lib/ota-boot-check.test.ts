@@ -7,6 +7,7 @@ import {
   androidEasClientPrefsXml,
   androidLaunchCommand,
   BOOT_CHECK_CLIENT_IDS,
+  BOOT_FIXTURE_COMMIT_TIME_MS,
   checkBinary,
   evidenceFromCapture,
   ensureAndroidRoot,
@@ -18,9 +19,11 @@ import {
   parseUpdatesLog,
   pinAndroidManifest,
   readEmbeddedManifest,
+  requireEmbeddedFixture,
   readServedHead,
   resolveExpectedUpdate,
   sha256HexToBase64Url,
+  stampEmbeddedFixtureManifest,
   updatesLogSince,
 } from './ota-boot-check';
 import type { BootCapture, BootPlatform, ServedHead } from './ota-boot-check';
@@ -121,6 +124,35 @@ describe('Android root reconnect handshake', () => {
       [['root'], 30_000],
       [['wait-for-device'], 10_000],
     ]);
+  });
+});
+
+describe('historical embedded fixture manifest', () => {
+  const original = {
+    id: '4f2ebe91-b04a-456a-84a8-a28e61bab715',
+    commitTime: 1791502215000,
+    assets: [{ name: 'asset', fileHash: 'unchanged', nested: { scales: [1, 2] } }],
+    runtimeVersion: 'unchanged-runtime',
+    extra: { branch: 'pr-6267', certificate: 'unchanged' },
+  };
+
+  it('changes only timestamp, including unknown identity and asset fields', () => {
+    const stamped = stampEmbeddedFixtureManifest(JSON.stringify(original));
+    expect(JSON.parse(stamped)).toEqual({ ...original, commitTime: BOOT_FIXTURE_COMMIT_TIME_MS });
+    expect(stampEmbeddedFixtureManifest(stamped)).toBe(stamped);
+    expect(() => requireEmbeddedFixture(stamped)).not.toThrow();
+    expect(() => requireEmbeddedFixture(JSON.stringify(original))).toThrow('historical');
+  });
+
+  it.each([
+    { ...original, id: 'not-a-uuid' },
+    { ...original, commitTime: '1791502215000' },
+    { ...original, commitTime: -1 },
+    { ...original, commitTime: 1.5 },
+    { ...original, commitTime: Number.MAX_SAFE_INTEGER + 1 },
+    { ...original, assets: null },
+  ])('refuses malformed generated manifests before stamping: %j', (manifest) => {
+    expect(() => stampEmbeddedFixtureManifest(JSON.stringify(manifest))).toThrow();
   });
 });
 
@@ -259,6 +291,20 @@ describe('the binary', () => {
   const publishedAtMs = Date.parse(servedHead.createdAt);
   const embedded = { embeddedUpdateId: '4f2ebe91-b04a-456a-84a8-a28e61bab715' };
 
+  it('lets a historical fixture receive deduplicated bytes while retaining strict ordering', () => {
+    const original = JSON.stringify({ id: embedded.embeddedUpdateId, commitTime: publishedAtMs + 60_000, assets: [] });
+    const originalBinary = { runtimeVersion: IOS_RUNTIME, ...readEmbeddedManifest(original) };
+    expect(checkBinary(originalBinary, expectation, servedHead)).toContain('would not download');
+    const prepared = { runtimeVersion: IOS_RUNTIME, ...readEmbeddedManifest(stampEmbeddedFixtureManifest(original)) };
+    expect(checkBinary(prepared, expectation, servedHead)).toBeNull();
+    expect(checkBinary(prepared, expectation, { ...servedHead, createdAt: '2000-01-01T00:00:00.000Z' })).toContain(
+      'would not download',
+    );
+    expect(checkBinary({ ...prepared, runtimeVersion: 'c'.repeat(40) }, expectation, servedHead)).toContain(
+      'bakes runtime version',
+    );
+  });
+
   it('accepts a binary of the same runtime whose embedded bundle is older than the update', () => {
     expect(
       checkBinary(
@@ -299,7 +345,7 @@ describe('the binary', () => {
       embeddedUpdateId: '4f2ebe91-b04a-456a-84a8-a28e61bab715',
       embeddedCommitTimeMs: 1791150000000,
     });
-    expect(() => readEmbeddedManifest('{"id":"x"}')).toThrow('no commitTime');
+    expect(() => readEmbeddedManifest('{"id":"x"}')).toThrow('no valid commitTime');
   });
 
   it('pins a generated Android manifest to a branch, once', () => {

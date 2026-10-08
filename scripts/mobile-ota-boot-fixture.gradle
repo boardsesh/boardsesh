@@ -1,0 +1,23 @@
+// Loaded ONLY by the OTA boot fixture build. Normal release builds never use it.
+// Expo wires this task's generated assetDir into AGP packaging, so doLast runs
+// after manifest generation and before the unchanged release signing pipeline.
+gradle.projectsEvaluated {
+    def appProject = gradle.rootProject.findProject(':app')
+    if (appProject == null) throw new GradleException('Boot fixture: missing :app project')
+    def resourceTasks = appProject.tasks.matching { it.name == 'createReleaseUpdatesResources' }.toList()
+    if (resourceTasks.size() != 1) throw new GradleException('Boot fixture: expected one release updates resource task')
+    def bootScript = System.getenv('BOOT_CHECK_SCRIPT')
+    if (bootScript == null || !new File(bootScript).isFile()) throw new GradleException('Boot fixture: missing boot checker script')
+    def resourceTask = resourceTasks.first()
+    resourceTask.inputs.property('boardseshBootFixtureEpoch', 946684800000L)
+    resourceTask.doLast {
+        def assetDirectory = resourceTask.assetDir.get().asFile.canonicalFile
+        def buildDirectory = appProject.layout.buildDirectory.get().asFile.canonicalFile
+        if (!assetDirectory.toPath().startsWith(buildDirectory.toPath())) throw new GradleException('Boot fixture: generated assets outside build directory')
+        def embeddedManifest = new File(assetDirectory, 'app.manifest')
+        if (!embeddedManifest.isFile()) throw new GradleException('Boot fixture: missing generated app.manifest')
+        resourceTask.execOperations.exec {
+            commandLine('node', '--experimental-strip-types', bootScript, 'stamp-embedded-fixture', '--manifest', embeddedManifest.absolutePath)
+        }
+    }
+}

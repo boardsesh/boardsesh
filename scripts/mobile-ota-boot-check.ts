@@ -34,6 +34,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   cpSync,
@@ -73,8 +74,10 @@ import {
   parseUpdateRows,
   pinAndroidManifest,
   readEmbeddedManifest,
+  requireEmbeddedFixture,
   readServedHead,
   resolveExpectedUpdate,
+  stampEmbeddedFixtureManifest,
   updatesLogSince,
 } from './lib/ota-boot-check.ts';
 import type { BinaryDescription, BootCapture, BootPlatform } from './lib/ota-boot-check.ts';
@@ -221,13 +224,14 @@ function iosDevice(device: string): BootDevice {
   const supportDir = () => join(dataContainer(), 'Library', 'Application Support');
   let logStart = new Date();
   const crashReportsDir = join(homedir(), 'Library', 'Logs', 'DiagnosticReports');
+  let originalEmbeddedCommitTimeMs: number;
 
   return {
     prepareBinary(appPath, branch, workDir) {
       const prepared = join(workDir, 'Boardsesh.app');
       cpSync(appPath, prepared, { recursive: true, verbatimSymlinks: true });
-      // The one edit: the branch header a phone on this branch would send. The
-      // simulator does not check the bundle's seal, so nothing is re-signed.
+      // Only the copied fixture changes: branch header and historical embedded
+      // ordering timestamp. The published candidate and cached app stay intact.
       run('plutil', [
         '-replace',
         'EXUpdatesRequestHeaders.xprem-branch',
@@ -235,6 +239,21 @@ function iosDevice(device: string): BootDevice {
         branch,
         join(prepared, 'Expo.plist'),
       ]);
+      const manifestPath = join(prepared, 'EXUpdates.bundle', 'app.manifest');
+      const originalManifest = readFileSync(manifestPath, 'utf8');
+      originalEmbeddedCommitTimeMs = readEmbeddedManifest(originalManifest).embeddedCommitTimeMs;
+      writeFileSync(manifestPath, stampEmbeddedFixtureManifest(originalManifest));
+      requireEmbeddedFixture(readFileSync(manifestPath, 'utf8'));
+      const bundleHash = (directory: string) =>
+        createHash('sha256')
+          .update(readFileSync(join(directory, 'main.jsbundle')))
+          .digest('hex');
+      if (bundleHash(appPath) !== bundleHash(prepared)) throw new Error('Fixture preparation changed the embedded JS.');
+      run('codesign', ['--force', '--sign', '-', '--preserve-metadata=entitlements', '--timestamp=none', prepared]);
+      run('codesign', ['--verify', '--strict', prepared]);
+      console.log(
+        `${LOG} Copied iOS fixture timestamp: ${originalEmbeddedCommitTimeMs} -> ${readEmbeddedManifest(readFileSync(manifestPath, 'utf8')).embeddedCommitTimeMs}; embedded JS unchanged.`,
+      );
       return prepared;
     },
     describeBinary(preparedPath) {
@@ -244,6 +263,7 @@ function iosDevice(device: string): BootDevice {
       return {
         runtimeVersion: run('plutil', ['-extract', 'EXUpdatesRuntimeVersion', 'raw', '-o', '-', plist]).trim(),
         ...readEmbeddedManifest(readFileSync(join(preparedPath, 'EXUpdates.bundle', 'app.manifest'), 'utf8')),
+        originalEmbeddedCommitTimeMs,
       };
     },
     // The simulator resolves names through the host.
@@ -562,7 +582,7 @@ export async function runBootCheck(options: BootCheckOptions): Promise<number> {
       mkdirSync(options.evidenceDir, { recursive: true });
       writeFileSync(
         join(options.evidenceDir, `${options.platform}-capture.json`),
-        `${JSON.stringify({ platform: options.platform, branch: options.branch, commit: expectation.commit, capture, verdict }, null, 2)}\n`,
+        `${JSON.stringify({ platform: options.platform, branch: options.branch, commit: expectation.commit, binary, capture, verdict }, null, 2)}\n`,
       );
       writeFileSync(join(options.evidenceDir, `${options.platform}-expo-updates.log`), updatesLog);
       writeFileSync(join(options.evidenceDir, `${options.platform}-device.log`), deviceLog);
@@ -588,6 +608,28 @@ function pinAndroidProject(argv: readonly string[]): number {
 async function main(argv: readonly string[]): Promise<number> {
   const args = argv.filter((argument) => argument !== '--');
   if (args[0] === 'pin-android-project') return pinAndroidProject(args.slice(1));
+  if (args[0] === 'stamp-embedded-fixture') {
+    const { values } = flagValues(args.slice(1), ['--manifest'], []);
+    const manifestPath = values.get('--manifest');
+    if (manifestPath === undefined) throw new Error('--manifest is required.');
+    const originalManifest = readFileSync(manifestPath, 'utf8');
+    const originalTime = readEmbeddedManifest(originalManifest).embeddedCommitTimeMs;
+    writeFileSync(manifestPath, stampEmbeddedFixtureManifest(originalManifest));
+    const preparedManifest = readFileSync(manifestPath, 'utf8');
+    requireEmbeddedFixture(preparedManifest);
+    console.log(
+      `${LOG} Generated fixture timestamp: ${originalTime} -> ${readEmbeddedManifest(preparedManifest).embeddedCommitTimeMs}; UUID/assets unchanged.`,
+    );
+    return 0;
+  }
+  if (args[0] === 'verify-android-fixture') {
+    const { values } = flagValues(args.slice(1), ['--apk'], []);
+    const apkPath = values.get('--apk');
+    if (apkPath === undefined) throw new Error('--apk is required.');
+    requireEmbeddedFixture(run('unzip', ['-p', apkPath, 'assets/app.manifest']));
+    console.log(`${LOG} APK historical fixture timestamp verified.`);
+    return 0;
+  }
   const options = parseBootCheckArgs(args, process.env.EXPO_UPDATES_URL);
   let exitCode: number;
   try {

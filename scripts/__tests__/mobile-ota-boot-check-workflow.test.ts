@@ -69,6 +69,7 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(workflow.on.pull_request.paths).toEqual([
       '.github/workflows/mobile-ota-boot-check.yml',
       'scripts/mobile-ota-boot-check.ts',
+      'scripts/mobile-ota-boot-fixture.gradle',
       'scripts/lib/ota-boot-check.ts',
       'scripts/mobile-ota-boot-preview.ts',
       'scripts/lib/ota-preview-boot-receipt.ts',
@@ -221,6 +222,23 @@ describe('mobile-ota-boot-check.yml', () => {
     expect(stepNamed(android, 'Build the release APK').run).toContain('-PreactNativeArchitectures=x86_64');
     // Reading the app's private update database needs adb root.
     expect(stepNamed(android, 'Boot the update').with).toMatchObject({ target: 'google_apis', arch: 'x86_64' });
+  });
+
+  it('stamps only generated fixture resources before normal APK packaging and verifies before caching', () => {
+    const android = workflow.jobs.android;
+    const build = stepNamed(android, 'Build the release APK');
+    expect(build.env?.BOOT_CHECK_SCRIPT).toBe('${{ github.workspace }}/.boot-check/scripts/mobile-ota-boot-check.ts');
+    expect(build.run).toContain('--init-script "$GITHUB_WORKSPACE/.boot-check/scripts/mobile-ota-boot-fixture.gradle"');
+    expect(stepNamed(android, 'Compute the binary cache key').run).toContain('boot-check-android-v2-');
+    const verify = stepNamed(android, 'Verify the prepared APK fixture');
+    expect(verify.if).toBeUndefined();
+    expect(verify.run).toContain('verify-android-fixture --apk boot-check-binary/app-release.apk');
+    expect(indexOfStep(android, 'Build the release APK')).toBeLessThan(
+      indexOfStep(android, 'Verify the prepared APK fixture'),
+    );
+    expect(indexOfStep(android, 'Verify the prepared APK fixture')).toBeLessThan(
+      indexOfStep(android, 'Save the release APK'),
+    );
   });
 
   it('fails the run unless resolution and both platform jobs succeeded and passed', () => {

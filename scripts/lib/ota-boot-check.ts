@@ -327,12 +327,33 @@ export interface BinaryDescription {
   embeddedUpdateId: string;
   /** `commitTime` of the bundle built into the binary, in milliseconds. */
   embeddedCommitTimeMs: number;
+  /** Present when fixture preparation preserved the original embedded timestamp. */
+  originalEmbeddedCommitTimeMs?: number;
+}
+
+/** A release fixture represents an already-installed binary, before any candidate publication. */
+export const BOOT_FIXTURE_COMMIT_TIME_MS = 946_684_800_000;
+
+/** Changes only the generated embedded manifest's ordering timestamp, never its identity or assets. */
+export function stampEmbeddedFixtureManifest(manifestJson: string): string {
+  const manifest = record(JSON.parse(manifestJson) as unknown, 'Embedded fixture app.manifest');
+  const embedded = readEmbeddedManifest(manifestJson);
+  if (!UPDATE_ID.test(embedded.embeddedUpdateId))
+    throw new Error('The embedded fixture app.manifest has no valid UUID.');
+  if (!Array.isArray(manifest.assets)) throw new Error('The embedded fixture app.manifest has no assets array.');
+  return `${JSON.stringify({ ...manifest, commitTime: BOOT_FIXTURE_COMMIT_TIME_MS })}\n`;
+}
+
+export function requireEmbeddedFixture(manifestJson: string): void {
+  if (readEmbeddedManifest(manifestJson).embeddedCommitTimeMs !== BOOT_FIXTURE_COMMIT_TIME_MS)
+    throw new Error('The prepared binary does not carry the historical boot fixture timestamp.');
 }
 
 /** Reads the embedded bundle's identity out of the `app.manifest` a release build carries. */
 export function readEmbeddedManifest(manifestJson: string): { embeddedUpdateId: string; embeddedCommitTimeMs: number } {
   const manifest = record(JSON.parse(manifestJson) as unknown, 'Embedded app.manifest');
-  if (typeof manifest.commitTime !== 'number') throw new Error('The embedded app.manifest has no commitTime.');
+  if (typeof manifest.commitTime !== 'number' || !Number.isSafeInteger(manifest.commitTime) || manifest.commitTime <= 0)
+    throw new Error('The embedded app.manifest has no valid commitTime.');
   return {
     embeddedUpdateId: text(manifest.id, 'Embedded app.manifest id').toLowerCase(),
     embeddedCommitTimeMs: manifest.commitTime,
@@ -344,10 +365,10 @@ export function readEmbeddedManifest(manifestJson: string): { embeddedUpdateId: 
  * or returns null when it can.
  *
  * expo-updates only downloads an update that is newer than the one running, by
- * `commitTime`. A phone's embedded bundle carries its commit's date and the
- * update carries its publish time, so on a phone the update is always newer. A
- * binary built from a commit made AFTER the update was published turns that
- * around, and the first launch would report "no update available".
+ * `commitTime`. Stock Expo stamps build time; Boardsesh's production patch
+ * uses the Git committer date. Either may outrank a content-deduplicated update.
+ * A prepared boot fixture uses a fixed historical timestamp instead, but this
+ * check still refuses any candidate that is not strictly newer than its binary.
  */
 export function checkBinary(binary: BinaryDescription, expectation: BootExpectation, head: ServedHead): string | null {
   if (binary.runtimeVersion !== null && binary.runtimeVersion !== expectation.runtimeVersion) {

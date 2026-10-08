@@ -140,6 +140,7 @@
     "lib/ota-boot-check.test.ts",
     "__tests__/mobile-ota-boot-check-manifest.test.ts",
     "__tests__/mobile-ota-boot-check-workflow.test.ts",
+    "__tests__/mobile-ota-boot-fixture.test.ts",
     "ota-rollout-proof.ts",
     "ota-rollout-proof.test.ts",
     "__tests__/helpers/fake-xprem-rollouts.ts",
