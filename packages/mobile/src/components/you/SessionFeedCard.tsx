@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import { Icon } from '../Icon';
 import { type IconName } from '../icon-map';
 import { Card } from '../Card';
 import { PressableSurface } from '../PressableSurface';
+import { ClimbContextMenu, NATIVE_CLIMB_MENU } from '../climb-actions/ClimbContextMenu';
 import { ClimbListThumbnail } from '../ClimbListThumbnail';
 import { AvatarGroup } from './AvatarGroup';
 import { FeedSocialRow } from './FeedSocialRow';
@@ -138,20 +139,28 @@ export const SessionFeedCard = memo(function SessionFeedCard({
   }, [handleCardPress, hardestSend, onOpenClimb]);
 
   // Long press the hardest-send hero → open the climb reaction menu.
-  const handleHeroLongPress = useCallback(() => {
-    if (!hardestSend) return;
-    const climb = tickToClimb(hardestSend);
-    const config = getBoardConfigForPlaylist(hardestSend.boardType, hardestSend.layoutId);
-    if (!climb || !config) return;
-    hapticMedium();
-    openClimbActions(climb, {
-      boardName: config.boardName,
-      layoutId: config.layoutId,
-      sizeId: config.sizeId,
-      setIds: config.setIds.join(','),
+  const heroClimb = useMemo(() => (hardestSend ? tickToClimb(hardestSend) : null), [hardestSend]);
+  const heroBoardConfig = useMemo(
+    () => (hardestSend ? getBoardConfigForPlaylist(hardestSend.boardType, hardestSend.layoutId) : null),
+    [hardestSend],
+  );
+  const openHeroMenu = useCallback(() => {
+    if (!hardestSend || !heroClimb || !heroBoardConfig) return;
+    openClimbActions(heroClimb, {
+      boardName: heroBoardConfig.boardName,
+      layoutId: heroBoardConfig.layoutId,
+      sizeId: heroBoardConfig.sizeId,
+      setIds: heroBoardConfig.setIds.join(','),
       angle: hardestSend.angle,
     });
-  }, [hardestSend, openClimbActions]);
+  }, [hardestSend, heroClimb, heroBoardConfig, openClimbActions]);
+  const handleHeroLongPress = useCallback(() => {
+    if (!heroClimb || !heroBoardConfig) return;
+    hapticMedium();
+    openHeroMenu();
+  }, [heroClimb, heroBoardConfig, openHeroMenu]);
+  // On iOS the system context menu (around the hero below) owns the long-press.
+  const nativeMenuOwnsHeroLongPress = NATIVE_CLIMB_MENU && !!heroClimb && !!heroBoardConfig;
 
   const handleOpenBeta = useCallback(async () => {
     if (!betaUrl) return;
@@ -237,17 +246,19 @@ export const SessionFeedCard = memo(function SessionFeedCard({
             <BetaHero betaLink={betaLink} tick={featuredBeta.tick} uploaderName={betaUploaderName} />
           </PressableSurface>
         ) : hardestSend ? (
-          <PressableSurface
-            onPress={handleHeroPress}
-            onLongPress={handleHeroLongPress}
-            feedback="opacity"
-            accessibilityRole="button"
-            accessibilityLabel={heroClimbLabel}
-            accessibilityHint={t('sessionFeedCard.openHint')}
-            style={styles.heroPressable}
-          >
-            <HeroSend tick={hardestSend} />
-          </PressableSurface>
+          <ClimbContextMenu climb={heroClimb} board={heroBoardConfig} onOpenActions={openHeroMenu}>
+            <PressableSurface
+              onPress={handleHeroPress}
+              onLongPress={nativeMenuOwnsHeroLongPress ? undefined : handleHeroLongPress}
+              feedback="opacity"
+              accessibilityRole="button"
+              accessibilityLabel={heroClimbLabel}
+              accessibilityHint={t('sessionFeedCard.openHint')}
+              style={styles.heroPressable}
+            >
+              <HeroSend tick={hardestSend} />
+            </PressableSurface>
+          </ClimbContextMenu>
         ) : null}
 
         <View style={[styles.divider, { backgroundColor: systemColors.separator }]} />

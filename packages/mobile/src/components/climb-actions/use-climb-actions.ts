@@ -15,9 +15,7 @@ import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { randomUUID } from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
-import type { AuroraBoardName, Climb } from '@boardsesh/shared-schema';
-import { getBoardCapabilities, toAuroraBoardName } from '@boardsesh/board-config';
-import { canEditClimb } from '@boardsesh/create-climb-react';
+import type { Climb } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
@@ -28,28 +26,13 @@ import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { useTheme } from '../../providers/theme-provider';
 import { useClimbModerationEnabled } from '../../providers/feature-flags-provider';
 import { useShareClimb } from '../../hooks/use-share-climb';
-import { ownClimbIsReportable } from '../play-drawer/can-report-climb';
 import { track } from '../../lib/analytics';
 import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
-import { canDeleteClimb } from './delete-climb-rules';
 import { useDeleteClimbAction } from './use-delete-climb-action';
+import { auroraAppUrlFor, isOwnClimb, resolveClimbActionIds, type ClimbActionId } from './climb-action-gating';
+import { CLIMB_ACTION_ICONS, climbActionTitle } from './climb-action-labels';
 
-export type ClimbActionId =
-  | 'preview'
-  | 'queue'
-  | 'openQueue'
-  | 'playNext'
-  | 'playlist'
-  | 'favorite'
-  | 'tick'
-  | 'editEntry'
-  | 'betaVideo'
-  | 'edit'
-  | 'fork'
-  | 'share'
-  | 'openInApp'
-  | 'report'
-  | 'delete';
+export type { ClimbActionId } from './climb-action-gating';
 
 export type ClimbActionItem = {
   id: ClimbActionId;
@@ -135,16 +118,6 @@ type UseClimbActionsArgs = {
   dismissPlayerAndWait?: DismissSurfaceAndWait;
 };
 
-// Mirrors web's constructClimbInfoUrl: Kilter no longer has a public app URL.
-// Aurora-only by construction — the caller gates on the auroraAppLink capability
-// and narrows the board name before calling, so a code-driven board (MoonBoard,
-// Woods) never reaches this and never gets an invented domain.
-function buildAuroraAppUrl(boardName: AuroraBoardName, climbUuid: string): string | null {
-  if (boardName === 'kilter') return null;
-  const suffix = boardName === 'tension' ? '2' : '';
-  return `https://${boardName}boardapp${suffix}.com/climbs/${climbUuid}`;
-}
-
 export function useClimbActions({
   climb,
   boardConfig,
@@ -220,18 +193,22 @@ export function useClimbActions({
 
     const { boardName, layoutId, sizeId, setIds, angle } = boardConfig;
     const { success: successColor, favorite: favoriteColor, accent: accentColor } = actionColors;
-    // Only boards with an official app page get the row; the guard is what turns
-    // the loose board string into the AuroraBoardName the builder assumes.
-    const auroraBoardName = getBoardCapabilities(boardName).auroraAppLink ? toAuroraBoardName(boardName) : null;
-    const auroraAppUrl = auroraBoardName ? buildAuroraAppUrl(auroraBoardName, climb.uuid) : null;
-
-    // Who may edit is one shared rule (`canEditClimb`): the setter, a draft for
-    // good and a published climb for 24 hours, on every board a spray wall
-    // included. A hint only; the server decides.
-    const canEdit =
-      getBoardCapabilities(boardName).climbCreation &&
-      !wallArchived &&
-      canEditClimb({ climb, boardType: boardName, currentUserId });
+    const auroraAppUrl = auroraAppUrlFor(boardName, climb.uuid);
+    // Which rows this climber gets is one pure rule, shared with the iOS native
+    // context menu (ClimbContextMenu), so the two menus never disagree.
+    const offered = new Set(
+      resolveClimbActionIds({
+        climb,
+        boardName,
+        currentUserId,
+        isAuthenticated,
+        moderationEnabled,
+        wallArchived,
+        activeClimbUuid,
+        hasOpenQueue: !!onOpenQueue,
+        hasEditEntry: !!onEditEntry,
+      }),
+    );
 
     const items: ClimbActionItem[] = [];
 
@@ -240,8 +217,8 @@ export function useClimbActions({
     // switch-board overlay; same-board needs no override.
     items.push({
       id: 'preview',
-      title: t('mobile.climbActions.preview'),
-      icon: 'visibility',
+      title: climbActionTitle('preview', t, false),
+      icon: CLIMB_ACTION_ICONS.preview,
       color: accentColor,
       run: () => {
         const override = boardConfigsMatch(boardConfig, activeBoardConfig) ? undefined : boardConfig;
@@ -255,8 +232,8 @@ export function useClimbActions({
 
     items.push({
       id: 'queue',
-      title: t('mobile.climbRow.addToQueue'),
-      icon: 'add',
+      title: climbActionTitle('queue', t, false),
+      icon: CLIMB_ACTION_ICONS.queue,
       color: successColor,
       run: () => {
         // Fire-and-forget: the cross-board prompt (when it fires) sits above
@@ -266,28 +243,26 @@ export function useClimbActions({
       },
     });
 
-    if (onOpenQueue) {
+    if (offered.has('openQueue')) {
       items.push({
         id: 'openQueue',
-        title: t('mobile.climbActions.openQueue'),
-        icon: 'queue',
+        title: climbActionTitle('openQueue', t, false),
+        icon: CLIMB_ACTION_ICONS.openQueue,
         color: accentColor,
         run: () => {
           // Close the menu first, like share: the queue sheet opens from the
           // play route, under an overlay that is already on its way out.
           after();
-          onOpenQueue();
+          onOpenQueue?.();
         },
       });
     }
 
-    // "Play next" is meaningless on the climb already on the wall, so it is hidden
-    // there rather than shown as a no-op.
-    if (climb.uuid !== activeClimbUuid) {
+    if (offered.has('playNext')) {
       items.push({
         id: 'playNext',
-        title: t('mobile.climbActions.playNext'),
-        icon: 'queue.next',
+        title: climbActionTitle('playNext', t, false),
+        icon: CLIMB_ACTION_ICONS.playNext,
         color: accentColor,
         run: () => {
           // Same fire-and-forget shape as the queue row above: the cross-board
@@ -300,8 +275,8 @@ export function useClimbActions({
 
     items.push({
       id: 'playlist',
-      title: t('actions.playlist.popover.title'),
-      icon: 'playlist',
+      title: climbActionTitle('playlist', t, false),
+      icon: CLIMB_ACTION_ICONS.playlist,
       color: accentColor,
       // Always the inline host: swap the reaction overlay to its playlist view
       // (no dismiss, no second native sheet). `onSelectPlaylist` is required so
@@ -314,8 +289,8 @@ export function useClimbActions({
 
     items.push({
       id: 'favorite',
-      title: t('mobile.climbRow.toggleFavorite'),
-      icon: isFavorited ? 'favorite.fill' : 'favorite',
+      title: climbActionTitle('favorite', t, false),
+      icon: isFavorited ? 'favorite.fill' : CLIMB_ACTION_ICONS.favorite,
       color: favoriteColor,
       run: () => {
         track(SHARED_EVENTS.FavoriteToggle, {
@@ -338,8 +313,8 @@ export function useClimbActions({
 
     items.push({
       id: 'tick',
-      title: t('mobile.climbActions.tick'),
-      icon: 'tick',
+      title: climbActionTitle('tick', t, false),
+      icon: CLIMB_ACTION_ICONS.tick,
       color: successColor,
       run: () => {
         track(SHARED_EVENTS.QuickTickOpened, { climbUuid: climb.uuid, layoutId, source: 'climb_actions' });
@@ -369,24 +344,24 @@ export function useClimbActions({
       },
     });
 
-    if (onEditEntry) {
+    if (offered.has('editEntry')) {
       items.push({
         id: 'editEntry',
-        title: t('mobile.climbActions.editEntry'),
-        icon: 'edit',
+        title: climbActionTitle('editEntry', t, false),
+        icon: CLIMB_ACTION_ICONS.editEntry,
         color: accentColor,
         run: () => {
-          onEditEntry();
+          onEditEntry?.();
           after();
         },
       });
     }
 
-    if (isAuthenticated) {
+    if (offered.has('betaVideo')) {
       items.push({
         id: 'betaVideo',
-        title: t('mobile.climbActions.addBetaVideo'),
-        icon: 'video',
+        title: climbActionTitle('betaVideo', t, false),
+        icon: CLIMB_ACTION_ICONS.betaVideo,
         color: accentColor,
         run: () => {
           // In-tree override (play drawer) stacks the sheet above the `/play` modal;
@@ -399,11 +374,11 @@ export function useClimbActions({
       });
     }
 
-    if (canEdit) {
+    if (offered.has('edit')) {
       items.push({
         id: 'edit',
-        title: t('mobile.climbActions.edit'),
-        icon: 'edit',
+        title: climbActionTitle('edit', t, false),
+        icon: CLIMB_ACTION_ICONS.edit,
         color: accentColor,
         // `openEdit` claims the action before dismissing this overlay, then owns
         // the source-sheet → player-route → create ordering.
@@ -413,13 +388,11 @@ export function useClimbActions({
       });
     }
 
-    // Fork drops into the create-climb editor, so it only appears on boards that
-    // can have climbs set on them, and never on an archived wall.
-    if (getBoardCapabilities(boardName).climbCreation && !wallArchived) {
+    if (offered.has('fork')) {
       items.push({
         id: 'fork',
-        title: t('mobile.climbActions.fork'),
-        icon: 'branch',
+        title: climbActionTitle('fork', t, false),
+        icon: CLIMB_ACTION_ICONS.fork,
         color: accentColor,
         // Same serialized handoff as Edit.
         run: () => {
@@ -428,14 +401,11 @@ export function useClimbActions({
       });
     }
 
-    // A draft is visible to its setter alone, so a link to it opens nowhere for
-    // anyone it is sent to (#5960).
-    const isDraft = climb.is_draft === true;
-    if (!isDraft) {
+    if (offered.has('share')) {
       items.push({
         id: 'share',
-        title: t('share.actionLabel'),
-        icon: 'share',
+        title: climbActionTitle('share', t, false),
+        icon: CLIMB_ACTION_ICONS.share,
         color: accentColor,
         run: () => {
           // Dismiss the overlay, then open the native share sheet (same as the play
@@ -453,11 +423,11 @@ export function useClimbActions({
       });
     }
 
-    if (auroraAppUrl) {
+    if (auroraAppUrl && offered.has('openInApp')) {
       items.push({
         id: 'openInApp',
-        title: t('mobile.climbActions.openInApp'),
-        icon: 'open.external',
+        title: climbActionTitle('openInApp', t, false),
+        icon: CLIMB_ACTION_ICONS.openInApp,
         color: accentColor,
         run: () => {
           // Dismiss the overlay first so it doesn't linger behind the in-app browser
@@ -472,18 +442,12 @@ export function useClimbActions({
 
     // Last in the list, and last for a reason: it is the one action that acts
     // AGAINST the climb, so it sits below everything a climber came here to do.
-    // Not on the viewer's own climb: reporting yourself to the crew has no
-    // outcome, and the setter already has Edit for anything they want changed.
-    // Except on a spray wall, where a grade proposal is how the setter changes
-    // their own climb's grade (#5971). A draft is never reported.
-    const isOwnClimb = !!currentUserId && climb.userId === currentUserId;
-    const reportable = climb.is_draft !== true && (!isOwnClimb || ownClimbIsReportable(boardName));
-    if (isAuthenticated && moderationEnabled && reportable) {
+    if (offered.has('report')) {
       items.push({
         id: 'report',
         // Your own spray climb: the report is how you change its grade (#5971).
-        title: isOwnClimb ? t('mobile.climbActions.changeGrade') : t('mobile.climbActions.report'),
-        icon: 'flag',
+        title: climbActionTitle('report', t, isOwnClimb(climb, currentUserId)),
+        icon: CLIMB_ACTION_ICONS.report,
         color: accentColor,
         run: () => {
           // In-tree override (play drawer) stacks the sheet above the `/play`
@@ -498,11 +462,11 @@ export function useClimbActions({
 
     // The setter's own published spray climb (#5960). Below Report, which the
     // setter never sees on their own climb, so it is the last row either way.
-    if (canDeleteClimb({ climb, boardName, currentUserId, wallArchived })) {
+    if (offered.has('delete')) {
       items.push({
         id: 'delete',
-        title: t('mobile.climbActions.deleteClimb.row'),
-        icon: 'delete',
+        title: climbActionTitle('delete', t, false),
+        icon: CLIMB_ACTION_ICONS.delete,
         color: accentColor,
         run: () => {
           // Close the menu first: the confirm is a system dialog, and it must

@@ -19,9 +19,7 @@ import { Gesture, GestureDetector, type GestureType } from 'react-native-gesture
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Icon } from './Icon';
-import { track } from '../lib/analytics';
 import { ClimbListItemContent } from './ClimbListItemContent';
 import { CLIMB_ROW_GUTTER, climbListRowStyles } from './climb-list-row-styles';
 import { hapticLight, hapticMedium, hapticSuccess } from '../lib/haptics';
@@ -31,6 +29,7 @@ import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
 import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
+import { ClimbContextMenu, NATIVE_CLIMB_MENU } from './climb-actions/ClimbContextMenu';
 
 // (44pt target - 20pt glyph) / 2 = 12pt of empty target past the glyph's edge.
 const MORE_BUTTON_GUTTER_PULL = -Math.min(CLIMB_ROW_GUTTER, (44 - 20) / 2);
@@ -309,6 +308,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
     openActions();
   }, [openActions]);
 
+  // A pick in the iOS native context menu. No haptic: the system played its own
+  // when the menu opened. The menu sets the picked action as the intent around
+  // this call, and openClimbActions runs it.
+  const handleNativeMenuOpenActions = useCallback(() => {
+    if (unsupportedRef.current) return;
+    onOpenActionsRef.current?.(climbRef.current);
+  }, []);
+
   // The ⋮ button's tap — same destination as the long-press, on a plain tap. Reads
   // the same refs so it stays dep-free and the row's memo/renderItem is untouched.
   const handleOpenActions = useCallback(() => {
@@ -334,6 +341,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
   );
 
   const canOpenActions = !!onOpenActions && !unsupported;
+  // On iOS the system context menu (ClimbContextMenu) owns the long-press, so the
+  // row drops its own: both would fire on one press otherwise.
+  const nativeMenuOwnsLongPress = NATIVE_CLIMB_MENU && canOpenActions;
+  const menuBoard = useMemo(() => ({ boardName, layoutId }), [boardName, layoutId]);
   // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
@@ -434,10 +445,11 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [handleLongPress],
   );
 
-  // Long-press wins over tap; a quick tap fires once the long-press fails.
+  // Long-press wins over tap; a quick tap fires once the long-press fails. Tap
+  // only where the native context menu has the long-press.
   const tapGesture = useMemo(
-    () => Gesture.Exclusive(longPressGesture, singleTapGesture),
-    [longPressGesture, singleTapGesture],
+    () => (nativeMenuOwnsLongPress ? singleTapGesture : Gesture.Exclusive(longPressGesture, singleTapGesture)),
+    [nativeMenuOwnsLongPress, longPressGesture, singleTapGesture],
   );
 
   // The ⋯ button's own tap. It blocks the row gestures so a tap on the button opens the
@@ -448,12 +460,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
       Gesture.Tap()
         .maxDuration(300)
         .maxDistance(15)
-        .blocksExternalGesture(singleTapRef, longPressRef)
+        .blocksExternalGesture(...(nativeMenuOwnsLongPress ? [singleTapRef] : [singleTapRef, longPressRef]))
         .onStart(() => {
           'worklet';
           runOnJS(handleOpenActions)();
         }),
-    [handleOpenActions],
+    [handleOpenActions, nativeMenuOwnsLongPress],
   );
 
   // Left actions (revealed by a left-to-right swipe) = Queue; right actions
@@ -512,57 +524,66 @@ const ClimbListRow = React.memo(function ClimbListRow({
             any drag starting on the row — independent of ReanimatedSwipeable's own
             gesture, which already sets pan-y. Vertical drags fall through to the
             browser/list scroll; only horizontal ones reach this tap/long-press. */}
-        <GestureDetector gesture={tapGesture} touchAction="pan-y">
-          <View
-            testID={testID}
-            style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
-            accessible
-            accessibilityRole="button"
-            // Let React Native compose the name, grade and status from the
-            // content labels instead of replacing them with just the name.
-            accessibilityState={{ selected: !!selected }}
-            onAccessibilityTap={handleRowPress}
-            // Keep the menu reachable through screen-reader actions even when
-            // the climber hides its visible quick-actions button.
-            accessibilityActions={rowAccessibilityActions}
-            onAccessibilityAction={handleRowAccessibilityAction}
-          >
-            {/* Active-climb highlight: violet wash + left accent bar */}
-            {selected ? (
-              <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
-            ) : null}
-            {selected ? (
-              <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
-            ) : null}
+        {/* iOS: the system context menu lifts this row as its preview. Elsewhere a
+            passthrough, and the row's own long-press opens the overlay. */}
+        <ClimbContextMenu
+          climb={climb}
+          board={menuBoard}
+          onOpenActions={handleNativeMenuOpenActions}
+          disabled={!canOpenActions}
+        >
+          <GestureDetector gesture={tapGesture} touchAction="pan-y">
+            <View
+              testID={testID}
+              style={[climbListRowStyles.contentRow, { backgroundColor: systemColors.background }, contentRowStyle]}
+              accessible
+              accessibilityRole="button"
+              // Let React Native compose the name, grade and status from the
+              // content labels instead of replacing them with just the name.
+              accessibilityState={{ selected: !!selected }}
+              onAccessibilityTap={handleRowPress}
+              // Keep the menu reachable through screen-reader actions even when
+              // the climber hides its visible quick-actions button.
+              accessibilityActions={rowAccessibilityActions}
+              onAccessibilityAction={handleRowAccessibilityAction}
+            >
+              {/* Active-climb highlight: violet wash + left accent bar */}
+              {selected ? (
+                <View style={[styles.selectedFill, { backgroundColor: highlight.fill }]} pointerEvents="none" />
+              ) : null}
+              {selected ? (
+                <View style={[styles.selectedAccent, { backgroundColor: highlight.accent }]} pointerEvents="none" />
+              ) : null}
 
-            {rowContent}
+              {rowContent}
 
-            {showMoreButton && onOpenActions ? (
-              <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
-                <View
-                  testID="climb-row-more-button"
-                  style={styles.moreButton}
-                  accessible
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.climbRow.moreActions')}
-                  // iOS reaches this menu through the row's custom action;
-                  // exclude its button label from the composed row description.
-                  // Android retains the separately focusable button.
-                  accessibilityElementsHidden={Platform.OS === 'ios' ? true : undefined}
-                  onAccessibilityTap={handleOpenActions}
-                  accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
-                  onAccessibilityAction={handleMoreButtonAccessibilityAction}
-                >
-                  {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
-                      Android's dots-vertical is already vertical (no rotation). */}
-                  <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
-                    <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
+              {showMoreButton && onOpenActions ? (
+                <GestureDetector gesture={moreButtonGesture} touchAction="pan-y">
+                  <View
+                    testID="climb-row-more-button"
+                    style={styles.moreButton}
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel={t('mobile.climbRow.moreActions')}
+                    // iOS reaches this menu through the row's custom action;
+                    // exclude its button label from the composed row description.
+                    // Android retains the separately focusable button.
+                    accessibilityElementsHidden={Platform.OS === 'ios' ? true : undefined}
+                    onAccessibilityTap={handleOpenActions}
+                    accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+                    onAccessibilityAction={handleMoreButtonAccessibilityAction}
+                  >
+                    {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
+                        Android's dots-vertical is already vertical (no rotation). */}
+                    <View style={Platform.OS === 'ios' ? styles.moreIconRotate : undefined}>
+                      <Icon name="more.vertical" size={20} color={systemColors.secondaryLabel} />
+                    </View>
                   </View>
-                </View>
-              </GestureDetector>
-            ) : null}
-          </View>
-        </GestureDetector>
+                </GestureDetector>
+              ) : null}
+            </View>
+          </GestureDetector>
+        </ClimbContextMenu>
       </ReanimatedSwipeable>
 
       {/* Separator — inset to start at the text column (after the thumbnail) */}

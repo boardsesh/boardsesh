@@ -216,6 +216,13 @@ vi.mock('../SessionAnalytics', () => ({ SessionAnalytics: () => null }));
 vi.mock('../SessionLeaderboard', () => ({ SessionLeaderboard: () => null }));
 vi.mock('../SessionPresenceRow', () => ({ SessionPresenceRow: () => null }));
 
+// The iOS native context menu wraps the row in expo-router's Link; this suite
+// covers the row itself, so the wrapper passes its children through.
+vi.mock('../../../climb-actions/ClimbContextMenu', () => ({
+  ClimbContextMenu: ({ children }: { children: unknown }) => children,
+  NATIVE_CLIMB_MENU: false,
+}));
+
 import { InSessionView } from '../InSessionView';
 
 describe('InSessionView footer', () => {

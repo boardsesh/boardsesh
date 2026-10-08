@@ -19,6 +19,7 @@ import { ClimbListItemContent } from '../../ClimbListItemContent';
 import { EndSessionSheet } from '../../EndSessionSheet';
 import { Icon } from '../../Icon';
 import { PressableSurface } from '../../PressableSurface';
+import { ClimbContextMenu, NATIVE_CLIMB_MENU } from '../../climb-actions/ClimbContextMenu';
 import { SectionHeader } from '../../SectionHeader';
 import { Text } from '../../Text';
 import { ScreenTitle } from '../../ScreenTitle';
@@ -186,9 +187,8 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
     onPress(tick);
   };
 
-  const handleLongPress = () => {
+  const openMenu = () => {
     if (!climb || !boardConfig) return;
-    hapticMedium();
     openClimbActions(climb, {
       boardName: boardConfig.boardName,
       layoutId: boardConfig.layoutId,
@@ -197,57 +197,65 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
       angle: tick.angle,
     });
   };
+  const handleLongPress = () => {
+    if (!climb || !boardConfig) return;
+    hapticMedium();
+    openMenu();
+  };
 
   return (
     <View>
-      <PressableSurface
-        onPress={handlePress}
-        onLongPress={handleLongPress}
-        feedback="opacity"
-        opacityTo={0.7}
-        accessibilityRole="button"
-        accessibilityLabel={t('mobile.session.historyRowAria', {
-          name: tick.climbName ?? t('detail.unknownClimb'),
-          status: statusLabel,
-        })}
-        style={[styles.historyRow, { backgroundColor: systemColors.secondaryBackground }]}
-      >
-        <View style={styles.historyStatusSlot}>
-          <View style={[styles.historyStatusIcon, { backgroundColor: withAlpha(statusColor, 0.15) }]}>
-            <Icon name={statusIconName} size={14} color={statusColor} />
-          </View>
-        </View>
-
-        {climb && boardConfig ? (
-          <ClimbListItemContent
-            climb={climb}
-            boardName={boardConfig.boardName}
-            layoutId={boardConfig.layoutId}
-            sizeId={boardConfig.sizeId}
-            setIds={boardConfig.setIds.join(',')}
-            angle={tick.angle}
-            showAscentStatus={false}
-          />
-        ) : (
-          <>
-            <View style={styles.historyTextColumn}>
-              <Text variant="body" numberOfLines={1} style={styles.historyClimbName}>
-                {tick.climbName ?? t('detail.unknownClimb')}
-              </Text>
-              <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
-                {subtitle}
-              </Text>
+      {/* iOS: the system context menu owns the long-press and lifts this row. */}
+      <ClimbContextMenu climb={climb} board={boardConfig} onOpenActions={openMenu}>
+        <PressableSurface
+          onPress={handlePress}
+          onLongPress={NATIVE_CLIMB_MENU && climb && boardConfig ? undefined : handleLongPress}
+          feedback="opacity"
+          opacityTo={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.session.historyRowAria', {
+            name: tick.climbName ?? t('detail.unknownClimb'),
+            status: statusLabel,
+          })}
+          style={[styles.historyRow, { backgroundColor: systemColors.secondaryBackground }]}
+        >
+          <View style={styles.historyStatusSlot}>
+            <View style={[styles.historyStatusIcon, { backgroundColor: withAlpha(statusColor, 0.15) }]}>
+              <Icon name={statusIconName} size={14} color={statusColor} />
             </View>
-            {gradeLabel && gradeColor ? (
-              <View style={[styles.historyGradePill, { backgroundColor: gradeColor }]}>
-                <Text variant="caption1" color={getGradeTextColor(gradeColor)} style={styles.historyGradeText}>
-                  {gradeLabel}
+          </View>
+
+          {climb && boardConfig ? (
+            <ClimbListItemContent
+              climb={climb}
+              boardName={boardConfig.boardName}
+              layoutId={boardConfig.layoutId}
+              sizeId={boardConfig.sizeId}
+              setIds={boardConfig.setIds.join(',')}
+              angle={tick.angle}
+              showAscentStatus={false}
+            />
+          ) : (
+            <>
+              <View style={styles.historyTextColumn}>
+                <Text variant="body" numberOfLines={1} style={styles.historyClimbName}>
+                  {tick.climbName ?? t('detail.unknownClimb')}
+                </Text>
+                <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
+                  {subtitle}
                 </Text>
               </View>
-            ) : null}
-          </>
-        )}
-      </PressableSurface>
+              {gradeLabel && gradeColor ? (
+                <View style={[styles.historyGradePill, { backgroundColor: gradeColor }]}>
+                  <Text variant="caption1" color={getGradeTextColor(gradeColor)} style={styles.historyGradeText}>
+                    {gradeLabel}
+                  </Text>
+                </View>
+              ) : null}
+            </>
+          )}
+        </PressableSurface>
+      </ClimbContextMenu>
       <View style={[styles.historySeparator, { backgroundColor: systemColors.separator }]} />
     </View>
   );

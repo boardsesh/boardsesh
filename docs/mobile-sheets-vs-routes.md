@@ -49,13 +49,22 @@ cleared behind your back. `AddToPlaylistSheet` is the reference.
 
 **Stacking above everything:** a **custom, non-sheet** overlay (Reanimated + plain views) can
 render in a higher iOS window via react-native-screens' `FullWindowOverlay` — that's how
-`ClimbReactionMenu` (the long-press context menu) floats above whatever's underneath. This does
+`ClimbReactionMenu` (the quick-actions and Android long-press overlay) floats above whatever's underneath. This does
 **not** work for a native `@expo/ui` sheet: a SwiftUI `.sheet` presents off the **key window**
 regardless of a `FullWindowOverlay` wrapper (the scar the player learned — see rule 1), so
 wrapping a sheet in one pushes it _under_ the overlay window, not above. A native sheet mounted
 inside a modal route presents above that route instead — that's how `HoldRoleSheet` shows over
 the New climb editor. There is **no**
 `fullWindowOverlay` prop on `Sheet`; it was an inert no-op and has been removed.
+
+**Native iOS climb menus:** climb rows use Expo Router `Link.Menu` through
+`ClimbContextMenu` for the system lift-and-blur context menu. A pick calls the surface's
+existing `openClimbActions` callback with a synchronous action intent. `DrawerHostProvider`
+runs it through `ClimbActionRunner`, preserving the same in-tree sheet openers and dismissal
+waiters as the overlay. Add to playlist opens the overlay directly into its inline picker.
+The ellipsis button and screen-reader custom actions still open the full overlay; Android
+and browser retain the existing long-press overlay. Keep action gating and labels shared
+between both presentations.
 
 **Inline body instead of a nested sheet:** when a surface needs a secondary picker/form but a
 second native sheet can't stack (rule 1), extract the body as a **presentation-agnostic component**
