@@ -23,18 +23,21 @@ export type BoardLookSuggestionDismissals = Record<BoardLookSuggestionId, boolea
 export const NO_BOARD_LOOK_SUGGESTIONS_DISMISSED: BoardLookSuggestionDismissals = Object.freeze({
   increaseContrast: false,
   grayscale: false,
+  differentiateWithoutColor: false,
 });
 
 /** Everything turned down — the shape a read error or a screenshot run reports. */
 export const ALL_BOARD_LOOK_SUGGESTIONS_DISMISSED: BoardLookSuggestionDismissals = Object.freeze({
   increaseContrast: true,
   grayscale: true,
+  differentiateWithoutColor: true,
 });
 
 function sanitize(raw: Partial<Record<BoardLookSuggestionId, unknown>> | null): BoardLookSuggestionDismissals {
   return {
     increaseContrast: raw?.increaseContrast === true,
     grayscale: raw?.grayscale === true,
+    differentiateWithoutColor: raw?.differentiateWithoutColor === true,
   };
 }
 

@@ -37,10 +37,10 @@ function boardseshSettings(roleGlyphs = false): typeof DEFAULT_BOARD_RENDER_SETT
 /** Every gate open, greyscale on — each case below spoils exactly one thing. */
 function eligible(overrides: Partial<Inputs> = {}): Inputs {
   return {
-    signals: { increaseContrast: 'off', grayscale: 'on', ready: true },
+    signals: { increaseContrast: 'off', grayscale: 'on', differentiateWithoutColor: 'off', ready: true },
     settings: boardseshSettings(),
     boardseshRendererAvailable: true,
-    dismissed: { increaseContrast: false, grayscale: false },
+    dismissed: { increaseContrast: false, grayscale: false, differentiateWithoutColor: false },
     dismissalsLoaded: true,
     platform: 'ios',
     ...overrides,
@@ -64,7 +64,9 @@ describe('pickBoardLookSuggestion', () => {
 
   it('suggests Max contrast when the OS contrast setting is on', () => {
     const suggestion = pickBoardLookSuggestion(
-      eligible({ signals: { increaseContrast: 'on', grayscale: 'off', ready: true } }),
+      eligible({
+        signals: { increaseContrast: 'on', grayscale: 'off', differentiateWithoutColor: 'off', ready: true },
+      }),
     );
     expect(suggestion?.id).toBe('increaseContrast');
   });
@@ -72,7 +74,11 @@ describe('pickBoardLookSuggestion', () => {
   describe('every gate suppresses on its own', () => {
     it('says nothing until the signals have settled', () => {
       expect(
-        pickBoardLookSuggestion(eligible({ signals: { increaseContrast: 'off', grayscale: 'on', ready: false } })),
+        pickBoardLookSuggestion(
+          eligible({
+            signals: { increaseContrast: 'off', grayscale: 'on', differentiateWithoutColor: 'off', ready: false },
+          }),
+        ),
       ).toBeNull();
     });
 
@@ -80,14 +86,25 @@ describe('pickBoardLookSuggestion', () => {
       // A rejected or unqueryable signal is not permission to interrupt.
       expect(
         pickBoardLookSuggestion(
-          eligible({ signals: { increaseContrast: 'unknown', grayscale: 'unknown', ready: true } }),
+          eligible({
+            signals: {
+              increaseContrast: 'unknown',
+              grayscale: 'unknown',
+              differentiateWithoutColor: 'off',
+              ready: true,
+            },
+          }),
         ),
       ).toBeNull();
     });
 
     it('says nothing when the signal is simply off', () => {
       expect(
-        pickBoardLookSuggestion(eligible({ signals: { increaseContrast: 'off', grayscale: 'off', ready: true } })),
+        pickBoardLookSuggestion(
+          eligible({
+            signals: { increaseContrast: 'off', grayscale: 'off', differentiateWithoutColor: 'off', ready: true },
+          }),
+        ),
       ).toBeNull();
     });
 
@@ -96,7 +113,11 @@ describe('pickBoardLookSuggestion', () => {
     });
 
     it('says nothing once the climber has turned it down', () => {
-      expect(pickBoardLookSuggestion(eligible({ dismissed: { increaseContrast: false, grayscale: true } }))).toBeNull();
+      expect(
+        pickBoardLookSuggestion(
+          eligible({ dismissed: { increaseContrast: false, grayscale: true, differentiateWithoutColor: false } }),
+        ),
+      ).toBeNull();
     });
 
     it('says nothing while the renderer probe has not answered', () => {
@@ -129,7 +150,10 @@ describe('pickBoardLookSuggestion', () => {
       expect(matchingBoardLookOptionId(settings)).toBe('max-contrast');
       expect(
         pickBoardLookSuggestion(
-          eligible({ settings, signals: { increaseContrast: 'on', grayscale: 'off', ready: true } }),
+          eligible({
+            settings,
+            signals: { increaseContrast: 'on', grayscale: 'off', differentiateWithoutColor: 'off', ready: true },
+          }),
         ),
       ).toBeNull();
     });
@@ -139,7 +163,7 @@ describe('pickBoardLookSuggestion', () => {
     // Rarer, more certain (a real query on both platforms), and role glyphs are
     // a contrast affordance in their own right.
     const suggestion = pickBoardLookSuggestion(
-      eligible({ signals: { increaseContrast: 'on', grayscale: 'on', ready: true } }),
+      eligible({ signals: { increaseContrast: 'on', grayscale: 'on', differentiateWithoutColor: 'off', ready: true } }),
     );
     expect(suggestion?.id).toBe('grayscale');
   });
@@ -147,8 +171,8 @@ describe('pickBoardLookSuggestion', () => {
   it('falls through to contrast when greyscale has been dismissed', () => {
     const suggestion = pickBoardLookSuggestion(
       eligible({
-        signals: { increaseContrast: 'on', grayscale: 'on', ready: true },
-        dismissed: { increaseContrast: false, grayscale: true },
+        signals: { increaseContrast: 'on', grayscale: 'on', differentiateWithoutColor: 'off', ready: true },
+        dismissed: { increaseContrast: false, grayscale: true, differentiateWithoutColor: false },
       }),
     );
     expect(suggestion?.id).toBe('increaseContrast');
@@ -156,7 +180,12 @@ describe('pickBoardLookSuggestion', () => {
 
   it('names the OS setting the way the running platform names it', () => {
     // Naming it exactly is what makes the banner credible rather than creepy.
-    const contrastOn = { increaseContrast: 'on', grayscale: 'off', ready: true } as const;
+    const contrastOn = {
+      increaseContrast: 'on',
+      grayscale: 'off',
+      differentiateWithoutColor: 'off',
+      ready: true,
+    } as const;
     expect(pickBoardLookSuggestion(eligible({ signals: contrastOn, platform: 'ios' }))?.titleI18nKey).toBe(
       'mobile.settings.boardLook.suggestion.increaseContrast.titleIos',
     );
@@ -164,6 +193,48 @@ describe('pickBoardLookSuggestion', () => {
       'mobile.settings.boardLook.suggestion.increaseContrast.titleAndroid',
     );
     expect(pickBoardLookSuggestion(eligible({ signals: contrastOn, platform: 'web' }))).toBeNull();
+  });
+
+  describe('Differentiate Without Color (R3, HIG Color)', () => {
+    const dwocOn = { increaseContrast: 'off', grayscale: 'off', differentiateWithoutColor: 'on', ready: true } as const;
+
+    it('offers role glyphs, naming the iOS setting, with the greyscale body and button', () => {
+      expect(pickBoardLookSuggestion(eligible({ signals: dwocOn }))).toEqual({
+        id: 'differentiateWithoutColor',
+        titleI18nKey: 'mobile.settings.boardLook.suggestion.differentiateWithoutColor.title',
+        bodyI18nKey: 'mobile.settings.boardLook.suggestion.grayscale.body',
+        applyI18nKey: 'mobile.settings.boardLook.suggestion.grayscale.apply',
+      });
+    });
+
+    it('wins over greyscale, which offers the same thing without naming this setting', () => {
+      const both = { ...dwocOn, grayscale: 'on' } as const;
+      expect(pickBoardLookSuggestion(eligible({ signals: both }))?.id).toBe('differentiateWithoutColor');
+    });
+
+    it('stays quiet once glyphs are on, once dismissed, and while the setting is unknown', () => {
+      expect(pickBoardLookSuggestion(eligible({ signals: dwocOn, settings: boardseshSettings(true) }))).toBeNull();
+      expect(
+        pickBoardLookSuggestion(
+          eligible({
+            signals: dwocOn,
+            dismissed: { increaseContrast: false, grayscale: false, differentiateWithoutColor: true },
+          }),
+        ),
+      ).toBeNull();
+      expect(
+        pickBoardLookSuggestion(eligible({ signals: { ...dwocOn, differentiateWithoutColor: 'unknown' } })),
+      ).toBeNull();
+    });
+
+    it('turns role glyphs on and records the answer when applied', async () => {
+      await setBoardRenderSettingsPreference(boardseshSettings());
+
+      await applyBoardLookSuggestion('differentiateWithoutColor');
+
+      expect((await loadBoardRenderSettings()).boardsesh.roleGlyphs).toBe(true);
+      expect((await loadBoardLookSuggestionDismissals()).differentiateWithoutColor).toBe(true);
+    });
   });
 
   it('returns only i18n keys — the banner has no colours to hand anyone', () => {

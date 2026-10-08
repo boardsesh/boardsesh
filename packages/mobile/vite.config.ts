@@ -119,6 +119,14 @@ export default defineConfig({
       // any suite that transitively imports src/lib/haptics (e.g. via the climbs
       // screen → FilterTokenRow / RecentFilterPills) from crashing.
       { find: 'expo-haptics', replacement: fileURLToPath(new URL('./test/expo-haptics-stub.ts', import.meta.url)) },
+      // modules/accessibility-ui touches expo-modules-core's native globals at
+      // import, which don't exist here. The stub is the module as Android and
+      // older binaries see it: absent. Anchored on `…/src/index`, so
+      // accessibility-ui-module.test.ts can still reach the real file as `…/src`.
+      {
+        find: /^(.*\/)?modules\/accessibility-ui\/src\/index$/,
+        replacement: fileURLToPath(new URL('./test/accessibility-ui-stub.ts', import.meta.url)),
+      },
       // src/theme/animations.ts has `export type SpringPreset = keyof typeof springs`
       // and `export type TimingPreset = keyof typeof timing`. In CI's Rolldown worker
       // (Node.js 24), Rolldown's static analysis traverses into this file even when

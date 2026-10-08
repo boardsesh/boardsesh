@@ -186,6 +186,9 @@
             "body": "Rollen-Symbole geben jedem beleuchteten Griff eine Form, damit sich Start, Hand, Finish und Fuß auch ohne Farbe unterscheiden lassen. Die LEDs an deinem Board ändern sich dabei nicht.",
             "apply": "Rollen-Symbole aktivieren"
           },
+          "differentiateWithoutColor": {
+            "title": "„Ohne Farbe unterscheiden“ ist an"
+          },
           "dismiss": "Jetzt nicht",
           "dismissAccessibility": "Diesen Vorschlag ausblenden"
         },

@@ -21,6 +21,8 @@ import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './Access
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { AccessoryPlayLink } from './AccessoryPlayLink';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { largeContentTitle } from './accessory-large-content-title';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -153,7 +155,7 @@ export function ClimbCapsule({
         onOpen={openPlay}
         onPrepare={preparePlay}
       >
-        <View style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}>
+        <LargeContentViewer style={[styles.labelSlot, { left: labelLeft, right: labelRight }]} title={largeContentTitle(currentClimb.name, grades.current)} onActivate={openPlay}>
           <ClimbLabel
             climb={currentClimb}
             labelColor={systemColors.label}
@@ -162,7 +164,7 @@ export function ClimbCapsule({
             showThumbnail={showThumbnail}
             boardConfig={boardConfig}
           />
-        </View>
+        </LargeContentViewer>
       </AccessoryPlayLink>
       {/* Leading board control — outside the tap target so it never opens the
           drawer. Sits over the bar's left edge, symmetric to the trailing tick. */}

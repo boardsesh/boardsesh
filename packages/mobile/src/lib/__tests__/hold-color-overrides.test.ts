@@ -38,7 +38,8 @@ describe('hold-color-overrides', () => {
       }),
     ).toEqual({
       colors: { HAND: '#123456', FOOT: '#abcdef' },
-      shapes: { HAND: 'triangle-up' },
+      // An explicit circle is kept: it can be a choice over the per-role default.
+      shapes: { HAND: 'triangle-up', FOOT: 'circle' },
       brushThickness: 1.6,
       shapeSize: 0.5,
     });

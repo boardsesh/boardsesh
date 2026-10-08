@@ -65,6 +65,12 @@ const effectiveRenderState = vi.hoisted(() => ({
 
 const holdColorOverridesState = vi.hoisted(() => ({
   overrides: {},
+  markerOverrides: { colors: {}, shapes: {}, brushThickness: 1, shapeSize: 1 } as {
+    colors: Record<string, string>;
+    shapes: Record<string, string>;
+    brushThickness: number;
+    shapeSize: number;
+  },
   shapes: {},
   brushThickness: 1,
   shapeSize: 1,
@@ -383,8 +389,19 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
     fireEvent.click(getByText('mobile.settings.accessibility.roles.starting').closest('button')!);
     fireEvent.click(getByText('mobile.settings.accessibility.save'));
 
-    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalled();
+    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalledWith('STARTING', null, undefined);
     expect(customHoldColors.remember).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a shape selection even when it matches the displayed default', () => {
+    setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
+    const { getByText } = render(<BoardLookAccessibilityScreen />);
+
+    fireEvent.click(getByText('mobile.settings.accessibility.roles.starting').closest('button')!);
+    fireEvent.click(getByText('mobile.settings.accessibility.shapes.circle').closest('button')!);
+    fireEvent.click(getByText('mobile.settings.accessibility.save'));
+
+    expect(holdColorOverridesState.setRoleMarkerOverride).toHaveBeenCalledWith('STARTING', null, 'circle');
   });
 
   it('does not mirror a palette, which would destroy what Custom gives back', () => {
@@ -400,7 +417,10 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
   });
 
   it('forgets them when the climber resets the hold markers', () => {
-    holdColorOverridesState.renderSignature = 'starting-00ff00';
+    holdColorOverridesState.markerOverrides = {
+      ...holdColorOverridesState.markerOverrides,
+      colors: { STARTING: '#00ff00' },
+    };
     setState({ mode: 'classic', effectiveMode: 'classic', boardseshRendererAvailable: true });
     const { getByText } = render(<BoardLookAccessibilityScreen />);
 
@@ -408,6 +428,6 @@ describe('the Accessibility leaf — remembering the climber’s own colours', (
 
     expect(holdColorOverridesState.resetOverrides).toHaveBeenCalledTimes(1);
     expect(customHoldColors.clear).toHaveBeenCalledTimes(1);
-    holdColorOverridesState.renderSignature = 'default';
+    holdColorOverridesState.markerOverrides = { ...holdColorOverridesState.markerOverrides, colors: {} };
   });
 });

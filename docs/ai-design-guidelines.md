@@ -731,3 +731,31 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
 climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.
+
+## Native accessibility defaults
+
+The native `accessibility-ui` module reads iOS **Differentiate Without Color** and
+listens for changes, including a fresh read after returning from Settings. In
+Classic board art, uncustomised hold roles gain distinct shapes while it is on:
+start is an upward triangle, hand a circle, finish a square, foot a downward
+triangle. An explicit shape selection always wins, including a circle or the
+current system default. Saving only a colour preserves the existing shape choice;
+Reset removes explicit choices and resumes following the OS. The effective shapes
+are part of the render signature, so board-art caches update when the OS changes.
+The Boardsesh drawing instead offers its existing role-glyph suggestion. Android
+has no corresponding queryable setting; high-contrast text does not describe hold
+roles, so it does not change the marker default.
+
+Persistent climb labels in `ClimbCapsule` and `NativeAccessoryClimbRow` retain
+their chrome text cap and use a native Large Content Viewer at accessibility text
+sizes. Long-pressing the label reveals its full climb name and grade; releasing
+on it opens the play drawer. The wrapper excludes controls with their own
+long-press gestures. Android, web, and binaries without the module keep the
+ordinary view. UIKit interaction/activation and text-size changes require iOS
+device verification before extending this wrapper to more chrome.
+
+The `with-brand-accent-color` config plugin generates a light/dark iOS
+`AccentColor` asset, including Increase Contrast variants (`#4C1D95` light,
+`#C4B5FD` dark), and the app target's global accent setting. Android AppTheme
+uses the matching light/night `colorAccent`; Expo's `primaryColor` sets the same
+brand violet. These native inputs require a new binary; an OTA cannot add them.

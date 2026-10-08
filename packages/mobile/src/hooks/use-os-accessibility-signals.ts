@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, type EventSubscription, Platform } from 'react-native';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
+import {
+  getDifferentiateWithoutColor,
+  startDifferentiateWithoutColorSignal,
+  subscribeDifferentiateWithoutColor,
+} from '../lib/differentiate-without-color';
 
 /**
  * The two OS accessibility settings the Board look screen is allowed to notice.
@@ -46,6 +51,13 @@ export type SignalState = 'on' | 'off' | 'unknown';
 export type OsAccessibilitySignals = {
   increaseContrast: SignalState;
   grayscale: SignalState;
+  /**
+   * iOS "Differentiate Without Color", read through `modules/accessibility-ui`
+   * rather than `AccessibilityInfo` (which has no query for it). Always
+   * `'unknown'` on Android and on a binary without the module. Not part of
+   * `ready`: it can only ever add a reason to suggest, never take one away.
+   */
+  differentiateWithoutColor: SignalState;
   /** Every queryable signal has settled (resolved OR rejected). */
   ready: boolean;
 };
@@ -100,17 +112,19 @@ function signalsForPlatform(os: string): Record<OsAccessibilitySignalId, Platfor
 
 const PLATFORM_SIGNALS = signalsForPlatform(Platform.OS);
 
-const INITIAL_SIGNALS: OsAccessibilitySignals = {
+type AccessibilityInfoSignals = Omit<OsAccessibilitySignals, 'differentiateWithoutColor'>;
+
+const INITIAL_SIGNALS: AccessibilityInfoSignals = {
   increaseContrast: 'unknown',
   grayscale: 'unknown',
   ready: false,
 };
 
 function withSignal(
-  previous: OsAccessibilitySignals,
+  previous: AccessibilityInfoSignals,
   id: OsAccessibilitySignalId,
   state: SignalState,
-): OsAccessibilitySignals {
+): AccessibilityInfoSignals {
   if (previous[id] === state) return previous;
   // Written out per key rather than with a computed one so the object stays
   // exactly `OsAccessibilitySignals` with no index signature widening.
@@ -118,7 +132,14 @@ function withSignal(
 }
 
 export function useOsAccessibilitySignals(): OsAccessibilitySignals {
-  const [signals, setSignals] = useState<OsAccessibilitySignals>(INITIAL_SIGNALS);
+  const [signals, setSignals] = useState<AccessibilityInfoSignals>(INITIAL_SIGNALS);
+  const [differentiateWithoutColor, setDifferentiateWithoutColor] = useState<SignalState>(getDifferentiateWithoutColor);
+
+  useEffect(() => {
+    startDifferentiateWithoutColorSignal();
+    setDifferentiateWithoutColor(getDifferentiateWithoutColor());
+    return subscribeDifferentiateWithoutColor(setDifferentiateWithoutColor);
+  }, []);
 
   // Re-poll on the background -> foreground edge. The realistic flow is leaving
   // for Settings, flipping the toggle and coming back; the change events cover
@@ -181,5 +202,5 @@ export function useOsAccessibilitySignals(): OsAccessibilitySignals {
     };
   }, []);
 
-  return signals;
+  return useMemo(() => ({ ...signals, differentiateWithoutColor }), [signals, differentiateWithoutColor]);
 }

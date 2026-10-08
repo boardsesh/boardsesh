@@ -12,6 +12,8 @@ import { DraftChip } from '../DraftChip';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { AccessoryPlayLink } from './AccessoryPlayLink';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { largeContentTitle } from './accessory-large-content-title';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -109,7 +111,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
       >
         {/* tapClip reserves the leading slot via paddingLeft (not a real child),
             so the climb thumbnail tucks in close to the lightbulb. */}
-        <View style={styles.labelSlot}>
+        <LargeContentViewer style={styles.labelSlot} title={largeContentTitle(climb.name, currentFormattedGrade)} onActivate={openPlay}>
           <ClimbLabel
             climb={climb}
             labelColor={systemColors.label}
@@ -117,7 +119,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
             showThumbnail={showThumbnail}
             boardConfig={boardConfig}
           />
-        </View>
+        </LargeContentViewer>
       </AccessoryPlayLink>
       <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
         <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
