@@ -61,6 +61,17 @@ capabilities, build the generated iOS workspace under the same cache lock with
 DEVELOPMENT_TEAM=<team> CODE_SIGN_STYLE=Automatic`. Record the exact command
 and expanded signed entitlements. Preserve the canonical exported directory
 name `BoardseshPerf.app`; separate variants with parent evidence directories.
+
+For additional simulator smoke checks, keep Xcode's simulator entitlement
+packaging enabled (`CODE_SIGNING_ALLOWED=YES`, `CODE_SIGN_IDENTITY=-`). Adapt the
+literal simulator contract in `scripts/screenshot-sim.entitlements` to the
+clone's `.perf` groups and pass that separate file as `CODE_SIGN_ENTITLEMENTS`.
+Verify the generated simulated entitlements and the binary's `__entitlements`
+and `__ents_der` sections. The host signature and embedded simulator entitlements
+are separate: manually signing a binary built with packaging disabled does not
+supply those sections. Preserve failed exports and launch attempts. Simulator
+liveness and screenshots are smoke evidence, excluded from physical acceptance.
+
 Before installation, run the embedded-identity gate:
 
 ```sh
@@ -191,13 +202,29 @@ collector pauses after final conditioning until the host observes recording
 active output from a 240-second Time Profiler or Animation Hitches recording.
 The readiness file must bind the validated PID, run, build, source,
 instrumentation and fixture identities to fresh host timestamps. A missing,
-stale or mismatched handoff fails within 30 seconds. These captures record
-`instrumentedTrace: true` and `cpuAcceptanceEligible: false`.
+stale or mismatched handoff fails within 30 seconds by default. A separately
+preregistered recovery may set `BOARDSESH_PROFILE_TRACE_READY_TIMEOUT_MS=90000`
+under the same conditioned physical iOS contract. Other overrides are rejected.
+The collector records the request time and absolute host monotonic deadline;
+the wrapper shares that deadline and records receipt, spawn, output and stop
+observations. Setup does not restart the timeout. Preserve earlier failed
+attempts, and stop the recovery on its first invalid member. These captures
+record `instrumentedTrace: true` and `cpuAcceptanceEligible: false`.
 
 Recording active output proves recorder readiness. Verify the actual process
 and measured time coverage in the native trace before using stacks or frames.
 Recorded host request/acknowledgment bounds help locate the tour; they do not
 establish synchronization with the native monotonic clock.
+Verified process identity and recording duration can support whole-recording
+attribution, with clock uncertainty retained. Whole-recording weights are not
+measured-tour CPU and cannot establish an improvement.
+
+Budget host storage before building, installing and handing off a trace. Check
+both the output and scratch volumes and monitor capacity during recording and
+finalization. If saving fails, retain the partial trace and interrupted ledger;
+do not infer recorder success from a completed UI tour. A separately recorded
+recovery plan must preserve the original failure and stop on its first invalid
+member. Storage sampling and graceful stopping cannot guarantee finalization.
 
 If Instruments command-line export fails, retain the trace and crash report.
 Inspect a copy in Instruments and preserve the actual visible tables, process

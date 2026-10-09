@@ -18,6 +18,8 @@ import {
   validateProfileFlow,
   validateTraceHandoff,
   waitForTraceHandoff,
+  traceReadinessTimeoutMs,
+  traceReadinessRequest,
 } from '../lib/mobile-profile-harness';
 import type { PreparedProfile } from '../lib/mobile-profile-prepare';
 import {
@@ -71,6 +73,121 @@ describe('conditioned native trace handoff', () => {
       },
     };
   }
+  it('keeps the untraced default and permits only an explicit conditioned iOS 90-second policy', () => {
+    const context = { platform: 'ios' as const, uiDriver: 'wda' as const, warmups: 1, cycles: 1, handoffFile: 'owned' };
+    expect(traceReadinessTimeoutMs(undefined, { ...context, handoffFile: undefined })).toBe(30_000);
+    expect(traceReadinessTimeoutMs(undefined, { ...context, platform: 'android', uiDriver: 'maestro' })).toBe(30_000);
+    expect(traceReadinessTimeoutMs('90000', context)).toBe(90_000);
+    for (const invalid of ['', '30000', '90000.0', '90000.5', '90001', 'Infinity', '90e3', '-90000'])
+      expect(() => traceReadinessTimeoutMs(invalid, context)).toThrow('exactly');
+    for (const invalidContext of [
+      { ...context, handoffFile: undefined },
+      { ...context, platform: 'android' as const },
+      { ...context, uiDriver: 'maestro' as const },
+      { ...context, warmups: 0 },
+      { ...context, warmups: Number.NaN },
+      { ...context, cycles: 2 },
+    ])
+      expect(() => traceReadinessTimeoutMs('90000', invalidContext)).toThrow('conditioned');
+  });
+  it('accepts validated active output after 30 seconds within the explicit 90-second absolute deadline', async () => {
+    vi.useFakeTimers();
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello, record } = readyRecord();
+    const request = traceReadinessRequest(90_000);
+    const ready = waitForTraceHandoff(
+      filename,
+      directory,
+      hello,
+      Date.parse(request.requestedAt),
+      () => undefined,
+      90_000,
+      request,
+    );
+    await vi.advanceTimersByTimeAsync(35_000);
+    writeFileSync(
+      filename,
+      JSON.stringify({ ...record, startedAt: request.requestedAt, activeObservedAt: new Date().toISOString() }),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    expect((await ready).pid).toBe(hello.native.pid);
+  });
+  it('preserves the default deadline and cannot revive a timed-out handoff with late facts', async () => {
+    vi.useFakeTimers();
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello, record } = readyRecord();
+    const result = waitForTraceHandoff(filename, directory, hello, 0, () => undefined).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await result).toBeInstanceOf(Error);
+    expect(String(await result)).toContain('deadline');
+    writeFileSync(filename, JSON.stringify(record));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(String(await result)).toContain('deadline');
+  });
+  it('uses the original absolute deadline instead of restarting the budget after setup', async () => {
+    vi.useFakeTimers();
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello } = readyRecord();
+    const request = traceReadinessRequest(90_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+    let settled = false;
+    const result = waitForTraceHandoff(filename, directory, hello, 0, () => undefined, 90_000, request).catch(
+      (error: unknown) => {
+        settled = true;
+        return error;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(69_950);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(String(await result)).toContain('deadline');
+  });
+  it('still rejects retired control, stale PID and outside paths under the 90-second policy', async () => {
+    vi.useFakeTimers();
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello, record } = readyRecord();
+    let retired: Error | undefined;
+    const result = waitForTraceHandoff(filename, directory, hello, 0, () => retired, 90_000).catch(
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(31_000);
+    retired = new Error('retired control');
+    writeFileSync(filename, JSON.stringify(record));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(String(await result)).toContain('retired control');
+    writeFileSync(filename, JSON.stringify({ ...record, pid: hello.native.pid + 1 }));
+    await expect(waitForTraceHandoff(filename, directory, hello, 0, () => undefined, 90_000)).rejects.toThrow(
+      'mismatch',
+    );
+    await expect(
+      waitForTraceHandoff(join(directory, 'outside.json'), directory, hello, 0, () => undefined, 90_000),
+    ).rejects.toThrow('owned');
+  });
+  it('rejects an invalid or extended absolute deadline', async () => {
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello } = readyRecord();
+    const request = traceReadinessRequest(90_000);
+    await expect(
+      waitForTraceHandoff(filename, directory, hello, 0, () => undefined, 90_000, {
+        ...request,
+        deadlineMonotonicNs: (BigInt(request.deadlineMonotonicNs) + 1n).toString(),
+      }),
+    ).rejects.toThrow('deadline mismatch');
+    for (const timeout of [90_001, 1.5, Number.NaN])
+      await expect(waitForTraceHandoff(filename, directory, hello, 0, () => undefined, timeout)).rejects.toThrow(
+        'bounded',
+      );
+  });
   it('accepts only recording-active facts for the validated process and source', () => {
     const { hello, record } = readyRecord();
     expect(validateTraceHandoff(record, hello, Date.now() - 1000).pid).toBe(hello.native.pid);

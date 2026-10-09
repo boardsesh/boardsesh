@@ -87,6 +87,39 @@ function validateTraceHandoffPath(filename: string, runDirectory: string) {
     throw new Error('Trace handoff must use the owned run directory');
 }
 
+export function traceReadinessTimeoutMs(
+  override: string | undefined,
+  context: Pick<ProfileOptions, 'platform' | 'uiDriver' | 'warmups' | 'cycles'> & { handoffFile?: string },
+) {
+  if (override === undefined) return 30_000;
+  if (
+    !context.handoffFile ||
+    context.platform !== 'ios' ||
+    context.uiDriver !== 'wda' ||
+    !Number.isInteger(context.warmups) ||
+    context.warmups < 1 ||
+    context.cycles !== 1
+  )
+    throw new Error('Trace readiness override requires conditioned physical iOS handoff');
+  if (override !== '90000') throw new Error('Trace readiness override must be exactly 90000 milliseconds');
+  return 90_000;
+}
+
+export function traceReadinessRequest(timeoutMs: number) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 90_000)
+    throw new Error('Trace handoff timeout must be bounded');
+  const requestedMonotonicNs = process.hrtime.bigint();
+  const requestedEpochMs = Date.now();
+  return {
+    timeoutMs,
+    requestedAt: new Date(requestedEpochMs).toISOString(),
+    requestedMonotonicNs: requestedMonotonicNs.toString(),
+    deadlineAt: new Date(requestedEpochMs + timeoutMs).toISOString(),
+    deadlineMonotonicNs: (requestedMonotonicNs + BigInt(timeoutMs) * 1_000_000n).toString(),
+    clockScope: 'UTC observations and shared-host monotonic hrtime; neither is the phone CPU clock.',
+  };
+}
+
 export async function waitForTraceHandoff(
   filename: string,
   runDirectory: string,
@@ -94,12 +127,24 @@ export async function waitForTraceHandoff(
   earliestStart: number,
   failure: () => Error | undefined,
   timeoutMs = 30_000,
+  request?: ReturnType<typeof traceReadinessRequest>,
 ) {
   validateTraceHandoffPath(filename, runDirectory);
-  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 90_000)
     throw new Error('Trace handoff timeout must be bounded');
-  const deadline = performance.now() + timeoutMs;
-  while (performance.now() < deadline) {
+  const readiness = request ?? traceReadinessRequest(timeoutMs);
+  if (
+    readiness.timeoutMs !== timeoutMs ||
+    !Number.isFinite(Date.parse(readiness.requestedAt)) ||
+    Date.parse(readiness.deadlineAt) - Date.parse(readiness.requestedAt) !== timeoutMs ||
+    !/^\d+$/.test(readiness.requestedMonotonicNs) ||
+    !/^\d+$/.test(readiness.deadlineMonotonicNs) ||
+    BigInt(readiness.requestedMonotonicNs) > process.hrtime.bigint() ||
+    BigInt(readiness.deadlineMonotonicNs) - BigInt(readiness.requestedMonotonicNs) !== BigInt(timeoutMs) * 1_000_000n
+  )
+    throw new Error('Trace handoff absolute deadline mismatch');
+  const deadline = BigInt(readiness.deadlineMonotonicNs);
+  while (process.hrtime.bigint() < deadline) {
     const controlFailure = failure();
     if (controlFailure) throw controlFailure;
     if (existsSync(filename)) {
@@ -350,6 +395,10 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
     )
       throw new Error('Trace capture requires physical iOS conditioning, one measured cycle and a fresh handoff file');
   }
+  const traceReadyTimeoutMs = traceReadinessTimeoutMs(process.env.BOARDSESH_PROFILE_TRACE_READY_TIMEOUT_MS, {
+    ...options,
+    handoffFile: traceHandoffFile,
+  });
   const buildEnvironment = objectRecord(
     JSON.parse(readFileSync(join(options.runDir, 'build-env.json'), 'utf8')) as unknown,
   );
@@ -370,6 +419,7 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
   let ownedChild: ChildProcess | undefined;
   let failure: string | undefined;
   let traceHandoff: ReturnType<typeof validateTraceHandoff> | undefined;
+  let traceReadiness: ReturnType<typeof traceReadinessRequest> | undefined;
   const cycles: unknown[] = [];
   const startedAt = new Date().toISOString();
   const abort = () => {
@@ -399,7 +449,7 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
     for (let index = 0; index < options.warmups + options.cycles; index += 1) {
       if (control.failure) throw control.failure;
       if (traceHandoffFile && index === options.warmups) {
-        const requestedAt = Date.now();
+        traceReadiness = traceReadinessRequest(traceReadyTimeoutMs);
         console.log(
           JSON.stringify({
             traceHandoffAwaiting: true,
@@ -407,14 +457,17 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
             pid: hello.native.pid,
             runId: hello.runId,
             buildId: hello.buildId,
+            traceReadiness,
           }),
         );
         traceHandoff = await waitForTraceHandoff(
           traceHandoffFile,
           options.runDir,
           hello,
-          requestedAt,
+          Date.parse(traceReadiness.requestedAt),
           () => control.failure,
+          traceReadyTimeoutMs,
+          traceReadiness,
         );
       }
       assertDeviceProcessPid(
@@ -575,6 +628,8 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
           instrumentedTrace: Boolean(traceHandoffFile),
           cpuAcceptanceEligible: !traceHandoffFile,
           traceHandoff: traceHandoff ?? null,
+          traceReadyTimeoutMs: traceHandoffFile ? traceReadyTimeoutMs : null,
+          traceReadiness: traceReadiness ?? null,
           requestedIdleMs: options.idleMs,
           requestedEndSettleMs: options.endSettleMs,
           endSettleScope:
@@ -605,6 +660,8 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
           preservesAppData: true,
           instrumentedTrace: Boolean(traceHandoffFile),
           cpuAcceptanceEligible: !traceHandoffFile,
+          traceReadyTimeoutMs: traceHandoffFile ? traceReadyTimeoutMs : null,
+          traceReadiness: traceReadiness ?? null,
         },
         null,
         2,
