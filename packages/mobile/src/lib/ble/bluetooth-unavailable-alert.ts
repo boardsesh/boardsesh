@@ -26,6 +26,25 @@ export function bluetoothBlockedBody(t: TFunction<'settings'>): string {
   return t('ble.blockedBody');
 }
 
+type AlertBluetoothPermissionDeniedOptions = {
+  t: TFunction<'settings'>;
+  /** The climber tapped "Try again". Start a new connect, which asks Android again. */
+  onRetry: () => void;
+};
+
+/**
+ * Tell an Android climber the connect stopped at "Don't allow", and offer to ask
+ * again. Only for a denial Android will still show its dialog for: once it stops
+ * ('blocked'), a retry is a dead tap and alertBluetoothUnavailable sends the
+ * climber to Settings instead. The caller tracks Bluetooth Permission Denied.
+ */
+export function alertBluetoothPermissionDenied({ t, onRetry }: AlertBluetoothPermissionDeniedOptions): void {
+  Alert.alert(t('ble.permissionRequired'), t('ble.errorPermissionDenied'), [
+    { text: t('ble.cancel'), style: 'cancel' },
+    { text: t('ble.tryAgain'), onPress: onRetry },
+  ]);
+}
+
 type AlertBluetoothUnavailableOptions = {
   /** Already known (an Android never-ask-again answer). Read from the radio when omitted. */
   reason?: BluetoothUnavailableReason;

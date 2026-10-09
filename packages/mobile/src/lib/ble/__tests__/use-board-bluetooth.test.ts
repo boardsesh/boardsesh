@@ -257,7 +257,10 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(connected).toBe(false);
-    expect(Alert.alert).toHaveBeenCalledWith('ble.permissionRequired', 'ble.errorPermissionDenied');
+    expect(Alert.alert).toHaveBeenCalledWith('ble.permissionRequired', 'ble.errorPermissionDenied', [
+      { text: 'ble.cancel', style: 'cancel' },
+      { text: 'ble.tryAgain', onPress: expect.any(Function) },
+    ]);
     expect(createBluetoothAdapter).not.toHaveBeenCalled();
   });
 
@@ -292,6 +295,8 @@ describe('useBoardBluetooth', () => {
         platform: 'android',
         androidApiLevel: 33,
         androidLocationPermissionGranted: false,
+        attempt: 1,
+        permission_status: 'denied',
       });
     });
   });
@@ -4270,8 +4275,226 @@ describe('useBoardBluetooth when Bluetooth is unavailable (#5654)', () => {
       await result.current.connect();
     });
 
-    expect(Alert.alert).toHaveBeenCalledWith('ble.permissionRequired', 'ble.errorPermissionDenied');
+    expect(Alert.alert).toHaveBeenCalledWith('ble.permissionRequired', 'ble.errorPermissionDenied', [
+      { text: 'ble.cancel', style: 'cancel' },
+      { text: 'ble.tryAgain', onPress: expect.any(Function) },
+    ]);
     expect(mockTrack.mock.calls.map(([eventName]) => eventName)).not.toContain('Bluetooth Unavailable');
+  });
+
+  describe('Try again on a plain denial (#6003)', () => {
+    type AlertButtonArg = { text?: string; onPress?: () => void };
+
+    function pressTryAgain(alertIndex: number): void {
+      const buttons = vi.mocked(Alert.alert).mock.calls[alertIndex]?.[2] as AlertButtonArg[] | undefined;
+      const tryAgain = buttons?.find((button) => button.text === 'ble.tryAgain');
+      if (!tryAgain?.onPress) throw new Error(`alert ${alertIndex} has no Try again button`);
+      tryAgain.onPress();
+    }
+
+    function permissionDeniedEvents(): unknown[] {
+      return mockTrack.mock.calls
+        .filter(([eventName]) => eventName === 'Bluetooth Permission Denied')
+        .map(([, properties]) => properties);
+    }
+
+    function denyOnce(): void {
+      reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValueOnce({
+        BLUETOOTH_SCAN: 'denied',
+        BLUETOOTH_CONNECT: 'denied',
+      });
+    }
+
+    function grantFromNowOn(): void {
+      reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValue({
+        BLUETOOTH_SCAN: 'granted',
+        BLUETOOTH_CONNECT: 'granted',
+      });
+    }
+
+    it('asks Android again and connects with the arguments of the first tap', async () => {
+      denyOnce();
+      grantFromNowOn();
+      const fakeAdapter = makeFakeAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+      let connected = true;
+      await act(async () => {
+        connected = await result.current.connect(undefined, undefined, 'SERIAL1');
+      });
+      // The first tap still ends as a failed connect for whoever awaited it.
+      expect(connected).toBe(false);
+      expect(createBluetoothAdapter).not.toHaveBeenCalled();
+
+      await act(async () => {
+        pressTryAgain(0);
+      });
+
+      await waitFor(() => {
+        expect(result.current.isConnected).toBe(true);
+      });
+      expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalledTimes(2);
+      expect(fakeAdapter.requestAndConnect).toHaveBeenCalledTimes(1);
+      expect(fakeAdapter.requestAndConnect).toHaveBeenCalledWith('SERIAL1', undefined);
+      expect(permissionDeniedEvents()).toEqual([expect.objectContaining({ attempt: 1, permission_status: 'denied' })]);
+    });
+
+    it('offers the retry only once the in-flight guard has cleared', async () => {
+      // If the alert went up before the guard dropped, a fast tap on Try again
+      // would be swallowed as a second concurrent connect.
+      denyOnce();
+      grantFromNowOn();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        makeFakeAdapter() as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      // Press the button from inside Alert.alert itself: the earliest a tap can land.
+      vi.mocked(Alert.alert).mockImplementationOnce((_title, _message, buttons) => {
+        buttons?.find((button) => button.text === 'ble.tryAgain')?.onPress?.();
+      });
+      const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      await waitFor(() => {
+        expect(result.current.isConnected).toBe(true);
+      });
+      expect(createBluetoothAdapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts each retry, then starts over at 1 for the next bulb tap', async () => {
+      reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValue({
+        BLUETOOTH_SCAN: 'denied',
+        BLUETOOTH_CONNECT: 'denied',
+      });
+      const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      await act(async () => {
+        pressTryAgain(0);
+      });
+      await waitFor(() => {
+        expect(Alert.alert).toHaveBeenCalledTimes(2);
+      });
+      await act(async () => {
+        pressTryAgain(1);
+      });
+      await waitFor(() => {
+        expect(Alert.alert).toHaveBeenCalledTimes(3);
+      });
+      // The climber gives up on the alert and taps the bulb again later.
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      await waitFor(() => {
+        expect(permissionDeniedEvents()).toHaveLength(4);
+      });
+      expect(permissionDeniedEvents()).toEqual([
+        expect.objectContaining({ attempt: 1, permission_status: 'denied' }),
+        expect.objectContaining({ attempt: 2, permission_status: 'denied' }),
+        expect.objectContaining({ attempt: 3, permission_status: 'denied' }),
+        expect.objectContaining({ attempt: 1, permission_status: 'denied' }),
+      ]);
+    });
+
+    it('lands on Open Settings, with no further retry, once Android stops asking', async () => {
+      denyOnce();
+      reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValue({
+        BLUETOOTH_SCAN: 'never_ask_again',
+        BLUETOOTH_CONNECT: 'never_ask_again',
+      });
+      const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      await act(async () => {
+        pressTryAgain(0);
+      });
+
+      await waitFor(() => {
+        expect(alertTitles()).toEqual(['ble.permissionRequired', 'ble.blockedTitle']);
+      });
+      await waitFor(() => {
+        expect(permissionDeniedEvents()).toEqual([
+          expect.objectContaining({ attempt: 1, permission_status: 'denied' }),
+          expect.objectContaining({ attempt: 2, permission_status: 'blocked' }),
+        ]);
+      });
+      expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    });
+
+    it('drops a retry for a board the climber has since left', async () => {
+      // The frames and the reconnect handle belong to the board that was in view
+      // when the alert went up.
+      denyOnce();
+      grantFromNowOn();
+      const { result, rerender } = renderHook(
+        ({ sizeId }: { sizeId: number }) => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId }),
+        { initialProps: { sizeId: 1 } },
+      );
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      rerender({ sizeId: 2 });
+      await act(async () => {
+        pressTryAgain(0);
+      });
+
+      expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalledTimes(1);
+      expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    });
+
+    it('leaves a link that came up behind the alert alone', async () => {
+      denyOnce();
+      grantFromNowOn();
+      const fakeAdapter = makeFakeAdapter();
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
+      const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      // The climber connects another way while the alert is still up.
+      await act(async () => {
+        await result.current.connect();
+      });
+      expect(result.current.isConnected).toBe(true);
+
+      await act(async () => {
+        pressTryAgain(0);
+      });
+
+      expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalledTimes(2);
+      expect(fakeAdapter.requestAndConnect).toHaveBeenCalledTimes(1);
+      expect(fakeAdapter.disconnect).not.toHaveBeenCalled();
+      expect(result.current.isConnected).toBe(true);
+    });
+
+    it('does nothing when the hook has unmounted behind the alert', async () => {
+      denyOnce();
+      grantFromNowOn();
+      const { result, unmount } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      unmount();
+      pressTryAgain(0);
+
+      expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalledTimes(1);
+      expect(createBluetoothAdapter).not.toHaveBeenCalled();
+    });
   });
 
   it('says Bluetooth is blocked, not off, when iOS reports Unauthorized', async () => {

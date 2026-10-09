@@ -497,6 +497,7 @@
     "connectionFailedTitle": "No se pudo conectar",
     "permissionRequired": "Permiso de Bluetooth necesario",
     "errorPermissionDenied": "Permite los permisos de Bluetooth para conectar un plafón.",
+    "tryAgain": "Reintentar",
     "blockedTitle": "Boardsesh no tiene permiso de Bluetooth",
     "blockedBody": "Permite el Bluetooth para Boardsesh en Ajustes para iluminar bloques en tu plafón.",
     "blockedBodyNearbyDevices": "Permite «Dispositivos cercanos» para Boardsesh en Ajustes para iluminar bloques en tu plafón.",

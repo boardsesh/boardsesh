@@ -497,6 +497,7 @@
     "connectionFailedTitle": "Couldn't connect",
     "permissionRequired": "Bluetooth permission required",
     "errorPermissionDenied": "Allow Bluetooth permissions to connect a board.",
+    "tryAgain": "Try again",
     "blockedTitle": "Bluetooth is blocked for Boardsesh",
     "blockedBody": "Allow Bluetooth for Boardsesh in Settings to light climbs on your board.",
     "blockedBodyNearbyDevices": "Allow Nearby devices for Boardsesh in Settings to light climbs on your board.",
