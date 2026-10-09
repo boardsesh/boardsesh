@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
@@ -559,3 +560,5 @@ describe('PartyProfileProvider', () => {
     expect(() => renderHook(() => usePartyProfile())).toThrow(/must be used within a PartyProfileProvider/);
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());

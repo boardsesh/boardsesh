@@ -20,6 +20,7 @@
     "@boardsesh/climb-actions": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/community-roles": "workspace:*",
+    "@boardsesh/consent": "workspace:*",
     "@boardsesh/create-climb-react": "workspace:*",
     "@boardsesh/graphql": "workspace:*",
     "@boardsesh/graphql-client": "workspace:*",
@@ -135,7 +136,9 @@
         "expo-dev-launcher",
         "expo-modules-core",
         "expo-app-metrics",
-        "expo-observe"
+        "expo-observe",
+        "@sentry/react-native",
+        "posthog-react-native-session-replay"
       ]
     },
     "install": {

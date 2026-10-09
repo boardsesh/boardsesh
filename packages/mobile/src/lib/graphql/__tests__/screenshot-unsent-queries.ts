@@ -50,6 +50,8 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetGroupedNotifications',
   'GetGym',
   'GetGymMembers',
+  // ConsentGate skips account privacy synchronization in screenshot mode.
+  'GetMyAnalyticsConsent',
   'GetMyBoardSerialConfigs',
   'GetMyGyms',
   'GetMyRoles',

@@ -1,3 +1,4 @@
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const preferenceStore = vi.hoisted(() => ({
@@ -35,6 +36,7 @@ const setPreferenceMock = vi.mocked(setPreference);
 const reportErrorMock = vi.mocked(reportError);
 
 beforeEach(() => {
+  grantAnalyticsForTest();
   preferenceStore.values.clear();
   analytics.track.mockClear();
   analytics.setPersonProperties.mockClear();
@@ -281,4 +283,55 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
     expect(analytics.track).not.toHaveBeenCalled();
     expect(reportErrorMock).toHaveBeenCalledWith(rejection);
   });
+});
+
+it('caches attribution while denied and publishes once after a later effective grant', async () => {
+  const { updateConsentState, getConsentSnapshot } = await import('../consent-state');
+  updateConsentState({ record: { ...getConsentSnapshot().record!, analytics: 'denied' } });
+  const fetchNative = vi.fn(async () => ({
+    installReferrer: 'utm_source=gym&utm_campaign=pilot',
+    referrerClickTimestampSeconds: 100,
+    installBeginTimestampSeconds: 200,
+  }));
+  await maybeFetchAndAttachInstallReferrer(fetchNative);
+  expect(analytics.track).not.toHaveBeenCalled();
+  expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  expect(preferenceStore.values.has('installReferrerResult')).toBe(true);
+  grantAnalyticsForTest();
+  await maybeFetchAndAttachInstallReferrer(fetchNative);
+  await maybeFetchAndAttachInstallReferrer(fetchNative);
+  expect(fetchNative).toHaveBeenCalledOnce();
+  expect(analytics.track).toHaveBeenCalledOnce();
+  expect(analytics.setPersonProperties).toHaveBeenCalledOnce();
+});
+it('a native referrer fetch finishing after withdrawal never publishes', async () => {
+  let finishFetch:
+    | ((result: {
+        installReferrer: string;
+        referrerClickTimestampSeconds: number;
+        installBeginTimestampSeconds: number;
+      }) => void)
+    | undefined;
+  const fetchNative = vi.fn(
+    () =>
+      new Promise<{
+        installReferrer: string;
+        referrerClickTimestampSeconds: number;
+        installBeginTimestampSeconds: number;
+      }>((resolve) => {
+        finishFetch = resolve;
+      }),
+  );
+  const fetching = maybeFetchAndAttachInstallReferrer(fetchNative);
+  await vi.waitFor(() => expect(fetchNative).toHaveBeenCalledOnce());
+  const { updateConsentState, getConsentSnapshot } = await import('../consent-state');
+  updateConsentState({ record: { ...getConsentSnapshot().record!, analytics: 'denied' } });
+  finishFetch?.({
+    installReferrer: 'utm_source=gym',
+    referrerClickTimestampSeconds: 100,
+    installBeginTimestampSeconds: 200,
+  });
+  await fetching;
+  expect(analytics.track).not.toHaveBeenCalled();
+  expect(analytics.setPersonProperties).not.toHaveBeenCalled();
 });

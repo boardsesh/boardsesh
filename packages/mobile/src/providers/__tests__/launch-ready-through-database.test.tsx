@@ -12,6 +12,8 @@ vi.mock('../../components/PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 //
 // #5654: the four launch gates sat frozen at "not ready" from 2.2.0 on, because
 // they are mounted inside <DatabaseProvider> and expo-sqlite's SQLiteProvider is
@@ -46,7 +48,7 @@ const flagsCtrl = vi.hoisted(() => ({
     flagsCtrl.resolved = resolved;
     for (const listener of flagsCtrl.listeners) listener();
   },
-  subscribe(listener: () => void) {
+  subscribe(this: void, listener: () => void) {
     flagsCtrl.listeners.add(listener);
     return () => flagsCtrl.listeners.delete(listener);
   },
@@ -412,3 +414,6 @@ describe('the launch gates, mounted inside DatabaseProvider as in app/_layout.ts
     await waitFor(() => expect(connectivityBannerHookMock).toHaveBeenCalled());
   });
 });
+
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

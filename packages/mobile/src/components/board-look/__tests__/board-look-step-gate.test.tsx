@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 //
 // The gate's plumbing, not its policy — the decision table itself is covered by
 // board-look-step-decision.test.ts. What matters here is the two-pass shape: a
@@ -246,3 +248,6 @@ describe('BoardLookStepGate in log-only mode', () => {
     expect(hasSeenTipMock).not.toHaveBeenCalled();
   });
 });
+
+import { grantAnalyticsForTest } from '../../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

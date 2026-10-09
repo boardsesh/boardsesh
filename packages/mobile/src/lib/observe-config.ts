@@ -20,14 +20,11 @@ import { resolveAppEnvironment } from './app-environment';
 export const OBSERVE_INTEGRATIONS: ObserveIntegrationsConfig = { 'expo-router': true };
 
 /**
- * Shipped defaults, in force until PostHog resolves the flags.
- *
- * Full sampling: the store fleet is the population we want, and the rate can be
- * dialled back from PostHog without a build if the volume proves too high.
- * `docs/railway.md` records the measured growth this trades against.
+ * Sampling after consent defaults to full collection. Startup separately uses
+ * zero sampling and disabled dispatch until consent and flags are resolved.
  */
 export const OBSERVE_DEFAULT_SAMPLE_RATE = 1;
-export const OBSERVE_DEFAULT_DISPATCHING_ENABLED = true;
+export const OBSERVE_DEFAULT_DISPATCHING_ENABLED = false;
 
 export type ObserveRuntimeOverrides = {
   dispatchingEnabled?: boolean;
@@ -42,7 +39,7 @@ export function buildObserveConfig(overrides: ObserveRuntimeOverrides = {}): Obs
     // default so a Metro dev session never writes into production ClickHouse.
     dispatchInDebug: false,
     dispatchingEnabled: overrides.dispatchingEnabled ?? OBSERVE_DEFAULT_DISPATCHING_ENABLED,
-    sampleRate: overrides.sampleRate ?? OBSERVE_DEFAULT_SAMPLE_RATE,
+    sampleRate: overrides.sampleRate ?? 0,
     integrations: OBSERVE_INTEGRATIONS,
   };
 }
@@ -72,20 +69,9 @@ function clampSampleRate(value: number): number {
 /**
  * Resolve the dispatch flag.
  *
- * Only an explicit off disables dispatch: PostHog leaves a flag `undefined`
- * until it resolves, and a device that never reaches PostHog would otherwise
- * stop reporting permanently — the failure mode docs/feature-flags.md calls out.
- *
- * The string `'false'` counts as off too. A boolean flag resolves to a real
- * boolean, but the same key typed as a multivariate flag in the dashboard would
- * arrive as a string, and a kill switch that silently ignores someone typing
- * "false" into it is the wrong way round for a kill switch to fail.
+ * Only a resolved boolean true enables dispatch. Missing or malformed flag
+ * values keep performance telemetry disabled.
  */
 export function resolveObserveDispatchEnabled(raw: unknown): boolean {
-  // `null` alongside `undefined` for the same reason parseObserveSampleRate
-  // takes both: the flag bag never holds one today, and the two must not drift
-  // apart if the shipped default ever flips to off.
-  if (raw === undefined || raw === null) return OBSERVE_DEFAULT_DISPATCHING_ENABLED;
-  if (raw === false || raw === 'false') return false;
-  return true;
+  return raw === true;
 }

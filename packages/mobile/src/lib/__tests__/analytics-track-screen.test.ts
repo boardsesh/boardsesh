@@ -1,3 +1,4 @@
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const screenMock = vi.fn();
@@ -15,6 +16,8 @@ let client: FakeClient | null = null;
 vi.mock('../posthog-client', () => ({
   getPostHogClient: () => client,
   registerAppSuperProperties: vi.fn(),
+  clearPosthogQueues: vi.fn(),
+  applyPosthogConsent: async () => {},
 }));
 
 const shouldEmitScreenForSessionMock = vi.fn<(screenName: string) => boolean>(() => true);
@@ -98,3 +101,5 @@ describe('reset', () => {
     expect(resetScreenSessionGateMock).toHaveBeenCalledOnce();
   });
 });
+
+beforeEach(() => grantAnalyticsForTest());

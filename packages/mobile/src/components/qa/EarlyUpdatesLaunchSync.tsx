@@ -1,3 +1,4 @@
+import { useConsentSettled } from '../../lib/consent-hooks';
 import { useEffect, useRef } from 'react';
 import { InteractionManager } from 'react-native';
 import { syncEarlyUpdates } from '../../lib/qa/early-updates';
@@ -20,11 +21,12 @@ import { useEarlyUpdatesSyncEnvironment } from '../../lib/qa/use-early-updates';
  * `early-updates.ts` says what launches in every state this can leave behind.
  */
 export function EarlyUpdatesLaunchSync() {
+  const consentSettled = useConsentSettled();
   const environment = useEarlyUpdatesSyncEnvironment();
   const adoptedRef = useRef(false);
 
   useEffect(() => {
-    if (!environment.surfingBuild || !environment.surfingReady) return;
+    if (!consentSettled || !environment.surfingBuild || !environment.surfingReady) return;
     // Before the first sync, and only once: the running bundle proves which pin
     // was in force at LAUNCH, and stops proving it the moment anything switches.
     if (!adoptedRef.current) {
@@ -37,7 +39,7 @@ export function EarlyUpdatesLaunchSync() {
       void syncEarlyUpdates(environment);
     });
     return () => interaction.cancel();
-  }, [environment]);
+  }, [environment, consentSettled]);
 
   return null;
 }

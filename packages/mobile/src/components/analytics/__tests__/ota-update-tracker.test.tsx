@@ -2,8 +2,13 @@
 import { render } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { OtaStatusProperties } from '../../../lib/ota-telemetry';
 
 const analytics = vi.hoisted(() => ({ track: vi.fn(), registerSuperProperties: vi.fn() }));
+const health = vi.hoisted(() => ({
+  reportStatus: vi.fn<(properties: OtaStatusProperties) => Promise<void>>(async () => {}),
+}));
+vi.mock('../../../lib/anonymous-ota-health', () => ({ reportAnonymousOtaStatus: health.reportStatus }));
 const sentry = vi.hoisted(() => ({ setOtaSentryTags: vi.fn() }));
 
 // Drives Updates.useUpdates() per test. The constants below mirror an OTA'd
@@ -44,11 +49,14 @@ vi.mock('expo-updates', () => ({
 import { OtaUpdateTracker, resetOtaStatusReportedForTests, stampOtaLaunchSentryTags } from '../OtaUpdateTracker';
 
 function trackCallsFor(eventName: string) {
+  if (eventName === 'OTA Update Status')
+    return health.reportStatus.mock.calls.map(([properties]) => [eventName, properties]);
   return analytics.track.mock.calls.filter(([name]) => name === eventName);
 }
 
 beforeEach(() => {
   analytics.track.mockClear();
+  health.reportStatus.mockClear();
   analytics.registerSuperProperties.mockClear();
   sentry.setOtaSentryTags.mockClear();
   updates.current = { isUpdatePending: false, downloadedUpdate: undefined };

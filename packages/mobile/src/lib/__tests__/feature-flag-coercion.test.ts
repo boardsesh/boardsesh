@@ -5,6 +5,18 @@ const posthogClientMocks = vi.hoisted(() => ({ getPostHogClient: vi.fn() }));
 vi.mock('../posthog-client', () => ({ getPostHogClient: posthogClientMocks.getPostHogClient }));
 
 import { readPosthogFeatureFlags, readPosthogFeatureFlagsRequestId, registerRenderSuperProperties } from '../analytics';
+import {
+  getPosthogFlagAuthority,
+  rememberPosthogFlagResponse,
+  setPosthogFlagAuthority,
+} from '../posthog-flag-authority';
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+import { updateConsentState } from '../consent-state';
+
+beforeEach(() => {
+  grantAnalyticsForTest();
+  setPosthogFlagAuthority(null);
+});
 
 // readPosthogFeatureFlags is the only exported surface over
 // coerceFeatureFlagValue, so these tests exercise the coercion through it:
@@ -22,7 +34,11 @@ describe('readPosthogFeatureFlags', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getFeatureFlag = vi.fn();
-    posthogClientMocks.getPostHogClient.mockReturnValue({ getFeatureFlag });
+    rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'coercion-response' });
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlag,
+      getFeatureFlagDetails: () => ({ requestId: 'coercion-response' }),
+    });
   });
 
   it('returns an empty bag when analytics is disabled (null client)', () => {
@@ -146,11 +162,33 @@ describe('registerRenderSuperProperties', () => {
 // The method and the field are PostHogCore's own: `getFeatureFlagDetails()` in
 // posthog-core.d.ts, `requestId` stored from each /flags response.
 describe('readPosthogFeatureFlagsRequestId', () => {
+  it('keeps a cached same-account flag bag available offline without fresh evidence', () => {
+    grantAnalyticsForTest();
+    updateConsentState({ authSettled: true, accountId: 'account-a' });
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlagDetails: () => ({ flags: {}, requestId: 'previous-launch' }),
+      getPersistedProperty: () => ({ boardseshFlagAccountId: 'account-a', requestId: 'previous-launch', flags: {} }),
+      getFeatureFlag: () => false,
+    });
+    expect(readPosthogFeatureFlagsRequestId()).toBeUndefined();
+    expect(readPosthogFeatureFlags([{ key: 'early-updates' }])).toEqual({ 'early-updates': false });
+    updateConsentState({ accountId: 'account-b' });
+    expect(readPosthogFeatureFlags([{ key: 'early-updates' }])).toEqual({});
+  });
   it('reads the request id of the response the flag bag came from', () => {
+    rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'response-1' });
     posthogClientMocks.getPostHogClient.mockReturnValue({
       getFeatureFlagDetails: () => ({ flags: {}, requestId: 'response-1' }),
     });
     expect(readPosthogFeatureFlagsRequestId()).toBe('response-1');
+  });
+  it('does not treat a persisted request id as a response for this account', () => {
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlagDetails: () => ({ flags: {}, requestId: 'persisted-old-response' }),
+      getFeatureFlag: () => false,
+    });
+    expect(readPosthogFeatureFlagsRequestId()).toBeUndefined();
+    expect(readPosthogFeatureFlags([{ key: 'early-updates' }])).toEqual({});
   });
 
   it('is undefined with no flags loaded yet', () => {

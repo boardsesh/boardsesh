@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Existing flow fixtures begin after the privacy choice has settled.
+vi.mock('../../lib/consent-hooks', () => ({ useConsentSettled: () => true }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 
@@ -204,3 +206,6 @@ describe('ShareTargetProvider', () => {
     expect(storage.has(PENDING_SHARE_KEY)).toBe(false);
   });
 });
+
+import { grantAnalyticsForTest } from '../../../test/consent-fixture';
+beforeEach(() => grantAnalyticsForTest());

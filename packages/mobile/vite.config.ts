@@ -41,6 +41,10 @@ export default defineConfig({
         find: 'posthog-react-native',
         replacement: fileURLToPath(new URL('./test/posthog-react-native-stub.ts', import.meta.url)),
       },
+      {
+        find: 'posthog-react-native-session-replay',
+        replacement: fileURLToPath(new URL('./test/posthog-replay-stub.ts', import.meta.url)),
+      },
       // react-native-paper's real entry throws a SyntaxError under vitest's node
       // env (untransformed RN-native source + react-native-vector-icons). Stub it
       // so any suite can import a Paper-backed primitive; component tests that

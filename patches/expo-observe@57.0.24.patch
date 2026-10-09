@@ -1,0 +1,159 @@
+--- a/ios/Observability.swift
++++ b/ios/Observability.swift
+@@ -23,6 +23,15 @@
+   private static var metricsRetryGate: DispatchUtils.RetryGateState = .initial
+   private static var logsRetryGate: DispatchUtils.RetryGateState = .initial
+ 
++  private static var consentGeneration: UInt64 = 0
++
++  /// Discards pending rows even while a network retry gate is active.
++  internal static func discardPendingEvents() throws {
++    consentGeneration &+= 1
++    if let highestId = try AppMetrics.getMaxMetricId() { ObserveUserDefaults.lastDispatchedMetricId = highestId }
++    if let highestId = try AppMetrics.getMaxLogId() { ObserveUserDefaults.lastDispatchedLogId = highestId }
++  }
++
+   internal static func dispatch() async {
+     // Per-signal gates are checked inside `dispatchMetrics` / `dispatchLogs` rather than
+     // here, so a backoff on one endpoint doesn't suppress the other's traffic.
+@@ -82,9 +91,11 @@
+       return
+     }
+ 
++    let dispatchGeneration = consentGeneration
+     await DispatchLoop.drain(
+       startCursor: cursor,
+-      fetchBatch: { cursor, limit in
++      fetchBatch: { (cursor: Int64, limit: Int) throws -> [MetricRow] in
++        guard dispatchGeneration == consentGeneration else { return [] }
+         let metrics = try AppMetrics.getMetrics(afterId: cursor, limit: limit)
+         if metrics.isEmpty {
+           observeLogger.debug("[EAS Observe] No new metrics to dispatch")
+@@ -93,6 +104,7 @@
+       },
+-      rowId: { $0.id },
+-      send: { metrics in
++      rowId: { (metric: MetricRow) -> Int64? in metric.id },
++      send: { (metrics: [MetricRow]) async throws -> DispatchResult? in
++        guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }
+         let events = try buildEvents(forMetrics: metrics)
+         guard !events.isEmpty else {
+           return nil
+@@ -127,7 +139,7 @@
+           break
+         }
+       },
+-      persistCursor: { ObserveUserDefaults.lastDispatchedMetricId = $0 }
++      persistCursor: { ObserveUserDefaults.lastDispatchedMetricId = max(ObserveUserDefaults.lastDispatchedMetricId, $0) }
+     )
+   }
+ 
+@@ -153,9 +165,11 @@
+       return
+     }
+ 
++    let dispatchGeneration = consentGeneration
+     await DispatchLoop.drain(
+       startCursor: cursor,
+-      fetchBatch: { cursor, limit in
++      fetchBatch: { (cursor: Int64, limit: Int) throws -> [LogRow] in
++        guard dispatchGeneration == consentGeneration else { return [] }
+         let logs = try AppMetrics.getLogs(afterId: cursor, limit: limit)
+         if logs.isEmpty {
+           observeLogger.debug("[EAS Observe] No new logs to dispatch")
+@@ -164,6 +178,7 @@
+       },
+-      rowId: { $0.id },
+-      send: { logs in
++      rowId: { (log: LogRow) -> Int64? in log.id },
++      send: { (logs: [LogRow]) async throws -> DispatchResult? in
++        guard dispatchGeneration == consentGeneration && Self.shouldDispatch() else { return nil }
+         let events = try buildEvents(forLogs: logs)
+         let resourceLogs = events.compactMap { event -> OTResourceLogs? in
+           guard !event.logs.isEmpty else {
+@@ -202,7 +217,7 @@
+           break
+         }
+       },
+-      persistCursor: { ObserveUserDefaults.lastDispatchedLogId = $0 }
++      persistCursor: { ObserveUserDefaults.lastDispatchedLogId = max(ObserveUserDefaults.lastDispatchedLogId, $0) }
+     )
+   }
+ 
+--- a/ios/ObserveModule.swift
++++ b/ios/ObserveModule.swift
+@@ -33,6 +33,12 @@
+         let baseUrl = getBaseUrl(manifest)
+         ObservabilityManager.setEndpointUrl(baseUrl, projectId: projectId)
+       }
++    }
++
++    AsyncFunction("discardPendingEvents") {
++      try await AppMetricsActor.isolated {
++        try ObservabilityManager.discardPendingEvents()
++      }.value
+     }
+ 
+     AsyncFunction("dispatchEvents") {
+--- a/android/src/main/java/expo/modules/observe/ObserveModule.kt
++++ b/android/src/main/java/expo/modules/observe/ObserveModule.kt
+@@ -58,6 +58,10 @@
+         observabilityManager.scheduleBackgroundDispatch()
+       }
+ 
++      AsyncFunction("discardPendingEvents") Coroutine { ->
++        observabilityManager.discardPendingEvents()
++      }
++
+       AsyncFunction("dispatchEvents") Coroutine { ->
+         observabilityManager.dispatchUnsentMetrics()
+         observabilityManager.dispatchUnsentLogs()
+--- a/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
++++ b/android/src/main/java/expo/modules/observe/ObservabilityManager.kt
+@@ -39,6 +39,10 @@
+       baseUrl = baseUrl,
+       isDebugBuild = BuildConfig.DEBUG
+     )
++  }
++
++  suspend fun discardPendingEvents() {
++    baseManager.discardPendingEvents()
+   }
+ 
+   suspend fun dispatchUnsentMetrics() {
+@@ -121,6 +125,13 @@
+     backoff = { DispatchUtils.computeBackoffDelay(it) }
+   )
+ 
++  suspend fun discardPendingEvents(): Unit = metricsDispatchMutex.withLock {
++    logsDispatchMutex.withLock {
++      ObservePreferences.setLastDispatchedMetricId(context, sessionManager.getMaxMetricId() ?: -1)
++      ObservePreferences.setLastDispatchedLogId(context, sessionManager.getMaxLogId() ?: -1)
++    }
++  }
++
+   suspend fun dispatchUnsentMetrics(): Unit = metricsDispatchMutex.withLock {
+     if (retryGateBlocks(metricsRetryGate, "metrics")) {
+       return
+@@ -161,6 +172,10 @@
+         continue
+       }
+ 
++      if (!shouldDispatch()) {
++        ObservePreferences.setLastDispatchedMetricId(context, sessionManager.getMaxMetricId() ?: -1)
++        return
++      }
+       val result = eventDispatcher.dispatch(events)
+       metricsRetryGate = nextGate(metricsRetryGate, result)
+       when (result) {
+@@ -241,6 +256,10 @@
+         continue
+       }
+ 
++      if (!shouldDispatch()) {
++        ObservePreferences.setLastDispatchedLogId(context, sessionManager.getMaxLogId() ?: -1)
++        return
++      }
+       val result = eventDispatcher.dispatchLogs(events)
+       logsRetryGate = nextGate(logsRetryGate, result)
+       when (result) {

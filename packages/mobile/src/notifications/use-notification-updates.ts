@@ -1,3 +1,4 @@
+import { useConsentSettled } from '../lib/consent-hooks';
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -9,16 +10,17 @@ import { setupNotificationHandlers } from './handlers';
 
 /** Keep import progress and the bell current without background polling. */
 export function useNotificationUpdates(authenticated: boolean, accountId: string | null | undefined) {
+  const consentSettled = useConsentSettled();
   const { i18n } = useTranslation();
   const locale = i18n.language;
   const refreshCompletion = useSprayCompletionUpdates(authenticated, accountId);
   useEffect(
     () =>
       setupNotificationHandlers(router, {
-        canNavigate: authenticated,
+        canNavigate: authenticated && consentSettled,
         onSprayCompletion: refreshCompletion,
       }),
-    [authenticated, accountId, refreshCompletion],
+    [authenticated, accountId, refreshCompletion, consentSettled],
   );
   useEffect(() => {
     if (!authenticated) return;

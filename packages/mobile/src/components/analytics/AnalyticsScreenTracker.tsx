@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSegments } from 'expo-router';
 import { trackScreen } from '../../lib/analytics';
 import { normalizeScreenPath } from '../../lib/analytics-screen-path';
+import { useAnalyticsConsent } from '../../lib/consent-hooks';
 
 // Reports every Expo Router navigation using the route pattern (e.g.
 // /climbs/[climbUuid]) rather than the concrete path, so PostHog sees one screen
@@ -12,13 +13,15 @@ import { normalizeScreenPath } from '../../lib/analytics-screen-path';
 // that gate's call — see lib/analytics-screen-session-gate.ts. Renders nothing.
 export function AnalyticsScreenTracker(): null {
   const segments = useSegments();
+  const granted = useAnalyticsConsent();
   const lastPath = useRef<string | null>(null);
 
   useEffect(() => {
     const path = normalizeScreenPath(segments);
-    if (path === lastPath.current) return;
-    lastPath.current = path;
-    trackScreen(path);
+    if (granted && path !== lastPath.current) {
+      lastPath.current = path;
+      trackScreen(path);
+    }
     // Screenshot mode: tell the capture orchestrator we reached home directly (not
     // via Metro's `$screen /home` log, which intermittently stops forwarding mid-run
     // with ERR_STREAM_UNABLE_TO_PIPE). A few retried GETs to its readiness server —
@@ -44,7 +47,7 @@ export function AnalyticsScreenTracker(): null {
         void pingUntilDelivered();
       }
     }
-  }, [segments]);
+  }, [segments, granted]);
 
   return null;
 }

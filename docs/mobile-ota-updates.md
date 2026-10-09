@@ -1524,6 +1524,26 @@ the latest Android build.
 
 To find the anchor for a release: `git tag -l 'release/ios-v2.1.0-*'`.
 
+## GDPR next-store release
+
+The consent rollout targets the next unsubmitted store binary on `main`, including native
+Observe buffer discard, Sentry identity stripping and replay lifecycle changes. It is not an OTA
+for current store binaries and needs no release backport. After native compilation, device QA
+must verify fresh launch, stored grant/account denial, account switch, offline denial, regrant,
+queued replay withdrawal, and first-party network requests on iOS, Android and Expo web. iOS
+specifically must verify Foundation exposes upload body/header data to the replay-private
+URLProtocol; missing metadata must fail closed.
+
+Replay uses a permanently sealed transport for each retired SDK instance and isolated storage
+for every recording generation. Android uses the pinned SDK's storage/replay prefixes; iOS uses
+an isolated project-token directory and rewrites only the private transport's token to the public
+project token. Old callbacks cannot place data where a future instance reads it. Native
+initialization, retirement and identity writes are serialized; legacy cache files are removed.
+
+Start the 30-day legacy-client grace period when this store release becomes available. Sentry
+organization IP storage and the PostHog legacy drop transformation require later explicit
+confirmation. Historical analytics-person deletion remains separate P2 work.
+
 ## OTA observability (adoption + funnel)
 
 A JS-only fix lands OTA-only, so "did it actually reach users?" needs telemetry — without it an
@@ -1532,7 +1552,7 @@ events from `OtaUpdateTracker` (`packages/mobile/src/components/analytics/OtaUpd
 mounted once near the root beside `AnalyticsScreenTracker`:
 
 - **`OTA Update Status`** — fired once per launch with the running bundle:
-  `{ isEnabled, isEmbeddedLaunch, updateId, channel, branch, runtimeVersion, createdAtIso, isEmergencyLaunch, emergencyLaunchReason }`.
+  `{ isEnabled, isEmbeddedLaunch, updateId, channel, branch, runtimeVersion, createdAtIso, isEmergencyLaunch }`.
   `isEmbeddedLaunch === false` means the install is running an **OTA'd**
   bundle (not the one baked into the binary); group by `updateId` to size the rollout of a specific
   JS-only fix; `runtimeVersion` is the fingerprint cohort that can receive OTAs at all. `channel`
@@ -1560,10 +1580,14 @@ The same launch reads also become **Sentry global tags** (`ota_channel`, `ota_br
 error event is attributable to a channel, surfed branch, and bundle and lines up with the PostHog
 cohort above.
 
-Both no-op in dev / Expo Go (analytics disabled, `Updates.isEnabled` false); the `__DEV__` debug hook
-still logs `[analytics] OTA Update Status …` to Metro so you can confirm the tracker fires locally.
-In PostHog (project 412845), count distinct installs with `isEmbeddedLaunch = false` per `updateId` to
-measure how many pulled a given OTA.
+`OTA Update Status` and `OTA Launch Update` use a separate memory-only health sender through the
+first-party PostHog proxy. Its identifier lasts for one JS runtime; it never reads product SDK
+storage or assigns an account, install, device or session identity. Cookies are omitted, IP and HTTP
+User-Agent headers are stripped by the proxy, person processing and GeoIP are disabled, and only
+reviewed build/launch fields are sent. Freeform emergency reasons are omitted. The sink does not
+queue on disk and no-ops in development and screenshot mode. `OTA Update Downloaded` remains a
+consented product event. Count launches per `updateId`; these reports cannot establish unique
+installations or people.
 
 The launch update gate (#6006) is judged on two numbers, both from newcomers on a binary that
 carries it, measured against the 2.5.0 baseline taken on 2026-10-04:
@@ -1588,16 +1612,20 @@ produced it — the per-update comparison neither PostHog nor Sentry can express
   else goes through the dependency-free slot in `observe-runtime.ts`, which keeps Expo's runtime out
   of the node-env test graph that `error-reporting.ts` sits in.
 - **What it sends**: per-screen `cold_ttr` / `warm_ttr` / `tti` (expo-router integration), log
-  events, and every error that reaches `reportError` — so Sentry and Observe always agree on what
-  counted as an error. After feature flags resolve, the app flushes once for the launch and again
+  events, and consented errors that reach `reportError`. Sentry continues crash/error reporting
+  independently of the analytics choice. After effective consent and feature flags resolve, the app flushes once for the launch and again
   whenever it returns from inactive/background to active; the SDK's native background flush stays
   in place. `tti` needs `markInteractive` per screen and is not wired up yet.
 - **Endpoint**: derived from `EXPO_UPDATES_URL`'s origin plus the OTA app id
   (`resolveObserveEndpoint` in `app.config.ts`), so telemetry and manifests can never point at
   different servers. A build with no self-hosted URL, or an EAS-hosted one, reports nothing.
 - **Control without a build**: `observe-dispatch-enabled` (kill switch) and `observe-sample-rate`
-  (multivariate, ships at `1`) in PostHog. Unresolved flags read as the shipped defaults, so a
-  device that never reaches PostHog keeps reporting.
+  (multivariate, consented default `1`) in PostHog. Startup sampling is `0` and dispatch is disabled.
+  A current Allow choice and resolved boolean `observe-dispatch-enabled: true` are both required.
+  The native `discardPendingEvents` operation advances persisted metric/log cursors independently
+  of network backoff before enabling dispatch. Withdrawal disables dispatch synchronously and
+  discards the old buffer. Each native batch rechecks dispatch permission; missing discard support
+  or a failed discard leaves Observe disabled.
 - **Country**: Cloudflare overwrites `X-Geo-Country` from `ip.src.country` on the proxied updates
   hostname, and xprem trusts only that configured header. This is aggregate telemetry only: the
   public Railway origin means it must never be used for authorization or compliance decisions.
@@ -1670,7 +1698,7 @@ because "nothing published yet" is a diagnosis rather than a fault.
 ### The health check (`scripts/mobile-ota-health-check.ts`)
 
 `vp run mobile:ota-health-check` queries PostHog (HogQL) for `OTA Update Status` events on the
-`production` channel over a window and reports launch count, distinct installs, and the
+`production` channel over a window and reports launch count, target-update launch count, and the
 emergency-launch rate:
 
 ```bash
@@ -1690,7 +1718,7 @@ Two notes on what it measures:
 - An emergency launch runs the **embedded** bundle, so its `updateId` is the embedded one — you
   can't attribute the failure to the bad update's id. The gate therefore measures the **fleet-wide**
   production emergency rate over the window, not a per-`updateId` rate. The target update's adoption
-  (installs successfully running it) is reported separately, for context only.
+  (launches successfully running it) is reported separately, for context only.
 - The fleet relaunches over **hours**, so the value is a re-run later (manually, or wire it to a
   schedule), not the seconds after a publish.
 

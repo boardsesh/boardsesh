@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react';
 import { AppState, type NativeEventSubscription } from 'react-native';
 import { useFeatureFlags, useFeatureFlagsResolved } from '../providers/feature-flags-provider';
 import { parseObserveSampleRate, resolveObserveDispatchEnabled } from '../lib/observe-config';
-import { configureObserve, dispatchObserveEvents } from '../lib/observe-runtime';
+import { configureObserve, dispatchObserveEvents, discardObserveEvents } from '../lib/observe-runtime';
+import { useAnalyticsConsent } from '../lib/consent-hooks';
+import { isProductAnalyticsGranted } from '../lib/consent-state';
 
 /**
  * Re-applies the Observe dispatch settings whenever the PostHog flags change.
@@ -13,10 +15,8 @@ import { configureObserve, dispatchObserveEvents } from '../lib/observe-runtime'
  * settings that ARE safe to change at runtime, and `buildObserveConfig` passes
  * the same integrations constant back so the integration never looks toggled.
  *
- * Flags resolve asynchronously, so a cold start always collects at the shipped
- * default for a moment. That is intended per docs/feature-flags.md — an
- * unresolved flag reads as the shipped default rather than as "off", so a device
- * that never reaches PostHog keeps reporting instead of going quiet forever.
+ * Startup sampling and dispatch are both disabled. Pending native metrics are
+ * discarded before a resolved flag and effective consent can enable dispatch.
  *
  * A no-op when no runtime is registered (node tests, Expo web).
  *
@@ -26,6 +26,7 @@ import { configureObserve, dispatchObserveEvents } from '../lib/observe-runtime'
  * first foreground flush always follows the final configuration.
  */
 export function useObserveRuntimeConfig(): void {
+  const consentGranted = useAnalyticsConsent();
   const flags = useFeatureFlags();
   const flagsResolved = useFeatureFlagsResolved();
   const dispatchFlag = flags['observe-dispatch-enabled'];
@@ -33,13 +34,30 @@ export function useObserveRuntimeConfig(): void {
   const appStateSubscription = useRef<NativeEventSubscription | null>(null);
 
   useEffect(() => {
-    configureObserve({
-      dispatchingEnabled: resolveObserveDispatchEnabled(dispatchFlag),
-      sampleRate: parseObserveSampleRate(sampleRateFlag),
-    });
+    let cancelled = false;
+    configureObserve({ dispatchingEnabled: false, sampleRate: 0 });
+    void discardObserveEvents()
+      .then(() => {
+        if (
+          cancelled ||
+          !consentGranted ||
+          !isProductAnalyticsGranted() ||
+          !flagsResolved ||
+          !resolveObserveDispatchEnabled(dispatchFlag)
+        )
+          return;
+        configureObserve({ dispatchingEnabled: true, sampleRate: parseObserveSampleRate(sampleRateFlag) });
+        if (AppState.currentState === 'active') void dispatchObserveEvents();
+      })
+      .catch(() => {
+        /* Discard failure keeps dispatch disabled. */
+      });
     // Keep configuration before the first flush in the same effect. Flag updates
     // reconfigure the SDK without replacing the listener or flushing again.
-    if (!flagsResolved || appStateSubscription.current) return;
+    if (!flagsResolved || appStateSubscription.current)
+      return () => {
+        cancelled = true;
+      };
 
     let previousAppState = AppState.currentState;
     appStateSubscription.current = AppState.addEventListener('change', (nextAppState) => {
@@ -49,8 +67,10 @@ export function useObserveRuntimeConfig(): void {
       // lifecycle does not wait for telemetry dispatch or its network requests.
       if (enteredForeground) void dispatchObserveEvents();
     });
-    if (previousAppState === 'active') void dispatchObserveEvents();
-  }, [dispatchFlag, flagsResolved, sampleRateFlag]);
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatchFlag, flagsResolved, sampleRateFlag, consentGranted]);
 
   useEffect(
     () => () => {

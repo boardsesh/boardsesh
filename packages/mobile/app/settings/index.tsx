@@ -1,3 +1,8 @@
+import { decideAnalyticsConsent } from '../../src/providers/consent-provider';
+import { useAnalyticsConsent, useAnalyticsPreference } from '../../src/lib/consent-hooks';
+import { isProductAnalyticsGranted } from '../../src/lib/consent-state';
+import { reportHandledError } from '../../src/lib/error-reporting';
+import { Platform } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { scopedRouter as router } from '../../src/lib/routing/scoped-navigation';
 import { useTranslation } from 'react-i18next';
@@ -102,6 +107,9 @@ export default function MoreScreen() {
   const { isAdmin } = useIsAdmin();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const { localePreference, setLocalePreference } = useLocalePreference();
+  const { t: consentT } = useTranslation('consent');
+  const analyticsGranted = useAnalyticsConsent();
+  const analyticsPreference = useAnalyticsPreference();
   const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
     useSessionRecordingPreference();
   const bottomChromeDiagnosticsEligible = useBottomChromeDiagnosticsEligible();
@@ -874,11 +882,26 @@ export default function MoreScreen() {
     rows: [
       {
         kind: 'toggle',
+        key: 'analytics',
+        label: consentT('analyticsLabel'),
+        subtitle: consentT('settingsBody'),
+        value: analyticsPreference,
+        onValueChange: (next) => {
+          void decideAnalyticsConsent(
+            next ? 'granted' : 'denied',
+            Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web',
+          ).catch((error: unknown) => reportHandledError(error));
+        },
+      },
+      {
+        kind: 'toggle',
         key: 'sessionRecording',
         label: t('mobile.settings.diagnostics.recording'),
         subtitle: t('mobile.settings.diagnostics.recordingDescription'),
-        value: sessionRecordingEnabled,
+        value: analyticsGranted && sessionRecordingEnabled,
+        disabled: !analyticsGranted,
         onValueChange: (next) => {
+          if (!isProductAnalyticsGranted()) return;
           hapticSelection();
           setSessionRecordingPreference(next);
           setSessionRecordingEnabled(next);

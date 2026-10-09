@@ -1,4 +1,6 @@
 import { createGraphQLClient, type Client } from '@boardsesh/graphql-client';
+import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
+import { CLIENT_PLATFORM } from '../client-platform';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
 import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
@@ -285,6 +287,7 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
           return {
             ...(token ? { authToken: token } : {}),
             [CLIENT_IDENTITY_CONNECTION_PARAM]: getClientIdentity(),
+            clientPlatform: CLIENT_PLATFORM,
           };
         },
       });

@@ -1,3 +1,4 @@
+import { deferConsentDestination } from '../src/lib/consent-navigation';
 import { getShareExtensionKey } from 'expo-share-intent';
 import { isLegacyPreviewLink } from '../src/lib/legacy-preview-link';
 
@@ -26,6 +27,7 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   // New builds no longer have that route; land those durable links on What's
   // New. Preview selection is available from More and the user drawer.
   if (isLegacyPreviewLink(path)) {
+    if (deferConsentDestination('/changelog')) return initial ? '/' : '';
     return '/changelog';
   }
   try {
@@ -44,5 +46,6 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
     // loaded). Fall through to the no-op `return path` so ordinary deep links
     // (join/universal links) still reach their destination — never reroute them.
   }
+  if (deferConsentDestination(path)) return initial ? '/' : '';
   return path;
 }
