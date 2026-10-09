@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { candidateFixture } from './__tests__/helpers/ota-stable-fixtures';
 import { promoteEarlyTrack } from './mobile-ota-promote-track';
+import type { EmptyBranchReader } from './mobile-ota-promote';
 
 const promote = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock('./mobile-ota-promote.ts', async (importOriginal) => ({
@@ -40,4 +41,17 @@ it('refuses legacy receipts lacking the pre-stage beta baseline', async () => {
   writeFileSync(join(path, 'receipt.json'), JSON.stringify(candidateFixture().receipt));
   await expect(promoteEarlyTrack(path, 'https://updates.test/manifest', 'publish-token')).rejects.toThrow();
   expect(promote).not.toHaveBeenCalled();
+});
+it('passes a live empty-target reader to beta promotion without replacing the captured baseline', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'ota-track-'));
+  tempPaths.push(path);
+  const early = { ios: null, android: null };
+  writeFileSync(
+    join(path, 'receipt.json'),
+    JSON.stringify({ ...candidateFixture().receipt, baselineEarlyUpdateIds: early }),
+  );
+  const reader: EmptyBranchReader = { getBranches: vi.fn(), getChannels: vi.fn(), getRuntimeVersions: vi.fn() };
+  await promoteEarlyTrack(path, 'https://updates.test/manifest', 'publish-token', reader);
+  expect(promote).toHaveBeenCalledWith(expect.objectContaining({ branch: 'pr-beta', emptyBranchReader: reader }));
+  expect(JSON.parse(readFileSync(join(path, 'early-receipt.json'), 'utf8')).baselineProductionUpdateIds).toEqual(early);
 });

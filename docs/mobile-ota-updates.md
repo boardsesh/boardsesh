@@ -874,6 +874,11 @@ GitHub setup was verified on 2026-10-08: this environment selects only the `main
 repository activation variable was explicitly set to `false`. This is the initial cutover state;
 the proof and store-device checks below are still required before changing that variable.
 
+On 2026-10-09 the owner explicitly enabled `OTA_STABLE_RELEASE_ENABLED=true`. The protected
+`pr-stable-candidate` branch was created and verified by the merged configuration apply. Fresh frozen
+candidate qualification and physical store-device acceptance remain outstanding; enabling the
+repository variable does not satisfy or bypass the controller's native and navigation gates.
+
 Relevant `main` pushes always publish to staging, wait for deployment and backend-schema readiness,
 then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
 Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
@@ -881,6 +886,21 @@ per-merge production promotion. Once enabled, production receives the daily qual
 The activation switch controls production cadence, not staging or beta publication. Native builds,
 release trains, manual hotfixes and backports retain
 their existing publish routes, with the trusted unlock before a production write.
+
+Staging captures production and beta baselines before either export. Runtime resolution uses the
+normal native build environment; a separate dependency-free, main-only admin job captures the
+baselines. The installed publisher receives only fingerprints and baseline JSON, and independently
+rechecks fingerprint parity before exporting. Admin credentials never enter its install or publish
+steps.
+
+A newly created beta or frozen-candidate branch can answer a manifest request with production's
+fallback update. That update is never saved as the target branch's baseline. Trusted main jobs may
+record a null baseline only after live authenticated reads confirm that the target exists, is
+protected, the production channel serves production with the declared `pr-*` surfing policy and no
+channel rollout, and the target has no such runtime version. A hidden existing runtime, malformed
+fallback, failed admin read or configuration drift stops the publish. Beta and candidate promotion
+repeat this check before uploads; post-publication verification still requires the target branch and
+exact exported bytes. Production baseline handling remains strict.
 
 | Time, UTC | Controller work |
 | --- | --- |
@@ -914,11 +934,12 @@ only trusted workflow runs on repository `main`; the stage receipt must match th
 Blocking QA must name the same frozen SHA, branch and receipt. Failed, cancelled, skipped or missing
 jobs cannot qualify a candidate. Historical proof runs below do not substitute for fresh qualification.
 
-**Activation remains off until proof and store QA pass.** Run fresh green and deliberately broken
+**Cutover acceptance requires proof and store QA.** Run fresh green and deliberately broken
 candidates on iOS and Android, including the required navigation smokes and real downloaded bytes.
 On physical store builds, verify early-update opt-in and opt-out, offline restart, preview precedence,
-native upgrade and flag disablement. Then enable `OTA_STABLE_RELEASE_ENABLED`; activate the separate
-`early-updates` product flag only after that device QA and the download/pin serialization work in
+native upgrade and flag disablement. Record these results even when the cadence variable has already
+been enabled. Activate the separate `early-updates` product flag only after that device QA and the
+download/pin serialization work in
 the Early updates section. The five-night advisory warm-up is not a prerequisite.
 The [2026-10-08 reconstruction proof](ota-differential-proof-2026-10-08.md) verifies one real production
 patch on each current native runtime: 18.34% of the measured gzip transfer on iOS and 20.43% on Android.

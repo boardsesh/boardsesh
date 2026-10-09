@@ -78,6 +78,22 @@ function branchName(input: string): string {
 
 /** What rollout mode reads from the admin API. */
 export type RolloutReader = Pick<XpremAdminClient, 'getUpdateRollout' | 'getUpdateDetails'>;
+/** Only trusted main jobs may supply an authenticated reader for empty-branch bootstrap. */
+export type EmptyBranchReader = Pick<XpremAdminClient, 'getBranches' | 'getChannels' | 'getRuntimeVersions'>;
+
+export async function connectEmptyBranchReader(manifestUrl: string, appId: string): Promise<EmptyBranchReader> {
+  if (process.env.GITHUB_REF !== 'refs/heads/main') {
+    throw new Error('Authenticated empty-target verification only runs from main.');
+  }
+  return adminClientFromEnvironment({
+    appId,
+    defaultBaseUrl: manifestUrl,
+    environment: {
+      OTA_ADMIN_EMAIL: process.env.OTA_ADMIN_EMAIL,
+      OTA_ADMIN_PASSWORD: process.env.OTA_ADMIN_PASSWORD,
+    },
+  });
+}
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
 
 export function parseStageReceipt(input: unknown): StageReceipt {
@@ -115,12 +131,14 @@ export function parsePromoteArgs(argv: string[]): {
   branch: string;
   rolloutPercentage: number | null;
   rolloutReceipt: string | null;
+  verifyEmptyTarget: boolean;
 } {
   const pathFlags = ['--receipt', '--ios-export', '--android-export', '--rollout-receipt'];
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     if (flag === '--') continue;
+    if (flag === '--verify-empty-target') continue;
     if (![...pathFlags, '--branch', '--rollout-percentage'].includes(flag))
       throw new Error(`Unknown argument: ${flag}.`);
     const argument = argv[++index];
@@ -149,6 +167,7 @@ export function parsePromoteArgs(argv: string[]): {
     branch: branchName(args['--branch'] ?? DEFAULT_BRANCH),
     rolloutPercentage,
     rolloutReceipt,
+    verifyEmptyTarget: argv.includes('--verify-empty-target'),
   };
 }
 
@@ -158,11 +177,13 @@ export function parseCaptureArgs(argv: string[]): {
   androidRuntime: string;
   out: string;
   branch: string;
+  verifyEmptyTarget: boolean;
 } {
   const args: Record<string, string> = {};
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
     if (flag === '--capture-baseline') continue;
+    if (flag === '--verify-empty-target') continue;
     if (!['--app-id', '--ios-runtime', '--android-runtime', '--out', '--branch'].includes(flag)) {
       throw new Error(`Unknown capture argument: ${flag}.`);
     }
@@ -179,7 +200,38 @@ export function parseCaptureArgs(argv: string[]): {
   if (!androidRuntime || !/^[0-9a-f]{40}$/i.test(androidRuntime))
     throw new Error('--android-runtime must be a fingerprint SHA.');
   if (!out) throw new Error('--out is required.');
-  return { appId, iosRuntime, androidRuntime, out, branch: branchName(args['--branch'] ?? DEFAULT_BRANCH) };
+  return {
+    appId,
+    iosRuntime,
+    androidRuntime,
+    out,
+    branch: branchName(args['--branch'] ?? DEFAULT_BRANCH),
+    verifyEmptyTarget: argv.includes('--verify-empty-target'),
+  };
+}
+
+async function assertEmptyTargetRuntime(
+  reader: EmptyBranchReader,
+  branch: string,
+  runtimeVersion: string,
+): Promise<void> {
+  const target = (await reader.getBranches()).find((entry) => entry.branchName === branch);
+  if (!target?.protected || target.branchId === null) throw new Error(`${branch} is not an existing protected branch.`);
+  const channel = (await reader.getChannels()).find((entry) => entry.releaseChannelName === DEFAULT_BRANCH);
+  if (
+    channel?.branchName !== DEFAULT_BRANCH ||
+    channel.rollout !== null ||
+    !channel.branchSurfing?.enabled ||
+    channel.branchSurfing.pattern !== 'pr-*' ||
+    !branch.startsWith('pr-')
+  ) {
+    throw new Error(`${branch} empty baseline cannot be verified under the current production channel configuration.`);
+  }
+  // Runtime absence is authoritative across both platforms. A picker omission or
+  // a single page of update history cannot establish that no target head exists.
+  if ((await reader.getRuntimeVersions(branch)).includes(runtimeVersion)) {
+    throw new Error(`${branch} already has runtime ${runtimeVersion}; refusing a production fallback baseline.`);
+  }
 }
 
 async function readProductionManifest(
@@ -189,15 +241,38 @@ async function readProductionManifest(
   appId: string,
   fetchImpl: typeof fetch,
   branch: string,
+  emptyBranchReader?: EmptyBranchReader,
 ): Promise<Record<string, unknown> | null> {
   const response = await requestManifest({ manifestUrl, platform, runtimeVersion, appId, branch, fetchImpl });
   await requireSuccess(response, `${platform} ${branch} manifest probe`);
   const manifest = parseServedManifest(await response.text(), branch);
-  if (manifest === null) return null;
+  if (manifest === null) {
+    if (branch !== DEFAULT_BRANCH && emptyBranchReader) {
+      await assertEmptyTargetRuntime(emptyBranchReader, branch, runtimeVersion);
+    }
+    return null;
+  }
   if (manifest.runtimeVersion !== runtimeVersion)
     throw new Error(`${platform} ${branch} runtimeVersion differs from staged runtime.`);
   const extra = object(manifest.extra, `${sentenceLabel(branch)} manifest extra`);
-  if (extra.branch !== branch) throw new Error(`${platform} manifest is not from the ${branch} branch.`);
+  if (extra.branch !== branch) {
+    if (branch !== DEFAULT_BRANCH && extra.branch === DEFAULT_BRANCH && emptyBranchReader) {
+      const expoConfig = object(extra.expoClient, `${platform} fallback Expo config`);
+      const updates = object(expoConfig.updates, `${platform} fallback updates config`);
+      const headers = object(updates.requestHeaders, `${platform} fallback request headers`);
+      if (
+        headers['expo-app-id'] !== appId ||
+        headers['expo-channel-name'] !== DEFAULT_BRANCH ||
+        typeof manifest.id !== 'string' ||
+        !UPDATE_ID.test(manifest.id)
+      ) {
+        throw new Error(`${platform} production fallback manifest has invalid app, channel or update identity.`);
+      }
+      await assertEmptyTargetRuntime(emptyBranchReader, branch, runtimeVersion);
+      return null;
+    }
+    throw new Error(`${platform} manifest is not from the ${branch} branch.`);
+  }
   return manifest;
 }
 
@@ -208,8 +283,17 @@ async function productionUpdateId(
   appId: string,
   fetchImpl: typeof fetch,
   branch: string,
+  emptyBranchReader?: EmptyBranchReader,
 ): Promise<string | null> {
-  const manifest = await readProductionManifest(manifestUrl, platform, runtimeVersion, appId, fetchImpl, branch);
+  const manifest = await readProductionManifest(
+    manifestUrl,
+    platform,
+    runtimeVersion,
+    appId,
+    fetchImpl,
+    branch,
+    emptyBranchReader,
+  );
   if (manifest === null) return null;
   const id = string(manifest.id, `${platform} ${branch} update ID`);
   if (!UPDATE_ID.test(id)) throw new Error(`${platform} ${branch} update ID must be a UUID-shaped ID.`);
@@ -222,6 +306,7 @@ export async function captureProductionBaseline(options: {
   runtimeVersions: Record<OtaPlatform, string>;
   /** The branch whose served update is the baseline. Defaults to `production`. */
   branch?: string;
+  emptyBranchReader?: EmptyBranchReader;
   fetchImpl?: typeof fetch;
 }): Promise<Record<OtaPlatform, string | null>> {
   if (!UUID.test(options.appId)) throw new Error('Capture app ID must be a UUID.');
@@ -239,6 +324,7 @@ export async function captureProductionBaseline(options: {
       options.appId,
       fetchImpl,
       branch,
+      options.emptyBranchReader,
     );
   }
   return baseline;
@@ -407,6 +493,7 @@ export async function promoteArchivedOta(options: {
   token: string;
   /** The branch to promote to. Defaults to `production`. */
   branch?: string;
+  emptyBranchReader?: EmptyBranchReader;
   /**
    * Start the update as a rollout to this share of devices instead of publishing
    * it to everyone. `connect` opens the admin API for the app the exports name,
@@ -467,6 +554,7 @@ export async function promoteArchivedOta(options: {
       appId,
       fetchImpl,
       branch,
+      options.emptyBranchReader,
     );
     if (current !== expected) {
       throw new Error(
@@ -738,11 +826,16 @@ export async function promoteArchivedOta(options: {
 async function main(): Promise<void> {
   if (process.argv.includes('--capture-baseline')) {
     const args = parseCaptureArgs(process.argv.slice(2));
+    const manifestUrl = process.env.EXPO_UPDATES_URL ?? '';
+    if (args.verifyEmptyTarget && !args.branch.startsWith('pr-')) {
+      throw new Error('--verify-empty-target requires an explicit pr- branch.');
+    }
     const baseline = await captureProductionBaseline({
-      manifestUrl: process.env.EXPO_UPDATES_URL ?? '',
+      manifestUrl,
       appId: args.appId,
       runtimeVersions: { ios: args.iosRuntime, android: args.androidRuntime },
       branch: args.branch,
+      ...(args.verifyEmptyTarget ? { emptyBranchReader: await connectEmptyBranchReader(manifestUrl, args.appId) } : {}),
     });
     writeFileSync(args.out, `${JSON.stringify(baseline)}\n`, { flag: 'wx' });
     console.log(`[ota-promote] Captured ${args.branch} baseline: ${args.out}`);
@@ -751,6 +844,18 @@ async function main(): Promise<void> {
   const args = parsePromoteArgs(process.argv.slice(2));
   const manifestUrl = process.env.EXPO_UPDATES_URL ?? '';
   const { rolloutPercentage, rolloutReceipt } = args;
+  if (args.verifyEmptyTarget && !args.branch.startsWith('pr-')) {
+    throw new Error('--verify-empty-target requires an explicit pr- branch.');
+  }
+  const receipt = args.verifyEmptyTarget
+    ? parseStageReceipt(JSON.parse(readFileSync(args.receipt, 'utf8')) as unknown)
+    : null;
+  const emptyBranchReader = receipt
+    ? await connectEmptyBranchReader(
+        manifestUrl,
+        validateExport(args.iosExport, 'ios', receipt.platforms.ios.bundleSha256).appId,
+      )
+    : undefined;
   await promoteArchivedOta({
     receiptPath: args.receipt,
     iosExport: args.iosExport,
@@ -758,6 +863,7 @@ async function main(): Promise<void> {
     manifestUrl,
     token: process.env.EOO_TOKEN ?? '',
     branch: args.branch,
+    ...(emptyBranchReader ? { emptyBranchReader } : {}),
     ...(rolloutPercentage === null || rolloutReceipt === null
       ? {}
       : {

@@ -63,6 +63,7 @@ const baseline = (options: ControllerOptions, receipt: StageReceipt, branch = ST
     appId: desiredOtaState.appId,
     runtimeVersions: runtimes(receipt),
     branch,
+    ...(branch === STABLE_BRANCH ? {} : { emptyBranchReader: options.client }),
   });
 function validateArchive(stagePath: string, receipt: StageReceipt): void {
   for (const platform of PLATFORMS) {
@@ -93,6 +94,7 @@ async function promote(
     manifestUrl: options.manifestUrl,
     token: options.token,
     branch,
+    ...(branch === STABLE_BRANCH ? {} : { emptyBranchReader: options.client }),
     ...(rolloutReceiptPath
       ? {
           rollout: {

@@ -146,7 +146,119 @@ env:
   EXPO_PUBLIC_USE_RN_FETCH: '1'
 
 jobs:
+  # Resolve native inputs with Production's build environment, without admin
+  # credentials. The next job only consumes validated fingerprints and built-ins.
+  resolve-staging-runtimes:
+    if: inputs.stage_for_production_deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: Production
+    outputs:
+      ios_runtime: ${{ steps.runtimes.outputs.ios_runtime }}
+      android_runtime: ${{ steps.runtimes.outputs.android_runtime }}
+    steps:
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - name: Install Node.js dependencies (workspace root)
+        run: vp install --frozen-lockfile
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EXPO_PUBLIC_SNAPSHOT_BASE_URL=$EXPO_PUBLIC_SNAPSHOT_BASE_URL
+          EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
+          EOF
+
+      - name: Resolve staged native runtimes
+        id: runtimes
+        env:
+          ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          for platform in ios android; do
+            if [ "$platform" = ios ]; then
+              runtime="$(cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion // empty')"
+            else
+              runtime="$(cd packages/mobile && GOOGLE_MAPS_API_KEY="$ANDROID_MAPS_KEY" vp exec expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion // empty')"
+            fi
+            if ! printf '%s' "$runtime" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::Could not resolve the full $platform staged runtime."
+              exit 1
+            fi
+            echo "${platform}_runtime=$runtime" >> "$GITHUB_OUTPUT"
+          done
+
+  # Trusted main only. No install, lifecycle hooks or publish token can see the
+  # admin login. Production remains strict; beta may be empty only when the
+  # authenticated control plane confirms the exact target has no updates.
+  capture-staging-baselines:
+    needs: resolve-staging-runtimes
+    if: inputs.stage_for_production_deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: ota-stable-release
+    outputs:
+      production_baseline: ${{ steps.capture.outputs.production_baseline }}
+      early_baseline: ${{ steps.capture.outputs.early_baseline }}
+    steps:
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Capture production baseline
+        env:
+          IOS_RUNTIME: ${{ needs.resolve-staging-runtimes.outputs.ios_runtime }}
+          ANDROID_RUNTIME: ${{ needs.resolve-staging-runtimes.outputs.android_runtime }}
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types scripts/mobile-ota-promote.ts --capture-baseline \
+            --ios-runtime "$IOS_RUNTIME" --android-runtime "$ANDROID_RUNTIME" \
+            --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc --out production-baseline.json
+      - name: Capture authenticated early baseline
+        id: capture
+        env:
+          IOS_RUNTIME: ${{ needs.resolve-staging-runtimes.outputs.ios_runtime }}
+          ANDROID_RUNTIME: ${{ needs.resolve-staging-runtimes.outputs.android_runtime }}
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+          node --experimental-strip-types scripts/mobile-ota-promote.ts --capture-baseline --branch pr-beta --verify-empty-target \
+            --ios-runtime "$IOS_RUNTIME" --android-runtime "$ANDROID_RUNTIME" \
+            --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc --out early-baseline.json
+          echo "production_baseline=$(jq -c . production-baseline.json)" >> "$GITHUB_OUTPUT"
+          echo "early_baseline=$(jq -c . early-baseline.json)" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: [resolve-staging-runtimes, capture-staging-baselines]
+    # Skipped staging prerequisites must not suppress direct/train/manual runs.
+    if: >-
+      always() && !cancelled()
+      && (!inputs.stage_for_production_deploy || (needs.resolve-staging-runtimes.result == 'success' && needs.capture-staging-baselines.result == 'success'))
     # Only this publisher needs dispatch permission. No admin login is exposed.
     permissions:
       contents: read
@@ -509,27 +621,27 @@ jobs:
         id: baseline
         if: inputs.stage_for_production_deploy && steps.generate.outcome == 'success'
         env:
-          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          IOS_RUNTIME: ${{ needs.resolve-staging-runtimes.outputs.ios_runtime }}
+          ANDROID_RUNTIME: ${{ needs.resolve-staging-runtimes.outputs.android_runtime }}
+          PRODUCTION_BASELINE: ${{ needs.capture-staging-baselines.outputs.production_baseline }}
+          EARLY_BASELINE: ${{ needs.capture-staging-baselines.outputs.early_baseline }}
+          ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
           set -euo pipefail
+          # The publisher independently resolves its identical native inputs.
+          # Any environment drift invalidates the authenticated frozen baseline.
+          ios_runtime="$(cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion // empty')"
+          android_runtime="$(cd packages/mobile && GOOGLE_MAPS_API_KEY="$ANDROID_MAPS_KEY" vp exec expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion // empty')"
+          if [ "$ios_runtime" != "$IOS_RUNTIME" ] || [ "$android_runtime" != "$ANDROID_RUNTIME" ]; then
+            echo '::error::Staged fingerprints changed after baseline capture.'
+            exit 1
+          fi
           mkdir -p ota-stage
-          ios_runtime="$(cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion')"
-          android_runtime="$(cd packages/mobile && vp exec expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion')"
-          printf '%s' "$ios_runtime" > ota-stage/ios-runtime
-          printf '%s' "$android_runtime" > ota-stage/android-runtime
-          vp exec tsx scripts/mobile-ota-promote.ts --capture-baseline \
-            --ios-runtime "$ios_runtime" --android-runtime "$android_runtime" \
-            --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc \
-            --out ota-stage/baseline.json
-          # Freeze beta's baseline before exports too. Capturing it only when
-          # promotion starts would let a reordered older deploy replace newer JS.
-          vp exec tsx scripts/mobile-ota-promote.ts --capture-baseline --branch pr-beta \
-            --ios-runtime "$ios_runtime" --android-runtime "$android_runtime" \
-            --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc \
-            --out ota-stage/early-baseline.json
+          printf '%s' "$IOS_RUNTIME" > ota-stage/ios-runtime
+          printf '%s' "$ANDROID_RUNTIME" > ota-stage/android-runtime
+          printf '%s' "$PRODUCTION_BASELINE" > ota-stage/baseline.json
+          printf '%s' "$EARLY_BASELINE" > ota-stage/early-baseline.json
 
-      # Check the same installed uploader the upload steps use before either OTA
-      # goes live. No export or Sentry token is needed for this compatibility check.
       - name: Validate Sentry uploader support before publishing
         id: sentry_uploader
         if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && ((steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')) || (steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')))
