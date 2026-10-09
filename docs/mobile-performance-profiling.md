@@ -9,6 +9,13 @@ CPU measurements from physical Release builds. Native templates live under
 `scripts/fixtures/mobile-profile` and are injected into profiling worktrees.
 The shipping mobile app does not import them.
 
+If a startup correctness failure prevents loaded-content validation, preserve
+the original startup attempts as a separate reliability cohort. Apply the
+same reviewed correctness fix to both comparison sources, record the derived
+baseline and candidate commits, and verify identical fix bytes. The resulting
+comparison measures the UI changes with that shared correction. Report this
+change to the baseline explicitly; retain every failed launch.
+
 ## Prepare the builds
 
 Select an explicit physical iPhone UDID or Android serial. Keep the original app
