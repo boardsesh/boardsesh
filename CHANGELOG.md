@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-10-09
+
+### Fixed
+
+- Notification badges, activity feeds and session votes load correctly while respecting your privacy settings. ([#6272](https://github.com/boardsesh/boardsesh/pull/6272))
+
 ## 2026-10-08
 
 ### New

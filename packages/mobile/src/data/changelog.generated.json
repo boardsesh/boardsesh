@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-08T22:15:52.149Z",
+  "generatedAt": "2026-10-09T08:17:41.878Z",
   "entries": [
+    {
+      "prNumber": 6272,
+      "category": "fixed",
+      "title": "Notification badges, activity feeds and session votes load correctly while respecting your privacy settings.",
+      "mergedAt": "2026-10-09T02:13:10Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6272"
+    },
     {
       "prNumber": 6266,
       "category": "fixed",
