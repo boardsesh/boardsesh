@@ -182,6 +182,21 @@ against measured noise. A/A pairs must repeat the same install, launch and
 conditioning schedule as A/B pairs. Consecutive cycles in one process provide
 only an additional noise-floor estimate.
 
+For the October 2026 HIG comparison, preregister five A/A pairs, ten alternating
+A/B pairs and three separate holdout pairs per platform: 36 members each.
+Require every scheduled member and retain failed attempts; do not compute a
+result from a healthy subset. Recheck source, artifacts, host helpers and the
+underlying qualification evidence before and after each member.
+
+The frozen iPhone flow measures 26 individually acknowledged touch windows.
+The Android flow measures 13 gesture/navigation windows containing 20 touches;
+five additional QA taps in its 25-touch tour are outside that primary measure.
+Sum native process CPU seconds within those windows separately per platform.
+Report paired percentage changes with negative numbers meaning less CPU. Keep
+the A/A noise distribution, ten-pair bootstrap uncertainty and three-pair
+holdout results separate. These sequential samples do not establish population
+performance, thermal stability or isolated renderer cost.
+
 Keep broad navigation/QA segments separate from narrow gesture windows. Resolve
 logical identity and touch geometry before the narrow start acknowledgment;
 place explicit assertions and screenshots after its end acknowledgment. Include
