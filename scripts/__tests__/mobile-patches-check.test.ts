@@ -54,7 +54,7 @@ function makeEnv(opts: {
 }
 
 describe('the shipped expo-sqlite lifetime guards', () => {
-  const sqliteKey = 'expo-sqlite@57.0.2';
+  const sqliteKey = 'expo-sqlite@57.0.4';
   const sqliteRules = REAL_RULES.filter((rule) => rule.package === 'expo-sqlite');
   const helperSource = `
 beginAsyncOperation();
@@ -67,10 +67,12 @@ finalizeStatementWithErrorPreservation(statement, failure);
       file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
       source: `
   private fun finalize(statement: NativeStatement, database: NativeDatabase) {
-    val result = statement.ref.sqlite3_finalize()
-    statement.isFinalized = true
-    if (result != NativeDatabaseBinding.SQLITE_OK) {
-      throw SQLiteErrorException(database.ref.convertSqlLiteErrorToString())
+    synchronized(statement) {
+      val result = statement.ref.sqlite3_finalize()
+      statement.isFinalized = true
+      if (result != NativeDatabaseBinding.SQLITE_OK) {
+        throw SQLiteErrorException(database.ref.convertSqlLiteErrorToString())
+      }
     }
   }
 `,
@@ -81,7 +83,7 @@ finalizeStatementWithErrorPreservation(statement, failure);
   private func finalize(statement: NativeStatement, database: NativeDatabase) throws {
     let result = exsqlite3_finalize(statement.pointer)
     statement.isFinalized = true
-    if (result != SQLITE_OK) {
+    if result != SQLITE_OK {
       throw SQLiteErrorException(convertSqlLiteErrorToString(database))
     }
   }
@@ -89,7 +91,7 @@ finalizeStatementWithErrorPreservation(statement, failure);
     },
   ];
 
-  function checkSqliteSources(overrides: Record<string, string> = {}, version = '57.0.2') {
+  function checkSqliteSources(overrides: Record<string, string> = {}, version = '57.0.4') {
     return checkPatchesApplied(
       sqliteRules,
       makeEnv({
@@ -116,7 +118,7 @@ finalizeStatementWithErrorPreservation(statement, failure);
   });
 
   it('rejects a version bump even when the old patch symbols remain', () => {
-    const result = checkSqliteSources({}, '57.0.3');
+    const result = checkSqliteSources({}, '57.0.5');
 
     expect(result.errors).toHaveLength(4);
     expect(result.errors.every((error) => error.includes('version drift'))).toBe(true);
@@ -1187,87 +1189,6 @@ if url.scheme == "file" {
     expect(result.errors[0]).toContain('patch NOT applied');
     expect(result.errors[0]).toContain('hasAbsoluteFilePath');
   });
-
-  // Guards against the #5296 fix silently dropping on the next
-  // expo-modules-core bump, the same way the expo-image guard above does.
-  it('keeps the expo-modules-core Exception patch keyed to the pinned mobile version', () => {
-    const exceptionRule = REAL_RULES.find(
-      (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Exceptions/Exception.swift',
-    );
-    expect(exceptionRule).toBeDefined();
-
-    const mobilePackageJson = JSON.parse(
-      readFileSync(resolve(import.meta.dirname, '../../packages/mobile/package.json'), 'utf8'),
-    ) as { dependencies?: Record<string, string> };
-    const pinnedVersion = mobilePackageJson.dependencies?.['expo-modules-core'];
-
-    expect(pinnedVersion, 'expo-modules-core must stay a direct packages/mobile dependency').toBeDefined();
-    expect(versionFromKey(exceptionRule?.patchedKey ?? '')).toBe(pinnedVersion);
-    expect(exceptionRule?.sentinels).toEqual(
-      expect.arrayContaining([
-        'boardsesh/boardsesh#5296',
-        'private let explicitReason: String?',
-        'explicitReason ?? "undefined reason"',
-      ]),
-    );
-  });
-
-  // The literal pre-#5296 upstream source at expo-modules-core@57.0.14, verified
-  // against both the installed node_modules copy and github.com/expo/expo's
-  // default branch, where `init(name:description:code:)` still never assigns
-  // `reason` (expo/expo#49677 was bot-closed for lacking a repro, not fixed).
-  // Every `promise.reject(code, description)` call — ours and expo-updates' own
-  // — reached JS as "<CODE>: undefined reason (...)". This is the "fails on
-  // today's code" proof: this exact text is what ships without the patch.
-  it('rejects the real pre-#5296 Exception.swift — every rejection loses its description', () => {
-    const exceptionRule = REAL_RULES.find(
-      (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Exceptions/Exception.swift',
-    );
-    if (!exceptionRule) throw new Error('no expo-modules-core Exception rule registered');
-
-    const unpatchedUpstreamSource = `
-// Copyright 2022-present 650 Industries. All rights reserved.
-
-open class Exception: CodedError, ChainableException, CustomStringConvertible, CustomDebugStringConvertible, JavaScriptThrowable, @unchecked Sendable {
-  open lazy var name: String = String(describing: Self.self)
-
-  /**
-   String describing the reason of the exception.
-   */
-  open var reason: String {
-    "undefined reason"
-  }
-
-  open var origin: ExceptionOrigin
-
-  let customCode: String?
-
-  public init(file: String = #fileID, line: UInt = #line, function: String = #function) {
-    self.origin = ExceptionOrigin(file: file, line: line, function: function)
-    self.customCode = nil
-  }
-
-  public init(name: String, description: String, code: String? = nil, file: String = #fileID, line: UInt = #line, function: String = #function) {
-    self.origin = ExceptionOrigin(file: file, line: line, function: function)
-    self.customCode = code
-    self.name = name
-    self.description = description
-  }
-}
-`;
-
-    const env = makeEnv({
-      patchedDependencies: { [exceptionRule.patchedKey]: 'patches/expo-modules-core@57.0.14.patch' },
-      versions: { [exceptionRule.package]: versionFromKey(exceptionRule.patchedKey) },
-      files: { [`${exceptionRule.package}::${exceptionRule.file}`]: unpatchedUpstreamSource },
-    });
-
-    const result = checkPatchesApplied([exceptionRule], env);
-
-    expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]).toContain('patch NOT applied');
-    expect(result.errors[0]).toContain('explicitReason');
-  });
 });
 
 // #5296: the Exception.swift patch applied to node_modules and CI went green, but
@@ -1368,7 +1289,7 @@ describe('checkIosPatchesBuildFromSource', () => {
 
 // Reads the REAL packages/mobile/package.json and the installed spm.config.json
 // files: remove "expo-modules-core" from buildFromSource and this goes red for
-// both expo-modules-core and the expo-image patch that rides its cascade.
+// the expo-image and expo-sqlite patches that ride its cascade.
 describe('the shipped buildFromSource list', () => {
   const mobilePackageJsonPath = resolve(import.meta.dirname, '../../packages/mobile/package.json');
   const mobileManifest = JSON.parse(readFileSync(mobilePackageJsonPath, 'utf8')) as {
@@ -1382,9 +1303,9 @@ describe('the shipped buildFromSource list', () => {
     expect(checkIosPatchesBuildFromSource({ rules: REAL_RULES, buildFromSource, readSpmConfig })).toEqual([]);
   });
 
-  it('builds expo-image from source only through the expo-modules-core cascade', () => {
-    expect(sourceBuildChain('expo-image', { buildFromSource, readSpmConfig })).toBe(
-      'expo-image → expo-modules-core (buildFromSource)',
+  it.each(['expo-image', 'expo-sqlite'])('builds %s from source through the expo-modules-core cascade', (pkg) => {
+    expect(sourceBuildChain(pkg, { buildFromSource, readSpmConfig })).toBe(
+      `${pkg} → expo-modules-core (buildFromSource)`,
     );
   });
 });

@@ -47,14 +47,6 @@
  * the only symptom is an OTA published mid-build silently losing to the binary
  * forever — months later, on devices, with a green publish in the log.
  *
- * For expo-modules-core, the patch makes `Exception.reason` fall back to the
- * description passed to `init(name:description:code:)` instead of a hardcoded
- * "undefined reason" (#5296). Every native `promise.reject(code, description)`
- * across the app goes through that initializer, so a dropped patch silently
- * turns every native rejection message back into a fixed string with no
- * diagnostic value — invisible to typecheck and the bundle, visible only in
- * Sentry.
- *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -133,7 +125,7 @@ export const RULES: readonly PatchRule[] = [
       'closePromise',
       'finalizeStatementWithErrorPreservation',
     ],
-    patchedKey: 'expo-sqlite@57.0.2',
+    patchedKey: 'expo-sqlite@57.0.4',
   })),
   // Pin the consecutive finalize/state/error sequence, not a global state
   // assignment: moving it after the throw leaves the native pointer freed but
@@ -143,10 +135,10 @@ export const RULES: readonly PatchRule[] = [
     file: 'android/src/main/java/expo/modules/sqlite/SQLiteModule.kt',
     sentinels: [
       `val result = statement.ref.sqlite3_finalize()
-    statement.isFinalized = true
-    if (result != NativeDatabaseBinding.SQLITE_OK)`,
+      statement.isFinalized = true
+      if (result != NativeDatabaseBinding.SQLITE_OK)`,
     ],
-    patchedKey: 'expo-sqlite@57.0.2',
+    patchedKey: 'expo-sqlite@57.0.4',
   },
   {
     package: 'expo-sqlite',
@@ -154,9 +146,9 @@ export const RULES: readonly PatchRule[] = [
     sentinels: [
       `let result = exsqlite3_finalize(statement.pointer)
     statement.isFinalized = true
-    if (result != SQLITE_OK)`,
+    if result != SQLITE_OK`,
     ],
-    patchedKey: 'expo-sqlite@57.0.2',
+    patchedKey: 'expo-sqlite@57.0.4',
   },
   {
     package: 'react-native-ble-plx',
@@ -185,13 +177,13 @@ export const RULES: readonly PatchRule[] = [
     package: '@expo/fingerprint',
     file: 'build/utils/Path.js',
     sentinels: ['normalizeIsolatedStoreModulePath', 'ISOLATED_STORE_MODULE_ROOT_REGEX'],
-    patchedKey: '@expo/fingerprint@0.20.11',
+    patchedKey: '@expo/fingerprint@0.20.13',
   },
   {
     package: '@expo/fingerprint',
     file: 'build/hash/Hash.js',
     sentinels: ['normalizeIsolatedStoreModulePath'],
-    patchedKey: '@expo/fingerprint@0.20.11',
+    patchedKey: '@expo/fingerprint@0.20.13',
   },
   {
     package: 'react-native-screens',
@@ -294,7 +286,7 @@ export const RULES: readonly PatchRule[] = [
       'hideSwallowingMissingNativeHandler();',
       'const close = hideSwallowingMissingNativeHandler;',
     ],
-    patchedKey: '@expo/ui@57.0.14',
+    patchedKey: '@expo/ui@57.0.22',
   },
   // The iOS half wires the native post-animation dismiss signal through to the
   // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
@@ -305,7 +297,7 @@ export const RULES: readonly PatchRule[] = [
     file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
     sentinels: ['onFullyDismissedRef', 'onDismiss={fireCloseCallbacks}', 'coordinator must observe index -1'],
     orderedSentinels: ['onChangeRef.current?.(-1);', 'onFullyDismissedRef.current?.();'],
-    patchedKey: '@expo/ui@57.0.14',
+    patchedKey: '@expo/ui@57.0.22',
   },
   // ExpoModulesCore uses relative file URLs for xcasset names, so
   // `localAssetName` must keep those while rejecting absolute/hosted file URLs
@@ -323,7 +315,7 @@ export const RULES: readonly PatchRule[] = [
       'if hasFileHost || hasAbsoluteFilePath',
       'Images/MyIcon',
     ],
-    patchedKey: 'expo-image@57.0.3',
+    patchedKey: 'expo-image@57.0.5',
   },
   // The embedded bundle's commitTime. `expo-updates` launches whichever update
   // has the newest one, and upstream stamps BUILD time — so a long native build
@@ -346,33 +338,7 @@ export const RULES: readonly PatchRule[] = [
       'Math.min(committerTime, now)',
       'commitTime: resolveEmbeddedCommitTime(projectRoot),',
     ],
-    patchedKey: 'expo-updates@57.0.19',
-  },
-  // `Exception.reason` is a hardcoded "undefined reason" that the
-  // `init(name:description:code:)` overload never assigns, so every
-  // `promise.reject(code, description)` across the app — BoardBleModule,
-  // HealthWorkoutsModule, LiveActivityModule, and expo-updates' own rejections —
-  // reached JS as "<CODE>: undefined reason (at ExpoModulesCore/Promise.swift:65)",
-  // dropping the description entirely (#5296). Upstream is unaware: their own
-  // internal workaround (ExpoRuntimeInstaller.swift's
-  // ReadOnlyExpoModulesPropertyException) overrides `reason` per-subclass rather
-  // than fixing the base initializer, and the tracking issue
-  // (github.com/expo/expo/issues/49677) was bot-closed for lacking a repro, not
-  // fixed. `explicitReason` is what nothing else can see: types are unchanged
-  // (still `String?`), the Metro bundle is unaffected, and the only symptom of a
-  // dropped patch is a Sentry message reading "undefined reason" again.
-  {
-    package: 'expo-modules-core',
-    file: 'ios/Core/Exceptions/Exception.swift',
-    sentinels: [
-      'boardsesh/boardsesh#5296',
-      'private let explicitReason: String?',
-      'explicitReason ?? "undefined reason"',
-      'self.explicitReason = nil',
-      'self.explicitReason = description',
-    ],
-    orderedSentinels: ['self.explicitReason = nil', 'self.explicitReason = description'],
-    patchedKey: 'expo-modules-core@57.0.14',
+    patchedKey: 'expo-updates@57.0.25',
   },
 ];
 
@@ -383,7 +349,7 @@ export const RULES: readonly PatchRule[] = [
  * of quietly landing unguarded.
  */
 export const UNGUARDED_PATCHES: Readonly<Record<string, string>> = {
-  'expo-dev-launcher@57.0.16':
+  'expo-dev-launcher@57.0.20':
     'raises the iOS dev-launcher request timeout from 10s to 120s. Under an isolated linker the package is ' +
     'only reachable through expo-dev-client, so createNodeEnv cannot resolve it from packages/mobile — pnpm does ' +
     "put it in node_modules/.pnpm/node_modules, but that directory is not on packages/mobile's resolution path. " +

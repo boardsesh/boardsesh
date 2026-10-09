@@ -193,7 +193,7 @@ install, since the device couldn't verify the manifest came from us.
    [What a launch runs](#what-a-launch-runs)).
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by the exact-pinned, patched
-   `@expo/fingerprint@0.20.11` installation behind Expo's `expo/fingerprint` export. An
+   `@expo/fingerprint@0.20.13` installation behind Expo's `expo/fingerprint` export. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
    fingerprint (the OTA lands) while **any native change yields a new fingerprint** — the OTA is
    intrinsically incompatible with old binaries and isn't delivered (they keep their embedded
@@ -1087,7 +1087,7 @@ leaves the path untouched, over-triggering a build rather than hiding a native c
 
 Expo's default `**/node_modules/**/node_modules/**` ignore also mistakes the isolated-store wrapper
 for a genuine nested dependency. The exact-pinned patch
-`patches/@expo__fingerprint@0.20.11.patch` collapses
+`patches/@expo__fingerprint@0.20.13.patch` collapses
 `node_modules/.<store>/<entry>/node_modules/` wrappers when matching ignores and building
 file/directory hash ids. Its dot-prefixed store match cannot collide with a real npm package name,
 and pnpm's hoisted-compat directory does not have the required `<entry>/node_modules/` shape.
@@ -1137,6 +1137,19 @@ bumping it alone starts no build; see [Version-only releases](#version-only-rele
 keep the release focused, and move
 both store builds through QA and review promptly. Keep backend changes compatible with the
 currently shipped app until the replacement has been adopted.
+
+**SDK 57 package refresh (October 2026).** Expo is exact-pinned to `57.0.27`,
+with the remaining Expo packages exact-pinned to that release's supported version
+map. Six local Expo patches were rebased: `@expo/fingerprint`, `@expo/ui`,
+`expo-dev-launcher`, `expo-image`, `expo-sqlite`, and `expo-updates`. Upstream
+`expo-modules-core@57.0.21` now preserves native exception descriptions through
+`customReason`, so the local Exception.swift patch is retired; an installed-source
+regression test guards that behavior and Swift initializer ordering. Keep
+`expo-modules-core` in `buildFromSource` so the image and SQLite patches still
+compile through its dependency cascade, and keep Observe's `expo-updates-interface`
+override at `57.0.1`. This refresh targets `main` under the current native-release exception:
+it requires the `allow-native-on-main` label and matching new iOS and Android native
+builds before users can receive OTAs with the new fingerprints.
 
 ### GraphQL schema changes: installed builds keep querying old fields
 
@@ -1313,7 +1326,7 @@ publish step exited 0" is a proxy; the 2026-09-01 stranding had a green publish 
 
 #### The root fix: `commitTime` is the commit's date
 
-The rail above routes around the defect; `patches/expo-updates@57.0.19.patch` removes it (#5021).
+The rail above routes around the defect; `patches/expo-updates@57.0.25.patch` removes it (#5021).
 The patched `resolveEmbeddedCommitTime` in `utils/build/createManifestForBuildAsync.js` embeds
 **HEAD's committer date** instead of the moment the build bundled, so ordering follows commit order
 — the semantics everyone already assumed. It cost one native build train, because `patches/**` is a

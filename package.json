@@ -30,7 +30,7 @@
     "@aws-sdk/client-s3": "^3.1101.0",
     "@boardsesh/pr-body": "workspace:*",
     "@boardsesh/text-redaction": "workspace:*",
-    "@expo/cli": "^57.0.15",
+    "@expo/cli": "57.0.28",
     "@graphql-codegen/add": "^5.0.3",
     "@graphql-codegen/cli": "^5.0.7",
     "@graphql-codegen/client-preset": "^4.8.3",
