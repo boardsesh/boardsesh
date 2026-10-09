@@ -1,0 +1,72 @@
+appId: com.boardsesh.app
+name: e2e gate smoke
+---
+# The mobile E2E gate's navigation smoke (docs/mobile-e2e-gate.md), not a store
+# capture: it takes no screenshots. Same route list as smoke-android.yaml, for
+# the same reason (every deep link below is one app-store.yaml already opens, so
+# the pinned fixture set holds its requests): home -> profile -> climbs -> first
+# climb's play drawer, with the drawer last because it overlays the app.
+#
+# This flow only NAVIGATES. On this iOS build Maestro cannot match the app's own
+# elements (see README.md, "Coordinate taps"), so there is nothing here to
+# assert with. The assertions are the app's own: each screen pings the
+# orchestrator with a content count (src/components/ScreenshotSmokeMarker.tsx)
+# and the crash screen pings an error. The orchestrator fails the run on a
+# missing ping, a zero count, an error ping, or a fatal line in the device log.
+#
+# The settle-waits give each screen time to load before the next deep link.
+# They never fail the flow; a screen that is still loading when its wait ends
+# keeps loading (tabs stay mounted) and the orchestrator waits for its ping.
+
+- setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
+
+# Prime the "Open in 'Boardsesh'?" dialog, exactly as app-store.yaml does: the
+# first custom-scheme link pops it and it blocks navigation until tapped.
+- openLink: com.boardsesh.app://home
+- extendedWaitUntil:
+    visible: 'Open'
+    timeout: 12000
+    optional: true
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd
+- repeat:
+    times: 3
+    commands:
+      - openLink: com.boardsesh.app://home
+      - waitForAnimationToEnd
+      - tapOn:
+          text: 'Open'
+          optional: true
+      - waitForAnimationToEnd
+
+# Home.
+- waitForAnimationToEnd:
+    timeout: 30000
+
+# Profile.
+- openLink: com.boardsesh.app://profile
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 30000
+
+# Climbs.
+- openLink: com.boardsesh.app://climbs
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 30000
+
+# Open the first climb's play drawer.
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- tapOn:
+    text: 'Open'
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 30000

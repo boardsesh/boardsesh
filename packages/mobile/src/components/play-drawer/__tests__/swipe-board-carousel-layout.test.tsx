@@ -10,6 +10,8 @@ type ViewProps = {
   onLayout?: (event: LayoutChangeEvent) => void;
   testID?: string;
   style?: unknown;
+  accessible?: boolean;
+  importantForAccessibility?: string;
 };
 
 const recorded = vi.hoisted(() => ({
@@ -23,7 +25,7 @@ vi.mock('react-native', () => {
     return style && typeof style === 'object' ? (style as Record<string, unknown>) : {};
   };
   return {
-    View: ({ children, onLayout, testID, style }: ViewProps) => {
+    View: ({ children, onLayout, testID, style, accessible, importantForAccessibility }: ViewProps) => {
       if (testID === 'play-drawer-board-container') recorded.onLayout = onLayout;
       const dimensions = flattenStyle(style);
       return createElement(
@@ -32,6 +34,8 @@ vi.mock('react-native', () => {
           'data-testid': testID,
           'data-width': dimensions.width,
           'data-height': dimensions.height,
+          'data-accessible': accessible,
+          'data-important-for-accessibility': importantForAccessibility,
         },
         children,
       );
@@ -71,12 +75,23 @@ vi.mock('../use-zoom-pan-gesture', () => ({
 }));
 vi.mock('../../BoardImageNative', () => ({
   // Paint synchronously, like an image whose photo and overlay are already cached.
-  BoardImageNative: ({ frames, style, renderWidth }: { frames: string; style: Box; renderWidth: number }) =>
+  BoardImageNative: ({
+    frames,
+    style,
+    renderWidth,
+    overlayTestID,
+  }: {
+    frames: string;
+    style: Box;
+    renderWidth: number;
+    overlayTestID?: string;
+  }) =>
     createElement('div', {
       'data-testid': `board-${frames}`,
       'data-width': style?.width,
       'data-height': style?.height,
       'data-render-width': renderWidth,
+      'data-overlay-testid': overlayTestID,
     }),
 }));
 vi.mock('../UpcomingBoardPrefetch', () => ({
@@ -124,6 +139,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (screenshotMode) => {
+  it('exposes the painted-overlay descendant only in screenshot mode and preserves the normal board group', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
+    const { getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
+    measure(350, 500);
+    const board = getByTestId('board-current');
+    if (screenshotMode === '1') {
+      expect(board.parentElement?.dataset.accessible).toBe('false');
+      expect(board.parentElement?.dataset.importantForAccessibility).toBe('no');
+      expect(board.dataset.overlayTestid).toBe('play-drawer-board-overlay');
+    } else {
+      expect(board.parentElement?.parentElement?.dataset.accessible).toBe('true');
+      expect(board.parentElement?.parentElement?.dataset.importantForAccessibility).toBeUndefined();
+      expect(board.dataset.overlayTestid).toBeUndefined();
+    }
+  });
+
   it('withholds cached images and prefetch until both dimensions are positive', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
     const { queryAllByTestId, getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));

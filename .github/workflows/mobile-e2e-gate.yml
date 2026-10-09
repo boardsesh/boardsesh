@@ -1,0 +1,398 @@
+name: Mobile E2E Gate
+
+# Answers one question for one commit: is this commit's mobile JS fit to become
+# today's stable OTA candidate? Full write-up: docs/mobile-e2e-gate.md.
+#
+# Three ways in:
+#   - workflow_call: the daily release job asks about the commit it is about to
+#     cut a canary from, and reads the `passed` output.
+#   - workflow_dispatch: a person asks about any ref (default: the ref the
+#     dispatch ran on).
+#   - schedule: nightly on main, so the gate cannot rot unseen. It gates nothing;
+#     it reports, and says so in Discord when something is red.
+#
+# TODAY THIS GATES NOTHING. Every job is advisory (see GATE_JOBS below), so the
+# nightly reports without failing and `passed` is vacuously true.
+#
+# A called workflow sees its CALLER's event name, so "this is a call" is read off
+# `inputs.called`, which only workflow_call defines and which defaults to true
+# there. It is deliberately not read off `inputs.ref`: a caller that passed an
+# empty ref would then look like a dispatch and test whatever the default ref
+# happens to be. The `resolve` job fails that call instead. Same convention as
+# e2e-tests.yml, which this workflow calls.
+#
+# NO `concurrency:` ON PURPOSE. Two rules have to hold: a second run for the same
+# commit must not cancel the first (its caller is waiting on that answer), and
+# runs for different commits must not queue behind one another. A group can only
+# cancel or queue, so there is none. For the same reason nothing here joins the
+# OTA publish groups (`mobile-ota-production`, `mobile-ota-staging`,
+# `production-deploy`): the gate reads a commit and publishes nothing, and a
+# 40-minute test must never sit on a publish lock. The contract test pins both
+# (scripts/__tests__/mobile-e2e-gate-workflow.test.ts).
+#
+# The jobs check out the commit UNDER TEST, and `uses: ./.github/actions/…`
+# resolves inside that checkout. So the smoke flows, the orchestrator and the
+# composite actions all come from the tested commit: the gate can only judge a
+# commit that already contains it.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, branch or tag to test.
+        required: true
+        type: string
+      called:
+        description: Marks the run as a workflow_call. Leave it at its default.
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      passed:
+        description: >
+          'true' only when every blocking job passed and none of them was left
+          unrun. Anything else, including an empty string, is not a pass.
+        value: ${{ jobs.verdict.outputs.passed }}
+      sha:
+        description: The full commit SHA the gate tested.
+        value: ${{ jobs.resolve.outputs.sha }}
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit, branch or tag to test. Empty tests the ref this dispatch runs on.
+        required: false
+        type: string
+        default: ''
+  schedule:
+    - cron: '17 19 * * *' # nightly, 19:17 UTC, on main
+
+permissions:
+  contents: read
+
+env:
+  # THE ONE PLACE that decides which jobs can fail the gate. "blocking": a
+  # failure fails the verdict, and the job not running makes `passed` false.
+  # "advisory": reported in the table and nothing else. Key order is table order.
+  #
+  # All advisory to start with, so the nightly reports without failing. Flip
+  # expo-web, android-smoke and ios-smoke to "blocking" once each has been green
+  # five nights running (the release PR does this). boot-real-bytes becomes
+  # "blocking" in the PR that implements it.
+  GATE_JOBS: >-
+    {
+      "boot-real-bytes": "advisory",
+      "expo-web": "advisory",
+      "android-smoke": "advisory",
+      "ios-smoke": "advisory"
+    }
+  # Words for a job's Notes column. Remove an entry when its job becomes real.
+  GATE_NOTES: >-
+    {
+      "boot-real-bytes": "not implemented yet: see the real-bytes PR"
+    }
+
+jobs:
+  # Turn the ref into a full SHA once. Every later checkout pins that SHA, so a
+  # branch that moves mid-run cannot make two jobs test two commits.
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - name: Refuse a call without a ref
+        if: inputs.called && !inputs.ref
+        run: |
+          echo "::error::mobile-e2e-gate.yml was called with an empty ref. Pass the commit to test."
+          exit 1
+
+      - name: Resolve the commit under test
+        id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_INPUT: ${{ inputs.ref }}
+          # The dispatching ref's head on a dispatch, main's head on the schedule.
+          DEFAULT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REF_INPUT" ]; then
+            sha="$DEFAULT_SHA"
+          else
+            # The commits API takes a branch, a tag or a SHA. Encoded, because a
+            # branch name has slashes in it.
+            encoded="$(jq -rn --arg ref "$REF_INPUT" '$ref | @uri')"
+            sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$encoded" --jq .sha)"
+          fi
+          if ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::Could not resolve \"$REF_INPUT\" to a commit (got \"$sha\")."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Testing commit \`$sha\` (ref input: \"${REF_INPUT:-none, the triggering ref}\")." >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # SLOT: Job A, "boot the real published bytes".
+  #
+  # Reserved for the real-bytes PR: launch the Release simulator .app and the
+  # release APK twice, and pass when the second launch runs the candidate's
+  # update id. This placeholder never runs (`if: false`), so the verdict reports
+  # it as "not run" with the note from GATE_NOTES. It is NOT a pass.
+  #
+  # To fill it in: replace the `if`, the runner and the step below with the real
+  # job (keep the id `boot-real-bytes`, keep `needs: resolve`, check out
+  # `needs.resolve.outputs.sha`), delete its GATE_NOTES entry, and set its
+  # GATE_JOBS mode to "blocking". Nothing else in this file needs to change: the
+  # verdict already needs it and already has a row for it.
+  # ---------------------------------------------------------------------------
+  boot-real-bytes:
+    needs: resolve
+    if: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Not implemented yet
+        run: echo "not implemented yet, see the real-bytes PR"
+
+  # The Expo-web Playwright smoke at the commit. e2e-tests.yml sets its own
+  # 45-minute timeout on the job; a `uses:` job cannot carry one here.
+  expo-web:
+    needs: resolve
+    uses: ./.github/workflows/e2e-tests.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+
+  # The navigation smoke on a KVM emulator: dev-client APK + Metro at the commit,
+  # against the recorded fixture backend. Emulator, APK and Maestro setup are the
+  # Play Store capture's, shared through the composite action.
+  android-smoke:
+    needs: resolve
+    runs-on: ubuntu-latest
+    # Measured on the store capture, which runs a longer flow on the same setup:
+    # 18 to 35 min. The bound adds the local APK build fallback (up to 19 min
+    # cold) and the one fresh-boot retry a launch crash is allowed.
+    timeout-minutes: 75
+    outputs:
+      failure_class: ${{ steps.result.outputs.failure_class }}
+      failure_label: ${{ steps.result.outputs.failure_label }}
+      native_crash_at_launch_count: ${{ steps.result.outputs.native_crash_at_launch_count }}
+    env:
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      # Same fetch as production, as in the capture workflows.
+      EXPO_PUBLIC_USE_RN_FETCH: '1'
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+    steps:
+      - name: Checkout the commit under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          # The APK freshness check diffs native inputs against the release's commit.
+          fetch-depth: 0
+
+      - name: Run the navigation smoke
+        uses: ./.github/actions/android-emulator-capture
+        with:
+          flow: smoke
+          fixtures: replay
+          # One orchestrator run. It retries itself once, from a reboot, and only
+          # when the app died natively at launch with no replay miss.
+          attempts: '1'
+
+      - name: Read the smoke result
+        id: result
+        if: always()
+        run: bash scripts/ci-mobile-smoke-outputs.sh
+
+      # Logcat per attempt, the app's pings, Metro's log, the replay backend's
+      # log and Maestro's view hierarchy.
+      - name: Upload smoke debug
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke-debug
+          path: android-capture-debug/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The same smoke on ONE iPhone simulator. This is the gate's only macOS job,
+  # and it must stay the only one: the org is capped at five concurrent macOS
+  # runners (docs/ci-runners.md).
+  ios-smoke:
+    needs: resolve
+    runs-on: macos-26
+    # Warm cache: about 20 min. A cache miss adds the ~30-min native build.
+    timeout-minutes: 90
+    outputs:
+      failure_class: ${{ steps.result.outputs.failure_class }}
+      failure_label: ${{ steps.result.outputs.failure_label }}
+      native_crash_at_launch_count: ${{ steps.result.outputs.native_crash_at_launch_count }}
+    env:
+      EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+      EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+      EXPO_PUBLIC_USE_RN_FETCH: '1'
+      SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: '300000'
+      # Where the orchestrator keeps a failed attempt's evidence. The shard
+      # action uploads this folder as its debug artifact.
+      SCREENSHOT_DEBUG_DIR: capture-debug
+    steps:
+      - name: Checkout the commit under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      # The SAME key recipe as ios-build in mobile-screenshots-ios.yml, so the
+      # two workflows share one cached Debug dev-client .app: it loads its JS
+      # from Metro, so only a native-input change makes a new one. The contract
+      # test compares the two lines.
+      #
+      # Caches are scoped by ref. A run can read entries saved on its own ref and
+      # on the default branch, nothing else. So:
+      #   - the nightly on main, and a call from a workflow running on main, read
+      #     main's entry. It is warm because this job saves it on main whenever it
+      #     misses: the first night after a native-input change pays the ~30-min
+      #     build once, and every night after that is a hit.
+      #   - a dispatch on a branch reads main's entry too, and only builds when
+      #     the branch itself changed a native input.
+      #   - the capture workflow's entries do not help here: its automatic runs
+      #     key on release/next's native inputs, which differ from main's exactly
+      #     when the train carries a native change.
+      - name: Compute app cache key
+        id: appkey
+        run: echo "key=${{ runner.os }}-${{ runner.arch }}-screenshot-sim-app-v1-${{ hashFiles('packages/mobile/app.config.ts', 'packages/mobile/react-native.config.js', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'packages/mobile/locales/**', 'packages/mobile/package.json', 'patches/**', 'package.json', 'pnpm-workspace.yaml', 'scripts/mobile-build-sim-app.ts', 'scripts/screenshot-sim.entitlements') }}" >> "$GITHUB_OUTPUT"
+
+      # lookup-only: the shard action below does the actual restore.
+      - name: Check for cached simulator app
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+          lookup-only: true
+
+      - name: Install Node.js dependencies
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp install --frozen-lockfile
+
+      - name: Build simulator dev-client app
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: vp run mobile:build-sim-app -- --app-out packages/mobile/.app-cache --clean
+
+      - name: Save simulator app to cache
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: packages/mobile/.app-cache
+          key: ${{ steps.appkey.outputs.key }}
+
+      - name: Run the navigation smoke
+        uses: ./.github/actions/ios-screenshot-shard
+        with:
+          locale: en-US
+          device-name: iPhone 16 Pro Max
+          device-slug: iphone-16-pro-max
+          flow: smoke
+          fixtures: replay
+          app-cache-key: ${{ steps.appkey.outputs.key }}
+          # One orchestrator run; see the Android job.
+          attempts: '1'
+          # No screenshots are taken, so there is nothing to upload.
+          upload-captures: 'false'
+          debug-artifact-on: always
+
+      - name: Read the smoke result
+        id: result
+        if: always()
+        run: bash scripts/ci-mobile-smoke-outputs.sh
+
+  # One line, one table, one output. `if: always()` so a failed or cancelled job
+  # is reported instead of skipping the report.
+  verdict:
+    needs: [resolve, boot-real-bytes, expo-web, android-smoke, ios-smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Job start and finish times, for the Duration column.
+      actions: read
+    outputs:
+      passed: ${{ steps.verdict.outputs.passed }}
+      any_red: ${{ steps.verdict.outputs.any_red }}
+      line: ${{ steps.verdict.outputs.line }}
+    steps:
+      - name: Checkout the commit under test
+        uses: actions/checkout@v4
+        with:
+          # The triggering commit when `resolve` itself failed; the verdict then
+          # fails below on the missing SHA.
+          ref: ${{ needs.resolve.outputs.sha || github.sha }}
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      - name: Install Node.js dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Read job timings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            --jq '.jobs[]' | jq -s '{jobs: .}' > "$RUNNER_TEMP/gate-run-jobs.json"
+
+      # Exits non-zero only when a BLOCKING job failed. See the rules at the top
+      # of scripts/mobile-e2e-gate-verdict.ts.
+      - name: Compute the verdict
+        id: verdict
+        env:
+          GATE_NEEDS: ${{ toJSON(needs) }}
+          GATE_SHA: ${{ needs.resolve.outputs.sha }}
+          GATE_RUN_JOBS_FILE: ${{ runner.temp }}/gate-run-jobs.json
+        run: vp run mobile:e2e-gate-verdict
+
+  # Nobody watches a scheduled run, so a red nightly says so in the deploy
+  # channel. A dispatch has a person behind it and a call reports to its caller,
+  # so neither posts.
+  #
+  # Its own job because of where the webhook lives: DISCORD_DEPLOY_WEBHOOK is an
+  # ENVIRONMENT secret (Production and Native Release), not a repository secret,
+  # so a job without `environment:` reads it as empty. Production's branch policy
+  # admits main and release/next, and the schedule only ever runs on main. The
+  # environment is on this one job so no test job ever holds its other secrets,
+  # and so a future required reviewer on Production can only park the post,
+  # never the gate.
+  notify:
+    needs: [resolve, verdict]
+    if: ${{ always() && github.event_name == 'schedule' && !inputs.called && (needs.verdict.result != 'success' || needs.verdict.outputs.any_red == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+    steps:
+      - name: Tell Discord the nightly gate is red
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          VERDICT_LINE: ${{ needs.verdict.outputs.line }}
+          VERDICT_RESULT: ${{ needs.verdict.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The nightly mobile E2E gate is red but DISCORD_DEPLOY_WEBHOOK is not readable here."
+            exit 0
+          fi
+          summary="${VERDICT_LINE:-the verdict job itself ended in $VERDICT_RESULT}"
+          jq -n --arg content "The nightly mobile E2E gate is red on main. ${summary} <${RUN_URL}>" \
+            '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"

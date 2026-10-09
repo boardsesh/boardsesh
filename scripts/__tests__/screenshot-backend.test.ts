@@ -1061,6 +1061,66 @@ describe('screenshot backend', () => {
         await client.close();
       });
 
+      const privacyRequest = { query: 'subscription PrivacyChanged { privacyChanged }', variables: {} };
+
+      it.each([undefined, null, {}])(
+        'keeps an unrecorded exact privacy-change notification stream open with empty variables %j',
+        async (variables) => {
+          const requestsBefore = upstream.graphqlRequests.length;
+          const client = await openGraphqlSocket();
+          expect(
+            await client.exchange({ id: 'privacy', type: 'subscribe', payload: { ...privacyRequest, variables } }),
+          ).toEqual([]);
+          expect(client.socket.readyState).toBe(WebSocket.OPEN);
+          expect(backend?.stats()).toMatchObject({ hits: 0, misses: 0 });
+          expect(upstream.graphqlRequests).toHaveLength(requestsBefore);
+          await client.close();
+        },
+      );
+
+      it.each([
+        { ...privacyRequest, query: 'query PrivacyChanged { privacyChanged }' },
+        { ...privacyRequest, query: 'subscription PrivacyChanged { changed: privacyChanged }' },
+        { ...privacyRequest, query: 'subscription PrivacyChanged { privacyChanged otherField }' },
+        { ...privacyRequest, variables: { changed: true } },
+        { ...queueRequest, operationName: 'PrivacyChanged' },
+      ])('rejects an unrecorded privacy stream with a changed contract: %j', async (payload) => {
+        const client = await openGraphqlSocket();
+        expect((await client.exchange({ id: 'privacy-drift', type: 'subscribe', payload }))[0]).toMatchObject({
+          type: 'next',
+          payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
+        });
+        expect(backend?.stats().misses).toBe(1);
+        await client.close();
+      });
+
+      it('replays recorded privacy events and refuses document or variable drift', async () => {
+        const response = { data: { privacyChanged: true } };
+        await stop();
+        await start({ mode: 'record' });
+        upstream.nextGraphqlResponse = { status: 200, body: response };
+        await postGraphql(privacyRequest);
+        await stop();
+        await start({ mode: 'replay' });
+        const client = await openGraphqlSocket();
+        expect(await client.exchange({ id: 'privacy-recorded', type: 'subscribe', payload: privacyRequest })).toEqual([
+          { id: 'privacy-recorded', type: 'next', payload: response },
+        ]);
+        for (const [index, payload] of [
+          { ...privacyRequest, query: 'subscription PrivacyChanged { changed: privacyChanged }' },
+          { ...privacyRequest, variables: { changed: true } },
+        ].entries()) {
+          expect(
+            (await client.exchange({ id: `privacy-drift-${index}`, type: 'subscribe', payload }))[0],
+          ).toMatchObject({
+            type: 'next',
+            payload: { errors: [{ extensions: { code: 'SCREENSHOT_FIXTURE_MISS' } }] },
+          });
+        }
+        expect(backend?.stats()).toMatchObject({ hits: 1, misses: 2 });
+        await client.close();
+      });
+
       it('validates recorded passive subscriptions instead of silently accepting changed variables', async () => {
         const request = {
           operationName: 'ClimbStatsUpdated',

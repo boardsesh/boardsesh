@@ -146,6 +146,7 @@ import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/li
 import { track } from '../../../src/lib/analytics';
 import { spacing } from '../../../src/theme/tokens';
 import { timing } from '../../../src/theme/animations';
+import { ScreenshotSmokeMarker } from '../../../src/components/ScreenshotSmokeMarker';
 
 const PAGE_SIZE = 30;
 // Soft character budget for the glass filter-summary title: include whole filter
@@ -1937,6 +1938,9 @@ function ClimbListInner() {
 
   return (
     <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
+      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+        <ScreenshotSmokeMarker route="/climbs" count={visibleClimbs.length} />
+      ) : null}
       <Stack.Screen options={stackOptions} />
       <View
         // `scrollIndicatorInsets` (used below to keep the scrollbar clear of the

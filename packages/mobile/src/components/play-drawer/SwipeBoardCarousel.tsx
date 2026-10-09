@@ -19,6 +19,8 @@ import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layou
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 import { useShowcaseAnchor } from '../../lib/showcase-anchor';
+import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
+import { countLitHolds } from '../../lib/screenshot-smoke';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -261,6 +263,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     );
   }, []);
 
+  const smokeLitHoldCount = useMemo(
+    () => (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? countLitHolds(currentFrames) : 0),
+    [currentFrames],
+  );
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
   // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
@@ -293,7 +299,19 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
           // board-presence sheet (no carousel) already captures reliably, confirming
           // the carousel layer is the culprit. overlayTestID anchors on the painted
           // holds overlay.
-          <View style={[styles.boardWrapper, boardBox]} {...boardSurfaceAnchor} {...boardAccessibility}>
+          <View
+            style={[styles.boardWrapper, boardBox]}
+            {...boardSurfaceAnchor}
+            {...boardAccessibility}
+            // Android groups an accessible board and hides its nested test IDs.
+            // In captures, expose the actual onLoad-gated overlay anchor instead.
+            accessible={false}
+            importantForAccessibility="no"
+          >
+            {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
+            {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
+              <ScreenshotSmokeMarker route="play-drawer" count={smokeLitHoldCount} />
+            ) : null}
             <BoardImageNative
               accessible={false}
               frames={currentFrameOverride ?? currentFrames}

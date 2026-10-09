@@ -11,6 +11,9 @@ import {
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildStatisticsSummary } from '@boardsesh/profile-stats';
+import { reportScreenshotSmokeContent } from '../../../lib/screenshot-smoke';
+
+vi.mock('../../../lib/screenshot-smoke', () => ({ reportScreenshotSmokeContent: vi.fn() }));
 
 const scrollToOffset = vi.hoisted(() => vi.fn());
 const ThemeVariantContext = createContext<'liquidGlass' | 'material'>('liquidGlass');
@@ -316,5 +319,26 @@ describe('all-board profile overview', () => {
     expect(getByText('MoonBoard Masters 2017')).toBeTruthy();
     expect(getByText('7B')).toBeTruthy();
     expect(getByText('7B').getAttribute('data-color')).toBe('#fff');
+  });
+});
+
+describe('profile smoke content', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.mocked(reportScreenshotSmokeContent).mockClear();
+  });
+
+  it('does not claim real content from an empty profile layout', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    const summary = buildStatisticsSummary({ totalDistinctClimbs: 0, layoutStats: [] });
+    render(<ProgressTab data={makeData({ statisticsSummary: summary })} topInset={0} />);
+    expect(reportScreenshotSmokeContent).toHaveBeenCalledWith('/profile', 0);
+  });
+
+  it('reports actual ascent content after a populated profile mounts', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    const profileData = makeData();
+    render(<ProgressTab data={profileData} topInset={0} />);
+    expect(reportScreenshotSmokeContent).toHaveBeenCalledWith('/profile', profileData.statisticsSummary.totalAscents);
   });
 });
