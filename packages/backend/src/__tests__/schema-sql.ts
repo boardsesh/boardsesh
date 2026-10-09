@@ -4,6 +4,9 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { socialEntityTypeEnum } from '@boardsesh/db/schema';
+
+const socialEntityTypeLabels = socialEntityTypeEnum.enumValues.map((entityType) => `'${entityType}'`).join(', ');
 
 // Install the real wall deletion triggers so resolver tests exercise offline
 // tombstones as well as the row's deleted_at flag. Install at the schema tail
@@ -1105,12 +1108,15 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "unique_integration_export" ON "integration_exports" ("provider","user_id","session_type","session_id");
 
-  -- Social tables the session-grouped feed LEFT-joins for vote/comment counts.
-  -- entity_type is a text column here (the real schema uses an enum); the feed
-  -- only does string-equality filters on it, so text is behavior-equivalent.
+  -- Match production: enum/text comparisons and recursive UNIONs have different
+  -- PostgreSQL typing rules, so plain text here hides real query failures.
+  DO $$ BEGIN
+    CREATE TYPE social_entity_type AS ENUM (${socialEntityTypeLabels});
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
   DROP TABLE IF EXISTS "vote_counts" CASCADE;
   CREATE TABLE IF NOT EXISTS "vote_counts" (
-    "entity_type" text NOT NULL,
+    "entity_type" social_entity_type NOT NULL,
     "entity_id" text NOT NULL,
     "upvotes" integer DEFAULT 0 NOT NULL,
     "downvotes" integer DEFAULT 0 NOT NULL,
@@ -1125,7 +1131,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "id" bigserial PRIMARY KEY NOT NULL,
     "uuid" text NOT NULL UNIQUE,
     "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-    "entity_type" text NOT NULL,
+    "entity_type" social_entity_type NOT NULL,
     "entity_id" text NOT NULL,
     "parent_comment_id" bigint,
     "body" text NOT NULL,
@@ -1135,13 +1141,12 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   );
   CREATE INDEX IF NOT EXISTS "comments_entity_created_at_idx" ON "comments" ("entity_type", "entity_id", "created_at");
 
-  -- Votes on a comment/tick/climb/etc. entity_type is text here (see the
-  -- comments-table note above — the real schema uses an enum).
+  -- Votes on a comment/tick/climb/etc.
   DROP TABLE IF EXISTS "votes" CASCADE;
   CREATE TABLE IF NOT EXISTS "votes" (
     "id" bigserial PRIMARY KEY NOT NULL,
     "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-    "entity_type" text NOT NULL,
+    "entity_type" social_entity_type NOT NULL,
     "entity_id" text NOT NULL,
     "value" integer NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL
@@ -1150,14 +1155,14 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "votes_entity_idx" ON "votes" ("entity_type", "entity_id");
 
   -- Per-user activity feed rows (ascent/new_climb/comment/etc.), fanned out on
-  -- write. entity_type/type are text here (see the comments-table note above).
+  -- write. Keep the entity enum; the unrelated activity type stays text here.
   DROP TABLE IF EXISTS "feed_items" CASCADE;
   CREATE TABLE IF NOT EXISTS "feed_items" (
     "id" bigserial PRIMARY KEY NOT NULL,
     "recipient_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "actor_id" text REFERENCES "users"("id") ON DELETE SET NULL,
     "type" text NOT NULL,
-    "entity_type" text NOT NULL,
+    "entity_type" social_entity_type NOT NULL,
     "entity_id" text NOT NULL,
     "board_uuid" text,
     "metadata" jsonb,
@@ -1166,8 +1171,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "feed_items_recipient_created_at_idx" ON "feed_items" ("recipient_id", "created_at" DESC, "id" DESC);
   CREATE INDEX IF NOT EXISTS "feed_items_entity_type_entity_id_idx" ON "feed_items" ("entity_type", "entity_id");
 
-  -- User notifications (comment replies, votes, follows, etc.). type/entity_type
-  -- are text here (see the comments-table note above).
+  -- User notifications retain the production entity enum. Notification type
+  -- remains text in this fixture.
   DROP TABLE IF EXISTS "notifications" CASCADE;
   CREATE TABLE IF NOT EXISTS "notifications" (
     "id" bigserial PRIMARY KEY NOT NULL,
@@ -1175,7 +1180,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "recipient_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "actor_id" text REFERENCES "users"("id") ON DELETE SET NULL,
     "type" text NOT NULL,
-    "entity_type" text,
+    "entity_type" social_entity_type,
     "entity_id" text,
     "comment_id" bigint REFERENCES "comments"("id") ON DELETE SET NULL,
     "read_at" timestamp,

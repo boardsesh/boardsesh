@@ -111,11 +111,6 @@ export function emptyMergeMovedRows(): MergeMovedRows {
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
 
-// The social tables' entity_type is a `social_entity_type` enum in prod but a
-// plain text column in the backend test schema. A bare untyped `'gym'` literal
-// coerces to the enum in prod AND string-compares against the text column in
-// tests — an explicit `::social_entity_type` cast would 500 against the test DB.
-
 type CountRow = {
   count: number | string | null;
 };

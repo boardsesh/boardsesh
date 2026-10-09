@@ -153,7 +153,7 @@ export function socialEntityPrivacyCondition(
     WITH RECURSIVE privacy_entity_chain AS (
       SELECT ${entityType}::text AS entity_type, ${entityId}::text AS entity_id, 0 AS depth
       UNION ALL
-      SELECT privacy_entity_reference.entity_type, privacy_entity_reference.entity_id, privacy_entity_chain.depth + 1
+      SELECT privacy_entity_reference.entity_type::text, privacy_entity_reference.entity_id, privacy_entity_chain.depth + 1
       FROM privacy_entity_chain
       JOIN comments privacy_entity_reference ON privacy_entity_reference.uuid = privacy_entity_chain.entity_id
       WHERE privacy_entity_chain.entity_type = 'comment' AND privacy_entity_chain.depth < 2
