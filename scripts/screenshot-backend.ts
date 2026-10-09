@@ -37,6 +37,7 @@ const DEFAULT_PORT = SCREENSHOT_BACKEND_DEFAULT_PORT;
 type CliOptions = {
   mode: ScreenshotBackendMode;
   port: number;
+  host: '127.0.0.1' | '0.0.0.0';
   fixturesDir: string;
   upstream: string;
   frozenNow: string | null;
@@ -54,6 +55,7 @@ const USAGE = [
   '',
   '  --mode <replay|record>  required',
   `  --port <n>              default BOARDSESH_SCREENSHOT_BACKEND_PORT or ${DEFAULT_PORT}`,
+  '  --host <address>        127.0.0.1 for USB/local captures; default 0.0.0.0',
   `  --fixtures <dir>        default ${DEFAULT_FIXTURES_DIR} (relative to the repo root)`,
   `  --upstream <url>        record only, default ${DEFAULT_UPSTREAM}`,
   '  --frozen-now <iso>      record: the start floor, defaults to now (the persisted manifest value',
@@ -79,6 +81,7 @@ function nextArgument(argv: string[], index: number, flag: string): string {
 export function parseCliArguments(argv: string[]): CliOptions {
   let mode: ScreenshotBackendMode | null = null;
   let port: number | null = null;
+  let host: '127.0.0.1' | '0.0.0.0' = '0.0.0.0';
   let fixtures: string | null = null;
   let upstream: string | null = null;
   let frozenNow: string | null = null;
@@ -107,6 +110,13 @@ export function parseCliArguments(argv: string[]): CliOptions {
         port = Number(nextArgument(argv, index, flag));
         index += 1;
         break;
+      case '--host': {
+        const address = nextArgument(argv, index, flag);
+        if (address !== '127.0.0.1' && address !== '0.0.0.0') fail('--host must be 127.0.0.1 or 0.0.0.0');
+        host = address;
+        index += 1;
+        break;
+      }
       case '--fixtures':
         fixtures = nextArgument(argv, index, flag);
         index += 1;
@@ -154,6 +164,7 @@ export function parseCliArguments(argv: string[]): CliOptions {
   return {
     mode,
     port: resolvedPort,
+    host,
     fixturesDir: isAbsolute(fixturesArgument) ? fixturesArgument : resolve(REPO_ROOT, fixturesArgument),
     upstream: upstream ?? DEFAULT_UPSTREAM,
     frozenNow,
@@ -207,7 +218,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await backend.listen(options.port);
+    await backend.listen(options.port, options.host);
   } catch (listenError) {
     const code = (listenError as { code?: string }).code;
     if (code === 'EADDRINUSE') {

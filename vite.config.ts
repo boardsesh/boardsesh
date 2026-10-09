@@ -1153,6 +1153,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-profile-ios.ts',
         cache: false,
       },
+      'mobile:profile': {
+        command: 'tsx scripts/mobile-profile.ts',
+        cache: false,
+      },
       'mobile:screenshot': {
         command: 'bash scripts/mobile-screenshot.sh',
         cache: false,

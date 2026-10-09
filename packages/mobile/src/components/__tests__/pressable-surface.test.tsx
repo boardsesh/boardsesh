@@ -1,15 +1,28 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, useState, type ReactNode, type Ref } from 'react';
 
 // Controls the rendering branch under test.
 const animatedStyles = vi.hoisted(() => new WeakSet<object>());
-const ctrl = vi.hoisted(() => ({ os: 'ios' as string, reduceMotion: false, pressed: { value: 0 }, spring: vi.fn() }));
+const ctrl = vi.hoisted(() => ({
+  os: 'ios' as string,
+  reduceMotion: false,
+  pressed: { value: 0 },
+  spring: vi.fn(),
+  sharedValue: vi.fn(),
+  animatedStyle: vi.fn(),
+  motionSubscription: vi.fn(),
+}));
 
 // Minimal RN surface: Pressable becomes a <button> that exposes whether it
 // received an android_ripple config and forwards onPress as onClick.
-vi.mock('../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => ctrl.reduceMotion }));
+vi.mock('../../hooks/use-reduce-motion', () => ({
+  useReduceMotion: () => {
+    ctrl.motionSubscription();
+    return ctrl.reduceMotion;
+  },
+}));
 vi.mock('react-native', () => ({
   StyleSheet: { flatten: (style: unknown) => Object.assign({}, ...[style].flat(10).filter(Boolean)) },
   Platform: {
@@ -26,8 +39,12 @@ vi.mock('react-native', () => ({
     onPressOut,
     disabled,
     style,
+    ref,
+    accessibilityState,
+    accessibilityLabel,
+    hitSlop,
   }: {
-    children?: ReactNode;
+    children?: ReactNode | ((state: { pressed: boolean }) => ReactNode);
     onPress?: () => void;
     android_ripple?: { color: string } | null;
     accessibilityRole?: string;
@@ -35,37 +52,62 @@ vi.mock('react-native', () => ({
     onPressOut?: () => void;
     disabled?: boolean;
     style?: unknown;
-  }) =>
-    createElement(
+    ref?: Ref<HTMLButtonElement>;
+    accessibilityState?: object;
+    accessibilityLabel?: string;
+    hitSlop?: unknown;
+  }) => {
+    const [pressed, setPressed] = useState(false);
+    const resolvedStyle = typeof style === 'function' ? style({ pressed }) : style;
+    return createElement(
       'button',
       {
+        ref,
         onClick: disabled ? undefined : onPress,
-        onMouseDown: onPressIn,
-        onMouseUp: onPressOut,
+        onMouseDown: disabled
+          ? undefined
+          : () => {
+              setPressed(true);
+              onPressIn?.();
+            },
+        onMouseUp: () => {
+          setPressed(false);
+          onPressOut?.();
+        },
         disabled,
+        'data-state': JSON.stringify(accessibilityState),
+        'data-label': accessibilityLabel,
+        'data-hit-slop': JSON.stringify(hitSlop),
         'data-style': JSON.stringify(
           Object.assign(
             {},
-            ...[style].flat(10).filter(Boolean),
-            ...[style].flat(10).filter((entry) => entry && typeof entry === 'object' && animatedStyles.has(entry)),
+            ...[resolvedStyle].flat(10).filter(Boolean),
+            ...[resolvedStyle]
+              .flat(10)
+              .filter((entry) => entry && typeof entry === 'object' && animatedStyles.has(entry)),
           ),
         ),
         'data-has-ripple': android_ripple ? 'true' : 'false',
         'data-ripple-color': android_ripple?.color,
         'data-role': accessibilityRole,
       },
-      children,
-    ),
+      typeof children === 'function' ? children({ pressed }) : children,
+    );
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
   default: { createAnimatedComponent: (component: unknown) => component },
   useAnimatedStyle: (callback: () => object) => {
+    ctrl.animatedStyle();
     const result = callback();
     animatedStyles.add(result);
     return result;
   },
-  useSharedValue: () => ctrl.pressed,
+  useSharedValue: () => {
+    ctrl.sharedValue();
+    return ctrl.pressed;
+  },
   withSpring: (value: number) => {
     ctrl.spring(value);
     return value;
@@ -86,16 +128,55 @@ vi.mock('../../theme/animations', () => ({
   springs: { snappy: {} },
 }));
 
-import { PressableSurface } from '../PressableSurface';
+import { PressableSurface, StaticPressableSurface } from '../PressableSurface';
 
 beforeEach(() => {
   ctrl.os = 'ios';
   ctrl.reduceMotion = false;
   ctrl.pressed.value = 0;
-  ctrl.spring.mockClear();
+  vi.clearAllMocks();
 });
 
 describe('PressableSurface', () => {
+  it('keeps the iOS press target and ref through live feedback-mode changes', () => {
+    const ref = { current: null };
+    const onPress = vi.fn();
+    const onPressIn = vi.fn();
+    const onPressOut = vi.fn();
+    const screen = render(
+      <PressableSurface ref={ref} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+        Touch
+      </PressableSurface>,
+    );
+    const target = screen.getByRole('button');
+    fireEvent.mouseDown(target);
+    for (const feedback of ['none', 'opacity', 'scale'] as const) {
+      screen.rerender(
+        <PressableSurface ref={ref} feedback={feedback} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+          Touch
+        </PressableSurface>,
+      );
+      expect(screen.getByRole('button')).toBe(target);
+      expect(ref.current).toBe(target);
+    }
+    fireEvent.mouseUp(target);
+    fireEvent.click(target);
+    expect(onPressIn).toHaveBeenCalledTimes(1);
+    expect(onPressOut).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('allocates no animation or motion subscription for the Android native path', () => {
+    ctrl.os = 'android';
+    const screen = render(<PressableSurface>Native</PressableSurface>);
+    fireEvent.mouseDown(screen.getByRole('button'));
+    fireEvent.mouseUp(screen.getByRole('button'));
+    screen.rerender(<PressableSurface feedback="none">Native</PressableSurface>);
+    expect(ctrl.sharedValue).not.toHaveBeenCalled();
+    expect(ctrl.animatedStyle).not.toHaveBeenCalled();
+    expect(ctrl.motionSubscription).not.toHaveBeenCalled();
+    expect(ctrl.spring).not.toHaveBeenCalled();
+  });
   it('keeps caller rotation while applying feedback scale', () => {
     ctrl.pressed.value = 1;
     const { getByRole } = render(<PressableSurface style={{ transform: [{ rotate: '90deg' }] }}>x</PressableSurface>);
@@ -164,6 +245,67 @@ describe('PressableSurface', () => {
     const { getByRole } = render(<PressableSurface onPress={onPress}>x</PressableSurface>);
     fireEvent.click(getByRole('button'));
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('StaticPressableSurface', () => {
+  it('keeps native callback styles, child callbacks, refs and press events without animations', () => {
+    const ref = { current: null };
+    const onPress = vi.fn();
+    const onPressIn = vi.fn();
+    const onPressOut = vi.fn();
+    const screen = render(
+      <StaticPressableSurface
+        ref={ref}
+        onPress={onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        hitSlop={8}
+        accessibilityLabel="Add to queue"
+        accessibilityState={{ selected: true }}
+        style={({ pressed }) => ({ opacity: pressed ? 0.4 : 0.8, transform: [{ rotate: '10deg' }] })}
+      >
+        {({ pressed }) => (pressed ? 'Pressed' : 'Resting')}
+      </StaticPressableSurface>,
+    );
+    const target = screen.getByRole('button');
+    expect(ref.current).toBe(target);
+    expect(target.getAttribute('data-label')).toBe('Add to queue');
+    expect(target.getAttribute('data-hit-slop')).toBe('8');
+    expect(JSON.parse(target.getAttribute('data-state') ?? '{}')).toEqual({ selected: true });
+    fireEvent.mouseDown(target);
+    expect(target.textContent).toBe('Pressed');
+    expect(JSON.parse(target.getAttribute('data-style') ?? '{}')).toEqual({
+      opacity: 0.4,
+      transform: [{ rotate: '10deg' }],
+    });
+    fireEvent.mouseUp(target);
+    fireEvent.click(target);
+    expect(target.textContent).toBe('Resting');
+    expect(onPressIn).toHaveBeenCalledTimes(1);
+    expect(onPressOut).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(ctrl.sharedValue).not.toHaveBeenCalled();
+    expect(ctrl.animatedStyle).not.toHaveBeenCalled();
+    expect(ctrl.motionSubscription).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ios', 0.4],
+    ['android', 0.38],
+  ])('preserves %s disabled dimming with callback styles', (platform, expectedOpacity) => {
+    ctrl.os = platform;
+    const onPress = vi.fn();
+    const screen = render(
+      <StaticPressableSurface disabled onPress={onPress} style={() => ({ opacity: 0.8 })}>
+        Disabled
+      </StaticPressableSurface>,
+    );
+    const target = screen.getByRole('button');
+    expect(JSON.parse(target.getAttribute('data-style') ?? '{}').opacity).toBe(expectedOpacity);
+    fireEvent.click(target);
+    expect(onPress).not.toHaveBeenCalled();
+    expect(JSON.parse(target.getAttribute('data-state') ?? '{}').disabled).toBe(true);
   });
 });
 

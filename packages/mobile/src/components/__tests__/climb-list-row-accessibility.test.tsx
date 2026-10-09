@@ -1,17 +1,35 @@
 // @vitest-environment jsdom
-vi.mock('../PressableSurface', () => ({
-  PressableSurface: ({
-    children,
-    onPress,
-    disabled,
-  }: {
-    children?: ReactNode;
-    onPress?: () => void;
-    disabled?: boolean;
-  }) => createElement('button', { disabled, onClick: disabled ? undefined : onPress }, children),
-}));
+vi.mock('../PressableSurface', () => {
+  const surface =
+    (feedback: string) =>
+    ({
+      children,
+      onPress,
+      disabled,
+      accessibilityLabel,
+      style,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      disabled?: boolean;
+      accessibilityLabel?: string;
+      style?: unknown;
+    }) =>
+      createElement(
+        'button',
+        {
+          disabled,
+          onClick: disabled ? undefined : onPress,
+          'aria-label': accessibilityLabel,
+          'data-feedback': feedback,
+          'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        },
+        children,
+      );
+  return { PressableSurface: surface('animated'), StaticPressableSurface: surface('static') };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
@@ -41,6 +59,7 @@ const a11y = vi.hoisted(() => ({
 // and re-import the component — the `activate` action list is decided at
 // module-evaluation time.
 const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+const panels = vi.hoisted(() => ({ enabled: false, props: null as Record<string, unknown> | null, language: '' }));
 
 vi.mock('react-native', () => {
   const capture = (props: AccessibilityCapture): AccessibilityCapture => ({
@@ -104,11 +123,22 @@ vi.mock('react-native-gesture-handler', () => {
 });
 
 vi.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({
-  default: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  default: (props: { children?: ReactNode } & Record<string, unknown>) => {
+    panels.props = props;
+    const renderAction = (callback: unknown) =>
+      typeof callback === 'function' ? callback({ value: 0 }, { value: 0 }) : null;
+    return createElement(
+      'div',
+      null,
+      props.children,
+      panels.enabled ? renderAction(props.renderLeftActions) : null,
+      panels.enabled ? renderAction(props.renderRightActions) : null,
+    );
+  },
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string) => `${key}${panels.language}` }),
 }));
 
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
@@ -127,11 +157,8 @@ vi.mock('../../providers/theme-provider', () => ({
   }),
 }));
 
-vi.mock('../use-swipe-arm', () => ({
-  useSwipeArm: () => ({ armedRef: { current: false }, arm: vi.fn(), disarm: vi.fn() }),
-}));
-
 vi.mock('../Icon', () => ({ Icon: () => createElement('span', { 'data-icon': 'true' }) }));
+vi.mock('../Text', () => ({ Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children) }));
 
 vi.mock('../ClimbListItemContent', () => ({
   ClimbListItemContent: ({ climb }: { climb?: { name?: string } }) =>
@@ -159,10 +186,61 @@ const boardProps = {
   angle: 40,
 };
 
+describe('ClimbListRow swipe feedback lifetime', () => {
+  beforeEach(() => {
+    panels.enabled = true;
+    panels.language = '';
+    platform.OS = 'ios';
+  });
+
+  it('keeps identical labelled panels through first drag, close and recycling', () => {
+    const onAddToQueue = vi.fn();
+    const onOpenPlaylist = vi.fn();
+    const props = { ...boardProps, onAddToQueue, onOpenPlaylist };
+    const screen = render(<ClimbListRow climb={climb} {...props} />);
+    const readPanels = () =>
+      ['mobile.climbRow.addToQueue', 'actions.playlist.popover.title'].map((label) => {
+        const button = screen.getByRole('button', { name: label });
+        return { label, style: button.getAttribute('data-style'), feedback: button.getAttribute('data-feedback') };
+      });
+    const idlePanels = readPanels();
+    expect(idlePanels.map((panel) => panel.feedback)).toEqual(['static', 'static']);
+    act(() => (panels.props?.onSwipeableOpenStartDrag as () => void)());
+    expect(readPanels()).toEqual(idlePanels.map((panel) => ({ ...panel, feedback: 'animated' })));
+    expect(onAddToQueue).not.toHaveBeenCalled();
+    expect(onOpenPlaylist).not.toHaveBeenCalled();
+    act(() => (panels.props?.onSwipeableClose as () => void)());
+    expect(readPanels()).toEqual(idlePanels);
+    act(() => (panels.props?.onSwipeableOpenStartDrag as () => void)());
+    screen.rerender(<ClimbListRow climb={{ ...climb, uuid: 'climb-2' }} {...props} />);
+    expect(readPanels()).toEqual(idlePanels);
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.climbRow.addToQueue' }));
+    expect(onAddToQueue).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-2' }));
+  });
+
+  it('keeps render callbacks for unchanged labels and refreshes translated panels', () => {
+    const props = { ...boardProps, onAddToQueue: vi.fn(), onOpenPlaylist: vi.fn() };
+    const screen = render(<ClimbListRow climb={climb} {...props} />);
+    const left = panels.props?.renderLeftActions;
+    const right = panels.props?.renderRightActions;
+    screen.rerender(<ClimbListRow climb={{ ...climb }} {...props} />);
+    expect(panels.props?.renderLeftActions).toBe(left);
+    expect(panels.props?.renderRightActions).toBe(right);
+    panels.language = ':es';
+    screen.rerender(<ClimbListRow climb={{ ...climb }} {...props} />);
+    expect(panels.props?.renderLeftActions).not.toBe(left);
+    expect(panels.props?.renderRightActions).not.toBe(right);
+    expect(screen.getByRole('button', { name: 'mobile.climbRow.addToQueue:es' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'actions.playlist.popover.title:es' })).toBeTruthy();
+  });
+});
+
 describe('ClimbListRow screen-reader activation', () => {
   beforeEach(() => {
     a11y.row = null;
     a11y.moreButton = null;
+    panels.enabled = false;
+    panels.language = '';
     vi.clearAllMocks();
   });
 

@@ -1,4 +1,4 @@
-import { PressableSurface } from './PressableSurface';
+import { PressableSurface, StaticPressableSurface } from './PressableSurface';
 import type { WindowAnchorPoint } from './navigation/AnchoredPopover.types';
 import { Text } from './Text';
 import { useFullSwipe } from './use-full-swipe';
@@ -125,8 +125,9 @@ function QueueSwipeAction({
   onPress: () => void;
   label: string;
 }) {
+  const ActionSurface = active ? PressableSurface : StaticPressableSurface;
   return (
-    <PressableSurface
+    <ActionSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -144,7 +145,7 @@ function QueueSwipeAction({
       <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
         {label}
       </Text>
-    </PressableSurface>
+    </ActionSurface>
   );
 }
 
@@ -191,8 +192,9 @@ function PlaylistSwipeAction({
   onPress: () => void;
   label: string;
 }) {
+  const ActionSurface = active ? PressableSurface : StaticPressableSurface;
   return (
-    <PressableSurface
+    <ActionSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -206,7 +208,7 @@ function PlaylistSwipeAction({
       <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
         {label}
       </Text>
-    </PressableSurface>
+    </ActionSurface>
   );
 }
 
@@ -382,6 +384,8 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const moreActionsLabel = t('mobile.climbRow.moreActions');
+  const queueActionLabel = t('mobile.climbRow.addToQueue');
+  const playlistActionLabel = t('actions.playlist.popover.title');
   const rowAccessibilityActions = useMemo(
     () =>
       canOpenActions
@@ -525,10 +529,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
         translation={translation}
         active={dragArmedRef.current}
         onPress={pressLeadingAction}
-        label={t('mobile.climbRow.addToQueue')}
+        label={queueActionLabel}
       />
     ),
-    [dragArmedRef, pressLeadingAction, t],
+    [dragArmedRef, pressLeadingAction, queueActionLabel],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
@@ -536,10 +540,10 @@ const ClimbListRow = React.memo(function ClimbListRow({
         translation={translation}
         active={dragArmedRef.current}
         onPress={pressTrailingAction}
-        label={t('actions.playlist.popover.title')}
+        label={playlistActionLabel}
       />
     ),
-    [dragArmedRef, pressTrailingAction, t],
+    [dragArmedRef, pressTrailingAction, playlistActionLabel],
   );
 
   const rowContent = renderContent ? (

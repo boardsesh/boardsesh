@@ -80,6 +80,12 @@ describe('parseCliArguments', () => {
     expect(captureFailure([])).toContain('--mode is required');
   });
 
+  it('supports a loopback-only bind and rejects ambiguous hosts', () => {
+    expect(parseCliArguments(['--mode', 'replay', '--host', '127.0.0.1']).host).toBe('127.0.0.1');
+    expect(parseCliArguments(['--mode', 'replay']).host).toBe('0.0.0.0');
+    expect(captureFailure(['--mode', 'replay', '--host', 'example.test'])).toContain('--host must be');
+  });
+
   it('validates --mode is replay or record', () => {
     expect(captureFailure(['--mode', 'bogus'])).toContain('--mode must be replay or record');
   });

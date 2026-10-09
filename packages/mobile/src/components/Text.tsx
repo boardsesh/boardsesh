@@ -42,7 +42,11 @@ export function Text({ variant = 'body', color, numeric = false, style, ...props
   // scale when no provider is mounted.
   const typeStyle = theme?.textStyles[variant] ?? variantStyles[variant];
 
-  const resolvedWeight = StyleSheet.flatten([typeStyle, style])?.fontWeight;
+  // Ordinary text can pass style arrays through to RN unchanged. Resolve the
+  // caller's final weight only when the accessibility override needs it.
+  const boldStyle = boldText
+    ? { fontWeight: boldTextWeight(StyleSheet.flatten([typeStyle, style])?.fontWeight) }
+    : undefined;
 
   return (
     <RNText
@@ -53,7 +57,7 @@ export function Text({ variant = 'body', color, numeric = false, style, ...props
         numeric ? tabularStyle : undefined,
         resolvedColor != null ? { color: resolvedColor } : undefined,
         style,
-        boldText ? { fontWeight: boldTextWeight(resolvedWeight) } : undefined,
+        boldStyle,
       ]}
       {...props}
     />

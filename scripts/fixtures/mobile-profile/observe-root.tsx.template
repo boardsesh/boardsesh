@@ -1,0 +1,17 @@
+import type { ComponentType, ReactNode } from 'react';
+
+// The SDK's default AppMetricsRoot is a Fragment and ObserveProvider adds only
+// React context. Preserve their hostless geometry while excluding collection.
+export function ObserveRoot({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
+ObserveRoot.wrap = function wrap<P extends Record<string, unknown>>(Component: ComponentType<P>): ComponentType<P> {
+  const Wrapped = (props: P) => (
+    <ObserveRoot>
+      <Component {...props} />
+    </ObserveRoot>
+  );
+  Wrapped.displayName = `ObserveRoot(${Component.displayName || Component.name || 'Component'})`;
+  return Wrapped;
+};

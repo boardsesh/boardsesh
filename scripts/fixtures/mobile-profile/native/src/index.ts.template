@@ -1,0 +1,26 @@
+import { requireNativeModule } from 'expo-modules-core';
+
+export interface NativeCpuSnapshot {
+  cpuMs: number;
+  monotonicMs: number;
+  pid: number;
+}
+
+export interface NativeProfileIdentity {
+  appId: string;
+  configuration: string;
+  platform: string;
+  physical: boolean;
+  pid: number;
+  model: string;
+  osVersion: string;
+  otaEnabled: boolean;
+  embeddedBundleSha256: string;
+  artifactSha256: string;
+  cpuClock: string;
+}
+
+export const mobileCpuProfile = requireNativeModule<{
+  identity(): Promise<NativeProfileIdentity>;
+  snapshot(): Promise<NativeCpuSnapshot>;
+}>('MobileCpuProfile');

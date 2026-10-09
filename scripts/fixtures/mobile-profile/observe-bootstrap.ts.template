@@ -1,0 +1,4 @@
+// Profiling-only: do not import or initialize the telemetry SDK.
+import { setObserveRuntime } from './observe-runtime';
+
+setObserveRuntime(null);
