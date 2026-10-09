@@ -426,6 +426,22 @@
         "footer": "Early updates can have rough edges now and then. Changes here apply next time you open the app.",
         "joinDeferred": "Can't reach the update server. We'll try again next time you open the app; early updates start the time after.",
         "leaveDeferred": "Can't switch back yet. We'll try again next time you open the app."
+      },
+      "climbDrawer": {
+        "title": "Climb drawer",
+        "description": "Choose what appears below the climb. Hide everything to keep the drawer still.",
+        "loading": "Loading drawer choices…",
+        "hideAll": "Hide all",
+        "showAll": "Show all",
+        "sections": {
+          "logbook": "Logbook",
+          "climberLogs": "Climber logs",
+          "setterNotes": "Setter’s notes",
+          "betaVideos": "Beta videos",
+          "boardseshGrade": "Boardsesh grade",
+          "community": "Community",
+          "similarClimbs": "Similar climbs"
+        }
       }
     },
     "sendRecovery": {

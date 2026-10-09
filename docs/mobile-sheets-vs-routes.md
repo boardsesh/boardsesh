@@ -239,6 +239,22 @@ work and native QA before claiming that contract works on Android.
 | **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | the **player** and **`onboarding`** (each with an opaque backing to read as full-screen) |
 | **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | no tab-root editing flow; nothing on a phone (`onboarding` moved to `transparentModal` in #5654) |
 
+### Play drawer section controls
+
+Settings → Climb drawer and the player's gear button use the same seven visibility
+switches, with Show all and Hide all actions. The gear opens `PlayDrawerSectionsSheet`
+as a managed `ModalSheet` mounted inside the player, above `/play`. It remains reachable
+when every section is hidden. These device-local choices use AsyncStorage (IndexedDB
+in the browser) and keep each section's existing expansion preference and order.
+
+The first eligible visible section supplies the header preview at the fold; its header
+mounts before deferred content so hiding Logbook never strands the remaining sections.
+With no eligible sections, the board and controls fill the viewport including safe-area
+clearance, and vertical scrolling is disabled. Native vertical scrolling waits for a
+24-point clearly vertical drag; horizontal carousel swipes block drawer scrolling.
+Pinch, zoomed panning, and downward dismissal retain their own gesture handling.
+Browser touch, wheel, trackpad, and keyboard scrolling retain native browser behavior.
+
 ## The decision tree
 
 ```

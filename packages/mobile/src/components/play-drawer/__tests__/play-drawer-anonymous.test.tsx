@@ -115,6 +115,48 @@ const ble = vi.hoisted(() => ({
   } | null,
 }));
 
+const drawerSections = vi.hoisted(() => ({
+  defaults: {
+    logbook: true,
+    climberLogs: true,
+    setterNotes: true,
+    betaVideos: true,
+    boardseshGrade: true,
+    community: true,
+    similarClimbs: true,
+  },
+  sections: {
+    logbook: true,
+    climberLogs: true,
+    setterNotes: true,
+    betaVideos: true,
+    boardseshGrade: true,
+    community: true,
+    similarClimbs: true,
+  },
+  ready: true,
+}));
+vi.mock('../../../lib/play-drawer-sections-preference', () => ({
+  DEFAULT_PLAY_DRAWER_SECTIONS: drawerSections.defaults,
+  PLAY_DRAWER_SECTION_IDS: [
+    'logbook',
+    'climberLogs',
+    'setterNotes',
+    'betaVideos',
+    'boardseshGrade',
+    'community',
+    'similarClimbs',
+  ],
+  usePlayDrawerSectionsPreference: () => ({
+    sections: drawerSections.sections,
+    ready: drawerSections.ready,
+    setSection: vi.fn(),
+    setAll: vi.fn(),
+  }),
+}));
+vi.mock('../use-deliberate-scroll-gesture', () => ({ useDeliberateScrollGesture: () => ({}) }));
+vi.mock('../PlayDrawerSectionsSheet', () => ({ PlayDrawerSectionsSheet: () => null }));
+
 // --- Host platform -----------------------------------------------------------
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

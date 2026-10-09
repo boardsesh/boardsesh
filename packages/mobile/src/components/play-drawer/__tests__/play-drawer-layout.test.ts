@@ -3,7 +3,8 @@ import {
   CAROUSEL_LAYER_Z,
   computeContainedBoardSize,
   computeFirstScreenHeight,
-  computeLogbookScrollTarget,
+  computeDrawerFirstScreenHeight,
+  computeFirstSectionScrollTarget,
   initialDrawerPreviewItem,
   shouldShowPanePlaceholder,
 } from '../play-drawer-layout';
@@ -69,7 +70,7 @@ describe('shouldShowPanePlaceholder', () => {
   });
 });
 
-describe('computeLogbookScrollTarget', () => {
+describe('computeFirstSectionScrollTarget', () => {
   // firstScreenHeight 700, topPadding 12 → the section starts at content y 712.
   const base = {
     firstScreenHeight: 700,
@@ -83,17 +84,19 @@ describe('computeLogbookScrollTarget', () => {
   it('lands a short section bottom just above the home indicator (board stays partly visible)', () => {
     // section 200 tall: bottom-into-view = 712 + 200 - 800 + 34 + 8 = 154;
     // header-to-top = 712 - 60 - 8 = 644 → min picks the gentler 154.
-    expect(computeLogbookScrollTarget({ ...base, sectionHeight: 200 })).toBe(154);
+    expect(computeFirstSectionScrollTarget({ ...base, sectionHeight: 200 })).toBe(154);
   });
 
   it('caps a tall section so its header stops under the top inset instead of scrolling its top away', () => {
     // section 900 tall: bottom-into-view = 712 + 900 - 800 + 34 + 8 = 854;
     // header-to-top = 644 → min caps at 644 so the header stays visible.
-    expect(computeLogbookScrollTarget({ ...base, sectionHeight: 900 })).toBe(644);
+    expect(computeFirstSectionScrollTarget({ ...base, sectionHeight: 900 })).toBe(644);
   });
 
   it('never returns a negative offset when the section already fits below the fold', () => {
-    expect(computeLogbookScrollTarget({ ...base, firstScreenHeight: 100, sectionHeight: 40, viewport: 800 })).toBe(0);
+    expect(computeFirstSectionScrollTarget({ ...base, firstScreenHeight: 100, sectionHeight: 40, viewport: 800 })).toBe(
+      0,
+    );
   });
 });
 
@@ -138,5 +141,33 @@ describe('initialDrawerPreviewItem', () => {
     expect(initialDrawerPreviewItem({})).toBeNull();
     expect(initialDrawerPreviewItem(null)).toBeNull();
     expect(initialDrawerPreviewItem(undefined)).toBeNull();
+  });
+});
+
+describe('computeDrawerFirstScreenHeight', () => {
+  it.each([
+    { viewport: 844, bottomInset: 34 },
+    { viewport: 568, bottomInset: 0 },
+    { viewport: 320, bottomInset: 24 },
+  ])('fits board-only content exactly in $viewport points including safe area', ({ viewport, bottomInset }) => {
+    const height = computeDrawerFirstScreenHeight({
+      viewport,
+      bottomInset,
+      firstSectionHeaderHeight: null,
+      sectionTopPadding: 12,
+      sectionMargin: 8,
+    });
+    expect(height + bottomInset).toBe(viewport);
+  });
+  it('reserves the measured first enabled header instead of a hidden Logbook', () => {
+    expect(
+      computeDrawerFirstScreenHeight({
+        viewport: 844,
+        bottomInset: 34,
+        firstSectionHeaderHeight: 70,
+        sectionTopPadding: 12,
+        sectionMargin: 8,
+      }),
+    ).toBe(754);
   });
 });

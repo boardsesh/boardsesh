@@ -426,6 +426,22 @@
         "footer": "Frühe Updates können ab und zu noch Ecken und Kanten haben. Änderungen greifen beim nächsten Öffnen der App.",
         "joinDeferred": "Der Update-Server ist nicht erreichbar. Wir versuchen es beim nächsten Öffnen der App wieder; frühe Updates starten beim Öffnen danach.",
         "leaveDeferred": "Zurückwechseln geht noch nicht. Wir versuchen es beim nächsten Öffnen der App wieder."
+      },
+      "climbDrawer": {
+        "title": "Boulderansicht",
+        "description": "Wähle, was unter dem Boulder erscheint. Blende alles aus, um vertikales Scrollen zu vermeiden.",
+        "loading": "Deine Auswahl wird geladen…",
+        "hideAll": "Alles ausblenden",
+        "showAll": "Alles anzeigen",
+        "sections": {
+          "logbook": "Routenbuch",
+          "climberLogs": "Einträge von Kletterer*innen",
+          "setterNotes": "Notizen vom Routenbau",
+          "betaVideos": "Beta-Videos",
+          "boardseshGrade": "Boardsesh-Grad",
+          "community": "Community",
+          "similarClimbs": "Ähnliche Boulder"
+        }
       }
     },
     "sendRecovery": {

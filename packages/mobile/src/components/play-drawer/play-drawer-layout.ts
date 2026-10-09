@@ -26,12 +26,30 @@ export function computeContainedBoardSize(boxWidth: number, boxHeight: number, a
 
 /**
  * Height of the play drawer's first screen: the window minus the reserve that
- * keeps the action bar visible and the Beta Videos header teasing at the fold.
+ * keeps the action bar visible and the first section header teasing at the fold.
  * Floored at a fraction of the window so an over-large reserve (e.g. a wildly
  * mismeasured header) can never collapse the board to nothing.
  */
 export function computeFirstScreenHeight(windowHeight: number, reserve: number, minFraction = 0.5): number {
   return Math.max(windowHeight - reserve, windowHeight * minFraction);
+}
+
+/** Without sections, the content plus its bottom safe area exactly fills the viewport. */
+export function computeDrawerFirstScreenHeight({
+  viewport,
+  bottomInset,
+  firstSectionHeaderHeight,
+  sectionTopPadding,
+  sectionMargin,
+}: {
+  viewport: number;
+  bottomInset: number;
+  firstSectionHeaderHeight: number | null;
+  sectionTopPadding: number;
+  sectionMargin: number;
+}): number {
+  if (firstSectionHeaderHeight === null) return Math.max(0, viewport - bottomInset);
+  return computeFirstScreenHeight(viewport, sectionTopPadding + firstSectionHeaderHeight + sectionMargin);
 }
 
 /**
@@ -61,15 +79,14 @@ export function shouldShowPanePlaceholder(isPane: boolean, hasDisplayedClimb: bo
 }
 
 /**
- * Scroll offset that brings a just-expanded Logbook section into view. The
- * Logbook is the first below-fold section, so it starts at
+ * Scroll offset that brings a just-expanded first section into view. It starts at
  * `firstScreenHeight + topPadding` in the scroll content. Prefer the minimal
  * scroll that lands the section's bottom just above the home indicator (a short
  * log keeps the board partly visible); for a section taller than the viewport,
  * cap it so the header stops just under the top inset rather than scrolling its
  * own top away. Never returns a negative offset.
  */
-export function computeLogbookScrollTarget(params: {
+export function computeFirstSectionScrollTarget(params: {
   firstScreenHeight: number;
   topPadding: number;
   sectionHeight: number;

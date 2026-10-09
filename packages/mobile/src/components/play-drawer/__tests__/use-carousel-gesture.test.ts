@@ -3,6 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { SWIPE_THRESHOLD } from '@boardsesh/play-view';
 
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
+vi.mock('react-native', () => ({ Platform: platform }));
+
 // The hook composes a reanimated worklet gesture — stub the native layers so it
 // runs in node. What these tests are really about: the Pan gesture composes
 // ONCE per mount (recomposing mid-session left RNGH stuck on iOS), with
@@ -31,17 +34,20 @@ vi.mock('react-native-reanimated', async () => {
 // Chainable Gesture.Pan() builder that is FRESH per call (so gesture identity
 // assertions are meaningful) and records the worklet handlers for driving.
 type RecordedHandlers = Record<string, (...args: unknown[]) => unknown>;
-const recordedBuilders: { handlers: RecordedHandlers }[] = [];
+const recordedBuilders: { handlers: RecordedHandlers; settings: Record<string, unknown> }[] = [];
 vi.mock('react-native-gesture-handler', () => {
   const makeBuilder = () => {
     const handlers: RecordedHandlers = {};
-    recordedBuilders.push({ handlers });
+    const settings: Record<string, unknown> = {};
+    recordedBuilders.push({ handlers, settings });
     const builder: Record<string, (...args: unknown[]) => unknown> = {};
     const proxy: typeof builder = new Proxy(builder, {
       get: (_target, prop: string) => {
         return (maybeHandler: unknown) => {
           if (typeof maybeHandler === 'function' && prop.startsWith('on')) {
             handlers[prop] = maybeHandler as RecordedHandlers[string];
+          } else {
+            settings[prop] = maybeHandler;
           }
           return proxy;
         };
@@ -85,6 +91,26 @@ describe('useCarouselGesture', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     recordedBuilders.length = 0;
+    platform.OS = 'ios';
+  });
+
+  it.each(['ios', 'android'])('makes %s scrolling wait for the carousel to fail', (platformName) => {
+    platform.OS = platformName;
+    const scrollRef = { current: null };
+    renderHook(() => useCarouselGesture(makeOptions({ scrollRef })));
+    const settings = recordedBuilders[0].settings;
+    expect(settings.blocksExternalGesture).toBe(scrollRef);
+    expect(settings.simultaneousWithExternalGesture).toBeUndefined();
+    expect(settings.maxPointers).toBe(1);
+  });
+
+  it('retains simultaneous browser scrolling', () => {
+    platform.OS = 'web';
+    const scrollRef = { current: null };
+    renderHook(() => useCarouselGesture(makeOptions({ scrollRef })));
+    const settings = recordedBuilders[0].settings;
+    expect(settings.simultaneousWithExternalGesture).toBe(scrollRef);
+    expect(settings.blocksExternalGesture).toBeUndefined();
   });
 
   it('keeps the gesture identity stable across swipe-availability, enabled, and board-width changes', () => {
@@ -187,5 +213,54 @@ describe('useCarouselGesture', () => {
 
     expect(state.activate).toHaveBeenCalledTimes(1);
     expect(state.fail).not.toHaveBeenCalled();
+  });
+
+  it('yields to a second finger even after locking horizontal', () => {
+    renderHook(() => useCarouselGesture(makeOptions()));
+    const handlers = latestHandlers();
+    const state = makeState();
+    lockFrom(handlers, 30, 4, state);
+    state.activate.mockClear();
+    handlers.onTouchesMove(
+      {
+        allTouches: [
+          { absoluteX: 130, absoluteY: 104 },
+          { absoluteX: 170, absoluteY: 140 },
+        ],
+      },
+      state,
+    );
+    expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(state.activate).not.toHaveBeenCalled();
+  });
+
+  it('fails an initial pinch and resets direction after repeated cancellation', () => {
+    renderHook(() => useCarouselGesture(makeOptions()));
+    const handlers = latestHandlers();
+    const state = makeState();
+    handlers.onTouchesDown(
+      {
+        allTouches: [
+          { absoluteX: 100, absoluteY: 100 },
+          { absoluteX: 120, absoluteY: 120 },
+        ],
+      },
+      state,
+    );
+    expect(state.fail).toHaveBeenCalledTimes(1);
+    handlers.onFinalize();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      state.fail.mockClear();
+      lockFrom(handlers, 30, 4, state);
+      handlers.onTouchesCancelled({ allTouches: [] }, state);
+      expect(state.fail).toHaveBeenCalledTimes(1);
+      handlers.onFinalize();
+      state.fail.mockClear();
+      state.activate.mockClear();
+      lockFrom(handlers, 0, 23, state);
+      expect(state.fail).toHaveBeenCalledTimes(1);
+      expect(state.activate).not.toHaveBeenCalled();
+      handlers.onFinalize();
+    }
   });
 });
