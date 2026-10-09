@@ -37,6 +37,7 @@ import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDeta
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
+import { BoardDemandSheet } from '../../src/components/board-discovery/BoardDemandSheet';
 import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
 import { useSprayLabelOptions } from '../../src/lib/spray/use-spray-label-options';
 import {
@@ -264,6 +265,11 @@ export default function BoardSelection() {
   // State (not a ref) so the quickstart sheet re-renders and kicks off its scan
   // when opened, and tears it down when closed.
   const [bluetoothActive, setBluetoothActive] = useState(false);
+  // "Can't find your board?" — the demand form (issue #6062). One mount for
+  // both layouts; the surface recorded on the event follows whichever one is
+  // showing, because a newcomer's miss and a member's miss read differently.
+  const [demandOpen, setDemandOpen] = useState(false);
+  const openCantFindBoard = useCallback(() => setDemandOpen(true), []);
 
   // See the boards index error path: a hard 401 clears tokens but doesn't flip
   // isAuthenticated, so re-validate on error to escape a stuck retry loop.
@@ -933,6 +939,7 @@ export default function BoardSelection() {
               onOpenSettings={onOpenLocationSettings}
               onRetryNearby={onRetryNearby}
               onAddSprayWall={offerSprayWall ? onFirstBoardSprayWall : undefined}
+              onCantFindBoard={openCantFindBoard}
             />
             {/* A new account can already have boards: one it built on the web,
                 or one it followed before a sign-out cleared the active board.
@@ -1007,6 +1014,14 @@ export default function BoardSelection() {
                 <Button title={t('mobile.discovery.create')} onPress={onModeCreate} style={styles.emptyCta} />
               </View>
             ) : null}
+
+            {/* Last, under every list and every empty state: the climber who
+                scrolled all of it and still has no board. Without this the
+                picker offers five ways to find a board and none to say it is
+                missing (issue #6062). */}
+            <View style={styles.demandTrigger}>
+              <Button title={t('mobile.demand.trigger')} variant="text" onPress={openCantFindBoard} />
+            </View>
           </>
         )}
       </ScrollView>
@@ -1026,6 +1041,12 @@ export default function BoardSelection() {
           bluetoothSheetRef.current?.close();
           void activateBoard(board, { pickSource: 'bluetooth' });
         }}
+      />
+
+      <BoardDemandSheet
+        visible={demandOpen}
+        surface={showFirstBoardChoice ? 'first_board' : 'board_picker'}
+        onClose={() => setDemandOpen(false)}
       />
     </>
   );
@@ -1075,6 +1096,10 @@ const styles = StyleSheet.create({
     // 8 dp, not 12: five tiles share the row, and every point of gap is a
     // point the labels lose (#5960).
     gap: spacing[2],
+    paddingHorizontal: spacing[4],
+  },
+  demandTrigger: {
+    alignItems: 'flex-start',
     paddingHorizontal: spacing[4],
   },
   section: {

@@ -312,6 +312,8 @@ vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
 vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () => ({
   BluetoothQuickstartSheet: () => createElement('div', { 'data-testid': 'ble-sheet' }),
 }));
+// Its ModalSheet stack needs RN exports this file's react-native mock omits.
+vi.mock('../../../src/components/board-discovery/BoardDemandSheet', () => ({ BoardDemandSheet: () => null }));
 // First-board mode (#5654) has its own suite, index-first-board.test.tsx.
 vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 

@@ -30,6 +30,12 @@ type FirstBoardChoiceProps = {
    * without it a home spray-wall owner with no boards has no way forward here.
    */
   onAddSprayWall?: () => void;
+  /**
+   * "Can't find your board?" (issue #6062). Passed in first-board mode: none of
+   * the three answers fits a climber whose gym board is missing or whose brand
+   * we do not drive, and that almost-leave is the demand signal worth keeping.
+   */
+  onCantFindBoard?: () => void;
 };
 
 /**
@@ -58,6 +64,7 @@ export function FirstBoardChoice({
   onOpenSettings,
   onRetryNearby,
   onAddSprayWall,
+  onCantFindBoard,
 }: FirstBoardChoiceProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -117,6 +124,16 @@ export function FirstBoardChoice({
           {t('mobile.firstBoard.scanFootnote')}
         </Text>
       </View>
+
+      {onCantFindBoard ? (
+        <View style={styles.textAction}>
+          {/* Under all three answers, because it is the one left when none of
+              them fits: the gym board we don't list, the brand we don't drive.
+              A dead end here is an app deleted in silence; the form keeps the
+              demand in the ledger instead (issue #6062). */}
+          <Button title={t('mobile.demand.trigger')} variant="text" onPress={onCantFindBoard} />
+        </View>
+      ) : null}
     </View>
   );
 }

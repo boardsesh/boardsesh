@@ -106,6 +106,20 @@
       "openSettings": "Ouvrir Réglages",
       "notNow": "Pas maintenant"
     },
+    "demand": {
+      "trigger": "Tu ne trouves pas ta board ?",
+      "title": "Que cherches-tu ?",
+      "body": "Choisis ce qui manque. On compte chaque réponse pour décider des prochaines boards.",
+      "gymBoardNotListed": "Ma salle a une board qui ne figure pas dans la liste",
+      "unsupportedBrand": "Ma salle utilise une marque que Boardsesh ne pilote pas",
+      "sprayWall": "Je veux allumer mon propre mur",
+      "noBoardYet": "Je n'ai pas encore de board",
+      "other": "Autre chose",
+      "send": "Envoyer",
+      "done": "Terminé",
+      "thanksTitle": "Merci, c'est compté.",
+      "thanksBody": "Ta réponse rejoint la liste de demande. Quand elle deviendra une board, tu la trouveras ici."
+    },
     "firstConnect": {
       "card": {
         "title": "Allume les blocs sur {{board}}",

@@ -179,6 +179,8 @@ vi.mock('../../../src/components/gym-directory/GymListPanel', () => ({
 }));
 vi.mock('../../../src/components/gym-directory/GymLocationPrompt', () => ({ GymLocationPrompt: () => null }));
 vi.mock('../../../src/components/gym-directory/ClaimGymSheet', () => ({ ClaimGymSheet: () => null }));
+// Its ModalSheet stack needs RN exports this file's react-native mock omits.
+vi.mock('../../../src/components/board-discovery/BoardDemandSheet', () => ({ BoardDemandSheet: () => null }));
 vi.mock('../../../src/components/gym-directory/WallFinderFilterChips', () => ({
   WallFinderFilterChips: (props: WallFinderFilterChipsProps) => {
     captured.chips = props;

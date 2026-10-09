@@ -444,6 +444,33 @@ definition, which is why the save's own `Set Active Climb` is filtered out
 above; count it as its own measure. Its `boardLayout` is the empty string
 on a spray wall, which is an accident of the layout table and not a classifier.
 
+### Unmet board demand
+
+Every event above starts after somebody already has a board or a wall. Nothing
+there records the visitor who opened the board picker, scrolled past every gym,
+and left — and that visitor is the whole next-board argument (issue #6062).
+The form that catches them is `Board Demand Reported`:
+
+- `reason` — one of `gym_board_not_listed`, `unsupported_brand`, `spray_wall`,
+  `no_board_yet`, `other`.
+- `surface` — where the form sat: `board_picker` (the mobile `/boards`
+  screens), `first_board` (the newcomer's "Where do you climb?"),
+  `gym_directory` (the no-results row on either platform's gym finder).
+
+One event per submitted form, never per keystroke or per sheet-open, so a
+weekly count is a count of people who asked. The payload is the two fields
+and nothing else: the free-text the climber writes goes to the feedback
+pipeline instead (mobile hands those three nameable-board reasons to the
+bug-mode sheet; www links to `/support`). PostHog never sees a gym name, a
+brand, or a town.
+
+Read it as demand pressure per week: `other` and `spray_wall` rising is an
+app-store-bin risk, `gym_board_not_listed` and `unsupported_brand` are
+acquisition lists in disguise — the follow-up answers say which gym and which
+brand to chase next. Watch the reason split as a stacked line and the raw
+count beneath it; both are weekly sums of `Board Demand Reported` over the
+native production population plus www.
+
 ## Acquisition
 
 These are separate counts. None of them is a funnel of the same people.

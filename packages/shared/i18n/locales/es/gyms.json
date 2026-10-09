@@ -84,7 +84,20 @@
     "emptyTitle": "Todavía no hay nada que encaje",
     "emptyBody": "Prueba con una búsqueda más corta o quita el filtro de plafón y explora todos los rocódromos.",
     "emptyClearSearch": "Borra la búsqueda",
-    "emptyBrowseAll": "Explora todos los rocódromos"
+    "emptyBrowseAll": "Explora todos los rocódromos",
+    "cantFindBoard": "¿No encuentras tu plafón?",
+    "demandTitle": "¿Qué estás buscando?",
+    "demandBody": "Elige qué falta. Contamos cada respuesta para decidir qué plafones llegan después.",
+    "demandGymBoard": "Mi rocódromo tiene un plafón que no está en la lista",
+    "demandBrand": "Mi rocódromo usa una marca que Boardsesh no controla",
+    "demandSpray": "Quiero iluminar mi propia pared",
+    "demandNoBoard": "Aún no tengo plafón",
+    "demandOther": "Otra cosa",
+    "demandSend": "Enviar",
+    "demandClose": "Cerrar",
+    "demandThanksTitle": "Gracias, contamos.",
+    "demandThanksBody": "Tu respuesta se añade a la lista de demanda. Cuando se convierta en plafón, lo verás aquí.",
+    "demandTellMore": "Dinos qué plafón falta en la página de soporte"
   },
   "error": {
     "title": "Ahora mismo no podemos cargar la lista de rocódromos",

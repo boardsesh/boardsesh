@@ -323,6 +323,8 @@ vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', () =
     return null;
   },
 }));
+// Its ModalSheet stack needs RN exports this file's react-native mock omits.
+vi.mock('../../../src/components/board-discovery/BoardDemandSheet', () => ({ BoardDemandSheet: () => null }));
 // First-board mode (#5654) has its own suite, index-first-board.test.tsx.
 vi.mock('../../../src/components/board-discovery/FirstBoardChoice', () => ({ FirstBoardChoice: () => null }));
 // Captures the props rather than rendering a card, so the item flags and the

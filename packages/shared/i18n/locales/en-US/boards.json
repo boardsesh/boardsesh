@@ -106,6 +106,20 @@
       "openSettings": "Open Settings",
       "notNow": "Not now"
     },
+    "demand": {
+      "trigger": "Can't find your board?",
+      "title": "What are you looking for?",
+      "body": "Pick what is missing. We count every answer to decide which boards come next.",
+      "gymBoardNotListed": "My gym has a board that isn't listed",
+      "unsupportedBrand": "My gym has a brand Boardsesh doesn't drive",
+      "sprayWall": "I want my own wall to light up",
+      "noBoardYet": "I don't have a board yet",
+      "other": "Something else",
+      "send": "Send",
+      "done": "Done",
+      "thanksTitle": "Thanks — counted.",
+      "thanksBody": "Your answer goes on the demand list. When it becomes a board, you'll find it here."
+    },
     "firstConnect": {
       "card": {
         "title": "Light climbs on {{board}}",

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { boardConfigLabel, formatBoardDisplayName } from '@boardsesh/board-config';
 import type { Gym, UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
+import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { PressableSurface } from '../PressableSurface';
@@ -47,6 +48,13 @@ type GymListPanelProps = {
   onClaimGym?: (gym: Gym) => void;
   /** Caption shown under an expanded gym that has no boards yet. */
   noBoardsLabel: string;
+  /**
+   * Action under the no-results row (issue #6062): "Can't find your board?"
+   * paired with `emptyActionLabel`. Without an empty list there is nothing to
+   * ask about, so the pair is only rendered on the `empty` row.
+   */
+  onEmptyAction?: () => void;
+  emptyActionLabel?: string;
   /** The pinned search field (lives in the panel header so it survives a blank map). */
   searchSlot: ReactNode;
   /** The "Showing <place>" caption row, when a place is searched. */
@@ -78,6 +86,8 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     onEditBoard,
     onClaimGym,
     noBoardsLabel,
+    onEmptyAction,
+    emptyActionLabel,
     searchSlot,
     placeCaption,
     filterSlot,
@@ -125,7 +135,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
         case 'loading':
           return <ActivityIndicator style={styles.listSpinner} />;
         case 'empty':
-          return <EmptyRow label={item.label} />;
+          return <EmptyRow label={item.label} actionLabel={emptyActionLabel} onAction={onEmptyAction} />;
         case 'gym':
           return (
             <GymRow
@@ -154,7 +164,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
           );
       }
     },
-    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym],
+    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym, emptyActionLabel, onEmptyAction],
   );
 
   const listContentStyle = useMemo(
@@ -231,12 +241,28 @@ const SectionHeaderRow = memo(function SectionHeaderRow({ label }: { label: stri
   );
 });
 
-const EmptyRow = memo(function EmptyRow({ label }: { label: string }) {
+const EmptyRow = memo(function EmptyRow({
+  label,
+  actionLabel,
+  onAction,
+}: {
+  label: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   const { systemColors } = useTheme();
   return (
-    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.empty}>
-      {label}
-    </Text>
+    <>
+      <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.empty}>
+        {label}
+      </Text>
+      {actionLabel && onAction ? (
+        // The no-results row is exactly where a search that found nothing turns
+        // into silent churn — one text action keeps the miss on the record
+        // instead of in the app-store bin (issue #6062).
+        <Button title={actionLabel} variant="text" onPress={onAction} style={styles.emptyAction} />
+      ) : null}
+    </>
   );
 });
 
@@ -482,6 +508,9 @@ const styles = StyleSheet.create({
   empty: {
     marginTop: spacing[4],
     textAlign: 'center',
+  },
+  emptyAction: {
+    alignSelf: 'center',
   },
   listSpinner: {
     marginTop: spacing[4],
