@@ -1,17 +1,35 @@
 // @vitest-environment jsdom
-vi.mock('../../PressableSurface', () => ({
-  PressableSurface: ({
-    children,
-    onPress,
-    disabled,
-  }: {
-    children?: ReactNode;
-    onPress?: () => void;
-    disabled?: boolean;
-  }) => createElement('button', { disabled, onClick: disabled ? undefined : onPress }, children),
-}));
+vi.mock('../../PressableSurface', () => {
+  const surface =
+    (feedback: string) =>
+    ({
+      children,
+      onPress,
+      disabled,
+      accessibilityLabel,
+      style,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      disabled?: boolean;
+      accessibilityLabel?: string;
+      style?: unknown;
+    }) =>
+      createElement(
+        'button',
+        {
+          disabled,
+          onClick: disabled ? undefined : onPress,
+          'aria-label': accessibilityLabel,
+          'data-feedback': feedback,
+          'data-style': JSON.stringify(Object.assign({}, ...[style].flat(10).filter(Boolean))),
+        },
+        children,
+      );
+  return { PressableSurface: surface('animated'), StaticPressableSurface: surface('static') };
+});
 import { createElement, type ReactNode } from 'react';
-import { render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 
@@ -25,6 +43,7 @@ const tracker = vi.hoisted(() => ({
   end: null as ((event: { translationX: number }) => void) | null,
 }));
 const swipeable = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+const panels = vi.hoisted(() => ({ enabled: false, language: '' }));
 const a11y = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 // Controls the app-wide "Show Boardsesh grades" toggle for the row. Default OFF
 // so the existing consensus-fallback tests are unaffected; the Boardsesh-grade
@@ -44,7 +63,8 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     // Interpolate counts so `mobile.logbook.tries:1` / `…row.stars:3` are assertable.
-    t: (key: string, opts?: { count?: number }) => (opts?.count != null ? `${key}:${opts.count}` : key),
+    t: (key: string, opts?: { count?: number }) =>
+      opts?.count != null ? `${key}:${opts.count}` : `${key}${panels.language}`,
     i18n: { language: 'en-US' },
   }),
 }));
@@ -102,7 +122,15 @@ vi.mock('react-native-gesture-handler', () => {
 vi.mock('react-native-gesture-handler/ReanimatedSwipeable', () => ({
   default: (props: { children?: ReactNode } & Record<string, unknown>) => {
     swipeable.props = props;
-    return createElement('div', null, props.children);
+    const renderAction = (callback: unknown) =>
+      typeof callback === 'function' ? callback({ value: 0 }, { value: 0 }) : null;
+    return createElement(
+      'div',
+      null,
+      props.children,
+      panels.enabled ? renderAction(props.renderLeftActions) : null,
+      panels.enabled ? renderAction(props.renderRightActions) : null,
+    );
   },
 }));
 vi.mock('@boardsesh/profile-stats', () => ({
@@ -122,9 +150,6 @@ vi.mock('../../Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }),
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => null }));
-vi.mock('../../use-swipe-arm', () => ({
-  useSwipeArm: () => ({ armedRef: { current: false }, arm: () => {}, disarm: () => {} }),
-}));
 vi.mock('../../../theme/colors', () => ({
   brandColors: { primary: '#6D28D9', error: '#C81E1E' },
   withAlpha: (color: string) => color,
@@ -219,6 +244,55 @@ beforeEach(() => {
   swipeable.props = null;
   a11y.props = null;
   boardsesh.active = false;
+  panels.enabled = false;
+  panels.language = '';
+});
+
+describe('LogbookRow swipe feedback lifetime', () => {
+  it('keeps panel layout and callbacks through first drag, close and recycling', () => {
+    panels.enabled = true;
+    const onEdit = vi.fn();
+    const onDeleteRequest = vi.fn();
+    const props = { onActivate: vi.fn(), onEdit, onDeleteRequest };
+    const item = ascent();
+    const screen = render(<LogbookRow ascent={item} {...props} />);
+    const readPanels = () =>
+      ['mobile.logbook.row.editAction', 'mobile.logbook.row.deleteAction'].map((label) => {
+        const button = screen.getByRole('button', { name: label });
+        return { label, style: button.getAttribute('data-style'), feedback: button.getAttribute('data-feedback') };
+      });
+    const idle = readPanels();
+    expect(idle.map((panel) => panel.feedback)).toEqual(['static', 'static']);
+    act(() => (swipeable.props?.onSwipeableOpenStartDrag as () => void)());
+    expect(readPanels()).toEqual(idle.map((panel) => ({ ...panel, feedback: 'animated' })));
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onDeleteRequest).not.toHaveBeenCalled();
+    act(() => (swipeable.props?.onSwipeableClose as () => void)());
+    expect(readPanels()).toEqual(idle);
+    act(() => (swipeable.props?.onSwipeableOpenStartDrag as () => void)());
+    screen.rerender(<LogbookRow ascent={{ ...item, uuid: 'tick-2' }} {...props} />);
+    expect(readPanels()).toEqual(idle);
+    fireEvent.click(screen.getByRole('button', { name: 'mobile.logbook.row.editAction' }));
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'tick-2' }), 'swipe');
+  });
+
+  it('keeps panel render callbacks despite new translators, then refreshes changed labels', () => {
+    panels.enabled = true;
+    const props = { onActivate: vi.fn(), onEdit: vi.fn(), onDeleteRequest: vi.fn() };
+    const item = ascent();
+    const screen = render(<LogbookRow ascent={item} {...props} />);
+    const left = swipeable.props?.renderLeftActions;
+    const right = swipeable.props?.renderRightActions;
+    screen.rerender(<LogbookRow ascent={{ ...item }} {...props} />);
+    expect(swipeable.props?.renderLeftActions).toBe(left);
+    expect(swipeable.props?.renderRightActions).toBe(right);
+    panels.language = ':fr';
+    screen.rerender(<LogbookRow ascent={{ ...item }} {...props} />);
+    expect(swipeable.props?.renderLeftActions).not.toBe(left);
+    expect(swipeable.props?.renderRightActions).not.toBe(right);
+    expect(screen.getByRole('button', { name: 'mobile.logbook.row.editAction:fr' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'mobile.logbook.row.deleteAction:fr' })).toBeTruthy();
+  });
 });
 
 describe('LogbookRow — grade column', () => {

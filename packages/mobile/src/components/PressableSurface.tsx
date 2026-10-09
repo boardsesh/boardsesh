@@ -1,5 +1,13 @@
 import { useState, type ComponentProps, type Ref } from 'react';
-import { Pressable, Platform, StyleSheet, type View, type GestureResponderEvent } from 'react-native';
+import {
+  Pressable,
+  Platform,
+  StyleSheet,
+  type View,
+  type GestureResponderEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import { springs } from '../theme/animations';
@@ -17,6 +25,7 @@ export type PressableSurfaceProps = RNPressableProps & {
   rippleColor?: string;
   rippleBorderless?: boolean;
 };
+export type StaticPressableSurfaceProps = Omit<PressableSurfaceProps, 'feedback' | 'scaleTo' | 'opacityTo'>;
 
 /** Native Pressable contract with platform feedback; persistence and haptics stay with callers. */
 export function PressableSurface({
@@ -34,6 +43,93 @@ export function PressableSurface({
   style,
   ...props
 }: PressableSurfaceProps) {
+  const state = { ...accessibilityState, disabled: disabled || accessibilityState?.disabled };
+  // Android's native ripple needs no Reanimated values or accessibility-motion
+  // subscriber. iOS keeps its animated host even when feedback changes to none,
+  // preserving active touches, refs and assistive focus across mode changes.
+  if (Platform.OS === 'android') {
+    return (
+      <StaticPressableSurface
+        {...props}
+        disabled={disabled}
+        accessibilityRole={accessibilityRole}
+        accessibilityState={state}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        android_ripple={android_ripple}
+        rippleColor={rippleColor}
+        rippleBorderless={rippleBorderless}
+        style={style}
+      />
+    );
+  }
+  return (
+    <AnimatedFeedbackPressable
+      {...props}
+      disabled={disabled}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={state}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      feedback={feedback}
+      scaleTo={scaleTo}
+      opacityTo={opacityTo}
+      style={style}
+    />
+  );
+}
+
+/** A permanently native surface: opt in only when animated feedback is unnecessary. */
+export function StaticPressableSurface({
+  rippleColor,
+  rippleBorderless = false,
+  disabled = false,
+  accessibilityRole = 'button',
+  accessibilityState,
+  android_ripple,
+  style,
+  ...props
+}: StaticPressableSurfaceProps) {
+  const state = { ...accessibilityState, disabled: disabled || accessibilityState?.disabled };
+  const resolveStyle = (callerStyle: StyleProp<ViewStyle>) => {
+    if (!disabled) return callerStyle;
+    const callerOpacity = StyleSheet.flatten(callerStyle)?.opacity;
+    return [
+      callerStyle,
+      {
+        opacity:
+          Platform.OS === 'android'
+            ? material.disabledContentOpacity
+            : (typeof callerOpacity === 'number' ? callerOpacity : 1) * opacity.disabled,
+      },
+    ];
+  };
+  return (
+    <Pressable
+      {...props}
+      disabled={disabled}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={state}
+      android_ripple={
+        Platform.OS === 'android'
+          ? (android_ripple ?? androidRipple(rippleColor ?? brandColors.tint, rippleBorderless))
+          : android_ripple
+      }
+      style={typeof style === 'function' ? (pressState) => resolveStyle(style(pressState)) : resolveStyle(style)}
+    />
+  );
+}
+
+function AnimatedFeedbackPressable({
+  feedback,
+  scaleTo,
+  opacityTo,
+  disabled,
+  onPressIn,
+  onPressOut,
+  style,
+  ...props
+}: RNPressableProps & { feedback: PressFeedback; scaleTo: number; opacityTo: number }) {
   const pressed = useSharedValue(0);
   const [callbackPressed, setCallbackPressed] = useState(false);
   const reduceMotion = useReduceMotion();
@@ -61,35 +157,13 @@ export function PressableSurface({
     if (resolvedFeedback !== 'none') pressed.value = reduceMotion ? 0 : withSpring(0, springs.snappy);
     onPressOut?.(event);
   };
-  const state = { ...accessibilityState, disabled: disabled || accessibilityState?.disabled };
-  const disabledStyle = disabled
-    ? { opacity: Platform.OS === 'android' ? material.disabledContentOpacity : opacity.disabled }
-    : undefined;
-  if (Platform.OS === 'android') {
-    return (
-      <Pressable
-        {...props}
-        disabled={disabled}
-        accessibilityRole={accessibilityRole}
-        accessibilityState={state}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        android_ripple={android_ripple ?? androidRipple(rippleColor ?? brandColors.tint, rippleBorderless)}
-        style={
-          typeof style === 'function' ? (pressState) => [style(pressState), disabledStyle] : [style, disabledStyle]
-        }
-      />
-    );
-  }
   return (
     <AnimatedPressable
       {...props}
       disabled={disabled}
-      accessibilityRole={accessibilityRole}
-      accessibilityState={state}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={[callerStyle, animatedStyle, disabledStyle]}
+      style={[callerStyle, animatedStyle]}
     />
   );
 }

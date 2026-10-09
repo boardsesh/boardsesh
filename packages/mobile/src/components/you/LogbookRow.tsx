@@ -1,4 +1,4 @@
-import { PressableSurface } from '../PressableSurface';
+import { PressableSurface, StaticPressableSurface } from '../PressableSurface';
 import { useFullSwipe } from '../use-full-swipe';
 import {
   SWIPE_ACTION_REVEAL as ACTION_REVEAL,
@@ -149,8 +149,9 @@ function SwipeAction({
   onPress: () => void;
   label: string;
 }) {
+  const ActionSurface = active ? PressableSurface : StaticPressableSurface;
   return (
-    <PressableSurface
+    <ActionSurface
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
@@ -164,7 +165,7 @@ function SwipeAction({
       <Text variant="caption1" color={iosSystemColors.white} style={styles.swipeLabel}>
         {label}
       </Text>
-    </PressableSurface>
+    </ActionSurface>
   );
 }
 
@@ -179,6 +180,9 @@ export const LogbookRow = memo(function LogbookRow({
   fontScale = 1,
 }: LogbookRowProps) {
   const { t, i18n } = useTranslation('you');
+  const editActionLabel = t('mobile.logbook.row.editAction');
+  const deleteActionLabel = t('mobile.logbook.row.deleteAction');
+  const moreActionsLabel = t('mobile.logbook.row.moreActions');
   const { systemColors, brandColors: brand } = useTheme();
   const { formatGrade, formatGradeByDifficultyId } = useGradeFormat();
   const boardseshActive = useBoardseshGradesActive();
@@ -406,10 +410,10 @@ export const LogbookRow = memo(function LogbookRow({
         icon="edit"
         side="left"
         onPress={pressLeadingAction}
-        label={t('mobile.logbook.row.editAction')}
+        label={editActionLabel}
       />
     ),
-    [dragArmedRef, pressLeadingAction, t],
+    [dragArmedRef, pressLeadingAction, editActionLabel],
   );
   const renderRightActions = useCallback(
     (_progress: SharedValue<number>, translation: SharedValue<number>) => (
@@ -419,10 +423,10 @@ export const LogbookRow = memo(function LogbookRow({
         icon="delete"
         side="right"
         onPress={pressTrailingAction}
-        label={t('mobile.logbook.row.deleteAction')}
+        label={deleteActionLabel}
       />
     ),
-    [dragArmedRef, pressTrailingAction, t],
+    [dragArmedRef, pressTrailingAction, deleteActionLabel],
   );
 
   // --- Non-visual parity: the label reads as a log entry ("Sent X, V7, you
@@ -459,11 +463,11 @@ export const LogbookRow = memo(function LogbookRow({
 
   const accessibilityActions = useMemo(() => {
     const actions: { name: string; label: string }[] = [];
-    if (onEdit) actions.push({ name: 'edit', label: t('mobile.logbook.row.editAction') });
-    if (onDeleteRequest) actions.push({ name: 'delete', label: t('mobile.logbook.row.deleteAction') });
-    if (onOpenActions) actions.push({ name: 'more', label: t('mobile.logbook.row.moreActions') });
+    if (onEdit) actions.push({ name: 'edit', label: editActionLabel });
+    if (onDeleteRequest) actions.push({ name: 'delete', label: deleteActionLabel });
+    if (onOpenActions) actions.push({ name: 'more', label: moreActionsLabel });
     return actions;
-  }, [onEdit, onDeleteRequest, onOpenActions, t]);
+  }, [onEdit, onDeleteRequest, onOpenActions, editActionLabel, deleteActionLabel, moreActionsLabel]);
 
   const handleAccessibilityAction = useCallback((event: AccessibilityActionEvent) => {
     const actionName = event.nativeEvent.actionName;
