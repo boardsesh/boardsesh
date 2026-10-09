@@ -208,57 +208,30 @@ const CLIMB_SITEMAP_PATH_PREFIX = '/sitemaps/climbs/';
 const CLIMB_SITEMAP_STORE_SOURCE = 'store';
 
 /**
- * `Cache-Control` directives a published climb shard must and may carry.
- *
- * The route emits `public, s-maxage=21600, stale-while-revalidate=604800`
- * (packages/web/app/lib/seo/sitemap/shard-registry.ts), and that long window is
- * the whole reason a crawl of six 2.5 MB pages does not reach a ten-connection
- * pool six times over. What a CDN forwards, though, is its own business: an edge
- * that consumes `s-maxage` as a private instruction commonly rewrites the client
- * copy to `public, max-age=0, must-revalidate`. A string compare is wrong at one
- * origin or the other, so this parses directives instead.
- *
- * `public` is the contract — the shard has to be cacheable by something other
- * than the browser that asked. Anything else (`no-store`, `private`, `no-cache`)
- * means every crawler fetch reaches Postgres, which is the failure this window
- * was built to prevent.
- *
- * Which freshness directive survives is the edge's business, but at least one of
- * them has to. A bare `public` is cacheable forever with nothing to revalidate
- * against, so requiring only `public` would pass a shard that had lost its whole
- * CDN window — the regression this check exists for. Requiring one of the three
- * accepts both the origin form and the `max-age=0, must-revalidate` an edge that
- * consumes `s-maxage` rewrites it to, and rejects a header with no freshness
- * story at all.
+ * Privacy-filtered climb shards recheck publication consent on every request.
+ * Their stored URL candidates may be cached internally, but the rendered XML
+ * must not survive a subsequent privacy revocation in a browser or shared CDN.
+ * Require both private and no-store, and reject contradictory cache directives.
+ * This intentionally rejects the public cache window used before #6254.
  */
-const REQUIRED_CLIMB_CACHE_DIRECTIVES = ['public'] as const;
-const FRESHNESS_CLIMB_CACHE_DIRECTIVES = ['s-maxage', 'max-age', 'stale-while-revalidate'] as const;
-const TOLERATED_CLIMB_CACHE_DIRECTIVES = [...FRESHNESS_CLIMB_CACHE_DIRECTIVES, 'must-revalidate'] as const;
+const REQUIRED_CLIMB_CACHE_DIRECTIVES = ['private', 'no-store'] as const;
 
-/** Directive NAMES only — `s-maxage=21600` reads as `s-maxage`. */
-function cacheControlDirectiveNames(header: string): string[] {
+/** Keep parameters: only bare private and no-store protect the whole response. */
+function cacheControlDirectives(header: string): string[] {
   return header
     .split(',')
-    .map((directive) => directive.trim().split('=')[0].toLowerCase())
+    .map((directive) => directive.trim().toLowerCase())
     .filter((name) => name.length > 0);
 }
 
 function expectClimbShardCacheControl(response: SmokeResponse): string | null {
   const header = response.headers['cache-control'] ?? '';
-  const names = cacheControlDirectiveNames(header);
+  const names = cacheControlDirectives(header);
 
   const missing = REQUIRED_CLIMB_CACHE_DIRECTIVES.filter((directive) => !names.includes(directive));
   if (missing.length > 0) return `expected cache-control to carry ${missing.join(' and ')}, got "${header}"`;
 
-  if (!FRESHNESS_CLIMB_CACHE_DIRECTIVES.some((directive) => names.includes(directive))) {
-    return `expected cache-control to carry one of ${FRESHNESS_CLIMB_CACHE_DIRECTIVES.join(', ')}, got "${header}"`;
-  }
-
-  const unexpected = names.filter(
-    (name) =>
-      !(REQUIRED_CLIMB_CACHE_DIRECTIVES as readonly string[]).includes(name) &&
-      !(TOLERATED_CLIMB_CACHE_DIRECTIVES as readonly string[]).includes(name),
-  );
+  const unexpected = names.filter((name) => !(REQUIRED_CLIMB_CACHE_DIRECTIVES as readonly string[]).includes(name));
   return unexpected.length === 0
     ? null
     : `cache-control carries unexpected directive(s) ${unexpected.join(', ')}, got "${header}"`;
@@ -499,7 +472,7 @@ export const WWW_CHECKS: SmokeCheck[] = [
     // The index check above can only see that climbs was listed. This is the
     // page a crawler actually fetches, and the one that still costs 51 s when
     // the store is empty — hence the check's own timeout.
-    name: 'the climb sitemap shard serves cacheable URLs',
+    name: 'the climb sitemap shard serves URLs without caching publication consent',
     path: `${CLIMB_SITEMAP_PATH_PREFIX}1.xml`,
     timeoutMs: CLIMB_SHARD_TIMEOUT_MS,
     assert: (response) =>

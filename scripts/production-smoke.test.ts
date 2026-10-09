@@ -368,54 +368,57 @@ describe('www production smoke checks', () => {
     expect(check.degradation?.(fromLiveScan)).toMatch(/refresh-sitemap-climbs/);
   });
 
-  it('requires cacheable XML from the climb shard at either origin', () => {
-    // The check used to string-compare the whole header against Vercel's
-    // downstream form, so pointing this smoke at a Railway origin failed on a
-    // header that was exactly right. Directives, not strings — and the set of
-    // tolerated ones widened with the flip, because the published shard runs on
-    // `s-maxage=21600, stale-while-revalidate=604800` where the withdrawn one
-    // ran on `must-revalidate`.
+  it('requires privacy-filtered XML without cached publication consent at either origin', () => {
     const check = checkNamed('climb sitemap shard');
     const healthy = response({
       status: 200,
       contentType: 'application/xml',
       body: '<urlset><url><loc>https://www.boardsesh.com/kilter/original/12x12-square/screw_bolt/40/view/x</loc></url></urlset>',
-      headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'public, s-maxage=21600, stale-while-revalidate=604800' },
+      headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'private, no-store' },
     });
     expect(check.assert(healthy)).toBeNull();
-    // What an edge that consumes `s-maxage` as a private instruction forwards.
+    // Whitespace, order and casing do not change the directive contract.
     expect(
-      check.assert({
-        ...healthy,
-        headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'public, max-age=0, must-revalidate' },
-      }),
-    ).toBeNull();
-    // Whitespace and casing are the header's business, not the contract's.
-    expect(
-      check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': ' Public,  S-MaxAge=21600' } }),
+      check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': ' No-Store,  Private ' } }),
     ).toBeNull();
 
-    // The withdrawn shape. A 410 here means the deploy lost the switch.
-    expect(check.assert({ ...healthy, status: 410 })).toMatch(/200/);
-    // A shard that rendered nothing is a regressed query, not an empty surface —
-    // the summary already said there were items on this page.
+    for (const status of [404, 410, 503]) {
+      expect(check.assert({ ...healthy, status })).toMatch(/200/);
+    }
+    expect(check.assert({ ...healthy, contentType: 'text/html' })).toMatch(/xml/);
     expect(check.assert({ ...healthy, body: '<urlset></urlset>' })).toMatch(/loc/);
-    expect(check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'no-store' } })).toMatch(
-      /no-store/,
-    );
-    expect(
-      check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'private, max-age=60' } }),
-    ).toMatch(/public/);
-    // Cacheable by anything, forever, with nothing to revalidate against. It
-    // carries `public`, so a required-directives check alone would pass a shard
-    // that had lost its entire CDN window.
-    expect(check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'public' } })).toMatch(
-      /s-maxage/,
-    );
-    expect(
-      check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'public, must-revalidate' } }),
-    ).toMatch(/s-maxage/);
-    expect(check.assert({ ...healthy, headers: { 'cache-control': 'public, s-maxage=21600' } })).toMatch(
+    expect(check.assert({ ...healthy, body: '<loc>wrong root</loc>' })).toMatch(/urlset/);
+
+    for (const header of [
+      '',
+      'no-store',
+      'private',
+      'private, no-store=1',
+      'private=foo, no-store',
+      'public, s-maxage=21600, stale-while-revalidate=604800',
+    ]) {
+      expect(check.assert({ ...healthy, headers: { ...CLIMBS_FROM_STORE, 'cache-control': header } }), header).toMatch(
+        /expected cache-control/,
+      );
+    }
+    // Even a response carrying both required directives must reject any public
+    // or freshness caching instruction, including the former CDN contract.
+    for (const directive of [
+      'public',
+      's-maxage=21600',
+      'max-age=0',
+      'stale-while-revalidate=604800',
+      'must-revalidate',
+    ]) {
+      expect(
+        check.assert({
+          ...healthy,
+          headers: { ...CLIMBS_FROM_STORE, 'cache-control': `private, no-store, ${directive}` },
+        }),
+        directive,
+      ).toMatch(/unexpected directive/);
+    }
+    expect(check.assert({ ...healthy, headers: { 'cache-control': 'private, no-store' } })).toMatch(
       /x-sitemap-climbs-source/,
     );
 
