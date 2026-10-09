@@ -1608,6 +1608,163 @@ through the same `OTA Recovery Attempted` event with `source: schema-downgrade` 
 crash-screen recoveries alone. See `docs/offline-sync-plan.md` → "Older JS
 on a newer database".
 
+## Boot check: the published bytes on a release build
+
+Everything above watches an update after it has reached phones. The boot check runs before: it takes
+the update a branch is serving for one commit and proves it starts on a release build of the app, on
+an iOS simulator and an Android emulator. A bundle that will not boot is the one failure a canary
+cannot contain cheaply, because every phone that takes it falls back or crashes before it can report.
+
+- Script: `scripts/mobile-ota-boot-check.ts` (`vp run mobile:ota-boot-check`), node built-ins only.
+- Decisions, with no I/O: `scripts/lib/ota-boot-check.ts`, tested against captures of real runs.
+- Workflow: `.github/workflows/mobile-ota-boot-check.yml`. It can be called (`workflow_call`, output
+  `passed`), dispatched, and it runs itself on any PR that edits it or the script.
+
+Nothing calls it yet. The daily stable release will, with the commit at the head of `pr-beta`.
+
+```bash
+gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch=pr-staging
+```
+
+### What a run does
+
+1. **Finds what was staged for the commit.** The stage job archives a `receipt.json` beside the export
+   it published (`mobile-ota-stage`, kept 7 days): the commit, each platform's runtime version, and the
+   SHA-256 of each bundle. The `resolve` job reads it with the repository's own token. An empty `ref`
+   takes the newest staged commit.
+2. **Asks the server what the branch serves**, with the headers a phone pinned to that branch sends
+   and no device id. The request, retries, and response-body read share a 30-second deadline. The
+   manifest carries no commit hash, so the tie to the commit is the bundle: the
+   head's `launchAsset.hash` must be the staged bundle's SHA-256. If it is not, the run fails here.
+   It also fails when the server answers from another branch, which is what it does when the branch
+   has nothing for that runtime version.
+3. **Gets a release binary of the commit's native tree**, from the cache or by building it. It is
+   built from the commit under test, with `EXPO_UPDATES_FINGERPRINT_OVERRIDE` set to the update's
+   runtime version, the same way a store build takes its own. The embedded fixture timestamp is
+   set to 2000-01-01 before installation or APK packaging, preserving the actual JS, assets and
+   runtime. This fixture represents an already-installed binary; it is not an unmodified store build.
+4. **Installs it fresh, pinned to the branch, and launches it twice.** Launch 1 runs the embedded
+   bundle and downloads the update. Launch 2 is a cold start, which is when a downloaded update runs.
+5. **Reads what expo-updates wrote down**: its `updates` table and its log file, copied off the
+   device. Nothing reads the screen and no test id is involved.
+
+It passes only when all of these hold for the second launch:
+
+| Check | Read from |
+| --- | --- |
+| The update was on disk, complete, after launch 1 | the update's row, status ready |
+| Launch 2 ran that update, not the embedded bundle and not nothing | `last_accessed`, which expo-updates stamps on the update it launches |
+| React drew content under it | `successful_launch_count` went up; expo-updates counts one on React Native's content-did-appear signal, for the launched update only |
+| No failed launch was recorded for it | `failed_launch_count` is 0 |
+| The process was alive 30 seconds in | `launchctl list` on the simulator, `pidof` on the emulator |
+| No crash line in the device log | a crash report or signal on iOS; `FATAL EXCEPTION`, a fatal signal or an uncaught JS error on Android |
+
+A check that cannot run is a failed check. There is no skip.
+
+### Pinning a binary to a branch
+
+The branch has to be baked into the binary. expo-updates can also take the header from a stored
+override, which is how a phone is pinned, but the app clears that override on a fresh install's first
+launch (`OtaBranchSurfingInitializer`), so an override written from outside does not survive.
+
+- **iOS:** the cached `.app` is the product build with `xprem-branch: ''`. At test time the script
+  copies it and sets `EXUpdatesRequestHeaders.xprem-branch` in the copy's `Expo.plist`. It changes
+  only the copied embedded `app.manifest` ordering timestamp, verifies the JS bytes are unchanged,
+  and signs the copy ad hoc while preserving its existing entitlements. The cached app remains
+  unchanged. One cached binary serves any branch.
+- **Android:** an APK's manifest is compiled, so the edit happens between `expo prebuild` and Gradle,
+  in the generated `android/` folder (`pin-android-project`). The branch is part of the cache key, and
+  a run against another branch builds again. A boot-only Gradle init hook stamps the generated
+  `app.manifest` after Expo resource generation and before normal packaging/signing. The workflow
+  verifies the final APK timestamp before caching or installing it; the APK signing process stays
+  unchanged. Production builds do not load this hook.
+
+The binary also has to be one a phone could hold when the update reaches it. expo-updates only
+downloads an update newer than the bundle it is running, by `commitTime`: a binary's embedded bundle
+uses `app.manifest.commitTime` and an update uses its published `createdAt`. Stock Expo stamps the
+build clock; Boardsesh's existing production SDK patch uses HEAD's committer date. Either can
+outrank a previously published update reused by content deduplication. Boot fixtures therefore use
+the fixed historical date 2000-01-01, independently of the candidate. The script still reads the
+prepared `app.manifest` and refuses a remote update that is not strictly newer. It never force-loads
+remote JS or changes the candidate manifest. Evidence records the prepared binary identity and
+timestamp; iOS also records the original timestamp, and Android build logs record the rewrite.
+Successful first-screen timings describe this prepared fixture and its exact remote update, not
+the original store binary or physical-device performance.
+
+### What it sends, and to whom
+
+- **Analytics: nothing, and the run checks.** The bundle built into the gate's binary has no PostHog
+  key and no Sentry DSN. The update under test has the production ones, because it is the real
+  update. The workflow adds `us.i.posthog.com`, `us-assets.i.posthog.com` and the Sentry ingest host
+  to the runner's `/etc/hosts` as `0.0.0.0`, and the script resolves each from the device before
+  installing anything. If one still resolves it fails. `--allow-telemetry` turns that off for a local
+  run, which then counts as one new anonymous climber in production PostHog.
+- **xprem's device registry: two devices in total.** The server registers a device when
+  `EAS-Client-ID` is a UUID, and a fresh install mints one. The script seeds one fixed id per platform
+  (`BOOT_CHECK_CLIENT_IDS`), so every run is the same two devices. Their rows in Observe are the
+  gate's: `b007c4ec-0000-4000-8000-000000000105` (iOS) and `b007c4ec-0000-4000-8000-0000000a11d0`
+  (Android).
+- **Observe timings and the backend.** Observe posts to the update server itself, so those few rows
+  per run are sent, attributed to the two devices above. The app also reads from the production
+  backend, signed out. It creates no account.
+
+### What it proves
+
+- The published bundle loads as Hermes bytecode and runs far enough to draw a first screen.
+- The native updater accepts the update: signature, runtime version, every asset downloaded.
+- The update is served to a binary pinned to that branch, at that runtime version.
+- The verdict turns red on a bundle that throws at startup (see "Proof, and what a run costs" below).
+
+### What it does not prove
+
+- **Anything past the first drawn content.** A blank or broken home screen that still renders passes.
+  A crash more than 30 seconds in passes.
+- **Signed-in behaviour**, navigation, writes, Bluetooth. The app is a signed-out fresh install.
+- **The patch path.** The gate's embedded bundle is not an update the server knows, so it is sent the
+  full bundle. A phone usually gets a bsdiff patch.
+- **The store binary itself.** The binary is a simulator or x86_64 build of the same native tree, told
+  the update's runtime version. It is not the signed arm64 binary a phone runs, and Android's is
+  debug-signed and built without the maps key.
+- **A phone that already ran other updates.** Every run is a fresh install.
+- **Real-device limits**: memory, a slow network, a full disk.
+
+### Proof, and what a run costs
+
+Measured on 2026-10-05, from PR #6131, on `macos-26` and `ubuntu-latest`:
+
+| Run | What it tested | iOS | Android |
+| --- | --- | --- | --- |
+| [37319204398](https://github.com/boardsesh/boardsesh/actions/runs/37319204398) | `pr-staging` head for main `042b342`, no cached binary | pass, 34 min (22 min build) | 20 min build, then a workflow bug stopped it |
+| [37325498650](https://github.com/boardsesh/boardsesh/actions/runs/37325498650) | the same, binaries cached | pass, 7 min | pass, 3 min |
+| [37326533621](https://github.com/boardsesh/boardsesh/actions/runs/37326533621) | `pr-6129`, a preview whose root layout throws while its module loads | fail, 8 min | fail, 19 min (the branch is in Android's cache key, so it built) |
+
+In the red run both platforms downloaded the broken update, launched it, and recorded one failed
+launch and no first screen. expo-updates then recovered: Android fell back to the embedded bundle,
+and iOS fetched the update the server falls back to. The app was on screen and alive either way,
+which is why the verdict is read from the update's own counters and not from "is the app running".
+
+The four captures in `scripts/__tests__/fixtures/ota-boot-check/` are from local runs of the same
+two updates, and the unit tests replay them through the verdict.
+
+Only that one failure class was produced on purpose. A bundle that is not valid Hermes bytecode, a
+missing asset and a bad signature all end in the same two readings (not on disk, or a failed launch),
+but none of them has been made to happen.
+
+A daily run is one macOS job and one Linux job: about 7 minutes of macOS and 3 of Linux while the
+native inputs stand still, and about 35 and 25 on the day they change.
+
+### Running it by hand
+
+```bash
+vp run mobile:ota-boot-check -- --platform ios --app-path <Boardsesh.app> \
+  --branch pr-staging --expect-commit <sha> --receipt <receipt.json> --device <udid> --allow-telemetry
+```
+
+A branch with no stage receipt (a PR preview) takes a receipt written by hand, naming the update by
+id: `{"commitHash":"<sha>","platforms":{"ios":{"runtimeVersion":"…","updateId":"…"}}}`. The workflow
+takes the same JSON as `receipt_json`. Android needs a `google_apis` emulator image, not
+`google_play`: reading the app's private database needs `adb root`.
+
 ## PR-time OTA-compatibility signal
 
 The native gate above answers "should `main` rebuild?". `mobile-ota-check.yml` answers the same

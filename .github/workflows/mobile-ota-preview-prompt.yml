@@ -65,6 +65,13 @@ jobs:
               path === 'scripts/lib/mobile-publish-retry.ts' ||
               path === 'scripts/lib/ota-branch-probe.ts' ||
               path === 'scripts/lib/eoas.ts' ||
+              path === 'scripts/mobile-ota-boot-check.ts' ||
+              path === 'scripts/mobile-ota-boot-fixture.gradle' ||
+              path === 'scripts/mobile-ota-boot-preview.ts' ||
+              path === 'scripts/lib/ota-boot-check.ts' ||
+              path === 'scripts/lib/ota-preview-boot-receipt.ts' ||
+              path === 'scripts/lib/ota-publish-protocol.ts' ||
+              path === '.github/workflows/mobile-ota-boot-check.yml' ||
               path === '.github/workflows/mobile-ota-preview.yml';
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,

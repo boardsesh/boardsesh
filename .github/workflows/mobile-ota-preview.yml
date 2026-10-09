@@ -197,6 +197,13 @@ jobs:
               path === 'scripts/lib/mobile-publish-retry.ts' ||
               path === 'scripts/lib/ota-branch-probe.ts' ||
               path === 'scripts/lib/eoas.ts' ||
+              path === 'scripts/mobile-ota-boot-check.ts' ||
+              path === 'scripts/mobile-ota-boot-fixture.gradle' ||
+              path === 'scripts/mobile-ota-boot-preview.ts' ||
+              path === 'scripts/lib/ota-boot-check.ts' ||
+              path === 'scripts/lib/ota-preview-boot-receipt.ts' ||
+              path === 'scripts/lib/ota-publish-protocol.ts' ||
+              path === '.github/workflows/mobile-ota-boot-check.yml' ||
               path === '.github/workflows/mobile-ota-preview.yml';
 
             // Paths that can move the native fingerprint, and therefore turn a
@@ -741,12 +748,13 @@ jobs:
       # step's own env produces the right hash: GOOGLE_MAPS_API_KEY below is an
       # Android-only fingerprint input, so the compat step (which has no key) resolves
       # a DIFFERENT Android hash. Passing that one in failed a healthy publish in run
-      # 34796068541. Nothing new is needed here.
+      # 34796068541. The boot receipt uses that same publisher-resolved runtime.
       - name: Publish iOS OTA
         id: publish_ios
         if: steps.compat.outputs.verdict_ios != 'native-change-required' && steps.eoas_pin.outputs.moved != 'true'
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          OTA_PREVIEW_RECEIPT_PATH: ${{ runner.temp }}/preview-ios.json
         run: vp run mobile:publish -- --channel "$BRANCH" --platform ios
 
       - name: Publish Android OTA
@@ -755,7 +763,30 @@ jobs:
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          OTA_PREVIEW_RECEIPT_PATH: ${{ runner.temp }}/preview-android.json
         run: vp run mobile:publish -- --channel "$BRANCH" --platform android
+
+      # Both receipts attest the actual export and publisher runtime, not the
+      # compat step's Android fingerprint (which has no maps key).
+      - name: Collect the frozen preview receipt
+        if: steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
+        env:
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.deployment_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/preview-receipt"
+          node --experimental-strip-types scripts/lib/ota-preview-boot-receipt.ts \
+            "$RUNNER_TEMP/preview-ios.json" "$RUNNER_TEMP/preview-android.json" \
+            "$HEAD_SHA" "$BRANCH" "$GITHUB_RUN_ID" "$DEPLOYMENT_ID" "$RUNNER_TEMP/preview-receipt/receipt.json"
+
+      - name: Archive the frozen preview receipt
+        if: steps.publish_ios.outcome == 'success' && steps.publish_android.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-ota-preview-receipt
+          path: ${{ runner.temp }}/preview-receipt/receipt.json
+          retention-days: 7
+          if-no-files-found: error
 
       # Record authoritative full-SHA state before this job releases the shared
       # mutation lane. The fork reconciler reads this deployment, never a
@@ -800,8 +831,8 @@ jobs:
             });
 
       # Only the production branch asks mobile:publish to retain external maps
-      # in dist. PR previews use pr-N branches, so they neither keep nor upload
-      # source maps; never provide SENTRY_AUTH_TOKEN to this PR-author-code job.
+      # in dist. PR preview boot receipts retain the export without source maps;
+      # never provide SENTRY_AUTH_TOKEN to this PR-author-code job.
 
   # ── Sticky comment + deployment status. Needs only the default GITHUB_TOKEN (no OTA
   # secrets); runs even when nothing shipped (native-only) or the publish failed, so
