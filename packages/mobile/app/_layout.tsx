@@ -83,6 +83,14 @@ import { reportError, reportHandledError } from '../src/lib/error-reporting';
 import { track, getAnalyticsClient } from '../src/lib/analytics';
 import { performOtaRecovery, type OtaRecoveryPhase } from '../src/lib/ota-recovery';
 import { watchForSchemaDowngrade } from '../src/lib/schema-downgrade-recovery';
+import { runOtaOperation } from '../src/lib/ota-operation-owner';
+import {
+  captureOtaReloadReceipt,
+  fetchOwnedOtaUpdate,
+  isOtaReloadReceiptCurrent,
+  waitForOtaUpdatesIdle,
+  waitForOtaReloadReceipt,
+} from '../src/lib/qa/qa-surf';
 import { isChunkLoadError, markRootLayoutLoaded } from '../src/lib/chunk-load-recovery';
 import { ChunkLoadErrorScreen } from '../src/components/ChunkLoadErrorScreen';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
@@ -139,11 +147,17 @@ void SplashScreen.preventAutoHideAsync();
 // leaving the early-updates track): the database lifecycle refuses the file, and
 // this downloads whatever newer bundle the OTA server has, for the next cold
 // start. Registered here, before `DatabaseProvider` can mount and find it.
+// Reserve startup cleanup before a schema watcher can enqueue native work.
+void runChannelOverrideCleanupOnce().catch((error: unknown) =>
+  reportHandledError(error, { tags: { source: 'ota-startup-cleanup' } }),
+);
 watchForSchemaDowngrade({
   // The check/fetch calls throw ERR_UPDATES_DISABLED in dev.
   updatesEnabled: Updates.isEnabled && !__DEV__,
+  runOperation: runOtaOperation,
+  waitForIdle: waitForOtaUpdatesIdle,
   checkForUpdate: () => Updates.checkForUpdateAsync(),
-  fetchUpdate: () => Updates.fetchUpdateAsync(),
+  fetchUpdate: fetchOwnedOtaUpdate,
   track,
   reportFailure: (error) => reportHandledError(error, { tags: { source: 'schema-downgrade-recovery' } }),
 });
@@ -306,15 +320,6 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
   const reportedRef = useRef<Error | null>(null);
   const [recovery, setRecovery] = useState<RecoveryState>({ kind: 'idle' });
 
-  // useUpdates() subscribes to expo-updates' native emitter directly (no provider
-  // of ours), so it's safe in this pre-provider boundary. Called unconditionally —
-  // the recovery button is gated below, never the hook.
-  const { isUpdatePending } = Updates.useUpdates();
-  // Mirror into a ref so a long-running recovery attempt (up to 30s) reads the
-  // latest pending state, not the snapshot captured when the attempt started.
-  const isUpdatePendingRef = useRef(isUpdatePending);
-  isUpdatePendingRef.current = isUpdatePending;
-
   // The check/fetch/reload calls throw ERR_UPDATES_DISABLED in dev, so only offer
   // recovery on a real store/TestFlight binary that ships with updates enabled.
   const showRecoveryButton = Updates.isEnabled && !__DEV__;
@@ -347,10 +352,14 @@ function CrashScreen({ error, retry }: ErrorBoundaryProps) {
     setRecovery({ kind: 'busy', phase: 'checking' });
     const { result, error: recoveryError } = await performOtaRecovery(
       {
+        runOperation: runOtaOperation,
+        waitForIdle: waitForOtaUpdatesIdle,
         checkForUpdate: () => Updates.checkForUpdateAsync(),
-        fetchUpdate: () => Updates.fetchUpdateAsync(),
+        fetchUpdate: fetchOwnedOtaUpdate,
         reload: () => Updates.reloadAsync(),
-        isUpdatePending: () => isUpdatePendingRef.current,
+        captureReloadReceipt: captureOtaReloadReceipt,
+        waitForReloadReceipt: waitForOtaReloadReceipt,
+        isReloadReceiptCurrent: isOtaReloadReceiptCurrent,
       },
       {
         onPhase: (phase) => setRecovery({ kind: 'busy', phase }),

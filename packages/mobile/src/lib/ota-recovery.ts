@@ -1,139 +1,67 @@
-// Pure orchestration for the crash-screen OTA recovery button ("Check for a fix").
-// All platform I/O (expo-updates) is injected so the check/fetch/reload state
-// machine can be unit-tested without a rendered component or native modules. The
-// root ErrorBoundary (app/_layout.tsx) is a thin UI layer over this.
-//
-// The incident this exists for (2026-07-17): a broken production OTA crashed the
-// app at the root ErrorBoundary, where "Try again" only re-renders the same
-// broken in-memory bundle. Recovery required an invisible dance — dwell in the
-// foreground so expo-updates background-downloads the fix, then force-quit and
-// relaunch. This collapses that into one tap: check → fetch → reload, which also
-// applies a published rollback-to-embedded directive and any already-downloaded
-// pending update.
+// Provider-independent crash recovery. The owner retains native ownership after
+// the caller's deadline until native work settles.
+import type { OtaOperationLease, OtaOperationRunner } from './ota-operation-owner';
 
 export type OtaRecoveryResult =
-  // The server had a newer update for this build's fingerprint: fetched + reloaded.
   | 'reloaded-update'
-  // The server published a rollback-to-embedded directive: fetched + reloaded onto
-  // the binary's known-good embedded bundle.
   | 'reloaded-rollback'
-  // Nothing new on the server, but an update was already downloaded (pending): reloaded
-  // to launch it without re-fetching.
   | 'reloaded-pending'
-  // Nothing new, nothing pending — did NOT reload, because reloading would just
-  // relaunch the same broken bundle.
   | 'no-fix-available'
-  // The check or fetch threw, or the whole check+fetch stalled past the timeout.
   | 'failed';
-
 export type OtaRecoveryPhase = 'checking' | 'downloading';
 
-export type OtaRecoveryDeps = {
-  // Ask the OTA server whether a newer update (isAvailable) or a rollback directive
-  // (isRollBackToEmbedded) is published for this build's fingerprint.
+export type OtaRecoveryDeps<Receipt = unknown, FetchResult = unknown> = {
+  runOperation: OtaOperationRunner;
+  waitForIdle?: (lease: OtaOperationLease) => Promise<void>;
   checkForUpdate: () => Promise<{ isAvailable: boolean; isRollBackToEmbedded: boolean }>;
-  // Download the update the check found (a newer bundle, or the rollback directive).
-  fetchUpdate: () => Promise<unknown>;
-  // Restart onto the downloaded/pending update. In production the app relaunches here.
+  fetchUpdate: () => Promise<FetchResult>;
   reload: () => Promise<void>;
-  // Whether an update is already downloaded and staged to launch on the next reload.
-  isUpdatePending: () => boolean;
+  captureReloadReceipt: () => Receipt | null;
+  waitForReloadReceipt?: (lease: OtaOperationLease, fetched: FetchResult) => Promise<Receipt | null>;
+  isReloadReceiptCurrent: (receipt: Receipt) => boolean;
 };
-
-// Options bag for a recovery attempt: progress callbacks plus the timeout tuning
-// constant (a plain number, kept out of OtaRecoveryDeps, which is platform I/O only).
 export type OtaRecoveryOptions = {
   onPhase?: (phase: OtaRecoveryPhase) => void;
   onBeforeReload?: (result: OtaRecoveryResult) => void;
-  // Overall budget for the check+fetch network work before we give up (default 30s).
   timeoutMs?: number;
 };
 
-const DEFAULT_TIMEOUT_MS = 30_000;
-
-// A descriptor of what the check resolved to, so `reload()` stays OUTSIDE the
-// timeout race (once we commit to reloading, the app restarts — there's nothing
-// left to time out).
-type RecoveryPlan = {
-  shouldReload: boolean;
-  result: OtaRecoveryResult;
-};
-
-// Race `work` against a timeout, clearing the timer whichever side wins so a
-// resolved happy path never leaves a pending timer to reject unobserved.
-function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`OTA recovery timed out after ${timeoutMs}ms`)), timeoutMs);
-  });
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
-}
-
-// The network portion: check, then download when there's something to download.
-// Returns the plan; the caller performs the reload afterward so it isn't raced
-// against the timeout.
-async function resolveRecoveryPlan(
-  deps: OtaRecoveryDeps,
-  onPhase?: (phase: OtaRecoveryPhase) => void,
-): Promise<RecoveryPlan> {
-  onPhase?.('checking');
-  const check = await deps.checkForUpdate();
-
-  if (check.isAvailable || check.isRollBackToEmbedded) {
-    onPhase?.('downloading');
-    await deps.fetchUpdate();
-    // A real newer bundle wins over a rollback directive when both are somehow set:
-    // moving the fleet forward is the preferred fix.
-    return { shouldReload: true, result: check.isAvailable ? 'reloaded-update' : 'reloaded-rollback' };
-  }
-
-  // Nothing new on the server, but an earlier foreground dwell may have already
-  // downloaded the fix — launch it without re-fetching.
-  if (deps.isUpdatePending()) {
-    return { shouldReload: true, result: 'reloaded-pending' };
-  }
-
-  // Nothing to apply. Deliberately do NOT reload: it would relaunch the same
-  // broken bundle and drop the user right back on this screen.
-  return { shouldReload: false, result: 'no-fix-available' };
-}
-
-/**
- * Run one recovery attempt: check the OTA server, download whatever fix it has
- * (a newer bundle or a rollback-to-embedded directive), then reload onto it. If
- * the server has nothing new but an update is already downloaded, reload onto
- * that. If there's nothing to apply, resolve `no-fix-available` WITHOUT reloading
- * (reloading would just relaunch the broken bundle).
- *
- * The check+fetch network work is bounded by `options.timeoutMs` (default 30s) so
- * a hung request resolves to `failed` instead of leaving the caller stuck;
- * `reload` runs outside that budget. Any throw resolves `{ result: 'failed', error }`.
- * `onPhase` drives the button's live status ('checking' → 'downloading').
- *
- * `onBeforeReload` fires synchronously right before each reload with the outcome
- * result, so the caller can emit success telemetry that would otherwise be lost:
- * reloadAsync() resolves right before the app restarts, so anything the caller
- * does after this function returns a reloaded-* result can be torn down first.
- */
-export async function performOtaRecovery(
-  deps: OtaRecoveryDeps,
+/** Check and apply a known-safe update, rollback, or pending download. */
+export async function performOtaRecovery<Receipt, FetchResult>(
+  deps: OtaRecoveryDeps<Receipt, FetchResult>,
   options?: OtaRecoveryOptions,
 ): Promise<{ result: OtaRecoveryResult; error?: unknown }> {
   try {
-    const plan = await withTimeout(
-      resolveRecoveryPlan(deps, options?.onPhase),
-      options?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    const result = await deps.runOperation(
+      async (lease): Promise<OtaRecoveryResult> => {
+        await deps.waitForIdle?.(lease);
+        lease.assertActive();
+        options?.onPhase?.('checking');
+        const check = await lease.native(deps.checkForUpdate);
+        let outcome: OtaRecoveryResult = 'reloaded-pending';
+        let receipt: Receipt | null;
+        if (check.isAvailable || check.isRollBackToEmbedded) {
+          lease.assertActive();
+          options?.onPhase?.('downloading');
+          const fetched = await lease.native(deps.fetchUpdate);
+          receipt = deps.waitForReloadReceipt
+            ? await deps.waitForReloadReceipt(lease, fetched)
+            : deps.captureReloadReceipt();
+          outcome = check.isAvailable ? 'reloaded-update' : 'reloaded-rollback';
+        } else {
+          receipt = deps.captureReloadReceipt();
+        }
+        lease.assertActive();
+        // Native pending state alone cannot prove which pin downloaded a bundle.
+        if (receipt === null || !deps.isReloadReceiptCurrent(receipt)) return 'no-fix-available';
+        lease.assertActive();
+        options?.onBeforeReload?.(outcome);
+        await lease.reload(deps.reload);
+        return outcome;
+      },
+      { timeoutMs: options?.timeoutMs ?? 30_000 },
     );
-    if (plan.shouldReload) {
-      // Emit outcome telemetry BEFORE the reload — both the fetched and the pending
-      // path funnel through here, so a post-return track() would race the restart
-      // and typically be lost.
-      options?.onBeforeReload?.(plan.result);
-      // Nothing meaningful can run after this: expo-updates resolves reloadAsync()
-      // right before it posts the reload, so the app is on its way out here.
-      await deps.reload();
-    }
-    return { result: plan.result };
+    return { result };
   } catch (error) {
     return { result: 'failed', error };
   }

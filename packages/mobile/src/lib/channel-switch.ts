@@ -2,6 +2,9 @@
 // (expo-updates, AsyncStorage mirror, telemetry) is injected so the commit/revert
 // state machine owned by BranchSwitcherScreen.tsx can be unit-tested without a
 // rendered component or native modules.
+import { runOtaOperation, type OtaOperationLease, type OtaOperationOptions } from './ota-operation-owner';
+
+const CHANNEL_SWITCH_TIMEOUT_MS = 180_000;
 
 // The AsyncStorage key mirroring the active channel override for display. The real
 // override is stored natively by expo-updates and survives cold starts; this mirror
@@ -18,10 +21,15 @@ export function buildChannelList(override: string | null): string[] {
 }
 
 export type ChannelSwitchDeps = {
+  waitForIdle?: (lease: OtaOperationLease) => Promise<void>;
   // Override the build's `expo-channel-name` request header (null clears it).
   applyOverride: (channel: string | null) => void;
   checkForUpdate: () => Promise<{ isAvailable: boolean }>;
   fetchUpdate: () => Promise<unknown>;
+  /** The fetch may return a cached UUID stamped for another channel. */
+  canLaunchFetchedUpdate?: (lease: OtaOperationLease) => Promise<boolean>;
+  /** Revalidate the saved launch receipt synchronously after mirror writes. */
+  isFetchedUpdateCurrent?: () => boolean;
   reload: () => Promise<void>;
   writeMirror: (channel: string) => Promise<void>;
   clearMirror: () => Promise<void>;
@@ -49,31 +57,54 @@ export async function performChannelSwitch(
   previousOverride: string | null,
   runtimeVersion: string,
   deps: ChannelSwitchDeps,
+  options?: OtaOperationOptions,
+): Promise<ChannelSwitchResult> {
+  return runOtaOperation((lease) => switchChannelOwned(channel, previousOverride, runtimeVersion, deps, lease), {
+    timeoutMs: CHANNEL_SWITCH_TIMEOUT_MS,
+    ...options,
+  }).catch((error: unknown) => ({ status: 'reverted', error }));
+}
+
+async function switchChannelOwned(
+  channel: string,
+  previousOverride: string | null,
+  runtimeVersion: string,
+  deps: ChannelSwitchDeps,
+  lease: OtaOperationLease,
 ): Promise<ChannelSwitchResult> {
   let committed = false;
+  let headersApplied = false;
   try {
+    await deps.waitForIdle?.(lease);
+    lease.assertActive();
+    headersApplied = true;
     deps.applyOverride(channel);
 
-    const check = await deps.checkForUpdate();
+    const check = await lease.native(deps.checkForUpdate);
     if (!check.isAvailable) {
       throw new Error(
         `No update on "${channel}" for runtime ${runtimeVersion}. Publish an OTA to that channel at this build's fingerprint first.`,
       );
     }
 
-    await deps.fetchUpdate();
+    await lease.native(deps.fetchUpdate);
+    if (deps.canLaunchFetchedUpdate && !(await deps.canLaunchFetchedUpdate(lease))) {
+      throw new Error('The downloaded update belongs to another update track.');
+    }
     // Commit point: the update is downloaded and will launch on reload (or the next
     // cold start). From here a failure keeps the override rather than stranding it.
     committed = true;
-    await deps.writeMirror(channel).catch(deps.onMirrorError);
-    await deps.reload();
+    await lease.native(() => deps.writeMirror(channel).catch(deps.onMirrorError));
+    if (deps.isFetchedUpdateCurrent && !deps.isFetchedUpdateCurrent()) {
+      throw new Error('The pending update changed while preparing to restart.');
+    }
+    await lease.reload(deps.reload);
     return { status: 'switched' };
   } catch (error) {
     if (committed) {
       return { status: 'pending-restart' };
     }
-    deps.applyOverride(previousOverride);
-    await (previousOverride ? deps.writeMirror(previousOverride) : deps.clearMirror()).catch(deps.onMirrorError);
+    if (headersApplied) await restoreChannel(previousOverride, deps, lease);
     return { status: 'reverted', error };
   }
 }
@@ -92,25 +123,60 @@ export type ChannelResetResult =
 export async function performChannelReset(
   previousOverride: string | null,
   deps: ChannelSwitchDeps,
+  options?: OtaOperationOptions,
+): Promise<ChannelResetResult> {
+  return runOtaOperation((lease) => resetChannelOwned(previousOverride, deps, lease), {
+    timeoutMs: CHANNEL_SWITCH_TIMEOUT_MS,
+    ...options,
+  }).catch((error: unknown) => ({ status: 'failed', error }));
+}
+
+async function resetChannelOwned(
+  previousOverride: string | null,
+  deps: ChannelSwitchDeps,
+  lease: OtaOperationLease,
 ): Promise<ChannelResetResult> {
   let committed = false;
+  let headersApplied = false;
   try {
+    await deps.waitForIdle?.(lease);
+    lease.assertActive();
+    headersApplied = true;
     deps.applyOverride(null);
 
-    const check = await deps.checkForUpdate();
+    const check = await lease.native(deps.checkForUpdate);
     if (check.isAvailable) {
-      await deps.fetchUpdate();
+      await lease.native(deps.fetchUpdate);
+      if (deps.canLaunchFetchedUpdate && !(await deps.canLaunchFetchedUpdate(lease))) {
+        throw new Error('The downloaded update belongs to another update track.');
+      }
     }
     committed = true;
-    await deps.clearMirror().catch(deps.onMirrorError);
-    await deps.reload();
+    await lease.native(() => deps.clearMirror().catch(deps.onMirrorError));
+    if (check.isAvailable && deps.isFetchedUpdateCurrent && !deps.isFetchedUpdateCurrent()) {
+      throw new Error('The pending update changed while preparing to restart.');
+    }
+    await lease.reload(deps.reload);
     return { status: 'reset' };
   } catch (error) {
     if (committed) {
       return { status: 'pending-restart' };
     }
+    if (headersApplied) await restoreChannel(previousOverride, deps, lease);
+    return { status: 'failed', error };
+  }
+}
+
+async function restoreChannel(
+  previousOverride: string | null,
+  deps: ChannelSwitchDeps,
+  lease: OtaOperationLease,
+): Promise<void> {
+  try {
     deps.applyOverride(previousOverride);
     await (previousOverride ? deps.writeMirror(previousOverride) : deps.clearMirror()).catch(deps.onMirrorError);
-    return { status: 'failed', error };
+  } catch (error) {
+    lease.quarantine(error);
+    throw error;
   }
 }

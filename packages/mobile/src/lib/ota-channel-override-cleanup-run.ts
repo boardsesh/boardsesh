@@ -7,6 +7,8 @@ import {
   wasStaleOverrideActive,
 } from './ota-channel-override-cleanup';
 import { getPreference, removePreference, setPreference } from './preference-store';
+import { runOtaOperation, type OtaOperationLease } from './ota-operation-owner';
+import { clearOwnedOtaHeaders, dropPinAfterEmergencyLaunch, waitForOtaUpdatesIdle } from './qa/qa-surf';
 
 export type ChannelOverrideCleanupRun = {
   /**
@@ -27,13 +29,36 @@ export function isSurfingBuildForThisLaunch(): boolean {
   });
 }
 
-async function runChannelOverrideCleanup(): Promise<ChannelOverrideCleanupRun> {
+async function runChannelOverrideCleanup(lease: OtaOperationLease): Promise<ChannelOverrideCleanupRun> {
+  const branchSurfingBuild = isSurfingBuildForThisLaunch();
+  if (branchSurfingBuild && Updates.isEmergencyLaunch) {
+    await waitForOtaUpdatesIdle(lease);
+    lease.assertActive();
+    // Repair comes before schema recovery can check or fetch. Its no-network
+    // clear survives an offline launch; later sync retains the evidence that
+    // a regular download is worth attempting.
+    try {
+      dropPinAfterEmergencyLaunch();
+    } catch (error) {
+      lease.quarantine(error);
+      throw error;
+    }
+  }
   const cleanup = await clearRetiredChannelOverride({
-    branchSurfingBuild: isSurfingBuildForThisLaunch(),
-    readMigrationComplete: getPreference,
-    clearRequestHeadersOverride: () => Updates.setUpdateRequestHeadersOverride(null),
-    removeLegacyMirror: removePreference,
-    markMigrationComplete: setPreference,
+    branchSurfingBuild,
+    readMigrationComplete: (key) => lease.waitFor(getPreference(key)),
+    clearRequestHeadersOverride: async () => {
+      await waitForOtaUpdatesIdle(lease);
+      lease.assertActive();
+      try {
+        clearOwnedOtaHeaders();
+      } catch (error) {
+        lease.quarantine(error);
+        throw error;
+      }
+    },
+    removeLegacyMirror: (key) => lease.native(() => removePreference(key)),
+    markMigrationComplete: (key, complete) => lease.native(() => setPreference(key, complete)),
   });
   return {
     staleOverrideActive: wasStaleOverrideActive({
@@ -55,7 +80,7 @@ async function runChannelOverrideCleanup(): Promise<ChannelOverrideCleanupRun> {
  * cleanup gets its next chance on the next launch, as before.
  */
 export function runChannelOverrideCleanupOnce(): Promise<ChannelOverrideCleanupRun> {
-  cleanupRun ??= runChannelOverrideCleanup();
+  cleanupRun ??= runOtaOperation(runChannelOverrideCleanup, { timeoutMs: 180_000 });
   return cleanupRun;
 }
 

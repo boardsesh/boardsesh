@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { noteOtaHeadersChanged } from '../../ota-operation-owner';
 
 // xprem's two internals, mocked at the deep paths `qa-surf` imports them from.
 // Nothing else in the app is allowed to reach them, so these two mocks are the
@@ -15,6 +16,7 @@ const updates = vi.hoisted(() => ({
   manifest: { extra: {} } as unknown,
   updateId: 'running-update' as string | null,
   downloadedId: undefined as string | undefined,
+  rollback: undefined as { commitTime: string } | undefined,
   isEmbeddedLaunch: false,
   isEmergencyLaunch: false,
   busy: { isStartupProcedureRunning: false, isChecking: false, isDownloading: false },
@@ -58,7 +60,12 @@ vi.mock('expo-updates', () => ({
     return updates.updateId;
   },
   get latestContext() {
-    return { ...updates.busy, downloadedManifest: updates.downloadedId ? { id: updates.downloadedId } : undefined };
+    return {
+      ...updates.busy,
+      isUpdatePending: Boolean(updates.downloadedId || updates.rollback),
+      rollback: updates.rollback,
+      downloadedManifest: updates.downloadedId ? { id: updates.downloadedId } : undefined,
+    };
   },
   addUpdatesStateChangeListener: (listener: () => void) => {
     updates.stateListeners.add(listener);
@@ -101,6 +108,12 @@ import {
   BRANCH_SURFING_UNAVAILABLE_MESSAGE,
   EARLY_UPDATES_OTA_BRANCH,
   fetchQaBranches,
+  fetchOwnedOtaUpdate,
+  setOwnedOtaHeaders,
+  captureOtaReloadReceipt,
+  isOtaReloadReceiptCurrent,
+  waitForOtaReloadReceipt,
+  runPinChangeExclusively,
   PIN_CHANGE_TIMEOUT_MS,
   UPDATES_IDLE_TIMEOUT_MS,
   joinEarlyUpdatesTrack,
@@ -170,6 +183,7 @@ beforeEach(() => {
   resetOtaPinSessionForTests();
   updates.updateId = 'running-update';
   updates.downloadedId = undefined;
+  updates.rollback = undefined;
   updates.isEmbeddedLaunch = false;
   updates.isEmergencyLaunch = false;
   updates.busy = { isStartupProcedureRunning: false, isChecking: false, isDownloading: false };
@@ -355,7 +369,7 @@ describe('listPrBranches', () => {
         'expo-runtime-version': 'fingerprint',
         'expo-platform': 'ios',
       },
-      signal: controller.signal,
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -386,75 +400,87 @@ describe('otaBranchKind', () => {
   });
 });
 
-describe('surfToPr / surfToStaging / surfToProduction', () => {
-  it('pins the staged branch without remapping production', async () => {
-    surf.surfTo.mockResolvedValue('reloading');
-    await expect(surfToStaging()).resolves.toBe('reloading');
-    expect(surf.surfTo).toHaveBeenCalledWith(SURF_CONFIG, 'pr-staging');
-  });
-
-  it('pins the PR branch and reports the outcome', async () => {
-    surf.surfTo.mockResolvedValue('reloading');
-    await expect(surfToPr(4792)).resolves.toBe('reloading');
-    expect(surf.surfTo).toHaveBeenCalledWith(SURF_CONFIG, 'pr-4792');
-  });
-
-  it('clears the pin with null rather than a channel name', async () => {
-    // null is "no override at all" — the native side reverts to the headers
-    // baked at build time, the one state that cannot be wrong.
-    surf.surfTo.mockResolvedValue('nothing-to-load');
-    await expect(surfToProduction()).resolves.toBe('nothing-to-load');
-    expect(surf.surfTo).toHaveBeenCalledWith(SURF_CONFIG, null);
-  });
-
-  it('refuses to surf on a build with no usable config', async () => {
-    config.readConfig.mockReturnValue(null);
-    await expect(surfToPr(1)).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
-    await expect(surfToProduction()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
-    expect(surf.surfTo).not.toHaveBeenCalled();
-    // And leaves the record alone: nothing was pinned.
+describe('bounded branch lists', () => {
+  it('times out through body reading even when fetch ignores abort', async () => {
+    vi.useFakeTimers();
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: () => new Promise(() => {}) });
+    const request = fetchQaBranches();
+    const rejection = expect(request).rejects.toThrow('took too long');
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejection;
     expect(settings.setSetting).not.toHaveBeenCalled();
   });
 
-  it('records who owns the pin BEFORE the surf, because a reload never returns', async () => {
-    surf.surfTo.mockImplementation(async () => {
-      expect(readOtaPinnedBranch()).toBe('pr-4792');
-      return 'reloading';
+  it('composes caller cancellation into the body deadline', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: () => new Promise(() => {}) });
+    const controller = new AbortController();
+    const request = fetchQaBranches(controller.signal);
+    const rejection = expect(request).rejects.toThrow('cancelled');
+    controller.abort();
+    await rejection;
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+});
+
+describe('app-owned preview surfing', () => {
+  beforeEach(() => {
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'preview-1' } });
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'preview-1';
+      return { isNew: true, manifest: { id: 'preview-1' } };
     });
-    await surfToPr(4792);
-    expect(readOtaPinnedBranch()).toBe('pr-4792');
+    updates.reloadAsync.mockResolvedValue(undefined);
   });
 
-  it('keeps the record when the surf loaded nothing: the pin is still in place', async () => {
-    surf.surfTo.mockResolvedValue('nothing-to-load');
-    await surfToStaging();
-    expect(readOtaPinnedBranch()).toBe('pr-staging');
+  it.each([
+    ['staging', () => surfToStaging(), 'pr-staging'],
+    ['PR', () => surfToPr(4792), 'pr-4792'],
+  ])('downloads and records the %s pin before restarting', async (_name, start, branch) => {
+    updates.reloadAsync.mockImplementation(async () => {
+      expect(readOtaPinnedBranch()).toBe(branch);
+    });
+    await expect(start()).resolves.toBe('reloading');
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledWith(
+      expect.objectContaining({ 'xprem-branch': branch }),
+    );
+    expect(surf.surfTo).not.toHaveBeenCalled();
   });
 
-  it('clears the record on the way back to production', async () => {
+  it('clears the pin to the build headers after a production download', async () => {
     settings.values.otaPinnedBranch = 'pr-4792';
-    surf.surfTo.mockResolvedValue('nothing-to-load');
-    await surfToProduction();
+    await expect(surfToProduction()).resolves.toBe('reloading');
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledWith(null);
     expect(readOtaPinnedBranch()).toBeNull();
   });
 
-  it('puts the previous pin back, record and headers, when the surf rejects', async () => {
-    settings.values.otaPinnedBranch = 'pr-beta';
-    surf.surfTo.mockRejectedValue(new Error('Could not reach the update server (502).'));
-
-    await expect(surfToPr(4792)).rejects.toThrow('Could not reach the update server (502).');
-
-    expect(readOtaPinnedBranch()).toBe('pr-beta');
-    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith({
-      'expo-channel-name': 'production',
-      'expo-app-id': 'app-id',
-      'xprem-branch': 'pr-beta',
-    });
+  it('refuses builds without usable config without touching the record', async () => {
+    config.readConfig.mockReturnValue(null);
+    await expect(surfToPr(1)).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
+    await expect(surfToProduction()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
+    expect(settings.setSetting).not.toHaveBeenCalled();
   });
 
-  it('puts "no pin" back as no override at all', async () => {
-    surf.surfTo.mockRejectedValue(new Error('offline'));
+  it('restores the previous pin when the preview has nothing launchable', async () => {
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: false });
+    await expect(surfToStaging()).resolves.toBe('nothing-to-load');
+    expect(readOtaPinnedBranch()).toBeNull();
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('restores a previous early-updates pin after a check rejection', async () => {
+    settings.values.otaPinnedBranch = 'pr-beta';
+    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
     await expect(surfToPr(4792)).rejects.toThrow('offline');
+    expect(readOtaPinnedBranch()).toBe('pr-beta');
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(
+      expect.objectContaining({ 'xprem-branch': 'pr-beta' }),
+    );
+  });
+
+  it('restores the previous pin after a definite restart rejection', async () => {
+    updates.reloadAsync.mockRejectedValue(new Error('restart rejected'));
+    await expect(surfToPr(4792)).rejects.toThrow('restart rejected');
     expect(readOtaPinnedBranch()).toBeNull();
     expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
   });
@@ -606,32 +632,49 @@ describe('a switch waits its turn and gives up', () => {
     expect(settings.setSetting).not.toHaveBeenCalled();
   });
 
-  it('a hung native call times out and puts the previous pin back', async () => {
+  it('holds the temporary pin until a timed-out native check finishes', async () => {
     vi.useFakeTimers();
-    updates.checkForUpdateAsync.mockReturnValue(new Promise(() => {}));
+    let finishCheck!: (result: unknown) => void;
+    updates.checkForUpdateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        finishCheck = resolve;
+      }),
+    );
     const joining = joinEarlyUpdatesTrack();
-    const rejection = expect(joining).rejects.toThrow('The update server took too long.');
+    const rejection = expect(joining).rejects.toThrow('took too long');
     await vi.advanceTimersByTimeAsync(PIN_CHANGE_TIMEOUT_MS);
     await rejection;
-
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(
+      expect.objectContaining({ 'xprem-branch': 'pr-beta' }),
+    );
+    expect(settings.values.otaPinSwitchInFlight).toEqual({ to: 'pr-beta' });
+    finishCheck({ isAvailable: true, manifest: { id: 'beta-1' } });
+    await vi.advanceTimersByTimeAsync(0);
     expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
-    expect(readOtaPinnedBranch()).toBeNull();
     expect(settings.values.otaPinSwitchInFlight).toBeNull();
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
   });
 
-  it("a hung surf times out too, so it cannot hold a tester's next one for the session", async () => {
+  it('expires a queued preview without calling native code while another check hangs', async () => {
     vi.useFakeTimers();
-    settings.values.otaPinnedBranch = 'pr-beta';
-    surf.surfTo.mockReturnValueOnce(new Promise(() => {})).mockResolvedValue('reloading');
-
+    let finishCheck!: (result: unknown) => void;
+    updates.checkForUpdateAsync.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishCheck = resolve;
+      }),
+    );
     const stuck = surfToPr(1);
-    const rejection = expect(stuck).rejects.toThrow('The update server took too long.');
-    const next = surfToPr(2);
+    const stuckRejection = expect(stuck).rejects.toThrow('took too long');
+    const queued = surfToPr(2);
+    const queuedRejection = expect(queued).rejects.toThrow('took too long');
     await vi.advanceTimersByTimeAsync(PIN_CHANGE_TIMEOUT_MS);
-    await rejection;
-
-    await expect(next).resolves.toBe('reloading');
-    expect(surf.surfTo).toHaveBeenLastCalledWith(SURF_CONFIG, 'pr-2');
+    await Promise.all([stuckRejection, queuedRejection]);
+    expect(updates.checkForUpdateAsync).toHaveBeenCalledOnce();
+    finishCheck({ isAvailable: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updates.checkForUpdateAsync).toHaveBeenCalledOnce();
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(readOtaPinnedBranch()).toBeNull();
   });
 
   it('journals the switch while its outcome is unknown', async () => {
@@ -855,5 +898,299 @@ describe('joinEarlyUpdatesTrack / leaveForProductionTrack', () => {
     await expect(joinEarlyUpdatesTrack()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
     await expect(leaveForProductionTrack()).rejects.toThrow(BRANCH_SURFING_UNAVAILABLE_MESSAGE);
     expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
+  });
+});
+
+describe('owned download provenance and reload receipts', () => {
+  it('preserves unknown emergency pending stamps even when fetch reports isNew', async () => {
+    updates.downloadedId = 'cached';
+    const fresh = await relaunch({ emergency: true });
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'cached' } });
+    await fresh.runPinChangeExclusively((lease) => lease.native(() => fresh.fetchOwnedOtaUpdate()));
+    expect(fresh.captureOtaReloadReceipt()).toBeNull();
+  });
+
+  it('preserves a cached UUID stamp when fetched again under another pin', async () => {
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'stable-cached';
+      return { isNew: true, manifest: { id: 'stable-cached' } };
+    });
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    const stableReceipt = captureOtaReloadReceipt();
+    expect(stableReceipt).not.toBeNull();
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'beta-new' } });
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'beta-new';
+      return { isNew: true, manifest: { id: 'beta-new' } };
+    });
+    await joinEarlyUpdatesTrack();
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'stable-cached';
+      return { isNew: true, manifest: { id: 'stable-cached' } };
+    });
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    expect(captureOtaReloadReceipt()).toBeNull();
+  });
+
+  it('attributes a download event even when its native promise rejects', async () => {
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'downloaded-before-rejection';
+      throw new Error('native bridge failed');
+    });
+    await expect(runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()))).rejects.toThrow(
+      'bridge failed',
+    );
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'downloaded-before-rejection' });
+  });
+
+  it('attributes a late timed-out fetch before headers are restored', async () => {
+    vi.useFakeTimers();
+    let finishFetch!: (result: unknown) => void;
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'late-beta' } });
+    updates.fetchUpdateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        finishFetch = resolve;
+      }),
+    );
+    const joining = joinEarlyUpdatesTrack();
+    const rejected = expect(joining).rejects.toThrow('took too long');
+    await vi.advanceTimersByTimeAsync(PIN_CHANGE_TIMEOUT_MS);
+    await rejected;
+    updates.downloadedId = 'late-beta';
+    finishFetch({ isNew: true, manifest: { id: 'late-beta' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captureOtaReloadReceipt()).toBeNull();
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'late-beta' } });
+    await expect(joinEarlyUpdatesTrack()).resolves.toBe('switched');
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'late-beta' });
+    expect(updates.fetchUpdateAsync).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a receipt after pending identity replacement under the same headers', async () => {
+    updates.fetchUpdateAsync
+      .mockImplementationOnce(async () => {
+        updates.downloadedId = 'first';
+        return { isNew: true, manifest: { id: 'first' } };
+      })
+      .mockImplementationOnce(async () => {
+        updates.downloadedId = 'second';
+        return { isNew: true, manifest: { id: 'second' } };
+      });
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    const receipt = captureOtaReloadReceipt();
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    expect(receipt && isOtaReloadReceiptCurrent(receipt)).toBe(false);
+  });
+
+  it('invalidates an A to B to A receipt despite matching current pin and UUID', async () => {
+    updates.downloadedId = 'startup-stable';
+    const receipt = captureOtaReloadReceipt();
+    expect(receipt).not.toBeNull();
+    noteOtaHeadersChanged();
+    noteOtaHeadersChanged();
+    expect(receipt && isOtaReloadReceiptCurrent(receipt)).toBe(false);
+  });
+
+  it('follows manifest precedence when a context also contains an older rollback', () => {
+    updates.downloadedId = 'startup-stable';
+    updates.rollback = { commitTime: '2026-10-01T00:00:00Z' };
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'startup-stable' });
+  });
+
+  it('validates rollback identity and invalidates replacement rollback directives', () => {
+    updates.rollback = { commitTime: '2026-10-01T00:00:00Z' };
+    const receipt = captureOtaReloadReceipt();
+    expect(receipt?.target).toEqual({ kind: 'rollback', commitTime: '2026-10-01T00:00:00Z' });
+    updates.rollback = { commitTime: '2026-10-02T00:00:00Z' };
+    expect(receipt && isOtaReloadReceiptCurrent(receipt)).toBe(false);
+  });
+
+  it('waits for the fetched UUID pending event rather than taking an older receipt', async () => {
+    updates.downloadedId = 'older';
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'fresh' } });
+    const operation = runPinChangeExclusively(async (lease) => {
+      const fetched = await lease.native(() => fetchOwnedOtaUpdate());
+      return waitForOtaReloadReceipt(lease, fetched);
+    });
+    await vi.waitFor(() => expect(updates.stateListeners.size).toBe(1));
+    updates.downloadedId = 'fresh';
+    for (const listener of updates.stateListeners) listener();
+    expect((await operation)?.target).toEqual({ kind: 'update', id: 'fresh' });
+    expect(updates.stateListeners.size).toBe(0);
+  });
+
+  it('attributes a rollback whose pending event follows native settlement under revised headers', async () => {
+    noteOtaHeadersChanged();
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: false, isRollBackToEmbedded: true });
+    const operation = runPinChangeExclusively(async (lease) => {
+      const fetched = await lease.native(() => fetchOwnedOtaUpdate());
+      return waitForOtaReloadReceipt(lease, fetched);
+    });
+    await vi.waitFor(() => expect(updates.stateListeners.size).toBe(1));
+    updates.rollback = { commitTime: '2026-10-03T00:00:00Z' };
+    for (const listener of updates.stateListeners) listener();
+    expect((await operation)?.target).toEqual({ kind: 'rollback', commitTime: '2026-10-03T00:00:00Z' });
+  });
+
+  it('fetches an already safely stamped preview target before restarting onto it', async () => {
+    updates.fetchUpdateAsync.mockImplementationOnce(async () => {
+      updates.downloadedId = 'stable-cached';
+      return { isNew: true, manifest: { id: 'stable-cached' } };
+    });
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    updates.checkForUpdateAsync.mockResolvedValueOnce({ isAvailable: true, manifest: { id: 'beta-new' } });
+    updates.fetchUpdateAsync.mockImplementationOnce(async () => {
+      updates.downloadedId = 'beta-new';
+      return { isNew: true, manifest: { id: 'beta-new' } };
+    });
+    await joinEarlyUpdatesTrack();
+    updates.checkForUpdateAsync.mockResolvedValueOnce({ isAvailable: true, manifest: { id: 'stable-cached' } });
+    updates.fetchUpdateAsync.mockImplementationOnce(async () => {
+      updates.downloadedId = 'stable-cached';
+      return { isNew: true, manifest: { id: 'stable-cached' } };
+    });
+    updates.reloadAsync.mockImplementation(async () => {
+      expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'stable-cached' });
+    });
+    await expect(surfToProduction()).resolves.toBe('reloading');
+    expect(updates.fetchUpdateAsync).toHaveBeenCalledTimes(3);
+  });
+
+  it('quarantines native work after header restoration fails', async () => {
+    updates.checkForUpdateAsync.mockRejectedValue(new Error('offline'));
+    updates.setUpdateRequestHeadersOverride.mockImplementation((headers) => {
+      if (headers === null) throw new Error('restore failed');
+    });
+    await expect(joinEarlyUpdatesTrack()).rejects.toThrow('restore failed');
+    await expect(surfToPr(123)).rejects.toThrow('headers could not be restored');
+    expect(updates.checkForUpdateAsync).toHaveBeenCalledOnce();
+  });
+
+  it('never restarts a preview whose native download finishes after its caller deadline', async () => {
+    vi.useFakeTimers();
+    updates.checkForUpdateAsync.mockResolvedValue({ isAvailable: true, manifest: { id: 'late-preview' } });
+    let finishFetch!: (result: unknown) => void;
+    updates.fetchUpdateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        finishFetch = resolve;
+      }),
+    );
+    const preview = surfToPr(123);
+    const rejected = expect(preview).rejects.toThrow('took too long');
+    await vi.advanceTimersByTimeAsync(PIN_CHANGE_TIMEOUT_MS);
+    await rejected;
+    updates.downloadedId = 'late-preview';
+    finishFetch({ isNew: true, manifest: { id: 'late-preview' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(readOtaPinnedBranch()).toBeNull();
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenLastCalledWith(null);
+  });
+
+  it('attributes subsequent raw downloads to the journal-proven launch pin', async () => {
+    const fresh = await relaunch({ record: null, interrupted: { to: 'pr-beta' } });
+    fresh.adoptRunningOtaPin();
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'fresh-beta';
+      return { isNew: true, manifest: { id: 'fresh-beta' } };
+    });
+    await fresh.runPinChangeExclusively((lease) => lease.native(() => fresh.fetchOwnedOtaUpdate()));
+    expect(fresh.captureOtaReloadReceipt()?.pin).toBe('pr-beta');
+  });
+});
+
+describe('legacy channel download provenance', () => {
+  const previewHeaders = { 'expo-app-id': 'app-id', 'expo-channel-name': 'preview' };
+
+  it('retains channel identity for later recovery after a rejected restart', async () => {
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'eas-preview';
+      return { isNew: true, manifest: { id: 'eas-preview' } };
+    });
+    await expect(
+      runPinChangeExclusively(async (lease) => {
+        setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+        await lease.native(() => fetchOwnedOtaUpdate());
+        await lease.reload(async () => {
+          throw new Error('restart rejected');
+        });
+      }),
+    ).rejects.toThrow('restart rejected');
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    expect(captureOtaReloadReceipt()?.pin).toBe('channel:preview');
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'eas-preview' });
+  });
+
+  it('preserves a pre-existing baked pending stamp when a channel fetch reuses its UUID', async () => {
+    updates.downloadedId = 'baked-pending';
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'baked-pending' } });
+    await runPinChangeExclusively(async (lease) => {
+      setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+      await lease.native(() => fetchOwnedOtaUpdate());
+    });
+    expect(captureOtaReloadReceipt()).toBeNull();
+    await runPinChangeExclusively(async () => setOwnedOtaHeaders(null, null));
+    expect(captureOtaReloadReceipt()?.pin).toBeNull();
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'baked-pending' });
+  });
+
+  it('preserves an unknown pending stamp across a successful cached channel fetch', async () => {
+    noteOtaHeadersChanged();
+    updates.downloadedId = 'unknown-pending';
+    updates.fetchUpdateAsync.mockResolvedValue({ isNew: true, manifest: { id: 'unknown-pending' } });
+    await runPinChangeExclusively(async (lease) => {
+      setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+      await lease.native(() => fetchOwnedOtaUpdate());
+    });
+    expect(captureOtaReloadReceipt()).toBeNull();
+  });
+
+  it('uses restored channel headers for recovery after a failed switch', async () => {
+    updates.fetchUpdateAsync.mockImplementationOnce(async () => {
+      updates.downloadedId = 'channel-a-update';
+      return { isNew: true, manifest: { id: 'channel-a-update' } };
+    });
+    await runPinChangeExclusively(async (lease) => {
+      setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+      await lease.native(() => fetchOwnedOtaUpdate());
+    });
+    updates.fetchUpdateAsync.mockRejectedValueOnce(new Error('channel B download failed'));
+    await expect(
+      runPinChangeExclusively(async (lease) => {
+        setOwnedOtaHeaders({ ...previewHeaders, 'expo-channel-name': 'staging' }, 'channel:staging');
+        try {
+          await lease.native(() => fetchOwnedOtaUpdate());
+        } finally {
+          setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+        }
+      }),
+    ).rejects.toThrow('channel B download failed');
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'channel-a-update' });
+    updates.fetchUpdateAsync.mockImplementationOnce(async () => {
+      updates.downloadedId = 'channel-a-recovery';
+      return { isNew: true, manifest: { id: 'channel-a-recovery' } };
+    });
+    await runPinChangeExclusively((lease) => lease.native(() => fetchOwnedOtaUpdate()));
+    expect(captureOtaReloadReceipt()?.pin).toBe('channel:preview');
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'channel-a-recovery' });
+  });
+
+  it('rejects old confirmation after channel A to B to A despite retained UUID provenance', async () => {
+    updates.fetchUpdateAsync.mockImplementation(async () => {
+      updates.downloadedId = 'eas-preview';
+      return { isNew: true, manifest: { id: 'eas-preview' } };
+    });
+    await runPinChangeExclusively(async (lease) => {
+      setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+      await lease.native(() => fetchOwnedOtaUpdate());
+    });
+    const receipt = captureOtaReloadReceipt();
+    await runPinChangeExclusively(async () => {
+      setOwnedOtaHeaders({ ...previewHeaders, 'expo-channel-name': 'staging' }, 'channel:staging');
+      expect(captureOtaReloadReceipt()).toBeNull();
+      setOwnedOtaHeaders(previewHeaders, 'channel:preview');
+    });
+    expect(captureOtaReloadReceipt()?.target).toEqual({ kind: 'update', id: 'eas-preview' });
+    expect(receipt && isOtaReloadReceiptCurrent(receipt)).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { createOtaOperationOwner } from '../ota-operation-owner';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetSchemaDowngradeForTests, setSchemaDowngrade } from '../../db/schema-downgrade';
 import {
@@ -10,6 +11,7 @@ import {
 
 function createDeps(overrides: Partial<SchemaDowngradeRecoveryDeps> = {}) {
   return {
+    runOperation: createOtaOperationOwner().run,
     updatesEnabled: true,
     checkForUpdate: vi.fn(async () => ({ isAvailable: false, isRollBackToEmbedded: false })),
     fetchUpdate: vi.fn(async () => undefined),
@@ -64,6 +66,7 @@ describe('recoverFromSchemaDowngrade', () => {
 
     await expect(recoverFromSchemaDowngrade(deps)).resolves.toBe('no-fix-available');
 
+    expect(deps.fetchUpdate).not.toHaveBeenCalled();
     expect(deps.track).toHaveBeenCalledTimes(1);
   });
 
@@ -91,6 +94,26 @@ describe('recoverFromSchemaDowngrade', () => {
     });
 
     await expect(recoverFromSchemaDowngrade(deps)).resolves.toBe('failed');
+  });
+
+  it('never downloads after a native check settles beyond its deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let complete!: (check: { isAvailable: boolean; isRollBackToEmbedded: boolean }) => void;
+      const check = new Promise<{ isAvailable: boolean; isRollBackToEmbedded: boolean }>((resolve) => {
+        complete = resolve;
+      });
+      const deps = createDeps({ checkForUpdate: vi.fn(() => check), timeoutMs: 10 });
+      const recovery = recoverFromSchemaDowngrade(deps);
+      await vi.advanceTimersByTimeAsync(11);
+      await expect(recovery).resolves.toBe('failed');
+      complete({ isAvailable: true, isRollBackToEmbedded: false });
+      await vi.advanceTimersByTimeAsync(1);
+      expect(deps.fetchUpdate).not.toHaveBeenCalled();
+      expect(deps.track).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('runs once per process, however many remounts find the same file', async () => {

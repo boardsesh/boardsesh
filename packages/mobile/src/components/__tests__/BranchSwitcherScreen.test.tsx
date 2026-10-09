@@ -34,6 +34,12 @@ vi.mock('../../lib/preference-store', () => ({
   removePreference: vi.fn(),
 }));
 vi.mock('../../lib/apply-channel-override', () => ({ applyChannelOverride: vi.fn() }));
+vi.mock('../../lib/qa/qa-surf', () => ({
+  fetchOwnedOtaUpdate: vi.fn(),
+  isOtaReloadReceiptCurrent: vi.fn(),
+  waitForOtaReloadReceipt: vi.fn(),
+  waitForOtaUpdatesIdle: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../lib/preview-build', () => ({ isPreviewBuild: () => buildState.isPreview }));
 vi.mock('../../providers/dialog-provider', () => ({ useConfirm: () => vi.fn().mockResolvedValue(false) }));
 

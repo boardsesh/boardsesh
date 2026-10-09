@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetOtaOperationOwnerForTests, runOtaOperation } from '../ota-operation-owner';
 
 const updates = vi.hoisted(() => ({
   isEnabled: true,
   channel: 'production' as string | null,
+  isEmergencyLaunch: false,
   setUpdateRequestHeadersOverride: vi.fn(),
 }));
+const qa = vi.hoisted(() => ({ waitForIdle: vi.fn(), dropPin: vi.fn() }));
 const preferences = vi.hoisted(() => ({
   stored: new Map<string, unknown>(),
   getPreference: vi.fn(),
@@ -18,6 +21,9 @@ vi.mock('expo-updates', () => ({
   },
   get channel() {
     return updates.channel;
+  },
+  get isEmergencyLaunch() {
+    return updates.isEmergencyLaunch;
   },
   setUpdateRequestHeadersOverride: updates.setUpdateRequestHeadersOverride,
 }));
@@ -36,6 +42,11 @@ vi.mock('../preference-store', () => ({
   setPreference: preferences.setPreference,
   removePreference: preferences.removePreference,
 }));
+vi.mock('../qa/qa-surf', () => ({
+  clearOwnedOtaHeaders: () => updates.setUpdateRequestHeadersOverride(null),
+  dropPinAfterEmergencyLaunch: qa.dropPin,
+  waitForOtaUpdatesIdle: qa.waitForIdle,
+}));
 // `__DEV__` is true under Vitest, which would make every build a non-surfing
 // one. Keep the real cleanup and override only the build check.
 vi.mock('../ota-channel-override-cleanup', async (importOriginal) => ({
@@ -51,8 +62,12 @@ import {
 const MARKER_KEY = 'ota_branch_surfing_migration_v1';
 
 beforeEach(() => {
+  resetOtaOperationOwnerForTests();
   resetChannelOverrideCleanupRunForTests();
   updates.channel = 'production';
+  updates.isEmergencyLaunch = false;
+  qa.waitForIdle.mockReset().mockResolvedValue(undefined);
+  qa.dropPin.mockReset();
   updates.setUpdateRequestHeadersOverride.mockReset();
   preferences.stored = new Map();
   preferences.getPreference.mockReset().mockImplementation(async (key: string) => preferences.stored.get(key) ?? null);
@@ -61,6 +76,7 @@ beforeEach(() => {
   });
   preferences.removePreference.mockReset().mockResolvedValue(undefined);
 });
+afterEach(() => vi.useRealTimers());
 
 describe('runChannelOverrideCleanupOnce', () => {
   it('runs the cleanup once per runtime and hands both callers the same result', async () => {
@@ -101,5 +117,55 @@ describe('runChannelOverrideCleanupOnce', () => {
     await expect(runChannelOverrideCleanupOnce()).rejects.toBe(failure);
     await expect(runChannelOverrideCleanupOnce()).rejects.toBe(failure);
     expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledOnce();
+  });
+
+  it('does not clear headers while an earlier native operation is still running', async () => {
+    let finishNative: () => void = () => {};
+    const earlier = runOtaOperation((lease) =>
+      lease.native(
+        () =>
+          new Promise<void>((resolve) => {
+            finishNative = resolve;
+          }),
+      ),
+    );
+    const cleanup = runChannelOverrideCleanupOnce();
+    await Promise.resolve();
+    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
+    finishNative();
+    await earlier;
+    await cleanup;
+    expect(updates.setUpdateRequestHeadersOverride).toHaveBeenCalledOnce();
+  });
+
+  it('never clears headers after an expired migration read finally answers', async () => {
+    vi.useFakeTimers();
+    let finishRead: (complete: boolean | null) => void = () => {};
+    preferences.getPreference.mockReturnValueOnce(
+      new Promise<boolean | null>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    const cleanup = runChannelOverrideCleanupOnce();
+    const failure = expect(cleanup).rejects.toThrow('cancelled');
+    await vi.advanceTimersByTimeAsync(180_000);
+    await failure;
+    finishRead(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updates.setUpdateRequestHeadersOverride).not.toHaveBeenCalled();
+    expect(preferences.setPreference).not.toHaveBeenCalled();
+  });
+
+  it('repairs an emergency pin before any later update check can start', async () => {
+    updates.isEmergencyLaunch = true;
+    const order: string[] = [];
+    qa.dropPin.mockImplementation(() => order.push('repair'));
+    const cleanup = runChannelOverrideCleanupOnce();
+    const recovery = runOtaOperation(async () => {
+      order.push('check');
+    });
+    await cleanup;
+    await recovery;
+    expect(order).toEqual(['repair', 'check']);
   });
 });

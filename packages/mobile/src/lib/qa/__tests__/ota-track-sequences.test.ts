@@ -67,6 +67,10 @@ const device = vi.hoisted(() => ({
   downloadedId: undefined as string | undefined,
   online: true,
   reloads: 0,
+  fetchGate: null as Promise<void> | null,
+  activeFetches: 0,
+  maxActiveFetches: 0,
+  headerWritesDuringFetch: 0,
   /** Branch name → its newest update. `production` is the channel's own branch. */
   server: new Map<string, { id: string; commitTime: number; branch: string | null }>(),
   settings: {} as Record<string, unknown>,
@@ -211,6 +215,7 @@ vi.mock('expo-updates', () => ({
   },
   addUpdatesStateChangeListener: () => ({ remove: () => {} }),
   setUpdateRequestHeadersOverride: (headers: Record<string, string> | null) => {
+    if (device.activeFetches > 0) device.headerWritesDuringFetch += 1;
     device.override = headers;
   },
   checkForUpdateAsync: async () => {
@@ -227,10 +232,17 @@ vi.mock('expo-updates', () => ({
     const head = serverHead();
     const launched = device.emergencyLaunch ? undefined : device.disk.get(device.runningId);
     if (!head || !shouldLoad(head, launched)) return { isNew: false };
-    download(head);
-    device.downloadedId = head.id;
-    // Rule 2: `isNew: true` even when the row was already there.
-    return { isNew: true, manifest: { id: head.id } };
+    device.activeFetches += 1;
+    device.maxActiveFetches = Math.max(device.maxActiveFetches, device.activeFetches);
+    try {
+      if (device.fetchGate) await device.fetchGate;
+      download(head);
+      device.downloadedId = head.id;
+      // Rule 2: `isNew: true` even when the row was already there.
+      return { isNew: true, manifest: { id: head.id } };
+    } finally {
+      device.activeFetches -= 1;
+    }
   },
   reloadAsync: async () => {
     device.reloads += 1;
@@ -326,6 +338,10 @@ describe.each(['ios', 'android'] as const)('on %s', (platform: Platform) => {
     device.downloadedId = undefined;
     device.online = true;
     device.reloads = 0;
+    device.fetchGate = null;
+    device.activeFetches = 0;
+    device.maxActiveFetches = 0;
+    device.headerWritesDuringFetch = 0;
     device.server = new Map();
     device.settings = {};
     // A phone that has been on the regular track for a while: installed, then
@@ -338,6 +354,45 @@ describe.each(['ios', 'android'] as const)('on %s', (platform: Platform) => {
     expect(coldStart()).toBe('stable-2');
     publish('pr-beta', 'beta-1', 20);
     serveBranchList('pr-beta', 'pr-123');
+  });
+
+  describe('native recovery downloads and pin switches share ownership', () => {
+    it.each([
+      ['join', 'recovery-first'],
+      ['join', 'switch-first'],
+      ['leave', 'recovery-first'],
+      ['leave', 'switch-first'],
+    ] as const)('%s with %s preserves download stamps and cold-start selection', async (switchKind, ordering) => {
+      let app = await openApp();
+      if (switchKind === 'leave') {
+        await app.earlyUpdates.setEarlyUpdatesChoice(true, ENVIRONMENT);
+        app = await openApp();
+      }
+      publish('production', 'stable-3', 30);
+      publish('pr-beta', 'beta-2', 40);
+      let releaseFetch!: () => void;
+      device.fetchGate = new Promise<void>((resolve) => {
+        releaseFetch = resolve;
+      });
+      const recover = () =>
+        app.surf.runPinChangeExclusively((lease) => lease.native(() => app.surf.fetchOwnedOtaUpdate()));
+      const changePin = () => app.earlyUpdates.setEarlyUpdatesChoice(switchKind === 'join', ENVIRONMENT);
+      const first = ordering === 'recovery-first' ? recover() : changePin();
+      await vi.waitFor(() => expect(device.activeFetches).toBe(1));
+      const second = ordering === 'recovery-first' ? changePin() : recover();
+      await Promise.resolve();
+      expect(device.activeFetches).toBe(1);
+      expect(device.headerWritesDuringFetch).toBe(0);
+      releaseFetch();
+      await Promise.all([first, second]);
+      expect(device.maxActiveFetches).toBe(1);
+      expect(device.headerWritesDuringFetch).toBe(0);
+      expect(coldStart()).toBe(switchKind === 'join' ? 'beta-2' : 'stable-3');
+      expect(device.emergencyLaunch).toBe(false);
+      expect(device.disk.get(switchKind === 'join' ? 'beta-2' : 'stable-3')?.stamp).toBe(
+        switchKind === 'join' ? stampOf(PINNED_EARLY) : BAKED_STAMP,
+      );
+    });
   });
 
   describe('the model itself', () => {

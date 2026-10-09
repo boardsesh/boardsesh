@@ -16,6 +16,7 @@ const surf = vi.hoisted(() => ({
   dropPinAfterEmergencyLaunch: vi.fn(),
   fetchRegularUpdateAfterEmergencyLaunch: vi.fn(),
   surfToProduction: vi.fn(),
+  waitForOtaUpdatesIdle: vi.fn(async () => {}),
 }));
 vi.mock('expo-updates', () => ({ isEmbeddedLaunch: false, isEmergencyLaunch: false, manifest: { extra: {} } }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { updates: {} } } }));
@@ -39,6 +40,7 @@ vi.mock('../qa-surf', async (importOriginal) => ({
   dropPinAfterEmergencyLaunch: surf.dropPinAfterEmergencyLaunch,
   fetchRegularUpdateAfterEmergencyLaunch: surf.fetchRegularUpdateAfterEmergencyLaunch,
   surfToProduction: surf.surfToProduction,
+  waitForOtaUpdatesIdle: surf.waitForOtaUpdatesIdle,
 }));
 
 const store = vi.hoisted(() => {
@@ -285,7 +287,7 @@ describe('syncEarlyUpdates', () => {
   it('asks the server for the branch, then joins', async () => {
     await expect(syncEarlyUpdates(ENVIRONMENT)).resolves.toBe('joined');
 
-    expect(surf.fetchQaBranches).toHaveBeenCalledExactlyOnceWith();
+    expect(surf.fetchQaBranches).toHaveBeenCalledExactlyOnceWith(expect.any(AbortSignal));
     expect(surf.joinEarlyUpdatesTrack).toHaveBeenCalledOnce();
   });
 

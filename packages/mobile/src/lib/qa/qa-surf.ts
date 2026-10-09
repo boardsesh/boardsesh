@@ -7,11 +7,18 @@ import { Platform } from 'react-native';
 // src/index.ts` and no `exports` map, so these two modules resolve as plain deep
 // paths. Keeping every such import here means one file to fix if xprem ever
 // publishes a real entry point for them.
-import { surfTo, type SurfOutcome } from '@xprem/control-center/src/surf';
+import type { SurfOutcome } from '@xprem/control-center/src/surf';
 import { BRANCH_HEADER, readConfig, readLoadedState, type SurfConfig } from '@xprem/control-center/src/config';
 import { isBranchSurfingBuild } from '../ota-channel-override-cleanup';
 import { readOtaBranch } from '../ota-telemetry';
 import { getSetting, setSetting } from '../../settings';
+import {
+  runOtaOperation,
+  readOtaHeaderRevision,
+  noteOtaHeadersChanged,
+  resetOtaOperationOwnerForTests,
+  type OtaOperationLease,
+} from '../ota-operation-owner';
 import {
   EARLY_UPDATES_OTA_BRANCH,
   STAGING_OTA_BRANCH,
@@ -142,7 +149,7 @@ export type QaBranchesAnswer =
  * the rest. The early-updates check needs the whole list as well: fifty PR
  * pushes between two merges to main push that branch off the first page.
  */
-export async function fetchQaBranches(signal?: AbortSignal): Promise<QaBranchesAnswer> {
+async function readQaBranches(signal: AbortSignal): Promise<QaBranchesAnswer> {
   const config = requireSurfConfig();
   const response = await fetch(`${config.baseUrl}/branch_lists?all=1`, {
     method: 'GET',
@@ -164,6 +171,7 @@ export async function fetchQaBranches(signal?: AbortSignal): Promise<QaBranchesA
   // This build outlives the server it was written against, so a body of another
   // shape reads as "no list" instead of crashing the screen that asked.
   const page: unknown = await response.json();
+  if (signal.aborted) throw new Error('The update server took too long.');
   if (typeof page !== 'object' || page === null) return { kind: 'unavailable' };
   const { branches } = page as Record<string, unknown>;
   if (!Array.isArray(branches)) return { kind: 'unavailable' };
@@ -181,6 +189,30 @@ export async function fetchQaBranches(signal?: AbortSignal): Promise<QaBranchesA
   }
   previews.sort((left, right) => branchTimeMs(right.lastUpdateAt) - branchTimeMs(left.lastUpdateAt));
   return { kind: 'listed', list: { previews, staging, earlyUpdates } };
+}
+
+/** The timeout covers the response body too; fetch abort alone cannot bound a stalled body. */
+export async function fetchQaBranches(signal?: AbortSignal): Promise<QaBranchesAnswer> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  const timer = setTimeout(abort, 30_000);
+  let removeAbort = () => {};
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    const rejectAbort = () => reject(new Error('The update server request was cancelled or took too long.'));
+    controller.signal.addEventListener('abort', rejectAbort, { once: true });
+    removeAbort = () => controller.signal.removeEventListener('abort', rejectAbort);
+    if (controller.signal.aborted) rejectAbort();
+  });
+  try {
+    if (controller.signal.aborted) return await cancelled;
+    return await Promise.race([readQaBranches(controller.signal), cancelled]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+    removeAbort();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -297,16 +329,25 @@ function readLaunchPin(): Pin | undefined {
 }
 
 // Updates this session downloaded, and the pin each was downloaded under.
-const stampedThisSession = new Map<string, Pin>();
+const stampedThisSession = new Map<string, Pin | undefined>();
+const rollbackStamps = new Map<string, Pin | undefined>();
+let configuredHeaderIdentity: Pin = launchPin !== undefined ? launchPin : getSetting('otaPinnedBranch');
+let emergencyPinEvidence = false;
+let pendingOwnedRollback: { pin: Pin; headerRevision: number; previousCommitTime: string | undefined } | undefined;
 
 /** Test seam: forget what earlier cases downloaded. */
 export function resetOtaPinSessionForTests(): void {
   stampedThisSession.clear();
+  rollbackStamps.clear();
+  configuredHeaderIdentity = getSetting('otaPinnedBranch');
+  emergencyPinEvidence = false;
+  pendingOwnedRollback = undefined;
+  resetOtaOperationOwnerForTests();
 }
 
 /** Write the override for a branch; null is no override at all (the build's own headers). */
 function writePin(config: SurfConfig, pin: Pin): void {
-  Updates.setUpdateRequestHeadersOverride(pin === null ? null : headersForBranch(config, pin));
+  setOwnedOtaHeaders(pin === null ? null : headersForBranch(config, pin), pin);
 }
 
 type DiskKnowledge = { onDisk: false } | { onDisk: true; stamp: Pin | undefined };
@@ -326,8 +367,157 @@ function knownOnDisk(updateId: string, pendingUpdateId: string | undefined): Dis
   if (stampedThisSession.has(updateId)) return { onDisk: true, stamp: stampedThisSession.get(updateId) };
   if (updateId === Updates.updateId) return { onDisk: true, stamp: launchPin };
   // Downloaded by the launch-time check, waiting for the next cold start.
-  if (updateId === pendingUpdateId) return { onDisk: true, stamp: launchPin };
+  if (updateId === pendingUpdateId) {
+    return { onDisk: true, stamp: readOtaHeaderRevision() === 0 ? launchPin : undefined };
+  }
   return { onDisk: false };
+}
+
+function rememberPendingUpdate(): void {
+  const pendingId = readPendingUpdateId();
+  if (pendingId && !stampedThisSession.has(pendingId)) {
+    const pendingKnowledge = knownOnDisk(pendingId, pendingId);
+    stampedThisSession.set(pendingId, pendingKnowledge.onDisk ? pendingKnowledge.stamp : undefined);
+  }
+  const rollback = Updates.latestContext.rollback;
+  if (rollback && !rollbackStamps.has(rollback.commitTime)) {
+    const owned = pendingOwnedRollback;
+    const ownedStamp =
+      owned && owned.headerRevision === readOtaHeaderRevision() && owned.previousCommitTime !== rollback.commitTime
+        ? owned.pin
+        : undefined;
+    rollbackStamps.set(rollback.commitTime, readOtaHeaderRevision() === 0 ? launchPin : ownedStamp);
+  }
+}
+
+/**
+ * Write inside an owned, idle turn. Branches use their pin as identity; legacy
+ * EAS targets use `channel:<name>`, distinct from every supported branch pin.
+ * Remember existing pending stamps before replacing the whole native header set.
+ */
+export function setOwnedOtaHeaders(headers: Record<string, string> | null, identity: string | null): void {
+  rememberPendingUpdate();
+  Updates.setUpdateRequestHeadersOverride(headers);
+  configuredHeaderIdentity = identity;
+  pendingOwnedRollback = undefined;
+  noteOtaHeadersChanged();
+}
+
+export function clearOwnedOtaHeaders(): void {
+  setOwnedOtaHeaders(null, null);
+}
+
+/** Raw native adapter; call through lease.native so held headers cannot change. */
+export async function fetchOwnedOtaUpdate(): Promise<Updates.UpdateFetchResult> {
+  rememberPendingUpdate();
+  const knownBefore = new Set(stampedThisSession.keys());
+  if (Updates.updateId) knownBefore.add(Updates.updateId);
+  const pendingBefore = readPendingUpdateId();
+  if (pendingBefore) knownBefore.add(pendingBefore);
+  const rollbackBefore = Updates.latestContext.rollback?.commitTime;
+  const heldPin = configuredHeaderIdentity;
+  pendingOwnedRollback = undefined;
+  try {
+    const fetched = await Updates.fetchUpdateAsync();
+    if (fetched.isRollBackToEmbedded) {
+      pendingOwnedRollback = {
+        pin: heldPin,
+        headerRevision: readOtaHeaderRevision(),
+        previousCommitTime: rollbackBefore,
+      };
+    }
+    if (fetched.isNew && !knownBefore.has(fetched.manifest.id)) {
+      stampedThisSession.set(fetched.manifest.id, heldPin);
+    }
+    return fetched;
+  } finally {
+    // State events may report the download before a native rejection reaches
+    // JS. Its provenance still belongs to this operation, even after timeout.
+    const pendingAfter = readPendingUpdateId();
+    if (pendingAfter && !knownBefore.has(pendingAfter)) stampedThisSession.set(pendingAfter, heldPin);
+    const rollbackAfter = Updates.latestContext.rollback?.commitTime;
+    if (rollbackAfter && rollbackAfter !== rollbackBefore && !rollbackStamps.has(rollbackAfter)) {
+      rollbackStamps.set(rollbackAfter, heldPin);
+    }
+  }
+}
+
+export type OtaReloadReceipt = {
+  headerRevision: number;
+  /** Held-header identity: branch pin, legacy `channel:<name>`, or baked headers. */
+  pin: Pin;
+  target: { kind: 'update'; id: string } | { kind: 'rollback'; commitTime: string };
+};
+
+/** Unknown or differently stamped pending data must never be a reload fallback. */
+export function captureOtaReloadReceipt(): OtaReloadReceipt | null {
+  rememberPendingUpdate();
+  if (Updates.latestContext.isUpdatePending === false) return null;
+  const pendingId = readPendingUpdateId();
+  if (pendingId) {
+    if (!stampedThisSession.has(pendingId) || stampedThisSession.get(pendingId) !== configuredHeaderIdentity)
+      return null;
+    return {
+      headerRevision: readOtaHeaderRevision(),
+      pin: configuredHeaderIdentity,
+      target: { kind: 'update', id: pendingId },
+    };
+  }
+  const rollback = Updates.latestContext.rollback;
+  if (
+    !rollback ||
+    !rollbackStamps.has(rollback.commitTime) ||
+    rollbackStamps.get(rollback.commitTime) !== configuredHeaderIdentity
+  )
+    return null;
+  return {
+    headerRevision: readOtaHeaderRevision(),
+    pin: configuredHeaderIdentity,
+    target: { kind: 'rollback', commitTime: rollback.commitTime },
+  };
+}
+
+/** Native fetch can finish before its pending-state event reaches JS. */
+export async function waitForOtaReloadReceipt(
+  lease: OtaOperationLease,
+  fetched?: Updates.UpdateFetchResult,
+): Promise<OtaReloadReceipt | null> {
+  lease.assertActive();
+  if (!fetched) return captureOtaReloadReceipt();
+  if (!fetched.isNew && !fetched.isRollBackToEmbedded) return null;
+  const matchingReceipt = () => {
+    const receipt = captureOtaReloadReceipt();
+    if (receipt === null) return null;
+    if (fetched.isNew)
+      return receipt.target.kind === 'update' && receipt.target.id === fetched.manifest.id ? receipt : null;
+    return receipt.target.kind === 'rollback' ? receipt : null;
+  };
+  const ready = matchingReceipt();
+  if (ready) return ready;
+  let subscription: { remove: () => void } | undefined;
+  const pending = new Promise<OtaReloadReceipt>((resolve) => {
+    const check = () => {
+      const receipt = matchingReceipt();
+      if (receipt) resolve(receipt);
+    };
+    subscription = Updates.addUpdatesStateChangeListener(check);
+    check();
+  });
+  try {
+    return await lease.waitFor(pending);
+  } finally {
+    subscription?.remove();
+  }
+}
+
+export function isOtaReloadReceiptCurrent(receipt: OtaReloadReceipt): boolean {
+  const current = captureOtaReloadReceipt();
+  if (current === null || current.headerRevision !== receipt.headerRevision || current.pin !== receipt.pin)
+    return false;
+  if (receipt.target.kind === 'rollback') {
+    return current.target.kind === 'rollback' && current.target.commitTime === receipt.target.commitTime;
+  }
+  return current.target.kind === 'update' && current.target.id === receipt.target.id;
 }
 
 /**
@@ -342,46 +532,12 @@ export function adoptRunningOtaPin(): void {
   if (readOtaPinnedBranch() !== launchPin) setSetting('otaPinnedBranch', launchPin);
 }
 
-// One pin change at a time, across everything that makes one: a tester's surf,
-// the early-updates sync, the switch in More. Two interleaved would stamp a
-// download with the other one's headers, or record a pin that the other had
-// just replaced.
-//
-// NOT in the queue: the changelog's "check for updates" and the crash screen's
-// recovery, which call expo-updates directly. A check or download of theirs
-// that lands in the middle of a switch is made, and stamped, under a pin the
-// switch may be about to take back. Routing them through here is owed before
-// the `early-updates` flag is turned on; it was left out while the feature is
-// dark because it would let a stuck switch stall the last-resort recovery
-// button for a fleet that has no switch to protect.
-let pinChangeQueue: Promise<unknown> = Promise.resolve();
-
-/**
- * Run a task after every earlier one has settled. The surfs below queue
- * themselves; `joinEarlyUpdatesTrack`, `leaveForProductionTrack` and
- * `fetchRegularUpdateAfterEmergencyLaunch` do not, so a caller can decide and
- * act inside one turn. Never call a surf from inside a task: it would wait on
- * itself.
- */
-export function runPinChangeExclusively<Result>(task: () => Promise<Result>): Promise<Result> {
-  const run = pinChangeQueue.then(task, task);
-  pinChangeQueue = run.catch(() => undefined);
-  return run;
-}
-
-// Longer than expo-updates' own 60 s per-request timeout with room for a
-// bundle's assets. Past it the native promise is treated as hung: one stuck
-// call must not hold every later surf for the rest of the session.
+/** A submission deadline includes waiting for earlier OTA work and startup. */
 export const PIN_CHANGE_TIMEOUT_MS = 180_000;
-// How long a switch waits for the launch-time check and download to finish.
 export const UPDATES_IDLE_TIMEOUT_MS = 120_000;
 
-function rejectAfter<Result>(work: Promise<Result>, timeoutMs: number, message: string): Promise<Result> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-  });
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+export function runPinChangeExclusively<Result>(task: (lease: OtaOperationLease) => Promise<Result>): Promise<Result> {
+  return runOtaOperation(task, { timeoutMs: PIN_CHANGE_TIMEOUT_MS });
 }
 
 function updatesBusy(): boolean {
@@ -389,56 +545,62 @@ function updatesBusy(): boolean {
   return isStartupProcedureRunning || isChecking || isDownloading;
 }
 
-/**
- * Wait until expo-updates is doing nothing. Native runs checks and downloads
- * one after another, behind the launch-time one. A switch that wrote its
- * override first would sit pinned, with nothing stamped, for as long as that
- * queue took, and the launch sync fires in exactly that window.
- */
-function waitForUpdatesIdle(): Promise<void> {
-  if (!updatesBusy()) return Promise.resolve();
+export async function waitForOtaUpdatesIdle(lease: OtaOperationLease): Promise<void> {
+  lease.assertActive();
+  if (!updatesBusy()) {
+    rememberPendingUpdate();
+    return;
+  }
   let subscription: { remove: () => void } | undefined;
-  const idle = new Promise<void>((resolve) => {
-    subscription = Updates.addUpdatesStateChangeListener(() => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const idle = new Promise<void>((resolve, reject) => {
+    const finish = () => {
       if (!updatesBusy()) resolve();
-    });
+    };
+    subscription = Updates.addUpdatesStateChangeListener(finish);
+    timer = setTimeout(() => reject(new Error('expo-updates stayed busy')), UPDATES_IDLE_TIMEOUT_MS);
+    finish();
   });
-  return rejectAfter(idle, UPDATES_IDLE_TIMEOUT_MS, 'expo-updates stayed busy').finally(() => subscription?.remove());
+  try {
+    await lease.waitFor(idle);
+    lease.assertActive();
+    rememberPendingUpdate();
+  } finally {
+    subscription?.remove();
+    clearTimeout(timer);
+  }
 }
 
-/**
- * Run one of xprem's surfs (pin, check, download, RELOAD) with the pin record
- * kept true around it.
- *
- * The record is written first, because a surf that reloads never returns to
- * write it. When the surf rejects, xprem has already "restored" the pin from its
- * own session memory, which knows nothing of a pin written by an earlier session
- * or by `switchTrackWithoutReload`. Two ways that goes wrong, both closed by
- * writing our own record back over it:
- *
- * - a member pinned at launch, then a failed PR surf: xprem restores "nothing",
- *   leaving the member unpinned while the switch says on;
- * - a PR surf that loaded nothing, then a return to early updates, then a failed
- *   surf: xprem restores the PR pin the tester had already left.
- */
-async function surfOwningPin(branch: Pin): Promise<SurfOutcome> {
-  const config = requireSurfConfig();
-  const pinnedBefore = readOtaPinnedBranch();
-  setSetting('otaPinnedBranch', branch);
+function restorePin(config: SurfConfig, pin: Pin, lease: OtaOperationLease): void {
   try {
-    const outcome = await rejectAfter(
-      surfTo(config, branch),
-      PIN_CHANGE_TIMEOUT_MS,
-      'The update server took too long.',
-    );
-    // A deliberate choice of branch settles whatever leave was still owed.
-    settleOwedLeave();
-    return outcome;
-  } catch (error) {
-    setSetting('otaPinnedBranch', pinnedBefore);
-    writePin(config, pinnedBefore);
-    throw error;
+    writePin(config, pin);
+    setSetting('otaPinnedBranch', pin);
+    setSetting('otaPinSwitchInFlight', null);
+  } catch (cause) {
+    lease.quarantine(cause);
+    throw cause;
   }
+}
+
+/** App-owned phases prevent an opaque SDK surf from reloading after cancellation. */
+async function surfOwningPin(branch: Pin, lease: OtaOperationLease): Promise<SurfOutcome> {
+  const pinnedBefore = readOtaPinnedBranch();
+  let fetched: Updates.UpdateFetchResult | undefined;
+  const outcome = await switchTrackWithoutReload(branch, lease, (result) => {
+    fetched = result;
+  });
+  lease.assertActive();
+  if (outcome !== 'switched') return 'nothing-to-load';
+  const receipt = await waitForOtaReloadReceipt(lease, fetched);
+  if (receipt === null || !isOtaReloadReceiptCurrent(receipt)) return 'nothing-to-load';
+  try {
+    await lease.reload(() => Updates.reloadAsync());
+  } catch (cause) {
+    restorePin(requireSurfConfig(), pinnedBefore, lease);
+    throw cause;
+  }
+  settleOwedLeave();
+  return 'reloading';
 }
 
 function settleOwedLeave(): void {
@@ -449,49 +611,57 @@ function settleOwedLeave(): void {
 /**
  * Point this device at a PR's preview and reload onto it. `'reloading'` means
  * the app is restarting and nothing after the call will run; `'nothing-to-load'`
- * means the pin is in place but the server had nothing newer to serve, so the
- * branch arrives on a later relaunch.
+ * means no safe pending target was available. A target pin is retained only
+ * when its data is known to be launchable.
  */
 // async, not a plain `return surfTo(...)`: requireSurfConfig throws, and a
 // synchronous throw out of a Promise-returning function is a trap for every
 // caller that only wrote a .catch().
 export async function surfToPr(prNumber: number): Promise<SurfOutcome> {
-  return runPinChangeExclusively(() => surfOwningPin(prBranchName(prNumber)));
+  return runPinChangeExclusively((lease) => surfOwningPin(prBranchName(prNumber), lease));
 }
 
 /** Clear the branch pin, go back to the build's own channel and reload onto it. */
 export async function surfToProduction(): Promise<SurfOutcome> {
-  return runPinChangeExclusively(() => surfOwningPin(null));
+  return runPinChangeExclusively((lease) => surfOwningPin(null, lease));
 }
 
 /** Pin the tester-only staged main bundle; production is never remapped. */
 export async function surfToStaging(): Promise<SurfOutcome> {
-  return runPinChangeExclusively(() => surfOwningPin(STAGING_OTA_BRANCH));
+  return runPinChangeExclusively((lease) => surfOwningPin(STAGING_OTA_BRANCH, lease));
 }
 
 type LaunchableVerdict = { launchable: true } | { launchable: false; blockedOnUpdateId?: string };
 
 /** Whether, with `target` just written as the override, the next cold start has an update stamped for it. */
-async function findUpdateLaunchableUnder(target: Pin): Promise<LaunchableVerdict> {
-  const check = await Updates.checkForUpdateAsync();
+async function findUpdateLaunchableUnder(
+  target: Pin,
+  lease: OtaOperationLease,
+  onFetched?: (result: Updates.UpdateFetchResult) => void,
+): Promise<LaunchableVerdict> {
+  const check = await lease.native(() => Updates.checkForUpdateAsync());
   if (check.isAvailable) {
     const served = knownOnDisk(check.manifest.id, readPendingUpdateId());
     if (served.onDisk) {
       // The one answer that looks like success and is not. expo-updates would
       // report this id "downloaded" and leave its old stamp on it.
-      return served.stamp === target
-        ? { launchable: true }
-        : { launchable: false, blockedOnUpdateId: check.manifest.id };
+      if (served.stamp !== target) return { launchable: false, blockedOnUpdateId: check.manifest.id };
+      // A preview reload needs native's pending target updated even when the
+      // served UUID is already safely stamped on disk.
+      if (!onFetched) return { launchable: true };
     }
     const pendingBefore = readPendingUpdateId();
-    const fetched = await Updates.fetchUpdateAsync();
+    const fetched = await lease.native(() => fetchOwnedOtaUpdate());
+    onFetched?.(fetched);
     if (!fetched.isNew) return { launchable: false };
     // A newer publish can land between the check and the download.
     const downloaded = knownOnDisk(fetched.manifest.id, pendingBefore);
     if (downloaded.onDisk && downloaded.stamp !== target) {
       return { launchable: false, blockedOnUpdateId: fetched.manifest.id };
     }
-    stampedThisSession.set(fetched.manifest.id, target);
+    if (stampedThisSession.get(fetched.manifest.id) !== target) {
+      return { launchable: false, blockedOnUpdateId: fetched.manifest.id };
+    }
     return { launchable: true };
   }
 
@@ -528,62 +698,65 @@ export type TrackSwitchOutcome = 'switched' | 'nothing-to-launch' | 'blocked';
  * only when that left an update stamped for it on disk. The running session is
  * never restarted, so this is safe with a queue running and a board connected.
  *
- * Anything short of that puts the previous pin back and changes nothing: a
- * thrown or hung check or download, a server with nothing to serve, or the
- * channel's own update served in place of a branch the server does not have.
+ * A failed or cancelled switch restores the previous pin after its active
+ * native work settles. A hung native promise keeps ownership and its headers;
+ * queued callers still reach their deadlines without running. No-data and
+ * differently stamped cached updates also restore the previous pin.
  *
  * The app can still be killed between the header write and the restore. The
  * journal written around the switch lets the next launch tell what happened
  * (`readLaunchPin`, `adoptRunningOtaPin`), but that launch itself starts from
  * whatever is stamped for the written pin, which may be nothing.
  */
-async function switchTrackWithoutReload(target: Pin): Promise<TrackSwitchOutcome> {
+async function switchTrackWithoutReload(
+  target: Pin,
+  lease: OtaOperationLease,
+  onFetched?: (result: Updates.UpdateFetchResult) => void,
+): Promise<TrackSwitchOutcome> {
   const config = requireSurfConfig();
-  await waitForUpdatesIdle();
+  await waitForOtaUpdatesIdle(lease);
+  lease.assertActive();
   const pinnedBefore = readOtaPinnedBranch();
   setSetting('otaPinSwitchInFlight', { to: target });
-  writePin(config, target);
-  let verdict: LaunchableVerdict;
+  let committed = false;
   try {
-    verdict = await rejectAfter(
-      findUpdateLaunchableUnder(target),
-      PIN_CHANGE_TIMEOUT_MS,
-      'The update server took too long.',
-    );
-  } catch (error) {
-    writePin(config, pinnedBefore);
+    writePin(config, target);
+    const verdict = await findUpdateLaunchableUnder(target, lease, onFetched);
+    lease.assertActive();
+    if (!verdict.launchable) {
+      if (target !== null || verdict.blockedOnUpdateId === undefined) return 'nothing-to-launch';
+      setSetting('otaLeaveBlockedUpdateId', verdict.blockedOnUpdateId);
+      return 'blocked';
+    }
+    setSetting('otaPinnedBranch', target);
     setSetting('otaPinSwitchInFlight', null);
-    throw error;
+    if (getSetting('otaLeaveBlockedUpdateId') !== null) setSetting('otaLeaveBlockedUpdateId', null);
+    if (target === null && getSetting('otaLeaveOwed')) setSetting('otaLeaveOwed', false);
+    committed = true;
+    return 'switched';
+  } finally {
+    // A timed-out native phase is still awaited by lease.native, so restoration
+    // cannot change the headers used by its unfinished download.
+    if (!committed) restorePin(config, pinnedBefore, lease);
   }
-  if (!verdict.launchable) {
-    writePin(config, pinnedBefore);
-    setSetting('otaPinSwitchInFlight', null);
-    if (target !== null || verdict.blockedOnUpdateId === undefined) return 'nothing-to-launch';
-    setSetting('otaLeaveBlockedUpdateId', verdict.blockedOnUpdateId);
-    return 'blocked';
-  }
-  setSetting('otaPinnedBranch', target);
-  setSetting('otaPinSwitchInFlight', null);
-  // Whatever was refused before, the phone has moved since.
-  if (getSetting('otaLeaveBlockedUpdateId') !== null) setSetting('otaLeaveBlockedUpdateId', null);
-  if (target === null && getSetting('otaLeaveOwed')) setSetting('otaLeaveOwed', false);
-  return 'switched';
 }
 
 /**
  * Follow the early-updates branch from the next launch. See
  * `switchTrackWithoutReload`. Call inside `runPinChangeExclusively`.
  */
-export async function joinEarlyUpdatesTrack(): Promise<TrackSwitchOutcome> {
-  return switchTrackWithoutReload(EARLY_UPDATES_OTA_BRANCH);
+export async function joinEarlyUpdatesTrack(lease?: OtaOperationLease): Promise<TrackSwitchOutcome> {
+  if (!lease) return runPinChangeExclusively((owned) => joinEarlyUpdatesTrack(owned));
+  return switchTrackWithoutReload(EARLY_UPDATES_OTA_BRANCH, lease);
 }
 
 /**
  * Follow the build's own channel from the next launch. See
  * `switchTrackWithoutReload`. Call inside `runPinChangeExclusively`.
  */
-export async function leaveForProductionTrack(): Promise<TrackSwitchOutcome> {
-  return switchTrackWithoutReload(null);
+export async function leaveForProductionTrack(lease?: OtaOperationLease): Promise<TrackSwitchOutcome> {
+  if (!lease) return runPinChangeExclusively((owned) => leaveForProductionTrack(owned));
+  return switchTrackWithoutReload(null, lease);
 }
 
 /**
@@ -593,7 +766,8 @@ export async function leaveForProductionTrack(): Promise<TrackSwitchOutcome> {
  * at every open for as long as the phone is offline. With no pin, Android
  * always has its embedded row and iOS has whatever was stamped before the pin.
  *
- * Synchronous, and safe for a phone that never had a pin: an emergency launch
+ * Call inside an owned turn after waitForOtaUpdatesIdle. Synchronous, and safe
+ * for a phone that never had a pin: an emergency launch
  * happens to any climber for reasons that have nothing to do with branches (a
  * crashing update), and for them this writes "no override" over no override.
  *
@@ -603,13 +777,13 @@ export async function leaveForProductionTrack(): Promise<TrackSwitchOutcome> {
  */
 export function dropPinAfterEmergencyLaunch(): boolean {
   const config = requireSurfConfig();
-  const pinEvidence =
+  emergencyPinEvidence ||=
     readOtaPinnedBranch() !== null || getSetting('otaPinSwitchInFlight') !== null || getSetting('earlyUpdates');
   writePin(config, null);
   if (readOtaPinnedBranch() !== null) setSetting('otaPinnedBranch', null);
   if (getSetting('otaPinSwitchInFlight') !== null) setSetting('otaPinSwitchInFlight', null);
   settleOwedLeave();
-  return pinEvidence;
+  return emergencyPinEvidence;
 }
 
 /**
@@ -617,18 +791,10 @@ export function dropPinAfterEmergencyLaunch(): boolean {
  * the next cold start has current JS, not just the embedded bundle. Best
  * effort; it throws offline. Call inside `runPinChangeExclusively`.
  */
-export async function fetchRegularUpdateAfterEmergencyLaunch(): Promise<void> {
-  await waitForUpdatesIdle();
-  const check = await rejectAfter(
-    Updates.checkForUpdateAsync(),
-    PIN_CHANGE_TIMEOUT_MS,
-    'The update server took too long.',
-  );
+export async function fetchRegularUpdateAfterEmergencyLaunch(lease?: OtaOperationLease): Promise<void> {
+  if (!lease) return runPinChangeExclusively((owned) => fetchRegularUpdateAfterEmergencyLaunch(owned));
+  await waitForOtaUpdatesIdle(lease);
+  const check = await lease.native(() => Updates.checkForUpdateAsync());
   if (!check.isAvailable || knownOnDisk(check.manifest.id, readPendingUpdateId()).onDisk) return;
-  const fetched = await rejectAfter(
-    Updates.fetchUpdateAsync(),
-    PIN_CHANGE_TIMEOUT_MS,
-    'The update server took too long.',
-  );
-  if (fetched.isNew) stampedThisSession.set(fetched.manifest.id, null);
+  await lease.native(() => fetchOwnedOtaUpdate());
 }

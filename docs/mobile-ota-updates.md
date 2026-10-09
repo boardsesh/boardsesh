@@ -2360,9 +2360,9 @@ updates" everywhere a climber can read it, never "beta": in this app beta means 
 **Status: shipped dark.** The row is behind the `early-updates` PostHog flag (see
 `docs/feature-flags.md` → "Mobile flags"). The deployment pipeline now promotes exact staged bytes
 to `pr-beta` after deployment/schema readiness, independently of the stable activation switch.
-Before enabling the product flag, finish the download/pin serialization work described below and
-complete the device checks from #6101 on iOS and Android store builds. The serialization follow-up is
-tracked in [#6269](https://github.com/boardsesh/boardsesh/issues/6269): everything below rests on
+OTA operations share the exclusive owner described below, implemented in
+[#6269](https://github.com/boardsesh/boardsesh/issues/6269). Before enabling the product flag,
+complete the device checks from #6101 on iOS and Android store builds: everything below rests on
 native expo-updates behaviour that unit tests model but cannot prove.
 
 After that serialization fix, pilot QA does not require enabling the flag for everyone.
@@ -2509,11 +2509,11 @@ None of the launch-time behaviour can be changed from JS: the decision is made b
 The kill window is not "seconds": native runs checks and downloads one after another, so a switch
 that started while the launch-time download was running would sit pinned for all of it. The switch
 therefore waits for `isStartupProcedureRunning`, `isChecking` and `isDownloading` to be false before
-writing anything, and every native call it awaits has a 3-minute JS timeout after which the
-previous override is put back.
-
-A pre-existing case this change does not touch: a PR surf that answers `nothing-to-load` keeps its
-pin with nothing stamped for it.
+writing anything. A switch has a 3-minute caller deadline, including queue waiting. If a native
+check or download is still running when that deadline expires, the caller returns but its owner
+and headers stay held until native settles. No later fetch or restart begins. A temporary pin is
+then restored before another owner can run. A PR surf with no launchable update restores its
+previous pin; `nothing-to-load` no longer creates a pin with nothing stamped for it.
 
 ### Leaving can be blocked
 
@@ -2535,10 +2535,10 @@ offered as usual (joining needs no leave).
 
 Previews and early updates share the one `xprem-branch` header, so they take turns.
 
-- Picking a PR or Staging replaces the pin. The three `surfTo*` helpers write the pin record first
-  (a surf that reloads never returns to write it) and put the previous pin back, record and headers,
-  when xprem's surf rejects or hangs. xprem restores from its own session memory on a failed surf,
-  which knows nothing of a pin made by an earlier session or by a no-reload switch.
+- Picking a PR or Staging replaces the pin after a launchable update is found. The three
+  `surfTo*` helpers own the check, fetch and restart phases directly, instead of delegating to
+  xprem's uncancellable `surfTo`. Failed uncommitted switches restore the previous record and
+  headers after native work settles. A failed restart restores the previous pin too.
 - The sync stands down while a tester's bundle is running, and that includes the flag going off.
 - Leaving is where a member differs. `returnToOwnTrack` (the picker's own-track row, the brief's
   **Leave preview**, the verdict sheet) joins early updates for a member, with no reload. A member
@@ -2564,21 +2564,39 @@ the launch sync retries it, for a member and a tester's preview pin alike. The `
 is kept: joining asks for the branch first, so nothing re-pins while surfing stays off. A 404
 without the header changes nothing.
 
-### Other code that checks for updates (not queued yet)
+### Serialized OTA operations
 
-The changelog's "check for updates" and the crash screen's recovery ("Check for a fix") call
-`Updates.checkForUpdateAsync` / `fetchUpdateAsync` directly, exactly as before this feature. They
-are **not** in the pin-change queue (`runPinChangeExclusively`), so one of them running in the
-middle of a no-reload switch is made, and stamped, under an override the switch may be about to take
-back, and a download of theirs after a same-session switch is attributed to the launch-time pin.
+The pin switches, changelog, crash recovery, automatic schema-downgrade recovery, explicit launch
+check, startup header cleanup and legacy EAS switcher use `ota-operation-owner.ts`. An operation's
+deadline starts at submission, so expired queued work never executes. Checks and downloads have
+30 seconds for recovery, changelog and launch work; track and preview switches have 180 seconds.
+The native-idle wait retains its 120-second ceiling within the remaining caller budget.
 
-That is deliberate while the flag is off: with no switch in the fleet the queue would protect
-nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing these
-downloads, including automatic schema-downgrade recovery, through the queue is owed before the flag
-is turned on.** Bound the branch-list request through response-body reading too: the early-update
-sync currently calls it while holding the pin queue. Expired waiting work must not start later;
-timing out a caller must not release a lock while an uncancelled native download still runs.
-Keep restart confirmation and reload outside the network timeout and preserve crash-screen recovery.
+Native operations cannot be cancelled from JS. A caller can time out while its native request
+continues, but no other operation can change headers or start native work until it settles.
+Cancellation prevents later phases, progress callbacks and restarts. Header restoration follows
+the native completion; a failed restore quarantines OTA operations for that runtime. The crash
+screen's **Try again** and **Go home** actions remain available. `/branch_lists` is separately
+bounded to 30 seconds through response-body reading and propagates caller cancellation.
+
+Downloads are attributed to the headers held during their operation, including late completions.
+Known cached UUIDs keep their existing or unknown stamp even when `fetchUpdateAsync` reports
+`isNew: true`. A pending UUID with an unknown or different stamp cannot be a recovery fallback.
+Schema-downgrade recovery fetches a newer bundle only: a rollback directive cannot repair a newer
+offline schema and is not fetched by that path.
+
+The changelog releases ownership before asking whether to restart. Confirmation has no network
+deadline. Accepting reacquires ownership and validates both the header revision and pending
+update/rollback identity; a changed track, even A → B → A, or a replacement pending UUID requires
+a fresh check. Native restart latches the runtime's OTA owner until restart or definite rejection.
+Its caller's network deadline no longer applies once restart begins.
+
+Startup cleanup reserves the first owner turn before schema recovery starts. An emergency pin is
+cleared without a network request and is not restored by a later download failure. The launch
+screen keeps its 1.5-second preparation limit and 4-second check / 10- or 15-second download caps.
+A released gate cannot start another download or restart; a native download already in progress
+continues under ownership. Queued launch restarts expire within the remaining cap or five seconds,
+whichever is shorter. The five-second native-restart grace begins when reload is actually invoked.
 
 ### Telemetry
 

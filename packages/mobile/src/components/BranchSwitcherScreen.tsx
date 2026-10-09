@@ -7,6 +7,13 @@ import { reportHandledError } from '../lib/error-reporting';
 import { getPreference, setPreference, removePreference } from '../lib/preference-store';
 import { applyChannelOverride } from '../lib/apply-channel-override';
 import {
+  fetchOwnedOtaUpdate,
+  isOtaReloadReceiptCurrent,
+  waitForOtaReloadReceipt,
+  waitForOtaUpdatesIdle,
+  type OtaReloadReceipt,
+} from '../lib/qa/qa-surf';
+import {
   OTA_CHANNEL_OVERRIDE_KEY,
   buildChannelList,
   performChannelSwitch,
@@ -79,18 +86,29 @@ export function BranchSwitcherScreen() {
   // The branch/channel currently targeted: the live override, else the build channel.
   const activeTarget = override ?? buildChannel;
 
-  const makeDeps = useCallback(
-    (): ChannelSwitchDeps => ({
+  const makeDeps = useCallback((): ChannelSwitchDeps => {
+    let fetched: Updates.UpdateFetchResult | undefined;
+    let receipt: OtaReloadReceipt | null = null;
+    return {
       applyOverride: applyChannelOverride,
+      waitForIdle: waitForOtaUpdatesIdle,
       checkForUpdate: () => Updates.checkForUpdateAsync(),
-      fetchUpdate: () => Updates.fetchUpdateAsync(),
+      fetchUpdate: async () => {
+        fetched = await fetchOwnedOtaUpdate();
+        return fetched;
+      },
+      canLaunchFetchedUpdate: async (lease) => {
+        if (!fetched) return false;
+        receipt = await waitForOtaReloadReceipt(lease, fetched);
+        return receipt !== null && isOtaReloadReceiptCurrent(receipt);
+      },
+      isFetchedUpdateCurrent: () => receipt !== null && isOtaReloadReceiptCurrent(receipt),
       reload: () => Updates.reloadAsync(),
       writeMirror: (channel) => setPreference(OTA_CHANNEL_OVERRIDE_KEY, channel),
       clearMirror: () => removePreference(OTA_CHANNEL_OVERRIDE_KEY),
       onMirrorError: reportHandledError,
-    }),
-    [],
-  );
+    };
+  }, []);
 
   const switchToBranch = useCallback(
     async (branch: string) => {

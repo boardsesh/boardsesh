@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { resetOtaOperationOwnerForTests, runOtaOperation } from '../ota-operation-owner';
 import {
   PRESET_CHANNELS,
   buildChannelList,
@@ -6,6 +7,9 @@ import {
   performChannelReset,
   type ChannelSwitchDeps,
 } from '../channel-switch';
+
+beforeEach(() => resetOtaOperationOwnerForTests());
+afterEach(() => vi.useRealTimers());
 
 function makeDeps(overrides: Partial<ChannelSwitchDeps> = {}): ChannelSwitchDeps {
   return {
@@ -89,9 +93,100 @@ describe('performChannelSwitch', () => {
     expect(deps.onMirrorError).toHaveBeenCalledOnce();
     expect(deps.reload).toHaveBeenCalledOnce();
   });
+
+  it('drains a timed-out check before restoring headers and running another operation', async () => {
+    vi.useFakeTimers();
+    let finishCheck: (answer: { isAvailable: boolean }) => void = () => {};
+    const deps = makeDeps({
+      checkForUpdate: vi.fn(
+        () =>
+          new Promise<{ isAvailable: boolean }>((resolve) => {
+            finishCheck = resolve;
+          }),
+      ),
+    });
+    const switched = performChannelSwitch('preview-3', 'production', 'rtv-1', deps, { timeoutMs: 10 });
+    await vi.advanceTimersByTimeAsync(10);
+    expect((await switched).status).toBe('reverted');
+    const next = vi.fn(async () => {});
+    const queued = runOtaOperation(next);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(next).not.toHaveBeenCalled();
+    expect(deps.applyOverride).toHaveBeenCalledTimes(1);
+    finishCheck({ isAvailable: true });
+    await vi.advanceTimersByTimeAsync(0);
+    await queued;
+    expect(deps.applyOverride).toHaveBeenLastCalledWith('production');
+    expect(deps.fetchUpdate).not.toHaveBeenCalled();
+    expect(deps.reload).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('does not write restoration headers when its idle wait expires', async () => {
+    vi.useFakeTimers();
+    const deps = makeDeps({ waitForIdle: (lease) => lease.waitFor(new Promise<void>(() => {})) });
+    const switched = performChannelSwitch('preview-3', 'production', 'rtv-1', deps, { timeoutMs: 10 });
+    await vi.advanceTimersByTimeAsync(10);
+    expect((await switched).status).toBe('reverted');
+    expect(deps.applyOverride).not.toHaveBeenCalled();
+    expect(deps.checkForUpdate).not.toHaveBeenCalled();
+  });
+
+  it('restores the prior channel when a cached download cannot launch under the target headers', async () => {
+    const deps = makeDeps({ canLaunchFetchedUpdate: vi.fn().mockResolvedValue(false) });
+    expect((await performChannelSwitch('preview-3', 'preview-1', 'rtv-1', deps)).status).toBe('reverted');
+    expect(deps.applyOverride).toHaveBeenLastCalledWith('preview-1');
+    expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  it('does not reload when the pending download changes during the mirror write', async () => {
+    let finishMirror: () => void = () => {};
+    let notifyMirrorStarted: () => void = () => {};
+    const mirrorStarted = new Promise<void>((resolve) => {
+      notifyMirrorStarted = resolve;
+    });
+    let downloadStillCurrent = true;
+    const deps = makeDeps({
+      canLaunchFetchedUpdate: vi.fn(async () => downloadStillCurrent),
+      isFetchedUpdateCurrent: () => downloadStillCurrent,
+      writeMirror: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishMirror = resolve;
+            notifyMirrorStarted();
+          }),
+      ),
+    });
+    const switched = performChannelSwitch('preview-3', 'preview-1', 'rtv-1', deps);
+    await mirrorStarted;
+    downloadStillCurrent = false;
+    finishMirror();
+    expect(await switched).toEqual({ status: 'pending-restart' });
+    expect(deps.reload).not.toHaveBeenCalled();
+    expect(deps.applyOverride).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('performChannelReset', () => {
+  it('restores the prior channel when the regular download has no launch proof', async () => {
+    const deps = makeDeps({ canLaunchFetchedUpdate: vi.fn().mockResolvedValue(false) });
+    expect((await performChannelReset('preview-2', deps)).status).toBe('failed');
+    expect(deps.applyOverride).toHaveBeenLastCalledWith('preview-2');
+    expect(deps.clearMirror).not.toHaveBeenCalled();
+    expect(deps.reload).not.toHaveBeenCalled();
+  });
+
+  it('does not reload when the regular download changes during mirror cleanup', async () => {
+    const deps = makeDeps({
+      canLaunchFetchedUpdate: vi.fn().mockResolvedValue(true),
+      isFetchedUpdateCurrent: vi.fn().mockReturnValue(false),
+    });
+    expect(await performChannelReset('preview-2', deps)).toEqual({ status: 'pending-restart' });
+    expect(deps.clearMirror).toHaveBeenCalledOnce();
+    expect(deps.reload).not.toHaveBeenCalled();
+    expect(deps.applyOverride).toHaveBeenCalledTimes(1);
+  });
+
   it('happy path: clears override + mirror, reloads → reset', async () => {
     const deps = makeDeps();
     const result = await performChannelReset('preview-2', deps);

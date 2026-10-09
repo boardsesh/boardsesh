@@ -569,6 +569,8 @@ export type LaunchUpdateSettleDeps = {
   markRuntimeHandled: (runtimeVersion: string) => Promise<void>;
   recordReloadTarget: (updateId: string) => Promise<void>;
   reload: () => Promise<void>;
+  /** An owned reload may wait in a queue; its grace starts at native invocation. */
+  reloadWithStartSignal?: (onStarted: () => void) => Promise<void>;
   onHandledError: (error: unknown, op: LaunchUpdateSettleOp) => void;
   markerWriteTimeoutMs?: number;
   flushTimeoutMs?: number;
@@ -646,13 +648,21 @@ export async function settleLaunchUpdate(
 
   const reloadGraceMs = deps.reloadGraceMs ?? LAUNCH_UPDATE_RELOAD_GRACE_MS;
   let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  let markGraceElapsed: () => void = () => {};
   const graceElapsed = new Promise<'grace'>((resolve) => {
-    graceTimer = setTimeout(() => resolve('grace'), reloadGraceMs);
+    markGraceElapsed = () => resolve('grace');
   });
+  const startReloadGrace = () => {
+    graceTimer = setTimeout(markGraceElapsed, reloadGraceMs);
+  };
   // A resolved reload never wins the race: the restart is on its way, and if it
   // is not, the grace timer is what says so.
   const reloadFailure = Promise.resolve()
-    .then(() => deps.reload())
+    .then(() => {
+      if (deps.reloadWithStartSignal) return deps.reloadWithStartSignal(startReloadGrace);
+      startReloadGrace();
+      return deps.reload();
+    })
     .then(
       () => new Promise<never>(() => {}),
       (error: unknown) => ({ error }),
