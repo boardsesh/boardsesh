@@ -345,7 +345,13 @@ export {
 // Silent when the first attempt succeeds, so `onSettled` fires only on a
 // contended write; a terminal failure rethrows the ORIGINAL error object, which
 // keeps Sentry grouping and lock classification unchanged.
-export { runLocalWriteWithRetry, OFFLINE_LOCAL_WRITE_BUDGET_MS } from './db/write-retry';
+export {
+  runLocalWriteWithRetry,
+  OFFLINE_LOCAL_WRITE_BUDGET_MS,
+  OFFLINE_BACKGROUND_WRITE_MAX_ATTEMPTS,
+  OFFLINE_BACKGROUND_WRITE_RETRY_DELAY_MS,
+  OFFLINE_BACKGROUND_WRITE_BUDGET_MS,
+} from './db/write-retry';
 export type { LocalWriteRetryOptions, LocalWriteRetryOutcome } from './db/write-retry';
 // One predicate for "was this write-lock contention?", so reporting (#4329) and
 // the sqlite-init retry loop (#4314) can never disagree about which failures
