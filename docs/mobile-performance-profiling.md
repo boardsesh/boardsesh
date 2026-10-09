@@ -177,6 +177,19 @@ evidence on iPhone, Perfetto scheduling and FrameTimeline evidence on Android.
 Trace overhead must not be mixed with acceptance CPU measurements. Device logs
 or host process CPU are not substitutes for native frame evidence.
 
+If Instruments command-line export fails, retain the trace and crash report.
+Inspect a copy in Instruments and preserve the actual visible tables, process
+filter and selected time range. Opening a trace alone does not establish readable
+stack or frame evidence. Gesture injection may itself invoke accessibility work;
+use native stacks to assess that residual driver cost without subtracting an
+estimated overhead from acceptance CPU.
+
+For hidden startup errors, use a separate local diagnostic build with bounded,
+sanitized reporting, distinct build identity and recorded patch provenance.
+Mark it `diagnosticOnly: true` and `acceptanceEligible: false`. The collector
+rejects diagnostic metadata, environment flags and embedded diagnostic markers;
+these builds cannot supply A/A, A/B or holdout samples.
+
 Check first swipe reveal, full-swipe commit, vertical scrolling, row recycling,
 repeated taps, localization, Bold Text, Reduce Motion and screen-reader actions.
 Both physical platforms must pass before claiming the optimization is accepted.

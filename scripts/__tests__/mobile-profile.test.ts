@@ -11,7 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ProfileControl, ProfileCycle } from '../lib/mobile-profile-control';
 import { androidProcessPid, assertDeviceProcessPid, iosProcessPid } from '../lib/mobile-profile-device';
-import { validateBackendDelta, validateBackendProof, validateProfileFlow } from '../lib/mobile-profile-harness';
+import {
+  exportedIdentity,
+  validateBackendDelta,
+  validateBackendProof,
+  validateProfileFlow,
+} from '../lib/mobile-profile-harness';
+import type { PreparedProfile } from '../lib/mobile-profile-prepare';
 import {
   injectProfileTemplates,
   parseMobileProfileArgs,
@@ -119,6 +125,12 @@ describe('native mobile profiling protocol', () => {
     expect(() =>
       assertEmbeddedProfileIdentity(Buffer.from(JSON.stringify({ ...expected, buildId: 'prior-build' })), expected),
     ).toThrow('buildId');
+    expect(() =>
+      assertEmbeddedProfileIdentity(Buffer.from(JSON.stringify(expected) + '[profile-diagnostic-only]'), expected),
+    ).toThrow('Diagnostic-only');
+    expect(() => exportedIdentity({ diagnosticOnly: true } as PreparedProfile, '/never-read-artifact')).toThrow(
+      'Diagnostic-only',
+    );
   });
   it('binds the native PID to the unique clone process on the selected physical device', () => {
     expect(androidProcessPid('42\n')).toBe(42);

@@ -55,6 +55,8 @@ export interface ProfileOptions {
 }
 
 export interface PreparedProfile {
+  diagnosticOnly?: boolean;
+  acceptanceEligible?: boolean;
   schemaVersion: 1;
   suite: 'hig-cpu';
   platform: ProfilePlatform;

@@ -224,6 +224,8 @@ export function assertEmbeddedProfileIdentity(
     'buildId' | 'sourceCommit' | 'instrumentationSha256' | 'fixtureManifestSha256'
   >,
 ): void {
+  if (bundle.includes(Buffer.from('[profile-diagnostic-only]')))
+    throw new Error('Diagnostic-only error logging bundle cannot be accepted for CPU profiling');
   for (const key of ['buildId', 'sourceCommit', 'instrumentationSha256', 'fixtureManifestSha256'] as const) {
     if (!expected[key] || !bundle.includes(Buffer.from(expected[key], 'utf8')))
       throw new Error(

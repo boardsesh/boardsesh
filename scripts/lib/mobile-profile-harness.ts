@@ -171,6 +171,8 @@ async function backendProof(origin: string, hash: string): Promise<BackendProof>
 }
 
 export function exportedIdentity(prepared: PreparedProfile, appPath: string): ProfileExpectedIdentity {
+  if (prepared.diagnosticOnly === true || prepared.acceptanceEligible === false)
+    throw new Error('Diagnostic-only builds are excluded from profiling capture and acceptance');
   let artifactSha256: string, embeddedBundleSha256: string;
   if (prepared.platform === 'ios') {
     const identity = readAppIdentity(appPath, 'Release');
@@ -222,6 +224,11 @@ export function exportedIdentity(prepared: PreparedProfile, appPath: string): Pr
 export async function captureProfile(options: ProfileOptions): Promise<void> {
   if (!options.appPath || !options.flow) throw new Error('Capture requires --app-path and --flow');
   const prepared = JSON.parse(readFileSync(join(options.runDir, 'prepare.json'), 'utf8')) as PreparedProfile;
+  const savedBuildEnvironment = objectRecord(
+    JSON.parse(readFileSync(join(options.runDir, 'build-env.json'), 'utf8')) as unknown,
+  );
+  if (savedBuildEnvironment.EXPO_PUBLIC_MOBILE_PROFILE_DIAGNOSTIC_ONLY === '1')
+    throw new Error('Diagnostic-only build environment cannot be measured by the acceptance capture');
   for (const key of ['platform', 'device', 'sourceRef', 'backendUrl', 'controlUrl'] as const)
     if (prepared[key] !== options[key]) throw new Error(`Capture/prepare mismatch: ${key}`);
   if (
