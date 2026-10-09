@@ -6,9 +6,8 @@ import { setupWorkerDatabase } from './worker-db';
 // Read persisted angles from Postgres and observe recompute keys; unrelated
 // event delivery stays mocked so this suite focuses on the saved ascent.
 type CapturedEventOptions = {
-  distinctId: string;
   properties?: Record<string, string | number | boolean | null | undefined>;
-  processPersonProfile?: boolean;
+  systemDistinctId?: string;
 };
 const { captureBackendEventMock, queueClimbStatsRecomputeMock, recomputeClimbStatsNowMock } = vi.hoisted(() => ({
   captureBackendEventMock: vi.fn((_eventName: string, _options: CapturedEventOptions) => true),

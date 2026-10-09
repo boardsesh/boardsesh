@@ -374,9 +374,10 @@ function trackPushDeliveryForRegistrations({
     }
   }
 
-  for (const [userId, deliveryCounts] of deliveryCountsByUserId.entries()) {
+  // One event per climber's set of devices, but the event names nobody: the
+  // grouping only keeps one person's failures from blurring into another's.
+  for (const deliveryCounts of deliveryCountsByUserId.values()) {
     trackLiveActivityPushDelivery({
-      userId,
       sessionId,
       event,
       source,
@@ -588,9 +589,8 @@ function trackSessionEndedForRegistrations(sessionId: string, registrations: Liv
     tokenCountsByUserId.set(registration.userId, (tokenCountsByUserId.get(registration.userId) ?? 0) + 1);
   }
 
-  for (const [userId, tokenCount] of tokenCountsByUserId.entries()) {
+  for (const tokenCount of tokenCountsByUserId.values()) {
     trackLiveActivityEnded({
-      userId,
       sessionId,
       reason: 'session-ended',
       tokenCount,

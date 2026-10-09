@@ -30,5 +30,5 @@ export * from './location-sync-admin';
 export * from './gym-owner-reassign';
 export * from './hold-outline-overrides';
 export * from './user-data-export';
-
 export * from './privacy';
+export * from './analytics-consent';

@@ -67,12 +67,15 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-type WidgetNavigationAnalyticsEvent = Parameters<typeof trackLiveActivityWidgetNavigation>[0];
-type WidgetNavigationAnalyticsPayload = Omit<WidgetNavigationAnalyticsEvent, 'userId'>;
+type WidgetNavigationAnalyticsPayload = Parameters<typeof trackLiveActivityWidgetNavigation>[0];
 
+/**
+ * `userId` only picks which event fires: a token bound to a user is a normal
+ * navigation, one without is an attribution gap. Neither event carries the id.
+ */
 function trackWidgetNavigation(userId: string | null, event: WidgetNavigationAnalyticsPayload): void {
   if (userId) {
-    trackLiveActivityWidgetNavigation({ userId, ...event });
+    trackLiveActivityWidgetNavigation(event);
     return;
   }
 

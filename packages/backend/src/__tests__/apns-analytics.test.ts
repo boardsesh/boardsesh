@@ -110,7 +110,6 @@ describe('APNs analytics instrumentation', () => {
     );
 
     expect(analyticsMocks.trackLiveActivityPushDelivery).toHaveBeenCalledWith({
-      userId: 'user-1',
       sessionId: SESSION_ID,
       event: 'update',
       source: 'registration',
@@ -156,7 +155,6 @@ describe('APNs analytics instrumentation', () => {
     );
 
     expect(analyticsMocks.trackLiveActivityPushDelivery).toHaveBeenCalledWith({
-      userId: 'user-1',
       sessionId: SESSION_ID,
       event: 'update',
       source: 'registration',
@@ -167,7 +165,6 @@ describe('APNs analytics instrumentation', () => {
       elapsedMs: expect.any(Number),
     });
     expect(analyticsMocks.trackLiveActivityPushDelivery).toHaveBeenCalledWith({
-      userId: 'user-2',
       sessionId: SESSION_ID,
       event: 'update',
       source: 'registration',
@@ -234,7 +231,6 @@ describe('APNs analytics instrumentation', () => {
 
     expect(analyticsMocks.trackLiveActivityPushDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
-        userId: 'user-1',
         sessionId: SESSION_ID,
         event: 'end',
         source: 'event',
@@ -255,7 +251,6 @@ describe('APNs analytics instrumentation', () => {
       }),
     );
     expect(analyticsMocks.trackLiveActivityEnded).toHaveBeenCalledWith({
-      userId: 'user-1',
       sessionId: SESSION_ID,
       reason: 'session-ended',
       tokenCount: 2,

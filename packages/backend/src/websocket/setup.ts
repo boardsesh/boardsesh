@@ -14,8 +14,13 @@ import { validateToken, extractAuthToken, extractControllerApiKey, validateContr
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
 import { tryAcquireAnonConnectionSlot, releaseAnonConnectionSlot } from './connection-cap';
-import type { ConnectionContext } from '@boardsesh/shared-schema';
+import {
+  CLIENT_PLATFORM_CONNECTION_PARAM,
+  CLIENT_PLATFORM_HEADER,
+  type ConnectionContext,
+} from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
+import { recordUserActivity, resolveActivityPlatform, type ActivityPlatform } from '../services/user-activity';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -47,6 +52,8 @@ const ANON_CONNECTION_CAP_CLOSE_CODE = 4429;
 // Extend Extra type with our custom context
 type CustomExtra = {
   context?: ConnectionContext;
+  /** The client's platform label for the active-user count, read once at connection_init. */
+  activityPlatform?: ActivityPlatform;
   [key: PropertyKey]: unknown;
 } & WsExtra;
 
@@ -278,6 +285,14 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         // Store context in ctx.extra for access in other hooks
         ctx.extra.context = context;
 
+        // First-party active-user count (#2644). Browsers can't set headers on a
+        // WebSocket upgrade, so the connection param comes first; the header is
+        // for native clients that send it on the upgrade request instead.
+        ctx.extra.activityPlatform = resolveActivityPlatform(
+          connectionParams?.[CLIENT_PLATFORM_CONNECTION_PARAM] ?? upgradeRequest?.headers[CLIENT_PLATFORM_HEADER],
+        );
+        if (authenticatedUserId) void recordUserActivity(authenticatedUserId, ctx.extra.activityPlatform);
+
         return true; // Allow connection (both authenticated and unauthenticated)
       },
       // context is called for EACH operation - return the stored context
@@ -302,6 +317,12 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           logger.info(
             `[Context] Retrieved context: ${latestContext.connectionId}, sessionId: ${latestContext.sessionId}`,
           );
+        }
+        // Per operation, not only at connect: a socket held open past UTC
+        // midnight still counts its climber on the new day. Deduped in memory,
+        // so this is a Set lookup on every operation after the first of the day.
+        if (latestContext.isAuthenticated && latestContext.userId) {
+          void recordUserActivity(latestContext.userId, extra.activityPlatform ?? 'unknown');
         }
         return latestContext;
       },

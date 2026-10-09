@@ -50,3 +50,4 @@ export * from './climb-revisions';
 export * from './notification-devices';
 
 export * from './privacy';
+export * from './analytics-consent';

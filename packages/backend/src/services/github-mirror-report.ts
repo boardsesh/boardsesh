@@ -19,8 +19,8 @@
  * 1. A structured `[github-mirror]` line on the backend logger — greppable, and
  *    it names the row that still holds the truth.
  * 2. A Sentry event with the row id, the operation, the failing status and
- *    GitHub's own (redacted) response body, scoped to the user whose write was
- *    lost. That is the alert; there is no polling job to write.
+ *    GitHub's own (redacted) response body. Account identifiers stay out of
+ *    Sentry. That is the alert; there is no polling job to write.
  *
  * Deliberately NOT a retry queue: that is a standing decision for this feature,
  * and the mirror is reconstructible from the row it names, so the event carries
@@ -124,7 +124,7 @@ function replayHint(record: GithubMirrorDrop['record'] | undefined): string {
  *
  * The Sentry capture is direct rather than via `logger.error(msg, err)` because
  * the winston transport captures with a fixed scope, and the two facts that make
- * this event worth having — which row was lost, and whose write it was — have to
+ * this event worth having — which row was lost, and why it failed — have to
  * be attached per event. The paired log line is therefore message-only, which is
  * also what keeps the transport from filing a second, poorer copy of the same
  * failure.
@@ -154,10 +154,6 @@ export function reportGithubMirrorDrop(drop: GithubMirrorDrop): void {
       : `GitHub mirror dropped ${drop.operation} (${reason})`;
 
     Sentry.withScope((scope) => {
-      // The backend never calls setUser, so a backend issue's "users impacted"
-      // is a count of Cloudflare edge IPs. For this event it is the one number
-      // that sizes the loss, so set it here rather than nowhere.
-      if (drop.userId) scope.setUser({ id: drop.userId });
       scope.setTag('github_mirror.operation', drop.operation);
       scope.setTag('github_mirror.reason', reason);
       scope.setTag('github_mirror.record_table', recordTable);

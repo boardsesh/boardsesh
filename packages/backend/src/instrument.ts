@@ -65,10 +65,12 @@ Sentry.init({
   dsn,
   enabled: isProductionSentryEnvironment() && Boolean(dsn),
   enableLogs: true,
-  // Matches the web service. Backend tags events with userId / clientIp from
-  // ConnectionContext for incident triage; the data is already in our own
-  // logs and is not exfiltrated beyond Sentry.
-  sendDefaultPii: true,
+  // Off, like the web service (#2644). Sentry runs under legitimate interest
+  // whatever a climber's analytics consent, so it must not collect personal
+  // data by default: no IP address, no IP headers, no request bodies. The
+  // backend never attaches a user identity to Sentry events.
+  // See docs/analytics-consent.md.
+  sendDefaultPii: false,
   // Platform-neutral — no RAILWAY_*-style branching. See resolveSentryEnvironment.
   environment: resolveSentryEnvironment(),
   serverName: 'boardsesh-backend',

@@ -293,7 +293,6 @@ describe('handleWidgetNavigate', () => {
     expect(parsed.error).toContain('re-register');
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'next',
       outcome: 'wrong_session',
@@ -317,7 +316,6 @@ describe('handleWidgetNavigate', () => {
     expect(parsed.success).toBe(true);
     expect(mockNavigate).toHaveBeenCalledOnce();
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'next',
       outcome: 'success',
@@ -406,7 +404,6 @@ describe('handleWidgetNavigate', () => {
       'widget-navigate',
     );
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'previous',
       outcome: 'success',
@@ -442,7 +439,6 @@ describe('handleWidgetNavigate', () => {
 
     expect(res3.statusCode).toBe(429);
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenLastCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'next',
       outcome: 'rate_limited',
@@ -468,7 +464,6 @@ describe('handleWidgetNavigate', () => {
     expect(res.statusCode).toBe(409);
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'previous',
       outcome: 'queue_empty',
@@ -494,7 +489,6 @@ describe('handleWidgetNavigate', () => {
     expect(parsed.success).toBe(false);
     expect(parsed.error).toContain('Target index out of bounds');
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'previous',
       outcome: 'target_out_of_bounds',
@@ -525,7 +519,6 @@ describe('handleWidgetNavigate', () => {
     // iOS widget. See handlers/widget-navigate.ts catch block.
     expect(parsed.error).toBe('Internal server error');
     expect(trackLiveActivityWidgetNavigationMock).toHaveBeenCalledWith({
-      userId: USER_ID,
       sessionId: SESSION_ID,
       action: 'next',
       outcome: 'error',

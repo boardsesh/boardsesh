@@ -116,7 +116,7 @@ describe('a rejected QA verdict mirror', () => {
     expect(detail?.body).toContain('Resource not accessible by integration');
   });
 
-  it('files a Sentry event naming the verdict row, the PR and the tester', async () => {
+  it('files a Sentry event naming the verdict and PR without the tester identity', async () => {
     fetchMock.mockImplementation(
       errorResponse({ message: 'Resource not accessible by integration' }, 403, {
         'x-github-request-id': 'C4E0:1F2A:9B',
@@ -137,9 +137,8 @@ describe('a rejected QA verdict mirror', () => {
     const [captured] = captureExceptionMock.mock.calls[0] as [Error];
     expect(captured.message).toBe('GitHub mirror dropped qa-verdict-comment (rejected, 403)');
 
-    // Whose write was lost — the backend files no `setUser` anywhere else, which
-    // is why BOARDSESH-GV's "users impacted" was a count of Cloudflare edge IPs.
-    expect(scopeRecord.user).toEqual({ id: 'tester-user-id' });
+    expect(scopeRecord.user).toBeNull();
+    expect(JSON.stringify(scopeRecord)).not.toContain('tester-user-id');
     expect(scopeRecord.tags).toMatchObject({
       'github_mirror.operation': 'qa-verdict-comment',
       'github_mirror.reason': 'rejected',

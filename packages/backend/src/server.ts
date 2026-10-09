@@ -460,7 +460,10 @@ export async function startServer(): Promise<ServerResources> {
 
       // PostHog analytics reverse proxy — forwards /api/posthog/* to https://us.i.posthog.com/*
       // so ad-blockers that target *.posthog.com don't drop our events.
-      if (pathname.startsWith('/api/posthog/') && (req.method === 'POST' || req.method === 'OPTIONS')) {
+      if (
+        pathname.startsWith('/api/posthog/') &&
+        (req.method === 'POST' || req.method === 'GET' || req.method === 'OPTIONS')
+      ) {
         await handlePosthogProxy(req, res, url);
         return;
       }

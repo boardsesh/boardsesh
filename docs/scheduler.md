@@ -23,7 +23,7 @@ missed-occurrence issue.
 
 ## Job ownership
 
-All five jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
+All seven jobs. `packages/scheduler/src/__tests__/registry.test.ts` pins each
 row's path and slot as data, and asserts `packages/web/vercel.json` declares no
 `crons` key at all — so a schedule reappearing there (which would double-fire
 the route, Vercel and Railway both) reds CI.
@@ -35,6 +35,8 @@ the route, Vercel and Railway both) reds CI.
 | `refresh-sitemap-climbs`     | `/api/internal/refresh-sitemap-climbs`      | `0 */6 * * *`  | 15 min      | `scheduler-refresh-sitemap-climbs`     |
 | `refresh-gym-activity-stats` | Backend `/graphql`: `refreshGymActivityStats` | `30 6 * * *` | 15 min | — (`overdue` on `/health/jobs`)        |
 | `purge-spray-wall-photos`    | Backend `/graphql`: `purgeDeletedSprayWallPhotos` | `0 7 * * *` | 10 min | — (`overdue` on `/health/jobs`)        |
+| `snapshot-active-users`      | Backend `/graphql`: `snapshotActiveUsers`   | `20 0 * * *`   | 10 min      | — (`overdue` on `/health/jobs`)        |
+| `purge-user-activity`        | Backend `/graphql`: `purgeExpiredUserActivity` | `30 7 * * *` | 10 min    | — (`overdue` on `/health/jobs`)        |
 
 **`refresh-sitemap-climbs` is the one job that missed the migration.** Vercel
 fired it at `0 */6 * * *` from 2026-08-22 until the climb-sitemap pause deleted
@@ -103,6 +105,29 @@ Manual run: `scheduler run purge-spray-wall-photos`, or POST to the backend
 `wallsConsidered` is how many walls past the window still had a photo key when
 the run started, so a run that reports `wallsPurged: 0, wallsConsidered: 0` has
 nothing to do — not a failure.
+
+### First-party active users
+
+`snapshot-active-users` and `purge-user-activity` serve the consent-independent
+active-user count (#2644, [analytics-consent.md](./analytics-consent.md)).
+Both are cron-authenticated backend mutations, for the same reason as the
+spray-wall purge: the scheduler has no database client, and the PostHog key
+lives in the backend.
+
+- `snapshot-active-users` (00:20 UTC, after UTC midnight so "yesterday" is
+  complete, clear of the 00:00 sitemap refresh) counts yesterday's DAU and the
+  trailing 7- and 30-day WAU/MAU from `user_activity_days` and sends PostHog one
+  `Active Users Snapshot` event. Overlap-safe: the counts are reads, and the
+  event's uuid is derived from the day, so a second send collapses into the
+  first. A response with `captured: false` (no PostHog key, or a non-production
+  backend) is logged as a warning, not a failed run.
+- `purge-user-activity` (07:30 UTC, after the 07:00 spray-wall purge) deletes
+  rows older than 13 months. Overlap-safe: a second run deletes nothing.
+
+Same failure handling as the other backend jobs: a non-2xx or GraphQL errors
+inside an HTTP 200 fail the run, and only 502/503 is retried once after two
+seconds. Deploy the backend before the scheduler, or list both in
+`SCHEDULER_DISABLED_JOBS` until it is out.
 
 ### Gym activity backend cutover
 

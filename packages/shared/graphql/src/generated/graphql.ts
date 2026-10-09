@@ -18,6 +18,30 @@ export type Scalars = {
   JSON: { input: unknown; output: unknown };
 };
 
+/** Daily first-party active-user counts for one platform. */
+export type ActiveUsersPlatformCount = {
+  __typename?: 'ActiveUsersPlatformCount';
+  dailyActiveUsers: Scalars['Int']['output'];
+  monthlyActiveUsers: Scalars['Int']['output'];
+  /** web, ios, android or unknown. */
+  platform: Scalars['String']['output'];
+  weeklyActiveUsers: Scalars['Int']['output'];
+};
+
+/** What one cron-authenticated active-users snapshot counted and sent. */
+export type ActiveUsersSnapshotResult = {
+  __typename?: 'ActiveUsersSnapshotResult';
+  /** False when PostHog is not configured for this runtime, so nothing was sent. */
+  captured: Scalars['Boolean']['output'];
+  dailyActiveUsers: Scalars['Int']['output'];
+  /** The UTC day the daily count covers (YYYY-MM-DD): the day before the run. */
+  day: Scalars['String']['output'];
+  durationMs: Scalars['Int']['output'];
+  monthlyActiveUsers: Scalars['Int']['output'];
+  platforms: Array<ActiveUsersPlatformCount>;
+  weeklyActiveUsers: Scalars['Int']['output'];
+};
+
 /** Input for activity feed queries. */
 export type ActivityFeedInput = {
   /** Filter by board UUID */
@@ -194,6 +218,19 @@ export type AllUserPlaylistsResult = {
   playlists: Array<Playlist>;
   /** Total count across all pages */
   totalCount: Scalars['Int']['output'];
+};
+
+/** The signed-in climber's analytics consent answer, as the account stores it. See docs/analytics-consent.md. */
+export type AnalyticsConsent = {
+  __typename?: 'AnalyticsConsent';
+  /** granted or denied. */
+  analytics: Scalars['String']['output'];
+  /** ISO 8601, stamped by the server's clock. */
+  decidedAt: Scalars['String']['output'];
+  /** web, ios or android: where the answer was given. */
+  source: Scalars['String']['output'];
+  /** The CONSENT_VERSION the answer was given under. */
+  version: Scalars['Int']['output'];
 };
 
 /** A supported board angle. */
@@ -4209,6 +4246,8 @@ export type Mutation = {
    * behind, because other people's ticks point at them.
    */
   purgeDeletedSprayWallPhotos: SprayWallPhotoPurgeResult;
+  /** HTTP cron credentials only. Deletes user_activity_days rows older than 13 months. */
+  purgeExpiredUserActivity: UserActivityPurgeResult;
   /**
    * Move a gym's ownership to another account (global admin only) — a sold gym,
    * a departed committee member, a claim approved to the wrong person. The
@@ -4415,6 +4454,8 @@ export type Mutation = {
   /** Save a new tick (climb attempt record). */
   saveTick: Tick;
   sendDeviceLogs: SendDeviceLogsResponse;
+  /** Record the signed-in climber's analytics consent answer and return the account's current answer. */
+  setAnalyticsConsent: AnalyticsConsent;
   setClimbFromLedPositions: ClimbMatchResult;
   /** Set a community setting (admin/leader only). */
   setCommunitySettings: CommunitySetting;
@@ -4487,6 +4528,8 @@ export type Mutation = {
   setSprayWallRenderSettings: SprayWall;
   /** Setter override: directly set community status for your own climb. */
   setterOverrideCommunityStatus: ClimbCommunityStatus;
+  /** HTTP cron credentials only. Counts yesterday's DAU and the trailing WAU and MAU, and sends one aggregate PostHog event. */
+  snapshotActiveUsers: ActiveUsersSnapshotResult;
   /**
    * Submit in-app rating + optional comment. Public — unauthenticated testers
    * can still rate. If the request has a valid auth token, the feedback row is
@@ -5208,6 +5251,11 @@ export type MutationSaveTickArgs = {
 /** Root mutation type for all write operations. */
 export type MutationSendDeviceLogsArgs = {
   input: SendDeviceLogsInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationSetAnalyticsConsentArgs = {
+  input: SetAnalyticsConsentInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -6601,6 +6649,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** The signed-in climber's current analytics consent, or null when they have never answered. */
+  myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
    * Recorded board configurations for the current user keyed by controller serial.
    * Used as a fallback when boardsBySerialNumbers returns nothing for a serial,
@@ -8968,6 +9018,22 @@ export type SessionUser = {
   username: Scalars['String']['output'];
 };
 
+export type SetAnalyticsConsentInput = {
+  /** granted or denied. */
+  analytics: Scalars['String']['input'];
+  /**
+   * The decidedAt of the account answer this client last saw, or null when it saw
+   * none. A grant must echo the exact current server stamp; a different stamp
+   * returns the current answer without writing. With null, an existing grant
+   * may be recorded again but an existing denial wins. A denial is always written.
+   */
+  basedOnDecidedAt?: InputMaybe<Scalars['String']['input']>;
+  /** web, ios or android. */
+  source: Scalars['String']['input'];
+  /** The CONSENT_VERSION the client asked under. A positive integer. */
+  version: Scalars['Int']['input'];
+};
+
 export type SetCommunitySettingInput = {
   key: Scalars['String']['input'];
   scope: Scalars['String']['input'];
@@ -10649,6 +10715,15 @@ export type UpsertSprayWallHoldsInput = {
   wallUuid: Scalars['ID']['input'];
 };
 
+/** What one cron-authenticated user-activity retention run deleted. */
+export type UserActivityPurgeResult = {
+  __typename?: 'UserActivityPurgeResult';
+  /** Rows dated before this UTC day (YYYY-MM-DD) were deleted. */
+  cutoffDay: Scalars['String']['output'];
+  durationMs: Scalars['Int']['output'];
+  rowsDeleted: Scalars['Int']['output'];
+};
+
 /** A named physical board installation (board type + layout + size + hold sets). */
 export type UserBoard = {
   __typename?: 'UserBoard';
@@ -11587,6 +11662,42 @@ export type SetSessionHealthKitWorkoutIdMutationVariables = Exact<{
 }>;
 
 export type SetSessionHealthKitWorkoutIdMutation = { __typename?: 'Mutation'; setSessionHealthKitWorkoutId: boolean };
+
+export type AnalyticsConsentFieldsFragment = {
+  __typename?: 'AnalyticsConsent';
+  analytics: string;
+  version: number;
+  source: string;
+  decidedAt: string;
+};
+
+export type GetMyAnalyticsConsentQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetMyAnalyticsConsentQuery = {
+  __typename?: 'Query';
+  myAnalyticsConsent?: {
+    __typename?: 'AnalyticsConsent';
+    analytics: string;
+    version: number;
+    source: string;
+    decidedAt: string;
+  } | null;
+};
+
+export type SetAnalyticsConsentMutationVariables = Exact<{
+  input: SetAnalyticsConsentInput;
+}>;
+
+export type SetAnalyticsConsentMutation = {
+  __typename?: 'Mutation';
+  setAnalyticsConsent: {
+    __typename?: 'AnalyticsConsent';
+    analytics: string;
+    version: number;
+    source: string;
+    decidedAt: string;
+  };
+};
 
 export type GetBetaLinksQueryVariables = Exact<{
   boardType: Scalars['String']['input'];
@@ -15365,6 +15476,25 @@ export const CrewClimbFieldsFragmentDoc = {
     },
   ],
 } as unknown as DocumentNode<CrewClimbFieldsFragment, unknown>;
+export const AnalyticsConsentFieldsFragmentDoc = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'AnalyticsConsentFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'AnalyticsConsent' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'analytics' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'version' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'source' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'decidedAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<AnalyticsConsentFieldsFragment, unknown>;
 export const LiveSessionFieldsFragmentDoc = {
   kind: 'Document',
   definitions: [
@@ -16506,6 +16636,97 @@ export const SetSessionHealthKitWorkoutIdDocument = {
     },
   ],
 } as unknown as DocumentNode<SetSessionHealthKitWorkoutIdMutation, SetSessionHealthKitWorkoutIdMutationVariables>;
+export const GetMyAnalyticsConsentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetMyAnalyticsConsent' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'myAnalyticsConsent' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'AnalyticsConsentFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'AnalyticsConsentFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'AnalyticsConsent' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'analytics' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'version' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'source' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'decidedAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetMyAnalyticsConsentQuery, GetMyAnalyticsConsentQueryVariables>;
+export const SetAnalyticsConsentDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'SetAnalyticsConsent' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'SetAnalyticsConsentInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'setAnalyticsConsent' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [{ kind: 'FragmentSpread', name: { kind: 'Name', value: 'AnalyticsConsentFields' } }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'FragmentDefinition',
+      name: { kind: 'Name', value: 'AnalyticsConsentFields' },
+      typeCondition: { kind: 'NamedType', name: { kind: 'Name', value: 'AnalyticsConsent' } },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          { kind: 'Field', name: { kind: 'Name', value: 'analytics' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'version' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'source' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'decidedAt' } },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<SetAnalyticsConsentMutation, SetAnalyticsConsentMutationVariables>;
 export const GetBetaLinksDocument = {
   kind: 'Document',
   definitions: [

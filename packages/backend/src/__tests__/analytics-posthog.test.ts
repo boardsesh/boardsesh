@@ -51,7 +51,6 @@ describe('backend PostHog analytics helper', () => {
     const { captureBackendEvent } = await loadPosthogModule();
 
     const captured = captureBackendEvent('Live Activity Started', {
-      distinctId: 'user-1',
       properties: { sessionId: 'session-1' },
     });
 
@@ -70,7 +69,6 @@ describe('backend PostHog analytics helper', () => {
     const { captureBackendEvent } = await loadPosthogModule();
 
     const captured = captureBackendEvent('Live Activity Widget Navigation', {
-      distinctId: 'user-1',
       properties: {
         sessionId: 'session-1',
         outcome: 'success',
@@ -87,14 +85,14 @@ describe('backend PostHog analytics helper', () => {
       disableGeoip: true,
     });
     expect(posthogMocks.capture).toHaveBeenCalledWith({
-      distinctId: 'user-1',
+      distinctId: expect.stringMatching(/^backend:live-activity-widget-navigation:[0-9a-f-]{36}$/),
       event: 'Live Activity Widget Navigation',
       properties: {
-        sessionId: 'session-1',
         outcome: 'success',
         targetIndex: 2,
         service: 'boardsesh-backend',
         environment: 'production',
+        $process_person_profile: false,
       },
     });
     expect(loggerMock.info).toHaveBeenCalledWith(
@@ -109,10 +107,10 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
     const { captureBackendEvent } = await loadPosthogModule();
 
-    expect(captureBackendEvent('Live Activity Started', { distinctId: 'user-1' })).toBe(false);
+    expect(captureBackendEvent('Live Activity Started')).toBe(false);
 
     vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
-    expect(captureBackendEvent('Live Activity Started', { distinctId: 'user-1' })).toBe(true);
+    expect(captureBackendEvent('Live Activity Started')).toBe(true);
     expect(posthogMocks.PostHog).toHaveBeenCalledOnce();
   });
 
@@ -121,7 +119,7 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
     const { captureBackendEvent } = await loadPosthogModule();
 
-    expect(captureBackendEvent('Live Activity Started', { distinctId: 'user-1' })).toBe(true);
+    expect(captureBackendEvent('Live Activity Started')).toBe(true);
 
     expect(posthogMocks.PostHog).toHaveBeenCalledWith(
       'ph_public_project',
@@ -134,25 +132,94 @@ describe('backend PostHog analytics helper', () => {
     );
   });
 
-  it('can disable PostHog person profiles for aggregate events', async () => {
-    vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
-    vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
-    const { captureBackendEvent } = await loadPosthogModule();
+  // GDPR (#2644): backend events are operational telemetry sent whatever a
+  // climber's consent, so none of them may identify anyone. These pin the
+  // three ways an event could: its distinct id, a person profile, a property.
+  describe('never identifies a person', () => {
+    it('gives every event its own random distinct id', async () => {
+      vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
+      vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
+      const { captureBackendEvent } = await loadPosthogModule();
 
-    captureBackendEvent('Live Activity Push Delivery', {
-      distinctId: 'live-activity-session:session-1',
-      processPersonProfile: false,
-      properties: { sentCount: 1 },
+      captureBackendEvent('Tick Climb Not In Catalog', { properties: { climbUuid: 'climb-1' } });
+      captureBackendEvent('Tick Climb Not In Catalog', { properties: { climbUuid: 'climb-1' } });
+
+      const distinctIds = posthogMocks.capture.mock.calls.map(
+        ([message]) => (message as { distinctId: string }).distinctId,
+      );
+      expect(distinctIds).toHaveLength(2);
+      expect(distinctIds[0]).toMatch(/^backend:tick-climb-not-in-catalog:[0-9a-f-]{36}$/);
+      expect(distinctIds[1]).not.toBe(distinctIds[0]);
     });
 
-    expect(posthogMocks.capture).toHaveBeenCalledWith(
-      expect.objectContaining({
-        properties: expect.objectContaining({
-          sentCount: 1,
-          $process_person_profile: false,
-        }),
-      }),
-    );
+    it('turns off person profiles on every event', async () => {
+      vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
+      vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
+      const { captureBackendEvent } = await loadPosthogModule();
+
+      captureBackendEvent('Live Activity Push Delivery', { properties: { sentCount: 1 } });
+      captureBackendEvent('Live Activity Started');
+
+      for (const [message] of posthogMocks.capture.mock.calls) {
+        expect(message).toMatchObject({ properties: { $process_person_profile: false } });
+      }
+      expect(posthogMocks.capture).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops identity properties a caller passes anyway, and says so once', async () => {
+      vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
+      vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
+      const { captureBackendEvent } = await loadPosthogModule();
+
+      const leakyProperties = {
+        userId: 'user-1',
+        user_id: 'user-1',
+        Email: 'a@b.c',
+        sessionId: 'session-1',
+        session_id: 'session-1',
+        boundSessionId: 'session-2',
+        bound_session_id: 'session-2',
+        reason: 'unregister',
+      };
+      captureBackendEvent('Live Activity Ended', { properties: leakyProperties });
+      captureBackendEvent('Live Activity Ended', { properties: leakyProperties });
+
+      for (const [message] of posthogMocks.capture.mock.calls) {
+        const { properties } = message as { properties: Record<string, unknown> };
+        expect(properties).not.toHaveProperty('userId');
+        expect(properties).not.toHaveProperty('user_id');
+        expect(properties).not.toHaveProperty('Email');
+        expect(properties).not.toHaveProperty('sessionId');
+        expect(properties).not.toHaveProperty('session_id');
+        expect(properties).not.toHaveProperty('boundSessionId');
+        expect(properties).not.toHaveProperty('bound_session_id');
+        expect(properties.reason).toBe('unregister');
+        expect(JSON.stringify(message)).not.toContain('user-1');
+        expect(JSON.stringify(message)).not.toContain('session-1');
+        expect(JSON.stringify(message)).not.toContain('session-2');
+      }
+      expect(loggerMock.warn).toHaveBeenCalledWith(
+        "[PostHog] Dropped personal property 'userId' from backend event: Live Activity Ended",
+      );
+      expect(loggerMock.warn.mock.calls.filter(([line]) => String(line).includes("'userId'"))).toHaveLength(1);
+    });
+
+    it('uses the fixed system id for an aggregate event', async () => {
+      vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
+      vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
+      const { captureBackendEvent } = await loadPosthogModule();
+
+      captureBackendEvent('Active Users Snapshot', {
+        systemDistinctId: 'system:active-users',
+        properties: { monthlyActiveUsers: 12 },
+      });
+
+      expect(posthogMocks.capture).toHaveBeenCalledWith({
+        distinctId: 'system:active-users',
+        event: 'Active Users Snapshot',
+        properties: expect.objectContaining({ monthlyActiveUsers: 12, $process_person_profile: false }),
+      });
+    });
   });
 
   it('logs and returns false when capture throws', async () => {
@@ -163,9 +230,7 @@ describe('backend PostHog analytics helper', () => {
     });
     const { captureBackendEvent } = await loadPosthogModule();
 
-    const captured = captureBackendEvent('Live Activity Started', {
-      distinctId: 'user-1',
-    });
+    const captured = captureBackendEvent('Live Activity Started');
 
     expect(captured).toBe(false);
     expect(loggerMock.warn).toHaveBeenCalledWith('[PostHog] Capture failed:', expect.any(Error));
@@ -175,7 +240,7 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
     vi.stubEnv('POSTHOG_ENVIRONMENT', 'production');
     const { captureBackendEvent, shutdownPosthog } = await loadPosthogModule();
-    captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
+    captureBackendEvent('Live Activity Started');
 
     await shutdownPosthog();
 
@@ -192,7 +257,6 @@ describe('backend PostHog analytics helper', () => {
     const { captureBackendEvent } = await loadPosthogModule();
 
     const captured = captureBackendEvent('Live Activity Started', {
-      distinctId: 'user-1',
       properties: { sessionId: 'session-1' },
     });
 
@@ -212,7 +276,7 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('NODE_ENV', 'production');
     const { captureBackendEvent } = await loadPosthogModule();
 
-    const captured = captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
+    const captured = captureBackendEvent('Live Activity Started');
 
     expect(captured).toBe(false);
     expect(posthogMocks.PostHog).not.toHaveBeenCalled();
@@ -224,7 +288,7 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('SENTRY_ENVIRONMENT', 'preview');
     const { captureBackendEvent } = await loadPosthogModule();
 
-    const captured = captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
+    const captured = captureBackendEvent('Live Activity Started');
 
     expect(captured).toBe(true);
     expect(posthogMocks.PostHog).toHaveBeenCalledOnce();
@@ -252,7 +316,7 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('GITHUB_ACTIONS', '');
     const { captureBackendEvent } = await loadPosthogModule();
 
-    const captured = captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
+    const captured = captureBackendEvent('Live Activity Started');
 
     expect(captured).toBe(true);
     expect(posthogMocks.PostHog).toHaveBeenCalledOnce();
@@ -271,7 +335,7 @@ describe('backend PostHog analytics helper', () => {
     vi.stubEnv('POSTHOG_ENVIRONMENT', '');
     const { captureBackendEvent } = await loadPosthogModule();
 
-    const captured = captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
+    const captured = captureBackendEvent('Live Activity Started');
 
     expect(captured).toBe(false);
     expect(posthogMocks.PostHog).not.toHaveBeenCalled();

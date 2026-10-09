@@ -2132,15 +2132,17 @@ Live Activity actions that happen outside the web view are captured server-side 
 - A backend started locally with `pnpm --filter boardsesh-backend run start` sets no `NODE_ENV`, so the runtime inference alone used to call it production; the private-`DATABASE_URL` check now catches it. Same for e2e jobs, which run that script on a CI runner.
 - When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at **warn** — same level as the missing-key branch, since both mean analytics went dark.
 
+Every backend event is non-personal (#2644, [analytics-consent.md](./analytics-consent.md)): `captureBackendEvent` gives each one its own random distinct id (`backend:<event>:<uuid>`), sets `$process_person_profile: false`, and drops identity properties. None of the events below carries a user id, so count events or sessions on them, never people.
+
 Event taxonomy:
 
-- `Live Activity Started`: emitted after `registerActivityPushToken` successfully upserts a token; attributed to the authenticated `userId`.
-- `Live Activity Ended`: emitted after explicit unregister and when a session end cleans up still-registered tokens; attributed to `activity_push_tokens.user_id` when available.
-- `Live Activity Widget Navigation`: emitted for attributed widget next/previous attempts, including success, rate limit, wrong-session, empty-queue, target-out-of-bounds, and server-error outcomes.
-- `Live Activity Widget Navigation Attribution Gap`: emitted as an aggregate, session-scoped event when a widget token row authorizes navigation but has no `user_id` yet. Token rows created before `activity_push_tokens.user_id` was added still authorize navigation and emit this gap metric until that device re-registers and the row gains user attribution.
-- `Live Activity Push Delivery`: emitted once per APNs send batch with token/sent/failed/stale counts only. It uses a session-scoped distinct ID with PostHog person-profile processing disabled.
+- `Live Activity Started`: emitted after `registerActivityPushToken` successfully upserts a token.
+- `Live Activity Ended`: emitted after explicit unregister and when a session end cleans up still-registered tokens (one event per climber's set of tokens, naming nobody).
+- `Live Activity Widget Navigation`: emitted for widget next/previous attempts from a token bound to a user, including success, rate limit, wrong-session, empty-queue, target-out-of-bounds, and server-error outcomes.
+- `Live Activity Widget Navigation Attribution Gap`: emitted when a widget token row authorizes navigation but has no `user_id` yet. Token rows created before `activity_push_tokens.user_id` was added still authorize navigation and emit this gap metric until that device re-registers.
+- `Live Activity Push Delivery`: emitted for an APNs send batch with failed or stale tokens, with token/sent/failed/stale counts only.
 
-Analytics intentionally excludes APNs tokens, bearer tokens, user emails, climb names, and queue item names. Existing token rows from before the `activity_push_tokens.user_id` migration continue to work; they gain user attribution the next time the device registers.
+Analytics intentionally excludes user ids, APNs tokens, bearer tokens, user emails, climb names, and queue item names. Existing token rows from before the `activity_push_tokens.user_id` migration continue to work.
 
 ### Event Types That Trigger a Push
 

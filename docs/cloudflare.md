@@ -113,6 +113,34 @@ interactive agents. CI and S3 publication still use their stored credentials.
 
 ## Observe country header
 
+### Functional feature-flag country
+
+The backend PostHog proxy reads only the `CF-IPCountry` country header supplied
+by [Cloudflare IP Geolocation](https://developers.cloudflare.com/network/ip-geolocation/).
+Keep the zone's IP Geolocation setting on; absent country fails closed as `XX`.
+No visitor IP, city, coordinates, or HTTP User-Agent is forwarded to PostHog.
+
+The backend accepts that header only when the socket peer is in Cloudflare's
+published IPv4/IPv6 ranges, or a private reverse-proxy socket has a Cloudflare
+address as the **last** `X-Forwarded-For` hop. Our hosted ingress appends the
+peer address it observes; earlier entries are caller-controlled. Private peers
+are trusted as ingress under that append contract. Other deployments must
+preserve it or use direct Cloudflare peers; do not expose an appending-proxy-free
+backend to untrusted private-network callers. A public direct-origin request,
+including a forged country or earlier Cloudflare hop, resolves as `XX`.
+
+Only `/flags/` and legacy `/decide/` JSON bodies are rewritten, with bounded gzip
+decoding. Incoming GeoIP overrides are removed, `$geoip_country_code` is replaced,
+and `geoip_disable: true` prevents PostHog from substituting the backend region.
+Capture and replay bytes are unchanged. The static edge ranges in
+`packages/backend/src/utils/flag-country.ts` come from
+[Cloudflare IPv4](https://www.cloudflare.com/ips-v4/) and
+[Cloudflare IPv6](https://www.cloudflare.com/ips-v6/); new ranges fail closed
+until this list is updated. This preserves coarse region targeting, rather than
+making IP geolocation an exact location guarantee.
+
+### Observe telemetry
+
 The `http_request_late_transform` phase carries one host-scoped rule for
 `updates.boardsesh.com`. It overwrites `X-Geo-Country` with Cloudflare's
 `ip.src.country` value before the request reaches xprem. Transform Rules and

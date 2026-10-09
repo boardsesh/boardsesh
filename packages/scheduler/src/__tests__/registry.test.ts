@@ -5,6 +5,7 @@ import { assertValidTimeZone } from '../cron/zoned-time';
 import { findJob, JOBS, VERCEL_OWNED_CRON_PATHS } from '../jobs/registry';
 import { refreshGymActivityStats } from '../jobs/refresh-gym-activity-stats';
 import { purgeSprayWallPhotos } from '../jobs/purge-spray-wall-photos';
+import { purgeUserActivity, snapshotActiveUsers } from '../jobs/active-users';
 
 type VercelConfig = { crons?: { path: string; schedule: string }[] };
 
@@ -114,6 +115,26 @@ describe('job registry', () => {
       run: purgeSprayWallPhotos,
     });
     expect(findJob('purge-spray-wall-photos')?.webPath).toBeUndefined();
+  });
+
+  it('snapshots active users just after midnight UTC and purges old activity at 07:30 UTC', () => {
+    // Pinned as data. The snapshot counts "yesterday", so it must run after UTC
+    // midnight. The purge is what makes the 13-month retention true: dropped
+    // from the registry, the table would grow past it (docs/analytics-consent.md).
+    expect(findJob('snapshot-active-users')).toMatchObject({
+      schedule: '20 0 * * *',
+      timezone: 'UTC',
+      timeoutMs: 600_000,
+      run: snapshotActiveUsers,
+    });
+    expect(findJob('purge-user-activity')).toMatchObject({
+      schedule: '30 7 * * *',
+      timezone: 'UTC',
+      timeoutMs: 600_000,
+      run: purgeUserActivity,
+    });
+    expect(findJob('snapshot-active-users')?.webPath).toBeUndefined();
+    expect(findJob('purge-user-activity')?.webPath).toBeUndefined();
   });
 
   it('gives the long jobs more than the 300s Vercel capped them at', () => {

@@ -350,7 +350,12 @@ point of this section.**
   every binary that predates it — and in Expo Go, and on Android — the probe
   returns null, which reads as not-allowed. That is the designed degradation.
 - **Android has no client guard at all.** Play exposes no storefront to the app,
-  so there is nothing on-device to check a country against. **The PostHog
+  so there is nothing on-device to check a country against. Functional flag
+  requests preserve OS/version/build targeting when analytics is denied. The
+  first-party proxy supplies only an edge-verified current country, disables
+  upstream GeoIP inference, and replaces unknown/untrusted countries with `XX`.
+  See `docs/cloudflare.md` for the trusted ingress and header prerequisite.
+  **The PostHog
   targeting IS the guard**, and it has to be exactly:
 
   > platform = Android **and** country = AU **and** date >= 2026-09-30

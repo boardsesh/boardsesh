@@ -35,6 +35,7 @@ import { holdOutlineOverridesTypeDefs } from './hold-outline-overrides';
 import { sprayWallsTypeDefs, sprayWallResetTypeDefs, sprayWallModerationTypeDefs } from './spray-walls';
 import { sprayDetectionTypeDefs } from './spray-detection';
 import { userDataExportTypeDefs } from './user-data-export';
+import { analyticsConsentTypeDefs } from './analytics-consent';
 
 export const typeDefs = [
   privacyTypeDefs,
@@ -76,4 +77,5 @@ export const typeDefs = [
   qaTypeDefs,
   boardPresenceTypeDefs,
   userDataExportTypeDefs,
+  analyticsConsentTypeDefs,
 ];
