@@ -469,6 +469,42 @@ describe('applyAuroraAscents — edit-clobber guard', () => {
     expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
   });
+
+  it('accepts a later Aurora edit after a board-attribution redelivery kept the row clean', async () => {
+    // The repair advances updated_at and aurora_synced_at together for a clean
+    // row. Exercise the real Aurora writer with that resulting classification:
+    // a later upstream payload change must still pass the edit-clobber guard.
+    const repairedAt = '2026-05-03T00:00:00.000Z';
+    const { tx, calls } = createTx({
+      selectResults: [
+        [
+          {
+            uuid: 'tick-1',
+            auroraId: 'aur-1',
+            ownerUserId: 'user-1',
+            climbUuid: 'climb-1',
+            angle: 40,
+            isMirror: false,
+            status: 'send',
+            attemptCount: 3,
+            quality: 3,
+            difficulty: 20,
+            isBenchmark: false,
+            comment: '',
+            climbedAt: '2026-05-01T22:00:00.000Z',
+            updatedAt: repairedAt,
+            auroraSyncedAt: repairedAt,
+            origin: 'aurora_pull',
+          },
+        ],
+      ],
+    });
+
+    await applyAuroraAscents(tx as unknown as Db, 'kilter', 'user-1', [ascent()]);
+
+    expect(calls.filter((call) => call.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((call) => call.kind === 'insert')).toHaveLength(0);
+  });
 });
 
 describe('applyAuroraBids', () => {
