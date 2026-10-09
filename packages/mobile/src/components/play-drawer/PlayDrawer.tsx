@@ -478,15 +478,6 @@ export function PlayDrawer({
     swipeTranslateX,
     swipeIsAnimating,
   });
-  const deliberateScrollGesture = useDeliberateScrollGesture({ scrollRef: scrollGestureRef, scrollYSV, isPane });
-  const contentGesture = useMemo(
-    () =>
-      Platform.OS === 'web'
-        ? dismissGesture.enabled(!isPane)
-        : Gesture.Simultaneous(dismissGesture.enabled(!isPane), deliberateScrollGesture),
-    [dismissGesture, deliberateScrollGesture, isPane],
-  );
-
   const dismissAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: dismissTranslateY.value }],
   }));
@@ -572,6 +563,28 @@ export function PlayDrawer({
   );
   const firstSectionId = visibleSectionIds[0];
   const hasVisibleSections = sectionsReady && visibleSectionIds.length > 0;
+  const handleDeliberateScrollIntent = useCallback(() => {
+    if (hasVisibleSections) requestBelowFoldContent();
+  }, [hasVisibleSections, requestBelowFoldContent]);
+  const deliberateScrollGesture = useDeliberateScrollGesture({
+    scrollRef: scrollGestureRef,
+    scrollYSV,
+    isPane,
+    onScrollIntent: handleDeliberateScrollIntent,
+  });
+  const contentGesture = useMemo(
+    () =>
+      Platform.OS === 'web'
+        ? dismissGesture.enabled(!isPane)
+        : Gesture.Simultaneous(dismissGesture.enabled(!isPane), deliberateScrollGesture),
+    [dismissGesture, deliberateScrollGesture, isPane],
+  );
+  // An expanded header with a deferred body may fill the viewport exactly.
+  // One pixel lets normal browser input produce the scroll that opens its body.
+  const initialWebScrollHeight =
+    Platform.OS === 'web' && hasVisibleSections && !belowFoldContentRequested
+      ? (sheetViewportHeight || windowHeight) + 1
+      : undefined;
   const visibleSectionsKey = sectionsReady ? visibleSectionIds.join(',') : 'loading';
   const firstSectionHeaderHeight =
     sectionHeaderMeasurement.sectionId === firstSectionId ? sectionHeaderMeasurement.height : 0;
@@ -1939,7 +1952,7 @@ export function PlayDrawer({
               bounces={false}
               overScrollMode="never"
               style={styles.content}
-              contentContainerStyle={{ paddingBottom: insets.bottom }}
+              contentContainerStyle={{ paddingBottom: insets.bottom, minHeight: initialWebScrollHeight }}
               onLayout={handleViewportLayout}
               onScroll={handleScroll}
               scrollEventThrottle={16}

@@ -38,6 +38,7 @@ const recorded = vi.hoisted(() => ({
   scroll: [] as Props[],
   firstScreen: [] as Props[],
   sectionsSheet: [] as Props[],
+  scrollGate: [] as Props[],
   headerLayout: undefined as ((event: LayoutChangeEvent) => void) | undefined,
 }));
 const setCurrentClimb = vi.hoisted(() => vi.fn());
@@ -97,7 +98,12 @@ vi.mock('../../../lib/play-drawer-sections-preference', () => ({
     setAll: vi.fn(),
   }),
 }));
-vi.mock('../use-deliberate-scroll-gesture', () => ({ useDeliberateScrollGesture: () => ({}) }));
+vi.mock('../use-deliberate-scroll-gesture', () => ({
+  useDeliberateScrollGesture: (options: Props) => {
+    recorded.scrollGate.push(options);
+    return {};
+  },
+}));
 vi.mock('../PlayDrawerSectionsSheet', () => ({
   PlayDrawerSectionsSheet: (props: Props) => {
     recorded.sectionsSheet.push(props);
@@ -388,6 +394,7 @@ beforeEach(() => {
   recorded.switchOverlay = [];
   recorded.actionBar = [];
   recorded.deferredSections = [];
+  recorded.scrollGate = [];
   recorded.logAscent = [];
   recorded.favoriteStatus = [];
   recorded.playback = [];
@@ -745,6 +752,38 @@ describe('PlayDrawer configurable sections', () => {
     const expandFirst = recorded.deferredSections.at(-1)?.onFirstSectionToggle as (expanded: boolean) => void;
     act(() => expandFirst(true));
     expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+  });
+  it('opens a lone deferred section on deliberate scroll intent before any offset exists', () => {
+    hideEverySection();
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(false);
+    const onScrollIntent = recorded.scrollGate.at(-1)?.onScrollIntent as () => void;
+    act(onScrollIntent);
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+  });
+  it('gives browser input initial overflow and removes it after scrolling or hiding everything', () => {
+    hideEverySection();
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    const rendered = renderDrawer();
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).not.toHaveProperty('minHeight', 845);
+    const ignoredIntent = recorded.scrollGate.at(-1)?.onScrollIntent as () => void;
+    act(ignoredIntent);
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    rendered.rerender(
+      createElement(PlayDrawer, { boardConfig: TWELVE_BY_TWELVE, onOpenQueue: vi.fn(), openTarget: null }),
+    );
+    const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
+    act(() => viewportLayout(layoutEvent(844)));
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(false);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', 845);
+    const onScroll = recorded.scroll.at(-1)?.onScroll as (event: {
+      nativeEvent: { contentOffset: { y: number } };
+    }) => void;
+    act(() => onScroll({ nativeEvent: { contentOffset: { y: 1 } } }));
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', undefined);
   });
   it('waits for preference hydration before mounting sections or the board', () => {
     drawerSections.ready = false;

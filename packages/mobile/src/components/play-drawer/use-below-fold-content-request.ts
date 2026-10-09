@@ -2,8 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 
 /**
  * Opens the play drawer's deferred-content gate once per mount. Native touch
- * scrolling can request it at drag start; browser wheel, trackpad, scrollbar,
- * and keyboard scrolling request it from the first positive scroll offset.
+ * scrolling requests it after a deliberate drag; browser wheel, trackpad,
+ * scrollbar and keyboard scrolling request it from the first positive offset.
  */
 export function useBelowFoldContentRequest(): {
   requested: boolean;

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, type ComponentType, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ComponentType, type RefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
-import { useSharedValue, type SharedValue } from 'react-native-reanimated';
+import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO } from '@boardsesh/play-view';
 
 /** Initial travel before each native vertical scroll can take the touch. */
@@ -10,6 +10,8 @@ type UseDeliberateScrollGestureOptions = {
   scrollRef: RefObject<ComponentType | undefined | null>;
   scrollYSV: SharedValue<number>;
   isPane: boolean;
+  /** Mount below-fold content even when there is not yet enough to scroll. */
+  onScrollIntent?: () => void;
 };
 
 // This Pan never activates. The native ScrollView waits for it to fail, which
@@ -19,6 +21,7 @@ export function useDeliberateScrollGesture({
   scrollRef,
   scrollYSV,
   isPane,
+  onScrollIntent,
 }: UseDeliberateScrollGestureOptions): GestureType {
   const isPaneSV = useSharedValue(isPane);
   useEffect(() => {
@@ -29,6 +32,12 @@ export function useDeliberateScrollGesture({
   const startTouchY = useSharedValue(0);
   const startedAtTop = useSharedValue(false);
   const verticalLocked = useSharedValue(false);
+  const hasReportedScrollIntent = useSharedValue(false);
+  const onScrollIntentRef = useRef(onScrollIntent);
+  onScrollIntentRef.current = onScrollIntent;
+  const reportScrollIntent = useCallback(() => {
+    onScrollIntentRef.current?.();
+  }, []);
 
   return useMemo(
     () =>
@@ -39,6 +48,7 @@ export function useDeliberateScrollGesture({
         .onTouchesDown((event, state) => {
           'worklet';
           verticalLocked.value = false;
+          hasReportedScrollIntent.value = false;
           if (event.allTouches.length !== 1) {
             state.fail();
             return;
@@ -72,7 +82,13 @@ export function useDeliberateScrollGesture({
             }
             verticalLocked.value = true;
           }
-          if (absoluteDeltaY >= SCROLL_ACTIVATION_DISTANCE) state.fail();
+          if (absoluteDeltaY >= SCROLL_ACTIVATION_DISTANCE) {
+            if (!hasReportedScrollIntent.value) {
+              hasReportedScrollIntent.value = true;
+              runOnJS(reportScrollIntent)();
+            }
+            state.fail();
+          }
         })
         .onTouchesUp((_event, state) => {
           'worklet';
@@ -85,10 +101,21 @@ export function useDeliberateScrollGesture({
         .onFinalize(() => {
           'worklet';
           verticalLocked.value = false;
+          hasReportedScrollIntent.value = false;
           startedAtTop.value = false;
           startTouchX.value = 0;
           startTouchY.value = 0;
         }),
-    [isPaneSV, scrollRef, scrollYSV, startTouchX, startTouchY, startedAtTop, verticalLocked],
+    [
+      isPaneSV,
+      scrollRef,
+      scrollYSV,
+      startTouchX,
+      startTouchY,
+      startedAtTop,
+      verticalLocked,
+      hasReportedScrollIntent,
+      reportScrollIntent,
+    ],
   );
 }

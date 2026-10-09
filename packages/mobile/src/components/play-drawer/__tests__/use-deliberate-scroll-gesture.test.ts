@@ -10,6 +10,7 @@ vi.mock('react-native-reanimated', async () => {
       if (ref.current === null) ref.current = { value: initial };
       return ref.current;
     },
+    runOnJS: (callback: () => void) => callback,
   };
 });
 
@@ -66,7 +67,8 @@ describe('useDeliberateScrollGesture', () => {
   });
 
   it('holds native scrolling through 23 points and releases at 24 without activating', () => {
-    const options = makeOptions();
+    const onScrollIntent = vi.fn();
+    const options = makeOptions({ onScrollIntent });
     renderHook(() => useDeliberateScrollGesture(options));
     const { handlers, settings } = latestBuilder();
     const state = makeState();
@@ -77,9 +79,71 @@ describe('useDeliberateScrollGesture', () => {
     handlers.onTouchesMove(touches(0, -10), state);
     handlers.onTouchesMove(touches(0, -23), state);
     expect(state.fail).not.toHaveBeenCalled();
+    expect(onScrollIntent).not.toHaveBeenCalled();
     handlers.onTouchesMove(touches(0, -24), state);
     expect(state.fail).toHaveBeenCalledTimes(1);
     expect(state.activate).not.toHaveBeenCalled();
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports scroll intent once per deliberate drag, including after cancellation', () => {
+    const onScrollIntent = vi.fn();
+    renderHook(() => useDeliberateScrollGesture(makeOptions({ onScrollIntent })));
+    const { handlers } = latestBuilder();
+    const state = makeState();
+    handlers.onTouchesDown(touches(), state);
+    handlers.onTouchesMove(touches(0, -24), state);
+    handlers.onTouchesMove(touches(0, -40), state);
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
+    handlers.onTouchesCancelled({ allTouches: [] }, state);
+    handlers.onFinalize();
+    handlers.onTouchesDown(touches(0, 100), state);
+    handlers.onTouchesMove(touches(0, 76), state);
+    expect(onScrollIntent).toHaveBeenCalledTimes(2);
+  });
+
+  it('calls the latest scroll-intent callback without rebuilding the gesture', () => {
+    const firstCallback = vi.fn();
+    const nextCallback = vi.fn();
+    const options = makeOptions({ onScrollIntent: firstCallback });
+    const { result, rerender } = renderHook((props: Options) => useDeliberateScrollGesture(props), {
+      initialProps: options,
+    });
+    const initialGesture = result.current;
+    const { handlers } = latestBuilder();
+    rerender({ ...options, onScrollIntent: nextCallback });
+    const state = makeState();
+    handlers.onTouchesDown(touches(), state);
+    handlers.onTouchesMove(touches(0, -24), state);
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(nextCallback).toHaveBeenCalledTimes(1);
+    expect(result.current).toBe(initialGesture);
+    expect(recordedBuilders).toHaveLength(1);
+  });
+
+  it('does not report intent for horizontal, pinch, dismissal, tiny drags or cancellation', () => {
+    const onScrollIntent = vi.fn();
+    const options = makeOptions({ onScrollIntent });
+    options.scrollYSV.value = 0;
+    renderHook(() => useDeliberateScrollGesture(options));
+    const { handlers } = latestBuilder();
+    const state = makeState();
+    for (const event of [
+      touches(30, 12),
+      { allTouches: [...touches(0, -30).allTouches, ...touches(20, -30).allTouches] },
+      touches(0, 30),
+      touches(0, -23),
+    ]) {
+      handlers.onTouchesDown(touches(), state);
+      handlers.onTouchesMove(event, state);
+      handlers.onTouchesUp({ allTouches: [] }, state);
+      handlers.onFinalize();
+    }
+    handlers.onTouchesDown(touches(), state);
+    handlers.onTouchesMove(touches(0, -15), state);
+    handlers.onTouchesCancelled({ allTouches: [] }, state);
+    handlers.onFinalize();
+    expect(onScrollIntent).not.toHaveBeenCalled();
   });
 
   it('yields promptly to horizontal and slightly diagonal carousel swipes', () => {

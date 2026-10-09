@@ -251,9 +251,12 @@ The first eligible visible section supplies the header preview at the fold; its 
 mounts before deferred content so hiding Logbook never strands the remaining sections.
 With no eligible sections, the board and controls fill the viewport including safe-area
 clearance, and vertical scrolling is disabled. Native vertical scrolling waits for a
-24-point clearly vertical drag; horizontal carousel swipes block drawer scrolling.
+24-point clearly vertical drag, which also requests deferred content when the
+header alone cannot scroll. Horizontal carousel swipes block drawer scrolling.
 Pinch, zoomed panning, and downward dismissal retain their own gesture handling.
 Browser touch, wheel, trackpad, and keyboard scrolling retain native browser behavior.
+While a visible section awaits content, the browser gets one pixel of initial
+overflow so those inputs can open the content gate. Hide all removes that overflow.
 
 ## The decision tree
 
