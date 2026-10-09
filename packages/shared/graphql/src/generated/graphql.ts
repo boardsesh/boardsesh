@@ -208,6 +208,8 @@ export type AppFeedbackContext = {
   __typename?: 'AppFeedbackContext';
   climbName?: Maybe<Scalars['String']['output']>;
   climbUuid?: Maybe<Scalars['String']['output']>;
+  /** Private identifiers. Any resolver returning this context must require admin access. */
+  diagnostics?: Maybe<FeedbackDiagnostics>;
   difficulty?: Maybe<Scalars['String']['output']>;
   sessionId?: Maybe<Scalars['String']['output']>;
   sessionName?: Maybe<Scalars['String']['output']>;
@@ -2387,11 +2389,39 @@ export type FavoritesCount = {
 export type FeedbackContextInput = {
   climbName?: InputMaybe<Scalars['String']['input']>;
   climbUuid?: InputMaybe<Scalars['String']['input']>;
+  /**
+   * Opaque input so malformed or newer optional diagnostics cannot reject the
+   * report. The backend stores only known, validated fields; output remains
+   * explicitly typed and admin-only.
+   */
+  diagnostics?: InputMaybe<Scalars['JSON']['input']>;
   difficulty?: InputMaybe<Scalars['String']['input']>;
   sessionId?: InputMaybe<Scalars['String']['input']>;
   sessionName?: InputMaybe<Scalars['String']['input']>;
   url?: InputMaybe<Scalars['String']['input']>;
   userAgent?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Private, best-effort telemetry identifiers for feedback investigation.
+ * Available only through the authenticated admin dashboard.
+ */
+export type FeedbackDiagnostics = {
+  __typename?: 'FeedbackDiagnostics';
+  easClientId?: Maybe<Scalars['String']['output']>;
+  lastUserOperationId?: Maybe<Scalars['String']['output']>;
+  launchId?: Maybe<Scalars['String']['output']>;
+  nativeStartupId?: Maybe<Scalars['String']['output']>;
+  otaBranch?: Maybe<Scalars['String']['output']>;
+  otaIsEmbedded?: Maybe<Scalars['Boolean']['output']>;
+  otaRuntimeVersion?: Maybe<Scalars['String']['output']>;
+  otaUpdateId?: Maybe<Scalars['String']['output']>;
+  posthogDistinctId?: Maybe<Scalars['String']['output']>;
+  posthogSessionId?: Maybe<Scalars['String']['output']>;
+  previousLaunchCrashed?: Maybe<Scalars['Boolean']['output']>;
+  previousLaunchId?: Maybe<Scalars['String']['output']>;
+  reportId?: Maybe<Scalars['String']['output']>;
+  schemaVersion?: Maybe<Scalars['Int']['output']>;
 };
 
 /**

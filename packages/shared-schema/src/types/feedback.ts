@@ -7,6 +7,27 @@ export type AppFeedbackSource = 'prompt' | 'drawer-feedback' | 'shake-bug' | 'dr
  */
 export type AppFeedbackBoardName = string;
 
+/** Private, best-effort telemetry correlation. Never mirrored to public issues. */
+export type FeedbackDiagnosticsInput = {
+  schemaVersion?: number | null;
+  reportId?: string | null;
+  launchId?: string | null;
+  previousLaunchId?: string | null;
+  nativeStartupId?: string | null;
+  lastUserOperationId?: string | null;
+  posthogDistinctId?: string | null;
+  posthogSessionId?: string | null;
+  easClientId?: string | null;
+  otaUpdateId?: string | null;
+  otaBranch?: string | null;
+  otaRuntimeVersion?: string | null;
+  previousLaunchCrashed?: boolean | null;
+  otaIsEmbedded?: boolean | null;
+};
+
+/** Same nullable wire fields, readable only in private admin feedback queries. */
+export type FeedbackDiagnostics = FeedbackDiagnosticsInput;
+
 /**
  * Free-form context attached to feedback for debugging. Stored as jsonb on the
  * server. Every field is optional — anonymous submissions from outside a board
@@ -20,6 +41,7 @@ export type FeedbackContextInput = {
   sessionName?: string | null;
   url?: string | null;
   userAgent?: string | null;
+  diagnostics?: FeedbackDiagnosticsInput | null;
 };
 
 export type SubmitAppFeedbackInput = {
@@ -81,6 +103,7 @@ export type AppFeedbackContext = {
   sessionName?: string | null;
   url?: string | null;
   userAgent?: string | null;
+  diagnostics?: FeedbackDiagnostics | null;
 };
 
 /** A feedback row enriched for the admin dashboard. */
