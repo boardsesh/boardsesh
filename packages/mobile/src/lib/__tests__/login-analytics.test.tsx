@@ -467,4 +467,28 @@ describe('useTrackLoginSucceeded', () => {
 
     expect(analytics.track).toHaveBeenCalledTimes(1);
   });
+
+  it('sends no follow-up for a returning account whose age came from the cache', async () => {
+    const queryClient = createTestQueryClient();
+    // Fetched a moment before sign-in, so it is reused without a read.
+    queryClient.setQueryData(['profile'], { profile: { createdAt: isoBeforeSignIn(400 * 24 * HOUR_MS) } });
+    const { result } = renderTracker(queryClient);
+
+    await act(async () => {
+      result.current({ auth_method: 'credentials', provider: 'email', flow: 'native', screen: 'login' });
+      await vi.runAllTimersAsync();
+      // A later profile refetch must not read as a late answer.
+      queryClient.setQueryData(['profile'], { profile: { createdAt: isoBeforeSignIn(400 * 24 * HOUR_MS) } });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(graphql.request).not.toHaveBeenCalled();
+    expect(analytics.track).toHaveBeenCalledTimes(1);
+    expect(analytics.track.mock.calls[0][0]).toBe('Login Succeeded');
+    expect(analytics.track.mock.calls[0][1]).toMatchObject({
+      is_new_account: false,
+      account_age_hours: 9600,
+      account_age_read: 'ok',
+    });
+  });
 });

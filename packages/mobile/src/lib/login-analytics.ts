@@ -148,7 +148,9 @@ export function watchAccountCreatedAt(
   { quickMs = PROFILE_READ_TIMEOUT_MS, lateMs = LATE_RESOLVE_WINDOW_MS }: { quickMs?: number; lateMs?: number } = {},
 ): AccountCreatedAtWatch {
   let finished = false;
-  let lastRead: Exclude<AccountAgeRead, 'timeout'> | null = null;
+  // The last of this module's reads that came back without a creation time.
+  // A read that found one is never stored here: it ends the watch instead.
+  let lastMiss: 'empty' | 'error' | null = null;
   let settle: (createdAt: string | null) => void = () => {};
   const settled = new Promise<string | null>((resolve) => {
     settle = resolve;
@@ -193,14 +195,15 @@ export function watchAccountCreatedAt(
         });
       }
       if (finished) return;
-      lastRead = await readProfileOnce(queryClient);
+      const read = await readProfileOnce(queryClient);
       if (finished) return;
       // A fresh cached profile is reused without a fetch, so no cache event
       // fires for it: take the answer straight from the entry.
-      if (lastRead === 'ok') {
+      if (read === 'ok') {
         finish(queryClient.getQueryData<GetProfileQueryResponse>(PROFILE_QUERY_KEY)?.profile?.createdAt ?? null);
         return;
       }
+      lastMiss = read;
     }
   })();
 
@@ -211,7 +214,7 @@ export function watchAccountCreatedAt(
   const quick = Promise.race([settled, quickDeadline]).then((createdAt) => {
     clearTimeout(quickTimeoutId);
     if (createdAt) return { createdAt, read: 'ok' as const };
-    return { createdAt: null, read: lastRead === null || lastRead === 'ok' ? ('timeout' as const) : lastRead };
+    return { createdAt: null, read: lastMiss ?? ('timeout' as const) };
   });
 
   return { quick, settled };

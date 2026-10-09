@@ -34,6 +34,11 @@ export const PENDING_BOARD_LINK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // that link again and the next sign-in would land on it. One launch, one stash.
 let handledLaunchBoardUrl: string | null = null;
 
+/** Tests only: forget the launch URL, as a new process would. */
+export function resetHandledLaunchBoardUrlForTests(): void {
+  handledLaunchBoardUrl = null;
+}
+
 type PendingBoardLink = { path: string; stashedAt: number };
 
 /** The stored link, or null when the value is not one we wrote or has expired. */

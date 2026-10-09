@@ -45,7 +45,11 @@ vi.mock('../../lib/routing/anonymous-auth-gate', () => ({
   },
 }));
 
-import { DeepLinkProvider, PENDING_BOARD_LINK_MAX_AGE_MS } from '../deep-link-provider';
+import {
+  DeepLinkProvider,
+  PENDING_BOARD_LINK_MAX_AGE_MS,
+  resetHandledLaunchBoardUrlForTests,
+} from '../deep-link-provider';
 import { clearBoardLinkReplay, didReplayBoardLink } from '../../lib/routing/board-link-replay';
 
 const PENDING_LEGACY_PREVIEW_KEY = 'boardsesh_pending_legacy_preview';
@@ -59,6 +63,8 @@ beforeEach(() => {
   gate.relaxesAnonymousRoutes = false;
   store.clear();
   clearBoardLinkReplay();
+  // Each test is its own launch: the provider handles a launch URL once per process.
+  resetHandledLaunchBoardUrlForTests();
 });
 
 describe('DeepLinkProvider — legacy OTA preview links', () => {
@@ -116,12 +122,7 @@ describe('DeepLinkProvider — legacy OTA preview links', () => {
 const PENDING_BOARD_LINK_KEY = 'boardsesh_pending_board_link';
 const WALL_UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
-/** A climb link no other test has launched with: the provider handles each launch URL once per process. */
-let climbLinkCount = 0;
-function nextClimbPath(): string {
-  climbLinkCount += 1;
-  return `/kilter/1/7/1,20/40/view/the-proj-${climbLinkCount}`;
-}
+const CLIMB_PATH = '/kilter/1/7/1,20/40/view/the-proj';
 
 function storedBoardLink(): { path: string; stashedAt: number } | null {
   const stored = store.get(PENDING_BOARD_LINK_KEY);
@@ -136,20 +137,18 @@ async function settleProvider(): Promise<void> {
 
 describe('DeepLinkProvider — board and climb links', () => {
   it('stashes the climb a signed-out cold start was launched with', async () => {
-    const climbPath = nextClimbPath();
-    linkState.initialUrl = `https://www.boardsesh.com${climbPath}`;
+    linkState.initialUrl = `https://www.boardsesh.com${CLIMB_PATH}`;
 
     render(createElement(DeepLinkProvider, { children: null }));
 
-    await waitFor(() => expect(storedBoardLink()?.path).toBe(climbPath));
+    await waitFor(() => expect(storedBoardLink()?.path).toBe(CLIMB_PATH));
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('lands on the climb after sign-in, once', async () => {
-    const climbPath = nextClimbPath();
-    linkState.initialUrl = `https://www.boardsesh.com${climbPath}`;
+    linkState.initialUrl = `https://www.boardsesh.com${CLIMB_PATH}`;
     const { unmount } = render(createElement(DeepLinkProvider, { children: null }));
-    await waitFor(() => expect(storedBoardLink()?.path).toBe(climbPath));
+    await waitFor(() => expect(storedBoardLink()?.path).toBe(CLIMB_PATH));
 
     // The auth gate swaps the tree on sign-in, so the provider mounts again
     // with the same launch URL and a session.
@@ -157,7 +156,7 @@ describe('DeepLinkProvider — board and climb links', () => {
     authState.isAuthenticated = true;
     const signedIn = render(createElement(DeepLinkProvider, { children: null }));
 
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(climbPath));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(CLIMB_PATH));
     expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(store.has(PENDING_BOARD_LINK_KEY)).toBe(false);
 
@@ -200,7 +199,7 @@ describe('DeepLinkProvider — board and climb links', () => {
 
   it('leaves a signed-in link to Expo Router: no stash, no second navigation', async () => {
     authState.isAuthenticated = true;
-    linkState.initialUrl = `https://www.boardsesh.com${nextClimbPath()}`;
+    linkState.initialUrl = `https://www.boardsesh.com${CLIMB_PATH}`;
 
     render(createElement(DeepLinkProvider, { children: null }));
     await settleProvider();
@@ -213,7 +212,7 @@ describe('DeepLinkProvider — board and climb links', () => {
 
   it('does not stash the launch link again after a sign-out in the same run', async () => {
     authState.isAuthenticated = true;
-    linkState.initialUrl = `https://www.boardsesh.com${nextClimbPath()}`;
+    linkState.initialUrl = `https://www.boardsesh.com${CLIMB_PATH}`;
     const signedIn = render(createElement(DeepLinkProvider, { children: null }));
     await settleProvider();
 
@@ -224,6 +223,37 @@ describe('DeepLinkProvider — board and climb links', () => {
     await settleProvider();
 
     expect(store.has(PENDING_BOARD_LINK_KEY)).toBe(false);
+  });
+
+  it('stashes a launch link once per run, however often the provider remounts', async () => {
+    linkState.initialUrl = `https://www.boardsesh.com${CLIMB_PATH}`;
+    const signedOut = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() => expect(storedBoardLink()?.path).toBe(CLIMB_PATH));
+
+    // Sign in: the stash is opened and cleared.
+    signedOut.unmount();
+    authState.isAuthenticated = true;
+    const signedIn = render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(CLIMB_PATH));
+
+    // Sign out. The provider sees the same launch URL a second time, signed out.
+    signedIn.unmount();
+    authState.isAuthenticated = false;
+    const signedOutAgain = render(createElement(DeepLinkProvider, { children: null }));
+    await settleProvider();
+    expect(store.has(PENDING_BOARD_LINK_KEY)).toBe(false);
+
+    // The same link tapped again is a new tap, not the launch: it is stashed.
+    linkState.listener?.({ url: `https://www.boardsesh.com${CLIMB_PATH}` });
+    await waitFor(() => expect(storedBoardLink()?.path).toBe(CLIMB_PATH));
+
+    // A new process launched with that URL starts over.
+    signedOutAgain.unmount();
+    store.clear();
+    resetHandledLaunchBoardUrlForTests();
+    render(createElement(DeepLinkProvider, { children: null }));
+    await waitFor(() => expect(storedBoardLink()?.path).toBe(CLIMB_PATH));
+    expect(navigateMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -274,7 +304,7 @@ describe('DeepLinkProvider — board and climb links', () => {
 
   it('stays out of the way in the browser app, which carries the path on the login URL', async () => {
     gate.relaxesAnonymousRoutes = true;
-    linkState.initialUrl = `https://www.boardsesh.com${nextClimbPath()}`;
+    linkState.initialUrl = `https://www.boardsesh.com${CLIMB_PATH}`;
     store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: '/b/the-garage', stashedAt: Date.now() }));
 
     const signedOut = render(createElement(DeepLinkProvider, { children: null }));
@@ -292,15 +322,14 @@ describe('DeepLinkProvider — board and climb links', () => {
   // The onboarding gate reads this before it pushes the first-board picker, so
   // a new account is not shown "Where do you climb?" over the shared climb.
   it('tells the onboarding gate when a sign-in opened a stashed climb', async () => {
-    const climbPath = nextClimbPath();
-    store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: climbPath, stashedAt: Date.now() }));
+    store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: CLIMB_PATH, stashedAt: Date.now() }));
     authState.isAuthenticated = true;
 
     render(createElement(DeepLinkProvider, { children: null }));
 
     // Asked straight after mount, while the stash read is still in flight.
     await expect(didReplayBoardLink()).resolves.toBe(true);
-    expect(navigateMock).toHaveBeenCalledWith(climbPath);
+    expect(navigateMock).toHaveBeenCalledWith(CLIMB_PATH);
   });
 
   it('tells the onboarding gate "no" when a sign-in had nothing stashed, or only an expired link', async () => {
@@ -319,7 +348,7 @@ describe('DeepLinkProvider — board and climb links', () => {
   });
 
   it('forgets the last sign-in once signed out, so the next account starts from "no"', async () => {
-    store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: nextClimbPath(), stashedAt: Date.now() }));
+    store.set(PENDING_BOARD_LINK_KEY, JSON.stringify({ path: CLIMB_PATH, stashedAt: Date.now() }));
     authState.isAuthenticated = true;
     const signedIn = render(createElement(DeepLinkProvider, { children: null }));
     await expect(didReplayBoardLink()).resolves.toBe(true);
