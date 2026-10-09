@@ -10,6 +10,7 @@ import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 type Props = {
   params: Promise<{ sessionId: string }>;
@@ -17,7 +18,7 @@ type Props = {
 
 const fetchSessionDetail = React.cache(async (sessionId: string) => {
   const url = getGraphQLHttpUrl();
-  const client = new GraphQLClient(url);
+  const client = new GraphQLClient(url, { headers: webClientIdentityHeaders() });
   try {
     const data = await client.request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, {
       sessionId,

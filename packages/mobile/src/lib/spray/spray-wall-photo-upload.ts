@@ -25,6 +25,7 @@ import { createUploadTask, FileSystemUploadType } from 'expo-file-system/legacy'
 import { appendUploadImage } from '../upload-image';
 import { authenticatedFetch, ensureFreshToken } from '../auth-interceptor';
 import { getAuthToken } from '../auth-store';
+import { clientIdentityHeaders } from '../client-identity';
 import { BACKEND_URL } from '../env';
 
 const SPRAY_WALL_PHOTO_ENDPOINT = `${BACKEND_URL}/api/spray-wall-photos`;
@@ -90,7 +91,7 @@ async function uploadWithTask(options: WallPhotoUploadOptions): Promise<Uploaded
         fieldName: 'photo',
         mimeType: 'image/jpeg',
         parameters: { wallUuid: options.wallUuid },
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...clientIdentityHeaders() },
       },
       ({ totalBytesSent, totalBytesExpectedToSend }) => {
         // -1 (or 0) is the "no Content-Length" answer; report it as

@@ -4,6 +4,7 @@ import { BACKEND_URL } from '../env';
 import { BackendUnavailableError } from '../connectivity/backend-unavailable-error';
 import type { AuthRejectionResult } from '../auth-rejection-result';
 import { AUTH_REFRESH_RETRY_CLOSE_CODE, AUTH_REJECTED_CLOSE_CODE } from './ws-close-codes';
+import { CLIENT_IDENTITY_CONNECTION_PARAM } from '@boardsesh/shared-schema/client-identity';
 
 /**
  * An async iterator that rejects on the first pull. `iterate()` is the pull-based
@@ -83,6 +84,11 @@ export type WsClientDeps = {
    * and passes `() => false`.
    */
   isOfflineModeOn: () => boolean;
+  /**
+   * The `x-boardsesh-client` identity string. Sent as a connectionParam, never
+   * an upgrade header, because browsers cannot set headers on the upgrade.
+   */
+  getClientIdentity: () => string;
 };
 
 export type WsClientModule = {
@@ -99,6 +105,7 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
     ensureFreshToken,
     recoverAuthRejection,
     isOfflineModeOn,
+    getClientIdentity,
   } = deps;
 
   function getWsUrl(): string {
@@ -275,7 +282,10 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
           if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
             throw new Error('Authentication session changed before the WebSocket handshake');
           }
-          return token ? { authToken: token } : {};
+          return {
+            ...(token ? { authToken: token } : {}),
+            [CLIENT_IDENTITY_CONNECTION_PARAM]: getClientIdentity(),
+          };
         },
       });
     }

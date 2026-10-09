@@ -37,6 +37,7 @@ function createModule() {
     ensureFreshToken: () => Promise.resolve(true),
     recoverAuthRejection: () => Promise.resolve('refreshed' as const),
     isOfflineModeOn: () => offlineMode.on,
+    getClientIdentity: () => 'boardsesh-mobile/2.6.0 (ios; build 45)',
   });
 }
 

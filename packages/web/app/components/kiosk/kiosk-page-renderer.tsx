@@ -33,6 +33,7 @@ import KioskAnalytics from './kiosk-analytics';
 import BoardSlot from './board-slot/board-slot';
 import LeaderboardRail from './leaderboard-rail/leaderboard-rail';
 import layoutStyles from './kiosk-layout.module.css';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 const KIOSK_REVALIDATE_SECONDS = 60;
 
@@ -58,7 +59,7 @@ export const fetchGymKiosk = cache(async (gymSlug: string, kioskSlug: string | n
   try {
     const response = await fetch(getGraphQLHttpUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...webClientIdentityHeaders() },
       body: JSON.stringify({ query: GET_GYM_KIOSK, variables: { gymSlug, kioskSlug } }),
       signal: AbortSignal.timeout(SSR_BACKEND_FETCH_TIMEOUT_MS),
       next: { revalidate: KIOSK_REVALIDATE_SECONDS },

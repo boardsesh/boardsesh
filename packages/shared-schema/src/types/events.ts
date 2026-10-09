@@ -14,6 +14,7 @@
  *    CurrentClimbChanged.item is nullable).
  */
 
+import type { ClientIdentity } from '../client-identity';
 import type { ClimbQueueItem, QueueState } from './queue';
 
 /**
@@ -185,6 +186,13 @@ export type ConnectionContext = {
   // separately from clientIp so a direct-origin caller cannot evade the
   // secondary rate-limit bucket by forging cf-connecting-ip (issue #4038).
   socketPeerIp?: string;
+  // Which client app made the request, from the `x-boardsesh-client` header on
+  // HTTP and `connectionParams.clientIdentity` on WebSocket (see
+  // client-identity.ts). Identification only: nothing is gated on it.
+  // `clientIdentity` is the parsed form (undefined when absent or malformed);
+  // `clientIdentityRaw` is the trimmed string as sent, for logs.
+  clientIdentity?: ClientIdentity;
+  clientIdentityRaw?: string;
   // Controller-specific context (set when using API key auth)
   controllerId?: string;
   controllerApiKey?: string;

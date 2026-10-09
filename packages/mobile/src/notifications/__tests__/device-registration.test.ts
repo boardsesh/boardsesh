@@ -30,6 +30,9 @@ vi.mock('../../lib/auth-store', () => ({
   isAuthCredentialGenerationCurrent: (generation: number) => generation === mocks.credentials.generation,
 }));
 vi.mock('../../lib/graphql/client', () => ({ getGraphQLHttpUrl: () => 'https://backend.example/graphql' }));
+vi.mock('../../lib/client-identity', () => ({
+  clientIdentityHeaders: () => ({ 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' }),
+}));
 vi.mock('../../lib/i18n/config', () => ({ default: { language: 'fr' } }));
 
 function sentRequest(index = 0) {
@@ -62,7 +65,7 @@ describe('account notification device registration', () => {
     await expect(registerNotificationDevice()).resolves.toBe(true);
     expect(mocks.getExpoToken).toHaveBeenCalledWith({ projectId: 'test-project' });
     expect(sentRequest()).toMatchObject({
-      headers: { Authorization: 'Bearer account-one' },
+      headers: { Authorization: 'Bearer account-one', 'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (ios; build 45)' },
       body: {
         variables: {
           input: {

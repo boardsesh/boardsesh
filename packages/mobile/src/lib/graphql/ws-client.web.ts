@@ -1,5 +1,6 @@
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../auth-store.web';
 import { ensureFreshToken, recoverAuthRejection } from '../auth-interceptor.web';
+import { getClientIdentityHeaderValue } from '../client-identity.web';
 import { createWsClientModule } from './ws-client-core';
 
 const { getWsClient, disposeWsClient } = createWsClientModule({
@@ -14,6 +15,7 @@ const { getWsClient, disposeWsClient } = createWsClientModule({
   // Expo web draws no offline-mode row and persists no setting behind one, so
   // there is nothing here for the gate to read.
   isOfflineModeOn: () => false,
+  getClientIdentity: getClientIdentityHeaderValue,
 });
 
 export { getWsClient, disposeWsClient };

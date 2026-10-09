@@ -44,7 +44,8 @@ function withCacheBuster(url: string): string {
  * cache-busted URL (ready to hand to `updateProfile`). Reuses `authenticatedFetch`,
  * which attaches the bearer token, refreshes it when stale, and retries once on
  * 401. We deliberately do NOT set `Content-Type` — the multipart boundary is
- * added by the fetch layer, and `authenticatedFetch` only touches `Authorization`.
+ * added by the fetch layer, and `authenticatedFetch` only adds `Authorization` and
+ * the `x-boardsesh-client` identity header.
  */
 export async function uploadAvatar(file: AvatarUploadFile, userId: string): Promise<string> {
   const formData = new FormData();

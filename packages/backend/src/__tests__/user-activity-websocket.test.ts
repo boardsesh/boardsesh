@@ -18,6 +18,7 @@ vi.mock('../middleware/auth', async (importOriginal) => {
 import { db } from '../db/client';
 import { setupWebSocketServer } from '../websocket/setup';
 import { resetUserActivityMemoryForTests } from '../services/user-activity';
+import { getClientUsageSnapshotForTests, stopClientUsageReporter } from '../services/client-usage';
 
 describe('authenticated WebSocket activity across UTC midnight', () => {
   let httpServer: Server;
@@ -45,6 +46,7 @@ describe('authenticated WebSocket activity across UTC midnight', () => {
     graphqlClient = undefined;
     vi.useRealTimers();
     resetUserActivityMemoryForTests();
+    stopClientUsageReporter();
   });
 
   afterAll(async () => {
@@ -58,6 +60,7 @@ describe('authenticated WebSocket activity across UTC midnight', () => {
     const userId = randomUUID();
     await db.insert(dbSchema.users).values({ id: userId, email: `${userId}@example.invalid` });
     resetUserActivityMemoryForTests();
+    stopClientUsageReporter();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-08T23:59:59.000Z'));
 
@@ -67,7 +70,11 @@ describe('authenticated WebSocket activity across UTC midnight', () => {
         webSocketImpl: WebSocket,
         lazy: false,
         retryAttempts: 0,
-        connectionParams: { authToken: `valid:${userId}`, clientPlatform: 'ios' },
+        connectionParams: {
+          authToken: `valid:${userId}`,
+          clientPlatform: 'ios',
+          clientIdentity: 'boardsesh-mobile/2.6.0 (ios; build 45)',
+        },
         onNonLazyError: reject,
         on: { connected: () => resolve() },
       });
@@ -84,6 +91,9 @@ describe('authenticated WebSocket activity across UTC midnight', () => {
       expect(result.errors).toBeUndefined();
       expect(result.data).toEqual({ myAnalyticsConsent: null });
     }
+    expect(getClientUsageSnapshotForTests()).toEqual([
+      { clientName: 'boardsesh-mobile', clientVersion: '2.6.0', transport: 'ws', operations: 1 },
+    ]);
     await vi.waitFor(async () => {
       expect((await activityRows()).map(({ day, platform }) => `${day}:${platform}`).sort()).toEqual([
         '2026-10-08:ios',

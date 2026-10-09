@@ -422,7 +422,7 @@ describe('CORS Handler', () => {
 
       expect(res.setHeader).toHaveBeenCalledWith(
         'Access-Control-Allow-Headers',
-        'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform',
+        'Content-Type, Authorization, Content-Encoding, X-Boardsesh-Platform, X-Boardsesh-Client',
       );
     });
 

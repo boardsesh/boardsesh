@@ -13,7 +13,8 @@ const SCREENSHOT_ENDPOINT = `${BACKEND_URL}/api/feedback-screenshots`;
  * key the feedback/verdict mutation carries. Reuses `authenticatedFetch`, which
  * attaches the bearer token, refreshes it when stale, and retries once on 401.
  * We deliberately do NOT set `Content-Type` — the multipart boundary is added by
- * the fetch layer, and `authenticatedFetch` only touches `Authorization`.
+ * the fetch layer, and `authenticatedFetch` only adds `Authorization` and the
+ * `x-boardsesh-client` identity header.
  */
 export async function uploadFeedbackScreenshot(uri: string): Promise<string> {
   const formData = new FormData();

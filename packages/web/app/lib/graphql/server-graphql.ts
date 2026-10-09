@@ -1,6 +1,7 @@
 import 'server-only';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl } from './client';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { GET_MY_BOARDS, type GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations/boards';
 import {
@@ -28,6 +29,7 @@ export async function executeAuthenticatedGraphQL<T = unknown, V extends Variabl
   const url = getGraphQLHttpUrl();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...webClientIdentityHeaders(),
   };
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;

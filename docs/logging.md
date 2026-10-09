@@ -164,6 +164,39 @@ for 30 minutes, asserting channel counts return to zero and sampling memory
 each minute. Forced GC is diagnostic-only; it is never used in production.
 This test covers subscription retention, not a full backend traffic workload.
 
+## Client identity and the per-minute usage summary
+
+Every Boardsesh client says which app it is. The contract lives in
+`packages/shared-schema/src/client-identity.ts`: a string such as
+`boardsesh-mobile/2.6.0 (ios; build 45)`, `boardsesh-mobile-web/2.6.0 (web)` or
+`boardsesh-web/0.1.0`. HTTP requests send it in the `x-boardsesh-client`
+header. WebSocket handshakes send it as `connectionParams.clientIdentity`,
+because browsers cannot set headers on the upgrade request. The backend does
+not read a WebSocket upgrade header.
+
+The backend parses it into `ConnectionContext.clientIdentity` and keeps the
+trimmed string, capped at 200 characters, as `clientIdentityRaw`. The value is
+used for attribution only. Nothing is gated on it, and `applyRateLimit` keys
+ignore it, so one user's budget is shared across every app they use. A missing
+or malformed value is reported as `unknown`. The "Client connected",
+anonymous-cap rejection and `[rate-limit] rejected` log lines carry it as
+`client`.
+
+`services/client-usage.ts` counts every GraphQL operation by client name,
+version and transport (`http` from a Yoga plugin, `ws` from the graphql-ws
+per-operation `context` hook). Once a minute each replica logs one
+`[client-usage] per-minute summary` line with the 50 busiest buckets, a
+`droppedBuckets` count and `totalOperations`. In production it also sends one
+`Client Usage Summary` PostHog event per reported bucket (`client_name`,
+`client_version`, `transport`, `operations`). Every event uses the distinctId
+`system:client-usage` and sets `$process_person_profile=false`, so it creates no
+person profile. A minute with no operations emits nothing. The version is client-authored, so the counter map holds at most
+1,000 buckets between flushes; new keys past that fold into a `(overflow)`
+bucket. The counters are per replica: sum across replicas for a fleet total.
+
+Known gap: Live Activity requests made from Swift or Kotlin send no identity,
+so their operations count as `unknown`.
+
 ## Out of scope
 
 - A request-id propagation layer is a separate concern (separate issue).

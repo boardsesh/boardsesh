@@ -34,6 +34,7 @@ import {
   scaleToFit,
   type GymLogoEncodingPlan,
 } from './logo-image-utils';
+import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
 /**
  * Downscale + re-encode via canvas per the plan. JPEG output fills white first
@@ -145,7 +146,7 @@ export default function GymLogoUploader({ gym, logoDisplayUrl, onGymChange }: Gy
 
       const response = await fetch(`${backendBaseUrl}/api/gym-logos`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
         body: formData,
       });
       if (!response.ok) {

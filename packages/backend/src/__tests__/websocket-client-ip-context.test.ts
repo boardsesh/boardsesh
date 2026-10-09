@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createServer, type Server } from 'node:http';
 import { WebSocket } from 'ws';
 import type { RawData, WebSocketServer } from 'ws';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
 
 /**
  * End-to-end cover for issue #2863: the real `setupWebSocketServer` must put a
@@ -15,7 +16,10 @@ import type { RawData, WebSocketServer } from 'ws';
  */
 
 const { createdContexts } = vi.hoisted(() => ({
-  createdContexts: [] as { connectionId: string; clientIp?: string; socketPeerIp?: string }[],
+  createdContexts: [] as Pick<
+    ConnectionContext,
+    'connectionId' | 'clientIp' | 'socketPeerIp' | 'clientIdentity' | 'clientIdentityRaw'
+  >[],
 }));
 
 vi.mock('../services/room-manager', () => ({
@@ -40,6 +44,7 @@ vi.mock('../graphql/context', async (importOriginal) => {
 });
 
 import { setupWebSocketServer } from '../websocket/setup';
+import { getClientUsageSnapshotForTests, stopClientUsageReporter } from '../services/client-usage';
 
 const GRAPHQL_TRANSPORT_WS = 'graphql-transport-ws';
 
@@ -89,13 +94,23 @@ describe('WebSocket connection context client IP', () => {
     createdContexts.length = 0;
   });
 
-  /** Connect with forged upgrade headers and resolve the context onConnect built. */
+  /**
+   * Connect with forged upgrade headers (and an optional connection_init
+   * payload) and resolve the context onConnect built.
+   */
   async function connectAndReadContext(
     headers: Record<string, string>,
-  ): Promise<{ connectionId: string; clientIp?: string; socketPeerIp?: string }> {
+    connectionParams?: Record<string, unknown>,
+  ): Promise<(typeof createdContexts)[number]> {
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS, { headers });
-      socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
+      socket.once('open', () =>
+        socket.send(
+          JSON.stringify(
+            connectionParams ? { type: 'connection_init', payload: connectionParams } : { type: 'connection_init' },
+          ),
+        ),
+      );
       socket.once('message', (message) => {
         const payload = JSON.parse(decodeMessage(message)) as { type?: unknown };
         if (payload.type !== 'connection_ack') {
@@ -158,5 +173,59 @@ describe('WebSocket connection context client IP', () => {
     expect(second.clientIp).not.toBe(first.clientIp);
     expect(first.socketPeerIp).toBe('127.0.0.1');
     expect(second.socketPeerIp).toBe(first.socketPeerIp);
+  });
+
+  it('puts the connectionParams client identity on the created context', async () => {
+    const context = await connectAndReadContext({}, { clientIdentity: 'boardsesh-mobile-web/2.6.0 (web)' });
+
+    expect(context.clientIdentity).toEqual({ name: 'boardsesh-mobile-web', version: '2.6.0', platform: 'web' });
+    expect(context.clientIdentityRaw).toBe('boardsesh-mobile-web/2.6.0 (web)');
+  });
+
+  it('ignores a non-string client identity param', async () => {
+    const context = await connectAndReadContext({}, { clientIdentity: { name: 'boardsesh-mobile', version: '2.6.0' } });
+
+    expect(context.clientIdentity).toBeUndefined();
+    expect(context.clientIdentityRaw).toBeUndefined();
+  });
+
+  it('keeps an unparseable identity raw-only and still connects', async () => {
+    const context = await connectAndReadContext({}, { clientIdentity: 'definitely not valid' });
+
+    expect(context.clientIdentity).toBeUndefined();
+    expect(context.clientIdentityRaw).toBe('definitely not valid');
+  });
+
+  it('does not read the identity from an upgrade header', async () => {
+    const context = await connectAndReadContext({ 'x-boardsesh-client': 'boardsesh-web/1.0.0' });
+
+    expect(context.clientIdentity).toBeUndefined();
+  });
+
+  it('counts each WebSocket operation against the connection client', async () => {
+    stopClientUsageReporter();
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS);
+      socket.once('open', () =>
+        socket.send(JSON.stringify({ type: 'connection_init', payload: { clientIdentity: 'boardsesh-web/1.4.2' } })),
+      );
+      socket.on('message', (message) => {
+        const payload = JSON.parse(decodeMessage(message)) as { type?: unknown };
+        if (payload.type === 'connection_ack') {
+          socket.send(JSON.stringify({ id: 'op-1', type: 'subscribe', payload: { query: '{ __typename }' } }));
+        } else if (payload.type === 'complete') {
+          socket.close(1000);
+          resolve();
+        } else if (payload.type === 'error') {
+          reject(new Error(`Operation failed: ${decodeMessage(message)}`));
+        }
+      });
+      socket.once('error', reject);
+    });
+
+    expect(getClientUsageSnapshotForTests()).toEqual([
+      { clientName: 'boardsesh-web', clientVersion: '1.4.2', transport: 'ws', operations: 1 },
+    ]);
+    stopClientUsageReporter();
   });
 });

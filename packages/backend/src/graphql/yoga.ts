@@ -9,6 +9,7 @@ import { authenticateCronBearer } from '../middleware/cron-auth';
 import type { AuthResult } from '../middleware/auth';
 import { resolveWebSocketClientIp } from '../websocket/client-ip';
 import { CLIENT_PLATFORM_HEADER, type ConnectionContext } from '@boardsesh/shared-schema';
+import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
 import { isLocalDevelopment, isTestEnvironment } from '@boardsesh/db/client/config';
@@ -17,6 +18,7 @@ import { wasErrorReported } from '../utils/sentry-dedupe';
 import { maskDatabaseError } from './mask-error';
 import { responseCompressionPlugin } from './response-compression';
 import { recordUserActivity, resolveActivityPlatform } from '../services/user-activity';
+import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usage';
 
 async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
   if (!authHeader) return null;
@@ -72,6 +74,7 @@ export async function buildHttpConnectionContext({
 }: { request: Request } & NodeServerContext): Promise<ConnectionContext> {
   const authHeader = request.headers.get('authorization');
   const clientIp = resolveWebSocketClientIp(req);
+  const { clientIdentity, clientIdentityRaw } = resolveClientIdentity(request.headers.get(CLIENT_IDENTITY_HEADER));
 
   const isCronAuthenticated = authenticateCronBearer(authHeader);
   const authResult = isCronAuthenticated ? null : await authenticateHttpBearer(authHeader);
@@ -91,6 +94,8 @@ export async function buildHttpConnectionContext({
     isAuthenticated: authResult !== null,
     isCronAuthenticated,
     clientIp,
+    clientIdentity,
+    clientIdentityRaw,
   };
 }
 
@@ -109,7 +114,14 @@ export function createYogaInstance() {
     // WebSocket subscriptions are protected separately via onSubscribe in websocket/setup.ts
     // Response compression: Railway bills uncompressed egress even though
     // Cloudflare compresses to the client. See ./response-compression.ts.
-    plugins: [maxDepthPlugin({ n: 10 }), costLimitPlugin({ maxCost: 5000 }), responseCompressionPlugin()],
+    // clientUsagePlugin counts operations per client identity for the
+    // once-a-minute usage summary (services/client-usage.ts); it gates nothing.
+    plugins: [
+      maxDepthPlugin({ n: 10 }),
+      costLimitPlugin({ maxCost: 5000 }),
+      responseCompressionPlugin(),
+      clientUsagePlugin(),
+    ],
     // Context function - extract auth and the trusted client IP from HTTP requests.
     // `req` is the Node request `server.ts` hands to `yoga.handle`; it carries the
     // TCP socket the client cannot forge.

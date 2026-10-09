@@ -83,6 +83,7 @@ import { kilterLiveSync } from './services/kilter-live-sync';
 import { registerBoardQueuePreviewHook } from './services/board-queue-preview';
 import { logger, setInstanceIdProvider } from './utils/logger';
 import { startBackendMemoryMonitoring } from './services/memory-monitor';
+import { startClientUsageReporter, stopClientUsageReporter } from './services/client-usage';
 import { isClientAbortError } from './utils/http-errors';
 import { setDbConnectObserver } from '@boardsesh/db/client';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
@@ -810,6 +811,9 @@ export async function startServer(): Promise<ServerResources> {
     logger.info(`  Integration OAuth start: ${httpScheme}://0.0.0.0:${PORT}/integrations/:provider/start`);
     logger.info(`  Integration OAuth callback: ${httpScheme}://0.0.0.0:${PORT}/integrations/:provider/callback`);
 
+    // Once-a-minute per-client operation summary (services/client-usage.ts).
+    startClientUsageReporter();
+
     // Popular board configs have no boot step: a pg-boss job refreshes them
     // (services/popular-board-configs.ts), so a deploy costs the database
     // nothing.
@@ -857,6 +861,12 @@ export async function startServer(): Promise<ServerResources> {
     if (apnsInstanceConfigInterval !== null) {
       clearInterval(apnsInstanceConfigInterval);
       apnsInstanceConfigInterval = null;
+    }
+
+    try {
+      stopClientUsageReporter();
+    } catch (error) {
+      logger.error('[Server] Error stopping client usage reporter:', error);
     }
 
     try {

@@ -143,17 +143,27 @@ describe('recordUserActivity', () => {
 });
 
 describe('the authenticated HTTP request path', () => {
-  it('records the climber under the platform header the client sent', async () => {
+  it('records platform activity while retaining the client identity', async () => {
     const userId = await createUser();
 
     const context = await buildHttpConnectionContext({
       request: new Request('http://localhost/graphql', {
         method: 'POST',
-        headers: { authorization: `Bearer valid:${userId}`, 'x-boardsesh-platform': 'android' },
+        headers: {
+          authorization: `Bearer valid:${userId}`,
+          'x-boardsesh-platform': 'android',
+          'x-boardsesh-client': 'boardsesh-mobile/2.6.0 (android; build 45)',
+        },
       }),
     });
 
     expect(context.userId).toBe(userId);
+    expect(context.clientIdentity).toEqual({
+      name: 'boardsesh-mobile',
+      version: '2.6.0',
+      platform: 'android',
+      build: '45',
+    });
     await vi.waitFor(async () => {
       const rows = await activityRowsFor(userId);
       expect(rows).toEqual([{ userId, day: utcDayOf(new Date()), platform: 'android' }]);
