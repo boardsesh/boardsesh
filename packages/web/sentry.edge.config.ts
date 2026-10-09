@@ -4,6 +4,11 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from '@sentry/nextjs';
+import {
+  redactWebOriginEvent,
+  redactWebOriginSpan,
+  redactWebOriginLog,
+} from './app/lib/observability/web-origin-redaction';
 import { isProductionSentryEnvironment, resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import {
   resolveWebTracesSampleRate,
@@ -27,6 +32,10 @@ Sentry.init({
 
   // Enable logs to be sent to Sentry
   enableLogs: true,
+  beforeSend: redactWebOriginEvent,
+  beforeSendTransaction: redactWebOriginEvent,
+  beforeSendLog: redactWebOriginLog,
+  beforeSendSpan: redactWebOriginSpan,
 
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
