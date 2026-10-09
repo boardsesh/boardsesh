@@ -94,13 +94,13 @@ describe('useCarouselGesture', () => {
     platform.OS = 'ios';
   });
 
-  it.each(['ios', 'android'])('makes %s scrolling wait for the carousel to fail', (platformName) => {
+  it.each(['ios', 'android'])('allows %s scrolling simultaneously with the carousel', (platformName) => {
     platform.OS = platformName;
     const scrollRef = { current: null };
     renderHook(() => useCarouselGesture(makeOptions({ scrollRef })));
     const settings = recordedBuilders[0].settings;
-    expect(settings.blocksExternalGesture).toBe(scrollRef);
-    expect(settings.simultaneousWithExternalGesture).toBeUndefined();
+    expect(settings.simultaneousWithExternalGesture).toBe(scrollRef);
+    expect(settings.blocksExternalGesture).toBeUndefined();
     expect(settings.maxPointers).toBe(1);
   });
 

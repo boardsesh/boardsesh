@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, type ComponentType, type RefObject } from 'react';
-import { Platform } from 'react-native';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { useSharedValue, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
 import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO, SWIPE_OFFSCREEN_PAD } from '@boardsesh/play-view';
@@ -19,9 +18,9 @@ type UseCarouselGestureOptions = {
   screenWidth: number;
   enabled?: boolean;
   isZoomedSV?: SharedValue<boolean>;
-  /** RNGH ref to the surrounding scroll. Native scrolling waits for the swipe
-   *  Pan to fail, keeping a horizontal swipe's vertical drift out of the scroll.
-   *  Browser scrolling retains its simultaneous relationship. */
+  /** RNGH ref to the surrounding scroll. Simultaneous recognition lets native
+   *  vertical scrolling start immediately while horizontal swipes still drive
+   *  the carousel. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
   /** Optional external translateX. Pass one so a sibling rendered OUTSIDE this
    *  carousel (the play-drawer header) can swipe off the exact same value as the
@@ -295,10 +294,7 @@ export function useCarouselGesture({
         'worklet';
         directionLock.value = 0;
       });
-    if (!scrollRef) return pan;
-    return Platform.OS === 'web'
-      ? pan.simultaneousWithExternalGesture(scrollRef)
-      : pan.blocksExternalGesture(scrollRef);
+    return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
   }, [
     canSwipeNextSV,
     canSwipePreviousSV,

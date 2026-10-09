@@ -695,11 +695,11 @@ describe('PlayDrawer configurable sections', () => {
   it('hiding everything removes content and scroll without waiting for a nonexistent header', () => {
     hideEverySection();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
-    const { getByRole } = renderDrawer();
+    renderDrawer();
     expect(recorded.deferredSections).toHaveLength(0);
     expect(recorded.scroll.at(-1)?.scrollEnabled).toBe(false);
-    const settingsButton = getByRole('button', { name: 'mobile.settings.climbDrawer.title' });
-    act(() => settingsButton.click());
+    const editSections = recorded.actionBar.at(-1)?.onEditSections as () => void;
+    act(editSections);
     expect(recorded.sectionsSheet.at(-1)?.visible).toBe(true);
     const viewportLayout = recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void;
     const headerLayout = recorded.headerLayout;
@@ -763,7 +763,19 @@ describe('PlayDrawer configurable sections', () => {
     act(onScrollIntent);
     expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
   });
-  it('gives browser input initial overflow and removes it after scrolling or hiding everything', () => {
+  it('opens a lone deferred section when a native drag begins, before its first offset', () => {
+    hideEverySection();
+    drawerSections.sections = { ...drawerSections.sections, betaVideos: true };
+    queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
+    renderDrawer();
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(false);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', 845);
+    const beginDrag = recorded.scroll.at(-1)?.onScrollBeginDrag as () => void;
+    act(beginDrag);
+    expect(recorded.deferredSections.at(-1)?.contentEnabled).toBe(true);
+    expect(recorded.scroll.at(-1)?.contentContainerStyle).toHaveProperty('minHeight', undefined);
+  });
+  it('gives initial overflow and removes it after scrolling or hiding everything', () => {
     hideEverySection();
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const rendered = renderDrawer();

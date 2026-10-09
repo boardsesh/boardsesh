@@ -417,11 +417,6 @@ export function PlayDrawer({
   // disarmed once the user drives the scroll, collapses it, or the climb changes.
   const pendingFirstSectionScrollRef = useRef(false);
 
-  const handleScrollTowardBelowFold = useCallback(() => {
-    // The user is driving the scroll now — stand down the expand-into-view glide.
-    pendingFirstSectionScrollRef.current = false;
-  }, []);
-
   // RNGH ref for the scroll container. Board gestures coordinate their
   // scroll blocking / simultaneous recognition through this ref (otherwise the plain RN ScrollView starved
   // them after the gorhom removal), and the dismiss gesture reads scroll offset
@@ -566,6 +561,10 @@ export function PlayDrawer({
   const handleDeliberateScrollIntent = useCallback(() => {
     if (hasVisibleSections) requestBelowFoldContent();
   }, [hasVisibleSections, requestBelowFoldContent]);
+  const handleScrollTowardBelowFold = useCallback(() => {
+    pendingFirstSectionScrollRef.current = false;
+    handleDeliberateScrollIntent();
+  }, [handleDeliberateScrollIntent]);
   const deliberateScrollGesture = useDeliberateScrollGesture({
     scrollRef: scrollGestureRef,
     scrollYSV,
@@ -580,11 +579,10 @@ export function PlayDrawer({
     [dismissGesture, deliberateScrollGesture, isPane],
   );
   // An expanded header with a deferred body may fill the viewport exactly.
-  // One pixel lets normal browser input produce the scroll that opens its body.
-  const initialWebScrollHeight =
-    Platform.OS === 'web' && hasVisibleSections && !belowFoldContentRequested
-      ? (sheetViewportHeight || windowHeight) + 1
-      : undefined;
+  // One pixel lets the native recognizer or browser input start scrolling and
+  // request the body without waiting for another gesture to release the touch.
+  const initialScrollHeight =
+    hasVisibleSections && !belowFoldContentRequested ? (sheetViewportHeight || windowHeight) + 1 : undefined;
   const visibleSectionsKey = sectionsReady ? visibleSectionIds.join(',') : 'loading';
   const firstSectionHeaderHeight =
     sectionHeaderMeasurement.sectionId === firstSectionId ? sectionHeaderMeasurement.height : 0;
@@ -1944,6 +1942,7 @@ export function PlayDrawer({
               ref={scrollRef}
               nestedScrollEnabled
               scrollEnabled={hasVisibleSections}
+              directionalLockEnabled={Platform.OS === 'ios'}
               showsVerticalScrollIndicator={false}
               showsHorizontalScrollIndicator={false}
               // No top/bottom rubber-band: at the top, a downward drag is the
@@ -1952,7 +1951,7 @@ export function PlayDrawer({
               bounces={false}
               overScrollMode="never"
               style={styles.content}
-              contentContainerStyle={{ paddingBottom: insets.bottom, minHeight: initialWebScrollHeight }}
+              contentContainerStyle={{ paddingBottom: insets.bottom, minHeight: initialScrollHeight }}
               onLayout={handleViewportLayout}
               onScroll={handleScroll}
               scrollEventThrottle={16}
@@ -1997,13 +1996,15 @@ export function PlayDrawer({
                           The grabber stays centred: both flanks are absolute. */}
                         <View style={styles.restTimerSlot}>
                           <RestTimerPillHost compact />
-                          <ChromeIconButton
-                            icon="settings"
-                            role="action"
-                            onPress={handleOpenSectionsSettings}
-                            accessibilityLabel={tCommon('mobile.settings.climbDrawer.title')}
-                            testID="play-drawer-section-settings"
-                          />
+                          {commitBarModel.mode === 'commit' && viewer !== 'anonymous' ? (
+                            <ChromeIconButton
+                              icon="visibility"
+                              role="action"
+                              onPress={handleOpenSectionsSettings}
+                              accessibilityLabel={tCommon('mobile.settings.climbDrawer.title')}
+                              testID="play-drawer-section-settings"
+                            />
+                          ) : null}
                         </View>
                       </View>
 
@@ -2192,6 +2193,7 @@ export function PlayDrawer({
                             onLightbulb={handleLightbulb}
                             onLightbulbLongPress={handleLightbulbLongPress}
                             onOpenActions={handleOpenActions}
+                            onEditSections={handleOpenSectionsSettings}
                             onOpenQueue={onOpenQueue}
                             onShare={displayedClimbIsDraft ? undefined : handleShare}
                             onTickPress={handleTickFabPress}

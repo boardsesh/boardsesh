@@ -66,21 +66,23 @@ describe('useDeliberateScrollGesture', () => {
     recordedBuilders.length = 0;
   });
 
-  it('holds native scrolling through 23 points and releases at 24 without activating', () => {
+  it('observes intent after 10 points without owning or delaying native scrolling', () => {
     const onScrollIntent = vi.fn();
     const options = makeOptions({ onScrollIntent });
     renderHook(() => useDeliberateScrollGesture(options));
     const { handlers, settings } = latestBuilder();
     const state = makeState();
-    expect(settings.blocksExternalGesture).toBe(options.scrollRef);
+    expect(settings.simultaneousWithExternalGesture).toBe(options.scrollRef);
+    expect(settings.blocksExternalGesture).toBeUndefined();
+    expect(settings.requireExternalGestureToFail).toBeUndefined();
+    expect(settings.cancelsTouchesInView).toBe(false);
     expect(settings.manualActivation).toBe(true);
     expect(settings.maxPointers).toBe(1);
     handlers.onTouchesDown(touches(), state);
     handlers.onTouchesMove(touches(0, -10), state);
-    handlers.onTouchesMove(touches(0, -23), state);
     expect(state.fail).not.toHaveBeenCalled();
     expect(onScrollIntent).not.toHaveBeenCalled();
-    handlers.onTouchesMove(touches(0, -24), state);
+    handlers.onTouchesMove(touches(0, -11), state);
     expect(state.fail).toHaveBeenCalledTimes(1);
     expect(state.activate).not.toHaveBeenCalled();
     expect(onScrollIntent).toHaveBeenCalledTimes(1);
@@ -92,13 +94,13 @@ describe('useDeliberateScrollGesture', () => {
     const { handlers } = latestBuilder();
     const state = makeState();
     handlers.onTouchesDown(touches(), state);
-    handlers.onTouchesMove(touches(0, -24), state);
+    handlers.onTouchesMove(touches(0, -11), state);
     handlers.onTouchesMove(touches(0, -40), state);
     expect(onScrollIntent).toHaveBeenCalledTimes(1);
     handlers.onTouchesCancelled({ allTouches: [] }, state);
     handlers.onFinalize();
     handlers.onTouchesDown(touches(0, 100), state);
-    handlers.onTouchesMove(touches(0, 76), state);
+    handlers.onTouchesMove(touches(0, 89), state);
     expect(onScrollIntent).toHaveBeenCalledTimes(2);
   });
 
@@ -114,7 +116,7 @@ describe('useDeliberateScrollGesture', () => {
     rerender({ ...options, onScrollIntent: nextCallback });
     const state = makeState();
     handlers.onTouchesDown(touches(), state);
-    handlers.onTouchesMove(touches(0, -24), state);
+    handlers.onTouchesMove(touches(0, -11), state);
     expect(firstCallback).not.toHaveBeenCalled();
     expect(nextCallback).toHaveBeenCalledTimes(1);
     expect(result.current).toBe(initialGesture);
@@ -132,7 +134,7 @@ describe('useDeliberateScrollGesture', () => {
       touches(30, 12),
       { allTouches: [...touches(0, -30).allTouches, ...touches(20, -30).allTouches] },
       touches(0, 30),
-      touches(0, -23),
+      touches(0, -10),
     ]) {
       handlers.onTouchesDown(touches(), state);
       handlers.onTouchesMove(event, state);
@@ -140,7 +142,7 @@ describe('useDeliberateScrollGesture', () => {
       handlers.onFinalize();
     }
     handlers.onTouchesDown(touches(), state);
-    handlers.onTouchesMove(touches(0, -15), state);
+    handlers.onTouchesMove(touches(0, -9), state);
     handlers.onTouchesCancelled({ allTouches: [] }, state);
     handlers.onFinalize();
     expect(onScrollIntent).not.toHaveBeenCalled();
@@ -162,20 +164,21 @@ describe('useDeliberateScrollGesture', () => {
     }
   });
 
-  it('uses the existing vertical ratio and keeps a clear vertical lock through drift', () => {
-    renderHook(() => useDeliberateScrollGesture(makeOptions()));
+  it('uses the existing vertical ratio without activating or waiting for 24 points', () => {
+    const onScrollIntent = vi.fn();
+    renderHook(() => useDeliberateScrollGesture(makeOptions({ onScrollIntent })));
     const { handlers } = latestBuilder();
     const state = makeState();
     handlers.onTouchesDown(touches(), state);
     handlers.onTouchesMove(touches(10, -15), state);
-    handlers.onTouchesMove(touches(40, -23), state);
-    expect(state.fail).not.toHaveBeenCalled();
-    handlers.onTouchesMove(touches(40, -24), state);
     expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
+    expect(state.activate).not.toHaveBeenCalled();
   });
 
-  it('releases downward dismissal at the top but keeps upward scrolling gated', () => {
-    const options = makeOptions();
+  it('ignores downward dismissal at the top but observes an upward scroll immediately', () => {
+    const onScrollIntent = vi.fn();
+    const options = makeOptions({ onScrollIntent });
     options.scrollYSV.value = 0;
     renderHook(() => useDeliberateScrollGesture(options));
     const { handlers } = latestBuilder();
@@ -183,28 +186,31 @@ describe('useDeliberateScrollGesture', () => {
     handlers.onTouchesDown(touches(), dismissState);
     handlers.onTouchesMove(touches(0, 11), dismissState);
     expect(dismissState.fail).toHaveBeenCalledTimes(1);
+    expect(onScrollIntent).not.toHaveBeenCalled();
     handlers.onFinalize();
     const scrollState = makeState();
     handlers.onTouchesDown(touches(), scrollState);
-    handlers.onTouchesMove(touches(0, -23), scrollState);
-    expect(scrollState.fail).not.toHaveBeenCalled();
+    handlers.onTouchesMove(touches(0, -11), scrollState);
+    expect(scrollState.fail).toHaveBeenCalledTimes(1);
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
   });
 
   it('captures scroll position at touch-down so reaching the top cannot turn scrolling into dismissal', () => {
-    const options = makeOptions();
+    const onScrollIntent = vi.fn();
+    const options = makeOptions({ onScrollIntent });
     renderHook(() => useDeliberateScrollGesture(options));
     const { handlers } = latestBuilder();
     const state = makeState();
     handlers.onTouchesDown(touches(), state);
     options.scrollYSV.value = 0;
-    handlers.onTouchesMove(touches(0, 23), state);
-    expect(state.fail).not.toHaveBeenCalled();
-    handlers.onTouchesMove(touches(0, 24), state);
+    handlers.onTouchesMove(touches(0, 11), state);
     expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the gesture graph stable while pane changes update dismissal eligibility', () => {
-    const options = makeOptions();
+    const onScrollIntent = vi.fn();
+    const options = makeOptions({ onScrollIntent });
     options.scrollYSV.value = 0;
     const { result, rerender } = renderHook((props: Options) => useDeliberateScrollGesture(props), {
       initialProps: options,
@@ -214,21 +220,21 @@ describe('useDeliberateScrollGesture', () => {
     rerender({ ...options, isPane: true });
     const state = makeState();
     handlers.onTouchesDown(touches(), state);
-    handlers.onTouchesMove(touches(0, 23), state);
-    expect(state.fail).not.toHaveBeenCalled();
-    handlers.onTouchesMove(touches(0, 24), state);
+    handlers.onTouchesMove(touches(0, 11), state);
     expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
     handlers.onFinalize();
     rerender(options);
     state.fail.mockClear();
     handlers.onTouchesDown(touches(), state);
     handlers.onTouchesMove(touches(0, 11), state);
     expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(onScrollIntent).toHaveBeenCalledTimes(1);
     expect(result.current).toBe(initialGesture);
     expect(recordedBuilders).toHaveLength(1);
   });
 
-  it('releases two-finger input both at touch-down and during a waiting drag', () => {
+  it('releases two-finger input both at touch-down and during an undecided drag', () => {
     renderHook(() => useDeliberateScrollGesture(makeOptions()));
     const { handlers } = latestBuilder();
     const multiTouch = { allTouches: [...touches().allTouches, ...touches(20, 20).allTouches] };
@@ -237,7 +243,7 @@ describe('useDeliberateScrollGesture', () => {
     expect(state.fail).toHaveBeenCalledTimes(1);
     handlers.onFinalize();
     handlers.onTouchesDown(touches(), state);
-    handlers.onTouchesMove(touches(0, -15), state);
+    handlers.onTouchesMove(touches(0, -9), state);
     handlers.onTouchesMove(multiTouch, state);
     expect(state.fail).toHaveBeenCalledTimes(2);
     expect(state.activate).not.toHaveBeenCalled();
@@ -249,7 +255,7 @@ describe('useDeliberateScrollGesture', () => {
     for (const terminalCallback of ['onTouchesUp', 'onTouchesCancelled', 'onTouchesCancelled']) {
       const state = makeState();
       handlers.onTouchesDown(touches(), state);
-      handlers.onTouchesMove(touches(0, -15), state);
+      handlers.onTouchesMove(touches(0, -9), state);
       handlers[terminalCallback]({ allTouches: [] }, state);
       expect(state.fail).toHaveBeenCalledTimes(1);
       handlers.onFinalize();

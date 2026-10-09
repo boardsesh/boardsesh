@@ -241,8 +241,8 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climb drawer and the player's gear button use the same seven visibility
-switches, with Show all and Hide all actions. The gear opens `PlayDrawerSectionsSheet`
+Settings → Climb drawer and the eye button beside the player's ellipsis use the same seven visibility
+switches, with Show all and Hide all actions. The eye opens `PlayDrawerSectionsSheet`
 as a managed `ModalSheet` mounted inside the player, above `/play`. It remains reachable
 when every section is hidden. These device-local choices use AsyncStorage (IndexedDB
 in the browser) and keep each section's existing expansion preference and order.
@@ -250,12 +250,14 @@ in the browser) and keep each section's existing expansion preference and order.
 The first eligible visible section supplies the header preview at the fold; its header
 mounts before deferred content so hiding Logbook never strands the remaining sections.
 With no eligible sections, the board and controls fill the viewport including safe-area
-clearance, and vertical scrolling is disabled. Native vertical scrolling waits for a
-24-point clearly vertical drag, which also requests deferred content when the
-header alone cannot scroll. Horizontal carousel swipes block drawer scrolling.
+clearance, and vertical scrolling is disabled. Native scrolling uses its normal
+activation distance, with iOS directional locking to reduce diagonal drift.
+The carousel and scroll-intent observer run simultaneously with the scroll;
+neither makes the native scroll wait for a gesture to fail. Scroll intent and
+the start of a drag request deferred content when the header alone cannot scroll.
 Pinch, zoomed panning, and downward dismissal retain their own gesture handling.
 Browser touch, wheel, trackpad, and keyboard scrolling retain native browser behavior.
-While a visible section awaits content, the browser gets one pixel of initial
+While a visible section awaits content, the drawer gets one pixel of initial
 overflow so those inputs can open the content gate. Hide all removes that overflow.
 
 ## The decision tree

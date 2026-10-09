@@ -3,9 +3,6 @@ import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useSharedValue, type SharedValue } from 'react-native-reanimated';
 import { DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO } from '@boardsesh/play-view';
 
-/** Initial travel before each native vertical scroll can take the touch. */
-const SCROLL_ACTIVATION_DISTANCE = 24;
-
 type UseDeliberateScrollGestureOptions = {
   scrollRef: RefObject<ComponentType | undefined | null>;
   scrollYSV: SharedValue<number>;
@@ -14,9 +11,9 @@ type UseDeliberateScrollGestureOptions = {
   onScrollIntent?: () => void;
 };
 
-// This Pan never activates. The native ScrollView waits for it to fail, which
-// happens once the user has made a deliberate vertical drag. Failing releases
-// the existing native scroll recognizer, preserving its scrolling and momentum.
+// Observe scroll intent without delaying native scrolling. A late failure
+// dependency on UIScrollView can lose the same-touch handoff on physical iOS.
+// This Pan never activates and stays simultaneous with the native scroll.
 export function useDeliberateScrollGesture({
   scrollRef,
   scrollYSV,
@@ -31,7 +28,6 @@ export function useDeliberateScrollGesture({
   const startTouchX = useSharedValue(0);
   const startTouchY = useSharedValue(0);
   const startedAtTop = useSharedValue(false);
-  const verticalLocked = useSharedValue(false);
   const hasReportedScrollIntent = useSharedValue(false);
   const onScrollIntentRef = useRef(onScrollIntent);
   onScrollIntentRef.current = onScrollIntent;
@@ -44,10 +40,10 @@ export function useDeliberateScrollGesture({
       Gesture.Pan()
         .manualActivation(true)
         .maxPointers(1)
-        .blocksExternalGesture(scrollRef)
+        .cancelsTouchesInView(false)
+        .simultaneousWithExternalGesture(scrollRef)
         .onTouchesDown((event, state) => {
           'worklet';
-          verticalLocked.value = false;
           hasReportedScrollIntent.value = false;
           if (event.allTouches.length !== 1) {
             state.fail();
@@ -68,27 +64,21 @@ export function useDeliberateScrollGesture({
           const deltaX = Math.abs(touch.absoluteX - startTouchX.value);
           const deltaY = touch.absoluteY - startTouchY.value;
           const absoluteDeltaY = Math.abs(deltaY);
-          if (!verticalLocked.value) {
-            if (deltaX <= DIRECTION_THRESHOLD && absoluteDeltaY <= DIRECTION_THRESHOLD) return;
-            if (absoluteDeltaY < deltaX * VERTICAL_LOCK_RATIO) {
-              state.fail();
-              return;
-            }
-            // Route dismissal keeps its existing activation distance. A pane
-            // has no downward dismissal, so it retains the scroll threshold.
-            if (!isPaneSV.value && startedAtTop.value && deltaY > 0) {
-              state.fail();
-              return;
-            }
-            verticalLocked.value = true;
-          }
-          if (absoluteDeltaY >= SCROLL_ACTIVATION_DISTANCE) {
-            if (!hasReportedScrollIntent.value) {
-              hasReportedScrollIntent.value = true;
-              runOnJS(reportScrollIntent)();
-            }
+          if (deltaX <= DIRECTION_THRESHOLD && absoluteDeltaY <= DIRECTION_THRESHOLD) return;
+          if (absoluteDeltaY < deltaX * VERTICAL_LOCK_RATIO) {
             state.fail();
+            return;
           }
+          // A downward drag from the route's top is dismissal, not scrolling.
+          if (!isPaneSV.value && startedAtTop.value && deltaY > 0) {
+            state.fail();
+            return;
+          }
+          if (!hasReportedScrollIntent.value) {
+            hasReportedScrollIntent.value = true;
+            runOnJS(reportScrollIntent)();
+          }
+          state.fail();
         })
         .onTouchesUp((_event, state) => {
           'worklet';
@@ -100,7 +90,6 @@ export function useDeliberateScrollGesture({
         })
         .onFinalize(() => {
           'worklet';
-          verticalLocked.value = false;
           hasReportedScrollIntent.value = false;
           startedAtTop.value = false;
           startTouchX.value = 0;
@@ -113,7 +102,6 @@ export function useDeliberateScrollGesture({
       startTouchX,
       startTouchY,
       startedAtTop,
-      verticalLocked,
       hasReportedScrollIntent,
       reportScrollIntent,
     ],
