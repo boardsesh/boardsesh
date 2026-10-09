@@ -745,7 +745,7 @@ function branchServer(
       const expoClient = JSON.parse(readFileSync(join(fixture.root, platform, 'expoConfig.json'), 'utf8')) as unknown;
       return Response.json({
         id: BASELINE_IDS[platform],
-        runtimeVersion: RUNTIME,
+        runtimeVersion: headers.get('expo-runtime-version') ?? RUNTIME,
         launchAsset: { hash: Buffer.from(fixture.hashes[platform], 'hex').toString('base64url') },
         assets: [
           {
@@ -1024,14 +1024,24 @@ describe('promotion to a named branch', () => {
 
   it('bootstraps beta but still requires its exact branch and bytes after publication', async () => {
     const fixture = stageFixture();
-    const receipt = JSON.parse(readFileSync(fixture.receiptPath, 'utf8')) as Record<string, unknown>;
+    const receipt = parseStageReceipt(JSON.parse(readFileSync(fixture.receiptPath, 'utf8')));
+    const androidRuntime = 'c'.repeat(40);
     writeFileSync(
       fixture.receiptPath,
-      JSON.stringify({ ...receipt, baselineProductionUpdateIds: { ios: null, android: null } }),
+      JSON.stringify({
+        ...receipt,
+        platforms: { ...receipt.platforms, android: { ...receipt.platforms.android, runtimeVersion: androidRuntime } },
+        baselineProductionUpdateIds: { ios: null, android: null },
+      }),
     );
     const published = new Set<string>();
     const server = branchServer(fixture, 'pr-beta', { onFinalize: (platform) => published.add(platform) });
     const { reader } = emptyTargetReader();
+    // xprem exposes checked runtimes after finalize, never for pending upload leases.
+    vi.mocked(reader.getRuntimeVersions).mockImplementation(async () => [
+      ...(published.has('ios') ? [RUNTIME] : []),
+      ...(published.has('android') ? [androidRuntime] : []),
+    ]);
     const bootstrapFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
       if (requestUrl(input).pathname === '/manifest' && !published.has(headers.get('expo-platform') ?? ''))
@@ -1045,6 +1055,32 @@ describe('promotion to a named branch', () => {
     });
     expect(published).toEqual(new Set(['ios', 'android']));
     expect(reader.getRuntimeVersions).toHaveBeenCalledTimes(4);
+  });
+
+  it('refuses an ambiguous shared runtime after the first platform finalizes', async () => {
+    const fixture = stageFixture();
+    const receipt = parseStageReceipt(JSON.parse(readFileSync(fixture.receiptPath, 'utf8')));
+    writeFileSync(
+      fixture.receiptPath,
+      JSON.stringify({ ...receipt, baselineProductionUpdateIds: { ios: null, android: null } }),
+    );
+    const published = new Set<string>();
+    const server = branchServer(fixture, 'pr-beta', { onFinalize: (platform) => published.add(platform) });
+    const { reader } = emptyTargetReader();
+    vi.mocked(reader.getRuntimeVersions).mockImplementation(async () => (published.size ? [RUNTIME] : []));
+    const bootstrapFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = new Headers(init.headers);
+      if (requestUrl(input).pathname === '/manifest' && !published.has(headers.get('expo-platform') ?? ''))
+        headers.set('xprem-branch', '');
+      return server.fetchImpl(input, { ...init, headers });
+    }) as unknown as typeof fetch;
+    await expect(
+      promoteArchivedOta({ ...promoteOptions(fixture, bootstrapFetch), branch: 'pr-beta', emptyBranchReader: reader }),
+    ).rejects.toThrow('already has runtime');
+    expect(published).toEqual(new Set(['ios']));
+    expect(
+      server.calls.some((call) => call.url.hostname === 'bucket.example' && call.url.pathname.includes('android')),
+    ).toBe(false);
   });
 
   it('refuses a hidden beta head that arrives after empty capture before any lease', async () => {

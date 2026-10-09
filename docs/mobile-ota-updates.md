@@ -871,8 +871,8 @@ unlock blocks the publish. Staging exports do not unlock or replace production.
 `pr-*` surfing pattern. Creating the new protected branch requires the usual `ota:apply` convergence.
 
 GitHub setup was verified on 2026-10-08: this environment selects only the `main` branch, and the
-repository activation variable was explicitly set to `false`. This is the initial cutover state;
-the proof and store-device checks below are still required before changing that variable.
+repository activation variable was explicitly set to `false`. This was the initial cutover state;
+the proof and store-device checks below remain the acceptance requirements.
 
 On 2026-10-09 the owner explicitly enabled `OTA_STABLE_RELEASE_ENABLED=true`. The protected
 `pr-stable-candidate` branch was created and verified by the merged configuration apply. Fresh frozen
@@ -901,6 +901,13 @@ channel rollout, and the target has no such runtime version. A hidden existing r
 fallback, failed admin read or configuration drift stops the publish. Beta and candidate promotion
 repeat this check before uploads; post-publication verification still requires the target branch and
 exact exported bytes. Production baseline handling remains strict.
+The empty-runtime check is conservative across platforms: the current iOS and Android fingerprints
+are distinct. If both platforms share a runtime, finalizing the first makes that runtime nonempty;
+the second platform stops rather than assuming its platform-specific baseline is still empty.
+
+The daily controller's reusable boot job explicitly allows read access to Actions, repository
+contents, deployments and pull requests. GitHub validates those nested permissions even for a
+read-only plan that skips boot execution; the controller's other jobs retain their original scopes.
 
 | Time, UTC | Controller work |
 | --- | --- |
