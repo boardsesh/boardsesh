@@ -17,6 +17,8 @@ vi.mock('../../utils/logger', () => ({
 }));
 
 const REPO = 'boardsesh/boardsesh';
+/** The App id every assertion here reads back out of the signed JWT or a log line. */
+const APP_ID = '4098323';
 const NOW = Date.parse('2026-09-05T12:00:00.000Z');
 
 const pkcs8 = generateKeyPairSync('rsa', {
@@ -61,7 +63,7 @@ function stubGitHub(options: { token?: string; expiresAt?: string; failOn?: 'ins
 
 beforeEach(() => {
   resetGithubAppAuthCache();
-  vi.stubEnv('FEEDBACK_GITHUB_APP_ID', '4098323');
+  vi.stubEnv('FEEDBACK_GITHUB_APP_ID', APP_ID);
   vi.stubEnv('FEEDBACK_GITHUB_APP_PRIVATE_KEY', pkcs8);
 });
 
@@ -150,7 +152,7 @@ describe('getInstallationAccessToken', () => {
 
     const claims = decodeJwt(jwt);
     const nowSeconds = Math.floor(NOW / 1000);
-    expect(claims.iss).toBe('4098323');
+    expect(claims.iss).toBe(APP_ID);
     // Back-dated, so GitHub's clock being slightly behind ours cannot reject it.
     expect(claims.iat).toBeLessThan(nowSeconds);
     // GitHub refuses anything claiming more than 10 minutes.
@@ -181,7 +183,7 @@ describe('getInstallationAccessToken', () => {
     // `currentDate`, because the JWT is stamped from the frozen NOW and the
     // claim check would otherwise fail against the wall clock.
     const { payload } = await jwtVerify(jwt, publicKey, { currentDate: new Date(NOW) });
-    expect(payload.iss).toBe('4098323');
+    expect(payload.iss).toBe(APP_ID);
   });
 
   it('converts a 4096-bit PKCS#1 key too', async () => {
@@ -267,6 +269,28 @@ describe('getInstallationAccessToken', () => {
   it('returns undefined when the App is not installed on the repo', async () => {
     stubGitHub({ failOn: 'installation' });
     await expect(getInstallationAccessToken(REPO, NOW)).resolves.toBeUndefined();
+  });
+
+  it('logs what to actually do about a 404 on the installation lookup', async () => {
+    // `GitHub GET /repos/boardsesh/boardsesh/installation responded 404` reads
+    // as a missing repo, which is the one thing it cannot be — the JWT was
+    // accepted or GitHub would have said 401. Nobody can fix this from the
+    // deploy, so the line has to point at the App's installation settings.
+    stubGitHub({ failOn: 'installation' });
+    await getInstallationAccessToken(REPO, NOW);
+
+    // The message, not JSON.stringify over the call: an Error serialises to
+    // `{}` and the assertion would pass on any wording at all.
+    const [call] = vi.mocked(logger.error).mock.calls;
+    const thrown = (call as unknown[])[1];
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    expect(message).toContain('boardsesh/boardsesh');
+    expect(message).toContain(APP_ID);
+    // Both causes, because GitHub answers the same 404 for each: naming only
+    // the installation would send an operator with a typo'd repo path to the
+    // wrong settings page.
+    expect(message).toContain('not installed');
+    expect(message).toContain('typo');
   });
 
   it('returns undefined when GitHub refuses the token mint', async () => {
