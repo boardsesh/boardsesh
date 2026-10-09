@@ -1,11 +1,6 @@
 import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import { createConsentSyncCoordinator, type AnalyticsConsentChoice, type ConsentSource } from '@boardsesh/consent';
-import {
-  getConsentSnapshot,
-  subscribeConsent,
-  updateConsentState,
-  isProductAnalyticsGranted,
-} from '../lib/consent-state';
+import { getConsentSnapshot, subscribeConsent, updateConsentState } from '../lib/consent-state';
 import {
   readLocalConsent,
   persistLocalConsent,
@@ -26,7 +21,6 @@ import {
 } from '@boardsesh/graphql/operations/analytics-consent';
 import { reportHandledError } from '../lib/error-reporting';
 import { ConsentSettledContext } from '../lib/consent-hooks';
-import { configureObserve } from '../lib/observe-runtime';
 export { useConsentSettled, useAnalyticsConsent } from '../lib/consent-hooks';
 
 let coordinator: ReturnType<typeof createConsentSyncCoordinator> | null = null;
@@ -43,7 +37,6 @@ subscribeConsent(() => {
       accountResolved: authoritative.accountResolved && !authoritative.syncing,
     });
   }
-  if (!isProductAnalyticsGranted()) configureObserve({ dispatchingEnabled: false, sampleRate: 0 });
   void applyPosthogConsent().catch((error) => reportHandledError(error));
   void initializePosthogClient().catch((error) => reportHandledError(error));
 });

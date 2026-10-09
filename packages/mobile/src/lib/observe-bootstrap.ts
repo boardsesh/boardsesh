@@ -18,18 +18,24 @@
 // hooks/use-observe-runtime-config.ts); that is safe precisely because
 // buildObserveConfig hands the same OBSERVE_INTEGRATIONS constant back.
 import { Observe } from 'expo-observe';
-import { buildObserveConfig, type ObserveRuntimeOverrides } from './observe-config';
+import Constants from 'expo-constants';
+import {
+  buildObserveConfig,
+  isFirstPartyObserveEndpointConfigured,
+  type ObserveRuntimeOverrides,
+} from './observe-config';
 import { setObserveRuntime } from './observe-runtime';
 
+// Without this explicit embedded endpoint, the native SDK falls back to o.expo.dev.
+const firstPartyConfigured = isFirstPartyObserveEndpointConfigured(
+  Constants.expoConfig?.extra?.eas?.observe?.endpointUrl,
+);
 setObserveRuntime({
-  configure: (overrides: ObserveRuntimeOverrides) => Observe.configure(buildObserveConfig(overrides)),
-  dispatchEvents: () => Observe.dispatchEvents(),
-  reportError: (error: unknown) => Observe.reportError(error),
-  discardPendingEvents: () => {
-    const native = Observe as typeof Observe & { discardPendingEvents?: () => Promise<void> };
-    if (typeof native.discardPendingEvents !== 'function')
-      return Promise.reject(new Error('Observe consent discard unavailable'));
-    return native.discardPendingEvents();
+  configure: (overrides: ObserveRuntimeOverrides) =>
+    Observe.configure(buildObserveConfig(firstPartyConfigured ? overrides : { dispatchingEnabled: false })),
+  dispatchEvents: () => (firstPartyConfigured ? Observe.dispatchEvents() : Promise.resolve()),
+  reportError: (error: unknown) => {
+    if (firstPartyConfigured) Observe.reportError(error);
   },
 });
 

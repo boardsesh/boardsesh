@@ -100,6 +100,10 @@ export function applyChunkLoadFingerprint<T extends FingerprintableEvent>(
 if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
+    // App startup installs native privacy callbacks through RNSentrySDK's
+    // supported configureOptions API. Reinitializing here would replace them.
+    // Requires the next native binary; this change is not an old-binary OTA.
+    autoInitializeNativeSdk: false,
     // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so
     // their crashes are filterable out of the prod view. See resolveAppEnvironment
     // (shared with PostHog — app-environment.ts).
@@ -148,6 +152,10 @@ if (isSentryEnabled) {
     // Hardcoding release here (e.g. "2.0.0" without dist) would mismatch the
     // uploaded artifacts and break symbolication.
   });
+  // Native options no longer receive this bundle's init options. Synchronize
+  // the environment through the supported scope bridge so preview OTAs keep
+  // their native errors out of production; pre-JS errors use the build value.
+  Sentry.setTag('boardsesh_environment', resolveAppEnvironment());
 }
 
 // Sentry tags must be primitives; coerce non-scalar values to a readable string

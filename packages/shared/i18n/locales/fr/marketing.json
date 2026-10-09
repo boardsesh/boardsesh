@@ -917,7 +917,7 @@
   },
   "privacy": {
     "title": "Politique de confidentialité",
-    "lastUpdatedProductAnalytics": "Dernière mise à jour : 8 octobre 2026",
+    "lastUpdatedProductAnalytics": "Dernière mise à jour : 9 octobre 2026",
     "intro1": "Boardsesh est une app open source pour piloter les boards d'entraînement (Kilter, Tension, MoonBoard) en Bluetooth. Cette politique explique quelles données nous collectons, pourquoi, et ce que nous en faisons.",
     "intro2ProductAnalytics": "La version courte : nous collectons uniquement ce qui est nécessaire au fonctionnement de l'app. Nous ne vendons pas vos données, nous n'affichons pas de publicités, et nous ne partageons pas vos données avec des marketeurs tiers ou des courtiers en données.",
     "collect": {
@@ -931,7 +931,7 @@
       "productAnalyticsLabel": "Analytique produit.",
       "productAnalyticsBody": "Nous utilisons PostHog uniquement si tu autorises les statistiques, pour l’utilisation des fonctionnalités, les pages vues, les performances et l’enregistrement facultatif des sessions dans l’app. Les statistiques des utilisateurs connectés peuvent être liées à leur compte Boardsesh. Avec ton autorisation, l’attribution des installations Android peut inclure la référence d’installation du Play Store et des informations de campagne. Nous n’utilisons pas ces données pour la publicité.",
       "serviceStatsLabel": "Statistiques internes du service.",
-      "serviceStatsBody": "Nous enregistrons dans notre propre base de données le jour d’activité et la plateforme des comptes connectés, indépendamment du consentement aux statistiques, au titre de l’intérêt légitime pour comprendre l’utilisation du service. Nous conservons ces lignes pendant 13 mois. Seuls des nombres quotidiens, hebdomadaires et mensuels agrégés sont transmis à PostHog. Les visiteurs déconnectés qui refusent ne sont pas comptés comme utilisateurs uniques."
+      "serviceStatsBody": "Nous enregistrons dans notre propre base de données le jour d’activité et la plateforme des comptes connectés, indépendamment du consentement aux statistiques, au titre de l’intérêt légitime pour comprendre l’utilisation du service. Nous conservons ces lignes pendant 13 mois. Seuls des nombres quotidiens, hebdomadaires et mensuels agrégés sont transmis à PostHog. Les visiteurs déconnectés ne sont pas inclus dans ces nombres de comptes actifs."
     },
     "bluetooth": {
       "title": "Bluetooth",
@@ -957,10 +957,10 @@
       "sentryLabel": "Sentry.",
       "sentryLink": "la politique de confidentialité de Sentry",
       "expoLabel": "Expo EAS Observe.",
-      "expoLink": "la politique de confidentialité d’Expo",
+      "expoLink": "la documentation d’Expo Observe",
       "hostingBody": "Railway héberge l’application et la base de données. Cloudflare distribue le contenu, héberge l’app du navigateur et stocke les médias. Ces prestataires traitent les requêtes nécessaires au fonctionnement de Boardsesh. Voir ",
       "sentryBody": "Nous utilisons Sentry pour surveiller les erreurs au titre de l’intérêt légitime afin de maintenir Boardsesh en état de marche. La collecte par défaut d’informations personnelles est désactivée ; les rapports d’erreur sont limités et les champs sensibles supprimés. Ce service reste actif si tu refuses les statistiques. Voir ",
-      "expoBody": "Si tu autorises les statistiques, EAS Observe peut transmettre des diagnostics de performance de l’app, dont l’identifiant d’installation du client Expo (expo.eas_client.id), lorsque les diagnostics sont activés. Voir "
+      "expoBody": "Nous utilisons Expo Observe pour les temps de performance, les informations sur l’appareil et la version de l’app et les diagnostics d’erreurs sur notre propre serveur, au titre de l’intérêt légitime pour maintenir Boardsesh en état de marche. Les diagnostics restent activés si tu refuses les statistiques. Les identifiants d’installation et de session du SDK servent au suivi des mises à jour ; nous n’associons aucune identité de compte Boardsesh à Observe. Voir "
     },
     "sharing": {
       "title": "Partage de données",
@@ -1001,7 +1001,7 @@
     },
     "choices": {
       "title": "Cookies et choix de confidentialité",
-      "storageBody": "Le stockage nécessaire comprend les cookies de connexion NextAuth, ta langue (boardsesh-locale), les préférences du téléphone et le cookie boardsesh-consent. Ce dernier dure un an et est partagé entre boardsesh.com et app.boardsesh.com. Autoriser les statistiques active le stockage des identifiants et événements PostHog (ph_* sur le site et stockage du SDK dans l’app). Refuser ou retirer l’autorisation supprime les identifiants statistiques et arrête les statistiques facultatives, les enregistrements, EAS Observe et les événements d’attribution des installations. Les options de fonctionnalités utilisent toujours un client en mémoire ; avec une connexion, elles peuvent utiliser ton identifiant de compte.",
+      "storageBody": "Le stockage nécessaire comprend les cookies de connexion NextAuth, ta langue (boardsesh-locale), les préférences du téléphone et le cookie boardsesh-consent. Ce dernier dure un an et est partagé entre boardsesh.com et app.boardsesh.com. Autoriser les statistiques active le stockage des identifiants et événements PostHog (ph_* sur le site et stockage du SDK dans l’app). Refuser ou retirer l’autorisation supprime les identifiants statistiques et arrête les statistiques facultatives, les enregistrements et les événements d’attribution des installations. Les diagnostics de base sur les erreurs et les performances sur nos propres serveurs restent activés. Les options de fonctionnalités utilisent toujours un client en mémoire ; avec une connexion, elles peuvent utiliser ton identifiant de compte.",
       "changeBody": "Utilise Choix de confidentialité dans le pied de page du site ou Statistiques d’utilisation dans les paramètres pour changer ta réponse. Nous enregistrons ta décision sur ton appareil et, si tu es connecté, sur ton compte. Un refus du compte remplace les autorisations des appareils ; une autorisation du compte s’applique aux appareils sans réponse. Nous conservons l’historique des décisions comme preuve du consentement jusqu’à la suppression du compte. Les événements anonymes et éphémères sur les mises à jour et les écrans des salles restent actifs pour la fiabilité du service."
     }
   },

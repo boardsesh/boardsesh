@@ -78,7 +78,7 @@ export default async function PrivacyPolicyPage() {
         </Prose>
         <Prose>
           <strong>{t('privacy.thirdParty.expoLabel')}</strong> {t('privacy.thirdParty.expoBody')}
-          <Link href="https://expo.dev/privacy" target="_blank" rel="noopener">
+          <Link href="https://docs.expo.dev/eas/observe/configuration/" target="_blank" rel="noopener">
             {t('privacy.thirdParty.expoLink')}
           </Link>
           .

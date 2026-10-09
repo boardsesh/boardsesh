@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import {
   OBSERVE_DEFAULT_SAMPLE_RATE,
   OBSERVE_INTEGRATIONS,
+  OBSERVE_FILTERED_ROUTE_PARAMS,
   buildObserveConfig,
   parseObserveSampleRate,
   resolveObserveDispatchEnabled,
+  isFirstPartyObserveEndpointConfigured,
 } from '../observe-config';
+
+// Exercise the installed SDK's pure helpers without importing its internal
+// native types into the application TypeScript project.
+const observePackageRoot = dirname(createRequire(import.meta.url).resolve('expo-observe/package.json'));
+type NavigationConfig = (typeof OBSERVE_INTEGRATIONS)['expo-router'];
+type NavigationHelpers = {
+  getNavigationMetricParams: (config: NavigationConfig, params: Record<string, unknown>, url: string) => unknown;
+  getNavigationRouteParams: (config: NavigationConfig, params: Record<string, unknown>) => unknown;
+};
+const { getNavigationMetricParams, getNavigationRouteParams } = (await import(
+  /* @vite-ignore */ join(observePackageRoot, 'src/integrations/navigationConfig.ts')
+)) as NavigationHelpers;
+const { buildRoutePattern } = (await import(
+  /* @vite-ignore */ join(observePackageRoot, 'src/integrations/expo-router/routeName.ts')
+)) as { buildRoutePattern: (segments: string[]) => string };
 
 describe('parseObserveSampleRate', () => {
   // PostHog hands back a string, and the value is typed by hand in a dashboard.
@@ -44,9 +63,9 @@ describe('parseObserveSampleRate', () => {
 });
 
 describe('resolveObserveDispatchEnabled', () => {
-  it('keeps unresolved flags disabled', () => {
-    expect(resolveObserveDispatchEnabled(undefined)).toBe(false);
-    expect(resolveObserveDispatchEnabled(null)).toBe(false);
+  it('uses enabled diagnostics after the flag bag resolves without a kill', () => {
+    expect(resolveObserveDispatchEnabled(undefined)).toBe(true);
+    expect(resolveObserveDispatchEnabled(null)).toBe(true);
   });
 
   it('disables only on an explicit false', () => {
@@ -54,9 +73,9 @@ describe('resolveObserveDispatchEnabled', () => {
     expect(resolveObserveDispatchEnabled(true)).toBe(true);
   });
 
-  it('rejects malformed non-boolean dispatch flags', () => {
-    expect(resolveObserveDispatchEnabled('true')).toBe(false);
-    expect(resolveObserveDispatchEnabled('')).toBe(false);
+  it('retains diagnostics for malformed flags rather than hiding errors', () => {
+    expect(resolveObserveDispatchEnabled('true')).toBe(true);
+    expect(resolveObserveDispatchEnabled('')).toBe(true);
   });
 
   it("honours the string 'false', so a kill switch typed as text still kills", () => {
@@ -74,7 +93,7 @@ describe('buildObserveConfig', () => {
 
   it('applies the shipped defaults when given no overrides', () => {
     const config = buildObserveConfig();
-    expect(config.sampleRate).toBe(0);
+    expect(config.sampleRate).toBe(1);
     expect(config.dispatchingEnabled).toBe(false);
   });
 
@@ -93,6 +112,56 @@ describe('buildObserveConfig', () => {
   });
 
   it('enables the expo-router integration, which is what produces the timings', () => {
-    expect(OBSERVE_INTEGRATIONS['expo-router']).toBe(true);
+    expect(OBSERVE_INTEGRATIONS['expo-router']).toEqual({ filteredParams: OBSERVE_FILTERED_ROUTE_PARAMS });
+  });
+});
+
+describe('Observe router metadata with the pinned public SDK', () => {
+  it('retains normalized timing routes without user or session IDs or their resolved URL', () => {
+    const integration = OBSERVE_INTEGRATIONS['expo-router'];
+    const params = { userId: 'account-secret', sessionId: 'session-secret', mode: 'followers' };
+    expect(buildRoutePattern(['users', '[userId]'])).toBe('/users/[userId]');
+    expect(getNavigationMetricParams(integration, params, '/users/account-secret')).toEqual({
+      routeParams: { mode: 'followers' },
+      urlHidden: true,
+    });
+    expect(getNavigationRouteParams(integration, params)).toEqual({
+      routeParams: { mode: 'followers' },
+      urlHidden: true,
+    });
+  });
+
+  it('removes auth reset credentials from navigation metrics', () => {
+    expect(
+      getNavigationMetricParams(
+        OBSERVE_INTEGRATIONS['expo-router'],
+        {
+          token: 'reset-secret',
+          email: 'person@example.com',
+        },
+        '/auth/reset-password',
+      ),
+    ).toEqual({ routeParams: {}, urlHidden: true });
+  });
+});
+
+describe('first-party Observe endpoint', () => {
+  it('accepts explicit self-hosted ingest configuration', () => {
+    expect(isFirstPartyObserveEndpointConfigured('https://ota.boardsesh.com/observe/app-id')).toBe(true);
+    expect(isFirstPartyObserveEndpointConfigured('http://localhost:3000/observe/app-id')).toBe(true);
+  });
+  it('rejects the SDK fallback and missing or malformed endpoints', () => {
+    for (const endpoint of [
+      undefined,
+      null,
+      '',
+      'invalid',
+      'https://o.expo.dev',
+      'https://o.expo.dev/observe/app-id',
+      'https://ota.boardsesh.com/manifest',
+      'http://ota.boardsesh.com/observe/app-id',
+      'https://user:password@ota.boardsesh.com/observe/app-id',
+    ])
+      expect(isFirstPartyObserveEndpointConfigured(endpoint)).toBe(false);
   });
 });

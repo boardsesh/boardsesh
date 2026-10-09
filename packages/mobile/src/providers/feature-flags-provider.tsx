@@ -130,7 +130,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'observe-dispatch-enabled',
     label: 'Observe telemetry dispatch',
     description:
-      'Emergency kill switch for expo-observe. Off stops the app dispatching metrics, logs and error reports to updates.boardsesh.com; pending ones are marked sent and discarded. Manifest polling and OTA updates are unaffected.',
+      'Emergency kill switch for first-party Observe diagnostics. Off disables SDK dispatch of metrics, logs and error reports to updates.boardsesh.com. The Analytics choice does not control diagnostics. Manifest polling and OTA updates are unaffected.',
   },
   {
     key: 'observe-sample-rate',

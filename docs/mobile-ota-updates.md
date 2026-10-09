@@ -1527,7 +1527,8 @@ To find the anchor for a release: `git tag -l 'release/ios-v2.1.0-*'`.
 ## GDPR next-store release
 
 The consent rollout targets the next unsubmitted store binary on `main`, including native
-Observe buffer discard, Sentry identity stripping and replay lifecycle changes. It is not an OTA
+first-party Observe diagnostics, Sentry identity stripping through app-owned native callbacks
+and replay lifecycle changes. It is not an OTA
 for current store binaries and needs no release backport. After native compilation, device QA
 must verify fresh launch, stored grant/account denial, account switch, offline denial, regrant,
 queued replay withdrawal, and first-party network requests on iOS, Android and Expo web. iOS
@@ -1612,20 +1613,24 @@ produced it — the per-update comparison neither PostHog nor Sentry can express
   else goes through the dependency-free slot in `observe-runtime.ts`, which keeps Expo's runtime out
   of the node-env test graph that `error-reporting.ts` sits in.
 - **What it sends**: per-screen `cold_ttr` / `warm_ttr` / `tti` (expo-router integration), log
-  events, and consented errors that reach `reportError`. Sentry continues crash/error reporting
-  independently of the analytics choice. After effective consent and feature flags resolve, the app flushes once for the launch and again
+  events, and errors that reach `reportError`. First-party Observe diagnostics and Sentry crash
+  reporting run independently of the analytics choice. Observe retains SDK installation/session identifiers for
+  per-update health, and the app assigns no account identity. After feature flags resolve, the app
+  flushes once for the launch and again
   whenever it returns from inactive/background to active; the SDK's native background flush stays
   in place. `tti` needs `markInteractive` per screen and is not wired up yet.
 - **Endpoint**: derived from `EXPO_UPDATES_URL`'s origin plus the OTA app id
-  (`resolveObserveEndpoint` in `app.config.ts`), so telemetry and manifests can never point at
-  different servers. A build with no self-hosted URL, or an EAS-hosted one, reports nothing.
+  (`resolveObserveEndpoint` in `app.config.ts`), so custom-hosted telemetry and manifests share an
+  origin. EAS-hosted builds and builds without a custom updates URL still embed
+  Boardsesh's first-party collector at `https://updates.boardsesh.com/observe/{APP_ID}`. This also
+  prevents native pre-JavaScript dispatch from falling back to Expo ingestion.
 - **Control without a build**: `observe-dispatch-enabled` (kill switch) and `observe-sample-rate`
-  (multivariate, consented default `1`) in PostHog. Startup sampling is `0` and dispatch is disabled.
-  A current Allow choice and resolved boolean `observe-dispatch-enabled: true` are both required.
-  The native `discardPendingEvents` operation advances persisted metric/log cursors independently
-  of network backoff before enabling dispatch. Withdrawal disables dispatch synchronously and
-  discards the old buffer. Each native batch rechecks dispatch permission; missing discard support
-  or a failed discard leaves Observe disabled.
+  (multivariate, default `1`) in PostHog. Startup dispatch is disabled while sampling remains `1`
+  to retain launch timings. Resolved flags enable diagnostics unless the kill switch is explicitly
+  off. Analytics consent does not change Observe configuration. The public SDK handles dispatch
+  and sampling; no native Observe patch, purge operation or first-party consent proxy is needed.
+  The JavaScript bridge refuses dispatch without an embedded self-hosted endpoint. The next
+  store binary always embeds that endpoint; older native SDKs can dispatch before JavaScript.
 - **Country**: Cloudflare overwrites `X-Geo-Country` from `ip.src.country` on the proxied updates
   hostname, and xprem trusts only that configured header. This is aggregate telemetry only: the
   public Railway origin means it must never be used for authorization or compliance decisions.

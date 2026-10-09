@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react';
-import { Linking, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useTranslation } from 'react-i18next';
@@ -48,7 +48,7 @@ function PrivacyConsentScreen() {
     else router.replace('/');
   };
   return (
-    <View style={[styles.backing, { backgroundColor: colors.background }]}>
+    <ScrollView style={[styles.scroll, { backgroundColor: colors.background }]} contentContainerStyle={styles.backing}>
       <View style={styles.content}>
         <Text accessibilityRole="header" style={[styles.title, { color: colors.label }]}>
           {t('mobileTitle')}
@@ -76,7 +76,7 @@ function PrivacyConsentScreen() {
           {t('privacyLink')}
         </Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -84,7 +84,8 @@ export default holdUntilLaunchReady(PrivacyConsentScreen);
 
 const createStyles = (typography: TypographyScale) =>
   StyleSheet.create({
-    backing: { flex: 1, justifyContent: 'center', padding: spacing[6] },
+    scroll: { flex: 1 },
+    backing: { flexGrow: 1, justifyContent: 'center', padding: spacing[6] },
     content: { width: '100%', maxWidth: 520, alignSelf: 'center', gap: spacing[4] },
     choiceButton: { alignSelf: 'stretch' },
     title: { ...typography.title1 },

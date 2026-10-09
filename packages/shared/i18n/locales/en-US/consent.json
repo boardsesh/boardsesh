@@ -1,17 +1,17 @@
 {
   "title": "Help us improve Boardsesh?",
-  "body": "Allow product analytics, performance diagnostics and optional session replay to help us see what works. No thanks keeps them off. Your choice applies wherever you are signed in, and you can change it anytime.",
+  "body": "Allow product analytics and optional session replay to help us see what works. No thanks keeps these off. Basic crash and performance diagnostics stay on. Your choice applies wherever you are signed in, and you can change it anytime.",
   "allow": "Allow",
   "deny": "No thanks",
   "privacyLink": "Read our privacy policy",
   "privacyChoices": "Privacy choices",
   "settingsTitle": "Analytics",
-  "settingsBody": "Choose whether to share product analytics and performance diagnostics. You can keep climbing with either choice.",
+  "settingsBody": "Choose whether to share product analytics and optional session replay. Basic diagnostics stay on. You can keep climbing with either choice.",
   "enabled": "Analytics is on",
   "disabled": "Analytics is off",
   "close": "Close",
   "syncError": "Your choice is saved here. We will sync it to your account when you are back online.",
   "mobileTitle": "Your privacy, your choice",
-  "mobileBody": "Allow product analytics, performance diagnostics and optional session replay to help us improve Boardsesh. No thanks keeps them off. Your choice applies wherever you are signed in. You can change it in Settings anytime.",
+  "mobileBody": "Allow product analytics and optional session replay to help us improve Boardsesh. No thanks keeps these off. Basic crash and performance diagnostics stay on. Your choice applies wherever you are signed in. You can change it in Settings anytime.",
   "analyticsLabel": "Share analytics"
 }

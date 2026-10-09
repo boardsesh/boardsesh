@@ -17,11 +17,46 @@ import { resolveAppEnvironment } from './app-environment';
  * same value. Handing back a fresh object literal each time is exactly the bug
  * that assertion exists to catch.
  */
-export const OBSERVE_INTEGRATIONS: ObserveIntegrationsConfig = { 'expo-router': true };
+// The router supplies normalized route names, but its params and resolved URL
+// otherwise include account/resource identifiers and auth links. The public
+// filter removes these params and hides the resolved URL whenever one occurs.
+export const OBSERVE_FILTERED_ROUTE_PARAMS = [
+  'userId',
+  'username',
+  'email',
+  'token',
+  'code',
+  'sessionId',
+  'resourceId',
+  'entityId',
+  'boardUuid',
+  'board_slug',
+  'gymUuid',
+  'wallUuid',
+  'wall',
+  'climbUuid',
+  'climb_segment',
+  'playlist_uuid',
+  'link',
+  'returnTo',
+  'origin',
+  'resetOf',
+  'reviewCandidate',
+  'versionId',
+  'board_name',
+  'layout_id',
+  'size_id',
+  'set_ids',
+  'angle',
+  'type',
+];
+export const OBSERVE_INTEGRATIONS: ObserveIntegrationsConfig = {
+  'expo-router': { filteredParams: OBSERVE_FILTERED_ROUTE_PARAMS },
+};
 
 /**
- * Sampling after consent defaults to full collection. Startup separately uses
- * zero sampling and disabled dispatch until consent and flags are resolved.
+ * First-party performance diagnostics are independent of product analytics.
+ * Record startup metrics immediately; dispatch waits for the functional flags.
  */
 export const OBSERVE_DEFAULT_SAMPLE_RATE = 1;
 export const OBSERVE_DEFAULT_DISPATCHING_ENABLED = false;
@@ -39,7 +74,7 @@ export function buildObserveConfig(overrides: ObserveRuntimeOverrides = {}): Obs
     // default so a Metro dev session never writes into production ClickHouse.
     dispatchInDebug: false,
     dispatchingEnabled: overrides.dispatchingEnabled ?? OBSERVE_DEFAULT_DISPATCHING_ENABLED,
-    sampleRate: overrides.sampleRate ?? 0,
+    sampleRate: overrides.sampleRate ?? OBSERVE_DEFAULT_SAMPLE_RATE,
     integrations: OBSERVE_INTEGRATIONS,
   };
 }
@@ -69,9 +104,30 @@ function clampSampleRate(value: number): number {
 /**
  * Resolve the dispatch flag.
  *
- * Only a resolved boolean true enables dispatch. Missing or malformed flag
- * values keep performance telemetry disabled.
+ * Once flags resolve, only an explicit false (boolean or variant) disables
+ * first-party diagnostics. The startup configuration separately waits for flags.
  */
 export function resolveObserveDispatchEnabled(raw: unknown): boolean {
-  return raw === true;
+  return raw !== false && raw !== 'false';
+}
+
+/** Permit JS dispatch only for an explicit first-party endpoint in app configuration. */
+export function isFirstPartyObserveEndpointConfigured(candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  try {
+    const endpoint = new URL(candidate);
+    return (
+      (endpoint.protocol === 'https:' ||
+        (endpoint.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname))) &&
+      endpoint.hostname !== 'expo.dev' &&
+      !endpoint.hostname.endsWith('.expo.dev') &&
+      !endpoint.username &&
+      !endpoint.password &&
+      !endpoint.search &&
+      !endpoint.hash &&
+      /^\/observe\/[A-Za-z0-9_-]+\/?$/.test(endpoint.pathname)
+    );
+  } catch {
+    return false;
+  }
 }

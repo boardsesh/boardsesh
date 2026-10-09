@@ -1,17 +1,17 @@
 {
   "title": "Hilfst du uns, Boardsesh zu verbessern?",
-  "body": "Erlaube Nutzungsanalysen, Leistungsdiagnosen und optionale Sitzungsaufzeichnungen, damit wir sehen, was funktioniert. „Nein danke“ schaltet sie aus. Deine Wahl gilt überall, wo du angemeldet bist, und du kannst sie jederzeit ändern.",
+  "body": "Erlaube Nutzungsanalysen und optionale Sitzungsaufzeichnungen, damit wir sehen, was funktioniert. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist, und du kannst sie jederzeit ändern.",
   "allow": "Erlauben",
   "deny": "Nein danke",
   "privacyLink": "Unsere Datenschutzerklärung lesen",
   "privacyChoices": "Datenschutzwahl",
   "settingsTitle": "Nutzungsanalysen",
-  "settingsBody": "Entscheide, ob du Nutzungsanalysen und Leistungsdiagnosen teilen möchtest. Du kannst mit beiden Optionen weiterklettern.",
+  "settingsBody": "Entscheide, ob du Nutzungsanalysen und optionale Sitzungsaufzeichnungen teilen möchtest. Grundlegende Diagnosen bleiben aktiviert. Du kannst mit beiden Optionen weiterklettern.",
   "enabled": "Nutzungsanalysen sind eingeschaltet",
   "disabled": "Nutzungsanalysen sind ausgeschaltet",
   "close": "Schließen",
   "syncError": "Deine Wahl ist hier gespeichert. Wir synchronisieren sie mit deinem Konto, sobald du wieder online bist.",
   "mobileTitle": "Deine Privatsphäre, deine Wahl",
-  "mobileBody": "Erlaube Nutzungsanalysen, Leistungsdiagnosen und optionale Sitzungsaufzeichnungen, um Boardsesh zu verbessern. „Nein danke“ schaltet sie aus. Deine Wahl gilt überall, wo du angemeldet bist. Du kannst sie jederzeit in den Einstellungen ändern.",
+  "mobileBody": "Erlaube Nutzungsanalysen und optionale Sitzungsaufzeichnungen, um Boardsesh zu verbessern. „Nein danke“ schaltet sie aus. Grundlegende Fehler- und Leistungsdiagnosen bleiben aktiviert. Deine Wahl gilt überall, wo du angemeldet bist. Du kannst sie jederzeit in den Einstellungen ändern.",
   "analyticsLabel": "Nutzungsanalysen teilen"
 }

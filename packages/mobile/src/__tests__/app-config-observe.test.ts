@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resolveObserveEndpoint, OTA_APP_ID } from '../../app.config';
 
-// The expo-observe ingest endpoint is derived rather than hardcoded, so the
-// telemetry and the manifest can never point at different servers. These cover
-// the gates that decide whether a build reports at all — a wrong answer here is
-// silent (telemetry simply never arrives, or arrives from a build that should
-// not be sending).
+// The native SDK can send before JS applies runtime settings. Every build must
+// embed a first-party endpoint instead of using the SDK's Expo-hosted fallback.
 
 const SELF_HOST_URL = 'https://ota.example.test/manifest';
 const ENV_KEYS = ['EAS_BUILD', 'EXPO_UPDATES_URL'] as const;
@@ -41,17 +38,16 @@ describe('resolveObserveEndpoint', () => {
     expect(resolveObserveEndpoint('app-id-123')).toBe('http://localhost:3000/observe/app-id-123');
   });
 
-  it('reports nothing when no self-hosted server is configured', () => {
-    // Such a build has no server of ours to talk to; collecting would be pointless.
-    expect(resolveObserveEndpoint('app-id-123')).toBeUndefined();
+  it('uses the first-party collector when the updates URL is not configured', () => {
+    expect(resolveObserveEndpoint('app-id-123')).toBe('https://updates.boardsesh.com/observe/app-id-123');
   });
 
-  it('reports nothing from an EAS-hosted build', () => {
-    // Matches the updates gate: EAS_BUILD keeps a build on u.expo.dev, where
-    // there is no Observe ingest at all.
+  it('keeps diagnostics first-party when update hosting uses EAS', () => {
     process.env.EAS_BUILD = '1';
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
-    expect(resolveObserveEndpoint('app-id-123')).toBeUndefined();
+    expect(resolveObserveEndpoint('app-id-123')).toBe('https://ota.example.test/observe/app-id-123');
+    delete process.env.EXPO_UPDATES_URL;
+    expect(resolveObserveEndpoint('app-id-123')).toBe('https://updates.boardsesh.com/observe/app-id-123');
   });
 
   it('uses the real OTA app id, not the EAS project id', () => {

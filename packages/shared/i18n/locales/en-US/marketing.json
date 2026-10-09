@@ -917,7 +917,7 @@
   },
   "privacy": {
     "title": "Privacy Policy",
-    "lastUpdatedProductAnalytics": "Last updated: October 8, 2026",
+    "lastUpdatedProductAnalytics": "Last updated: October 9, 2026",
     "intro1": "Boardsesh is an open-source app for controlling climbing training boards (Kilter, Tension, MoonBoard) over Bluetooth. This policy explains what data we collect, why, and what we do with it.",
     "intro2ProductAnalytics": "The short version: we collect only what we need to make the app work. We do not sell your data, we do not run ads, and we do not share data with third-party marketers or data brokers.",
     "collect": {
@@ -931,7 +931,7 @@
       "productAnalyticsLabel": "Product analytics.",
       "productAnalyticsBody": "We use PostHog only after you allow analytics, for feature usage, page views, performance and optional session replay in the app. Signed-in analytics can be linked to your Boardsesh account. With your permission, Android install attribution may include the Play Store install referrer and campaign information. We do not use these data for ads.",
       "serviceStatsLabel": "First-party service statistics.",
-      "serviceStatsBody": "We record a signed-in account’s active day and platform in our own database, regardless of analytics consent, under legitimate interest to understand service use. These rows are kept for 13 months. Only aggregate daily, weekly and monthly counts are sent to PostHog. Signed-out visitors who decline are not counted as unique users."
+      "serviceStatsBody": "We record a signed-in account’s active day and platform in our own database, regardless of analytics consent, under legitimate interest to understand service use. These rows are kept for 13 months. Only aggregate daily, weekly and monthly counts are sent to PostHog. Signed-out visitors are not included in these account-based active-user counts."
     },
     "bluetooth": {
       "title": "Bluetooth",
@@ -957,10 +957,10 @@
       "sentryLabel": "Sentry.",
       "sentryLink": "Sentry’s privacy policy",
       "expoLabel": "Expo EAS Observe.",
-      "expoLink": "Expo’s privacy policy",
+      "expoLink": "Expo Observe documentation",
       "hostingBody": "We use Railway for application and database hosting, and Cloudflare for content delivery, browser-app hosting and media storage. These providers process requests needed to deliver Boardsesh. See ",
       "sentryBody": "We use Sentry for error monitoring under legitimate interest to keep Boardsesh working. Default personal-information collection is disabled; error reports are limited and sensitive fields are removed. This service remains on when analytics is declined. See ",
-      "expoBody": "If you allow analytics, EAS Observe can send app performance diagnostics, including the Expo client installation identifier (expo.eas_client.id), when diagnostics are enabled. See "
+      "expoBody": "We use Expo Observe for performance timings, device/build information and error diagnostics on our own server, under legitimate interest to keep Boardsesh working. Diagnostics remain on when analytics is declined. SDK installation and session identifiers support update health; we assign no Boardsesh account identity to Observe. See "
     },
     "sharing": {
       "title": "Data sharing",
@@ -1001,7 +1001,7 @@
     },
     "choices": {
       "title": "Cookies and privacy choices",
-      "storageBody": "Required storage includes NextAuth login and sign-in-flow cookies, your language preference (boardsesh-locale), device preferences and the boardsesh-consent cookie. The consent cookie lasts one year and is shared between boardsesh.com and app.boardsesh.com. Allowing analytics enables PostHog identifier and event storage (ph_* on the website and SDK storage in the app). Declining or withdrawing clears analytics identifiers and stops optional analytics, replay, EAS Observe and install-attribution events. Feature flags still use an in-memory client; signed-in flags can use your account ID.",
+      "storageBody": "Required storage includes NextAuth login and sign-in-flow cookies, your language preference (boardsesh-locale), device preferences and the boardsesh-consent cookie. The consent cookie lasts one year and is shared between boardsesh.com and app.boardsesh.com. Allowing analytics enables PostHog identifier and event storage (ph_* on the website and SDK storage in the app). Declining or withdrawing clears analytics identifiers and stops optional analytics, replay and install-attribution events. Basic crash and first-party performance diagnostics remain on. Feature flags still use an in-memory client; signed-in flags can use your account ID.",
       "changeBody": "Use Privacy choices in the website footer or Analytics in Settings to change your answer. We save your decision on the device and, when signed in, on your account. An account denial overrides device grants; an account grant fills devices that have not answered. We retain decision history as evidence of consent until account deletion. Anonymous, short-lived update-health and kiosk events remain enabled for service reliability."
     }
   },

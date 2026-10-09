@@ -50,7 +50,8 @@ permissions:
 
 env:
   # The app's env.ts already defaults to the production backend/web URLs, so the
-  # test APK talks to prod without any secrets. Sentry stays off (no DSN).
+  # test APK talks to prod without any secrets. Sentry's fixture collector is
+  # local, so callback compilation is exercised without sending reports to Sentry.
   # Workflow-level so the gate's fingerprint resolve and both build jobs read an
   # identical set (the .env they each write is hashed into the fingerprint).
   EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
@@ -59,6 +60,7 @@ env:
   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: http://ci-compiler@127.0.0.1:1/1
   # The sideload APK below bundles the JS, so it must pin RN's fetch as the global
   # `fetch` too — expo/fetch tears down JSI promises off-thread and crashes Hermes
   # (Sentry 7595562195). Without this, testers validating a PR on the artifact APK
@@ -142,6 +144,15 @@ jobs:
         uses: actions/checkout@v4
 
       - uses: ./.github/actions/android-rn-setup
+
+      - name: Require generated native Sentry callbacks
+        run: |
+          startup=$(find packages/mobile/android/app/src/main/java -name MainApplication.kt -print)
+          test -n "$startup"
+          grep -Fq 'RNSentrySDK.init(this)' "$startup"
+          grep -Fq 'options.setBeforeSend {' "$startup"
+          grep -Fq 'options.setBeforeSendTransaction {' "$startup"
+          grep -Fq "$EXPO_PUBLIC_SENTRY_DSN" "$startup"
 
       - name: Build debug-signed release APK (compiles all native modules + plugins)
         working-directory: packages/mobile/android

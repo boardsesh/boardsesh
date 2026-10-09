@@ -81,7 +81,7 @@ operations in `@boardsesh/graphql/operations/analytics-consent`):
 | --- | --- | --- |
 | PostHog capture and identify (web, app) | Consent | Only after "Allow" (PRs B and C). Feature flags still resolve without consent. |
 | PostHog session replay | Consent | Off unless analytics is granted. |
-| EAS Observe | Consent | Dispatch only when granted. |
+| Self-hosted Observe | Legitimate interest | First-party performance/error diagnostics, independent of the analytics choice. Retains SDK installation/session IDs for update health; no account identity is assigned. |
 | Android install-referrer attribution | Consent | `Install Attributed` is sent only after a grant. |
 | Sentry (web, backend, app) | Legitimate interest | `sendDefaultPii: false`, with explicit identity/request-field redaction. User identifiers are removed from the GitHub mirror too. |
 | Backend PostHog events | Legitimate interest | Operational telemetry, non-personal by construction (below). |

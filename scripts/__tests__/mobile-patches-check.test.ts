@@ -1378,8 +1378,6 @@ describe('the shipped buildFromSource list', () => {
 
 describe('the shipped native privacy patches', () => {
   const expectedKeys: Readonly<Record<string, string>> = {
-    'expo-observe': 'expo-observe@57.0.24',
-    '@sentry/react-native': '@sentry/react-native@8.24.0',
     'posthog-react-native-session-replay': 'posthog-react-native-session-replay@1.6.0',
   };
   const privacyRules = REAL_RULES.filter((rule) => rule.package in expectedKeys);
@@ -1431,33 +1429,6 @@ describe('the shipped native privacy patches', () => {
   });
 
   it.each([
-    ['expo-observe', 'ios/ObserveModule.swift', 'try await AppMetricsActor.isolated {'],
-    ['expo-observe', 'ios/Observability.swift', 'consentGeneration &+= 1'],
-    ['expo-observe', 'ios/Observability.swift', 'fetchBatch: { (cursor: Int64, limit: Int) throws -> [MetricRow] in'],
-    ['expo-observe', 'ios/Observability.swift', 'rowId: { (metric: MetricRow) -> Int64? in metric.id }'],
-    ['expo-observe', 'ios/Observability.swift', 'send: { (metrics: [MetricRow]) async throws -> DispatchResult? in'],
-    ['expo-observe', 'ios/Observability.swift', 'fetchBatch: { (cursor: Int64, limit: Int) throws -> [LogRow] in'],
-    ['expo-observe', 'ios/Observability.swift', 'rowId: { (log: LogRow) -> Int64? in log.id }'],
-    ['expo-observe', 'ios/Observability.swift', 'send: { (logs: [LogRow]) async throws -> DispatchResult? in'],
-    ['expo-observe', 'ios/Observability.swift', 'max(ObserveUserDefaults.lastDispatchedLogId, $0)'],
-    [
-      'expo-observe',
-      'android/src/main/java/expo/modules/observe/ObserveModule.kt',
-      'observabilityManager.discardPendingEvents()',
-    ],
-    [
-      'expo-observe',
-      'android/src/main/java/expo/modules/observe/ObservabilityManager.kt',
-      'logsDispatchMutex.withLock {',
-    ],
-    ['@sentry/react-native', 'ios/RNSentry.mm', 'event.user = nil;'],
-    ['@sentry/react-native', 'ios/RNSentry.mm', '[mutableOptions setValue:@NO forKey:@"sendDefaultPii"];'],
-    ['@sentry/react-native', 'android/src/main/java/io/sentry/react/RNSentryStart.java', 'transaction.setUser(null);'],
-    [
-      '@sentry/react-native',
-      'android/src/main/java/io/sentry/react/RNSentryStart.java',
-      'event.getContexts().getDevice().setId(null);',
-    ],
     [
       'posthog-react-native-session-replay',
       'src/index.tsx',

@@ -917,7 +917,7 @@
   },
   "privacy": {
     "title": "Datenschutzerklärung",
-    "lastUpdatedProductAnalytics": "Zuletzt aktualisiert: 8. Oktober 2026",
+    "lastUpdatedProductAnalytics": "Zuletzt aktualisiert: 9. Oktober 2026",
     "intro1": "Boardsesh ist eine quelloffene App, die Kletter-Trainingsboards (Kilter, Tension, MoonBoard) über Bluetooth steuert. Diese Erklärung sagt dir, welche Daten wir erheben, wozu, und was wir damit machen.",
     "intro2ProductAnalytics": "Kurz gesagt: Wir erheben nur, was die App zum Laufen braucht. Wir verkaufen deine Daten nicht, wir schalten keine Werbung, und wir geben nichts an Werbetreibende oder Datenhändler weiter.",
     "collect": {
@@ -931,7 +931,7 @@
       "productAnalyticsLabel": "Produktanalyse.",
       "productAnalyticsBody": "Wir nutzen PostHog nur, wenn du Nutzungsanalysen erlaubst, für Funktionsnutzung, Seitenaufrufe, Leistung und optionale Sitzungsaufzeichnungen in der App. Analysen angemeldeter Nutzer*innen können mit ihrem Boardsesh-Konto verknüpft sein. Mit deiner Erlaubnis kann die Installationszuordnung auf Android den Play-Store-Installationsverweis und Kampagneninformationen enthalten. Wir verwenden diese Daten nicht für Werbung.",
       "serviceStatsLabel": "Eigene Dienststatistiken.",
-      "serviceStatsBody": "Wir speichern den Aktivitätstag und die Plattform angemeldeter Konten in unserer eigenen Datenbank, unabhängig von der Analysewahl, auf Grundlage berechtigter Interessen zur Auswertung der Dienstnutzung. Die Einträge bleiben 13 Monate gespeichert. Nur zusammengefasste tägliche, wöchentliche und monatliche Zahlen werden an PostHog gesendet. Abgemeldete Besucher*innen, die ablehnen, werden nicht als eindeutige Nutzer*innen gezählt."
+      "serviceStatsBody": "Wir speichern den Aktivitätstag und die Plattform angemeldeter Konten in unserer eigenen Datenbank, unabhängig von der Analysewahl, auf Grundlage berechtigter Interessen zur Auswertung der Dienstnutzung. Die Einträge bleiben 13 Monate gespeichert. Nur zusammengefasste tägliche, wöchentliche und monatliche Zahlen werden an PostHog gesendet. Abgemeldete Besucher*innen werden in diesen kontobasierten Aktivitätszahlen nicht erfasst."
     },
     "bluetooth": {
       "title": "Bluetooth",
@@ -957,10 +957,10 @@
       "sentryLabel": "Sentry.",
       "sentryLink": "die Datenschutzerklärung von Sentry",
       "expoLabel": "Expo EAS Observe.",
-      "expoLink": "die Datenschutzerklärung von Expo",
+      "expoLink": "die Dokumentation von Expo Observe",
       "hostingBody": "Railway hostet Anwendung und Datenbank. Cloudflare liefert Inhalte aus, hostet die Browser-App und speichert Medien. Diese Anbieter verarbeiten die Anfragen, die für Boardsesh erforderlich sind. Siehe ",
       "sentryBody": "Wir nutzen Sentry zur Fehlerüberwachung auf Grundlage berechtigter Interessen, damit Boardsesh funktioniert. Die standardmäßige Erfassung personenbezogener Informationen ist ausgeschaltet; Fehlerberichte werden begrenzt und sensible Felder entfernt. Der Dienst bleibt aktiv, wenn du Analysen ablehnst. Siehe ",
-      "expoBody": "Wenn du Analysen erlaubst, kann EAS Observe bei eingeschalteter Diagnose Leistungsdaten der App senden, einschließlich der Expo-Client-Installationskennung (expo.eas_client.id). Siehe "
+      "expoBody": "Wir nutzen Expo Observe für Leistungsmessungen, Geräte- und App-Versionsinformationen sowie Fehlerdiagnosen auf unserem eigenen Server, auf Grundlage berechtigter Interessen, damit Boardsesh funktioniert. Diagnosen bleiben aktiviert, wenn du Analysen ablehnst. Installations- und Sitzungskennungen des SDK dienen der Prüfung von Updates; wir weisen Observe keine Boardsesh-Kontoidentität zu. Siehe "
     },
     "sharing": {
       "title": "Datenweitergabe",
@@ -1001,7 +1001,7 @@
     },
     "choices": {
       "title": "Cookies und Datenschutzwahl",
-      "storageBody": "Erforderlicher Speicher umfasst NextAuth-Anmeldecookies, deine Sprache (boardsesh-locale), Geräteeinstellungen und das Cookie boardsesh-consent. Das Zustimmungscookie gilt ein Jahr und wird zwischen boardsesh.com und app.boardsesh.com geteilt. Erlaubte Analysen aktivieren die Speicherung von PostHog-Kennungen und Ereignissen (ph_* auf der Website und SDK-Speicher in der App). Ablehnung oder Widerruf löscht Analysekennungen und stoppt optionale Analysen, Aufzeichnungen, EAS Observe und Ereignisse zur Installationszuordnung. Funktionsschalter verwenden weiterhin einen Client im Arbeitsspeicher; bei angemeldeten Konten können sie deine Kontokennung nutzen.",
+      "storageBody": "Erforderlicher Speicher umfasst NextAuth-Anmeldecookies, deine Sprache (boardsesh-locale), Geräteeinstellungen und das Cookie boardsesh-consent. Das Zustimmungscookie gilt ein Jahr und wird zwischen boardsesh.com und app.boardsesh.com geteilt. Erlaubte Analysen aktivieren die Speicherung von PostHog-Kennungen und Ereignissen (ph_* auf der Website und SDK-Speicher in der App). Ablehnung oder Widerruf löscht Analysekennungen und stoppt optionale Analysen, Aufzeichnungen und Ereignisse zur Installationszuordnung. Grundlegende Fehler- und Leistungsdiagnosen auf unseren eigenen Servern bleiben aktiviert. Funktionsschalter verwenden weiterhin einen Client im Arbeitsspeicher; bei angemeldeten Konten können sie deine Kontokennung nutzen.",
       "changeBody": "Ändere deine Antwort über Datenschutzwahl im Website-Fußbereich oder Nutzungsanalysen in den Einstellungen. Wir speichern deine Wahl auf dem Gerät und bei angemeldeten Konten auch im Konto. Eine Ablehnung im Konto überschreibt Gerätefreigaben; eine Kontofreigabe gilt für Geräte ohne Antwort. Der Entscheidungsverlauf bleibt als Zustimmungsnachweis bis zur Kontolöschung gespeichert. Anonyme, kurzlebige Ereignisse zum Zustand von Updates und Hallenanzeigen bleiben zur Dienstzuverlässigkeit aktiv."
     }
   },

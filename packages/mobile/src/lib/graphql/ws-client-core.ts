@@ -287,7 +287,7 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
           return {
             ...(token ? { authToken: token } : {}),
             [CLIENT_IDENTITY_CONNECTION_PARAM]: getClientIdentity(),
-            clientPlatform: CLIENT_PLATFORM,
+            [CLIENT_PLATFORM_CONNECTION_PARAM]: CLIENT_PLATFORM,
           };
         },
       });

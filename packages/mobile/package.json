@@ -137,7 +137,6 @@
         "expo-modules-core",
         "expo-app-metrics",
         "expo-observe",
-        "@sentry/react-native",
         "posthog-react-native-session-replay"
       ]
     },
