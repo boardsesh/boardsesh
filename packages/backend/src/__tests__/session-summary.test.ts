@@ -147,9 +147,6 @@ describe('generateSessionSummary', () => {
         sends: 4,
         flashes: 1,
         attempts: 8,
-        allSends: 4,
-        allFlashes: 1,
-        allAttempts: 8,
       },
       {
         userId: 'user-2',
@@ -158,9 +155,6 @@ describe('generateSessionSummary', () => {
         sends: 2,
         flashes: 0,
         attempts: 5,
-        allSends: 2,
-        allFlashes: 0,
-        allAttempts: 5,
       },
     ];
 
@@ -435,9 +429,6 @@ describe('generateSessionSummary', () => {
         sends: 10,
         flashes: 3,
         attempts: 15,
-        allSends: 10,
-        allFlashes: 3,
-        allAttempts: 15,
       },
       {
         userId: 'user-2',
@@ -446,9 +437,6 @@ describe('generateSessionSummary', () => {
         sends: 5,
         flashes: 1,
         attempts: 20,
-        allSends: 5,
-        allFlashes: 1,
-        allAttempts: 20,
       },
       {
         userId: 'user-3',
@@ -457,9 +445,6 @@ describe('generateSessionSummary', () => {
         sends: 0,
         flashes: 0,
         attempts: 3,
-        allSends: 0,
-        allFlashes: 0,
-        allAttempts: 3,
       },
     ];
 

@@ -475,7 +475,9 @@ export async function getSessionFeed(
   const sessions: SessionFeedItem[] = await Promise.all(
     resultRows.map(async (row) => {
       const isDailyHighlight = row.session_type === 'daily_highlight';
-      const participants = isDailyHighlight ? (dailyParticipantMap.get(row.session_id) ?? []) : (participantMap.get(row.session_id) ?? []);
+      const participants = isDailyHighlight
+        ? (dailyParticipantMap.get(row.session_id) ?? [])
+        : (participantMap.get(row.session_id) ?? []);
       const gradeDistribution = isDailyHighlight
         ? (dailyGradeDistMap.get(row.session_id) ?? [])
         : (gradeDistMap.get(row.session_id) ?? []);
@@ -1303,7 +1305,8 @@ async function fetchDailyParticipantsBatch(
     JOIN boardsesh_ticks t ON t.user_id = daily_keys.user_id AND t.climbed_at::date = daily_keys.day AND t.session_id IS NULL
     LEFT JOIN users u ON u.id = t.user_id
     LEFT JOIN user_profiles up ON up.user_id = t.user_id
-    WHERE ${sprayTickVisibleSql('t', viewerUserId)} ${tickScopeFilter(boardIdFilter, snapshotAt)}
+    WHERE ${tickPrivacyCondition(viewerUserId, alias(dbSchema.boardseshTicks, 't'))}
+      AND ${sprayTickVisibleSql('t', viewerUserId)} ${tickScopeFilter(boardIdFilter, snapshotAt)}
     GROUP BY daily_keys.session_id, t.user_id, up.display_name, u.name, up.avatar_url, u.image
   `);
   const participantsBySession = new Map<string, SessionFeedParticipant[]>();

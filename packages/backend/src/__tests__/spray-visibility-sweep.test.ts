@@ -2442,7 +2442,7 @@ describe('private spray social references and anonymous aggregates', () => {
     });
   });
 
-  it('excludes deleted spray smart refs from stranger totals and retains author counts', async () => {
+  it('excludes deleted spray smart refs and retains the author’s live climb counts', async () => {
     const document =
       'query Privacy($input: GetSmartPlaylistInput!) { smartPlaylist(input: $input) { totalCount hasMore meta { climbCount } climbs { uuid } } }';
     for (const type of ['FIVE_STARS', 'LIKED_CLIMBS']) {
@@ -2453,7 +2453,7 @@ describe('private spray social references and anonymous aggregates', () => {
       }
       expect(
         await ask6037(ctxFor(OWNER), document, { input: { type, userId: OWNER, boardName: 'spray' } }),
-      ).toMatchObject({ smartPlaylist: { totalCount: 2, meta: { climbCount: 2 } } });
+      ).toMatchObject({ smartPlaylist: { totalCount: 1, meta: { climbCount: 1 } } });
     }
   });
 
