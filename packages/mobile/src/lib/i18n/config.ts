@@ -9,9 +9,10 @@ import 'intl-pluralrules';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { getLocales } from 'expo-localization';
-import { SUPPORTED_LOCALES, DEFAULT_LOCALE, DEFAULT_NAMESPACE, MOBILE_NAMESPACES, type Locale } from '@boardsesh/i18n';
+import { DEFAULT_LOCALE, DEFAULT_NAMESPACE, MOBILE_NAMESPACES, type Locale } from '@boardsesh/i18n';
 import { setRelativeTimeLocale } from '@boardsesh/profile-stats';
 import { SCREENSHOT_LOCALE_OVERRIDE } from '../screenshot-mode';
+import { matchDeviceLocale } from './match-device-locale';
 
 // --- Locale catalogs from @boardsesh/i18n ---
 // Static imports so Metro bundles only the namespaces the mobile app uses;
@@ -20,61 +21,73 @@ import commonEn from '@boardsesh/i18n/locales/en-US/common.json';
 import commonEs from '@boardsesh/i18n/locales/es/common.json';
 import commonFr from '@boardsesh/i18n/locales/fr/common.json';
 import commonDe from '@boardsesh/i18n/locales/de/common.json';
+import commonZhHans from '@boardsesh/i18n/locales/zh-Hans/common.json';
 
 import authEn from '@boardsesh/i18n/locales/en-US/auth.json';
 import authEs from '@boardsesh/i18n/locales/es/auth.json';
 import authFr from '@boardsesh/i18n/locales/fr/auth.json';
 import authDe from '@boardsesh/i18n/locales/de/auth.json';
+import authZhHans from '@boardsesh/i18n/locales/zh-Hans/auth.json';
 
 import climbsEn from '@boardsesh/i18n/locales/en-US/climbs.json';
 import climbsEs from '@boardsesh/i18n/locales/es/climbs.json';
 import climbsFr from '@boardsesh/i18n/locales/fr/climbs.json';
 import climbsDe from '@boardsesh/i18n/locales/de/climbs.json';
+import climbsZhHans from '@boardsesh/i18n/locales/zh-Hans/climbs.json';
 
 import sessionEn from '@boardsesh/i18n/locales/en-US/session.json';
 import sessionEs from '@boardsesh/i18n/locales/es/session.json';
 import sessionFr from '@boardsesh/i18n/locales/fr/session.json';
 import sessionDe from '@boardsesh/i18n/locales/de/session.json';
+import sessionZhHans from '@boardsesh/i18n/locales/zh-Hans/session.json';
 
 import profileEn from '@boardsesh/i18n/locales/en-US/profile.json';
 import profileEs from '@boardsesh/i18n/locales/es/profile.json';
 import profileFr from '@boardsesh/i18n/locales/fr/profile.json';
 import profileDe from '@boardsesh/i18n/locales/de/profile.json';
+import profileZhHans from '@boardsesh/i18n/locales/zh-Hans/profile.json';
 
 import settingsEn from '@boardsesh/i18n/locales/en-US/settings.json';
 import settingsEs from '@boardsesh/i18n/locales/es/settings.json';
 import settingsFr from '@boardsesh/i18n/locales/fr/settings.json';
 import settingsDe from '@boardsesh/i18n/locales/de/settings.json';
+import settingsZhHans from '@boardsesh/i18n/locales/zh-Hans/settings.json';
 
 import playlistsEn from '@boardsesh/i18n/locales/en-US/playlists.json';
 import playlistsEs from '@boardsesh/i18n/locales/es/playlists.json';
 import playlistsFr from '@boardsesh/i18n/locales/fr/playlists.json';
 import playlistsDe from '@boardsesh/i18n/locales/de/playlists.json';
+import playlistsZhHans from '@boardsesh/i18n/locales/zh-Hans/playlists.json';
 
 import notificationsEn from '@boardsesh/i18n/locales/en-US/notifications.json';
 import notificationsEs from '@boardsesh/i18n/locales/es/notifications.json';
 import notificationsFr from '@boardsesh/i18n/locales/fr/notifications.json';
 import notificationsDe from '@boardsesh/i18n/locales/de/notifications.json';
+import notificationsZhHans from '@boardsesh/i18n/locales/zh-Hans/notifications.json';
 
 import feedEn from '@boardsesh/i18n/locales/en-US/feed.json';
 import feedEs from '@boardsesh/i18n/locales/es/feed.json';
 import feedFr from '@boardsesh/i18n/locales/fr/feed.json';
 import feedDe from '@boardsesh/i18n/locales/de/feed.json';
+import feedZhHans from '@boardsesh/i18n/locales/zh-Hans/feed.json';
 
 import youEn from '@boardsesh/i18n/locales/en-US/you.json';
 import youEs from '@boardsesh/i18n/locales/es/you.json';
 import youFr from '@boardsesh/i18n/locales/fr/you.json';
 import youDe from '@boardsesh/i18n/locales/de/you.json';
+import youZhHans from '@boardsesh/i18n/locales/zh-Hans/you.json';
 
 import boardsEn from '@boardsesh/i18n/locales/en-US/boards.json';
 import boardsEs from '@boardsesh/i18n/locales/es/boards.json';
 import boardsFr from '@boardsesh/i18n/locales/fr/boards.json';
 import boardsDe from '@boardsesh/i18n/locales/de/boards.json';
+import boardsZhHans from '@boardsesh/i18n/locales/zh-Hans/boards.json';
 
 import auroraEn from '@boardsesh/i18n/locales/en-US/aurora.json';
 import auroraEs from '@boardsesh/i18n/locales/es/aurora.json';
 import auroraFr from '@boardsesh/i18n/locales/fr/aurora.json';
 import auroraDe from '@boardsesh/i18n/locales/de/aurora.json';
+import auroraZhHans from '@boardsesh/i18n/locales/zh-Hans/aurora.json';
 
 const resources = {
   'en-US': {
@@ -133,6 +146,20 @@ const resources = {
     boards: boardsDe,
     aurora: auroraDe,
   },
+  'zh-Hans': {
+    common: commonZhHans,
+    auth: authZhHans,
+    climbs: climbsZhHans,
+    session: sessionZhHans,
+    profile: profileZhHans,
+    settings: settingsZhHans,
+    playlists: playlistsZhHans,
+    notifications: notificationsZhHans,
+    feed: feedZhHans,
+    you: youZhHans,
+    boards: boardsZhHans,
+    aurora: auroraZhHans,
+  },
 } as const;
 
 /**
@@ -147,25 +174,11 @@ export function detectDeviceLocale(): Locale {
     return SCREENSHOT_LOCALE_OVERRIDE;
   }
 
-  const deviceLocales = getLocales();
-
-  for (const deviceLocale of deviceLocales) {
-    // Try exact match first (e.g. "en-US")
-    const exactTag = deviceLocale.languageTag as Locale;
-    if ((SUPPORTED_LOCALES as readonly string[]).includes(exactTag)) {
-      return exactTag;
-    }
-
-    // Try language-only match (e.g. "es" from "es-MX")
-    const languageCode = deviceLocale.languageCode;
-    if (languageCode) {
-      const languageMatch = SUPPORTED_LOCALES.find(
-        (locale) => locale === languageCode || locale.startsWith(`${languageCode}-`),
-      );
-      if (languageMatch) {
-        return languageMatch;
-      }
-    }
+  // Device order is the climber's own preference order: the first language the
+  // app can render wins. Script-aware matching lives in ./match-device-locale.
+  for (const deviceLocale of getLocales()) {
+    const matched = matchDeviceLocale(deviceLocale.languageTag);
+    if (matched) return matched;
   }
 
   return DEFAULT_LOCALE;

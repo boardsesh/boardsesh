@@ -304,6 +304,9 @@ const APP_STORE_LOCALES_BY_APP_LOCALE: Record<Locale, readonly string[]> = {
   es: ['es-ES', 'es-MX'],
   fr: ['fr-FR'],
   de: ['de-DE'],
+  // Not in STORE_READY_APP_LOCALES yet: Chinese screenshots wait for the native
+  // locale file and a CJK caption font (the compositor ships Roboto only).
+  'zh-Hans': ['zh-Hans'],
 };
 
 /** Default / `--locales all` set. Excludes app locales without store screenshot folders yet. */

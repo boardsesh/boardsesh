@@ -797,8 +797,9 @@ The path gate is the full {locale prefix} × {board tree root} cross product
 (4 × 9 = 36 `starts_with` clauses, 2,187 of the 4,096 characters a rule
 expression may hold), because the middleware tests the first segment of the
 **locale-stripped** path and Cloudflare cannot strip a prefix. A test reads
-`SUPPORTED_BOARDS` and `SUPPORTED_LOCALES` from their real source files and
-fails if either list grows without this one; another fails at 3,072 characters,
+`SUPPORTED_BOARDS` and `WEB_LOCALES` from their real source files and
+fails if either list grows without this one (app-only locales such as
+`zh-Hans` are not web routes and must stay out of it); another fails at 3,072 characters,
 so the cross product's growth gets compacted deliberately rather than
 discovered as a 400 during a production apply.
 
