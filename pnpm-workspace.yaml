@@ -54,16 +54,15 @@ overrides:
   react-native-screens: 4.26.2
 
 patchedDependencies:
-  expo-sqlite@57.0.2: patches/expo-sqlite@57.0.2.patch
+  expo-sqlite@57.0.4: patches/expo-sqlite@57.0.4.patch
   'postgres@3.4.9': packages/db/patches/postgres@3.4.9.patch
   'react-native-ble-plx@3.5.1': patches/react-native-ble-plx@3.5.1.patch
-  '@expo/fingerprint@0.20.11': patches/@expo__fingerprint@0.20.11.patch
-  '@expo/ui@57.0.14': patches/@expo__ui@57.0.14.patch
-  'expo-dev-launcher@57.0.16': patches/expo-dev-launcher@57.0.16.patch
-  'expo-image@57.0.3': patches/expo-image@57.0.3.patch
-  'expo-updates@57.0.19': patches/expo-updates@57.0.19.patch
+  '@expo/fingerprint@0.20.13': patches/@expo__fingerprint@0.20.13.patch
+  '@expo/ui@57.0.22': patches/@expo__ui@57.0.22.patch
+  'expo-dev-launcher@57.0.20': patches/expo-dev-launcher@57.0.20.patch
+  'expo-image@57.0.5': patches/expo-image@57.0.5.patch
+  'expo-updates@57.0.25': patches/expo-updates@57.0.25.patch
   'react-native-screens@4.26.2': patches/react-native-screens@4.26.2.patch
-  'expo-modules-core@57.0.14': patches/expo-modules-core@57.0.14.patch
 
 # pnpm blocks dependency lifecycle scripts unless they are listed here. Only
 # add a package after reviewing what its build script does.
