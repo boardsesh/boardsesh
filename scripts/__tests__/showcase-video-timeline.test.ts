@@ -29,16 +29,41 @@ describe('showcase timeline', () => {
 
   it('bakes the poster in as frame 0', () => {
     expect(SHOWCASE_POSTER_FRAME).toBe(0);
-    expect(SHOWCASE_SCENES[0].id).toBe('hook');
+    expect(SHOWCASE_SCENES[0].id).toBe('boards');
   });
 
-  it('alternates backgrounds, except the match cut into light and the hand-off to the end card', () => {
+  it('runs boards, the spray wall, then the feature scenes: 1644 frames, 54.8 s', () => {
+    expect(SHOWCASE_SCENES.map((scene) => [scene.id, scene.endFrame - scene.startFrame])).toEqual([
+      ['boards', 156],
+      ['spray', 180],
+      ['wall', 270],
+      ['crew', 282],
+      ['workouts', 168],
+      ['lock-screen', 180],
+      ['log', 216],
+      ['outro', 192],
+    ]);
+    expect(SHOWCASE_TOTAL_FRAMES).toBe(1644);
+    expect(SHOWCASE_TOTAL_FRAMES / SHOWCASE_FPS).toBeCloseTo(54.8);
+  });
+
+  it('alternates backgrounds from the first scene, except the hand-off to the end card', () => {
     const sameBackground = SHOWCASE_SCENES.slice(1).flatMap((scene, index) => {
       const previous = SHOWCASE_SCENES[index];
       return scene.background === previous.background ? [`${previous.id}→${scene.id}`] : [];
     });
-    expect(sameBackground).toEqual(['hook→light', 'log→outro']);
-    // The loop closes dark to dark, into the hook's poster frame.
+    expect(sameBackground).toEqual(['log→outro']);
+    expect(SHOWCASE_SCENES.map((scene) => scene.background)).toEqual([
+      'dark',
+      'light',
+      'dark',
+      'light',
+      'dark',
+      'light',
+      'dark',
+      'dark',
+    ]);
+    // The loop closes dark to dark, into the boards scene's poster frame.
     expect(SHOWCASE_SCENES[0].background).toBe('dark');
     expect(SHOWCASE_SCENES[SHOWCASE_SCENES.length - 1].background).toBe('dark');
   });
@@ -54,7 +79,9 @@ describe('showcase timeline', () => {
 
   it('lets only board phones and the island take go missing', () => {
     expect(SHOWCASE_OPTIONAL_TAKES.filter((takeId) => !takeId.startsWith('boards-'))).toEqual(['lock-screen']);
-    expect(SHOWCASE_OPTIONAL_TAKES).toHaveLength(9);
+    expect(SHOWCASE_OPTIONAL_TAKES).toHaveLength(10);
+    // The spray scene is not skippable: its take is required.
+    expect(SHOWCASE_OPTIONAL_TAKES).not.toContain('spray');
     expect(SHOWCASE_SKIPPABLE_SCENES).toEqual(['lock-screen']);
   });
 
@@ -80,8 +107,47 @@ describe('showcase timeline', () => {
       const previous = timeline.scenes[index];
       return scene.background === previous.background ? [`${previous.id}→${scene.id}`] : [];
     });
-    expect(sameBackground).toEqual(['hook→light']);
+    expect(sameBackground).toEqual([]);
+    expect(timeline.totalFrames).toBe(1464);
     expect(timeline.scenes.find((scene) => scene.id === 'log')?.background).toBe('light');
+  });
+
+  it('alternates dark and light from the first scene of any plan; the last scene keeps its own', () => {
+    const every = new Set(SHOWCASE_TAKE_IDS);
+    const reel = resolveTimeline(every, [
+      { id: 'boards' },
+      { id: 'spray' },
+      { id: 'crew' },
+      { id: 'lock-screen', frames: 150 },
+      { id: 'outro', frames: 129 },
+    ]);
+    expect(reel.scenes.map((scene) => [scene.id, scene.background])).toEqual([
+      ['boards', 'dark'],
+      ['spray', 'light'],
+      ['crew', 'dark'],
+      ['lock-screen', 'light'],
+      ['outro', 'dark'],
+    ]);
+    const play = resolveTimeline(every, [
+      { id: 'boards' },
+      { id: 'spray' },
+      { id: 'crew' },
+      { id: 'lock-screen' },
+      { id: 'log' },
+      { id: 'outro', frames: 129 },
+    ]);
+    expect(play.scenes.map((scene) => [scene.id, scene.background])).toEqual([
+      ['boards', 'dark'],
+      ['spray', 'light'],
+      ['crew', 'dark'],
+      ['lock-screen', 'light'],
+      ['log', 'dark'],
+      ['outro', 'dark'],
+    ]);
+    // An odd scene before the end card would otherwise meet it light on dark, which is fine: only the
+    // last scene is pinned.
+    const short = resolveTimeline(every, [{ id: 'boards' }, { id: 'spray' }, { id: 'outro' }]);
+    expect(short.scenes.map((scene) => scene.background)).toEqual(['dark', 'light', 'dark']);
   });
 
   it('asks each take for its scene plus a second either side', () => {

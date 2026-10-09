@@ -62,8 +62,8 @@ for (const browserProfile of platformBrowsers) {
       expect(html).not.toContain(encodeURIComponent(`/images/app/${oppositePlatform}/`));
       const screenshots = page.locator('[data-marketing-shot]');
       // English hero: the demo video replaces the three-phone stack, so only the
-      // feature strip's three shots remain.
-      await expect(screenshots).toHaveCount(3);
+      // feature strip's four shots remain.
+      await expect(screenshots).toHaveCount(4);
       const showcase = page.locator('figure:has(video)');
       await expect(showcase).toHaveCount(1);
       await expect(showcase.locator('img[fetchpriority="high"]')).toHaveCount(1);
@@ -97,7 +97,7 @@ for (const browserProfile of platformBrowsers) {
   });
 }
 
-test('non-English homepages keep the six-shot phone stack and no demo video', async ({ browser, baseURL }) => {
+test('non-English homepages keep the seven-shot phone stack and no demo video', async ({ browser, baseURL }) => {
   const context = await browser.newContext({
     baseURL,
     ignoreHTTPSErrors,
@@ -107,7 +107,7 @@ test('non-English homepages keep the six-shot phone stack and no demo video', as
   try {
     const page = await context.newPage();
     await page.goto('/de');
-    await expect(page.locator('[data-marketing-shot]')).toHaveCount(6);
+    await expect(page.locator('[data-marketing-shot]')).toHaveCount(7);
     await expect(page.locator('video')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'iOS', exact: true })).toHaveCount(1);
   } finally {
@@ -126,7 +126,7 @@ test('desktop preview switching persists when navigating to About', async ({ bro
     const page = await context.newPage();
     await page.goto('/');
     await page.getByRole('button', { name: 'iOS', exact: true }).click();
-    await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(3);
+    await expect(page.locator('[data-preview-platform="ios"]')).toHaveCount(4);
     await page.getByTestId('marketing-header').getByRole('link', { name: 'About', exact: true }).click();
     await expect(page).toHaveURL(/\/about$/);
     await expect(
@@ -321,7 +321,7 @@ for (const width of [320, 390, 430]) {
       await expect(heading).toHaveCSS('letter-spacing', '-0.56px');
     }
     const features = page.getByTestId('home-feature-column');
-    await expect(features).toHaveCount(3);
+    await expect(features).toHaveCount(4);
     for (const feature of await features.all()) {
       // The feature cards are PageCards now. They used to hand-roll surface +
       // radius + padding and NO border, so their bottom edge barely read against

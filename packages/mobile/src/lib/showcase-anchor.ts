@@ -18,7 +18,6 @@ import { createElement, useCallback, useEffect, useMemo, useRef, type ReactNode 
 import { View, type LayoutChangeEvent } from 'react-native';
 
 export const SHOWCASE_ANCHOR_NAMES = [
-  'wall-pill',
   'board-surface',
   'invite-qr',
   'queue-row-avatar',

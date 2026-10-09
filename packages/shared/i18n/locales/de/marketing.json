@@ -114,11 +114,10 @@
       "title": "Frische Beta"
     },
     "showcase": {
-      "videoLabel": "Demo: ein Kilter Board vom Handy beleuchten, Boards wechseln, eine Crew-Warteschlange führen und eine Begehung eintragen.",
+      "videoLabel": "Demo: jedes Board in einer App, auch eine Spraywand, dann eine Crew-Warteschlange, ein Trainingsplan und eine eingetragene Begehung.",
       "scenes": {
-        "hook": "Dein Board. Vom Handy beleuchtet.",
-        "light": "Wische, und das Board folgt.",
         "boards": "Jedes Board. Eine App.",
+        "spray": "Auch deine Spraywand.",
         "wall": "Sieh, was an der Wand läuft.",
         "crew": "Deine Crew. Eine Warteschlange.",
         "workouts": "Gib deiner Session einen Plan.",
@@ -147,6 +146,11 @@
         "title": "Alle deine Boards. Ein Profil.",
         "body": "Sieh Begehungen und Fortschritte an jedem Board.",
         "shotAlt": "Deine Begehungen und Fortschritte an allen Boards im Boardsesh-Profil"
+      },
+      "spray": {
+        "title": "Auch deine Spraywand.",
+        "body": "Fotografier jede Wand. Schraub und logge Boulder darauf.",
+        "shotAlt": "Ein hervorgehobener Boulder auf dem Foto einer Spraywand in Boardsesh"
       }
     },
     "support": {

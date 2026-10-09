@@ -40,6 +40,12 @@
   object-position: center 38%;
 }
 
+/* Centres the crop on the wall photo, which sits lower in the play view than
+   the store shots' subjects. */
+.detail[data-marketing-shot='spray-wall'] .image {
+  object-position: center 47%;
+}
+
 .switch {
   align-self: flex-start;
   border-radius: var(--border-radius-full);

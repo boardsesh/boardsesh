@@ -33,11 +33,13 @@ import {
 import {
   SHOWCASE_BOARD_CONFIG_LINKS,
   SHOWCASE_BOARD_SLOTS,
+  SHOWCASE_PRIME_SETTLE_MS,
   SHOWCASE_TAKES,
   assertShowcaseTakesComplete,
   expectedAnchorsFor,
   isShowcaseFlow,
   showcaseFlowPath,
+  findShowcaseTake,
 } from '../lib/showcase-video/takes';
 import { requiredTakeSeconds } from '../lib/showcase-video/timeline';
 
@@ -102,6 +104,9 @@ describe('parseRecordArgs', () => {
 
   it('rejects an unknown take, backend or flag', () => {
     expect(() => parseRecordArgs(['--only', 'hook'])).toThrow(/unknown take "hook"/);
+    // The light take went with its scene.
+    expect(() => parseRecordArgs(['--only', 'light'])).toThrow(/unknown take "light"/);
+    expect(parseRecordArgs(['--only', 'spray,boards-spray']).only).toEqual(['spray', 'boards-spray']);
     expect(() => parseRecordArgs(['--backend', 'staging'])).toThrow(/prod or local/);
     expect(() => parseRecordArgs(['--fast'])).toThrow(/Unknown argument: --fast/);
     expect(() => parseRecordArgs(['--only'])).toThrow(/requires a value/);
@@ -234,7 +239,7 @@ describe('splitCompleteLines', () => {
   });
 
   it('strips CRLF line endings and carries the unterminated tail', () => {
-    const line = anchorLine('wall-pill', 7);
+    const line = anchorLine('workout-type', 7);
     const { lines, rest } = splitCompleteLines(Buffer.alloc(0), Buffer.from(`${line}\r\nnext\r\npart`));
     expect(lines).toEqual([line, 'next']);
     expect(rest.toString('utf8')).toBe('part');
@@ -247,14 +252,14 @@ describe('buildAnchorsFile', () => {
 
   it('stamps against the trimmed start, pins earlier samples to 0, drops repeats and the overrun', () => {
     const arrivals = [
-      ...anchorArrivalsFromChunk(`${anchorLine('wall-pill', 10)}\n${anchorLine('wall-pill', 11)}`, 0),
-      ...anchorArrivalsFromChunk(anchorLine('wall-pill', 11), 9000),
-      ...anchorArrivalsFromChunk(`noise\n${anchorLine('wall-pill', 30)}`, 10_500),
+      ...anchorArrivalsFromChunk(`${anchorLine('workout-type', 10)}\n${anchorLine('workout-type', 11)}`, 0),
+      ...anchorArrivalsFromChunk(anchorLine('workout-type', 11), 9000),
+      ...anchorArrivalsFromChunk(`noise\n${anchorLine('workout-type', 30)}`, 10_500),
       ...anchorArrivalsFromChunk(anchorLine('board-surface', 4), 12_000),
-      ...anchorArrivalsFromChunk(anchorLine('wall-pill', 99), 60_000),
+      ...anchorArrivalsFromChunk(anchorLine('workout-type', 99), 60_000),
     ];
     const file = buildAnchorsFile({
-      takeId: 'light',
+      takeId: 'spray',
       arrivals,
       recordStartMs: 1000,
       trimSeconds: 6,
@@ -262,10 +267,10 @@ describe('buildAnchorsFile', () => {
       screen,
     });
     expect(file).toEqual<ShowcaseAnchorsFile>({
-      takeId: 'light',
+      takeId: 'spray',
       screen,
       anchors: {
-        'wall-pill': [
+        'workout-type': [
           { t: 0, x: 11, y: 118, width: 132, height: 32 },
           { t: 3.5, x: 30, y: 118, width: 132, height: 32 },
         ],
@@ -335,18 +340,55 @@ describe('anchorTapValues', () => {
 });
 
 describe('findBoardSlotProblem', () => {
-  it('passes the right kind of wall', () => {
-    const log = ' LOG  [screenshot] board[2] "MoonBoard" -> "Home Moon" (MoonBoard 2016 L2 S1 @40°)';
-    expect(findBoardSlotProblem(log, 2, 'moonboard')).toBeNull();
+  const line = (slot: number, name: string, description: string) =>
+    ` LOG  [screenshot] board[${slot}] "selector" -> "${name}" (${description})`;
+
+  it('reads the board type the app ends the description with', () => {
+    expect(
+      findBoardSlotProblem(line(2, 'Home Moon', 'MoonBoard 2016 L2 S1 @40°, moonboard'), 2, 'moonboard'),
+    ).toBeNull();
+    expect(
+      findBoardSlotProblem(line(0, "Marco's Board", 'Kilter Board Original L1 S7 @40°, kilter'), 0, 'kilter'),
+    ).toBeNull();
+    // No layout name: the type still closes the line.
+    expect(findBoardSlotProblem(line(1, 'Gym', 'L10 S18 @40°, tension'), 1, 'tension')).toBeNull();
   });
 
-  it('names a wrong wall, a miss with its roster, and a slot never resolved', () => {
-    expect(findBoardSlotProblem(' LOG  [screenshot] board[1] "X" -> "Gym" (kilter L8 S21 @40°)', 1, 'tension')).toMatch(
-      /non-tension wall/,
+  it('accepts a spray wall whatever its owner called it', () => {
+    // Neither the wall's name nor its layout's says "spray".
+    const garage = line(6, 'The Woodie', 'The Woodie L90012 S1 @35°, spray');
+    expect(findBoardSlotProblem(garage, 6, 'spray')).toBeNull();
+    expect(findBoardSlotProblem(garage, 6, 'kilter')).toMatch(/non-kilter wall/);
+  });
+
+  it('never takes the kind from free text: a Kilter called "Tension Fans Kilter" is not a Tension', () => {
+    const misnamed = line(1, 'Tension Fans Kilter', 'Kilter Board Original L1 S7 @40°, kilter');
+    expect(findBoardSlotProblem(misnamed, 1, 'tension')).toMatch(/slot 1 landed on a non-tension wall/);
+    expect(findBoardSlotProblem(misnamed, 1, 'kilter')).toBeNull();
+    // Nor from the layout's name, when the type says otherwise.
+    const borrowed = line(0, 'Garage', 'Kilter Homewall copy L90013 S1 @40°, spray');
+    expect(findBoardSlotProblem(borrowed, 0, 'kilter')).toMatch(/non-kilter wall/);
+    // Brackets and quotes in the name or the layout don't move what is read.
+    const bracketed = line(1, 'Wall (tension)', 'Kilter Board Original L1 S7 @40°, kilter');
+    expect(findBoardSlotProblem(bracketed, 1, 'tension')).toMatch(/non-tension wall/);
+    const quotedLayout = line(6, 'Cave', 'The "Cave" (garage) L90014 S1 @40°, spray');
+    expect(findBoardSlotProblem(quotedLayout, 6, 'spray')).toBeNull();
+    const posing = line(6, 'Cave', 'x" (kilter) L90015 S1 @40°, spray');
+    expect(findBoardSlotProblem(posing, 6, 'kilter')).toMatch(/non-kilter wall/);
+  });
+
+  it('refuses a line with no board type instead of guessing from the layout', () => {
+    expect(findBoardSlotProblem(line(2, 'Home Moon', 'MoonBoard 2016 L2 S1 @40°'), 2, 'moonboard')).toMatch(
+      /names no board type/,
     );
+  });
+
+  it('uses the last line for the slot, and names a miss with its roster or a slot never resolved', () => {
+    const switched = [line(0, 'Old', 'L10 S18 @40°, tension'), line(0, 'New', 'L1 S7 @40°, kilter')].join('\n');
+    expect(findBoardSlotProblem(switched, 0, 'kilter')).toBeNull();
     const miss = [
       ' LOG  [screenshot] WARN board[2] selector "MoonBoard" matched nothing; using position',
-      ' LOG  [screenshot] board roster: "HQ" (kilter L1 S7 @40°)',
+      ' LOG  [screenshot] board roster: "HQ" (L1 S7 @40°, kilter)',
     ].join('\n');
     expect(findBoardSlotProblem(miss, 2, 'moonboard')).toMatch(/matched no wall \(board roster: "HQ"/);
     expect(findBoardSlotProblem('', 0, 'kilter')).toMatch(/never resolved board slot 0/);
@@ -434,6 +476,7 @@ describe('frame checks', () => {
 describe('checkTake', () => {
   const passing: TakeCheckInput = {
     takeId: 'crew',
+    platform: 'ios',
     expectedAnchors: ['invite-qr', 'queue-row-avatar'],
     anchors: {
       takeId: 'crew',
@@ -468,7 +511,10 @@ describe('checkTake', () => {
     expect(problems.every((problem) => problem.startsWith('[crew]'))).toBe(true);
     expect(problems.join('\n')).toMatch(/needs 6\.00s/);
     expect(problems.join('\n')).toMatch(/first frame is blank/);
-    expect(problems.join('\n')).toMatch(/reference\/crew\.jpg/);
+    expect(problems.join('\n')).toMatch(/reference\/ios\/crew\.jpg/);
+    // Each platform has its own reference frames: the same take opens on different pixels.
+    const android = checkTake({ ...passing, platform: 'android', referenceDiffRatio: REFERENCE_MAX_DIFF_RATIO + 0.1 });
+    expect(android.join('\n')).toMatch(/reference\/android\/crew\.jpg/);
     expect(problems.join('\n')).toMatch(/wrong wall/);
     expect(problems.join('\n')).toMatch(/invite-qr, queue-row-avatar/);
   });
@@ -482,18 +528,19 @@ describe('take registry', () => {
   it('covers every contract take once', () => {
     expect(() => assertShowcaseTakesComplete()).not.toThrow();
     expect(SHOWCASE_TAKES.map((take) => take.id)).toEqual([...SHOWCASE_TAKE_IDS]);
-    expect(() => assertShowcaseTakesComplete(SHOWCASE_TAKES.slice(1))).toThrow(/missing: light/);
+    expect(() => assertShowcaseTakesComplete(SHOWCASE_TAKES.slice(1))).toThrow(/missing: boards-kilter/);
   });
 
   it('takes its durations and callouts from the timeline', () => {
     for (const take of SHOWCASE_TAKES) expect(take.minSeconds).toBe(requiredTakeSeconds(take.id));
-    expect(expectedAnchorsFor('light')).toEqual(['wall-pill', 'board-surface']);
+    expect(expectedAnchorsFor('spray')).toEqual(['board-surface']);
     expect(expectedAnchorsFor('crew')).toEqual(['invite-qr', 'queue-row-avatar', 'play-next']);
     // Recorder-authored island buttons are not app anchors.
     expect(expectedAnchorsFor('lock-screen')).toEqual([]);
     expect(expectedAnchorsFor('log')).toEqual(['profile-board-filter', 'activity-calendar']);
-    // Three phones in one scene: nothing to call out on any one of them.
+    // Nine phones in one scene: nothing to call out on any one of them.
     expect(expectedAnchorsFor('boards-tension')).toEqual([]);
+    expect(expectedAnchorsFor('boards-spray')).toEqual([]);
   });
 
   it('raises at least one moment mark in every take that moves', () => {
@@ -527,7 +574,33 @@ describe('take registry', () => {
     }
   });
 
+  it('films the spray wall twice: among the boards, and on its own with two swipes', () => {
+    const slot = SHOWCASE_BOARD_SLOTS.indexOf('spray');
+    expect(slot).toBe(6);
+    const board = findShowcaseTake('boards-spray');
+    expect(board.flow).toBe('boards.yaml');
+    expect(board.board).toEqual({ slot, kind: 'spray' });
+    expect(board.primeLinks).toEqual(['home', 'climbs?screenshotOpenFirst=1&screenshotBoardIndex=6']);
+    const spray = findShowcaseTake('spray');
+    expect(spray.flow).toBe('spray.yaml');
+    expect(spray.board).toEqual({ slot, kind: 'spray' });
+    expect(spray.primeLinks).toEqual(board.primeLinks);
+    for (const take of [board, spray]) {
+      // The dev DB has no spray wall.
+      expect(take.unavailable.local, take.id).toBeTruthy();
+      expect(take.unavailable.prod, take.id).toBeUndefined();
+      // The wall's photo is fetched: it gets longer to draw than a catalogue board.
+      expect(take.primeSettleMs, take.id).toBe(8000);
+    }
+    expect(findShowcaseTake('boards-kilter').primeSettleMs).toBe(SHOWCASE_PRIME_SETTLE_MS);
+    expect(SHOWCASE_PRIME_SETTLE_MS).toBe(3000);
+    const flow = readFileSync(showcaseFlowPath('spray.yaml'), 'utf8');
+    expect(flow.match(/'\/mark\/[a-z0-9-]+'/g)).toEqual(["'/mark/flow-start'", "'/mark/next-1'", "'/mark/next-2'"]);
+  });
+
   it('names a wall for every board slot on prod, and marks the rest unavailable locally', () => {
+    expect(SHOWCASE_BOARD_SLOTS).toEqual(['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray']);
+    expect(SHOWCASE_DEFAULT_BOARDS.prod.split('|')).toHaveLength(7);
     expect(SHOWCASE_DEFAULT_BOARDS.prod.split('|')).toHaveLength(SHOWCASE_BOARD_SLOTS.length);
     const localSlots = SHOWCASE_DEFAULT_BOARDS.local.split('|').length;
     for (const take of SHOWCASE_TAKES) {
@@ -541,7 +614,7 @@ describe('take registry', () => {
       if (take.privateSession) expect(take.teardownFlows).toEqual(['session-end.yaml']);
     }
     const kinds = SHOWCASE_TAKES.filter((take) => take.id.startsWith('boards-')).map((take) => take.board?.kind);
-    expect(new Set(kinds).size).toBe(8);
+    expect(new Set(kinds).size).toBe(9);
     for (const take of SHOWCASE_TAKES.filter((candidate) => candidate.board?.slot === null)) {
       const kind = take.board?.kind;
       expect(kind && SHOWCASE_BOARD_CONFIG_LINKS[kind], take.id).toBeTruthy();

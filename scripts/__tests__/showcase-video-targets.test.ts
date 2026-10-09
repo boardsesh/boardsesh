@@ -76,8 +76,10 @@ describe('the target registry', () => {
         expect(target.scenes.length, target.name).toBeGreaterThan(0);
         for (const step of target.scenes) expect(storyboard.has(step.id), `${target.name}/${step.id}`).toBe(true);
         expect(new Set(target.scenes.map((step) => step.id)).size, target.name).toBe(target.scenes.length);
-        // The loop: every motion cut opens on the hook and closes on the outro.
-        expect(target.scenes[0].id, target.name).toBe('hook');
+        // The loop: every motion cut opens on the boards trio (the poster, and where
+        // the closer lands), goes straight to the spray wall, and closes on the outro.
+        expect(target.scenes[0].id, target.name).toBe('boards');
+        expect(target.scenes[1].id, target.name).toBe('spray');
         expect(target.scenes.at(-1)?.id, target.name).toBe('outro');
       } else {
         expect(target.scenes, target.name).toEqual([]);
@@ -103,10 +105,10 @@ describe('the target registry', () => {
 });
 
 describe('the homepage target', () => {
-  it("is today's output exactly: the lite 9:16 hero, rotated to the poster frame, with the donation line", () => {
+  it("is today's output exactly: the lite 9:16 hero, opening on frame 0, with the donation line", () => {
     expect(SHOWCASE_TARGETS.homepage).toEqual({
       name: 'homepage',
-      summary: 'The homepage hero: lite 9:16 web encodes opening on the light scene, and its poster',
+      summary: 'The homepage hero: lite 9:16 web encodes opening on the boards scene, and its poster',
       layout: 'motion',
       scenes: SHOWCASE_FULL_PLAN,
       clips: [],
@@ -132,7 +134,7 @@ describe('the homepage target', () => {
             webm: `${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.webm`,
             mp4: `${SHOWCASE_WEB_VIDEO_DIR}/showcase-9x16-lite.mp4`,
             poster: `${SHOWCASE_WEB_POSTER_DIR}/showcase-hero-9x16.webp`,
-            posterFrame: 142,
+            posterFrame: 0,
             size: { width: 720, height: 1280 },
             maxWebmBytes: 1_750_000,
             maxMp4Bytes: 1_900_000,
@@ -140,7 +142,7 @@ describe('the homepage target', () => {
         },
       ],
     });
-    expect(SHOWCASE_WEB_POSTER_FRAME).toBe(142);
+    expect(SHOWCASE_WEB_POSTER_FRAME).toBe(0);
     expect(SHOWCASE_WEB_LITE).toEqual({
       size: { width: 720, height: 1280 },
       maxWebmBytes: 1_750_000,
@@ -205,7 +207,7 @@ describe('which targets a render covers', () => {
 describe('durations', () => {
   it('holds motion and full-bleed cuts to the same window, both ends', () => {
     const reel = SHOWCASE_TARGETS.reel;
-    expect(() => assertTargetLength(reel, 921)).not.toThrow();
+    expect(() => assertTargetLength(reel, 897)).not.toThrow();
     expect(() => assertTargetLength(reel, reel.maxSeconds * 30 + 1)).toThrow(/outside its 20–32 s window/);
     expect(() => assertTargetLength(reel, reel.minSeconds * 30 - 1)).toThrow(/outside/);
     expect(() => assertTargetLength(SHOWCASE_TARGETS['app-store'], 14 * 30)).toThrow(/15–30 s/);
@@ -228,26 +230,52 @@ describe('durations', () => {
   });
 
   it('lands each cut where it is going: reel about 30 s, play 30–45 s, the App Preview 15–30 s', () => {
-    expect(targetSeconds(SHOWCASE_TARGETS.homepage)).toBeCloseTo(56.8);
-    expect(targetSeconds(SHOWCASE_TARGETS.social)).toBeCloseTo(56.8);
-    expect(targetSeconds(SHOWCASE_TARGETS.reel)).toBeGreaterThan(27);
-    expect(targetSeconds(SHOWCASE_TARGETS.reel)).toBeLessThanOrEqual(32);
-    expect(targetSeconds(SHOWCASE_TARGETS['play-promo'])).toBeGreaterThanOrEqual(30);
-    expect(targetSeconds(SHOWCASE_TARGETS['play-promo'])).toBeLessThanOrEqual(45);
+    expect(targetSeconds(SHOWCASE_TARGETS.homepage)).toBeCloseTo(54.8);
+    expect(targetSeconds(SHOWCASE_TARGETS.social)).toBeCloseTo(54.8);
+    expect(targetSeconds(SHOWCASE_TARGETS.reel)).toBeCloseTo(29.9);
+    expect(targetSeconds(SHOWCASE_TARGETS['play-promo'])).toBeCloseTo(38.1);
     const store = targetSeconds(SHOWCASE_TARGETS['app-store']);
+    expect(store).toBeCloseTo(28);
     expect(store).toBeGreaterThanOrEqual(APPLE_APP_PREVIEW_SPEC.minSeconds);
     expect(store).toBeLessThanOrEqual(APPLE_APP_PREVIEW_SPEC.maxSeconds);
   });
 
-  it('cuts the reel to hook, light, boards, crew, island and outro, in that order', () => {
-    expect(SHOWCASE_TARGETS.reel.scenes.map((step) => step.id)).toEqual([
-      'hook',
-      'light',
-      'boards',
-      'crew',
-      'lock-screen',
-      'outro',
+  it('cuts the reel to boards, spray, crew, island and outro, and the play promo adds the log', () => {
+    expect(SHOWCASE_TARGETS.reel.scenes).toEqual([
+      { id: 'boards' },
+      { id: 'spray' },
+      { id: 'crew' },
+      { id: 'lock-screen', frames: 150 },
+      { id: 'outro', frames: 129 },
     ]);
+    expect(SHOWCASE_TARGETS['play-promo'].scenes).toEqual([
+      { id: 'boards' },
+      { id: 'spray' },
+      { id: 'crew' },
+      { id: 'lock-screen' },
+      { id: 'log' },
+      { id: 'outro', frames: 129 },
+    ]);
+  });
+
+  it('opens the App Preview on the spray wall, then wall, crew, island and log', () => {
+    const { clips } = SHOWCASE_TARGETS['app-store'];
+    expect(clips.map((clip) => [clip.take, clip.frames])).toEqual([
+      ['spray', 135],
+      ['wall', 165],
+      ['crew', 225],
+      ['lock-screen', 165],
+      ['log', 150],
+    ]);
+    expect(clips[0]).toEqual({
+      take: 'spray',
+      caption: 'spray',
+      captionTop: 14,
+      segments: [{ mark: 'next-1', from: -2 }],
+      frames: 135,
+    });
+    expect(copy.appStore.captions.spray).toBe('Your spray wall, too');
+    expect(copy.appStore.captions).not.toHaveProperty('light');
   });
 });
 

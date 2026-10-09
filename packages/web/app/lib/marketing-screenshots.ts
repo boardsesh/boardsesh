@@ -1,7 +1,7 @@
 import type { Locale } from './i18n/config';
 import type { MarketingPlatform } from './marketing-platform';
 
-export type MarketingShot = 'kilter' | 'tension' | 'moonboard' | 'queue' | 'wall-status' | 'profile';
+export type MarketingShot = 'kilter' | 'tension' | 'moonboard' | 'queue' | 'wall-status' | 'profile' | 'spray-wall';
 type MarketingCapture = { src: string; width: number; height: number };
 type MarketingCaptureSet = Record<MarketingShot, MarketingCapture>;
 type LocalizedCaptureSets = { 'en-US': MarketingCaptureSet } & Partial<
@@ -21,6 +21,7 @@ function englishCaptures(platform: MarketingPlatform, width: number): MarketingC
     queue: capture('queue'),
     'wall-status': capture('wall-status'),
     profile: capture('profile'),
+    'spray-wall': capture('spray-wall'),
   };
 }
 

@@ -9,7 +9,8 @@
  *   vp run video:record -- --dry-run                     # print the plan, touch nothing
  *
  * Flags: --only <take[,take]> (repeatable), --backend prod|local (default prod),
- * --app-path <Boardsesh.app>, --boards "<kilter>|<tension>|<moonboard>",
+ * --app-path <Boardsesh.app>,
+ * --boards "<kilter>|<tension>|<moonboard>|<woods>|<decoy>|<grasshopper>|<spray>" (seven walls by name),
  * --env-file <path> (default ~/.config/boardsesh/showcase-secrets.env),
  * --keep-raw, --skip-anchor-check, --dry-run.
  *
@@ -1037,8 +1038,12 @@ async function frameStdevs(file: string): Promise<number[]> {
   return stats.channels.slice(0, 3).map((channel) => channel.stdev);
 }
 
-async function referenceDiff(takeId: ShowcaseTakeId, firstFrame: string): Promise<number | null> {
-  const reference = resolve(REFERENCE_DIR, `${takeId}.jpg`);
+async function referenceDiff(
+  takeId: ShowcaseTakeId,
+  firstFrame: string,
+  platform: ShowcasePlatform,
+): Promise<number | null> {
+  const reference = resolve(REFERENCE_DIR, platform, `${takeId}.jpg`);
   if (!existsSync(reference)) return null;
   const thumbnail = (file: string): Promise<Buffer> =>
     sharp(file).resize(100, 217, { fit: 'fill' }).removeAlpha().raw().toBuffer();
@@ -1093,7 +1098,7 @@ async function processTake(
   const seconds = frames / 30;
   const firstFrame = resolve(footageDir, '00001.jpg');
   const firstFrameBlank = frames > 0 ? isBlankFrame(await frameStdevs(firstFrame)) : true;
-  const referenceDiffRatio = frames > 0 ? await referenceDiff(take.id, firstFrame) : null;
+  const referenceDiffRatio = frames > 0 ? await referenceDiff(take.id, firstFrame, args.platform) : null;
 
   const staticAnchors = take.staticAnchors.flatMap((staticAnchor) => {
     const markMs = options.marks.get(staticAnchor.fromMark);
@@ -1134,6 +1139,7 @@ async function processTake(
     ...options.extraProblems,
     ...checkTake({
       takeId: take.id,
+      platform: args.platform,
       expectedAnchors: [...take.expectedAnchors, ...take.staticAnchors.map((staticAnchor) => staticAnchor.name)],
       anchors,
       footageSeconds: seconds,
@@ -1223,7 +1229,7 @@ async function recordTake(context: RunContext, take: ShowcaseTake): Promise<Take
   }
   const primeStatus = await runMaestro({
     udid: primary.device.udid,
-    flowFile: writeNavigationFlow(`prime-${take.id}`, take.primeLinks, 3000, primary.platform),
+    flowFile: writeNavigationFlow(`prime-${take.id}`, take.primeLinks, take.primeSettleMs, primary.platform),
     label: `${take.id}-prime`,
     signalUrl: signal.url,
   });

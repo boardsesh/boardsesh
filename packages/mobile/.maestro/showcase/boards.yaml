@@ -1,15 +1,18 @@
 appId: com.boardsesh.app
 name: showcase take - one lit climb, held still
 ---
-# Takes: boards-kilter, boards-tension, boards-moonboard
-#   -> .boardsesh/showcase-video/work/footage/boards-<wall>/ (scene "boards",
-#      three phones side by side)
+# Takes: boards-<wall>, one per board type (kilter, tension, spray, moonboard,
+#   woods, decoy, grasshopper, touchstone, soill)
+#   -> .boardsesh/showcase-video/work/footage/boards-<wall>/ (scene "boards":
+#      Kilter, Tension and the spray wall stand as the opening trio, the rest
+#      crowd in around them)
 #
 # Records: nothing moves. The recorder opens
-# ://climbs?screenshotOpenFirst=1&screenshotBoardIndex=<0|1|2> on a freshly
+# ://climbs?screenshotOpenFirst=1&screenshotBoardIndex=<slot> on a freshly
 # launched app BEFORE recording starts, which switches to that slot of
-# EXPO_PUBLIC_SCREENSHOT_BOARDS and opens its first climb lit. This flow only
-# holds the phone still long enough for the scene (5 s) plus slack.
+# EXPO_PUBLIC_SCREENSHOT_BOARDS and opens its first climb lit (Touchstone and
+# So iLL open a board-config link instead). This flow only holds the phone
+# still long enough for the scene (5.2 s) plus slack.
 #
 # Which wall each slot is gets checked after the take from the app's own
 # `[screenshot] board[N]` log line, so a renamed wall fails the run instead of
@@ -22,5 +25,5 @@ name: showcase take - one lit climb, held still
 
 - extendedWaitUntil:
     visible: 'zzz-showcase-pause'
-    timeout: 6500
+    timeout: 7000
     optional: true

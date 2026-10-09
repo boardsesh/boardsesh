@@ -1,16 +1,12 @@
 {
-  "hook": {
-    "headline": "Your board.\nLit from your *phone.*"
-  },
-  "light": {
-    "headline": "Swipe, and the\nwall *follows.*",
-    "callouts": {
-      "wall-pill": "On the wall",
-      "board-surface": "Swipe for next"
-    }
-  },
   "boards": {
     "headline": "Every board.\nOne *app.*"
+  },
+  "spray": {
+    "headline": "Your spray\nwall, *too.*",
+    "callouts": {
+      "board-surface": "Holds on your photo"
+    }
   },
   "wall": {
     "headline": "See what's on\nthe *wall.*",
@@ -82,7 +78,7 @@
   },
   "appStore": {
     "captions": {
-      "light": "Light climbs on your board",
+      "spray": "Your spray wall, too",
       "wall": "See what's on the wall",
       "crew": "Your crew. One queue.",
       "lock-screen": "Next climb from the island",

@@ -49,9 +49,9 @@ describe('work dirs per platform', () => {
   });
 
   it('numbers frames from 00001 in the platform footage dir', () => {
-    expect(footageFramePath('light', 0)).toBe(resolve(SHOWCASE_WORK_ROOT, 'work', 'footage', 'light', '00001.jpg'));
-    expect(footageFramePath('light', 41, 'android')).toBe(
-      resolve(SHOWCASE_WORK_ROOT, 'work', 'android', 'footage', 'light', '00042.jpg'),
+    expect(footageFramePath('spray', 0)).toBe(resolve(SHOWCASE_WORK_ROOT, 'work', 'footage', 'spray', '00001.jpg'));
+    expect(footageFramePath('spray', 41, 'android')).toBe(
+      resolve(SHOWCASE_WORK_ROOT, 'work', 'android', 'footage', 'spray', '00042.jpg'),
     );
   });
 
@@ -66,12 +66,12 @@ describe('work dirs per platform', () => {
 describe('flows per platform', () => {
   it('prefers showcase/android/<flow> when it exists, else the shared flow', () => {
     const only = (path: string) => (candidate: string) => candidate === path;
-    const androidLight = resolve(FLOW_DIR, 'android', 'light.yaml');
-    expect(showcaseFlowPathFor('light.yaml', 'android', only(androidLight))).toBe(androidLight);
-    expect(showcaseFlowPathFor('crew-join.yaml', 'android', only(androidLight))).toBe(
+    const androidSpray = resolve(FLOW_DIR, 'android', 'spray.yaml');
+    expect(showcaseFlowPathFor('spray.yaml', 'android', only(androidSpray))).toBe(androidSpray);
+    expect(showcaseFlowPathFor('crew-join.yaml', 'android', only(androidSpray))).toBe(
       resolve(FLOW_DIR, 'crew-join.yaml'),
     );
-    expect(showcaseFlowPathFor('light.yaml', 'ios', only(androidLight))).toBe(resolve(FLOW_DIR, 'light.yaml'));
+    expect(showcaseFlowPathFor('spray.yaml', 'ios', only(androidSpray))).toBe(resolve(FLOW_DIR, 'spray.yaml'));
   });
 
   it('has an Android flow, under the dev-client package, for every step the Android primary runs', () => {
@@ -114,8 +114,8 @@ describe('takeForPlatform', () => {
   });
 
   it('marks a take the platform cannot film unavailable on both backends', () => {
-    const light = findShowcaseTake('light');
-    const blocked = takeForPlatform({ ...light, platforms: { android: { unavailable: 'no reason' } } }, 'android');
+    const spray = findShowcaseTake('spray');
+    const blocked = takeForPlatform({ ...spray, platforms: { android: { unavailable: 'no reason' } } }, 'android');
     expect(blocked.unavailable).toEqual({ local: 'no reason', prod: 'no reason' });
   });
 });
@@ -194,7 +194,7 @@ describe('screenrecord', () => {
   });
 
   it('names the parts and joins them without re-encoding', () => {
-    expect(screenrecordRemotePath('light', 0)).toBe('/sdcard/showcase-light-00.mp4');
+    expect(screenrecordRemotePath('spray', 0)).toBe('/sdcard/showcase-spray-00.mp4');
     expect(screenrecordRemotePath('crew', 12)).toBe('/sdcard/showcase-crew-12.mp4');
     expect(buildConcatList(['/a/p0.mp4', "/b/it's.mp4"])).toBe("file '/a/p0.mp4'\nfile '/b/it'\\''s.mp4'\n");
     const args = buildConcatArgs('/a/list.txt', '/a/out.mp4');

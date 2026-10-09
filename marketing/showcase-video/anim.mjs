@@ -73,6 +73,17 @@ export function spring(seconds, { zeta = 0.78, period = 0.55 } = {}) {
 /** Spring from `from` to `to`, released at `startFrame`. */
 export const springAt = (frame, startFrame, fps, options) => spring((frame - startFrame) / fps, options);
 
+/**
+ * A phone coming back to its opening `slot` in the loop closer: `drop` px
+ * below it until `start`, easing up from there, and the slot itself, to the
+ * last bit, from `lastFrame` on. So the cut's last frame shows the phone where
+ * frame 0 does and the loop has no seam.
+ */
+export function closerPose(slot, frame, start, lastFrame, drop) {
+  const rise = easeOut(progress(frame, start, lastFrame - start));
+  return rise >= 1 ? { ...slot } : { ...slot, cy: slot.cy + drop * (1 - rise) };
+}
+
 // --- colour --------------------------------------------------------------
 
 const srgbToLinear = (channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
@@ -219,20 +230,6 @@ export function pointAtLength(curve, length) {
   const span = lengths[high] - lengths[low] || 1;
   const amount = (target - lengths[low]) / span;
   return { x: lerp(points[low].x, points[high].x, amount), y: lerp(points[low].y, points[high].y, amount) };
-}
-
-/** Arc length along the curve at which it passes closest to `point`. */
-export function lengthNearest(curve, point) {
-  let best = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  curve.points.forEach((candidate, index) => {
-    const distance = Math.hypot(candidate.x - point.x, candidate.y - point.y);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = curve.lengths[index];
-    }
-  });
-  return best;
 }
 
 export function polylinePath(points) {

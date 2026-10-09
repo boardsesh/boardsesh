@@ -70,7 +70,6 @@ import {
   SHOWCASE_PLACEHOLDER_TAKES,
   SHOWCASE_SHARE_COPY,
   SHOWCASE_STAGE_COPY,
-  SHOWCASE_STAGE_HOLDS,
   SHOWCASE_FULL_BLEED_HTML,
   SHOWCASE_STAGE_HTML,
   SHOWCASE_STAGE_TOKENS,
@@ -102,7 +101,6 @@ import {
   buildPlaceholderFootageArgs,
   buildWebMp4PassArgs,
   buildWebmPassArgs,
-  detectLitHolds,
   footageTakeDir,
   layoutSceneCallouts,
   parseRenderArgs,
@@ -120,7 +118,6 @@ import {
   resolveSceneCallouts,
   stillFramesForScene,
   webCutSeconds,
-  footageAt,
   takeSegments,
   localAtFootage,
   resolveTakeEdit,
@@ -129,7 +126,6 @@ import {
   type CalloutStage,
   type FullBleedClipData,
   type FullBleedStageData,
-  type LitHold,
   type PlaceholderBoardRender,
   type PlaceholderClimb,
   type PlaceholderTake,
@@ -456,41 +452,6 @@ function loadTakes(
   return { takes, anchors, edits };
 }
 
-/**
- * The motif's holds: detected on the light take at the moment the rings land on
- * it, inside the board-surface anchor. Falls back to the hand-traced set.
- */
-async function resolveHolds(take: StageTake, anchors: ShowcaseAnchorsFile, dirs: ShowcaseWorkDirs): Promise<LitHold[]> {
-  // Rings land 18 frames after the phone is released at L-4 of the hook.
-  const landLocal = 18 - SHOWCASE_CHOREO.backgroundLeadIn;
-  const index = footageAt(take.segments, landLocal, take.frameCount);
-  const framePath = resolve(footageTakeDir('light', dirs), `${String(index + 1).padStart(5, '0')}.jpg`);
-  const { data, info } = await sharp(framePath).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-  const toPixels = info.width / anchors.screen.width;
-  const surface = anchors.anchors['board-surface']?.[0];
-  const region = surface
-    ? {
-        x: surface.x * toPixels,
-        y: surface.y * toPixels,
-        width: surface.width * toPixels,
-        height: surface.height * toPixels,
-      }
-    : undefined;
-  const detected = detectLitHolds(data, info.width, info.height, info.channels, region, 30).map((hold) => ({
-    ...hold,
-    x: hold.x / toPixels,
-    y: hold.y / toPixels,
-  }));
-  if (detected.length >= 3) {
-    log(`motif: ${detected.length} lit holds detected on light frame ${index + 1}`);
-    return detected;
-  }
-  warn(
-    `only ${detected.length} lit holds detected on the light take; using ${relative(REPO_ROOT, SHOWCASE_STAGE_HOLDS)}`,
-  );
-  return (JSON.parse(readFileSync(SHOWCASE_STAGE_HOLDS, 'utf8')) as { holds: LitHold[] }).holds;
-}
-
 // --- tokens ------------------------------------------------------------------------------
 
 function roleColor(name: HoldStateInfo['name'], fallback: string): string {
@@ -532,14 +493,13 @@ function gradeColors(): ShowcaseStageData['grades'] {
 /** Where a run's recording is: whose it is, and the dirs it is read from. */
 type FootageSource = Readonly<{ platform: RenderArgs['platform']; dirs: ShowcaseWorkDirs }>;
 
-/** Everything read from disk once per run: footage, anchors, holds, copy, and the phone it sits in. */
+/** Everything read from disk once per run: footage, anchors, copy, and the phone it sits in. */
 type Footage = Readonly<{
   source: FootageSource;
   copy: ShowcaseCopy;
   phone: ShowcasePhone;
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
-  holds: LitHold[];
 }>;
 
 /** One cut of the motion stage: its timeline, the edits at its scene lengths, and what the stage shows. */
@@ -548,7 +508,6 @@ type Prepared = Readonly<{
   phone: ShowcasePhone;
   takes: Partial<Record<ShowcaseTakeId, StageTake>>;
   anchors: Partial<Record<ShowcaseTakeId, ShowcaseAnchorsFile>>;
-  holds: LitHold[];
   callouts: Partial<Record<ShowcaseScene['id'], ShowcaseCalloutName[]>>;
   boards: StageBoards;
   edits: Partial<Record<ShowcaseTakeId, ResolvedTakeEdit>>;
@@ -560,22 +519,27 @@ async function loadFootage(allowDrawnPlaceholders: boolean, source: FootageSourc
   const shared = JSON.parse(readFileSync(SHOWCASE_STAGE_COPY, 'utf8')) as ShowcaseCopy;
   const copy = copyForPlatform(shared, source.platform);
   const { takes, anchors } = loadTakes(allowDrawnPlaceholders, source);
-  const light = takes.light;
-  const lightAnchors = anchors.light;
-  if (!light || !lightAnchors) throw new Error('The light take is required');
-  const holds = await resolveHolds(light, lightAnchors, source.dirs);
-  const phone = showcasePhone(source.platform, await footageAspect(source.dirs));
+  const phone = showcasePhone(
+    source.platform,
+    await footageAspect(Object.keys(takes) as ShowcaseTakeId[], source.dirs),
+  );
   log(
     `${source.platform} footage from ${relative(REPO_ROOT, source.dirs.footage)}; phone ${phone.width}x${phone.height}, ` +
       `screen ${phone.screenWidth}x${phone.screenHeight}`,
   );
-  return { source, copy, phone, takes, anchors, holds };
+  return { source, copy, phone, takes, anchors };
 }
 
-/** Width / height of the recorded frames (the light take's first), which the phone's screen matches. */
-async function footageAspect(dirs: ShowcaseWorkDirs): Promise<number> {
-  const { width, height } = await sharp(resolve(footageTakeDir('light', dirs), '00001.jpg')).metadata();
-  if (!width || !height) throw new Error("Could not read the light take's first frame size");
+/**
+ * Width / height of the recorded frames, which the phone's screen matches. Read
+ * from a required take when one is loaded: a board take may be a stand-in still
+ * of another shape, and it would skew the phone for the whole cut.
+ */
+async function footageAspect(takeIds: readonly ShowcaseTakeId[], dirs: ShowcaseWorkDirs): Promise<number> {
+  const takeId = takeIds.find((id) => !id.startsWith('boards-')) ?? takeIds[0];
+  if (!takeId) throw new Error('No take has footage to size the phone from');
+  const { width, height } = await sharp(resolve(footageTakeDir(takeId, dirs), '00001.jpg')).metadata();
+  if (!width || !height) throw new Error(`Could not read the "${takeId}" take's first frame size`);
   return width / height;
 }
 
@@ -629,7 +593,6 @@ function prepareCut(footage: Footage, target: ShowcaseTarget, donationLine: bool
     phone: footage.phone,
     takes,
     anchors: footage.anchors,
-    holds: footage.holds,
     callouts,
     boards,
     edits,
@@ -702,7 +665,6 @@ function stageData(prepared: Prepared, rendition: ShowcaseRendition, measure: bo
     staging: SHOWCASE_SCENE_STAGING,
     restPill: prepared.edits.workouts?.restPill ?? [],
     lightRoles: SHOWCASE_LIGHT_ROLE_COLORS,
-    holds: prepared.holds,
     copy: prepared.copy,
     grades: gradeColors(),
     palette: { stageDark: themeTokens.semantic.background, stageLight: '#F4F1FB' },

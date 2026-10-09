@@ -26,8 +26,8 @@ import { SHOWCASE_SCENES, SHOWCASE_TOTAL_FRAMES, requiredTakeSeconds, type Showc
 
 /**
  * Pure helpers for `packages/web/scripts/render-showcase-video.ts`: output
- * paths, stage geometry, the reading budget, callout layout, lit-hold
- * detection and every ffmpeg argument vector. Nothing here touches a browser,
+ * paths, stage geometry, the reading budget, callout layout, the boards
+ * pile-up plan and every ffmpeg argument vector. Nothing here touches a browser,
  * a file or a child process, so `scripts/__tests__/showcase-video-render.test.ts`
  * can pin all of it.
  */
@@ -49,7 +49,6 @@ export const SHOWCASE_STAGE_HTML = resolve(SHOWCASE_STAGE_DIR, 'index.html');
 /** The full-bleed page (store previews): footage filling the frame under caption bars. */
 export const SHOWCASE_FULL_BLEED_HTML = resolve(SHOWCASE_STAGE_DIR, 'full-bleed.html');
 export const SHOWCASE_STAGE_COPY = resolve(SHOWCASE_STAGE_DIR, 'copy.en-US.json');
-export const SHOWCASE_STAGE_HOLDS = resolve(SHOWCASE_STAGE_DIR, 'holds.json');
 export const SHOWCASE_STAGE_TOKENS = resolve(SHOWCASE_STAGE_DIR, 'tokens.css');
 export const SHOWCASE_SHARE_COPY = resolve(SHOWCASE_STAGE_DIR, 'share-copy.txt');
 export const SHOWCASE_FRAMES_DIR = resolve(SHOWCASE_WORK_ROOT, 'work/frames');
@@ -447,9 +446,9 @@ export type ResolvedTakeEdit = Readonly<{
  * each was checked with `--measure` on the recorded frames.
  */
 export const SHOWCASE_TAKE_EDITS: Partial<Record<ShowcaseTakeId, TakeEdit>> = {
-  // From just before the bulb tap (it lights a few frames after), through the
-  // first swipe to the next climb (`next-1`).
-  light: { segments: [{ mark: 'bulb-tapped', from: -0.3 }] },
+  // The first climb on the wall's photo, the swipe to the next one (`next-1`)
+  // and the one after (`next-2`).
+  spray: { segments: [{ mark: 'next-1', from: -1.6 }] },
   // The climbs list, the board-button tap and the sheet opening at its middle
   // detent; cut to the sheet dragged up on "Lit on this wall".
   wall: {
@@ -884,9 +883,8 @@ type SceneCopy = Readonly<{ headline: string; callouts?: CalloutCopy }>;
 export type WorkoutRow = Readonly<{ name: string; grade: string; rest: string }>;
 
 export type ShowcaseCopy = Readonly<{
-  hook: SceneCopy;
-  light: SceneCopy;
   boards: SceneCopy;
+  spray: SceneCopy;
   wall: SceneCopy;
   crew: SceneCopy;
   workouts: SceneCopy &
@@ -920,7 +918,7 @@ export type ShowcaseCopy = Readonly<{
 }>;
 
 /** The scenes whose headline and callouts a platform may override. */
-export type ShowcaseCopySceneId = 'hook' | 'light' | 'boards' | 'wall' | 'crew' | 'workouts' | 'lock-screen' | 'log';
+export type ShowcaseCopySceneId = 'boards' | 'spray' | 'wall' | 'crew' | 'workouts' | 'lock-screen' | 'log';
 
 export type ShowcaseCopyOverride = Partial<
   Record<ShowcaseCopySceneId, Readonly<{ headline?: string; callouts?: CalloutCopy }>>
@@ -957,7 +955,7 @@ export function withoutDonationLine(copy: ShowcaseCopy): ShowcaseCopy {
   return { ...copy, outro };
 }
 
-/** `boards-soill` → "So iLL", from the one brand-name map the apps use. */
+/** `boards-soill` → "So iLL", `boards-spray` → "Spray wall", from the one label map the apps use. */
 export function boardTakeLabel(takeId: ShowcaseTakeId): string {
   const boardType = takeId.replace(/^boards-/, '');
   return BOARD_TYPE_LABELS[boardType] ?? boardType;
@@ -993,12 +991,12 @@ export function sceneVisibleText(
 
 /**
  * Frames the scene's text is on screen and still: from the first word landing
- * (frame 0 for the hook, whose frame 0 is the settled poster) to the start of
- * the exit (the loop closer for the outro).
+ * (frame 0 for the cut's opening scene, whose frame 0 is the settled poster)
+ * to the start of the exit (the loop closer for the outro).
  */
 export function readingWindowFrames(scene: ShowcaseScene): number {
   const length = scene.endFrame - scene.startFrame;
-  const start = scene.id === 'hook' ? 0 : SHOWCASE_CHOREO.firstWord;
+  const start = scene.startFrame === 0 ? 0 : SHOWCASE_CHOREO.firstWord;
   const end =
     scene.id === 'outro' ? length - SHOWCASE_CHOREO.loopCloserFrames : length - SHOWCASE_CHOREO.wordsOutFromEnd;
   return end - start;
@@ -1459,110 +1457,6 @@ export function layoutPortraitPills(
   return placed;
 }
 
-// --- lit-hold detection ------------------------------------------------------
-
-export type LitHold = Readonly<{ x: number; y: number; role: CalloutRole }>;
-
-function hueSaturationValue(red: number, green: number, blue: number): [number, number, number] {
-  const max = Math.max(red, green, blue);
-  const min = Math.min(red, green, blue);
-  const delta = max - min;
-  let hue = 0;
-  if (delta > 0) {
-    if (max === red) hue = 60 * (((green - blue) / delta) % 6);
-    else if (max === green) hue = 60 * ((blue - red) / delta + 2);
-    else hue = 60 * ((red - green) / delta + 4);
-  }
-  if (hue < 0) hue += 360;
-  return [hue, max === 0 ? 0 : delta / max, max / 255];
-}
-
-/** Which role a glow pixel belongs to, by hue. Foot holds (amber) and everything dull return null. */
-export function classifyGlowPixel(red: number, green: number, blue: number): CalloutRole | null {
-  const [hue, saturation, value] = hueSaturationValue(red, green, blue);
-  if (saturation < 0.55 || value < 0.45) return null;
-  if (hue >= 95 && hue <= 150) return 'start';
-  if (hue >= 172 && hue <= 200) return 'hand';
-  if (hue >= 285 && hue <= 330) return 'finish';
-  return null;
-}
-
-/**
- * Finds the lit holds in one footage frame: connected blobs of start-green,
- * hand-cyan and finish-magenta glow inside `region` (pixel coordinates), each
- * reported at its centroid. `pixels` is packed RGB or RGBA, row-major.
- */
-export function detectLitHolds(
-  pixels: Uint8Array | Uint8ClampedArray,
-  width: number,
-  height: number,
-  channels: number,
-  region: CanvasRect = { x: 0, y: 0, width, height },
-  minArea = 12,
-): LitHold[] {
-  const left = Math.max(0, Math.floor(region.x));
-  const top = Math.max(0, Math.floor(region.y));
-  const right = Math.min(width, Math.ceil(region.x + region.width));
-  const bottom = Math.min(height, Math.ceil(region.y + region.height));
-  const labels = new Int8Array(width * height).fill(-1);
-  const roleIndex = (role: CalloutRole) => CALLOUT_ROLES.indexOf(role);
-  for (let y = top; y < bottom; y += 1) {
-    for (let x = left; x < right; x += 1) {
-      const offset = (y * width + x) * channels;
-      const role = classifyGlowPixel(pixels[offset], pixels[offset + 1], pixels[offset + 2]);
-      if (role) labels[y * width + x] = roleIndex(role);
-    }
-  }
-  const seen = new Uint8Array(width * height);
-  const holds: LitHold[] = [];
-  for (let y = top; y < bottom; y += 1) {
-    for (let x = left; x < right; x += 1) {
-      const start = y * width + x;
-      if (labels[start] < 0 || seen[start]) continue;
-      const label = labels[start];
-      const stack = [start];
-      seen[start] = 1;
-      let area = 0;
-      let sumX = 0;
-      let sumY = 0;
-      while (stack.length > 0) {
-        const index = stack.pop() as number;
-        const px = index % width;
-        const py = (index - px) / width;
-        area += 1;
-        sumX += px;
-        sumY += py;
-        for (const [dx, dy] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]) {
-          const nx = px + dx;
-          const ny = py + dy;
-          if (nx < left || nx >= right || ny < top || ny >= bottom) continue;
-          const neighbour = ny * width + nx;
-          if (seen[neighbour] || labels[neighbour] !== label) continue;
-          seen[neighbour] = 1;
-          stack.push(neighbour);
-        }
-      }
-      if (area >= minArea) holds.push({ x: sumX / area, y: sumY / area, role: CALLOUT_ROLES[label] });
-    }
-  }
-  return orderHoldsForClimb(holds);
-}
-
-/** Climbing order for the motif line: starts, then hands bottom-up, then finishes left to right. */
-export function orderHoldsForClimb(holds: readonly LitHold[]): LitHold[] {
-  const rank = (hold: LitHold) => CALLOUT_ROLES.indexOf(hold.role);
-  return holds.slice().sort((a, b) => {
-    if (rank(a) !== rank(b)) return rank(a) - rank(b);
-    if (a.role === 'finish') return a.x - b.x;
-    return b.y - a.y || a.x - b.x;
-  });
-}
-
 // --- stage data ----------------------------------------------------------------
 
 export type StageCallout = Readonly<{
@@ -1651,11 +1545,13 @@ export type StageBoards = Readonly<{
   arrival: readonly ShowcaseTakeId[];
   /** Left-to-right order once everyone has squeezed in. */
   final: readonly ShowcaseTakeId[];
-  /** The persistent phone's take (it carries on from the previous scene). */
+  /** The persistent phone's take: it carries on from its slot into the scene after the boards. */
   main: ShowcaseTakeId;
   neatCount: number;
   /** Local frame each phone arrives at, in arrival order (see `pileupArrivalFrames`). */
   arrivalFrames: readonly number[];
+  /** Frames before the scene's end at which the side phones start to sink (`SHOWCASE_PILEUP.exitFromEnd`). */
+  exitFromEnd: number;
   labels: Readonly<Partial<Record<ShowcaseTakeId, string>>>;
 }>;
 
@@ -1695,8 +1591,6 @@ export type ShowcaseStageData = Readonly<{
   restPill: readonly (readonly [number, string])[];
   /** Light-scene callout hues; dark scenes use the tokens' LED hues. */
   lightRoles: Record<CalloutRole, string>;
-  /** Lit holds of the light take's first frame, in screen points. */
-  holds: readonly LitHold[];
   copy: ShowcaseCopy;
   grades: Record<string, Readonly<{ background: string; ink: string }>>;
   /** The two backgrounds the stage tweens between, in OKLab. */
@@ -1821,7 +1715,7 @@ export function layoutSceneCallouts(
 
 // --- boards pile-up ----------------------------------------------------------------
 
-/** How many board phones rise together before the rest crowd in. */
+/** How many board phones stand in the opening trio before the rest crowd in. */
 export const SHOWCASE_NEAT_BOARDS = 3;
 
 /** Local frames of the pile-up. The last arrival waits a beat, then squeezes in. */
@@ -1829,22 +1723,26 @@ export const SHOWCASE_PILEUP = {
   firstArrival: 40,
   arrivalGap: 6,
   squeezePause: 5,
-  /** Nominal squeeze frame with every board present (for the stills). */
-  squeeze: 40 + 3 * 6 + 6 + 5,
+  /** Nominal squeeze frame with all nine boards present (for the stills): 40 + 5 * 6 + 5. */
+  squeeze: 75,
+  /**
+   * Frames before the scene's end at which the side phones start sinking away,
+   * one a frame, so even eight of them are on their way down before the
+   * persistent phone moves on at L-4.
+   */
+  exitFromEnd: 18,
 } as const;
 
 /**
- * Local arrival frame for each phone in arrival order. The neat phones ride the
- * scene change (the persistent one is released with the background at L-4);
- * the rest come in fast, and the last one pauses before it squeezes in.
+ * Local arrival frame for each phone in arrival order. The neat phones are
+ * there from the scene's first frame (the cut opens on them, settled); the
+ * rest come in fast, and the last one pauses before it squeezes in.
  */
-export function pileupArrivalFrames(arrivalCount: number, neatCount: number, mainIndex: number): number[] {
+export function pileupArrivalFrames(arrivalCount: number, neatCount: number): number[] {
   const frames: number[] = [];
-  let neatSeen = 0;
   for (let index = 0; index < arrivalCount; index += 1) {
     if (index < neatCount) {
-      frames.push(index === mainIndex ? -4 : neatSeen === 0 ? -2 : 3);
-      if (index !== mainIndex) neatSeen += 1;
+      frames.push(0);
       continue;
     }
     const pileIndex = index - neatCount;
@@ -1890,24 +1788,26 @@ export function workoutTickFrames(
 }
 
 /**
- * Left-to-right order once the pile-up settles: the three neat phones keep the
- * middle, newcomers take the flanks, and the last arrival squeezes in beside
- * the persistent phone.
+ * Left-to-right order once the pile-up settles: the three neat phones keep
+ * their order (Kilter, spray wall, Tension) with the spray wall in the centre,
+ * newcomers take the flanks, and the last arrival squeezes in beside it.
  */
 export const SHOWCASE_BOARDS_FINAL_ORDER: readonly ShowcaseTakeId[] = [
   'boards-touchstone',
   'boards-woods',
-  'boards-kilter',
-  'boards-tension',
-  'boards-soill',
   'boards-moonboard',
+  'boards-kilter',
+  'boards-spray',
+  'boards-soill',
+  'boards-tension',
   'boards-decoy',
   'boards-grasshopper',
 ];
 
 /**
  * The pile-up for whichever board takes have footage. The persistent phone is
- * Tension when it was recorded, else the first neat arrival.
+ * the spray wall when it stands in the opening trio (the next scene is its
+ * own), else the first neat arrival.
  */
 export function planBoards(
   arrivalOrder: readonly ShowcaseTakeId[],
@@ -1918,11 +1818,11 @@ export function planBoards(
   const final = SHOWCASE_BOARDS_FINAL_ORDER.filter((takeId) => arrival.includes(takeId));
   for (const takeId of arrival) if (!final.includes(takeId)) final.push(takeId);
   const neatCount = Math.min(SHOWCASE_NEAT_BOARDS, arrival.length);
-  const main = arrival.slice(0, neatCount).includes('boards-tension') ? 'boards-tension' : arrival[0];
+  const main = arrival.slice(0, neatCount).includes('boards-spray') ? 'boards-spray' : arrival[0];
   const labels: Partial<Record<ShowcaseTakeId, string>> = {};
   for (const takeId of arrival) labels[takeId] = boardTakeLabel(takeId);
-  const arrivalFrames = pileupArrivalFrames(arrival.length, neatCount, arrival.indexOf(main));
-  return { arrival, final, main, neatCount, arrivalFrames, labels };
+  const arrivalFrames = pileupArrivalFrames(arrival.length, neatCount);
+  return { arrival, final, main, neatCount, arrivalFrames, exitFromEnd: SHOWCASE_PILEUP.exitFromEnd, labels };
 }
 
 // --- stills ----------------------------------------------------------------------
@@ -1939,13 +1839,14 @@ export function stillFramesForScene(
   /** Every callout: one still each, once its pill has landed. */
   callouts: ReadonlyArray<Readonly<{ name: string; enter: number; leave: number }>> = [],
 ): StillFrame[] {
-  const length = scene.endFrame - scene.startFrame;
-  const settled =
-    scene.id === 'hook'
-      ? 0
-      : scene.id === 'outro'
-        ? scene.startFrame + length - SHOWCASE_CHOREO.loopCloserFrames - 2
-        : scene.endFrame - SHOWCASE_CHOREO.settleEndFromEnd - 2;
+  // The last frame before anything leaves: the loop closer, the pile-up's exit, or the callouts' retract.
+  const settledFromEnd =
+    scene.id === 'outro'
+      ? SHOWCASE_CHOREO.loopCloserFrames
+      : scene.id === 'boards'
+        ? SHOWCASE_PILEUP.exitFromEnd
+        : SHOWCASE_CHOREO.settleEndFromEnd;
+  const settled = scene.endFrame - settledFromEnd - 2;
   const frames: StillFrame[] = [
     { frame: settled, label: 'settled' },
     { frame: scene.startFrame + 2, label: 'in +2' },
@@ -1954,7 +1855,6 @@ export function stillFramesForScene(
     { frame: scene.endFrame - 8, label: 'out -8' },
     { frame: Math.min(totalFrames - 1, scene.endFrame + 1), label: 'next +1' },
   ];
-  if (scene.id === 'hook') frames.splice(1, 0, { frame: 24, label: 'spark' });
   if (scene.id === 'boards') {
     frames.splice(
       4,
@@ -1989,12 +1889,12 @@ export const SHOWCASE_WEB_MAX_BYTES = 1_900_000;
 
 /**
  * The frame the web cut starts on and its poster (`showcase-hero-9x16.webp`)
- * shows: the light scene settled, "Swipe, and the wall follows." over the lit
- * phone with both callouts up. The web encodes play the loop rotated to start
- * here (`webRotation`); `brag.mp4` and `brag.jpg` keep frame 0, the hook, for
- * social. `--poster-frame` overrides it.
+ * shows: frame 0, the boards trio settled under "Every board. One app.", which
+ * is also what `brag.mp4` and `brag.jpg` open on. `--poster-frame` picks
+ * another; the web encodes then play the loop rotated to start there
+ * (`webRotation`).
  */
-export const SHOWCASE_WEB_POSTER_FRAME = 142;
+export const SHOWCASE_WEB_POSTER_FRAME = 0;
 
 /**
  * The lighter 9:16 encode for phones: 720x1280, a bitrate that lands each file
@@ -2362,7 +2262,6 @@ export const SHOWCASE_STORE_STILL_DIR = resolve(SHOWCASE_WEB_POSTER_DIR, '../app
 export const PLACEHOLDER_SCREEN = { width: 440, height: 956 } as const;
 
 export type PlaceholderSource =
-  | Readonly<{ kind: 'video'; file: string; seek: number }>
   /** One frame of a help clip, held for the whole take. */
   | Readonly<{ kind: 'frame'; file: string; at: number }>
   | Readonly<{ kind: 'still'; file: string }>
@@ -2591,15 +2490,9 @@ export const SHOWCASE_DRAWN_PLACEHOLDER_MARKER = 'DRAWN-PLACEHOLDER';
  * so the callout layout can still be judged.
  */
 export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake> = {
-  light: {
-    source: { kind: 'video', file: 'preview-browsing.mp4', seek: 0.2 },
-    anchors: {
-      'wall-pill': { x: 16, y: 133, width: 33, height: 32 },
-      'board-surface': { x: 21, y: 188, width: 398, height: 560 },
-    },
-  },
   'boards-kilter': { source: { kind: 'still', file: 'kilter.webp' }, anchors: {} },
   'boards-tension': { source: { kind: 'still', file: 'tension.webp' }, anchors: {} },
+  'boards-spray': { source: { kind: 'still', file: 'spray-wall.webp' }, anchors: {} },
   'boards-moonboard': { source: { kind: 'still', file: 'moonboard.webp' }, anchors: {} },
   'boards-woods': { source: boardRender('woods', 1, 2, [1]), anchors: {} },
   // Decoy's full-size layout draws only with its whole hold-set list (2–20).
@@ -2615,6 +2508,10 @@ export const SHOWCASE_PLACEHOLDER_TAKES: Record<ShowcaseTakeId, PlaceholderTake>
   'boards-touchstone': { source: boardRender('touchstone', 1, 1, [1]), anchors: {} },
   'boards-grasshopper': { source: boardRender('grasshopper', 1, 4, [1, 2]), anchors: {} },
   'boards-soill': { source: boardRender('soill', 1, 1, [1]), anchors: {} },
+  spray: {
+    source: { kind: 'still', file: 'spray-wall.webp' },
+    anchors: { 'board-surface': { x: 16, y: 276, width: 408, height: 396 } },
+  },
   wall: {
     source: { kind: 'still', file: 'wall-status.webp' },
     anchors: {
@@ -2708,8 +2605,7 @@ export function buildPlaceholderFootageArgs(
   }
   let input: string[];
   let hold = '';
-  if (source.kind === 'video') input = ['-ss', String(source.seek), '-i', resolve(HELP_CLIP_VIDEO_DIR, source.file)];
-  else if (source.kind === 'frame') {
+  if (source.kind === 'frame') {
     input = ['-ss', String(source.at), '-i', resolve(HELP_CLIP_VIDEO_DIR, source.file)];
     // Keep only the first frame and repeat it.
     hold = 'trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB,';

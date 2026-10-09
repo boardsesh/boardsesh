@@ -46,16 +46,18 @@ export const SHOWCASE_DEVICES: Readonly<Record<'primary' | 'secondary', Showcase
 };
 
 /**
- * The walls the board takes sit on, in `SHOWCASE_BOARD_SLOTS` order (kilter,
- * tension, moonboard, woods, decoy, grasshopper). Each entry matches a board's name or layout name on the signed-in
- * account (see packages/mobile/src/lib/screenshot-board-selection.ts). Prod is
- * the App Store account's walls (the Kilter is Marco's own board, the App Store
- * hero wall); local is the seeded dev DB's, plus the MoonBoard the recorder
+ * The seven walls the board takes sit on, in `SHOWCASE_BOARD_SLOTS` order
+ * (kilter, tension, moonboard, woods, decoy, grasshopper, spray). Each entry
+ * matches a board's name or layout name on the signed-in account (see
+ * packages/mobile/src/lib/screenshot-board-selection.ts). Prod is the App Store
+ * account's walls (the Kilter is Marco's own board, the App Store hero wall;
+ * the spray wall's name is a placeholder until the account has the wall the
+ * video shows); local is the seeded dev DB's, plus the MoonBoard the recorder
  * adds on first run. A wall that is renamed or unfollowed fails the take with
  * the account's roster in the message.
  */
 export const SHOWCASE_DEFAULT_BOARDS: Readonly<Record<ShowcaseBackend, string>> = {
-  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper",
+  prod: "Marco's Board|High Point Climbing Orlando|MoonBoard 2016|Woods Original|Decoy Dungeon|Grasshopper|Home Spray Wall",
   local: 'The Proj Wall|The Slab Lab|MoonBoard 2016',
 };
 
@@ -535,6 +537,17 @@ export function findBoardHandoffProblem(logText: string, link: string): string |
 }
 
 /**
+ * The board type a `[screenshot] board[N]` line names. The app ends the line
+ * with `@<angle>°, <boardType>)`, after the wall's name and its layout's name,
+ * which are free text and may hold brackets and quotes of their own. Reading
+ * from the end means neither can pose as the type: a Kilter called "Tension
+ * Fans" is still a Kilter. Null when the line does not end that way.
+ */
+function loggedBoardType(detail: string): string | null {
+  return /@-?[\d.]+°, ([a-z][a-z0-9]*)\)\s*$/.exec(detail)?.[1] ?? null;
+}
+
+/**
  * Which wall the app put slot `slot` on, from its own `[screenshot] board[N]`
  * lines. `null` when it is the right kind of wall; otherwise the problem, with
  * the account's roster when the app logged one.
@@ -550,8 +563,12 @@ export function findBoardSlotProblem(logText: string, slot: number, kind: Showca
   const resolved = [...lines].reverse().find((line) => line.includes(`[screenshot] board[${slot}] `));
   if (!resolved) return `the app never resolved board slot ${slot}; is the account signed in and are its walls loaded?`;
   const detail = resolved.slice(resolved.indexOf(`board[${slot}]`));
-  const wanted = kind === 'moonboard' ? 'moon' : kind;
-  if (!detail.toLowerCase().includes(wanted)) {
+  const boardType = loggedBoardType(detail);
+  if (boardType === null) {
+    return `slot ${slot}'s line names no board type (${detail.trim()}); the app bundle is older than this recorder`;
+  }
+  const rightKind = boardType === kind;
+  if (!rightKind) {
     return `slot ${slot} landed on a non-${kind} wall (${detail.trim()}); pass --boards with a ${kind} wall in slot ${slot}`;
   }
   return null;
@@ -641,6 +658,8 @@ export const REFERENCE_MAX_DIFF_RATIO = 0.35;
 
 export type TakeCheckInput = Readonly<{
   takeId: ShowcaseTakeId;
+  /** The phone the take was filmed on: each platform has its own reference frames. */
+  platform: ShowcasePlatform;
   expectedAnchors: readonly ShowcaseCalloutName[];
   anchors: ShowcaseAnchorsFile;
   footageSeconds: number;
@@ -670,7 +689,7 @@ export function checkTake(input: TakeCheckInput): string[] {
   }
   if (input.referenceDiffRatio !== null && input.referenceDiffRatio > REFERENCE_MAX_DIFF_RATIO) {
     problems.push(
-      `${prefix} the first frame differs from marketing/showcase-video/reference/${input.takeId}.jpg in ` +
+      `${prefix} the first frame differs from marketing/showcase-video/reference/${input.platform}/${input.takeId}.jpg in ` +
         `${Math.round(input.referenceDiffRatio * 100)}% of pixels: the take opened on the wrong screen. ` +
         `Fix its primeLinks/flow, or replace the reference if the screen changed on purpose.`,
     );

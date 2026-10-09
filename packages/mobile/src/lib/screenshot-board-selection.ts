@@ -68,10 +68,16 @@ export function matchScreenshotBoard<Board extends ScreenshotSelectableBoard>(
  * The wall's identity in one fragment, so a capture run is debuggable from the
  * log the orchestrator tees. The config ids matter as much as the name: they are
  * what says whether "Marco's Board" is the 10x12 someone meant.
+ *
+ * The board type always comes last, after the angle. A wall's name and its
+ * layout's name are free text (a spray wall's layout is whatever its owner
+ * called it) and may hold any punctuation, so the showcase recorder reads the
+ * type from the end of the line, where no free text can follow it
+ * (`findBoardSlotProblem` in scripts/lib/showcase-video/record.ts).
  */
 function describeBoard(board: ScreenshotSelectableBoard): string {
-  const layout = board.layoutName ?? board.boardType;
-  return `(${layout} L${board.layoutId} S${board.sizeId} @${board.angle}°)`;
+  const layout = board.layoutName ? `${board.layoutName} ` : '';
+  return `(${layout}L${board.layoutId} S${board.sizeId} @${board.angle}°, ${board.boardType})`;
 }
 
 /**

@@ -115,11 +115,11 @@ that merges, `scripts/lib/showcase-video/contract.ts` is the reference.
   `packages/mobile/src/lib/ble/screenshot-fake-adapter.ts`.
 - Showcase anchors need only screenshot mode. Views the video points callouts at log where
   they sit on screen through Metro:
-  `[showcase-anchor] {"name":"wall-pill","x":24,"y":118,"width":132,"height":32}`, in
+  `[showcase-anchor] {"name":"board-surface","x":21,"y":188,"width":398,"height":560}`, in
   `measureInWindow` points. Each logs on layout and again 250 ms and 700 ms later, so a
   sheet that springs in still reports where it settled, and a repeat of the same rect is
   skipped. The names:
-  - `wall-pill`, `board-surface`: the play view's wall-state pill and board.
+  - `board-surface`: the play view's board.
   - `invite-qr`: the QR code in the session invite sheet.
   - `queue-row-avatar`: the added-by avatar on the first upcoming queue row only.
   - `play-next`: the Play next row in the long-press climb menu.

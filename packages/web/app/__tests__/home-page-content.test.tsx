@@ -165,7 +165,7 @@ describe('HomePageContent', () => {
     expect(video.compareDocumentPosition(featureSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByAltText(resolveMarketingKey('home.hero.playShotAlt'))).toBeNull();
     expect(screen.queryByRole('heading', { name: /see it on the wall/i })).toBeNull();
-    expect(document.querySelectorAll('figcaption li')).toHaveLength(9);
+    expect(document.querySelectorAll('figcaption li')).toHaveLength(8);
     expect(screen.getByRole('button', { name: resolveMarketingKey('home.showcase.play') })).toBeTruthy();
   });
 

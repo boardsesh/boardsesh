@@ -23,7 +23,7 @@
   gap: var(--spacing-6);
   overflow: hidden;
 }
-.feature:first-child {
+.featureWide {
   grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
@@ -43,7 +43,7 @@
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
-.feature:first-child .featureTitle {
+.featureWide .featureTitle {
   font-size: 36px;
   max-width: 14ch;
 }
@@ -66,13 +66,13 @@
     gap: var(--spacing-4);
   }
   .feature,
-  .feature:first-child {
+  .featureWide {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--spacing-5);
     gap: var(--spacing-5);
   }
   .feature .featureTitle,
-  .feature:first-child .featureTitle {
+  .featureWide .featureTitle {
     font-size: 24px;
     max-width: none;
   }

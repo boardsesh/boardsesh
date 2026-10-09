@@ -114,11 +114,10 @@
       "title": "Beta fraîche"
     },
     "showcase": {
-      "videoLabel": "Démo : allumer une board Kilter depuis un téléphone, changer de board, gérer une file de groupe et noter une croix.",
+      "videoLabel": "Démo : toutes les boards dans une appli, y compris un mur de spray, puis une file de groupe, un plan de séance et une croix notée.",
       "scenes": {
-        "hook": "Ta board. Allumée depuis ton téléphone.",
-        "light": "Balaie, et le mur suit.",
         "boards": "Toutes les boards. Une seule appli.",
+        "spray": "Ton mur de spray aussi.",
         "wall": "Vois ce qu'il y a sur le mur.",
         "crew": "Ton crew. Une seule file.",
         "workouts": "Donne un plan à ta séance.",
@@ -147,6 +146,11 @@
         "title": "Toutes tes boards. Un seul profil.",
         "body": "Suis tes croix et tes progrès sur chaque board.",
         "shotAlt": "Tes croix et tes progrès sur chaque board dans ton profil Boardsesh"
+      },
+      "spray": {
+        "title": "Ton mur de spray aussi.",
+        "body": "Photographie n'importe quel mur. Ouvre des blocs et fais la croix dessus.",
+        "shotAlt": "Un bloc mis en évidence sur la photo d'un mur de spray dans Boardsesh"
       }
     },
     "support": {

@@ -55,14 +55,16 @@ All paths below are relative to `packages/web/public/images/app/`. Raw SHA-256 r
 | `ios/queue.webp` | 1206 × 2622 | 736 × 1600 | 70,874 |
 | `ios/wall-status.webp` | 1206 × 2622 | 736 × 1600 | 92,276 |
 | `ios/profile-overview.webp` | 1206 × 2622 | 736 × 1600 | 54,502 |
+| `ios/spray-wall.webp` | 1320 × 2868 | 736 × 1600 | 104,570 |
 | `android/kilter.webp` | 1080 × 1920 | 900 × 1600 | 87,330 |
 | `android/tension.webp` | 1080 × 1920 | 900 × 1600 | 76,478 |
 | `android/moonboard.webp` | 1080 × 1920 | 900 × 1600 | 45,062 |
 | `android/queue.webp` | 1080 × 1920 | 900 × 1600 | 87,940 |
 | `android/wall-status.webp` | 1080 × 1920 | 900 × 1600 | 82,706 |
 | `android/profile-overview.webp` | 1080 × 1920 | 900 × 1600 | 52,434 |
+| `android/spray-wall.webp` | 1080 × 2424 | 713 × 1600 | 97,760 |
 
-Total: **853,760 bytes** across 12 files.
+Total: **1,056,090 bytes** across 14 files.
 
 | Asset | Raw PNG SHA-256 | WebP SHA-256 |
 | --- | --- | --- |
@@ -72,9 +74,15 @@ Total: **853,760 bytes** across 12 files.
 | `ios/queue` | `9698243244fdb1dfc7d6f39d4e683d7007178c4f9182433a51e0cc73c79d4c1a` | `b4fb612eea9686ce922677dd90fff9b8e117df36e2e94492ba03e0ab7731ccb3` |
 | `ios/wall-status` | `fdb8eec4e899020dce2fa63c43df51c5ee83436f832c94f66e0f77d3ca33136d` | `a2e42f21aba84312a38b8968e2a6ff319c6292db4d2a8777a941bff5aacc6e48` |
 | `ios/profile-overview` | `581d8aee67ab0fc6cc97d2c14d9383231ce2892cd722713bd5ba8409dbc13053` | `c60d933f7dd797449ba0b5dad8b7c99eb334afd128ea215eed3340f362901ed2` |
+| `ios/spray-wall` | `31147170e246160450bd086527cae40da1d81e066c675a5ec27c91a696269c76` | `495821398b8d370a3f35b0b75ea3268e17f511a5a29806b00416da08bb6579ea` |
 | `android/kilter` | `977184520b781b62b21e377efcda531281981cf12c21d5fed87fcd741f0cc09c` | `12b7c081aa4b75d4d85a535ab199b07d015610f2cf7a1a1c1ff0d411f1684a07` |
 | `android/tension` | `82be291d86792001878e825876c6b3ed8f343652f0b21ee52c454da60c059c26` | `c149fe9ecaf93ec2964a236f21cbaa109ce1102464eb0487eac24bc1d6a3c2a4` |
 | `android/moonboard` | `528a8f47dc74705b7f5bedb3a2a61fc88e4c3c222d2dd8dd2f8918c61cd42ceb` | `9dce8570aa661034a7e66872113f9a909236deef751f3c6b5195073ba8aea1c4` |
 | `android/queue` | `e728ffb637e62fc3d1a74846b10677cb5414f8a818540afe5267a6484900e633` | `a541296cd5b4015ab4d82e0c526d2fbdb4a5ee10f6ba83a07e11d52cd69c3b9a` |
 | `android/wall-status` | `440ddaab20d7566e670ea619290a12ef270389769d73e0c5ff4985f01ed16b9b` | `54cc604dbb33030c3c0d7f0e1aa9d960ba98f443d56874d5a56973e09a26113d` |
 | `android/profile-overview` | `525406070e62bca67102ea868bea1201f7bc537ff304d3353b59ba4f042493bf` | `2a853fd62d925d113c34d4ec596bb2086e81fc9df36bebf48fe1691ebe520849` |
+| `android/spray-wall` | `ac67d5e6e9701dceb167d113a0c18b5f148635426b45fed7baa69cb884242c7f` | `1826b8c2c294d6c771d724d0f22dd5f1b67794281643fbeec6a1514c0a42d8e2` |
+
+The two `spray-wall` images come from different devices than the rest, which is why their raw sizes differ: the iOS one from an iPhone 16 Pro Max simulator, the Android one from a frame of the showcase recorder's Pixel 9-class emulator recording.
+
+To reproduce `spray-wall`, open the first climb on the demo spray wall (slot 6 of the showcase roster, see `docs/showcase-video.md`) live against production, capture the play view, and process it with the same Sharp settings as above. The pinned replay fixture has no spray wall, so the replay environment cannot produce this shot.
