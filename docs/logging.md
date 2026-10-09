@@ -189,7 +189,7 @@ per-operation `context` hook). Once a minute each replica logs one
 `droppedBuckets` count and `totalOperations`. In production it also sends one
 `Client Usage Summary` PostHog event per reported bucket (`client_name`,
 `client_version`, `transport`, `operations`). Every event uses the distinctId
-`backend:client-usage` and sets `$process_person_profile=false`, so it creates no
+`system:client-usage` and sets `$process_person_profile=false`, so it creates no
 person profile. A minute with no operations emits nothing. The version is client-authored, so the counter map holds at most
 1,000 buckets between flushes; new keys past that fold into a `(overflow)`
 bucket. The counters are per replica: sum across replicas for a fleet total.
