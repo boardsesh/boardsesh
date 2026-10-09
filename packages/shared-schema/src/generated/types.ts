@@ -3917,6 +3917,16 @@ export type MergeGymsResult = {
   results: Array<GymMergeDuplicateResult>;
 };
 
+export type MobileStorePlatform = 'android' | 'ios';
+
+export type MobileStoreRelease = {
+  __typename?: 'MobileStoreRelease';
+  checkedAt: Scalars['String']['output'];
+  firstNewerMinorAvailableAt: Scalars['String']['output'];
+  latestVersion: Scalars['String']['output'];
+  storeUrl: Scalars['String']['output'];
+};
+
 export type MoonBoardClimbDuplicateCandidateInput = {
   clientKey: Scalars['String']['input'];
   holds: MoonBoardHoldsInput;
@@ -6652,6 +6662,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** Latest publicly available native release; null when no reliable newer minor release is known. */
+  mobileStoreRelease?: Maybe<MobileStoreRelease>;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -7439,6 +7451,12 @@ export type QueryInstagramBetaScanArgs = {
 /** Root query type for all read operations. */
 export type QueryIsFollowingArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryMobileStoreReleaseArgs = {
+  nativeVersion: Scalars['String']['input'];
+  platform: MobileStorePlatform;
 };
 
 /** Root query type for all read operations. */
@@ -11396,6 +11414,8 @@ export type ResolversTypes = ResolversObject<{
   LocationSyncEntityType: LocationSyncEntityType;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: ResolverTypeWrapper<MergeGymsResult>;
+  MobileStorePlatform: MobileStorePlatform;
+  MobileStoreRelease: ResolverTypeWrapper<MobileStoreRelease>;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
@@ -11884,6 +11904,7 @@ export type ResolversParentTypes = ResolversObject<{
   LiveSessionUser: LiveSessionUser;
   MergeGymsInput: MergeGymsInput;
   MergeGymsResult: MergeGymsResult;
+  MobileStoreRelease: MobileStoreRelease;
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: MoonBoardClimbDuplicateMatch;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
@@ -14114,6 +14135,17 @@ export type MergeGymsResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type MobileStoreReleaseResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['MobileStoreRelease'] = ResolversParentTypes['MobileStoreRelease'],
+> = ResolversObject<{
+  checkedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  firstNewerMinorAvailableAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  latestVersion?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  storeUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type MoonBoardClimbDuplicateMatchResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['MoonBoardClimbDuplicateMatch'] =
@@ -15934,6 +15966,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryIsFollowingArgs, 'userId'>
+  >;
+  mobileStoreRelease?: Resolver<
+    Maybe<ResolversTypes['MobileStoreRelease']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryMobileStoreReleaseArgs, 'nativeVersion' | 'platform'>
   >;
   myAnalyticsConsent?: Resolver<Maybe<ResolversTypes['AnalyticsConsent']>, ParentType, ContextType>;
   myBoardSerialConfigs?: Resolver<
@@ -18028,6 +18066,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   LiveSessionClimb?: LiveSessionClimbResolvers<ContextType>;
   LiveSessionUser?: LiveSessionUserResolvers<ContextType>;
   MergeGymsResult?: MergeGymsResultResolvers<ContextType>;
+  MobileStoreRelease?: MobileStoreReleaseResolvers<ContextType>;
   MoonBoardClimbDuplicateMatch?: MoonBoardClimbDuplicateMatchResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   MyGymClaim?: MyGymClaimResolvers<ContextType>;

@@ -45,6 +45,11 @@
       "types": "./src/generated/types.ts",
       "import": "./src/generated/types.ts",
       "default": "./src/generated/types.ts"
+    },
+    "./mobile-store-release": {
+      "types": "./src/mobile-store-release.ts",
+      "import": "./src/mobile-store-release.ts",
+      "default": "./src/mobile-store-release.ts"
     }
   },
   "scripts": {

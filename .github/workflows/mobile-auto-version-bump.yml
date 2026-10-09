@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Log which release anchor tags would be cut, without tagging or pushing'
+        description: 'Log anchors and public store snapshots without pushing or publishing'
         type: boolean
         default: true
 
@@ -123,3 +123,34 @@ jobs:
       - name: Warn if anchoring failed
         if: steps.anchor.outcome == 'failure'
         run: echo "::warning::Cutting release anchor tags failed (see the step above). Accepted builds are re-anchored on the next scheduled run; investigate if this persists."
+
+  public-store-snapshot:
+    # Independent from anchoring: unavailable monitoring credentials cannot block tags.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+      - run: vp install --frozen-lockfile
+      - name: Collect public store snapshots independently
+        env:
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          # Compare identities before creating an edit; never authenticate publishing here.
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: vp exec tsx scripts/mobile-store-release-monitor.ts

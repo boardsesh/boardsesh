@@ -170,17 +170,21 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-vi.mock('expo-router', () => ({
-  Stack: {
-    Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
-      mocks.stackOptions.push(options);
-      return null;
+vi.mock('expo-router', async () => {
+  const { useEffect } = await import('react');
+  return {
+    Stack: {
+      Screen: ({ options }: { options: NativeStackNavigationOptions }) => {
+        mocks.stackOptions.push(options);
+        return null;
+      },
     },
-  },
-  useRouter: () => ({ push: mocks.push }),
-  useLocalSearchParams: () => mocks.searchParams,
-  useFocusEffect: () => {},
-}));
+    useRouter: () => ({ push: mocks.push }),
+    useLocalSearchParams: () => mocks.searchParams,
+    // Run focus effects while preserving the native-header registrations.
+    useFocusEffect: (effect: () => void | (() => void)) => useEffect(effect, [effect]),
+  };
+});
 vi.mock('expo-router/react-navigation', () => ({ useHeaderHeight: () => 100 }));
 vi.mock('../../../../src/hooks/use-native-root-header', () => ({ useNativeRootHeader: () => mocks.nativeRootHeader }));
 vi.mock('../../../../src/hooks/use-glass-capability', () => ({ useGlassCapability: () => true }));
@@ -202,9 +206,23 @@ vi.mock('../../../../src/components/onboarding/FirstConnectCard', () => ({
   FirstConnectCard: () => null,
   useFirstConnectCardExpected: () => false,
 }));
+vi.mock('../../../../src/components/store-update/StoreUpdateCard', () => ({
+  StoreUpdateCard: ({ enabled }: { enabled: boolean }) =>
+    createElement('span', { 'data-testid': 'store-update-card', 'data-enabled': String(enabled) }),
+}));
+vi.mock('../../../../src/providers/feature-flags-provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/providers/feature-flags-provider')>()),
+  useFeatureFlagsResolved: () => true,
+}));
+vi.mock('../../../../src/lib/onboarding/first-connect-store', () => ({ useFirstConnectSelector: () => true }));
+vi.mock('../../../../src/lib/onboarding/connect-step-build', () => ({
+  readConnectStepBuild: () => ({ nativeVersion: '2.6.0', productionBuild: true }),
+}));
 vi.mock('../../../../src/lib/onboarding/onboarding-storage', () => ({
   hasBoardRevealTipPending: vi.fn(async () => false),
   clearBoardRevealTipPending: vi.fn(async () => {}),
+  hasSeenTip: vi.fn(async () => true),
+  markTipSeen: vi.fn(async () => {}),
 }));
 
 // The favourite-hearts fetcher reads the signed-in user's id, which reaches
@@ -525,6 +543,7 @@ vi.mock('../../../../src/theme/layout', () => ({ glassSize: { standard: 48 } }))
 vi.mock('../../../../src/theme/animations', () => ({ timing: { normal: 180 } }));
 
 import ClimbList from '../index';
+import { hasSeenTip } from '../../../../src/lib/onboarding/onboarding-storage';
 
 beforeEach(() => {
   mocks.previewedClimbUuid.mockReturnValue(null);
@@ -566,6 +585,7 @@ beforeEach(() => {
   mocks.nativeSearch = false;
   mocks.renderNativeChrome = false;
   mocks.stackOptions.length = 0;
+  vi.mocked(hasSeenTip).mockResolvedValue(true);
 });
 
 describe('ClimbList native header ownership', () => {
@@ -624,6 +644,39 @@ describe('ClimbList native header ownership', () => {
     expect(restoredOptions).toMatchObject({ title: 'Climbs', headerShown: true, headerLargeTitle: true });
     expect(restoredOptions.headerTitle).toBeUndefined();
     expect(mocks.stackOptions.every((options) => !Object.hasOwn(options, 'title'))).toBe(true);
+  });
+});
+
+// The store update card yields to the quick-actions tip, which waits for a
+// climb row. Showing the card during the first load would let the tip push it
+// out as soon as the climbs land.
+describe('ClimbList store update card', () => {
+  it('holds the card while an unseen quick-actions tip waits for climbs', async () => {
+    vi.mocked(hasSeenTip).mockResolvedValue(false);
+    // First load: no rows yet, so the tip itself is not showing.
+    mocks.searchClimbs = [];
+    mocks.isClimbsLoading = true;
+    const { findByTestId } = render(<ClimbList />);
+    await waitFor(() => expect(hasSeenTip).toHaveBeenCalled());
+    await act(async () => {});
+    expect((await findByTestId('store-update-card')).getAttribute('data-enabled')).toBe('false');
+  });
+
+  it('allows the card on a board with no climbs once loading ends', async () => {
+    vi.mocked(hasSeenTip).mockResolvedValue(false);
+    mocks.searchClimbs = [];
+    const { findByTestId } = render(<ClimbList />);
+    await waitFor(async () =>
+      expect((await findByTestId('store-update-card')).getAttribute('data-enabled')).toBe('true'),
+    );
+  });
+
+  it('allows the card once the quick-actions tip has been seen', async () => {
+    mocks.isClimbsLoading = true;
+    const { findByTestId } = render(<ClimbList />);
+    await waitFor(async () =>
+      expect((await findByTestId('store-update-card')).getAttribute('data-enabled')).toBe('true'),
+    );
   });
 });
 

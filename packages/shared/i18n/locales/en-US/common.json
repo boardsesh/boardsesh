@@ -622,6 +622,17 @@
       "googlePlay": "Get it on Google Play",
       "appStore": "Download on the App Store",
       "dismiss": "Not now"
+    },
+    "storeUpdate": {
+      "weeklyTitle": "A Boardsesh update is ready",
+      "frequentTitle": "Get the latest Boardsesh fixes",
+      "dailyTitle": "Your Boardsesh build is out of date",
+      "iosBody": "Update to {{version}} in the App Store for the latest app improvements.",
+      "androidBody": "Update to {{version}} in Google Play for the latest app improvements.",
+      "update": "Update Boardsesh",
+      "later": "Later",
+      "stopReminders": "Don't remind me again",
+      "openFailed": "The store could not open. Try again."
     }
   },
   "lightControl": {

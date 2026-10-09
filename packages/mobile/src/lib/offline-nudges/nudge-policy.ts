@@ -20,6 +20,7 @@
 //   by construction and any frequency machinery could only ever silence it.
 
 import type { BoardDownloadState } from '../../components/board-discovery/board-offline-state';
+import { hasNudgeCooldownElapsed } from '../nudge-cooldown';
 
 export type NudgeSurface =
   | 'post_session'
@@ -144,13 +145,13 @@ export function shouldShowNudge(input: NudgeDecisionInput): boolean {
 
   if (input.storeReviewWillPrompt) return false;
   if (surfaceState.shownCount >= POST_SESSION_MAX_SHOWS) return false;
-  if (surfaceState.lastShownAtMs !== null && input.nowMs - surfaceState.lastShownAtMs < POST_SESSION_COOLDOWN_MS) {
+  if (!hasNudgeCooldownElapsed(input.nowMs, surfaceState.lastShownAtMs, POST_SESSION_COOLDOWN_MS)) {
     return false;
   }
-  if (input.state.lastPromptAtMs !== null && input.nowMs - input.state.lastPromptAtMs < GLOBAL_PROMPT_COOLDOWN_MS) {
+  if (!hasNudgeCooldownElapsed(input.nowMs, input.state.lastPromptAtMs, GLOBAL_PROMPT_COOLDOWN_MS)) {
     return false;
   }
-  if (input.state.lastAcceptedAtMs !== null && input.nowMs - input.state.lastAcceptedAtMs < POST_ACCEPT_QUIET_MS) {
+  if (!hasNudgeCooldownElapsed(input.nowMs, input.state.lastAcceptedAtMs, POST_ACCEPT_QUIET_MS)) {
     return false;
   }
   return true;

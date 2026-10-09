@@ -622,6 +622,17 @@
       "googlePlay": "Jetzt bei Google Play",
       "appStore": "Laden im App Store",
       "dismiss": "Jetzt nicht"
+    },
+    "storeUpdate": {
+      "weeklyTitle": "Ein Boardsesh-Update ist verfügbar",
+      "frequentTitle": "Hol dir die neuesten Verbesserungen für Boardsesh",
+      "dailyTitle": "Deine Boardsesh-Version ist veraltet",
+      "iosBody": "Aktualisiere im App Store auf {{version}}, um die neuesten Verbesserungen zu erhalten.",
+      "androidBody": "Aktualisiere bei Google Play auf {{version}}, um die neuesten Verbesserungen zu erhalten.",
+      "update": "Boardsesh aktualisieren",
+      "later": "Später",
+      "stopReminders": "Nicht mehr daran erinnern",
+      "openFailed": "Der Store konnte nicht geöffnet werden. Versuch es noch einmal."
     }
   },
   "lightControl": {

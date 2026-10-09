@@ -21,6 +21,7 @@ export * from './climb-stats-for-angles';
 export * from './boardsesh-grade';
 export * from './feedback';
 export * from './qa';
+export * from './mobile-store-release';
 export * from './beta-links';
 export * from './integrations';
 export * from './location-sync-admin';

@@ -400,3 +400,91 @@ after the shipped fingerprint moves on.
 - Review submission, phased/staged rollout, and the iOS App Store icon upload are
   intentionally manual. The iOS icon comes from the uploaded binary.
 - Android build and signing background: `docs/android-sideload-build.md`.
+
+## Public store releases and update reminders
+
+The 2.6.0 app can show a dismissible update reminder in Climbs when its native
+major/minor version falls behind a public store release. Patch releases stay quiet.
+After 14 days reminders recur weekly; after 30 days every three days; after 60 days
+daily. Dismissal or successfully opening the store starts the cooldown. Updating
+the native app resets acknowledgment. The app stays usable throughout.
+
+### Collection and storage
+
+The six-hour Mobile Release Anchor workflow has an independent public-store job.
+`mobile-store-release-monitor.ts` writes GitHub deployment payloads in
+`mobile-public-store-ios` and `mobile-public-store-android`. These are metadata
+snapshots, not application deployments. They contain schemaVersion, checkedAt,
+latestVersion (nullable), and firstPublicAtByMinor. Each successful snapshot keeps
+all known first-observation dates from 2.6 onward. New versions do not reset the
+first qualifying update's age. Initial dates are observed dates, never inferred
+from approval dates. No historical backfill is necessary.
+
+Apple requires `READY_FOR_DISTRIBUTION` and at least one available territory whose
+preorder is off and release date has arrived. See Apple's [version API](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps-_id_-appstoreversions)
+and [availability API](https://developer.apple.com/documentation/appstoreconnectapi/get-v2-appavailabilities-_id_-territoryavailabilities).
+Android requires `RELEASE_LIFECYCLE_STATE_PUBLISHED` intersected with a `completed`
+production rollout. Exact version codes resolve through existing build tags; absent
+or ambiguous tags fail closed. See Google's [lifecycle API](https://developers.google.com/android-publisher/api-ref/rest/v3/applications.tracks.releases)
+and [rollout states](https://developers.google.com/android-publisher/api-ref/rest/v3/edits.tracks).
+Withdrawals publish a null target; rollbacks publish the currently available lower
+target, while retaining historical dates. Failures never refresh stale snapshots.
+Malformed previous payloads require explicit operator repair and never reset history.
+History includes the latest observed snapshot even when its status write failed;
+only snapshots with a successful deployment status are served by the backend.
+Each platform succeeds or fails independently.
+
+The backend GraphQL `mobileStoreRelease(platform, nativeVersion)` returns the
+latest native version, first qualifying public minor date, checkedAt, and store URL,
+or null when no eligible update exists. Metadata over 24 hours old, future dates,
+and malformed versions fail closed. The mobile app compares the installed native
+application version, not the OTA marketing version. Development, preview, browser,
+and screenshot sessions do not show reminders.
+
+The backend reads the deployments with the Boardsesh Feedback Bot App's
+installation token (`resolveGithubToken`). Without the App configured, the
+reads are anonymous, which GitHub caps at 60 requests an hour per IP, shared
+with every other anonymous GitHub read from the same egress. Steady state is
+about 24 an hour (two platforms, two calls, every 10 minutes). When GitHub
+refuses, the field returns null for 10 minutes and logs a `warn`; the app shows
+no reminder and reports nothing.
+
+### Monitor credential and activation
+
+1. Create a dedicated Play monitor account and set Production's
+   `GOOGLE_PLAY_MONITOR_SERVICE_ACCOUNT_JSON`; verify its `client_email` differs
+   from the publishing account. Supply `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` for
+   that identity comparison. The collector rejects missing or equal publishing
+   identities before creating an edit; it never authenticates with that account.
+   Until the monitor credential is set, each run skips Android with a
+   `::warning::` annotation and stays green; iOS keeps publishing, and the
+   Android snapshot is left as it was (no snapshot means no Android reminders).
+2. Grant app-level read access to release lifecycle metadata and the permissions
+   required to insert, read, and discard a production edit. Validate permissions
+   with a dry run before activating; view-only accounts may not allow edit creation.
+3. Run the workflow manually with `dry_run=true` and confirm both snapshot logs
+   reflect publicly downloadable builds. Dry runs read existing history and never
+   publish snapshots. Google always deletes its temporary edit without committing.
+4. Collection and the backend query both run from `main`: the workflow checks
+   out `main`, and the backend deploys from it. No live snapshots or credentials
+   are provisioned by this feature's implementation.
+5. Confirm both deployment environments receive successful snapshots every six
+   hours. If collection stops for 24 hours, reminders suppress automatically;
+   inspect the platform-specific workflow error before restoring collection.
+
+Google permits one edit per account and app; creating an edit invalidates another
+edit owned by the same account. This is why monitoring uses its own account. It
+never commits, changes tracks, or modifies publishing metadata. [Edit lifecycle](https://developers.google.com/android-publisher/edits).
+The workflow's fixed concurrency group serializes scheduled and manually dispatched
+runs. Do not run the monitor independently alongside that workflow.
+
+### Previewing reminders locally
+
+For a development simulator only, set `EXPO_PUBLIC_STORE_UPDATE_QA_STAGE` to
+`weekly`, `frequent`, or `daily` when starting Metro. This supplies a synthetic
+2.7.0 public release for an installed 2.6.0 build; `current` supplies no update.
+It bypasses development/screenshot build exclusions but keeps onboarding,
+foreground, focus, and active-session gates. Dismissals use separate QA
+preferences. Production JavaScript ignores this flag.
+
+The PR's iOS screenshot uses the `daily` fixture in a real iPhone simulator.

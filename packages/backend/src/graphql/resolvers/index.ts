@@ -83,6 +83,7 @@ import { feedbackMutations } from './feedback/mutations';
 import { feedbackQueries } from './feedback/queries';
 import { qaMutations } from './qa/mutations';
 import { qaQueries } from './qa/queries';
+import { mobileStoreReleaseQueries } from './mobile-store-release';
 import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
@@ -150,6 +151,7 @@ export const resolvers = {
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
+    ...mobileStoreReleaseQueries,
   },
 
   Mutation: {

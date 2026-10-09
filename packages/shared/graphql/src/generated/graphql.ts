@@ -3914,6 +3914,16 @@ export type MergeGymsResult = {
   results: Array<GymMergeDuplicateResult>;
 };
 
+export type MobileStorePlatform = 'android' | 'ios';
+
+export type MobileStoreRelease = {
+  __typename?: 'MobileStoreRelease';
+  checkedAt: Scalars['String']['output'];
+  firstNewerMinorAvailableAt: Scalars['String']['output'];
+  latestVersion: Scalars['String']['output'];
+  storeUrl: Scalars['String']['output'];
+};
+
 export type MoonBoardClimbDuplicateCandidateInput = {
   clientKey: Scalars['String']['input'];
   holds: MoonBoardHoldsInput;
@@ -6649,6 +6659,8 @@ export type Query = {
    * Requires authentication.
    */
   isFollowing: Scalars['Boolean']['output'];
+  /** Latest publicly available native release; null when no reliable newer minor release is known. */
+  mobileStoreRelease?: Maybe<MobileStoreRelease>;
   /** The signed-in climber's current analytics consent, or null when they have never answered. */
   myAnalyticsConsent?: Maybe<AnalyticsConsent>;
   /**
@@ -7436,6 +7448,12 @@ export type QueryInstagramBetaScanArgs = {
 /** Root query type for all read operations. */
 export type QueryIsFollowingArgs = {
   userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryMobileStoreReleaseArgs = {
+  nativeVersion: Scalars['String']['input'];
+  platform: MobileStorePlatform;
 };
 
 /** Root query type for all read operations. */
@@ -12579,6 +12597,22 @@ export type ClearLocationSyncFreezeMutation = {
     entityUuid: string;
     previousSyncFrozenAt?: string | null;
   };
+};
+
+export type MobileStoreReleaseQueryVariables = Exact<{
+  platform: MobileStorePlatform;
+  nativeVersion: Scalars['String']['input'];
+}>;
+
+export type MobileStoreReleaseQuery = {
+  __typename?: 'Query';
+  mobileStoreRelease?: {
+    __typename?: 'MobileStoreRelease';
+    latestVersion: string;
+    firstNewerMinorAvailableAt: string;
+    checkedAt: string;
+    storeUrl: string;
+  } | null;
 };
 
 export type GetNewClimbFeedQueryVariables = Exact<{
@@ -18904,6 +18938,61 @@ export const ClearLocationSyncFreezeDocument = {
     },
   ],
 } as unknown as DocumentNode<ClearLocationSyncFreezeMutation, ClearLocationSyncFreezeMutationVariables>;
+export const MobileStoreReleaseDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'MobileStoreRelease' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'platform' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'MobileStorePlatform' } },
+          },
+        },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'nativeVersion' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'mobileStoreRelease' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'platform' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'platform' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'nativeVersion' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'nativeVersion' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'latestVersion' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'firstNewerMinorAvailableAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'checkedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'storeUrl' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<MobileStoreReleaseQuery, MobileStoreReleaseQueryVariables>;
 export const GetNewClimbFeedDocument = {
   kind: 'Document',
   definitions: [
