@@ -6,7 +6,7 @@ import {
   boardSearchRetryDelay,
   resetBoardSearchCooldownForTests,
 } from '../search-boards-request';
-import { SEARCH_BOARDS } from '../operations';
+import { SEARCH_BOARDS } from '@boardsesh/graphql/operations';
 import { reportHandledError } from '../../error-reporting';
 
 const requestMock = vi.hoisted(() => vi.fn());

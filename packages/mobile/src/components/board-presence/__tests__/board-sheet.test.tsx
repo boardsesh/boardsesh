@@ -398,7 +398,7 @@ function registerSprayWallFixture(layoutId: number, wallUuid: string, archive: P
   });
 }
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { GET_CLIMB } from '../../../lib/graphql/operations';
+import { GET_CLIMB } from '@boardsesh/graphql/operations';
 
 function makeClimb(climbUuid: string, seq: number, overrides: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb {
   return {

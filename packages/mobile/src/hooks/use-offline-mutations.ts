@@ -18,7 +18,7 @@ import { reportEnqueueRevived, reportEnqueueSuppressed } from '../offline/outbox
 import { notifyOutboxChanged } from '../offline/outbox-store';
 import { localWriteRetryOptions } from '../offline/local-write-telemetry';
 import { takeInjectedWriteFault } from '../offline/dev/write-fault-injection';
-import type { SaveTickMutationVariables } from '../lib/graphql/operations';
+import type { SaveTickMutationVariables } from '@boardsesh/graphql/operations';
 import { readAuthorSnapshot, saveAuthorSnapshot, updateAuthorSnapshot } from '../db/queries/followed-authors-local';
 
 export async function writeAuthorFollowLocal(

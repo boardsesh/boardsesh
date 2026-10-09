@@ -304,9 +304,9 @@ function collectSharedImports(): Map<string, Set<string>> {
     //     operations module up top to build SHARED_OPERATION_MODULES, plus
     //     carries fake import statements as inline string samples for the
     //     guard's own tests below.
-    //   - mobile's own operations.ts, which re-exports a few documents from the
-    //     shared package (`export { TOGGLE_FAVORITE, … } from
-    //     '@boardsesh/graphql/operations/favorites'`) — that file is already
+    //   - mobile's own operations.ts, which re-exports one document from the
+    //     shared package (`export { GET_BOARD, … } from
+    //     '@boardsesh/graphql/operations/boards'`) — that file is already
     //     scanned exhaustively via the `mobileOperations` namespace import
     //     above (a re-export shows up on the namespace object like any other
     //     export), so it is never actually invisible to the registry.
@@ -462,8 +462,8 @@ describe('the recorded screenshot fixtures', () => {
   });
 
   it('holds a recording of every document the app sends under a recorded operation name', () => {
-    // Two documents may share an operation name (mobile's GetBoard and the
-    // shared package's select different fields). The check above passes as
+    // Two documents may share an operation name (mobile and the shared package
+    // each had a GetBoard, selecting different fields). The check above passes as
     // long as ONE of them matches, so a screen that switches to the other one
     // replays as `document-changed` with every PR check green — #6076 did
     // exactly that to GetBoard.

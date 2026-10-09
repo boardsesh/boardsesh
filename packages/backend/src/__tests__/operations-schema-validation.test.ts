@@ -183,11 +183,7 @@ describe('mobile plain-string subscription documents validate against the execut
     );
   }
 
-  const mobilePlainOperationNames = [
-    'SESSION_UPDATES_SUBSCRIPTION',
-    'QUEUE_UPDATES_SUBSCRIPTION',
-    'NOTIFICATION_RECEIVED_SUBSCRIPTION',
-  ] as const;
+  const mobilePlainOperationNames = ['SESSION_UPDATES_SUBSCRIPTION', 'QUEUE_UPDATES_SUBSCRIPTION'] as const;
 
   const operationEntries: Array<[string, string]> = mobilePlainOperationNames.map((constName) => [
     constName,
@@ -221,41 +217,27 @@ describe('mobile plain-string subscription documents validate against the execut
 // it, the play drawer — deliberately omitted `description` on the premise that
 // "no list UI renders them". The play drawer DOES render it now (setter notes),
 // so re-slimming the list would silently blank that section for every climb
-// opened from search while leaving deep-linked climbs fine. Same technique as
-// queue-climb-field-contract.test.ts: read the hand-maintained template out of
-// mobile's source and assert on the parsed field set.
-describe('CLIMB_SEARCH_FIELDS carries the fields the play drawer renders', () => {
-  // The shared document nests the list under `searchClimbs { climbs { ... } }`,
-  // so collect by the `climbs` parent rather than the `climb` one climbFieldNames uses.
-  function searchResultClimbFields(operationSource: string): Set<string> {
-    const fields = new Set<string>();
-    visit(parse(operationSource), {
-      Field(node) {
-        if (node.name.value !== 'climbs' || !node.selectionSet) return;
-        for (const selection of node.selectionSet.selections) {
-          if (selection.kind === 'Field') fields.add(selection.name.value);
-        }
-      },
-    });
-    return fields;
-  }
-
-  const mobileSearchFields = climbFieldNames(
-    `{ climb { ${extractTemplateConst(readMobileOperationsSource(), 'CLIMB_SEARCH_FIELDS')} } }`,
-  );
-  const sharedSearchFields = searchResultClimbFields(publicOperations.SEARCH_CLIMBS);
-
-  it('both copies select a non-empty field set', () => {
-    expect(mobileSearchFields.size).toBeGreaterThan(0);
-    expect(sharedSearchFields.size).toBeGreaterThan(0);
+// opened from search while leaving deep-linked climbs fine. There is one
+// SEARCH_CLIMBS document, in the shared package; mobile imports it.
+describe('SEARCH_CLIMBS carries the fields the play drawer renders', () => {
+  // The document nests the list under `searchClimbs { climbs { ... } }`, so
+  // collect by the `climbs` parent rather than the `climb` one climbFieldNames uses.
+  const searchFields = new Set<string>();
+  visit(parse(publicOperations.SEARCH_CLIMBS), {
+    Field(node) {
+      if (node.name.value !== 'climbs' || !node.selectionSet) return;
+      for (const selection of node.selectionSet.selections) {
+        if (selection.kind === 'Field') searchFields.add(selection.name.value);
+      }
+    },
   });
 
-  it('mobile selects description, so the play drawer can show the setter notes (#4494)', () => {
-    expect(mobileSearchFields.has('description')).toBe(true);
+  it('selects a non-empty field set', () => {
+    expect(searchFields.size).toBeGreaterThan(0);
   });
 
-  it('the shared search operation selects description too, so a future web caller starts correct', () => {
-    expect(sharedSearchFields.has('description')).toBe(true);
+  it('selects description, so the play drawer can show the setter notes (#4494)', () => {
+    expect(searchFields.has('description')).toBe(true);
   });
 });
 

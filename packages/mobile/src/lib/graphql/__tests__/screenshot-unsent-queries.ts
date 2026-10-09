@@ -55,7 +55,6 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetMyRoles',
   'GetMySprayWallLifecycle',
   'GetMySprayWalls',
-  'GetNearbySessions',
   'GetNotificationActors',
   'GetNotifications',
   'GetPlaylist',

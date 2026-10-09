@@ -4,7 +4,7 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { useFeatureFlag } from '../../../providers/feature-flags-provider';
 import { offlineAwareRequest } from '../offline-request';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '@boardsesh/graphql/operations';
 import { INFINITE_SEARCH_CLIMBS_QUERY_KEY } from '../query-keys';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { screenshotModeNextPageParam } from '../../screenshot-mode';

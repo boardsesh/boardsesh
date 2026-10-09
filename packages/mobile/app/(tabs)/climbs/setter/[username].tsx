@@ -14,7 +14,7 @@ import { usePlaylistRenderBoard } from '../../../../src/lib/playlists/use-playli
 import { setterPlaylistInput } from '../../../../src/lib/playlists/setter-playlist-input';
 import { useInfiniteSearchClimbs } from '../../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { useSearchClimbsCount } from '../../../../src/lib/graphql/hooks';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../../src/lib/graphql/operations';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '@boardsesh/graphql/operations';
 import { offlineAwareRequest } from '../../../../src/lib/graphql/offline-request';
 import { toQueueClimbs } from '../../../../src/lib/climb-types';
 import { useIsSharedSession } from '../../../../src/providers/queue-provider';

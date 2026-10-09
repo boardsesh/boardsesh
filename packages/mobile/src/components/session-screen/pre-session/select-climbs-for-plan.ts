@@ -2,7 +2,7 @@ import type { Climb, ClimbSearchInput, UserBoard } from '@boardsesh/shared-schem
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { PlannedClimbSlot } from '@boardsesh/playlist-generator';
 import { offlineAwareRequest } from '../../../lib/graphql/offline-request';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../lib/graphql/operations';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '@boardsesh/graphql/operations';
 import {
   buildPools,
   selectItemsFromPools,

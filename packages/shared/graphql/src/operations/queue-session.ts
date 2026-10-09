@@ -334,6 +334,14 @@ export const CREATE_SESSION = `
 `;
 
 // Subscriptions
+//
+// SESSION_UPDATES and QUEUE_UPDATES below are NOT what the mobile app sends.
+// It sends its own SessionUpdates / QueueUpdates texts from
+// packages/mobile/src/lib/graphql/operations.ts, which are the ones recorded
+// for screenshot replay; these two are sent only by the backend test harness.
+// They are the last operations defined on both sides. See KNOWN_DUPLICATES in
+// packages/mobile/src/lib/graphql/__tests__/no-duplicate-operations.test.ts for
+// why, and for what merging them takes.
 export const SESSION_UPDATES = `
   subscription SessionUpdates($sessionId: ID!) {
     sessionUpdates(sessionId: $sessionId) {

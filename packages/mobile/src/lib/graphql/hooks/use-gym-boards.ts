@@ -13,7 +13,7 @@ import {
   type GetGymBoardsForSwitcherQueryResponse,
 } from '@boardsesh/graphql/operations/gyms';
 import { getHttpClient } from '../client';
-import type { GetMyBoardsQueryResponse } from '../operations';
+import type { GetMyBoardsQueryResponse } from '@boardsesh/graphql/operations';
 import { gymBoardsQueryKey, myBoardsQueryKey } from '../query-keys';
 
 /**

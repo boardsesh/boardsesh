@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
-import type { SearchClimbsQueryResponse } from '../../operations';
+import type { SearchClimbsQueryResponse } from '@boardsesh/graphql/operations';
 
 const requestMock = vi.fn();
 

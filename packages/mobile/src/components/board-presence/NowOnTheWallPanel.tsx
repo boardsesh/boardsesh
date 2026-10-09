@@ -65,7 +65,7 @@ import type { DismissAndWaitResult } from '../../providers/sheet-presentation-pr
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
-import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
+import { GET_CLIMB, type GetClimbQueryResponse } from '@boardsesh/graphql/operations';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { withAlpha } from '../../theme/colors';

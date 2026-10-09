@@ -148,10 +148,6 @@ type Documents = {
   '\n  query QaPreviews($prNumbers: [Int!]!, $includeBuilding: Boolean) {\n    qaPreviews(prNumbers: $prNumbers, includeBuilding: $includeBuilding) {\n      prNumber\n      branch\n      title\n      url\n      author\n      isDraft\n      headSha\n      headCommittedAt\n      updatedAt\n      risk\n      riskReason\n      testPlan\n      testPlanSteps\n      otaBuild\n      labels {\n        name\n        color\n      }\n      myLatestVerdict {\n        id\n        prNumber\n        branch\n        verdict\n        comment\n        headSha\n        createdAt\n        githubCommentUrl\n      }\n    }\n  }\n': typeof types.QaPreviewsDocument;
   '\n  mutation SubmitQaVerdict($input: SubmitQaVerdictInput!) {\n    submitQaVerdict(input: $input) {\n      id\n      prNumber\n      branch\n      verdict\n      comment\n      headSha\n      createdAt\n      githubCommentUrl\n    }\n  }\n': typeof types.SubmitQaVerdictDocument;
   '\n  query SavedClimbDocuments($boardType: String!, $layoutId: Int!, $climbUuid: ID!, $sprayWallUuid: ID) {\n    syncClimbDocuments(\n      boardType: $boardType\n      layoutId: $layoutId\n      climbUuid: $climbUuid\n      sprayWallUuid: $sprayWallUuid\n    ) {\n      viewerId\n      climb\n      stats\n    }\n  }\n': typeof types.SavedClimbDocumentsDocument;
-  '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n': typeof types.SessionSummaryFieldsFragmentDoc;
-  '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.EndSessionDocument;
-  '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n      isPublic\n    }\n  }\n': typeof types.UpdateSessionDocument;
-  '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.GetSessionSummaryDocument;
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': typeof types.FollowUserDocument;
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n': typeof types.UnfollowUserDocument;
   '\n  query GetPublicProfile($userId: ID!) {\n    publicProfile(userId: $userId) {\n      id\n      displayName\n      avatarUrl\n      instagramUrl\n      followerCount\n      followingCount\n      isFollowedByMe\n    }\n  }\n': typeof types.GetPublicProfileDocument;
@@ -458,14 +454,6 @@ const documents: Documents = {
     types.SubmitQaVerdictDocument,
   '\n  query SavedClimbDocuments($boardType: String!, $layoutId: Int!, $climbUuid: ID!, $sprayWallUuid: ID) {\n    syncClimbDocuments(\n      boardType: $boardType\n      layoutId: $layoutId\n      climbUuid: $climbUuid\n      sprayWallUuid: $sprayWallUuid\n    ) {\n      viewerId\n      climb\n      stats\n    }\n  }\n':
     types.SavedClimbDocumentsDocument,
-  '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n':
-    types.SessionSummaryFieldsFragmentDoc,
-  '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n':
-    types.EndSessionDocument,
-  '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n      isPublic\n    }\n  }\n':
-    types.UpdateSessionDocument,
-  '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n':
-    types.GetSessionSummaryDocument,
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': types.FollowUserDocument,
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n':
     types.UnfollowUserDocument,
@@ -1359,30 +1347,6 @@ export function graphql(
 export function graphql(
   source: '\n  query SavedClimbDocuments($boardType: String!, $layoutId: Int!, $climbUuid: ID!, $sprayWallUuid: ID) {\n    syncClimbDocuments(\n      boardType: $boardType\n      layoutId: $layoutId\n      climbUuid: $climbUuid\n      sprayWallUuid: $sprayWallUuid\n    ) {\n      viewerId\n      climb\n      stats\n    }\n  }\n',
 ): (typeof documents)['\n  query SavedClimbDocuments($boardType: String!, $layoutId: Int!, $climbUuid: ID!, $sprayWallUuid: ID) {\n    syncClimbDocuments(\n      boardType: $boardType\n      layoutId: $layoutId\n      climbUuid: $climbUuid\n      sprayWallUuid: $sprayWallUuid\n    ) {\n      viewerId\n      climb\n      stats\n    }\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n',
-): (typeof documents)['\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n',
-): (typeof documents)['\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n      isPublic\n    }\n  }\n',
-): (typeof documents)['\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n      isPublic\n    }\n  }\n'];
-/**
- * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
- */
-export function graphql(
-  source: '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n',
-): (typeof documents)['\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
