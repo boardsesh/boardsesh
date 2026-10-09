@@ -250,7 +250,8 @@ async function verifyServedExport(
   runtimeVersion: string,
   fetchImpl: typeof fetch,
   branch: string,
-): Promise<void> {
+  expectedUUID?: string,
+): Promise<string> {
   const manifest = await readProductionManifest(
     manifestUrl,
     exportFiles.platform,
@@ -260,6 +261,10 @@ async function verifyServedExport(
     branch,
   );
   if (manifest === null) throw new Error(`${exportFiles.platform} ${branch} has no update after promotion.`);
+  const uuid = string(manifest.id, `${exportFiles.platform} ${branch} update ID`);
+  if (!UPDATE_ID.test(uuid)) throw new Error('Served update ID must be a UUID.');
+  if (expectedUUID !== undefined && uuid !== expectedUUID)
+    throw new Error(`${exportFiles.platform} ${branch} unchanged baseline UUID differs from stage.`);
   const extra = object(manifest.extra, `${sentenceLabel(branch)} manifest extra`);
   if (!isDeepStrictEqual(extra.expoClient, exportFiles.expoConfig)) {
     throw new Error(`${exportFiles.platform} ${branch} Expo config differs from stage.`);
@@ -285,6 +290,38 @@ async function verifyServedExport(
     .sort();
   if (JSON.stringify(servedHashes) !== JSON.stringify(stagedHashes)) {
     throw new Error(`${exportFiles.platform} ${branch} asset hashes differ from stage.`);
+  }
+  return uuid;
+}
+
+/** Recheck unchanged platforms from one coherent manifest per platform, including its UUID and all staged bytes. */
+export async function verifyUnchangedPlatforms(options: {
+  receipt: StageReceipt;
+  iosExport: string;
+  androidExport: string;
+  manifestUrl: string;
+  unchangedPlatforms: Partial<Record<OtaPlatform, string>>;
+  branch?: string;
+  fetchImpl?: typeof fetch;
+}): Promise<void> {
+  for (const platform of ['ios', 'android'] as const) {
+    const uuid = options.unchangedPlatforms[platform];
+    if (uuid === undefined) continue;
+    if (uuid !== options.receipt.baselineProductionUpdateIds[platform] || !UPDATE_ID.test(uuid))
+      throw new Error(`${platform} unchanged UUID is not the captured baseline.`);
+    const exportFiles = validateExport(
+      platform === 'ios' ? options.iosExport : options.androidExport,
+      platform,
+      options.receipt.platforms[platform].bundleSha256,
+    );
+    await verifyServedExport(
+      options.manifestUrl,
+      exportFiles,
+      options.receipt.platforms[platform].runtimeVersion,
+      options.fetchImpl ?? fetch,
+      branchName(options.branch ?? DEFAULT_BRANCH),
+      uuid,
+    );
   }
 }
 
@@ -312,6 +349,7 @@ async function verifyServedExportWithRetry(
 interface RolloutRecord {
   /** The numeric update id the server leased, per platform. */
   updateIds: Partial<Record<OtaPlatform, string>>;
+  unchangedPlatforms: Partial<Record<OtaPlatform, string>>;
   /**
    * The update each platform's rollout replaced: the staged baseline at the
    * moment the lease was taken, as a manifest id (the update UUID), or null when
@@ -325,14 +363,27 @@ interface RolloutRecord {
  * when the file belongs to another commit or branch: ids from a different
  * promotion prove nothing about this one.
  */
-function readRolloutReceipt(path: string, branch: string, receipt: StageReceipt): RolloutRecord {
-  const record: RolloutRecord = { updateIds: {}, baselineUpdateIds: {} };
+export function readRolloutReceipt(path: string, branch: string, receipt: StageReceipt): RolloutRecord {
+  const record: RolloutRecord = { updateIds: {}, baselineUpdateIds: {}, unchangedPlatforms: {} };
   if (!existsSync(path)) return record;
   const receiptJson = object(JSON.parse(readFileSync(path, 'utf8')) as unknown, 'Rollout receipt');
   if (receiptJson.branch !== branch || receiptJson.commitHash !== receipt.commitHash) return record;
   const updateIds = object(receiptJson.updateIds, 'Rollout receipt updateIds');
   const baselineUpdateIds = object(receiptJson.baselineUpdateIds, 'Rollout receipt baselineUpdateIds');
+  const unchanged = object(
+    receiptJson.unchangedPlatforms === undefined ? {} : receiptJson.unchangedPlatforms,
+    'Unchanged platform UUIDs',
+  );
+  if (Object.keys(unchanged).some((platform) => platform !== 'ios' && platform !== 'android'))
+    throw new Error('Unknown unchanged platform.');
   for (const platform of ['ios', 'android'] as const) {
+    if (unchanged[platform] !== undefined) {
+      const uuid = string(unchanged[platform], 'Unchanged platform UUID');
+      if (!UPDATE_ID.test(uuid) || uuid !== receipt.baselineProductionUpdateIds[platform])
+        throw new Error(`${platform} unchanged UUID is not the captured baseline.`);
+      if (updateIds[platform] !== undefined) throw new Error(`${platform} cannot be both unchanged and leased.`);
+      record.unchangedPlatforms[platform] = uuid;
+    }
     const updateId = updateIds[platform];
     if (updateId === undefined) continue;
     if (typeof updateId !== 'string' || !/^\d+$/.test(updateId)) {
@@ -363,7 +414,13 @@ export async function promoteArchivedOta(options: {
    * this writes the leased update ids to, and reads on a re-run to recognise its
    * own rollout; keep it with the stage receipt between attempts.
    */
-  rollout?: { percentage: number; receiptPath: string; connect: (appId: string) => Promise<RolloutReader> };
+  rollout?: {
+    percentage: number;
+    receiptPath: string;
+    connect: (appId: string) => Promise<RolloutReader>;
+    /** Synchronously persist controller ownership before any upload/finalize can begin. */
+    onRecord?: (record: Readonly<RolloutRecord>) => void;
+  };
   fetchImpl?: typeof fetch;
   verificationDelaysMs?: readonly number[];
 }): Promise<void> {
@@ -423,17 +480,26 @@ export async function promoteArchivedOta(options: {
   // which update each of its rollouts replaced.
   const rolloutRecord: RolloutRecord = options.rollout
     ? readRolloutReceipt(options.rollout.receiptPath, branch, receipt)
-    : { updateIds: {}, baselineUpdateIds: {} };
+    : { updateIds: {}, baselineUpdateIds: {}, unchangedPlatforms: {} };
+  const saveRolloutRecord = (): void => {
+    if (options.rollout) {
+      writeFileSync(
+        options.rollout.receiptPath,
+        `${JSON.stringify({ branch, commitHash: receipt.commitHash, ...rolloutRecord })}\n`,
+      );
+      options.rollout.onRecord?.(rolloutRecord);
+    }
+  };
   const recordLease = (platform: OtaPlatform, updateId: string): void => {
     if (!options.rollout) return;
+    // The common lease parser also accepts safe integer numbers. Negative IDs
+    // cannot be controller ownership; reject before poisoning its durable receipt.
+    if (!/^\d+$/.test(updateId)) throw new Error('Rollout lease update ID must be a numeric id.');
     rolloutRecord.updateIds[platform] = updateId;
     // The lease is only requested after the baseline was confirmed unchanged, so
     // the staged baseline is the update this rollout is about to replace.
     rolloutRecord.baselineUpdateIds[platform] = receipt.baselineProductionUpdateIds[platform];
-    writeFileSync(
-      options.rollout.receiptPath,
-      `${JSON.stringify({ branch, commitHash: receipt.commitHash, ...rolloutRecord })}\n`,
-    );
+    saveRolloutRecord();
   };
 
   /**
@@ -533,6 +599,17 @@ export async function promoteArchivedOta(options: {
   // assertRolloutReplacedBaseline in its place: see there for why.
   for (const platform of ['ios', 'android'] as const) {
     if (rolloutReader && (await ownRolloutIsLive(rolloutReader, platform, null))) leases[platform] = 'rolling';
+    else if (rolloutRecord.unchangedPlatforms[platform]) {
+      await verifyServedExport(
+        options.manifestUrl,
+        exports[platform],
+        receipt.platforms[platform].runtimeVersion,
+        fetchImpl,
+        branch,
+        rolloutRecord.unchangedPlatforms[platform],
+      );
+      leases[platform] = null;
+    }
   }
 
   // Both platforms must still match their pre-stage baseline before creating
@@ -543,7 +620,7 @@ export async function promoteArchivedOta(options: {
 
   // Validate both server responses before sending any archived bytes.
   for (const platform of ['ios', 'android'] as const) {
-    if (leases[platform] === 'rolling') continue;
+    if (leases[platform] === 'rolling' || rolloutRecord.unchangedPlatforms[platform]) continue;
     const response = await requestUploadLease(target, {
       platform,
       runtimeVersion: receipt.platforms[platform].runtimeVersion,
@@ -564,12 +641,26 @@ export async function promoteArchivedOta(options: {
       throw new Error(`${platform} ${branch} has an active rollout; promotion was refused.`);
     }
     if (response.status === 406) {
+      await response.body?.cancel();
       if (rolloutReader) {
-        throw new Error(`${platform} ${branch} already serves these files to everyone; there is no rollout to start.`);
+        const uuid = receipt.baselineProductionUpdateIds[platform];
+        if (uuid === null) throw new Error(`${platform} unchanged platform has no stable baseline.`);
+        if (rolloutRecord.updateIds[platform]) throw new Error(`${platform} leased update cannot become unchanged.`);
+        await verifyServedExport(
+          options.manifestUrl,
+          exports[platform],
+          receipt.platforms[platform].runtimeVersion,
+          fetchImpl,
+          branch,
+          uuid,
+        );
+        // An unowned rollout starting after the first read must never be classified as unchanged.
+        await ownRolloutIsLive(rolloutReader, platform, null);
+        rolloutRecord.unchangedPlatforms[platform] = uuid;
+        saveRolloutRecord();
       }
       // Since 3.2.0 "no changes" is answered here, before any upload. The served
       // manifest is still verified below, so this cannot hide a wrong update.
-      await response.body?.cancel();
       leases[platform] = null;
       continue;
     }
@@ -589,6 +680,18 @@ export async function promoteArchivedOta(options: {
   }
 
   for (const platform of ['ios', 'android'] as const) {
+    if (rolloutReader) {
+      // Revalidate every unchanged side before either platform's upload/finalize.
+      await verifyUnchangedPlatforms({
+        receipt,
+        iosExport: options.iosExport,
+        androidExport: options.androidExport,
+        manifestUrl: options.manifestUrl,
+        unchangedPlatforms: rolloutRecord.unchangedPlatforms,
+        branch,
+        fetchImpl,
+      });
+    }
     const lease = leases[platform];
     if (lease === 'rolling') continue;
     if (lease === null) {

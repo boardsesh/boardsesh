@@ -102,7 +102,7 @@ What the retry has to respect:
   (path, SHA-256 hash, md5 cache key, role) instead of `fileNames`, and "no changes" moved from a
   406 on `markUpdateAsUploaded` to a 406 on `requestUploadUrl`. eoas 3.2.x against a 3.1.x server
   fails with `No file names provided`; eoas 3.1.x against a 3.2.x server fails too, because the
-  server has no fallback. `scripts/mobile-ota-promote.ts` speaks this protocol itself, so it moves
+  server rejects the previous upload shape. `scripts/mobile-ota-promote.ts` speaks this protocol itself, so it moves
   with `EOAS_PACKAGE_SPEC` as well.
 - **One PR moves the image, the CLI and the promote script.** On that push, Railway Config rolls the
   server while production-deploy stages the OTA. `scripts/mobile-ota-server-ready.mjs` makes the
@@ -120,13 +120,15 @@ What the retry has to respect:
 - **Bundle diffing is on** (`BUNDLE_DIFFING=true`). On each publish xprem computes a bsdiff patch from
   each of the five previous updates on the same branch, runtime and platform, and keeps one only when
   it is at most 30% of the gzipped bundle. expo-updates has asked for patches by default since
-  56.0.13, so no build was needed. A device more than five updates behind gets the full bundle, and
-  `main` publishes about 14 updates a day, so patches mostly help climbers who open the app several
-  times a day. Each diff job peaks at about six times the bundle size in memory (about 125 MB) and
-  two run at once.
+  56.0.13, so no build was needed. A device more than five updates behind gets the full bundle.
+  The historical per-merge production cadence of about 14 updates a day limited useful patch history
+  to hours. Daily stable publication extends that history; independent staging and beta publishes
+  do not evict production's previous updates. Each diff job peaks at about six times the bundle size
+  in memory (about 125 MB) and two run at once.
 - **Patches come from the server, never the CDN.** `BUNDLE_DIFFING_CDN_REDIRECT` stays unset.
   expo-updates rejects a patch without the `im: bsdiff` and `expo-base-update-id` response headers
-  and does not fall back to the full bundle. The edge would need a Worker to add the second one,
+  and retries the full bundle with patching disabled. Both native downloaders implement this fallback;
+  a rejected patch still wastes transfer and launch time. The edge would need a Worker to add the second header,
   because the value comes from the request path. `BUNDLE_DIFFING_CDN_REDIRECT` is a forbidden
   variable in `infra/railway/config.ts`, so setting it by hand shows up as drift.
 - **Turning diffing off is a one-line PR:** set `BUNDLE_DIFFING` to `'false'` in
@@ -574,6 +576,7 @@ What the tool converges:
 | Branch `production` | exists, protected |
 | Branch `pr-beta` | exists, protected |
 | Branch `pr-staging` | exists, protected |
+| Branch `pr-stable-candidate` | exists, protected; frozen bytes for blocking QA |
 
 On 2026-10-05 the server differed from this in four ways: `pr-beta` did not exist, and none of the
 three branches was protected. The first apply creates one empty branch and sets three flags.
@@ -583,11 +586,11 @@ A protected branch cannot be deleted by anyone until the flag is lifted in the d
 leaves the PR-number check in `scripts/ota-preview-cleanup.ts` as the only thing between a cleanup
 run and those branches. Protection is the second lock.
 
-The same file declares a **release policy that nothing acts on yet**: canary steps 5, 10, 25, 50,
-4 hours per step, a 20 hour minimum soak and a 22:00 UTC daily window. They are written down so the
-stable-release workflow can read them when it lands. Only the health thresholds are in use today,
-by `mobile-ota-rollout.ts health`, and every one of them is provisional until the fleet's normal
-faulty-device rate has been measured.
+The same file declares the daily controller's release policy: canary steps 5, 10, 25, 50,
+four hours per step, at least 20 hours overall and eight hours at 50%, then a healthy finish in the
+22:00 UTC daily window. The controller stays read-only for production until
+`OTA_STABLE_RELEASE_ENABLED=true`. Health thresholds remain provisional until the fleet's normal
+faulty-device rate has been measured; see the daily stable runbook below.
 
 What the tool will not do, whatever the declaration says:
 
@@ -839,14 +842,130 @@ health answers for an update with no devices and stops there.
 
 ##### Results
 
-Not run yet. The answers to the eight questions above are filled in here from the first run's
-transcript, with the run's URL and date. Until then nothing in this section is known.
+[Run 37291343711](https://github.com/boardsesh/boardsesh/actions/runs/37291343711) passed on
+2026-10-05. The script took 59 seconds on `pr-rollout-proof`: twelve steps passed, the shared-runtime
+step recorded an observation, and none failed or skipped. Its `ota-rollout-proof` artifact contains
+the transcript and raw replies. This proves the control plane; it does not qualify a current native candidate.
+
+| Question | Measured result |
+| --- | --- |
+| Publish locks | Publish, republish and rollback returned 409 during a live rollout; publishing succeeded after revert and finish. |
+| Device assignment | Anonymous requests received control. Each of forty IDs per platform kept its assignment; increasing 10% → 25% → 50% only added canary devices. |
+| IDs and scope | `GET …/rollout` returned string IDs and one row per platform. Wrong string `expectedUpdateId` returned 409; a number returned 400. One write moved both platforms sharing the synthetic runtime. Production fingerprints differ, so production requires two writes. |
+| Revert and finish | Revert restored control bytes under new UUIDs and null commit hashes. Finish served the candidate to anonymous and sampled devices; both operations removed the publish lock. Control IDs were present. |
+| Remaining gaps | No device executed these bundles. Fallback-device accounting, issue-counter time semantics and a licensed-feature refusal remain unmeasured. Zero-device health correctly returned insufficient evidence. |
 
 `mobile-ota-unlock.yml` wraps `revert --if-live` for publishers that must not be refused by a live
 canary. It takes the iOS and the Android runtime version in one run. It is dispatch-only: a
 reusable workflow is loaded from the caller's ref, so a release branch could change the steps that
 run with the admin login. Callers will start it with
-`gh workflow run mobile-ota-unlock.yml --ref main`. Nothing calls it yet.
+`gh workflow run mobile-ota-unlock.yml --ref main`. Native-build republishes and manual hotfix/backport
+publishers dispatch and await that trusted workflow before writing production. A failed or missing
+unlock blocks the publish. Staging exports do not unlock or replace production.
+
+#### Daily stable runbook
+
+`mobile-ota-stable-release.yml` runs dependency-free controller code from `main`. Its admin environment,
+`ota-stable-release`, must use **Selected branches: main only**. The channel still serves `production`;
+`pr-stable-candidate`, `pr-staging` and `pr-beta` are protected branches reached through the existing
+`pr-*` surfing pattern. Creating the new protected branch requires the usual `ota:apply` convergence.
+
+GitHub setup was verified on 2026-10-08: this environment selects only the `main` branch, and the
+repository activation variable was explicitly set to `false`. This is the initial cutover state;
+the proof and store-device checks below are still required before changing that variable.
+
+Relevant `main` pushes always publish to staging, wait for deployment and backend-schema readiness,
+then promote those exact exported bytes to `pr-beta`. This supplies early-update store QA before cutover.
+Before `OTA_STABLE_RELEASE_ENABLED=true`, successful deployments additionally keep the existing
+per-merge production promotion. Once enabled, production receives the daily qualified canary instead.
+The activation switch controls production cadence, not staging or beta publication. Native builds,
+release trains, manual hotfixes and backports retain
+their existing publish routes, with the trusted unlock before a production write.
+
+| Time, UTC | Controller work |
+| --- | --- |
+| 19:17 daily | Prepare the newest successful `main` push deployment with a complete stage artifact. Copy its exports to `pr-stable-candidate`; pin SHA, runtimes, hashes and source run; run all navigation smokes and both native boot checks against that frozen receipt. |
+| 22:00 daily | Start one qualified candidate at 5%, or finish an eligible healthy canary. This is 9am Sydney during daylight saving, 8am during standard time. |
+| Minute 37 hourly | Recheck health and apply at most one timed step. Delays do not skip soak periods. |
+
+Each of 5%, 10%, 25% and 50% must soak for at least four hours. Completion additionally needs at
+least 20 hours overall, eight hours at 50%, the 22:00 UTC hour and healthy evidence on every changed platform.
+Insufficient samples with valid counts may progress through 50%, then hold. Missing or malformed
+health data holds progression. An unhealthy platform reverts the owned canaries, except the partial-finish
+case below. There is only one active production canary; staging and beta continue independently.
+Start and step clocks begin after every changed platform write is confirmed, so a partial write never shortens a soak.
+
+An unchanged platform must match one coherent production manifest: its captured native update UUID,
+launch bundle hash, asset hashes and Expo client configuration must match the frozen candidate.
+The controller records that UUID separately from the rollout IDs it owns. If both platforms are
+unchanged, it records the candidate as completed without rollout writes. If only one changes, only
+that platform needs rollout health and soak evidence; both platforms still require frozen native QA.
+The unchanged manifest is rechecked before each transition. An external change holds completion and
+reverts any owned sibling canary while preserving the external update.
+
+Upload leases and unchanged-platform attestations are checkpointed before bundle uploads or
+finalization. A retained receipt can recover a cancelled start, after validation against the frozen
+candidate and captured baselines. Normal active phases restore the candidate bytes for those checks;
+abort and revert can release owned canaries without that archive.
+
+Preparation and tick artifacts retain candidate bytes, receipts, owned update IDs and checkpoints for
+30 days. The source `mobile-ota-stage` artifact has its separate seven-day retention. Discovery accepts
+only trusted workflow runs on repository `main`; the stage receipt must match the source run SHA.
+Blocking QA must name the same frozen SHA, branch and receipt. Failed, cancelled, skipped or missing
+jobs cannot qualify a candidate. Historical proof runs below do not substitute for fresh qualification.
+
+**Activation remains off until proof and store QA pass.** Run fresh green and deliberately broken
+candidates on iOS and Android, including the required navigation smokes and real downloaded bytes.
+On physical store builds, verify early-update opt-in and opt-out, offline restart, preview precedence,
+native upgrade and flag disablement. Then enable `OTA_STABLE_RELEASE_ENABLED`; activate the separate
+`early-updates` product flag only after that device QA and the download/pin serialization work in
+the Early updates section. The five-night advisory warm-up is not a prerequisite.
+The [2026-10-08 reconstruction proof](ota-differential-proof-2026-10-08.md) verifies one real production
+patch on each current native runtime: 18.34% of the measured gzip transfer on iOS and 20.43% on Android.
+Issue [#6098](https://github.com/boardsesh/boardsesh/issues/6098) remains open for fleet download timing,
+patch coverage, publish memory and emergency-launch evidence. The launch cap stays at ten seconds.
+
+**Read a hold before retrying.** The workflow summary records the decision; the latest earlier write run's
+state artifact is the authority. The current run is ignored, along with future queued, pending, waiting or
+requested writes that have not started. A future completed or in-progress write run blocks this run;
+dispatch a new controller run so it can read that newer checkpoint. Read-only plans never replace state.
+Missing or unknown future-writer status also blocks recovery. An older unfinished write
+run still blocks recovery. A missing, expired, corrupt or stale latest earlier checkpoint blocks automation, including
+after a failed or cancelled run. Do not substitute an older artifact, reset ownership or guess a baseline.
+Recovery requires the valid latest checkpoint: repair missing state from retained authoritative evidence
+and compare its producer and owned IDs with the live server before retrying. `abort` cannot reconstruct
+a lost or expired checkpoint. A candidate older
+than 30 days must be prepared again. An independent production publication invalidates its recorded baseline;
+only the controller's own completed canary may refresh a waiting candidate's baseline.
+
+**Recover partial writes explicitly.** Intent and leased IDs are saved before writes; successful platform
+results are retained. A retry may acquire a fresh lease if its recorded lease never became live; adoption of
+an existing live canary requires the recorded ID. A changed completed-platform head blocks the remaining
+write. To abandon a partial start or interrupted release with a valid checkpoint, dispatch:
+
+```bash
+gh workflow run mobile-ota-stable-release.yml --ref main -f command=abort
+```
+
+This main-only recovery takes the production lock even when `OTA_STABLE_RELEASE_ENABLED` is false.
+It clears the waiting candidate, probes production heads, preserves independently published hotfix/native
+updates and reverts any remaining live canary using its saved expected ID. An enabled tick that sees an
+interrupted ramping canary follows the same abort path; trusted unlock and hotfix publication do not
+permanently strand the controller. The standalone unlock itself does not erase controller state.
+
+If a platform is unhealthy after the other platform finished at 100%, automation holds for manual recovery.
+Reverting the remaining canary cannot restore the completed platform. While that platform still serves
+the controller's finished UUID, `abort` refuses too: publish the approved known-good bytes for that platform
+through the trusted publisher/unlock route, then dispatch `command=abort` to preserve the restored head
+and revert the remaining owned canary. The controller never guesses a rollback bundle or overwrites
+an independent recovery publication.
+
+For a read-only inspection, dispatch `mobile-ota-stable-release.yml` with `command=plan`. Dispatch
+`command=prepare` to freeze and test a candidate without enabling production writes. `command=tick` writes
+only when the repository activation variable is true. Planning does not publish a replacement checkpoint.
+Retry with a **new dispatch**, rather than GitHub's Re-run button: mutating run attempts other than one are
+refused so a previous attempt's artifact IDs and ownership evidence are never replaced. Dispatch a new
+`command=tick` to resume recorded work, or a new `command=abort` for explicit recovery.
 
 #### Promoting to another branch, or as a rollout
 
@@ -1620,7 +1739,8 @@ cannot contain cheaply, because every phone that takes it falls back or crashes 
 - Workflow: `.github/workflows/mobile-ota-boot-check.yml`. It can be called (`workflow_call`, output
   `passed`), dispatched, and it runs itself on any PR that edits it or the script.
 
-Nothing calls it yet. The daily stable release will, with the commit at the head of `pr-beta`.
+The daily stable controller calls it with the exact SHA, receipt and `pr-stable-candidate` branch.
+Staging or beta moving during QA cannot change the candidate under test.
 
 ```bash
 gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch=pr-staging
@@ -1628,10 +1748,13 @@ gh workflow run mobile-ota-boot-check.yml -f ref=<40-character commit> -f branch
 
 ### What a run does
 
-1. **Finds what was staged for the commit.** The stage job archives a `receipt.json` beside the export
-   it published (`mobile-ota-stage`, kept 7 days): the commit, each platform's runtime version, and the
-   SHA-256 of each bundle. The `resolve` job reads it with the repository's own token. An empty `ref`
-   takes the newest staged commit.
+1. **Pins a receipt for the exact bytes.** The daily controller passes its frozen candidate receipt.
+   A PR self-check instead waits for the successful `pr-N` preview at that PR's exact head SHA, then
+   reads `mobile-ota-preview-receipt` and validates its producing run and successful deployment.
+   That receipt records the actual exported hashes, platform publish runtimes and served update UUIDs.
+   Neither path follows the moving staging head. For a manual dispatch without an explicit receipt,
+   `resolve` reads the matching `mobile-ota-stage` receipt (kept seven days); an empty `ref` selects
+   the newest staged commit. Such a manual staging run fails if staging moves before its manifest check.
 2. **Asks the server what the branch serves**, with the headers a phone pinned to that branch sends
    and no device id. The request, retries, and response-body read share a 30-second deadline. The
    manifest carries no commit hash, so the tie to the commit is the bundle: the
@@ -1730,7 +1853,9 @@ the original store binary or physical-device performance.
 
 ### Proof, and what a run costs
 
-Measured on 2026-10-05, from PR #6131, on `macos-26` and `ubuntu-latest`:
+Historical proof measured on 2026-10-05, from PR #6131, on `macos-26` and `ubuntu-latest`.
+These runs prove the original green/red behavior; refreshed controller activation still requires new
+proof on both platforms with the current frozen candidate and blocking gate:
 
 | Run | What it tested | iOS | Android |
 | --- | --- | --- | --- |
@@ -2220,11 +2345,18 @@ receives every merge to `main`; a phone with it off follows `production`. It is 
 updates" everywhere a climber can read it, never "beta": in this app beta means climb beta.
 
 **Status: shipped dark.** The row is behind the `early-updates` PostHog flag (see
-`docs/feature-flags.md` → "Mobile flags"), which does not exist yet, and nothing publishes to
-`pr-beta` yet. Until both happen no climber sees the row and no device sends the header. The flag
-must stay off until the device checks in the PR that added this (#6101) have been done on an iOS and
-an Android store build: everything below rests on native expo-updates behaviour that unit tests
-model but cannot prove.
+`docs/feature-flags.md` → "Mobile flags"). The deployment pipeline now promotes exact staged bytes
+to `pr-beta` after deployment/schema readiness, independently of the stable activation switch.
+Before enabling the product flag, finish the download/pin serialization work described below and
+complete the device checks from #6101 on iOS and Android store builds. The serialization follow-up is
+tracked in [#6269](https://github.com/boardsesh/boardsesh/issues/6269): everything below rests on
+native expo-updates behaviour that unit tests model but cannot prove.
+
+After that serialization fix, pilot QA does not require enabling the flag for everyone.
+On a tester's phone, leave any PR or staging
+preview, then set **More → Feature Flags → Early updates → On** and **Get updates early → On**.
+The tester-only per-phone override persists across restart and wins over PostHog. After testing,
+turn Get updates early off and wait for the leave to complete before resetting the override to Default.
 
 ### Known cost: the first launch after every store update (Android)
 
@@ -2428,8 +2560,12 @@ middle of a no-reload switch is made, and stamped, under an override the switch 
 back, and a download of theirs after a same-session switch is attributed to the launch-time pin.
 
 That is deliberate while the flag is off: with no switch in the fleet the queue would protect
-nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing both
-through the queue (with the timeout) is owed before the flag is turned on.**
+nothing, and it would let a stuck pin change stall the last-resort recovery button. **Routing these
+downloads, including automatic schema-downgrade recovery, through the queue is owed before the flag
+is turned on.** Bound the branch-list request through response-body reading too: the early-update
+sync currently calls it while holding the pin queue. Expired waiting work must not start later;
+timing out a caller must not release a lock while an uncancelled native download still runs.
+Keep restart confirmation and reload outside the network timeout and preserve crash-screen recovery.
 
 ### Telemetry
 

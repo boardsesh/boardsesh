@@ -819,6 +819,7 @@ function writeRolloutReceipt(
       updateIds,
       // The update each rollout replaced: the staged baseline, as the first run recorded it.
       baselineUpdateIds: BASELINE_IDS,
+      unchangedPlatforms: {},
       ...overrides,
     }),
   );
@@ -978,6 +979,7 @@ describe('promotion as a rollout', () => {
       updateIds: { ios: '101', android: '102' },
       // And the update each rollout replaced, for the re-run's baseline check.
       baselineUpdateIds: BASELINE_IDS,
+      unchangedPlatforms: {},
     });
   });
 
@@ -1103,6 +1105,7 @@ describe('promotion as a rollout', () => {
       commitHash: COMMIT,
       updateIds: { ios: '101', android: '102' },
       baselineUpdateIds: BASELINE_IDS,
+      unchangedPlatforms: {},
     });
   });
 
@@ -1226,9 +1229,74 @@ describe('promotion as a rollout', () => {
     ).rejects.toThrow('ios production has an active rollout; promotion was refused.');
   });
 
-  it('fails when the branch already serves the files in full, because no rollout can start', async () => {
+  it('records exact unchanged heads without uploading or finalizing when both lease requests return406', async () => {
+    const fixture = stageFixture();
+    const server = branchServer(fixture, 'production', { requestStatus: { ios: 406, android: 406 } });
+    await promoteArchivedOta({
+      ...promoteOptions(fixture, server.fetchImpl),
+      rollout: {
+        percentage: 5,
+        receiptPath: rolloutReceiptPath(fixture),
+        connect: async () => rolloutReader({}).reader,
+      },
+    });
+    expect(JSON.parse(readFileSync(rolloutReceiptPath(fixture), 'utf8'))).toMatchObject({
+      updateIds: {},
+      unchangedPlatforms: BASELINE_IDS,
+    });
+    expect(
+      server.calls.some((call) => call.init.method === 'PUT' || call.url.pathname.includes('/markUpdateAsUploaded/')),
+    ).toBe(false);
+  });
+
+  it.each(['ios', 'android'] as const)(
+    'persists %s unchanged before the other platform uploads, then resumes without publishing it',
+    async (unchanged) => {
+      const fixture = stageFixture();
+      const changed = unchanged === 'ios' ? 'android' : 'ios';
+      const admin = rolloutReader({});
+      const server = branchServer(fixture, 'production', {
+        requestStatus: { [unchanged]: 406 },
+        onFinalize: (platform) => {
+          expect(platform).toBe(changed);
+          expect(JSON.parse(readFileSync(rolloutReceiptPath(fixture), 'utf8'))).toMatchObject({
+            unchangedPlatforms: { [unchanged]: BASELINE_IDS[unchanged] },
+          });
+          admin.live[platform] = { updateId: LEASE_IDS[platform], commitHash: COMMIT, percentage: 5 };
+        },
+      });
+      const checkedFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        if (init.method === 'PUT')
+          expect(JSON.parse(readFileSync(rolloutReceiptPath(fixture), 'utf8'))).toMatchObject({
+            unchangedPlatforms: { [unchanged]: BASELINE_IDS[unchanged] },
+          });
+        return server.fetchImpl(input, init);
+      }) as unknown as typeof fetch;
+      const options = {
+        ...promoteOptions(fixture, checkedFetch),
+        rollout: { percentage: 5, receiptPath: rolloutReceiptPath(fixture), connect: async () => admin.reader },
+      };
+      await promoteArchivedOta(options);
+      expect(
+        server.calls
+          .filter((call) => call.url.pathname.includes('/markUpdateAsUploaded/'))
+          .map((call) => call.url.searchParams.get('platform')),
+      ).toEqual([changed]);
+      const callsBeforeResume = server.calls.length;
+      await promoteArchivedOta(options);
+      expect(server.calls.slice(callsBeforeResume).every((call) => call.url.pathname === '/manifest')).toBe(true);
+      expect(JSON.parse(readFileSync(rolloutReceiptPath(fixture), 'utf8')).updateIds).toEqual({
+        [changed]: String(LEASE_IDS[changed]),
+      });
+    },
+  );
+
+  it('stops before all uploads when durable checkpoint recording throws', async () => {
     const fixture = stageFixture();
     const server = branchServer(fixture, 'production', { requestStatus: { ios: 406 } });
+    const onRecord = vi.fn(() => {
+      throw new Error('Checkpoint write failed');
+    });
     await expect(
       promoteArchivedOta({
         ...promoteOptions(fixture, server.fetchImpl),
@@ -1236,9 +1304,87 @@ describe('promotion as a rollout', () => {
           percentage: 5,
           receiptPath: rolloutReceiptPath(fixture),
           connect: async () => rolloutReader({}).reader,
+          onRecord,
         },
       }),
-    ).rejects.toThrow('there is no rollout to start');
+    ).rejects.toThrow('Checkpoint write failed');
+    expect(onRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ unchangedPlatforms: { ios: BASELINE_IDS.ios }, updateIds: {} }),
+    );
+    expect(
+      server.calls.some((call) => call.init.method === 'PUT' || call.url.pathname.includes('/markUpdateAsUploaded/')),
+    ).toBe(false);
+  });
+
+  it.each(['bundle', 'assets', 'config', 'uuid'] as const)(
+    'refuses a false406 with mismatched %s before any bytes upload',
+    async (mismatch) => {
+      const fixture = stageFixture();
+      const server = branchServer(fixture, 'production', { requestStatus: { android: 406 } });
+      let requestSeen = false;
+      const wrongFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const response = await server.fetchImpl(input, init);
+        const url = requestUrl(input);
+        if (url.pathname.includes('/requestUploadUrl/') && url.searchParams.get('platform') === 'android')
+          requestSeen = true;
+        if (
+          url.pathname !== '/manifest' ||
+          !requestSeen ||
+          new Headers(init.headers).get('expo-platform') !== 'android'
+        )
+          return response;
+        const manifest = (await response.json()) as {
+          id: string;
+          launchAsset: { hash: string };
+          assets: { hash: string }[];
+          extra: { expoClient: unknown };
+        };
+        if (mismatch === 'bundle') manifest.launchAsset.hash = 'wrong';
+        if (mismatch === 'assets') manifest.assets = [];
+        if (mismatch === 'config') manifest.extra.expoClient = {};
+        if (mismatch === 'uuid') manifest.id = BASELINE_IDS.ios;
+        return Response.json(manifest);
+      }) as unknown as typeof fetch;
+      await expect(
+        promoteArchivedOta({
+          ...promoteOptions(fixture, wrongFetch),
+          rollout: {
+            percentage: 5,
+            receiptPath: rolloutReceiptPath(fixture),
+            connect: async () => rolloutReader({}).reader,
+          },
+        }),
+      ).rejects.toThrow(/differs|hashes differ/);
+      expect(
+        server.calls.some((call) => call.init.method === 'PUT' || call.url.pathname.includes('/markUpdateAsUploaded/')),
+      ).toBe(false);
+      expect(JSON.parse(readFileSync(rolloutReceiptPath(fixture), 'utf8'))).toMatchObject({
+        updateIds: { ios: '101' },
+        unchangedPlatforms: {},
+      });
+    },
+  );
+
+  it('refuses unchanged recovery after an external UUID change even when bytes still match', async () => {
+    const fixture = stageFixture();
+    writeRolloutReceipt(fixture, {}, {});
+    const path = rolloutReceiptPath(fixture);
+    const record = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    record.unchangedPlatforms = { ios: BASELINE_IDS.ios };
+    writeFileSync(path, JSON.stringify(record));
+    const server = branchServer(fixture, 'production');
+    const wrongFetch = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const response = await server.fetchImpl(input, init);
+      if (requestUrl(input).pathname !== '/manifest') return response;
+      return Response.json({ ...((await response.json()) as Record<string, unknown>), id: BASELINE_IDS.android });
+    }) as unknown as typeof fetch;
+    await expect(
+      promoteArchivedOta({
+        ...promoteOptions(fixture, wrongFetch),
+        rollout: { percentage: 5, receiptPath: path, connect: async () => rolloutReader({}).reader },
+      }),
+    ).rejects.toThrow('unchanged baseline UUID differs');
+    expect(server.calls.every((call) => call.url.pathname === '/manifest')).toBe(true);
   });
 
   it('fails when the rollout never shows up after finalize', async () => {

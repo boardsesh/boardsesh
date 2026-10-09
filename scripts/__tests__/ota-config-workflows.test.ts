@@ -223,11 +223,19 @@ describe('mobile-ota-unlock.yml', () => {
     for (const block of runBlocks) expect(block.split(/^ {6}- /m)[0]).not.toContain('${{');
   });
 
-  it('is not wired into any other workflow yet', () => {
+  it('is awaited by direct production and backport publishers only', () => {
     const callers = readdirSync(WORKFLOWS_DIR)
       .filter((file) => file !== 'mobile-ota-unlock.yml')
       .filter((file) => withoutComments(readWorkflow(file)).includes('mobile-ota-unlock'));
-    expect(callers).toEqual([]);
+    expect(callers.sort()).toEqual(['mobile-ota-backport.yml', 'mobile-ota-production.yml']);
+    const production = withoutComments(readWorkflow('mobile-ota-production.yml'));
+    expect(production).toContain('node scripts/mobile-ota-unlock-wait.mjs');
+    expect(production).toContain("!inputs.stage_for_production_deploy && steps.unlock_runtimes.outcome == 'success'");
+    expect(production).toContain("(inputs.stage_for_production_deploy || steps.unlock.outcome == 'success')");
+    expect(production).not.toContain('secrets.OTA_ADMIN');
+    const backport = withoutComments(readWorkflow('mobile-ota-backport.yml'));
+    expect(backport).toContain('mobile-ota-unlock-wait.mjs');
+    expect(backport).not.toContain('secrets.OTA_ADMIN');
   });
 });
 
@@ -330,15 +338,21 @@ describe('ota-rollout-proof.yml', () => {
 });
 
 describe('release behaviour', () => {
-  it('leaves every existing publish path on its defaults', () => {
+  it('preserves publisher rollout defaults while adding the explicit early track', () => {
     for (const name of ['production-deploy.yml', 'mobile-ota-production.yml', 'mobile-ota-backport.yml']) {
       const code = withoutComments(readWorkflow(name));
       expect(code, name).not.toContain('--rollout-percentage');
       expect(code, name).not.toContain('mobile-ota-rollout');
       expect(code, name).not.toContain('ota-apply');
       expect(code, name).not.toContain('ota-rollout-proof');
-      // The promote and the baseline capture still target the default branch.
-      expect(code, name).not.toContain('pr-beta');
     }
+    const production = withoutComments(readWorkflow('mobile-ota-production.yml'));
+    expect(production).toContain('scripts/mobile-ota-promote.ts --capture-baseline --branch pr-beta');
+    expect(production).toContain('--out ota-stage/early-baseline.json');
+    const deployment = withoutComments(readWorkflow('production-deploy.yml'));
+    expect(deployment).toContain("vars.OTA_STABLE_RELEASE_ENABLED != 'true'");
+    expect(deployment).toContain('scripts/mobile-ota-promote-track.ts ota-stage');
+    // Native/backport publication still uses its original production branch.
+    expect(withoutComments(readWorkflow('mobile-ota-backport.yml'))).not.toContain('pr-beta');
   });
 });

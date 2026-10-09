@@ -199,7 +199,10 @@ test.describe('expo-web smoke', () => {
     const backdrop = page.getByRole('button', { name: 'Bottom sheet backdrop' }).last();
     await expect(async () => {
       if (await backdrop.isVisible().catch(() => false)) {
-        await backdrop.click({ force: true });
+        // The center of a full-screen backdrop meets the 50% queue sheet's
+        // top edge on desktop. Click its exposed corner with real hit testing
+        // so the pointer reaches the backdrop rather than the sheet above it.
+        await backdrop.click({ position: { x: 10, y: 10 }, timeout: 2_000 });
       }
       await page.keyboard.press('Escape');
       await expect(stillVisible).toBeHidden({ timeout: 2_000 });

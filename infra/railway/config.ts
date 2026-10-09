@@ -487,7 +487,7 @@ export const OTA_FORBIDDEN_VARS: ForbiddenEnvVar[] = [
     name: 'BUNDLE_DIFFING_CDN_REDIRECT',
     reason:
       'Sends patch requests to the CDN, which does not add the im and expo-base-update-id headers. ' +
-      'Every device with a patch available then fails its update with no fallback to the full bundle.',
+      'Native expo-updates rejects those patches and retries the full bundle, wasting transfer and launch time.',
   },
 ];
 

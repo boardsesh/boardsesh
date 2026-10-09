@@ -147,6 +147,10 @@ env:
 
 jobs:
   publish:
+    # Only this publisher needs dispatch permission. No admin login is exposed.
+    permissions:
+      contents: read
+      actions: write
     runs-on: ubuntu-latest
     # Six attempts per platform can spend 34 minutes in backoff alone, and iOS
     # and Android each get that budget sequentially — a fully throttled run is
@@ -159,7 +163,8 @@ jobs:
     # Costs nothing on a healthy publish, which finishes in well under 10 minutes.
     # On top of that budget: up to 85 minutes waiting for a Railway Config run on the
     # same commit (scripts/mobile-ota-server-ready.mjs), which only happens on the
-    # rare push that also rolls the OTA server.
+    # rare push that also rolls the OTA server. Direct publishes also reserve
+    # 25 minutes for the trusted main-only unlock; staging has no such wait.
     timeout-minutes: 240
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
@@ -372,6 +377,48 @@ jobs:
             echo "::notice::$PLATFORM fingerprint still matches $EXPECT_FINGERPRINT — republishing so the new binary has an update newer than its embedded bundle."
           fi
 
+      # Resolve every platform this direct publish can upload before unlocking.
+      # Staging never touches the production canary. The caller retains the
+      # production lane while the separate main-only unlock run reverts it.
+      - name: Resolve runtime versions before direct production publish
+        id: unlock_runtimes
+        if: ${{ !inputs.stage_for_production_deploy && steps.gate.outputs.configured == 'true' && steps.expect.outputs.mismatch != 'true' }}
+        env:
+          ANDROID_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          TRAIN_PUBLISH_IOS: ${{ steps.train_guard.outputs.publish_ios }}
+          TRAIN_PUBLISH_ANDROID: ${{ steps.train_guard.outputs.publish_android }}
+        run: |
+          set -euo pipefail
+          case "$INPUT_PLATFORM" in
+            ios|android|all) ;;
+            *) echo "::error::Unknown publish platform."; exit 1 ;;
+          esac
+          for platform in ios android; do
+            if [ "$INPUT_PLATFORM" != all ] && [ "$INPUT_PLATFORM" != "$platform" ]; then continue; fi
+            if [ "$platform" = ios ] && [ "$TRAIN_PUBLISH_IOS" = false ]; then continue; fi
+            if [ "$platform" = android ] && [ "$TRAIN_PUBLISH_ANDROID" = false ]; then continue; fi
+            if [ "$platform" = ios ]; then
+              runtime="$(cd packages/mobile && env -u GOOGLE_MAPS_API_KEY vp exec expo-updates runtimeversion:resolve --platform ios | jq -r '.runtimeVersion // empty')"
+            else
+              runtime="$(cd packages/mobile && GOOGLE_MAPS_API_KEY="$ANDROID_MAPS_KEY" vp exec expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion // empty')"
+            fi
+            if ! printf '%s' "$runtime" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::Could not resolve the full $platform runtime before unlocking."
+              exit 1
+            fi
+            echo "${platform}_runtime_version=$runtime" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Await trusted main unlock before direct production publish
+        id: unlock
+        if: ${{ !inputs.stage_for_production_deploy && steps.unlock_runtimes.outcome == 'success' && (steps.unlock_runtimes.outputs.ios_runtime_version != '' || steps.unlock_runtimes.outputs.android_runtime_version != '') }}
+        timeout-minutes: 25
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          IOS_RUNTIME_VERSION: ${{ steps.unlock_runtimes.outputs.ios_runtime_version }}
+          ANDROID_RUNTIME_VERSION: ${{ steps.unlock_runtimes.outputs.android_runtime_version }}
+        run: node scripts/mobile-ota-unlock-wait.mjs
+
       # This workflow is the SOLE OWNER of packages/mobile/src/data/changelog.generated.json.
       # It regenerates the "What's New" changelog from merged-PR Release Notes and
       # pushes it back to main so the committed copy is the single source of truth
@@ -474,12 +521,18 @@ jobs:
             --ios-runtime "$ios_runtime" --android-runtime "$android_runtime" \
             --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc \
             --out ota-stage/baseline.json
+          # Freeze beta's baseline before exports too. Capturing it only when
+          # promotion starts would let a reordered older deploy replace newer JS.
+          vp exec tsx scripts/mobile-ota-promote.ts --capture-baseline --branch pr-beta \
+            --ios-runtime "$ios_runtime" --android-runtime "$android_runtime" \
+            --app-id 007e6fd7-f200-448c-9449-8d48ba5d51fc \
+            --out ota-stage/early-baseline.json
 
       # Check the same installed uploader the upload steps use before either OTA
       # goes live. No export or Sentry token is needed for this compatibility check.
       - name: Validate Sentry uploader support before publishing
         id: sentry_uploader
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && ((steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')) || (steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')))
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && ((steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')) || (steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')))
         run: |
           vp exec node --import tsx --input-type=module --eval 'import * as sourceMapTools from "./scripts/mobile-upload-sourcemaps.ts"; console.log((sourceMapTools.default ?? sourceMapTools).resolveInstalledSentryUploader("packages/mobile"));'
 
@@ -491,7 +544,7 @@ jobs:
       # single `--platform all` publish with one env could only ever match one side.
       - name: Publish iOS OTA
         id: publish_ios
-        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
+        if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_ios != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'ios')
         continue-on-error: true
         env:
           # V3 control-plane rejects Expo tokens; eoas publish authenticates with the
@@ -532,7 +585,7 @@ jobs:
 
       - name: Publish Android OTA
         id: publish_android
-        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
+        if: always() && steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success' && steps.sentry_uploader.outcome == 'success' && (!inputs.stage_for_production_deploy || steps.baseline.outcome == 'success') && (inputs.stage_for_production_deploy || steps.unlock.outcome == 'success') && steps.expect.outputs.mismatch != 'true' && steps.train_guard.outputs.publish_android != 'false' && (env.INPUT_PLATFORM == 'all' || env.INPUT_PLATFORM == 'android')
         continue-on-error: true
         env:
           EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
@@ -572,10 +625,10 @@ jobs:
           android_hash="$(sha256sum "ota-stage/android/$android_bundle" | cut -d' ' -f1)"
           update_message="$INPUT_MESSAGE"
           if [ -z "$update_message" ]; then update_message="$(git log -1 --format=%s "$GITHUB_SHA")"; fi
-          jq -n --slurpfile baseline ota-stage/baseline.json --arg sha "$GITHUB_SHA" --arg message "$update_message" \
+          jq -n --slurpfile baseline ota-stage/baseline.json --slurpfile early_baseline ota-stage/early-baseline.json --arg sha "$GITHUB_SHA" --arg message "$update_message" \
             --arg ios_runtime "$ios_runtime" --arg android_runtime "$android_runtime" \
             --arg ios_hash "$ios_hash" --arg android_hash "$android_hash" \
-            '{commitHash:$sha,message:$message,baselineProductionUpdateIds:$baseline[0],platforms:{ios:{runtimeVersion:$ios_runtime,bundleSha256:$ios_hash},android:{runtimeVersion:$android_runtime,bundleSha256:$android_hash}}}' \
+            '{commitHash:$sha,message:$message,baselineProductionUpdateIds:$baseline[0],baselineEarlyUpdateIds:$early_baseline[0],platforms:{ios:{runtimeVersion:$ios_runtime,bundleSha256:$ios_hash},android:{runtimeVersion:$android_runtime,bundleSha256:$android_hash}}}' \
             > ota-stage/receipt.json
           cp packages/mobile/src/data/changelog.generated.json ota-stage/changelog.generated.json
           cp CHANGELOG.md ota-stage/CHANGELOG.md

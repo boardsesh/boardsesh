@@ -1,0 +1,235 @@
+name: Daily Stable OTA
+run-name: OTA stable ${{ inputs.command == 'abort' && 'abort' || (inputs.command == 'prepare' || github.event.schedule == '17 19 * * *') && 'prepare' || (inputs.command != 'plan' && vars.OTA_STABLE_RELEASE_ENABLED == 'true' && 'tick') || 'plan' }}
+
+# Main-only admin code. Set the environment deployment-branch policy to main.
+# Repository switch stays off until fresh green/red native proofs and store QA.
+on:
+  schedule:
+    - cron: '17 19 * * *'
+    - cron: '0 22 * * *'
+    - cron: '37 * * * *'
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Prepare frozen bytes, tick enabled production, or read-only plan.
+        type: choice
+        default: plan
+        options: [plan, prepare, tick, abort]
+
+permissions:
+  contents: read
+  actions: read
+
+# QA takes this controller lane only. It never occupies the production lock.
+concurrency:
+  group: mobile-ota-stable-controller
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      command: ${{ steps.mode.outputs.command }}
+    steps:
+      - name: Refuse any ref but main
+        if: github.ref != 'refs/heads/main'
+        run: exit 1
+      - name: Resolve command
+        id: mode
+        env:
+          INPUT_COMMAND: ${{ inputs.command }}
+          SCHEDULE: ${{ github.event.schedule }}
+          ENABLED: ${{ vars.OTA_STABLE_RELEASE_ENABLED }}
+        run: |
+          command="${INPUT_COMMAND:-tick}"
+          if [ -z "$INPUT_COMMAND" ] && [ "$SCHEDULE" = '17 19 * * *' ]; then command=prepare; fi
+          if [ "$command" = tick ] && [ "$ENABLED" != true ]; then command=plan; fi
+          echo "command=$command" >> "$GITHUB_OUTPUT"
+
+  prepare:
+    needs: resolve
+    if: needs.resolve.outputs.command == 'prepare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ota-stable-release
+    outputs:
+      sha: ${{ steps.prepare.outputs.sha }}
+      receipt: ${{ steps.prepare.outputs.receipt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }} # guarded main run SHA
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Restore trusted checkpoint and source deployment
+        id: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p controller-state ota-stage
+          state="$(node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts state --out controller-state --exclude-run-id "$GITHUB_RUN_ID")"
+          source="$(node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts source --out ota-stage)"
+          echo "loaded_run=$(jq -r '.runId // "0"' <<< "$state")" >> "$GITHUB_OUTPUT"
+          echo "source_run=$(jq -r .runId <<< "$source")" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(jq -r .headSha <<< "$source")" >> "$GITHUB_OUTPUT"
+      - name: Freeze the exact archived bytes
+        id: prepare
+        env:
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+          SOURCE_RUN: ${{ steps.artifacts.outputs.source_run }}
+          SOURCE_SHA: ${{ steps.artifacts.outputs.source_sha }}
+          LOADED_RUN: ${{ steps.artifacts.outputs.loaded_run }}
+        run: |
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+          node --experimental-strip-types scripts/mobile-ota-stable.ts prepare --apply \
+            --state controller-state/state.json --stage ota-stage --source-run-id "$SOURCE_RUN" \
+            --source-sha "$SOURCE_SHA" --loaded-state-run-id "$LOADED_RUN"
+      - name: Retain preparation checkpoint
+        if: always() && steps.artifacts.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-ota-stable-preparation-state
+          path: controller-state/state.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Retain frozen candidate
+        if: steps.prepare.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-ota-stable-candidate
+          path: ota-stage/
+          retention-days: 30
+          if-no-files-found: error
+
+  smokes:
+    needs: prepare
+    uses: ./.github/workflows/mobile-e2e-gate.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+    secrets: inherit
+
+  boot:
+    needs: prepare
+    uses: ./.github/workflows/mobile-ota-boot-check.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      branch: pr-stable-candidate
+      receipt_json: ${{ needs.prepare.outputs.receipt }}
+
+  qualify:
+    needs: [resolve, prepare, smokes, boot]
+    if: always() && needs.resolve.outputs.command == 'prepare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }} # guarded main run SHA
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: mobile-ota-stable-preparation-state
+          path: controller-state
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.prepare.result == 'success'
+        with:
+          name: mobile-ota-stable-candidate
+          path: ota-stage
+      - name: Record blocking QA verdict
+        if: needs.prepare.result == 'success'
+        env:
+          SMOKE_SHA: ${{ needs.smokes.outputs.sha || 'missing' }}
+          BOOT_SHA: ${{ needs.boot.outputs.sha || 'missing' }}
+          SMOKE_RESULT: ${{ needs.smokes.result }}
+          BOOT_RESULT: ${{ needs.boot.result }}
+          SMOKE_PASSED: ${{ needs.smokes.outputs.passed || 'false' }}
+          BOOT_PASSED: ${{ needs.boot.outputs.passed || 'false' }}
+        run: |
+          node --experimental-strip-types scripts/mobile-ota-stable.ts qualify --apply \
+            --state controller-state/state.json --stage ota-stage --sha "$SMOKE_SHA" --boot-sha "$BOOT_SHA" \
+            --branch pr-stable-candidate --smoke-result "$SMOKE_RESULT" --boot-result "$BOOT_RESULT" \
+            --smoke-passed "$SMOKE_PASSED" --boot-passed "$BOOT_PASSED"
+      - name: Retain final checkpoint even when QA fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-ota-stable-state
+          path: controller-state/state.json
+          retention-days: 30
+          if-no-files-found: error
+
+  tick:
+    needs: resolve
+    if: needs.resolve.outputs.command != 'prepare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ota-stable-release
+    concurrency:
+      group: mobile-ota-production
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }} # guarded main run SHA
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.x'
+      - name: Restore trusted checkpoint and its exact candidate
+        id: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMAND: ${{ needs.resolve.outputs.command }}
+        run: |
+          mkdir -p controller-state ota-stage
+          state="$(node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts state --out controller-state --exclude-run-id "$GITHUB_RUN_ID")"
+          echo "loaded_run=$(jq -r '.runId // "0"' <<< "$state")" >> "$GITHUB_OUTPUT"
+          if [ "$COMMAND" != abort ] && [ -f controller-state/state.json ]; then
+            candidate_run="$(jq -r 'if .active then (if .active.phase != "reverting" then .active.candidate.preparationRunId else empty end) else (.candidate | select(.qaPassed == true) | .preparationRunId) end' controller-state/state.json)"
+            if [ -n "$candidate_run" ]; then
+              node --experimental-strip-types scripts/mobile-ota-stable-artifacts.ts candidate --run-id "$candidate_run" --out ota-stage
+            fi
+          fi
+          if [ -f controller-state/rollout-receipt.json ]; then cp controller-state/rollout-receipt.json ota-stage/; fi
+      - name: Judge and apply at most one timed step
+        id: controller
+        env:
+          OTA_ADMIN_EMAIL: ${{ secrets.OTA_ADMIN_EMAIL }}
+          OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL || 'https://updates.boardsesh.com/manifest' }}
+          COMMAND: ${{ needs.resolve.outputs.command }}
+          LOADED_RUN: ${{ steps.artifacts.outputs.loaded_run }}
+        run: |
+          if [ -n "${OTA_ADMIN_EMAIL:-}" ]; then echo "::add-mask::$OTA_ADMIN_EMAIL"; fi
+          flags=()
+          if [ "$COMMAND" != plan ]; then flags+=(--apply); fi
+          operation="$COMMAND"
+          if [ "$operation" = plan ]; then operation=tick; fi
+          node --experimental-strip-types scripts/mobile-ota-stable.ts "$operation" "${flags[@]}" \
+            --state controller-state/state.json --stage ota-stage --loaded-state-run-id "$LOADED_RUN" \
+            | tee "$RUNNER_TEMP/ota-stable-result.txt"
+          cat "$RUNNER_TEMP/ota-stable-result.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Collect durable upload leases
+        if: always() && needs.resolve.outputs.command != 'plan'
+        run: |
+          if [ -f ota-stage/rollout-receipt.json ]; then cp ota-stage/rollout-receipt.json controller-state/; fi
+      - name: Retain checkpoint and upload leases
+        if: always() && steps.artifacts.outcome == 'success' && needs.resolve.outputs.command != 'plan'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-ota-stable-state
+          path: controller-state/
+          retention-days: 30
+          if-no-files-found: error

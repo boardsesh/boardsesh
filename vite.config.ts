@@ -756,7 +756,7 @@ export default defineConfig({
       },
       'test:service-deploy-inputs': {
         command:
-          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/production-web-deploy-targets.test.mjs scripts/railway-deployment-rollback.test.mjs scripts/railway-deployment-status.test.mjs scripts/mobile-ota-schema-ready.test.mjs scripts/mobile-ota-server-ready.test.mjs',
+          'node --test scripts/check-service-deploy-inputs.test.mjs scripts/production-backend-smoke.test.mjs scripts/production-deploy-changes.test.mjs scripts/production-deploy-watchdog.test.mjs scripts/production-web-deploy-targets.test.mjs scripts/railway-deployment-rollback.test.mjs scripts/railway-deployment-status.test.mjs scripts/mobile-ota-schema-ready.test.mjs scripts/mobile-ota-server-ready.test.mjs scripts/mobile-ota-unlock-wait.test.mjs',
         cache: false,
       },
       'check:service-deploy-inputs': {
@@ -1362,6 +1362,11 @@ export default defineConfig({
       // See scripts/mobile-ota-rollout.ts + docs/mobile-ota-updates.md.
       'ota:rollout': {
         command: 'tsx scripts/mobile-ota-rollout.ts',
+        cache: false,
+      },
+
+      'ota:stable': {
+        command: 'tsx scripts/mobile-ota-stable.ts',
         cache: false,
       },
 
