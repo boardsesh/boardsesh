@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-10-09T08:17:41.878Z",
+  "generatedAt": "2026-10-09T22:05:49.357Z",
   "entries": [
+    {
+      "prNumber": 6275,
+      "category": "improved",
+      "title": "Climbs keep loading when sync updates overlap.",
+      "mergedAt": "2026-10-09T21:50:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/6275"
+    },
     {
       "prNumber": 6272,
       "category": "fixed",

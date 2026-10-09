@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-10-09
 
+### Improved
+
+- Climbs keep loading when sync updates overlap. ([#6275](https://github.com/boardsesh/boardsesh/pull/6275))
+
 ### Fixed
 
 - Notification badges, activity feeds and session votes load correctly while respecting your privacy settings. ([#6272](https://github.com/boardsesh/boardsesh/pull/6272))
