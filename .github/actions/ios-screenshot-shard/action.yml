@@ -134,7 +134,7 @@ runs:
       # EXPO_PUBLIC_BACKEND_URL override, so the bundle uses the app's production
       # backend defaults. --locales is a single value: `es` expands to both es-ES
       # and es-MX for this device, so the shards together produce all five App
-      # Store locales × 3 devices. --shutdown is belt-and-suspenders (a shard only
+      # Store locales × 4 devices. --shutdown is belt-and-suspenders (a shard only
       # boots this one sim, so there's nothing to accumulate).
       #
       # Bounded shard-level retry: the simulator/Maestro capture is flaky — a leg

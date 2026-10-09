@@ -57,29 +57,44 @@ Canonical: [`fastlane/metadata/en-US/release_notes.txt`](../../fastlane/metadata
 
 ## Screenshots
 
-Generated iPhone portrait and iPad landscape screenshots, captured + uploaded by
-`vp run mobile:screenshots` (Maestro -> fastlane; see
-`packages/mobile/.maestro/README.md`). iPhone and iPad are separate App Store
-slots and carry different sets — the iPad one is its own campaign, below.
+The native capture and framing pipeline produces iPhone portrait and iPad
+landscape screenshots. `--devices common --locales all` covers iPhone 16 Pro Max,
+iPhone 16 Pro, and the 13-inch and 11-inch iPads in four app languages. Spanish
+is copied to both Apple Spanish locales. iPhone and iPad carry different stories.
 
-### iPhone — ten slots, in store display order (the filename prefix sets the order)
+### iPhone — nine-image campaign, staged behind a fixture prerequisite
 
-1. `00-board-view` — a climb with the holds lit on Marco's Kilter board (the signature view)
-2. `01-board-view-2` — a climb lit on a gym Tension board, showing multi-board support
-3. `02-home` — the global "Everyone" activity feed
-4. `03-climbs` — browse the board's climbs, on Marco's Kilter board
-5. `04-session-detail` — a session recap: stats, leaderboard, sends
-6. `05-workout-generator` — the Record tab's workout generator
-7. `06-discover` — the playlist library
-8. `07-playlist-detail` — a smart playlist (crowd favourites)
-9. `08-logbook` — your logged sends and progression
-10. `09-profile` — your stats and progression
+The opt-in `--flow app-store-campaign` captures 18 native sources and composes
+these nine outputs. Filename prefixes set the store display order:
 
-The lit board leads. It is the thing nothing else does, and the first shot is the
-only one most people see — the feed and the climb list read like any app's until
-you already know what the board is for.
+| Output                  | Headline / benefit               | Native content                                                       |
+| ----------------------- | -------------------------------- | -------------------------------------------------------------------- |
+| `00-your-boards.png`    | Your boards. One app.            | Kilter, Tension and MoonBoard, labelled by compatibility.            |
+| `01-your-crew.png`      | Your crew. One queue.            | The shared queue and contributor avatars.                            |
+| `02-spray-wall.png`     | Your spray wall, too.            | A real wall photo with the climb's holds highlighted.                |
+| `03-more-boards.png`    | More boards. Same app.           | Woods, Decoy and Grasshopper; copy also names Touchstone and So iLL. |
+| `04-on-the-wall.png`    | See what's on the wall.          | Current wall status while browsing another climb.                    |
+| `05-one-logbook.png`    | All your boards. One logbook.    | The multiboard Progress overview.                                    |
+| `06-session-plan.png`   | Give your session a plan.        | The native workout generator.                                        |
+| `07-dynamic-island.png` | Next climb. From Dynamic Island. | Real expanded Live Activity controls.                                |
+| `08-next-project.png`   | Find your next project.          | Native climb search and filters.                                     |
 
-Apple allows up to 10; the current generated set uploads 10 screenshots. Google Play caps phones at 8, so its set drops playlist detail and logbook (see the Play metadata).
+The opening establishes compatibility; queue and spray show why to try it. The
+fourth image makes the wider board catalogue visible without crowding the first
+image. Compositions reuse the showcase video's typography and palette around
+real captures. They do not manufacture app controls or use AI-generated images.
+
+**The campaign is not the default capture flow yet.** Its replay prerequisite is
+a verified, sanitized fixture with a shared crew session and seven board
+selectors in this order: Kilter, Tension, MoonBoard, Woods, Decoy, Grasshopper,
+spray. The existing pinned fixture lacks the required Decoy/spray scenario. The
+capture gate rejects missing or wrongly typed boards; do not bypass it or upload
+an incomplete campaign. Until that fixture is ready, `--flow app-store` retains
+the earlier ten-image iPhone recipe. See the [creative asset runbook](../../docs/app-store-creative-assets.md)
+for capture, review, and separate Header/Search Results exports.
+
+Apple permits up to ten screenshots; this campaign deliberately uses nine.
+The Android eight-image campaign is separate. [Apple screenshot guidance](https://developer.apple.com/app-store/product-page/)
 
 ### iPad — six framed slots
 
@@ -88,14 +103,14 @@ gets mounted by the wall. So it leads with the kiosk, then shows the browse scre
 twice — once whole, once with its trailing "Now on the wall" column lifted out and
 enlarged beside it. That column is the shell no phone screenshot can show.
 
-| Output | What the image shows |
-| --- | --- |
-| `00-wall-kiosk.png` | The wall kiosk: the lit climb, readable from the mat. |
-| `01-wall-status.png` | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
-| `02-home.png` | The crew's activity feed. |
-| `03-discover.png` | The playlist library. |
-| `04-workout-generator.png` | The Record tab's workout generator. |
-| `05-profile.png` | Sends and progress across every board. |
+| Output                     | What the image shows                                                                           |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `00-wall-kiosk.png`        | The wall kiosk: the lit climb, readable from the mat.                                          |
+| `01-wall-status.png`       | The trailing "Now on the wall" column, lifted out of the browse screen and enlarged beside it. |
+| `02-home.png`              | The crew's activity feed.                                                                      |
+| `03-discover.png`          | The playlist library.                                                                          |
+| `04-workout-generator.png` | The Record tab's workout generator.                                                            |
+| `05-profile.png`           | Sends and progress across every board.                                                         |
 
 It runs on the same six captures the sidebar flow already takes — the raw Climbs
 capture feeds two frames — so it needs no board switching and no extra fixtures.
@@ -114,6 +129,16 @@ drawing and which wall each shot sits on are pinned by the screenshots build
 `packages/mobile/src/lib/screenshot-mode.ts`), and the capture fails rather than
 upload a set that came back in the classic look or on a fallback wall. Retarget one
 run from the workflow's `render_mode` / `boards` dispatch inputs.
+
+## Header and Search Results
+
+These are separate organic App Store creative placements on iOS/iPadOS 27 and
+later, not extra screenshot slots. Generate opaque PNGs with `vp run store:creatives`:
+Header at 3840 × 1646 and Search Results at 3840 × 2560. Keep them outside the
+screenshot upload tree. The [creative asset runbook](../../docs/app-store-creative-assets.md)
+covers source requirements, `creative-assets.json` provenance, localization and
+manual Asset Library review/publication. Existing fastlane screenshot and
+metadata lanes do not upload or publish them.
 
 ## Review Notes
 

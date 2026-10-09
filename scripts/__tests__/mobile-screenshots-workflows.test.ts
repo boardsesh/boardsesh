@@ -7,12 +7,12 @@ import { parse } from 'yaml';
 /**
  * The screenshot runs gate themselves twice over: a `workflow_run` trigger plus a
  * shipped-binary check decide whether a native deploy is worth capturing at all,
- * and on iOS one probe shard then decides whether the other eleven macOS runners
+ * and on iOS one probe shard then decides whether the other fifteen macOS runners
  * are worth spending. Both decisions live entirely in trigger blocks and job
  * `needs`/`if` expressions, which nothing else type-checks and which cannot be
  * exercised from a branch — a `workflow_run` workflow always runs the copy of
  * itself that sits on the default branch. A single wrong `result ==` there either
- * burns twelve runners after every JS-only push or silently stops capturing
+ * burns sixteen runners after every JS-only push or silently stops capturing
  * anything at all. So the wiring is pinned here.
  */
 
@@ -215,7 +215,7 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
       'source_sha',
       'shipped',
     ]);
-    // upload and probe are contradictory: an upload needs all 12 shards.
+    // upload and probe are contradictory: an upload needs all 16 shards.
     expect(source).toContain('upload=true cannot be combined with gate=probe');
     // A narrowed / onboarding / uploading run has no full-set baseline to compare against.
     expect(source).toContain('if [ -n "$locales" ] || [ "$flow" = "onboarding" ] || [ "$upload" = "true" ]; then');
@@ -224,6 +224,21 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     // shard actually shoots.
     expect(source).toContain(`jq -r '.[0].slug')" != "iphone-16-pro-max" ]; then`);
     expect(source).toContain(`probe_exclude=$(printf '%s' "$devices" | jq -c '[{locale:"en-US", device: .[0]}]')`);
+  });
+
+  it('captures four devices across four app locales and five store locales', () => {
+    const compute = workflow.jobs.setup.steps?.find((step) => step.id === 'compute')?.run ?? '';
+    const devicesJson = compute.match(/devices='([^']+)'/)?.[1];
+    expect(devicesJson).toBeDefined();
+    const devices = JSON.parse(devicesJson ?? '[]') as Array<{ name: string; slug: string }>;
+    expect(devices.map((device) => device.slug)).toEqual([
+      'iphone-16-pro-max',
+      'iphone-16-pro',
+      'ipad-pro-13-inch-m5',
+      'ipad-pro-11-inch-m5',
+    ]);
+    expect(devices.length * 4).toBe(16);
+    expect(devices.length * 5).toBe(20);
   });
 
   it('runs the probe on gate=probe only, off the shared shard action', () => {
@@ -303,13 +318,13 @@ describe('mobile-screenshots-ios.yml probe gate', () => {
     expect(steps[1].with?.['device-name']).toBe('${{ matrix.device.name }}');
   });
 
-  it('captures the full 12-shard matrix when the probe crashed or was skipped, and the 11-shard one only on probe success', () => {
+  it('captures the full 16-shard matrix when the probe crashed or was skipped, and the 15-shard one only on probe success', () => {
     // Pins the #5326 fix: gate=probe computes an exclude assuming the probe
     // itself will capture and upload its shard, but a probe that FAILS may not
     // does that — so the matrix, not just the `if:`, must fall back to the
-    // full 12-shard set on failure (and on `skipped`, the gate=full path,
+    // full 16-shard set on failure (and on `skipped`, the gate=full path,
     // which never asked for an exclude at all). Only an actually-successful
-    // probe gets the 11-shard exclude. Mutation check: hardcode this to
+    // probe gets the 15-shard exclude. Mutation check: hardcode this to
     // always resolve to ios_matrix_without_probe and this test must fail.
     const capture = workflow.jobs['ios-capture'];
     const matrixExpression = flatten(capture.strategy?.matrix as string | undefined);

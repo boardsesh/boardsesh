@@ -27,6 +27,16 @@ describe('decideProbeScope', () => {
     expect(decideProbeScope([]).forceFull).toBe(false);
   });
 
+  it.each([
+    'scripts/mobile-screenshots.ts',
+    'scripts/assert-screenshot-dimensions.ts',
+    '.github/workflows/mobile-screenshots-ios.yml',
+    '.github/actions/ios-screenshot-shard/action.yml',
+    'packages/mobile/.maestro/app-store.yaml',
+  ])('forces a complete baseline when capture inventory changes: %s', (path) => {
+    expect(decideProbeScope([path]).forceFull).toBe(true);
+  });
+
   it('does not force on an unrelated file', () => {
     const decision = decideProbeScope(['packages/mobile/src/components/board-view.tsx']);
     expect(decision.forceFull).toBe(false);
@@ -86,6 +96,7 @@ describe('decideProbeScope', () => {
 
   it('covers all documented rules', () => {
     expect(PROBE_SCOPE_RULES.map((rule) => rule.name)).toEqual([
+      'screenshot-capture-inventory',
       'screenshot-presentation',
       'shared-i18n-non-en-us-locale',
       'mobile-locales',

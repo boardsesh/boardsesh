@@ -1,0 +1,243 @@
+appId: com.boardsesh.app
+name: multiboard App Store campaign sources
+---
+# Opt-in candidate capture: the orchestrator requires the verified seven-board
+# replay scenario before launching. Slots: Kilter, Tension, MoonBoard, Woods,
+# Decoy, Grasshopper, spray. Keep existing sources for provenance/reframing.
+# The orchestrator inlines this flow before rendering orientation placeholders.
+- runFlow: app-store.yaml
+
+# Relaunch closes the previous play drawer before selecting another wall.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=2
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 10-moonboard-board-view
+
+# Relaunch closes the previous play drawer before selecting another wall.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=3
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 11-woods-board-view
+
+# Relaunch closes the previous play drawer before selecting another wall.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=4
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 12-decoy-board-view
+
+# Relaunch closes the previous play drawer before selecting another wall.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=5
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 13-grasshopper-board-view
+
+# Relaunch closes the previous play drawer before selecting another wall.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=6
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 90000
+- waitForAnimationToEnd:
+    timeout: 30000
+- takeScreenshot: 14-spray-board-view
+
+# Browse a different climb while the real seeded wall state remains visible.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotBoardIndex=0
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible: 'Guessing Games'
+    timeout: 90000
+- tapOn: 'Guessing Games'
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000
+- tapOn: ${SCREENSHOT_CLOSE_LABEL}
+- extendedWaitUntil:
+    notVisible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_WALL_STATUS_LABEL}
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: 16-wall-status
+
+# Replay the recorded crew in the real native queue UI. Labels follow app locale;
+# climb/session names are fixture content and intentionally are not translated.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://join/${SCREENSHOT_SHARED_SESSION_ID}
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_JOIN_LABEL}
+    timeout: 60000
+- tapOn: ${SCREENSHOT_JOIN_LABEL}
+- extendedWaitUntil:
+    visible: 'Friday board crew'
+    timeout: 60000
+- tapOn: 'Lightest Pair of Shorts'
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000
+- tapOn: ${SCREENSHOT_QUEUE_LABEL}
+- extendedWaitUntil:
+    visible: ${SCREENSHOT_QUEUE_TITLE}
+    timeout: 60000
+- swipe:
+    from:
+      text: ${SCREENSHOT_QUEUE_TITLE}
+    direction: UP
+    duration: 700
+- extendedWaitUntil:
+    visible: 'Wax On'
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: 15-crew-queue
+
+# Existing simulator BLE adapter supplies local connected state. The replay
+# fixture must contain the session registration responses; the native client must
+# carry screenshot-sim.entitlements. No fabricated island is accepted: require
+# the actual SpringBoard Next control before capturing it.
+- launchApp
+- openLink: com.boardsesh.app://home
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'home-screen'
+    timeout: 90000
+- assertNotVisible:
+    id: 'play-drawer-board-overlay'
+- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=0
+- tapOn:
+    text: 'Open'
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'play-drawer-board-overlay'
+    timeout: 60000
+# Existing showcase lightbulb position, proportional on both phone sizes.
+- tapOn:
+    point: '87%,84%'
+- waitForAnimationToEnd
+- pressKey: home
+- longPressOn:
+    point: '50%,3%'
+- extendedWaitUntil:
+    visible: 'Next climb'
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: 17-dynamic-island

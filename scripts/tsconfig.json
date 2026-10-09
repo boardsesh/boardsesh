@@ -112,6 +112,8 @@
     "assert-screenshot-content.ts",
     "compare-screenshots.ts",
     "frame-screenshots.ts",
+    "app-store-creatives.ts",
+    "__tests__/app-store-creatives.test.ts",
     "lib/screenshot-presentation.ts",
     "__tests__/screenshot-presentation.test.ts",
     "screenshot-baseline.ts",

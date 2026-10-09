@@ -265,7 +265,7 @@ describe('buildManifest', () => {
 });
 
 describe('packBaseline', () => {
-  it('zips every shard flat and writes a manifest that covers all 30 files', () => {
+  it('zips every shard flat and writes a manifest that covers all 40 files', () => {
     const tree = writeTree(join(workDir, 'tree'));
     const runner = new FakeRunner();
 
@@ -284,7 +284,7 @@ describe('packBaseline', () => {
     // -j flattens the directory prefix so the archive holds bare NN-name.png.
     expect(runner.calls[0].args.slice(0, 3)).toEqual(['-j', '-X', '-q']);
     expect(runner.calls[0].args[3]).toContain('ios-en-US-iphone-16-pro-max.zip');
-    expect(Object.keys(packed.manifest.files)).toHaveLength(30);
+    expect(Object.keys(packed.manifest.files)).toHaveLength(40);
     expect(packed.manifest.files['en-US/iphone-16-pro-max/01-discover.png']).toMatch(/^[0-9a-f]{64}$/);
 
     const written: unknown = JSON.parse(readFileSync(packed.manifestFile, 'utf8'));
@@ -344,7 +344,7 @@ describe('publishBaseline', () => {
     expect(ghCalls[1].args).toContain('--prerelease');
     expect(ghCalls[1].args).toContain(BASELINE_TAG);
     // Zips first, manifest last: whoever reads the manifest sees every asset it names.
-    expect(ghCalls[2].args.filter((argument) => argument.endsWith('.zip'))).toHaveLength(15);
+    expect(ghCalls[2].args.filter((argument) => argument.endsWith('.zip'))).toHaveLength(20);
     expect(ghCalls[2].args).toContain('--clobber');
     expect(ghCalls[3].args.some((argument) => argument.endsWith('ios-manifest.json'))).toBe(true);
   });
@@ -383,7 +383,7 @@ describe('publishBaseline', () => {
     expect(editedNotes).toContain('deadbeef');
     expect(editedNotes).toContain('run 7');
     // Zips first, manifest last: same guarantee as the first-publish path.
-    expect(ghCalls[2].args.filter((argument) => argument.endsWith('.zip'))).toHaveLength(15);
+    expect(ghCalls[2].args.filter((argument) => argument.endsWith('.zip'))).toHaveLength(20);
     expect(ghCalls[2].args).toContain('--clobber');
     expect(ghCalls[3].args.some((argument) => argument.endsWith('ios-manifest.json'))).toBe(true);
     expect(ghCalls[3].args).toContain('--clobber');

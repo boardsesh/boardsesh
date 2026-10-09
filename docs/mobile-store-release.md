@@ -248,15 +248,43 @@ uploads the artifact; committing the set back to `main` stays opt-in on a
 dispatch (`commit_to_main`) — that is deliberately still `main`, because
 `mobile-store-metadata.yml` reads the committed PNGs from there.
 
+### Candidate iPhone campaign capture
+
+The new nine-frame multiboard campaign is staged with `--flow app-store-campaign`.
+It retains the ten existing native sources and adds MoonBoard, Woods, Decoy,
+Grasshopper, spray wall, crew queue, persistent wall status, and the expanded
+Dynamic Island. Its outputs stay under `app-stores/app-store-campaign/apple/`
+for review; this flow does not replace or upload the current listing. iPads keep
+their six-source kiosk campaign. Android keeps its existing flow and fixture pin.
+
+The candidate requires a dedicated sanitized replay fixture with a crew session
+and seven selectors in this order: Kilter, Tension, MoonBoard, Woods, Decoy,
+Grasshopper, spray wall. Preflight checks the types against recorded `GetMyBoards`
+responses, not selector spelling or board count. The old fixture is rejected with
+an actionable error because it lacks Decoy and spray-wall sources. The spray image
+must be an actual permitted wall photograph included in that fixture's static files.
+
+Use an entitled simulator client for the Dynamic Island. The flow uses the existing
+screenshot BLE adapter and verifies the native Next control before capturing;
+an empty island or disconnected widget fails. Inspect the candidate sources on both
+phones and all four locales before promoting the flow and complete baseline into
+the default upload pipeline. Missing campaign sources never select a legacy layout.
+
 ### The iOS probe gate
 
-The iOS capture is a 12-shard macOS fan-out (4 app locales × 3 devices) and a
+Store capture now includes both iPhone 16 Pro Max (1320 × 2868) and iPhone 16 Pro
+(1206 × 2622), plus the existing 13-inch and 11-inch landscape iPads. The medium
+Dynamic Island set is captured natively rather than resized from Pro Max. The
+navigation smoke still defaults to one Pro Max in English. Inventory changes
+force the first complete baseline even if the Pro Max probe pixels match.
+
+The iOS capture is a 16-shard macOS fan-out (4 app locales × 4 devices) and a
 public repo gets 5 concurrent macOS runners, so the run sizes itself. With
 `gate: probe` it shoots ONE shard first — en-US × iPhone 16 Pro Max — pulls the
 matching shard out of the stored baseline and compares them pixel by pixel
 (`vp run screenshot:compare`, `scripts/compare-screenshots.ts`). Unchanged and
 the run stops there in roughly 15 minutes; changed, or no baseline yet, and it
-fans out to the remaining 11 shards. Automatic runs always probe. On a dispatch
+fans out to the remaining 15 shards. Automatic runs always probe. On a dispatch
 `gate: full` is the default, and a narrowed `locales` list, the `onboarding` flow
 or `upload: true` force it back to `full` — none of those has a full-set baseline
 to compare against.
@@ -281,7 +309,9 @@ commit explicitly, since it may sit outside a shallow clone's default reach)
 and sets `force_full=true` when any changed path matches a documented scope —
 `packages/shared/i18n/locales/**` except `en-US/**`, `packages/mobile/locales/**`,
 an `ipad`/`tablet`-matching path under `packages/mobile/`,
-`packages/mobile/app.config.ts`, or `app-stores/apple/**` — or when the baseline
+`packages/mobile/app.config.ts`, `app-stores/apple/**`, screenshot presentation files,
+the capture-device inventory or dimension gate, the iOS capture workflow/action,
+or an App Store Maestro flow — or when the baseline
 commit itself can't be fetched or diffed at all (no baseline yet, or one that
 fell out of history). `ios-capture` and `ios-finalize` then treat `force_full`
 exactly like a pixel-wise `changed`, fanning out even though the one shard the
@@ -292,13 +322,13 @@ probe actually captured matched byte for byte.
 iPad (a `Platform.isPad` branch, a width-based layout switch) is caught by
 neither the pixel probe (en-US iPhone only) nor the path rules above — its
 file path says nothing about iPad. There is no changed-path signal to force a
-fan-out here without also forcing a full 12-shard capture on every ordinary
+fan-out here without also forcing a full 16-shard capture on every ordinary
 component edit, which would defeat probing in the first place. Dispatch with
 `gate: full` (or `upload: true`) by hand when a change is iPad-specific by
 intent.
 
 The baseline lives on a rolling GitHub prerelease tagged `screenshots-baseline`:
-`pack` writes 15 `ios-<store-locale>-<device>.zip` files — 5 store locales × 3
+`pack` writes 20 `ios-<store-locale>-<device>.zip` files — 5 store locales × 4
 devices, since the captured `es` app locale fans out into both `es-ES` and
 `es-MX` — plus an `ios-manifest.json` recording the commit, the run id and a
 sha256 per file. Captured PNGs are deliberately not committed (issue #2905),

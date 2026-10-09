@@ -26,6 +26,11 @@ export const CAPTION_IDS = [
   'wallStatus',
   'moreBoards',
   'crossBoardLogbook',
+  'storeBoards',
+  'storeCrew',
+  'storeSpray',
+  'storeMoreBoards',
+  'storeIsland',
 ] as const;
 export type CaptionId = (typeof CAPTION_IDS)[number];
 export const CAPTION_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
@@ -33,6 +38,8 @@ export type CaptionLocale = (typeof CAPTION_LOCALES)[number];
 export interface ScreenshotCaption {
   headline: string;
   description: string;
+  /** Exact headline substring set in the showcase's italic display face. */
+  emphasis?: string;
 }
 export type CaptionCatalog = Record<CaptionId, ScreenshotCaption>;
 
@@ -96,14 +103,61 @@ export type ScreenshotLayout =
   | 'live-climb'
   | 'wall-status'
   | 'wall-column'
-  | 'cross-board-logbook';
+  | 'cross-board-logbook'
+  | 'store-boards'
+  | 'store-queue'
+  | 'store-wall'
+  | 'store-island';
 export interface ScreenshotRecipe {
   output: string;
   caption: CaptionId;
   layout: ScreenshotLayout;
   /** Actual native captures, in their compositing order. */
   sources: readonly string[];
+  /** Compatibility labels, in source order; never guessed from a layout. */
+  labels?: readonly string[];
 }
+
+export const IOS_CAMPAIGN_CAPTURE_NAMES = [
+  ...Object.keys(PHONE_CAPTIONS),
+  '10-moonboard-board-view.png',
+  '11-woods-board-view.png',
+  '12-decoy-board-view.png',
+  '13-grasshopper-board-view.png',
+  '14-spray-board-view.png',
+  '15-crew-queue.png',
+  '16-wall-status.png',
+  '17-dynamic-island.png',
+] as const;
+
+const IOS_CAMPAIGN_RECIPES: readonly ScreenshotRecipe[] = [
+  {
+    output: '00-your-boards.png',
+    caption: 'storeBoards',
+    layout: 'store-boards',
+    sources: ['01-board-view-2.png', '00-board-view.png', '10-moonboard-board-view.png'],
+    labels: ['Tension', 'Kilter', 'MoonBoard'],
+  },
+  { output: '01-your-crew.png', caption: 'storeCrew', layout: 'store-queue', sources: ['15-crew-queue.png'] },
+  { output: '02-spray-wall.png', caption: 'storeSpray', layout: 'screen', sources: ['14-spray-board-view.png'] },
+  {
+    output: '03-more-boards.png',
+    caption: 'storeMoreBoards',
+    layout: 'store-boards',
+    sources: ['11-woods-board-view.png', '12-decoy-board-view.png', '13-grasshopper-board-view.png'],
+    labels: ['Woods', 'Decoy', 'Grasshopper'],
+  },
+  { output: '04-on-the-wall.png', caption: 'wallStatus', layout: 'store-wall', sources: ['16-wall-status.png'] },
+  { output: '05-one-logbook.png', caption: 'crossBoardLogbook', layout: 'screen', sources: ['09-profile.png'] },
+  { output: '06-session-plan.png', caption: 'workout', layout: 'screen', sources: ['05-workout-generator.png'] },
+  {
+    output: '07-dynamic-island.png',
+    caption: 'storeIsland',
+    layout: 'store-island',
+    sources: ['17-dynamic-island.png'],
+  },
+  { output: '08-next-project.png', caption: 'climbs', layout: 'screen', sources: ['03-climbs.png'] },
+];
 
 // Legacy live captures and current wall/board captures are separate complete sets.
 // Their numeric prefixes may overlap; recipes match exact filenames, never slots.
@@ -127,6 +181,9 @@ export function resolveScreenshotRecipes(
   const actualNames = [...captureNames].sort();
   // Sorting copies ignores capture order while retaining duplicate-name rejection.
   const matches = (expected: readonly string[]) => [...expected].sort().join('\n') === actualNames.join('\n');
+  if (platform === 'ios' && device.startsWith('iphone-') && matches(IOS_CAMPAIGN_CAPTURE_NAMES)) {
+    return IOS_CAMPAIGN_RECIPES;
+  }
   // The iPad listing is its own campaign, not the phone set in landscape: the
   // wall kiosk leads, and the browse screen is shown twice — once whole, once
   // with its trailing "Now on the wall" column lifted out and enlarged beside it.
@@ -240,7 +297,17 @@ export function readCaptionCatalog(locale: CaptionLocale, root = PRESENTATION_RO
     ) {
       throw new Error(`Missing screenshot caption ${locale}.${captionId}`);
     }
-    catalog[captionId] = { headline: caption.headline, description: caption.description };
+    if (
+      caption.emphasis !== undefined &&
+      (typeof caption.emphasis !== 'string' || !caption.emphasis.trim() || !caption.headline.includes(caption.emphasis))
+    ) {
+      throw new Error(`Invalid screenshot emphasis ${locale}.${captionId}`);
+    }
+    catalog[captionId] = {
+      headline: caption.headline,
+      description: caption.description,
+      ...(typeof caption.emphasis === 'string' ? { emphasis: caption.emphasis } : {}),
+    };
   }
   return catalog;
 }

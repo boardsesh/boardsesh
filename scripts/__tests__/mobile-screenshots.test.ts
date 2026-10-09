@@ -11,6 +11,9 @@ import { parseAllDocuments } from 'yaml';
 
 import {
   appendNotesToStepSummary,
+  assertIosCampaignCaptureReady,
+  assertIosCampaignSources,
+  buildIosCampaignMaestroEnv,
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
@@ -42,9 +45,10 @@ import {
   type ScreenshotBackendSession,
   type ScreenshotOptions,
 } from '../mobile-screenshots';
+import { IOS_CAMPAIGN_CAPTURE_NAMES } from '../lib/screenshot-presentation';
 import { metroDevClientUrl, SCREENSHOT_READY_PORT, screenshotReadinessCount } from '../lib/metro-dev-server';
 
-const phoneDevices = ['iPhone 16 Pro Max'];
+const phoneDevices = ['iPhone 16 Pro Max', 'iPhone 16 Pro'];
 const ipadDevices = ['iPad Pro 13-inch (M5)', 'iPad Pro 11-inch (M5)'];
 const commonDevices = [...phoneDevices, ...ipadDevices];
 const allAppLocales: ScreenshotOptions['appLocales'] = ['en-US', 'es', 'fr', 'de'];
@@ -317,6 +321,86 @@ describe('buildScreenshotEnv', () => {
       capture,
     );
     expect(overrideEnv.EXPO_PUBLIC_SCREENSHOT_BOARDS).toBe('Custom Tension|Custom Kilter');
+  });
+});
+
+describe('iOS campaign capture', () => {
+  const boardTypes = ['kilter', 'tension', 'moonboard', 'woods', 'decoy', 'grasshopper', 'spray'];
+  const boards = boardTypes.map((boardType) => ({ name: `Demo ${boardType}`, boardType }));
+  const capture = { sharedSessionId: 'crew', boards: boards.map((board) => board.name) };
+  const options = makeOptions({ flow: 'app-store-campaign', fixtures: 'replay' });
+
+  it('is opt-in and stays iOS-only', () => {
+    expect(parseArgs(['--flow', 'app-store-campaign']).flow).toBe('app-store-campaign');
+    expect(parseArgs([]).flow).toBe('app-store');
+    expect(() => parseArgs(['--flow', 'app-store-campaign', '--platform', 'android'])).toThrow(
+      /requires --platform ios/,
+    );
+  });
+
+  it('rejects the previous fixture before native capture starts', () => {
+    expect(() =>
+      assertIosCampaignCaptureReady(options, { ...capture, boards: capture.boards.slice(0, 6) }, boards),
+    ).toThrow(/lacks Decoy\/spray/);
+    expect(() => assertIosCampaignCaptureReady(options, capture, [])).toThrow(/no recorded board/);
+  });
+
+  it('proves every named source is its recorded board type', () => {
+    expect(() => assertIosCampaignCaptureReady(options, capture, boards)).not.toThrow();
+    const wrongType = boards.map((board) =>
+      board.boardType === 'decoy' ? { ...board, boardType: 'moonboard' } : board,
+    );
+    expect(() => assertIosCampaignCaptureReady(options, capture, wrongType)).toThrow(/must resolve to decoy/);
+    expect(() =>
+      assertIosCampaignCaptureReady({ ...options, boards: [...capture.boards].reverse().join('|') }, capture, boards),
+    ).toThrow(/must resolve to kilter/);
+  });
+
+  it('refuses legacy framing when even one campaign image is missing', () => {
+    expect(() => assertIosCampaignSources(IOS_CAMPAIGN_CAPTURE_NAMES)).not.toThrow();
+    expect(() =>
+      assertIosCampaignSources(IOS_CAMPAIGN_CAPTURE_NAMES.filter((name) => name !== '14-spray-board-view.png')),
+    ).toThrow(/14-spray-board-view.png/);
+    expect(() => assertIosCampaignSources([...IOS_CAMPAIGN_CAPTURE_NAMES, 'unexpected.png'])).toThrow(/unexpected.png/);
+  });
+
+  it('loads native accessibility labels for every capture locale', () => {
+    for (const locale of allAppLocales) {
+      const env = buildIosCampaignMaestroEnv(locale, capture);
+      expect(env).toContain('SCREENSHOT_SHARED_SESSION_ID=crew');
+      expect(env.some((entry) => entry.startsWith('SCREENSHOT_JOIN_LABEL=') && entry.length > 22)).toBe(true);
+      expect(env.some((entry) => entry.startsWith('SCREENSHOT_QUEUE_LABEL=') && entry.includes('.*'))).toBe(true);
+      expect(env.join(' ')).not.toContain('{{count}}');
+      expect(
+        env.some(
+          (entry) => entry.startsWith('SCREENSHOT_WALL_STATUS_LABEL=') && entry.includes('Lightest Pair of Shorts'),
+        ),
+      ).toBe(true);
+      expect(env.join(' ')).not.toContain('{{sender}}');
+    }
+    expect(buildIosCampaignMaestroEnv('fr', capture)).not.toEqual(buildIosCampaignMaestroEnv('en-US', capture));
+  });
+
+  it('keeps iPad on its six-shot flow when capturing the campaign', () => {
+    expect(
+      iosSourceFlowFile(options, {
+        name: 'iPad Pro 13-inch (M5)',
+        typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB',
+        orientation: 'LANDSCAPE_LEFT',
+      }),
+    ).toMatch(/app-store-ipad\.yaml$/);
+  });
+
+  it('captures all eighteen sources without optional skipping of campaign images', () => {
+    const legacy = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
+    const campaign = readFileSync('packages/mobile/.maestro/app-store-campaign.yaml', 'utf8');
+    const documents = parseAllDocuments(campaign);
+    for (const document of documents) expect(document.errors).toEqual([]);
+    const names = [...`${legacy}\n${campaign}`.matchAll(/takeScreenshot: ([^\n]+)/g)].map((match) => `${match[1]}.png`);
+    expect([...new Set(names)].sort()).toEqual([...IOS_CAMPAIGN_CAPTURE_NAMES].sort());
+    expect(names).toContain('17-dynamic-island.png');
+    expect(campaign).toContain("visible: 'Next climb'");
+    expect(campaign).not.toContain('when:');
   });
 });
 

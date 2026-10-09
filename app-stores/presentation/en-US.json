@@ -70,5 +70,30 @@
   "crossBoardLogbook": {
     "headline": "All your boards.\nOne logbook.",
     "description": "Keep your sends and sessions together across boards."
+  },
+  "storeBoards": {
+    "headline": "Your boards.\nOne app.",
+    "description": "Switch boards without switching apps.",
+    "emphasis": "app."
+  },
+  "storeCrew": {
+    "headline": "Your crew.\nOne queue.",
+    "description": "Add climbs together. Everyone can pick what’s next.",
+    "emphasis": "queue."
+  },
+  "storeSpray": {
+    "headline": "Your spray\nwall, too.",
+    "description": "Set climbs on your wall photo.",
+    "emphasis": "too."
+  },
+  "storeMoreBoards": {
+    "headline": "More boards.\nSame app.",
+    "description": "Also works with Touchstone and So iLL.",
+    "emphasis": "app."
+  },
+  "storeIsland": {
+    "headline": "Next climb.\nFrom Dynamic Island.",
+    "description": "Change the climb without opening the app.",
+    "emphasis": "Dynamic Island."
   }
 }

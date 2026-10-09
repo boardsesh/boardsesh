@@ -70,5 +70,30 @@
   "crossBoardLogbook": {
     "headline": "Toutes tes boards.\nUn seul carnet.",
     "description": "Tes croix et tes séances réunies, sur toutes tes boards."
+  },
+  "storeBoards": {
+    "headline": "Tes boards.\nUne appli.",
+    "description": "Change de board sans changer d’appli.",
+    "emphasis": "appli."
+  },
+  "storeCrew": {
+    "headline": "Ton crew.\nUne file.",
+    "description": "Ajoutez des blocs ensemble et choisissez le suivant.",
+    "emphasis": "file."
+  },
+  "storeSpray": {
+    "headline": "Ton mur de spray,\nlui aussi.",
+    "description": "Ouvre des blocs sur la photo de ton mur.",
+    "emphasis": "aussi."
+  },
+  "storeMoreBoards": {
+    "headline": "Plus de boards.\nLa même appli.",
+    "description": "Compatible aussi avec Touchstone et So iLL.",
+    "emphasis": "appli."
+  },
+  "storeIsland": {
+    "headline": "Le bloc suivant,\ndepuis Dynamic Island.",
+    "description": "Change de bloc sans ouvrir l’appli.",
+    "emphasis": "Dynamic Island."
   }
 }
