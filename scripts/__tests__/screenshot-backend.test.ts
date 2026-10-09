@@ -871,42 +871,49 @@ describe('screenshot backend', () => {
       expect(backend?.stats().processInstanceId).not.toBe(originalIdentity);
     });
 
-    it('acks a graphql-ws handshake, pongs a ping, and stays silent on a subscribe', async () => {
-      const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/graphql`, 'graphql-transport-ws');
-      const received: Array<Record<string, unknown>> = [];
-      await new Promise<void>((resolve, reject) => {
-        socket.on('open', () => resolve());
-        socket.on('error', reject);
-      });
-      socket.on('message', (frame) =>
-        received.push(JSON.parse(Buffer.from(frame as Buffer).toString('utf8')) as Record<string, unknown>),
-      );
+    it.each(['ClimbStatsUpdated', 'PrivacyChanged'])(
+      'acks a graphql-ws handshake, pongs a ping, and stays silent on %s',
+      async (operationName) => {
+        const subscriptionQuery =
+          operationName === 'PrivacyChanged'
+            ? 'subscription PrivacyChanged { privacyChanged }'
+            : 'subscription ClimbStatsUpdated { ok }';
+        const socket = new WebSocket(`${backendOrigin.replace('http://', 'ws://')}/graphql`, 'graphql-transport-ws');
+        const received: Array<Record<string, unknown>> = [];
+        await new Promise<void>((resolve, reject) => {
+          socket.on('open', () => resolve());
+          socket.on('error', reject);
+        });
+        socket.on('message', (frame) =>
+          received.push(JSON.parse(Buffer.from(frame as Buffer).toString('utf8')) as Record<string, unknown>),
+        );
 
-      socket.send(JSON.stringify({ type: 'connection_init' }));
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(received).toEqual([{ type: 'connection_ack' }]);
+        socket.send(JSON.stringify({ type: 'connection_init' }));
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(received).toEqual([{ type: 'connection_ack' }]);
 
-      socket.send(JSON.stringify({ type: 'ping' }));
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(received[1]).toEqual({ type: 'pong' });
+        socket.send(JSON.stringify({ type: 'ping' }));
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(received[1]).toEqual({ type: 'pong' });
 
-      socket.send(
-        JSON.stringify({
-          id: '1',
-          type: 'subscribe',
-          payload: { operationName: 'ClimbStatsUpdated', query: 'subscription ClimbStatsUpdated { ok }' },
-        }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      // Silence is the contract: the store screens render fine when the
-      // subscription never emits, so an inert socket is the right fixture.
-      expect(received).toHaveLength(2);
-      expect(socket.readyState).toBe(WebSocket.OPEN);
-      expect(hasLine('WS connection_init ack')).toBe(true);
-      expect(hasLine('WS subscribe ClimbStatsUpdated')).toBe(true);
-      expect(backend?.stats().misses).toBe(0);
-      socket.close();
-    });
+        socket.send(
+          JSON.stringify({
+            id: '1',
+            type: 'subscribe',
+            payload: { operationName, query: subscriptionQuery },
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        // Silence is the contract: the store screens render fine when the
+        // subscription never emits, so an inert socket is the right fixture.
+        expect(received).toHaveLength(2);
+        expect(socket.readyState).toBe(WebSocket.OPEN);
+        expect(hasLine('WS connection_init ack')).toBe(true);
+        expect(hasLine(`WS subscribe ${operationName}`)).toBe(true);
+        expect(backend?.stats().misses).toBe(0);
+        socket.close();
+      },
+    );
 
     describe('WebSocket fixture replay', () => {
       const joinRequest = {

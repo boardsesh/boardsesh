@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-08T23:00:00.263078+00:00",
+  "context": {
+    "platform": "iOS Simulator",
+    "device_model": "iPhone 17",
+    "ios_version": "iOS 26.5",
+    "configuration": "Release",
+    "host_cpu_cores": 18,
+    "source_commits": {
+      "baseline": "4601cb1f2e2cb40502c486f879732d9d32f328cf",
+      "candidate": "58c2b12be4ba1071cdde01f2793d40b69565ec83"
+    },
+    "screenshot_mode": true,
+    "startup_instrumentation": true,
+    "locale": "en-US",
+    "theme": "dark",
+    "fixture_archive_sha256": "03ddb626f41d3627f587f3bff1686e2d0cc098630973d14a730f348dfe546ed1",
+    "fixture_manifest_sha256": "ce66d11b7fcf92be08d29f1c5344f41ec5a89c8c77f8863c60919deae23ab95e",
+    "startup_policy": "One excluded warmup, ten process-cold launches; warmed persisted data preserved.",
+    "order": "Baseline then candidate within each backend cohort; not randomized.",
+    "host_contention": "Unequal host contention was observed during initial captures: baseline startup host load approximately 12\u201320, candidate initial trials approximately 246 on an 18-core host during unrelated builds. Startup differences are descriptive, not attributable to HIG changes. Mixed-flow core percentages use host wall duration and are diluted by scheduling/automation gaps."
+  },
+  "artifact_identity": {
+    "baseline": {
+      "bundleIdentifier": "com.boardsesh.app",
+      "executableUuid": "44F389AC-1CC2-3BA6-B951-ACCA7F20C060 (arm64)",
+      "executableSha256": "1b3bf396da8698e2a215b677449cbd132cb2ce5d54399fd11afec8e4464fdeac",
+      "embeddedBundleSha256": "c8757b663d115694c8053eecd3ddaf83fa45021ee83d4a3aefaed7417c83b573",
+      "expoPlistSha256": "6d75112e981575c94adad4b73df34dd728762824fd4ba88cb5e01a6dc21d7d1b",
+      "otaEnabled": false
+    },
+    "candidate": {
+      "bundleIdentifier": "com.boardsesh.app",
+      "executableUuid": "0F2E7C23-EF44-3119-9B8F-F0705A9E7B07 (arm64)",
+      "executableSha256": "a582e68d02ac6b9f19e5c0d7f9ad1c70219fd9bdac4377e96b5161a042217e60",
+      "embeddedBundleSha256": "fd3060ce63d4d5bbd8fcea801803ef3524f641e3c4b051c89d65e9b24545bc42",
+      "expoPlistSha256": "f3a673a6fceb200f21855ff15defad12c19abd16eb9910d80d8878b737366dd4",
+      "otaEnabled": false
+    }
+  },
+  "identity_consistent_across_selected_phases": {
+    "baseline": true,
+    "candidate": true
+  },
+  "validity": {
+    "completed_valid_captures_only": true,
+    "invalid_all_trials_excluded": true,
+    "exported_and_installed_identity_verified": true,
+    "ota_disabled": true,
+    "data_container_preserved": true
+  },
+  "percentile_rule": "Nearest-rank p50; max is also nearest-rank p95 for ten launches and three/five rounds. Small series do not establish population tails.",
+  "production_equivalent_backend_established": false,
+  "causal_hig_attribution_established": false,
+  "startup_timing_conclusion": "Inconclusive under unequal and variable host contention; ordered timings are descriptive.",
+  "backend_cohorts": {
+    "original-fixture-miss": {
+      "backend_context": {
+        "privacySubscription": "original-fixture-miss",
+        "fixtureManifestSHA256": "ce66d11b7fcf92be08d29f1c5344f41ec5a89c8c77f8863c60919deae23ab95e",
+        "replayToolSHA256": null
+      },
+      "backend_scope": "Original replay fixture lacked PrivacyChanged and returned an error payload. Its next callback may invalidate queries similarly to a production initial signal, but error behavior is not a faithful production replay. Retain as diagnostic.",
+      "browse": {
+        "baseline": {
+          "warmup_rounds": 2,
+          "completed_valid_rounds": 5,
+          "cpu_seconds": {
+            "samples_in_capture_order": [
+              6.169999999999998, 6.079999999999998, 6.039999999999999, 5.950000000000003, 6.210000000000001
+            ],
+            "p50": 6.079999999999998,
+            "max": 6.210000000000001
+          },
+          "cpu_core_percent": {
+            "samples_in_capture_order": [
+              11.083823649062843, 10.79492854339413, 10.79562093874069, 11.122339724116271, 10.885168699185083
+            ],
+            "p50": 10.885168699185083,
+            "max": 11.122339724116271
+          },
+          "settled_physical_footprint_mib": {
+            "samples_in_capture_order": [326.2, 348.4, 351.4, 345.5, 360.8],
+            "p50": 348.4,
+            "max": 360.8
+          },
+          "settled_idle_cpu_core_percent": {
+            "samples_in_capture_order": [
+              1.9355051768213722, 1.4428263523105798, 1.1220990058810933, 0.9773518657746769, 1.4637541837031574
+            ],
+            "p50": 1.4428263523105798,
+            "max": 1.9355051768213722
+          },
+          "footprint_last_minus_first_mib": 34.60000000000002,
+          "entry_matches_tenth_preceding_valid_startup_pid": true
+        },
+        "candidate": {
+          "warmup_rounds": 2,
+          "completed_valid_rounds": 5,
+          "cpu_seconds": {
+            "samples_in_capture_order": [
+              7.209999999999997, 6.82, 7.330000000000005, 8.520000000000003, 7.020000000000003
+            ],
+            "p50": 7.209999999999997,
+            "max": 8.520000000000003
+          },
+          "cpu_core_percent": {
+            "samples_in_capture_order": [
+              13.095889835449363, 12.35966732503986, 13.487399238559034, 13.151490141906939, 13.11833335930705
+            ],
+            "p50": 13.11833335930705,
+            "max": 13.487399238559034
+          },
+          "settled_physical_footprint_mib": {
+            "samples_in_capture_order": [266.1, 271.4, 281.5, 276.9, 281.4],
+            "p50": 276.9,
+            "max": 281.5
+          },
+          "settled_idle_cpu_core_percent": {
+            "samples_in_capture_order": [
+              1.4821172666062106, 1.4765640070874262, 0.9832724259323978, 0.9835225350470317, 0.9808875488303509
+            ],
+            "p50": 0.9835225350470317,
+            "max": 1.4821172666062106
+          },
+          "footprint_last_minus_first_mib": 15.299999999999955,
+          "entry_matches_tenth_preceding_valid_startup_pid": true
+        }
+      },
+      "startup": {
+        "baseline": {
+          "completed_valid_launches": 10,
+          "collector_to_useful_home_ms": {
+            "samples_in_capture_order": [
+              444.13854199647903, 488.14795899391174, 457.59400004148483, 471.8669159412384, 481.0823330283165,
+              475.5860829949379, 485.07225000858307, 471.20629197359085, 498.7388330101967, 468.96908301115036
+            ],
+            "p50": 471.8669159412384,
+            "max": 498.7388330101967
+          },
+          "home_outcome_counts": {
+            "content": 10
+          },
+          "auth_outcome_counts": {
+            "authenticated": 10
+          },
+          "host_load_1min_before_after_range_per_trial": [null, null, null, null, null, null, null, null, null, null],
+          "process_cpu_seconds_at_deferred_export": {
+            "samples_in_capture_order": [null, null, null, null, null, null, null, null, null, null],
+            "p50": null,
+            "max": null
+          }
+        },
+        "candidate": {
+          "completed_valid_launches": 10,
+          "collector_to_useful_home_ms": {
+            "samples_in_capture_order": [
+              636.944041967392, 639.9774169921875, 590.8947499990463, 638.6974580287933, 652.0998330116272,
+              464.5656249523163, 432.473042011261, 443.9734159708023, 555.0584159493446, 546.5399580001831
+            ],
+            "p50": 555.0584159493446,
+            "max": 652.0998330116272
+          },
+          "home_outcome_counts": {
+            "content": 10
+          },
+          "auth_outcome_counts": {
+            "authenticated": 10
+          },
+          "host_load_1min_before_after_range_per_trial": [null, null, null, null, null, null, null, null, null, null],
+          "process_cpu_seconds_at_deferred_export": {
+            "samples_in_capture_order": [null, null, null, null, null, null, null, null, null, null],
+            "p50": null,
+            "max": null
+          }
+        }
+      },
+      "round_flow_sha256_in_order": {
+        "baseline": [
+          "086fbbb193c7b1ec454e9c41fd8415e68b0e201da1fda3051780a4934aca4c07",
+          "fa2097ca23d05c5da3a95e916be3db5b0cac19f0f8c839c0368c01203a3d37e5",
+          "2d110d5bd78ccbdf07e2bf4422929d5e8f96e0dbd25088056c150d691f643b67",
+          "726ace0670292ac185d6793e9ddc44e3cf8f75f93f4e565f0662ec7380a3a74d",
+          "4342e80554238e4bea90ecf55a9cc4bb1750bf2fe85a8b2f922550651809300f"
+        ],
+        "candidate": [
+          "086fbbb193c7b1ec454e9c41fd8415e68b0e201da1fda3051780a4934aca4c07",
+          "fa2097ca23d05c5da3a95e916be3db5b0cac19f0f8c839c0368c01203a3d37e5",
+          "2d110d5bd78ccbdf07e2bf4422929d5e8f96e0dbd25088056c150d691f643b67",
+          "726ace0670292ac185d6793e9ddc44e3cf8f75f93f4e565f0662ec7380a3a74d",
+          "4342e80554238e4bea90ecf55a9cc4bb1750bf2fe85a8b2f922550651809300f"
+        ]
+      },
+      "paired_browse_proof": {
+        "available": true,
+        "comparable": false,
+        "same_simulator": true,
+        "backend_contexts_match": true,
+        "both_backend_contexts_explicit": false,
+        "exact_round_flows_match": true,
+        "both_browse_pids_match_preceding_valid_startup": true,
+        "non_comparable_reasons": [
+          "Legacy replay backend context was not explicitly captured; retain original subscription-miss series as diagnostic"
+        ]
+      },
+      "median_browse_deltas": {
+        "mixed_flow_cpu_seconds": {
+          "baseline": 6.079999999999998,
+          "candidate": 7.209999999999997,
+          "absolute_delta": 1.129999999999999,
+          "percent_delta": 18.58552631578947
+        },
+        "settled_home_physical_footprint_mib": {
+          "baseline": 348.4,
+          "candidate": 276.9,
+          "absolute_delta": -71.5,
+          "percent_delta": -20.52238805970149
+        },
+        "settled_idle_cpu_core_percent": {
+          "baseline": 1.4428263523105798,
+          "candidate": 0.9835225350470317,
+          "absolute_delta": -0.4593038172635481,
+          "percent_delta": -31.83361715898847
+        }
+      }
+    },
+    "passive-open-no-events": {
+      "backend_context": {
+        "privacySubscription": "passive-open-no-events",
+        "fixtureManifestSHA256": "ce66d11b7fcf92be08d29f1c5344f41ec5a89c8c77f8863c60919deae23ab95e",
+        "replayToolSHA256": "f283627814979f52efcdb2f2ce76226b0d865e35d9c1bd28cc2cef988b2861e4"
+      },
+      "backend_scope": "Quiet PrivacyChanged subscription held open with no events and no initial signal. Production sends an initial true signal, so this suppresses initial privacy invalidation and does not establish production-equivalent startup/privacy behavior.",
+      "browse": {
+        "baseline": {
+          "warmup_rounds": 2,
+          "completed_valid_rounds": 3,
+          "cpu_seconds": {
+            "samples_in_capture_order": [5.859999999999999, 5.520000000000003, 5.600000000000001],
+            "p50": 5.600000000000001,
+            "max": 5.859999999999999
+          },
+          "cpu_core_percent": {
+            "samples_in_capture_order": [10.68791541796942, 10.21924892531306, 10.180591320238996],
+            "p50": 10.21924892531306,
+            "max": 10.68791541796942
+          },
+          "settled_physical_footprint_mib": {
+            "samples_in_capture_order": [327.1, 347.4, 349.9],
+            "p50": 347.4,
+            "max": 349.9
+          },
+          "settled_idle_cpu_core_percent": {
+            "samples_in_capture_order": [1.4708597855718164, 0.9661456137578612, 1.1906055469341177],
+            "p50": 1.1906055469341177,
+            "max": 1.4708597855718164
+          },
+          "footprint_last_minus_first_mib": 22.799999999999955,
+          "entry_matches_tenth_preceding_valid_startup_pid": true
+        },
+        "candidate": {
+          "warmup_rounds": 2,
+          "completed_valid_rounds": 3,
+          "cpu_seconds": {
+            "samples_in_capture_order": [7.150000000000002, 6.980000000000004, 6.920000000000002],
+            "p50": 6.980000000000004,
+            "max": 7.150000000000002
+          },
+          "cpu_core_percent": {
+            "samples_in_capture_order": [13.082625023118485, 13.550368114902845, 12.533851748298721],
+            "p50": 13.082625023118485,
+            "max": 13.550368114902845
+          },
+          "settled_physical_footprint_mib": {
+            "samples_in_capture_order": [270.8, 288.3, 298.8],
+            "p50": 288.3,
+            "max": 298.8
+          },
+          "settled_idle_cpu_core_percent": {
+            "samples_in_capture_order": [0.8671959032028028, 1.4750603253578252, 1.9666796528981623],
+            "p50": 1.4750603253578252,
+            "max": 1.9666796528981623
+          },
+          "footprint_last_minus_first_mib": 28.0,
+          "entry_matches_tenth_preceding_valid_startup_pid": true
+        }
+      },
+      "startup": {
+        "baseline": {
+          "completed_valid_launches": 10,
+          "collector_to_useful_home_ms": {
+            "samples_in_capture_order": [
+              612.0733749866486, 667.2304579615593, 599.9794589877129, 602.5637090206146, 574.1870000362396,
+              572.6834169626236, 540.5607500076294, 514.4652500152588, 900.7606250047684, 899.1462909579277
+            ],
+            "p50": 599.9794589877129,
+            "max": 900.7606250047684
+          },
+          "home_outcome_counts": {
+            "content": 10
+          },
+          "auth_outcome_counts": {
+            "authenticated": 10
+          },
+          "host_load_1min_before_after_range_per_trial": [
+            [126.44482421875, 126.44482421875],
+            [117.3603515625, 126.44482421875],
+            [108.9228515625, 117.3603515625],
+            [100.6806640625, 108.9228515625],
+            [93.0986328125, 100.6806640625],
+            [86.20361328125, 93.0986328125],
+            [86.20361328125, 86.20361328125],
+            [79.86083984375, 86.20361328125],
+            [73.86572265625, 79.86083984375],
+            [69.55224609375, 73.86572265625]
+          ],
+          "process_cpu_seconds_at_deferred_export": {
+            "samples_in_capture_order": [3.9, 4.23, 3.7, 3.67, 3.52, 3.66, 3.41, 3.22, 4.53, 5.5],
+            "p50": 3.67,
+            "max": 5.5
+          }
+        },
+        "candidate": {
+          "completed_valid_launches": 10,
+          "collector_to_useful_home_ms": {
+            "samples_in_capture_order": [
+              375.38308399915695, 377.4203749895096, 383.63050001859665, 377.6986250281334, 376.351666033268,
+              379.79333305358887, 387.7945419549942, 573.5523750185966, 386.168084025383, 375.9603329896927
+            ],
+            "p50": 377.6986250281334,
+            "max": 573.5523750185966
+          },
+          "home_outcome_counts": {
+            "content": 10
+          },
+          "auth_outcome_counts": {
+            "authenticated": 10
+          },
+          "host_load_1min_before_after_range_per_trial": [
+            [9.6923828125, 9.9267578125],
+            [9.6923828125, 9.6923828125],
+            [9.396484375, 9.6923828125],
+            [9.0439453125, 9.396484375],
+            [9.0439453125, 9.0439453125],
+            [9.1201171875, 9.1201171875],
+            [8.7900390625, 9.1201171875],
+            [8.7900390625, 9.046875],
+            [9.046875, 9.046875],
+            [8.642578125, 8.642578125]
+          ],
+          "process_cpu_seconds_at_deferred_export": {
+            "samples_in_capture_order": [3.08, 3.07, 3.14, 3.03, 3.04, 3.05, 3.06, 3.19, 3.06, 3.05],
+            "p50": 3.06,
+            "max": 3.19
+          }
+        }
+      },
+      "round_flow_sha256_in_order": {
+        "baseline": [
+          "086fbbb193c7b1ec454e9c41fd8415e68b0e201da1fda3051780a4934aca4c07",
+          "fa2097ca23d05c5da3a95e916be3db5b0cac19f0f8c839c0368c01203a3d37e5",
+          "2d110d5bd78ccbdf07e2bf4422929d5e8f96e0dbd25088056c150d691f643b67"
+        ],
+        "candidate": [
+          "086fbbb193c7b1ec454e9c41fd8415e68b0e201da1fda3051780a4934aca4c07",
+          "fa2097ca23d05c5da3a95e916be3db5b0cac19f0f8c839c0368c01203a3d37e5",
+          "2d110d5bd78ccbdf07e2bf4422929d5e8f96e0dbd25088056c150d691f643b67"
+        ]
+      },
+      "paired_browse_proof": {
+        "available": true,
+        "comparable": true,
+        "same_simulator": true,
+        "backend_contexts_match": true,
+        "both_backend_contexts_explicit": true,
+        "exact_round_flows_match": true,
+        "both_browse_pids_match_preceding_valid_startup": true,
+        "non_comparable_reasons": []
+      },
+      "median_browse_deltas": {
+        "mixed_flow_cpu_seconds": {
+          "baseline": 5.600000000000001,
+          "candidate": 6.980000000000004,
+          "absolute_delta": 1.3800000000000026,
+          "percent_delta": 24.64285714285719
+        },
+        "settled_home_physical_footprint_mib": {
+          "baseline": 347.4,
+          "candidate": 288.3,
+          "absolute_delta": -59.099999999999966,
+          "percent_delta": -17.01208981001726
+        },
+        "settled_idle_cpu_core_percent": {
+          "baseline": 1.1906055469341177,
+          "candidate": 1.4750603253578252,
+          "absolute_delta": 0.2844547784237075,
+          "percent_delta": 23.891605339501055
+        }
+      }
+    }
+  },
+  "candidate_supplemental": {
+    "completed_valid": true,
+    "candidate_only": true,
+    "preset_count": 6,
+    "sweeps": 25,
+    "before_physical_footprint_mib": 284.5,
+    "settled_physical_footprint_mib_in_block_order": [284.7, 284.8, 284.8, 284.9, 284.7],
+    "after_visual_home_exit_physical_footprint_mib": 284.2,
+    "before_idle_cpu_core_percent": 0.9829593754744733,
+    "after_visual_home_exit_idle_cpu_core_percent": 1.2293677769230096,
+    "onboarding_unmount_confirmed": false,
+    "actual_logbook_row_reveal": {
+      "selector_asserted": true,
+      "edit_visible": true,
+      "edit_action_dispatched": false
+    },
+    "fixture_provenance": {
+      "candidate_supplemental_only": true,
+      "source_manifest_sha256": "ce66d11b7fcf92be08d29f1c5344f41ec5a89c8c77f8863c60919deae23ab95e",
+      "supplemental_manifest_sha256": "1afba7a98ad51232e3ccbf07faafe79fce80f8fe7b53a52d45e56772b250216b",
+      "operation_name": "SearchClimbs",
+      "document_sha256": "49c09142fab010a5a4e3bda645d4fa3e6d52cb1bddc6764945aed50dd1825d57",
+      "variables_sha256": "6683e9b35d0cccce846a9905b8c80d53d4140b96fe23e674b53f4c1e700bb98c",
+      "scope": "Candidate-only preview derives one real first recorded climb from the same board configuration at 35 degrees, from the recorded page-size-30 response. Original archive and paired captures are unchanged; this supplemental input is not a baseline comparison. No climb/account identifiers are exported."
+    },
+    "scope": "Candidate-only draft-preview stress across six render presets; Custom omitted. No paired baseline carousel comparison. Footprints are settled snapshots, not gesture peaks. Direct onboarding URL bypasses preference reset; no Save/Continue action is dispatched. Visual Home return does not prove modal unmount."
+  },
+  "measurement_scope": [
+    "CPU seconds cover the whole verified tab/scroll input sequence, including background work and automation/assertion gaps. Core percent divides process CPU by host elapsed time; neither is gesture latency.",
+    "Identical fixed-coordinate Logbook inputs reach a baseline row and a candidate group heading. Paired edit-reveal/new-pan coverage is not established; candidate-only row reveal verifies Edit without invoking it.",
+    "Physical footprints are settled snapshots, not peaks. Three/five rounds and 25 preview sweeps cannot establish a long-session leak or presentation FPS.",
+    "Collector-to-useful Home spans use one JS runtime clock and exclude native work before collector load. CPU at deferred export includes native/background work and idle after useful Home; not CPU to first frame.",
+    "Original subscription-miss replay is diagnostic; quiet no-event/no-initial-signal control omits production's initial true signal. Neither proves a causal HIG effect or production performance equivalence."
+  ]
+}
