@@ -15,7 +15,10 @@ export function usePlayDrawerSectionControls() {
   const { t } = useTranslation('common');
   const { sections, ready, setSection, setAll } = usePlayDrawerSectionsPreference();
   const title = t('mobile.settings.climbDrawer.title');
+  const sheetTitle = t('mobile.settings.climbDrawer.sheetTitle');
   const description = t('mobile.settings.climbDrawer.description');
+  const groupTitle = t('mobile.settings.climbDrawer.groupTitle');
+  const footer = t('mobile.settings.climbDrawer.footer');
   const loadingLabel = t('mobile.settings.climbDrawer.loading');
   const hideAllLabel = t('mobile.settings.climbDrawer.hideAll');
   const showAllLabel = t('mobile.settings.climbDrawer.showAll');
@@ -54,16 +57,18 @@ export function usePlayDrawerSectionControls() {
     },
     [ready, setSection],
   );
+  const canShowAll = ready && controls.some((control) => !control.enabled);
+  const canHideAll = ready && controls.some((control) => control.enabled);
   const hideAll = useCallback(() => {
-    if (!ready) return;
+    if (!canHideAll) return;
     hapticSelection();
     setAll(false);
-  }, [ready, setAll]);
+  }, [canHideAll, setAll]);
   const showAll = useCallback(() => {
-    if (!ready) return;
+    if (!canShowAll) return;
     hapticSelection();
     setAll(true);
-  }, [ready, setAll]);
+  }, [canShowAll, setAll]);
   const settingsSection = useMemo<MoreSection>(
     () => ({
       key: 'climbDrawer',
@@ -92,7 +97,10 @@ export function usePlayDrawerSectionControls() {
   );
   return {
     title,
+    sheetTitle,
     description,
+    groupTitle,
+    footer,
     ready,
     controls,
     onSectionChange,
@@ -100,6 +108,8 @@ export function usePlayDrawerSectionControls() {
     showAllLabel,
     hideAll,
     showAll,
+    canShowAll,
+    canHideAll,
     settingsSection,
   };
 }

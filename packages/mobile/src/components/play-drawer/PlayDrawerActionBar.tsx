@@ -396,7 +396,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 size="sm"
                 iconName="visibility"
                 onPress={onEditSections}
-                accessibilityLabel={tCommon('mobile.settings.climbDrawer.title')}
+                accessibilityLabel={tCommon('mobile.settings.climbDrawer.sheetTitle')}
               />
             ) : null}
 

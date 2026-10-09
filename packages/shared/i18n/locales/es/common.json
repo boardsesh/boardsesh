@@ -703,9 +703,9 @@
         "leaveDeferred": "Todavía no se puede volver. Lo intentaremos la próxima vez que abras la app."
       },
       "climbDrawer": {
-        "title": "Panel del bloque",
-        "description": "Elige qué aparece debajo del bloque. Oculta todo para evitar el desplazamiento vertical.",
-        "loading": "Cargando tus opciones…",
+        "title": "Vista del bloque",
+        "description": "Elige qué ves debajo del bloque.",
+        "loading": "Cargando opciones de vista…",
         "hideAll": "Ocultar todo",
         "showAll": "Mostrar todo",
         "sections": {
@@ -716,7 +716,10 @@
           "boardseshGrade": "Grado Boardsesh",
           "community": "Comunidad",
           "similarClimbs": "Bloques similares"
-        }
+        },
+        "sheetTitle": "Opciones de vista",
+        "groupTitle": "Debajo del bloque",
+        "footer": "Los cambios se aplican al momento. Oculta todo para ver solo el bloque, sin desplazamiento vertical."
       }
     },
     "sendRecovery": {

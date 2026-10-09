@@ -429,8 +429,8 @@
       },
       "climbDrawer": {
         "title": "Boulderansicht",
-        "description": "Wähle, was unter dem Boulder erscheint. Blende alles aus, um vertikales Scrollen zu vermeiden.",
-        "loading": "Deine Auswahl wird geladen…",
+        "description": "Wähle, was du unter dem Boulder siehst.",
+        "loading": "Ansichtsoptionen werden geladen…",
         "hideAll": "Alles ausblenden",
         "showAll": "Alles anzeigen",
         "sections": {
@@ -441,7 +441,10 @@
           "boardseshGrade": "Boardsesh-Grad",
           "community": "Community",
           "similarClimbs": "Ähnliche Boulder"
-        }
+        },
+        "sheetTitle": "Ansichtsoptionen",
+        "groupTitle": "Unter dem Boulder",
+        "footer": "Änderungen gelten sofort. Blende alles aus, um nur den Boulder ohne vertikales Scrollen zu sehen."
       }
     },
     "sendRecovery": {

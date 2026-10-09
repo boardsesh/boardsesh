@@ -217,7 +217,7 @@ describe('PlayDrawerActionBar', () => {
     expect(ellipsis?.nextElementSibling).toBe(edit);
     expect(edit?.getAttribute('data-action')).toBe('visibility');
     expect(edit?.getAttribute('data-size')).toBe('sm');
-    expect(edit?.getAttribute('data-label')).toBe('mobile.settings.climbDrawer.title');
+    expect(edit?.getAttribute('data-label')).toBe('mobile.settings.climbDrawer.sheetTitle');
     if (!edit) throw new Error('Expected section edit button');
     fireEvent.click(edit);
     expect(onEditSections).toHaveBeenCalledTimes(1);

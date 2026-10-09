@@ -2001,7 +2001,7 @@ export function PlayDrawer({
                               icon="visibility"
                               role="action"
                               onPress={handleOpenSectionsSettings}
-                              accessibilityLabel={tCommon('mobile.settings.climbDrawer.title')}
+                              accessibilityLabel={tCommon('mobile.settings.climbDrawer.sheetTitle')}
                               testID="play-drawer-section-settings"
                             />
                           ) : null}

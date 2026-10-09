@@ -428,9 +428,9 @@
         "leaveDeferred": "Retour impossible pour l'instant. Nouvel essai à la prochaine ouverture de l'app."
       },
       "climbDrawer": {
-        "title": "Panneau du bloc",
-        "description": "Choisis ce qui apparaît sous le bloc. Masque tout pour éviter le défilement vertical.",
-        "loading": "Chargement de tes choix…",
+        "title": "Vue du bloc",
+        "description": "Choisis ce que tu vois sous le bloc.",
+        "loading": "Chargement des options d’affichage…",
         "hideAll": "Tout masquer",
         "showAll": "Tout afficher",
         "sections": {
@@ -441,7 +441,10 @@
           "boardseshGrade": "Cotation Boardsesh",
           "community": "Communauté",
           "similarClimbs": "Blocs similaires"
-        }
+        },
+        "sheetTitle": "Options d’affichage",
+        "groupTitle": "Sous le bloc",
+        "footer": "Les changements s’appliquent immédiatement. Masque tout pour voir uniquement le bloc, sans défilement vertical."
       }
     },
     "sendRecovery": {

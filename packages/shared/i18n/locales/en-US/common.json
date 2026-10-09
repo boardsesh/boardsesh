@@ -428,9 +428,9 @@
         "leaveDeferred": "Can't switch back yet. We'll try again next time you open the app."
       },
       "climbDrawer": {
-        "title": "Climb drawer",
-        "description": "Choose what appears below the climb. Hide everything to keep the drawer still.",
-        "loading": "Loading drawer choices…",
+        "title": "Climb view",
+        "description": "Choose what you see below the climb.",
+        "loading": "Loading view options…",
         "hideAll": "Hide all",
         "showAll": "Show all",
         "sections": {
@@ -441,7 +441,10 @@
           "boardseshGrade": "Boardsesh grade",
           "community": "Community",
           "similarClimbs": "Similar climbs"
-        }
+        },
+        "sheetTitle": "View options",
+        "groupTitle": "Below the climb",
+        "footer": "Changes apply immediately. Hide all for just the climb, without vertical scrolling."
       }
     },
     "sendRecovery": {

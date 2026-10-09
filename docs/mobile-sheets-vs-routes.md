@@ -241,9 +241,12 @@ work and native QA before claiming that contract works on Android.
 
 ### Play drawer section controls
 
-Settings → Climb drawer and the eye button beside the player's ellipsis use the same seven visibility
-switches, with Show all and Hide all actions. The eye opens `PlayDrawerSectionsSheet`
-as a managed `ModalSheet` mounted inside the player, above `/play`. It remains reachable
+Settings → Climb view and the eye button beside the player's ellipsis use the same seven visibility
+switches. The eye opens the **View options** sheet (`PlayDrawerSectionsSheet`)
+as a managed `ModalSheet` mounted inside the player, above `/play`. Show all and Hide all
+stay together above the grouped switches, with 44-point targets and disabled states
+when every section already matches the action. Choices apply immediately; the close
+button dismisses the sheet without a save step. It remains reachable
 when every section is hidden. These device-local choices use AsyncStorage (IndexedDB
 in the browser) and keep each section's existing expansion preference and order.
 
