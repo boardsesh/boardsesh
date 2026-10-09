@@ -179,8 +179,8 @@ export function parseArgs(argv: string[]): CliOptions {
 /**
  * Collect the variable values the caller supplied, as a name -> value map.
  *
- * Exported for tests. The returned values are secrets; only their KEYS ever reach
- * the plan layer or any log line.
+ * Exported for tests. The plan compares these secrets internally, but only their
+ * names and status ever reach its output or any log line.
  */
 export function collectSuppliedVars(env: NodeJS.ProcessEnv): Map<string, string> {
   const supplied = new Map<string, string>();
@@ -1280,6 +1280,7 @@ export async function main(
     suppliedVars: suppliedVarKeys(desired, supplied),
     allowImageChange: options.allowImageChange,
     eoasVersion: EOAS_PACKAGE_SPEC.replace(/^eoas@/, ''),
+    suppliedValues: supplied,
   });
 
   if (changes.length === 0) {
