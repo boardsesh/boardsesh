@@ -163,6 +163,13 @@ browsing results. Use the same discarded conditioning tour after every variant
 swap, and compare idle CPU before accepting a settled browsing measurement.
 A warmup in one app process does not condition a newly launched process.
 
+Retain the installation and structured launch receipts for each member. On
+iPhone, verify the previous process is absent immediately before launch and
+bind the launched PID and executable to the native identity before any CPU
+boundary or UI action. Stop an existing clone only when its full executable
+path matches the retained installation receipt. A new run ID alone does not
+prove a cold launch; a PID may legitimately be reused after verified absence.
+
 ## Acceptance evidence
 
 CPU is cumulative own-process time: iOS `getrusage` user plus system time, and

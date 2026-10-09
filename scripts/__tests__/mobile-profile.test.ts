@@ -20,6 +20,7 @@ import {
   waitForTraceHandoff,
   traceReadinessTimeoutMs,
   traceReadinessRequest,
+  awaitProfileLifecycleHook,
 } from '../lib/mobile-profile-harness';
 import type { PreparedProfile } from '../lib/mobile-profile-prepare';
 import {
@@ -51,6 +52,151 @@ function temporaryDirectory() {
 afterEach(() => {
   vi.useRealTimers();
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+describe('bounded optional capture lifecycle admission', () => {
+  it('retires pending admission when control fails, before later host launch or marks', async () => {
+    vi.useFakeTimers();
+    let failure: Error | undefined;
+    let hookSignal: AbortSignal | undefined;
+    let finish: (() => void) | undefined;
+    const launch = vi.fn();
+    const mark = vi.fn();
+    const admission = awaitProfileLifecycleHook(
+      async (signal) => {
+        hookSignal = signal;
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        if (!signal.aborted) launch();
+      },
+      new AbortController().signal,
+      () => failure,
+    ).then(mark);
+    const rejected = expect(admission).rejects.toThrow('Disconnected');
+    await Promise.resolve();
+    failure = new Error('Disconnected');
+    await vi.advanceTimersByTimeAsync(25);
+    await rejected;
+    expect(hookSignal?.aborted).toBe(true);
+    finish!();
+    await Promise.resolve();
+    expect(launch).not.toHaveBeenCalled();
+    expect(mark).not.toHaveBeenCalled();
+  });
+  it('awaits admission before subsequent measurement work', async () => {
+    const order: string[] = [];
+    let finishAdmission: (() => void) | undefined;
+    const admitted = awaitProfileLifecycleHook(
+      async () => {
+        order.push('admission-start');
+        await new Promise<void>((resolve) => {
+          finishAdmission = resolve;
+        });
+        order.push('admission-end');
+      },
+      new AbortController().signal,
+      () => undefined,
+    ).then(() => order.push('first-mark'));
+    await Promise.resolve();
+    expect(order).toEqual(['admission-start']);
+    finishAdmission!();
+    await admitted;
+    expect(order).toEqual(['admission-start', 'admission-end', 'first-mark']);
+  });
+
+  it('retires a timed-out callback and never admits its late completion', async () => {
+    vi.useFakeTimers();
+    let hookSignal: AbortSignal | undefined;
+    let finishAdmission: (() => void) | undefined;
+    const mark = vi.fn();
+    const admission = awaitProfileLifecycleHook(
+      async (signal) => {
+        hookSignal = signal;
+        await new Promise<void>((resolve) => {
+          finishAdmission = resolve;
+        });
+      },
+      new AbortController().signal,
+      () => undefined,
+      20,
+    ).then(mark);
+    const rejected = expect(admission).rejects.toThrow('deadline exceeded');
+    await vi.advanceTimersByTimeAsync(20);
+    await rejected;
+    expect(hookSignal?.aborted).toBe(true);
+    finishAdmission!();
+    await Promise.resolve();
+    expect(mark).not.toHaveBeenCalled();
+  });
+
+  it('does not start host launch work when cancelled before callback dispatch', async () => {
+    const capture = new AbortController();
+    const launch = vi.fn(async () => {});
+    const admission = awaitProfileLifecycleHook(launch, capture.signal, () => undefined);
+    capture.abort();
+    await expect(admission).rejects.toThrow('interrupted');
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it('cancels in-flight host work and rejects admission', async () => {
+    const capture = new AbortController();
+    let signal: AbortSignal | undefined;
+    const admission = awaitProfileLifecycleHook(
+      async (hookSignal) => {
+        signal = hookSignal;
+        await new Promise<void>(() => {});
+      },
+      capture.signal,
+      () => undefined,
+    );
+    await Promise.resolve();
+    capture.abort();
+    await expect(admission).rejects.toThrow('interrupted');
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('rejects control failure before and after an awaited hook', async () => {
+    const launch = vi.fn(async () => {});
+    await expect(
+      awaitProfileLifecycleHook(launch, new AbortController().signal, () => new Error('Disconnected')),
+    ).rejects.toThrow('Disconnected');
+    expect(launch).not.toHaveBeenCalled();
+    let failure: Error | undefined;
+    await expect(
+      awaitProfileLifecycleHook(
+        async () => {
+          failure = new Error('Disconnected');
+        },
+        new AbortController().signal,
+        () => failure,
+      ),
+    ).rejects.toThrow('Disconnected');
+  });
+
+  it('aborts the hook signal on callback failure and rejects unbounded deadlines', async () => {
+    let signal: AbortSignal | undefined;
+    await expect(
+      awaitProfileLifecycleHook(
+        async (hookSignal) => {
+          signal = hookSignal;
+          throw new Error('Launch proof rejected');
+        },
+        new AbortController().signal,
+        () => undefined,
+      ),
+    ).rejects.toThrow('Launch proof rejected');
+    expect(signal?.aborted).toBe(true);
+    for (const timeout of [0, 30_001, 1.5, NaN])
+      await expect(
+        awaitProfileLifecycleHook(
+          async () => {},
+          new AbortController().signal,
+          () => undefined,
+          timeout,
+        ),
+      ).rejects.toThrow('bounded');
+  });
 });
 
 describe('conditioned native trace handoff', () => {

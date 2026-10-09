@@ -351,7 +351,68 @@ export function exportedIdentity(prepared: PreparedProfile, appPath: string): Pr
   };
 }
 
-export async function captureProfile(options: ProfileOptions): Promise<void> {
+export interface ProfileLifecycleContext {
+  captureDirectory: string;
+  device: string;
+  identity: Readonly<ProfileExpectedIdentity>;
+  signal: AbortSignal;
+}
+
+export interface ProfileCaptureHooks {
+  onControlReady?: (context: ProfileLifecycleContext) => Promise<void>;
+  admitRuntime?: (hello: ProfileHello, context: ProfileLifecycleContext) => Promise<void>;
+}
+
+/** Optional host admission work must finish before any native measurement mark. */
+export async function awaitProfileLifecycleHook(
+  callback: (signal: AbortSignal) => Promise<void>,
+  captureSignal: AbortSignal,
+  controlFailure: () => Error | undefined,
+  timeoutMs = 30_000,
+): Promise<void> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
+    throw new Error('Lifecycle hook deadline must be bounded to 30 seconds');
+  const hookController = new AbortController();
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  let retirementPoll: ReturnType<typeof setInterval> | undefined;
+  let rejectInterruption: (reason: Error) => void = () => {};
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    rejectInterruption = reject;
+  });
+  const interrupt = (reason: Error) => {
+    hookController.abort(reason);
+    rejectInterruption(reason);
+  };
+  const onCaptureAbort = () => interrupt(new Error('Lifecycle hook interrupted'));
+  captureSignal.addEventListener('abort', onCaptureAbort, { once: true });
+  try {
+    if (captureSignal.aborted) throw new Error('Lifecycle hook interrupted');
+    const priorFailure = controlFailure();
+    if (priorFailure) throw priorFailure;
+    deadline = setTimeout(() => interrupt(new Error('Lifecycle hook deadline exceeded')), timeoutMs);
+    retirementPoll = setInterval(() => {
+      const failure = controlFailure();
+      if (failure) interrupt(failure);
+    }, 25);
+    await Promise.race([
+      Promise.resolve().then(() => {
+        if (hookController.signal.aborted) throw new Error('Lifecycle hook interrupted');
+        return callback(hookController.signal);
+      }),
+      interrupted,
+    ]);
+    if (captureSignal.aborted || hookController.signal.aborted) throw new Error('Lifecycle hook interrupted');
+    const nextFailure = controlFailure();
+    if (nextFailure) throw nextFailure;
+  } finally {
+    if (deadline) clearTimeout(deadline);
+    if (retirementPoll) clearInterval(retirementPoll);
+    captureSignal.removeEventListener('abort', onCaptureAbort);
+    hookController.abort(new Error('Lifecycle hook scope ended'));
+  }
+}
+
+export async function captureProfile(options: ProfileOptions, hooks?: ProfileCaptureHooks): Promise<void> {
   if (!options.appPath || !options.flow) throw new Error('Capture requires --app-path and --flow');
   const prepared = JSON.parse(readFileSync(join(options.runDir, 'prepare.json'), 'utf8')) as PreparedProfile;
   const savedBuildEnvironment = objectRecord(
@@ -422,7 +483,9 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
   let traceReadiness: ReturnType<typeof traceReadinessRequest> | undefined;
   const cycles: unknown[] = [];
   const startedAt = new Date().toISOString();
+  const captureController = new AbortController();
   const abort = () => {
+    captureController.abort(new Error('Capture interrupted'));
     control.retire(new Error('Capture interrupted'));
     ownedChild?.kill('SIGTERM');
   };
@@ -431,6 +494,19 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
   try {
     const initialBackend = await backendProof(options.backendUrl, fixtureHash);
     await control.listen(Number(endpoint.port || 80), options.controlBind);
+    const lifecycleContext = (signal: AbortSignal): ProfileLifecycleContext => ({
+      captureDirectory,
+      device: options.device,
+      identity: expected,
+      signal,
+    });
+    if (hooks?.onControlReady)
+      await awaitProfileLifecycleHook(
+        (signal) => hooks.onControlReady!(lifecycleContext(signal)),
+        captureController.signal,
+        () => control.failure,
+      );
+    if (control.failure) throw control.failure;
     console.log(
       JSON.stringify({
         controlReady: true,
@@ -446,6 +522,13 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
       selectedDeviceProcessPid(options.platform, options.device, options.appPath, captureDirectory),
     );
     writeFileSync(join(captureDirectory, 'runtime-identity.json'), JSON.stringify(hello, null, 2) + '\n');
+    if (hooks?.admitRuntime)
+      await awaitProfileLifecycleHook(
+        (signal) => hooks.admitRuntime!(hello, lifecycleContext(signal)),
+        captureController.signal,
+        () => control.failure,
+      );
+    if (control.failure) throw control.failure;
     for (let index = 0; index < options.warmups + options.cycles; index += 1) {
       if (control.failure) throw control.failure;
       if (traceHandoffFile && index === options.warmups) {
@@ -603,6 +686,7 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
     failure = error instanceof Error ? error.message : String(error);
     control.retire(new Error(failure));
   } finally {
+    captureController.abort(new Error('Capture scope ended'));
     ownedChild?.kill('SIGTERM');
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
