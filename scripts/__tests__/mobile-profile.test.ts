@@ -16,6 +16,8 @@ import {
   validateBackendDelta,
   validateBackendProof,
   validateProfileFlow,
+  validateTraceHandoff,
+  waitForTraceHandoff,
 } from '../lib/mobile-profile-harness';
 import type { PreparedProfile } from '../lib/mobile-profile-prepare';
 import {
@@ -47,6 +49,81 @@ function temporaryDirectory() {
 afterEach(() => {
   vi.useRealTimers();
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+describe('conditioned native trace handoff', () => {
+  function readyRecord() {
+    const hello = parseHello(helloCandidate(), expected);
+    return {
+      hello,
+      record: {
+        pid: hello.native.pid,
+        runId: hello.runId,
+        buildId: hello.buildId,
+        sourceCommit: hello.sourceCommit,
+        instrumentationSha256: hello.instrumentationSha256,
+        fixtureManifestSha256: hello.fixtureManifestSha256,
+        template: 'Time Profiler',
+        timeLimitSeconds: 240,
+        startedAt: new Date(Date.now() - 100).toISOString(),
+        activeObservedAt: new Date().toISOString(),
+        scope: 'xctrace-cli-recording-active-output',
+      },
+    };
+  }
+  it('accepts only recording-active facts for the validated process and source', () => {
+    const { hello, record } = readyRecord();
+    expect(validateTraceHandoff(record, hello, Date.now() - 1000).pid).toBe(hello.native.pid);
+    for (const mismatch of [
+      { pid: hello.native.pid + 1 },
+      { runId: 'another-process' },
+      { sourceCommit: 'stale' },
+      { scope: 'spawned-only' },
+      { timeLimitSeconds: 180 },
+      { template: 'unknown' },
+    ])
+      expect(() => validateTraceHandoff({ ...record, ...mismatch }, hello, Date.now() - 1000)).toThrow('mismatch');
+  });
+  it('rejects recordings started before final conditioning and invalid clocks', () => {
+    const { hello, record } = readyRecord();
+    expect(() => validateTraceHandoff(record, hello, Date.now())).toThrow('clock');
+    expect(() => validateTraceHandoff({ ...record, activeObservedAt: 'invalid' }, hello, 0)).toThrow('clock');
+  });
+  it('waits for a scoped regular readiness file without executing a UI callback', async () => {
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello, record } = readyRecord();
+    const ready = waitForTraceHandoff(filename, directory, hello, Date.now() - 1000, () => undefined, 500);
+    writeFileSync(filename, JSON.stringify(record));
+    expect((await ready).pid).toBe(hello.native.pid);
+  });
+  it('fails closed for outside paths, symlinks and absent readiness', async () => {
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello, record } = readyRecord();
+    await expect(
+      waitForTraceHandoff(join(directory, 'outside.json'), directory, hello, 0, () => undefined, 25),
+    ).rejects.toThrow('owned');
+    await expect(waitForTraceHandoff(filename, directory, hello, 0, () => undefined, 25)).rejects.toThrow('deadline');
+    writeFileSync(join(directory, 'outside.json'), JSON.stringify(record));
+    symlinkSync(join(directory, 'outside.json'), filename);
+    await expect(waitForTraceHandoff(filename, directory, hello, 0, () => undefined, 25)).rejects.toThrow('file');
+  });
+  it('retires an interrupted or unbounded handoff before accepting facts', async () => {
+    const directory = temporaryDirectory();
+    mkdirSync(join(directory, 'trace-handoffs'));
+    const filename = join(directory, 'trace-handoffs', '11111111-1111-1111-1111-111111111111.ready.json');
+    const { hello, record } = readyRecord();
+    writeFileSync(filename, JSON.stringify(record));
+    await expect(waitForTraceHandoff(filename, directory, hello, 0, () => new Error('retired'), 25)).rejects.toThrow(
+      'retired',
+    );
+    await expect(
+      waitForTraceHandoff(filename, directory, hello, 0, () => undefined, Number.POSITIVE_INFINITY),
+    ).rejects.toThrow('bounded');
+  });
 });
 
 const expected: ProfileExpectedIdentity = {

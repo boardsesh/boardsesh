@@ -1,5 +1,13 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  createWriteStream,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +34,84 @@ import {
   touchSampleWindows,
   sha256,
   type ProfileExpectedIdentity,
+  type ProfileHello,
 } from './mobile-profile-protocol';
+
+export function validateTraceHandoff(candidate: unknown, hello: ProfileHello, earliestStart: number) {
+  const record = objectRecord(candidate);
+  for (const key of ['buildId', 'sourceCommit', 'instrumentationSha256', 'fixtureManifestSha256', 'runId'] as const)
+    if (record[key] !== hello[key]) throw new Error('Trace handoff identity/readiness mismatch');
+  if (
+    record.pid !== hello.native.pid ||
+    record.runId !== hello.runId ||
+    record.buildId !== hello.buildId ||
+    record.scope !== 'xctrace-cli-recording-active-output' ||
+    !['Time Profiler', 'Animation Hitches'].includes(String(record.template)) ||
+    record.timeLimitSeconds !== 240
+  )
+    throw new Error('Trace handoff identity/readiness mismatch');
+  const startedAt = Date.parse(requiredString(record.startedAt, 'trace start'));
+  const activeAt = Date.parse(requiredString(record.activeObservedAt, 'trace active observation'));
+  if (
+    !Number.isFinite(startedAt) ||
+    !Number.isFinite(activeAt) ||
+    startedAt < earliestStart ||
+    activeAt < startedAt ||
+    activeAt > Date.now() + 5000
+  )
+    throw new Error('Trace handoff clock mismatch');
+  return {
+    pid: hello.native.pid,
+    runId: hello.runId,
+    buildId: hello.buildId,
+    sourceCommit: hello.sourceCommit,
+    instrumentationSha256: hello.instrumentationSha256,
+    fixtureManifestSha256: hello.fixtureManifestSha256,
+    template: record.template,
+    timeLimitSeconds: 240,
+    startedAt: record.startedAt,
+    activeObservedAt: record.activeObservedAt,
+    scope: record.scope,
+    coverageScope:
+      'CLI active output is a readiness observation; actual native trace coverage requires PID/window validation.',
+  };
+}
+
+function validateTraceHandoffPath(filename: string, runDirectory: string) {
+  const handoffDirectory = join(realpathSync(runDirectory), 'trace-handoffs');
+  if (
+    dirname(resolve(filename)) !== join(resolve(runDirectory), 'trace-handoffs') ||
+    realpathSync(dirname(filename)) !== handoffDirectory ||
+    !/^[a-f0-9-]{36}\.ready\.json$/.test(filename.split('/').at(-1) ?? '')
+  )
+    throw new Error('Trace handoff must use the owned run directory');
+}
+
+export async function waitForTraceHandoff(
+  filename: string,
+  runDirectory: string,
+  hello: ProfileHello,
+  earliestStart: number,
+  failure: () => Error | undefined,
+  timeoutMs = 30_000,
+) {
+  validateTraceHandoffPath(filename, runDirectory);
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
+    throw new Error('Trace handoff timeout must be bounded');
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
+    const controlFailure = failure();
+    if (controlFailure) throw controlFailure;
+    if (existsSync(filename)) {
+      const status = lstatSync(filename);
+      if (!status.isFile() || status.isSymbolicLink() || status.size > 4096)
+        throw new Error('Invalid trace handoff file');
+      return validateTraceHandoff(JSON.parse(readFileSync(filename, 'utf8')) as unknown, hello, earliestStart);
+    }
+    await new Promise((resolvePoll) => setTimeout(resolvePoll, 50));
+  }
+  throw new Error('Trace recording readiness deadline exceeded');
+}
 
 export interface ValidatedFlow {
   marks: ProfileMark[];
@@ -253,6 +338,18 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
   }
   const validatedFlow = validateProfileFlow(options.flow);
   const expected = exportedIdentity(prepared, options.appPath);
+  const traceHandoffFile = process.env.BOARDSESH_PROFILE_TRACE_READY_FILE;
+  if (traceHandoffFile) {
+    validateTraceHandoffPath(traceHandoffFile, options.runDir);
+    if (
+      options.platform !== 'ios' ||
+      options.uiDriver !== 'wda' ||
+      options.warmups < 1 ||
+      options.cycles !== 1 ||
+      existsSync(traceHandoffFile)
+    )
+      throw new Error('Trace capture requires physical iOS conditioning, one measured cycle and a fresh handoff file');
+  }
   const buildEnvironment = objectRecord(
     JSON.parse(readFileSync(join(options.runDir, 'build-env.json'), 'utf8')) as unknown,
   );
@@ -272,6 +369,7 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
   mkdirSync(captureDirectory, { recursive: true });
   let ownedChild: ChildProcess | undefined;
   let failure: string | undefined;
+  let traceHandoff: ReturnType<typeof validateTraceHandoff> | undefined;
   const cycles: unknown[] = [];
   const startedAt = new Date().toISOString();
   const abort = () => {
@@ -300,6 +398,25 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
     writeFileSync(join(captureDirectory, 'runtime-identity.json'), JSON.stringify(hello, null, 2) + '\n');
     for (let index = 0; index < options.warmups + options.cycles; index += 1) {
       if (control.failure) throw control.failure;
+      if (traceHandoffFile && index === options.warmups) {
+        const requestedAt = Date.now();
+        console.log(
+          JSON.stringify({
+            traceHandoffAwaiting: true,
+            captureDirectory,
+            pid: hello.native.pid,
+            runId: hello.runId,
+            buildId: hello.buildId,
+          }),
+        );
+        traceHandoff = await waitForTraceHandoff(
+          traceHandoffFile,
+          options.runDir,
+          hello,
+          requestedAt,
+          () => control.failure,
+        );
+      }
       assertDeviceProcessPid(
         hello.native.pid,
         selectedDeviceProcessPid(options.platform, options.device, options.appPath, captureDirectory),
@@ -312,7 +429,9 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
       const hostLoadBefore = loadavg();
       const idleBefore = await control.mark({ segment: 'pre-flow-idle', boundary: 'sample' });
       if (options.idleMs) await new Promise((resolveIdle) => setTimeout(resolveIdle, options.idleMs));
+      const beforeRequestHostAt = new Date().toISOString();
       const before = await control.mark({ segment: 'whole-cycle', boundary: 'sample' });
+      const beforeAckHostAt = new Date().toISOString();
       control.beginCycle(validatedFlow.marks);
       const cycleDirectory = join(captureDirectory, `cycle-${index + 1}`);
       mkdirSync(cycleDirectory);
@@ -377,7 +496,9 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
         });
       });
       const completed = control.finishCycle();
+      const afterRequestHostAt = new Date().toISOString();
       const after = await control.mark({ segment: 'whole-cycle', boundary: 'sample' });
+      const afterAckHostAt = new Date().toISOString();
       const afterBackend = await backendProof(options.backendUrl, fixtureHash);
       validateBackendDelta(beforeBackend, afterBackend);
       if (validateProfileFlow(options.flow).sha256 !== validatedFlow.sha256)
@@ -387,6 +508,13 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
         warmup: index < options.warmups,
         before,
         after,
+        hostClockBounds: {
+          beforeRequestHostAt,
+          beforeAckHostAt,
+          afterRequestHostAt,
+          afterAckHostAt,
+          scope: 'Host request/ACK receipt bounds for native snapshots; host and native clocks remain distinct.',
+        },
         wholeCycle: segmentCpu(before.snapshot, after.snapshot),
         idle: options.idleMs
           ? {
@@ -444,6 +572,9 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
           flow: validatedFlow,
           warmups: options.warmups,
           measuredCycles: options.cycles,
+          instrumentedTrace: Boolean(traceHandoffFile),
+          cpuAcceptanceEligible: !traceHandoffFile,
+          traceHandoff: traceHandoff ?? null,
           requestedIdleMs: options.idleMs,
           requestedEndSettleMs: options.endSettleMs,
           endSettleScope:
@@ -472,6 +603,8 @@ export async function captureProfile(options: ProfileOptions): Promise<void> {
           completed: !failure && !control.failure,
           failure: failure ?? control.failure?.message ?? null,
           preservesAppData: true,
+          instrumentedTrace: Boolean(traceHandoffFile),
+          cpuAcceptanceEligible: !traceHandoffFile,
         },
         null,
         2,

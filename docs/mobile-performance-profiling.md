@@ -184,6 +184,21 @@ evidence on iPhone, Perfetto scheduling and FrameTimeline evidence on Android.
 Trace overhead must not be mixed with acceptance CPU measurements. Device logs
 or host process CPU are not substitutes for native frame evidence.
 
+For a conditioned iPhone trace, set `BOARDSESH_PROFILE_TRACE_READY_FILE` to a new
+`<run-directory>/trace-handoffs/<UUID>.ready.json`, use the WDA driver, discard
+at least one conditioning tour, and request exactly one measured tour. The
+collector pauses after final conditioning until the host observes recording
+active output from a 240-second Time Profiler or Animation Hitches recording.
+The readiness file must bind the validated PID, run, build, source,
+instrumentation and fixture identities to fresh host timestamps. A missing,
+stale or mismatched handoff fails within 30 seconds. These captures record
+`instrumentedTrace: true` and `cpuAcceptanceEligible: false`.
+
+Recording active output proves recorder readiness. Verify the actual process
+and measured time coverage in the native trace before using stacks or frames.
+Recorded host request/acknowledgment bounds help locate the tour; they do not
+establish synchronization with the native monotonic clock.
+
 If Instruments command-line export fails, retain the trace and crash report.
 Inspect a copy in Instruments and preserve the actual visible tables, process
 filter and selected time range. Opening a trace alone does not establish readable
