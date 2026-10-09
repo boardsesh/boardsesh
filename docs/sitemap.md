@@ -396,19 +396,27 @@ assertion is deliberately the inverse of what it used to be. While publication w
 paused the smoke required the header to be **absent**, the index to omit climb
 shard URLs, and a direct climb shard request to return the cacheable 410 — so
 re-enabling the surface could not be done by changing an environment variable
-alone. #4648 flipped all three together in one change: the index must now carry
-climb `<loc>` entries, `/sitemaps/climbs/1.xml` must be a cacheable 200 XML, and
-both must name a source. The tripwire still works in the other direction — an
-image that lost `CLIMB_SITEMAPS_ENABLED` turns the post-deploy smoke red instead
+alone. #4648 restored publication together with both source diagnostics. The
+index must carry climb `<loc>` entries, `/sitemaps/climbs/1.xml` must be a 200 XML,
+and both must name a source. #6254 subsequently changed the rendered page
+response to `private, no-store` for publication revocation. The tripwire still
+works in the other direction — an image that lost `CLIMB_SITEMAPS_ENABLED` turns the post-deploy smoke red instead
 of silently withdrawing 53,000 URLs. A `live` source is a WARN rather than a FAIL:
 correct, complete, and paying the scan the store exists to retire.
 
-One honest limit, shared with `X-Sitemap-Degraded`: the header rides a CDN-cached
-response. A healthy index is `s-maxage=3600` and the shard pages are
-`s-maxage=21600`, and the edge in front of the origin is free to ignore the smoke's
-`Cache-Control: no-cache` request header, so the value read can be up to that old in
-either direction. It is a signal that a wedged store gets noticed within the hour,
-not a live probe. The Sentry event has no such lag.
+Since the privacy controls in #6254, climb and setter pages and the playlist
+shard recheck current publication consent before rendering their cached URL
+candidates. These responses use `private, no-store`: neither browsers nor shared
+CDNs may reuse XML after a climb, account, board or playlist becomes private.
+The materialised climb store still avoids the expensive grouped scan; response
+caching must not bypass the live visibility filter. The production smoke now
+requires both directives and rejects `public` and freshness caching directives,
+while retaining the XML, nonempty URL, status and source checks.
+
+The index still uses `s-maxage=3600`, so its source and `X-Sitemap-Degraded`
+diagnostics can be up to an hour old when a CDN ignores the smoke's
+`Cache-Control: no-cache` request header. The climb page's source diagnostic is
+read on a fresh request under its no-store policy. Sentry events have no CDN lag.
 
 ### Who refreshes it
 
@@ -418,12 +426,12 @@ Three paths, in order of who does the work:
    `packages/scheduler/src/jobs/registry.ts` triggers
    `/api/internal/refresh-sitemap-climbs` at `0 */6 * * *` UTC with a 15-minute
    `timeoutMs`, and Sentry raises a missed-occurrence issue on
-   `scheduler-refresh-sitemap-climbs` if a run does not check in. Six hours
-   matches `s-maxage=21600` on the shard pages: refreshing less often would
-   publish `<lastmod>` values the CDN had already aged out, more often would
-   re-run sixteen `DISTINCT ON` scans more frequently than any crawler re-reads
-   the file. `SCHEDULER_DISABLED_JOBS=refresh-sitemap-climbs` unschedules it
-   without a deploy. See [scheduler.md](./scheduler.md).
+   `scheduler-refresh-sitemap-climbs` if a run does not check in. The six-hour
+   refresh bounds staleness of the stored candidates and their `<lastmod>` values without
+   repeating sixteen `DISTINCT ON` scans on each crawler request. Current
+   publication consent is checked separately on every page render; the
+   refresh interval is not a response-cache window.
+   `SCHEDULER_DISABLED_JOBS=refresh-sitemap-climbs` unschedules it without a deploy. See [scheduler.md](./scheduler.md).
 
    This replaces the bespoke one-shot Railway cron service an earlier draft of
    the runbook called for. The scheduler is that service and already has the
