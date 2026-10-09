@@ -1,0 +1,8 @@
+{
+  "name": "@boardsesh/mobile-cpu-profile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local profiling-only native process CPU counters",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

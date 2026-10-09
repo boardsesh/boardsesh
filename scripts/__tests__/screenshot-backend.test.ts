@@ -8,6 +8,7 @@
 // shoot the wrong data with no error at all.
 
 import { createServer, type Server } from 'node:http';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { Socket } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -840,11 +841,34 @@ describe('screenshot backend', () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
         mode: 'replay',
+        processInstanceId: expect.any(String),
+        fixtureManifestSHA256: createHash('sha256')
+          .update(readFileSync(join(fixturesDir, 'manifest.json')))
+          .digest('hex'),
         hits: 1,
         misses: 1,
         recorded: 0,
         fixtures: { graphql: 1, static: 1 },
       });
+    });
+
+    it('reports the loaded manifest identity when the file changes after startup', async () => {
+      const manifestPath = join(fixturesDir, 'manifest.json');
+      const loadedManifestBytes = readFileSync(manifestPath);
+      writeFileSync(manifestPath, Buffer.concat([loadedManifestBytes, Buffer.from('\n')]));
+      const response = await fetch(`${backendOrigin}/__screenshot-backend/status`);
+      expect(await response.json()).toMatchObject({
+        fixtureManifestSHA256: createHash('sha256').update(loadedManifestBytes).digest('hex'),
+      });
+    });
+
+    it('changes its process identity when a replay instance restarts', async () => {
+      const originalIdentity = backend?.stats().processInstanceId;
+      expect(originalIdentity).toMatch(/^[0-9a-f-]{36}$/);
+      expect(backend?.stats().processInstanceId).toBe(originalIdentity);
+      await stop();
+      await start({ mode: 'replay' });
+      expect(backend?.stats().processInstanceId).not.toBe(originalIdentity);
     });
 
     it('acks a graphql-ws handshake, pongs a ping, and stays silent on a subscribe', async () => {

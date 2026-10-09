@@ -1,0 +1,133 @@
+import { requireOptionalNativeModule } from 'expo-modules-core';
+import { mobileCpuProfile } from '../../../modules/mobile-cpu-profile/src';
+
+/** Injected only into dedicated profiling worktrees; no production import. */
+const enabled = process.env.EXPO_PUBLIC_MOBILE_PROFILE_BUILD === '1';
+const controlUrl = process.env.EXPO_PUBLIC_MOBILE_PROFILE_CONTROL_URL;
+const token = process.env.EXPO_PUBLIC_MOBILE_PROFILE_TOKEN;
+const counters: Record<string, number> = {};
+
+export function recordMobileProfileEvent(name: string, increment = 1): void {
+  if (!enabled) return;
+  if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,79}$/.test(name) || !Number.isSafeInteger(increment) || increment < 0)
+    throw new Error('Invalid local profiling counter');
+  if (!(name in counters) && Object.keys(counters).length >= 128) throw new Error('Profiling counter bound exceeded');
+  counters[name] = (counters[name] ?? 0) + increment;
+}
+
+function recordObject(candidate: unknown): Record<string, unknown> | null {
+  return candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate)
+    ? (candidate as Record<string, unknown>)
+    : null;
+}
+
+async function bounded<T>(request: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Native profiling request exceeded five seconds')), 5000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function connect(): Promise<void> {
+  if (!enabled || !controlUrl || !token) return;
+  const native = await bounded(mobileCpuProfile.identity());
+  const runId = `${native.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let attempts = 0;
+  const open = () => {
+    if (++attempts > 30) return;
+    const socket = new WebSocket(
+      `${controlUrl}${controlUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`,
+    );
+    let sessionId: string | undefined;
+    let busy = false;
+    let retired = false;
+    socket.onopen = () =>
+      socket.send(
+        JSON.stringify({
+          type: 'hello',
+          protocolVersion: 1,
+          runId,
+          buildId: process.env.EXPO_PUBLIC_MOBILE_PROFILE_BUILD_ID,
+          sourceCommit: process.env.EXPO_PUBLIC_MOBILE_PROFILE_SOURCE_COMMIT,
+          instrumentationSha256: process.env.EXPO_PUBLIC_MOBILE_PROFILE_INSTRUMENTATION_SHA256,
+          fixtureManifestSha256: process.env.EXPO_PUBLIC_MOBILE_PROFILE_FIXTURE_SHA256,
+          native,
+          telemetryIsolation: {
+            observeNativePresent: requireOptionalNativeModule('ExpoObserve') !== null,
+            appMetricsNativePresent: requireOptionalNativeModule('ExpoAppMetrics') !== null,
+          },
+        }),
+      );
+    socket.onmessage = (event) => {
+      void (async () => {
+        let incoming: unknown;
+        try {
+          incoming = JSON.parse(String(event.data)) as unknown;
+        } catch {
+          socket.close();
+          return;
+        }
+        const request = recordObject(incoming);
+        if (!request) {
+          socket.close();
+          return;
+        }
+        if (request.type === 'welcome' && typeof request.sessionId === 'string' && !sessionId) {
+          sessionId = request.sessionId;
+          return;
+        }
+        if (
+          retired ||
+          busy ||
+          request.type !== 'mark' ||
+          request.sessionId !== sessionId ||
+          typeof request.requestId !== 'string' ||
+          typeof request.segment !== 'string' ||
+          !['start', 'end', 'sample'].includes(String(request.boundary))
+        ) {
+          socket.close();
+          return;
+        }
+        busy = true;
+        try {
+          const snapshot = await bounded(mobileCpuProfile.snapshot());
+          if (!retired && socket.readyState === WebSocket.OPEN)
+            socket.send(
+              JSON.stringify({
+                type: 'ack',
+                requestId: request.requestId,
+                sessionId,
+                runId,
+                segment: request.segment,
+                boundary: request.boundary,
+                snapshot,
+                counters: { ...counters },
+              }),
+            );
+        } catch {
+          retired = true;
+          socket.close();
+        } finally {
+          busy = false;
+        }
+      })();
+    };
+    socket.onclose = () => {
+      retired = true;
+      setTimeout(open, Math.min(2000, attempts * 250));
+    };
+    socket.onerror = () => socket.close();
+  };
+  open();
+}
+
+void connect().catch(() => {
+  // The harness times out and marks capture invalid; app UI remains inspectable.
+});

@@ -1,0 +1,46 @@
+import type { ConfigContext, ExpoConfig } from 'expo/config';
+
+const originalConfig = require('./app.config.profile-original.cjs') as { default: (context: ConfigContext) => ExpoConfig };
+
+function namespace<T>(configuration: T): T {
+  return JSON.parse(
+    JSON.stringify(configuration).replace(/com\.boardsesh\.app(?!\.perf)/g, 'com.boardsesh.app.perf'),
+  ) as T;
+}
+
+export default (context: ConfigContext): ExpoConfig => {
+  const endpoint = process.env.EXPO_PUBLIC_BACKEND_URL;
+  if (!endpoint) throw new Error('Profiling build requires explicit private backend endpoint');
+  const localUrl = new URL(endpoint);
+  const address = localUrl.hostname.split('.').map(Number);
+  const privateHost = localUrl.hostname === 'localhost' || localUrl.hostname === '[::1]' ||
+    (address.length === 4 && address.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255) &&
+    (address[0] === 127 || address[0] === 10 || (address[0] === 192 && address[1] === 168) ||
+    (address[0] === 172 && address[1] >= 16 && address[1] <= 31)));
+  if (localUrl.protocol !== 'http:' || !privateHost || localUrl.username || localUrl.password || localUrl.search || localUrl.hash || localUrl.pathname !== '/')
+    throw new Error('Profiling telemetry defense endpoint must be a plain explicit private HTTP origin');
+  const config = namespace(originalConfig.default(context));
+  return {
+    ...config,
+    name: 'Boardsesh Perf',
+    scheme: 'boardsesh-perf',
+    // Defense in depth only: native modules are excluded and the SDK is never initialized.
+    // Missing/empty endpoints otherwise fall back to the public Expo collector.
+    extra: {
+      ...config.extra,
+      eas: {
+        ...config.extra?.eas,
+        observe: { ...config.extra?.eas?.observe, endpointUrl: endpoint },
+      },
+    },
+    updates: { ...config.updates, enabled: false, checkAutomatically: 'NEVER' },
+    ios: {
+      ...config.ios,
+      bundleIdentifier: 'com.boardsesh.app.perf',
+      associatedDomains: [],
+      infoPlist: { ...config.ios?.infoPlist, CFBundleURLTypes: [{ CFBundleURLSchemes: ['boardsesh-perf'] }] },
+    },
+    android: { ...config.android, package: 'com.boardsesh.app.perf', intentFilters: [] },
+    plugins: [...(config.plugins ?? []), './plugins/with-mobile-profile.cjs'],
+  };
+};

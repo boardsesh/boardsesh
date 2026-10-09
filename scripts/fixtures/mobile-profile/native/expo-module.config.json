@@ -1,0 +1,5 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": { "modules": ["MobileCpuProfileModule"] },
+  "android": { "modules": ["com.boardsesh.mobilecpuprofile.MobileCpuProfileModule"] }
+}

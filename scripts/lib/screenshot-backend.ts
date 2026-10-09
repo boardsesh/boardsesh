@@ -15,7 +15,7 @@
  * module (screenshot-fixtures.ts); this file is the I/O.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import {
   createServer,
@@ -103,6 +103,10 @@ export type ScreenshotBackendServerOptions = {
 
 export type ScreenshotBackendStats = {
   mode: ScreenshotBackendMode;
+  /** Unique per server instance, so a restart cannot masquerade as continuous replay. */
+  processInstanceId: string;
+  /** SHA256 of the manifest loaded by this process; null until a recording is persisted. */
+  fixtureManifestSHA256: string | null;
   hits: number;
   misses: number;
   recorded: number;
@@ -112,8 +116,8 @@ export type ScreenshotBackendStats = {
 };
 
 export type ScreenshotBackendServer = {
-  /** Binds 0.0.0.0 and resolves with the actual port (pass 0 for an ephemeral one). */
-  listen(port: number): Promise<number>;
+  /** Resolves with the actual port; callers can select loopback-only binding. */
+  listen(port: number, host?: '127.0.0.1' | '0.0.0.0'): Promise<number>;
   close(): Promise<void>;
   stats(): ScreenshotBackendStats;
 };
@@ -228,18 +232,25 @@ function shortHash(hash: string): string {
 
 /** Read a manifest off disk. Returns null when there is none; throws when there is a broken one. */
 export function readScreenshotFixtureManifest(fixturesDir: string): ScreenshotFixtureManifest | null {
+  return readFixtureManifestSnapshot(fixturesDir)?.manifest ?? null;
+}
+
+function readFixtureManifestSnapshot(
+  fixturesDir: string,
+): { manifest: ScreenshotFixtureManifest; sha256: string } | null {
   const manifestPath = join(fixturesDir, MANIFEST_FILENAME);
   if (!existsSync(manifestPath)) return null;
+  const manifestBytes = readFileSync(manifestPath);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    parsed = JSON.parse(manifestBytes.toString('utf8'));
   } catch (parseError) {
     const detail = parseError instanceof Error ? parseError.message : String(parseError);
     throw new Error(`${manifestPath} is not valid JSON: ${detail}`);
   }
   const validation = validateScreenshotFixtureManifest(parsed);
   if (!validation.ok) throw new Error(`${manifestPath} is not a usable fixture manifest: ${validation.reason}`);
-  return validation.manifest;
+  return { manifest: validation.manifest, sha256: createHash('sha256').update(manifestBytes).digest('hex') };
 }
 
 function writeJsonFile(filePath: string, value: unknown): void {
@@ -327,6 +338,7 @@ export function isFixtureFileWithinDirectory(fixturesDir: string, file: string):
 }
 
 export function createScreenshotBackend(options: ScreenshotBackendServerOptions): ScreenshotBackendServer {
+  const processInstanceId = randomUUID();
   const { mode, fixturesDir, frozenNow, log } = options;
   const isRecording = mode === 'record';
   // Defaults ON: a recording that forgets the flag must still be safe to
@@ -348,7 +360,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
     rmSync(join(fixturesDir, MANIFEST_FILENAME), { force: true });
   }
 
-  const loadedManifest = readScreenshotFixtureManifest(fixturesDir);
+  const manifestSnapshot = readFixtureManifestSnapshot(fixturesDir);
+  const loadedManifest = manifestSnapshot?.manifest ?? null;
+  let fixtureManifestSHA256 = manifestSnapshot?.sha256 ?? null;
   if (!isRecording && !loadedManifest) {
     throw new Error(`replay needs a recorded fixture set — no ${MANIFEST_FILENAME} under ${fixturesDir}`);
   }
@@ -429,6 +443,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
       }
     }
     writeJsonFile(join(fixturesDir, MANIFEST_FILENAME), sortManifestEntries(manifest));
+    fixtureManifestSHA256 = createHash('sha256')
+      .update(readFileSync(join(fixturesDir, MANIFEST_FILENAME)))
+      .digest('hex');
   };
 
   const carriesSensitiveToken = (serialized: string): boolean => {
@@ -1015,6 +1032,8 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
 
   const currentStats = (): ScreenshotBackendStats => ({
     mode,
+    processInstanceId,
+    fixtureManifestSHA256,
     hits,
     misses,
     recorded,
@@ -1281,7 +1300,7 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
   };
 
   return {
-    listen(port: number): Promise<number> {
+    listen(port: number, host: '127.0.0.1' | '0.0.0.0' = '0.0.0.0'): Promise<number> {
       return new Promise<number>((resolve, reject) => {
         if (!isRecording) {
           const fixtureProblems = unusableFixtureProblems();
@@ -1300,9 +1319,9 @@ export function createScreenshotBackend(options: ScreenshotBackendServerOptions)
         }
         const onListenError = (listenError: Error): void => reject(listenError);
         httpServer.once('error', onListenError);
-        // 0.0.0.0 so the iOS simulator (localhost) and the Android emulator
-        // (adb reverse) both reach it.
-        httpServer.listen(port, '0.0.0.0', () => {
+        // USB-reversed Android captures can bind only to loopback. Existing
+        // store-capture callers retain their explicit network-accessible default.
+        httpServer.listen(port, host, () => {
           httpServer.removeListener('error', onListenError);
           const address = httpServer.address();
           const boundPort = typeof address === 'object' && address !== null ? address.port : port;
