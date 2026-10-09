@@ -20,10 +20,12 @@ export function contentVisibilityCondition(
   viewerId: ViewerId,
 ): SQL {
   const approved = approvedFollowerCondition(userIdColumn, viewerId);
-  return sql`COALESCE(((${userIdColumn} IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = ${entityType} AND orphan_privacy.entity_id = ${entityIdColumn})) OR ${viewerId ?? null} = ${userIdColumn} OR EXISTS (
+  // Social columns are enums; content_privacy also supports non-social text types.
+  const entityTypeText = sql`${entityType}::text`;
+  return sql`COALESCE(((${userIdColumn} IS NULL AND NOT EXISTS (SELECT 1 FROM content_privacy orphan_privacy WHERE orphan_privacy.entity_type = ${entityTypeText} AND orphan_privacy.entity_id = ${entityIdColumn})) OR ${viewerId ?? null} = ${userIdColumn} OR EXISTS (
     SELECT 1 FROM users privacy_owner
     LEFT JOIN user_profiles privacy_profile ON privacy_profile.user_id = privacy_owner.id
-    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = ${entityType}
+    LEFT JOIN content_privacy privacy_content ON privacy_content.entity_type = ${entityTypeText}
       AND privacy_content.entity_id = ${entityIdColumn} AND privacy_content.owner_id = privacy_owner.id
     WHERE privacy_owner.id = ${userIdColumn} AND CASE
       WHEN privacy_content.audience = 'only_me' THEN false
