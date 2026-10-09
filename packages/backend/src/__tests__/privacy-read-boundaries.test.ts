@@ -2,9 +2,11 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, count, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import * as schema from '@boardsesh/db/schema';
+import { contentVisibilityCondition } from '@boardsesh/db/queries';
 import { db } from '../db/client';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
 import { socialCommentQueries } from '../graphql/resolvers/social/comments';
+import { socialNotificationQueries } from '../graphql/resolvers/social/notifications';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
   betaPrivacyCondition,
@@ -223,11 +225,138 @@ describe('SQL privacy boundaries against Postgres', () => {
   });
   it('rechecks notification references without exposing private replies', async () => {
     const [reply] = await db.select().from(schema.comments).where(eq(schema.comments.uuid, 'privacy-reply'));
+    await db.insert(schema.notifications).values({
+      uuid: 'privacy-enum-reply-notification',
+      recipientId: stranger,
+      actorId: stranger,
+      type: 'comment_reply',
+      commentId: reply.id,
+      entityType: 'climb',
+      entityId: climbUuid,
+    });
     const notification = alias(schema.notifications, 'privacy_test_notice');
-    const [result] = await db.select({ allowed: notificationPrivacyCondition(stranger, notification) })
-      .from(sql`(SELECT 'comment_reply'::text AS type, ${stranger}::text AS actor_id, ${reply.id}::integer AS comment_id,
-        'climb'::text AS entity_type, ${climbUuid}::text AS entity_id) privacy_test_notice`);
-    expect(result.allowed).toBe(false);
+    for (const [viewerId, allowed] of [
+      [owner, true],
+      [approved, true],
+      [stranger, false],
+    ] as const) {
+      const [result] = await db
+        .select({ allowed: notificationPrivacyCondition(viewerId, notification) })
+        .from(notification)
+        .where(eq(notification.uuid, 'privacy-enum-reply-notification'));
+      expect(result.allowed).toBe(allowed);
+    }
+  });
+  it('counts only readable unread notifications and applies the same policy to both inboxes', async () => {
+    const [reply] = await db.select().from(schema.comments).where(eq(schema.comments.uuid, 'privacy-reply'));
+    const otherRecipient = 'privacy-enum-other-recipient';
+    await db.insert(schema.users).values({ id: otherRecipient, email: `${otherRecipient}@test.com` });
+    for (const viewerId of [owner, approved, stranger]) {
+      const context: ConnectionContext = { userId: viewerId, isAuthenticated: true, connectionId: viewerId };
+      expect(await socialNotificationQueries.unreadNotificationCount(null, {}, context)).toBe(0);
+    }
+    const fixtures: Array<Omit<schema.NewNotification, 'uuid' | 'recipientId'>> = [
+      { type: 'new_climb', actorId: stranger, entityType: 'climb', entityId: climbUuid },
+      {
+        type: 'new_climb',
+        actorId: stranger,
+        entityType: 'climb',
+        entityId: climbUuid,
+        readAt: new Date('2026-01-02T10:00:00Z'),
+      },
+      { type: 'vote_on_tick', actorId: owner, entityType: 'tick', entityId: 'privacy-normal' },
+      { type: 'vote_on_tick', actorId: owner, entityType: 'tick', entityId: 'privacy-only-me' },
+      { type: 'comment_reply', actorId: stranger, entityType: 'climb', entityId: climbUuid, commentId: reply.id },
+      { type: 'vote_on_tick', actorId: null, entityType: 'tick', entityId: 'privacy-missing-tick' },
+    ];
+    await db.insert(schema.notifications).values([
+      ...[owner, approved, stranger].flatMap((recipientId) =>
+        fixtures.map((fixture, index) => ({
+          ...fixture,
+          uuid: `privacy-enum-${recipientId}-${index}`,
+          recipientId,
+          createdAt: new Date(`2026-01-01T10:00:0${index}Z`),
+        })),
+      ),
+      { uuid: 'privacy-enum-other-notice', recipientId: otherRecipient, ...fixtures[0] },
+    ]);
+    for (const [viewerId, visibleIndexes] of [
+      [owner, [0, 1, 2, 3, 4]],
+      [approved, [0, 1, 2, 4]],
+      [stranger, [0, 1]],
+    ] as const) {
+      const context: ConnectionContext = { userId: viewerId, isAuthenticated: true, connectionId: viewerId };
+      const expectedIds = visibleIndexes.map((index) => `privacy-enum-${viewerId}-${index}`).sort();
+      const expectedUnreadCount = visibleIndexes.length - 1;
+      expect(await socialNotificationQueries.unreadNotificationCount(null, {}, context)).toBe(expectedUnreadCount);
+      const inbox = await socialNotificationQueries.notifications(null, {}, context);
+      expect(inbox.notifications.map((notification) => notification.uuid).sort()).toEqual(expectedIds);
+      expect(inbox.totalCount).toBe(expectedIds.length);
+      expect(inbox.unreadCount).toBe(expectedUnreadCount);
+      const unreadInbox = await socialNotificationQueries.notifications(null, { unreadOnly: true }, context);
+      expect(unreadInbox.notifications.map((notification) => notification.uuid).sort()).toEqual(
+        expectedIds.filter((uuid) => uuid !== `privacy-enum-${viewerId}-1`),
+      );
+      expect(unreadInbox.totalCount).toBe(expectedIds.length);
+      expect(unreadInbox.unreadCount).toBe(expectedUnreadCount);
+      const groupedInbox = await socialNotificationQueries.groupedNotifications(null, {}, context);
+      // The read and unread public notices form one group; every other row is distinct.
+      expect(groupedInbox.groups.map((group) => group.uuid).sort()).toEqual(
+        expectedIds.filter((uuid) => uuid !== `privacy-enum-${viewerId}-0`),
+      );
+      expect(groupedInbox.totalCount).toBe(expectedUnreadCount);
+      expect(groupedInbox.unreadCount).toBe(expectedUnreadCount);
+    }
+  });
+  it('checks enum-backed feed rows against content policies and retained orphan privacy', async () => {
+    await db.insert(schema.contentPrivacy).values({
+      entityType: 'tick',
+      entityId: 'privacy-feed-orphan-private',
+      ownerId: owner,
+      audience: 'only_me',
+    });
+    const entityIds = [
+      'privacy-normal',
+      'privacy-only-me',
+      'privacy-public',
+      'privacy-stale-public',
+      'privacy-feed-orphan-private',
+      'privacy-feed-unowned-public',
+    ];
+    await db.insert(schema.feedItems).values(
+      entityIds.map((entityId, index) => ({
+        recipientId: owner,
+        actorId: index < 4 ? owner : null,
+        type: 'ascent' as const,
+        entityType: 'tick' as const,
+        entityId,
+      })),
+    );
+    for (const [viewerId, expectedIds] of [
+      [
+        owner,
+        ['privacy-normal', 'privacy-only-me', 'privacy-public', 'privacy-stale-public', 'privacy-feed-unowned-public'],
+      ],
+      [approved, ['privacy-normal', 'privacy-public', 'privacy-stale-public', 'privacy-feed-unowned-public']],
+      [stranger, ['privacy-public', 'privacy-feed-unowned-public']],
+      [undefined, ['privacy-public', 'privacy-feed-unowned-public']],
+    ] as const) {
+      const rows = await db
+        .select({ entityId: schema.feedItems.entityId })
+        .from(schema.feedItems)
+        .where(
+          and(
+            eq(schema.feedItems.recipientId, owner),
+            contentVisibilityCondition(
+              schema.feedItems.entityType,
+              schema.feedItems.entityId,
+              schema.feedItems.actorId,
+              viewerId,
+            ),
+          ),
+        );
+      expect(rows.map((row) => row.entityId).sort()).toEqual([...expectedIds].sort());
+    }
   });
   it('keeps a public tick and beta inside an authored climb audience', async () => {
     const authoredClimb = 'privacy-authored-parent';

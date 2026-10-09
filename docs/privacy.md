@@ -69,3 +69,5 @@ The database privacy matrix exercises self, accepted and pending followers, stra
 Run the backend suites against their PostgreSQL/Redis test services. Do not run two independent backend test processes against the same database: each process resets its schema. The manual tester flows are in the worktree's `.boardsesh/qa-notes.md` and the PR test plan.
 
 Social test tables must use the production `social_entity_type` enum. Using text instead hides PostgreSQL comparison and recursive UNION errors. The shared privacy helpers normalize incoming entity types to text because `content_privacy` also covers non-social types such as playlists and beta links. Real resolver tests cover unread notification counts, materialized activity feeds and bulk session votes with these enum columns.
+
+The privacy matrix also covers empty inboxes, exact unread counts, read and other-recipient exclusions, aliased flat and grouped inboxes, private comment ancestors and retained ownerless policies.
