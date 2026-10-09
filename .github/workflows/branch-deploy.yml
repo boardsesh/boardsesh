@@ -14,11 +14,8 @@ on:
         type: string
 
 concurrency:
-  group: branch-deploy-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  group: branch-deploy-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
-
-env:
-  PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
 
 jobs:
   detect-changes:
@@ -28,24 +25,34 @@ jobs:
       pull-requests: read
     outputs:
       backend_changed: ${{ steps.changes.outputs.backend }}
+      pr_number: ${{ steps.source.outputs.pr_number }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Resolve selected PR source
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/resolve-branch-deploy-source.mjs
+
       - name: Detect changed paths
         id: changes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.source.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           # workflow_dispatch has no PR diff - always do full build
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             echo "backend=true" >> "$GITHUB_OUTPUT"
             echo "Manual trigger: building everything"
             exit 0
           fi
 
-          CHANGED_FILES=$(gh pr diff ${{ env.PR_NUMBER }} --name-only --repo ${{ github.repository }}) || \
+          CHANGED_FILES=$(gh pr diff "$PR_NUMBER" --name-only --repo "$REPOSITORY") || \
             CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
 
           # Backend-affecting paths — keep in sync with detect-changes in production-deploy.yml.
@@ -67,11 +74,27 @@ jobs:
   build-images:
     needs: detect-changes
     runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ needs.detect-changes.outputs.pr_number }}
+      SOURCE_SHA: ${{ needs.detect-changes.outputs.source_sha }}
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.detect-changes.outputs.source_sha }}
+
+      - name: Assert checkout matches selected PR source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.detect-changes.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "$actual_sha" != "$EXPECTED_SOURCE_SHA" ]; then
+            echo "::error::checked out $actual_sha, expected selected PR head $EXPECTED_SOURCE_SHA"
+            exit 1
+          fi
 
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -101,7 +124,10 @@ jobs:
           build-args: |
             NEXT_PUBLIC_WS_URL=wss://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com/graphql
             BASE_URL=https://${{ env.PR_NUMBER }}.preview.boardsesh.com
-            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
+            BOARDSESH_BUILD_RELEASE=${{ needs.detect-changes.outputs.source_sha }}
+            NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.detect-changes.outputs.source_sha }}
           # The PR's own scope, then main's cache. The `-main` FALLBACK is a
           # registry ref, not `type=gha,scope=web-main`: production-deploy.yml
           # writes its cache to GHCR now, so that scope is orphaned and a
@@ -126,7 +152,9 @@ jobs:
           push: true
           tags: ghcr.io/boardsesh/boardsesh-daemon:pr-${{ env.PR_NUMBER }}
           build-args: |
-            BOARDSESH_BUILD_RELEASE=${{ github.sha }}
+            BOARDSESH_BUILD_RELEASE=${{ needs.detect-changes.outputs.source_sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.detect-changes.outputs.source_sha }}
           # The PR's own scope, then main's cache. The `-main` FALLBACK is a
           # registry ref, not `type=gha,scope=backend-main`: production-deploy.yml
           # writes its cache to GHCR now, so that scope is orphaned and a
@@ -138,13 +166,96 @@ jobs:
             type=registry,ref=ghcr.io/boardsesh/boardsesh-daemon:buildcache-main
           cache-to: type=gha,mode=max,scope=backend-pr-${{ env.PR_NUMBER }}
 
+      # ---------------------------------------------------------------------
+      # Standalone Expo-web preview (https://{N}.app.boardsesh.com). A static
+      # SPA export served by a tiny Caddy image. The preview env trio is
+      # inlined at export time; the app then talks to this PR's own web +
+      # backend previews.
+      # ---------------------------------------------------------------------
+      - name: Install dependencies for Expo-web export
+        run: vp install --frozen-lockfile
+
+      - name: Install isolated Expo-web runtime
+        run: vp run mobile:web-runtime:install
+
+      - name: Build standalone Expo-web export
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com
+          EXPO_PUBLIC_WS_URL: wss://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com/graphql
+          EXPO_PUBLIC_WEB_URL: https://${{ env.PR_NUMBER }}.preview.boardsesh.com
+          # The export script clears Metro and asserts both inlined origins.
+          BOARDSESH_EXPORT_EXPECT_URLS: https://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com https://${{ env.PR_NUMBER }}.preview.boardsesh.com
+        run: |
+          bash scripts/build-expo-web-export.sh --subdomain "${RUNNER_TEMP}/app-context/app-standalone"
+
+      - name: Verify preview origins are inlined in the export
+        run: |
+          # Keep an explicit workflow-level check that both preview origins
+          # appear in the emitted JS, so a stale or mismatched export fails here.
+          JS_DIR="${RUNNER_TEMP}/app-context/app-standalone/_expo/static/js/web"
+          # Guard the dir exists and holds .js before grepping — a missing dir
+          # or an unexpanded glob would otherwise mask the real "origin absent"
+          # failure behind a confusing "No such file" from grep.
+          if [ ! -d "${JS_DIR}" ] || [ -z "$(find "${JS_DIR}" -maxdepth 1 -name '*.js' -print -quit)" ]; then
+            echo "::error::no exported JS bundles under ${JS_DIR}"
+            exit 1
+          fi
+          for origin in \
+            "https://${PR_NUMBER}.ws.preview.boardsesh.com" \
+            "https://${PR_NUMBER}.preview.boardsesh.com"; do
+            if ! grep -rqF "${origin}" "${JS_DIR}"; then
+              echo "::error::expected origin ${origin} not found in exported JS (${JS_DIR})"
+              exit 1
+            fi
+            echo "Found ${origin} in exported JS"
+          done
+
+      - name: Assemble app-web build context
+        run: |
+          cp deploy/app-preview/Caddyfile "${RUNNER_TEMP}/app-context/Caddyfile"
+
+      - name: Build and push app-web image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/app-context
+          file: Dockerfile.app-web
+          push: true
+          tags: ghcr.io/boardsesh/boardsesh-app-web:pr-${{ env.PR_NUMBER }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.detect-changes.outputs.source_sha }}
+
   deploy:
     needs: [build-images, detect-changes, create-deployment]
     if: always() && needs.build-images.result == 'success' && (needs.create-deployment.result == 'success' || needs.create-deployment.result == 'skipped')
     runs-on: [self-hosted, homelab, ephemeral]
+    env:
+      PR_NUMBER: ${{ needs.detect-changes.outputs.pr_number }}
+      SOURCE_SHA: ${{ needs.detect-changes.outputs.source_sha }}
     steps:
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull and verify images match the selected PR source
+        env:
+          BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend_changed }}
+        run: |
+          set -euo pipefail
+          images=(
+            ghcr.io/boardsesh/boardsesh-web:pr-${PR_NUMBER}
+            ghcr.io/boardsesh/boardsesh-app-web:pr-${PR_NUMBER}
+          )
+          if [ "$BACKEND_CHANGED" = "true" ]; then
+            images+=(ghcr.io/boardsesh/boardsesh-daemon:pr-${PR_NUMBER})
+          fi
+
+          for image in "${images[@]}"; do
+            docker pull "$image"
+            image_sha="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
+            if [ "$image_sha" != "$SOURCE_SHA" ]; then
+              echo "::error::image $image was built from ${image_sha:-an unknown source}, expected $SOURCE_SHA"
+              exit 1
+            fi
+          done
 
       - name: Deploy preview containers
         env:
@@ -164,8 +275,6 @@ jobs:
             # Stop/remove old per-PR backend
             docker stop backend-pr-${PR_NUM} 2>/dev/null || true
             docker rm backend-pr-${PR_NUM} 2>/dev/null || true
-
-            docker pull ghcr.io/boardsesh/boardsesh-daemon:pr-${PR_NUM}
 
             NEXTAUTH_SECRET="branch-deploy-secret-${PR_NUM}"
             BACKEND_INTERNAL_URL="ws://backend-pr-${PR_NUM}:8080/graphql"
@@ -203,13 +312,9 @@ jobs:
 
           # Pull and start web.
           #
-          # TODO(#4656): the `-e VERCEL_ENV=preview` below goes with the Vercel
-          # project. Traced inert already — the https NEXTAUTH_URL short-circuits
-          # every consumer ahead of it — but this workflow is
-          # workflow_dispatch-only, so no PR can produce the live proof, and
-          # #4651 chose not to remove it on a desk-check alone.
-          docker pull ghcr.io/boardsesh/boardsesh-web:pr-${PR_NUM}
-
+          # TODO(#4656): `VERCEL_ENV=preview` appears inert because HTTPS
+          # NEXTAUTH_URL short-circuits every consumer ahead of it. Keep the
+          # value until a selected-PR manual preview confirms that behavior.
           docker run -d \
             --name web-pr-${PR_NUM} \
             --network ${NETWORK} \
@@ -228,26 +333,83 @@ jobs:
             --restart unless-stopped \
             ghcr.io/boardsesh/boardsesh-web:pr-${PR_NUM}
 
-      - name: Wait for containers to be healthy
+          # Standalone Expo-web preview (static SPA behind a tiny Caddy).
+          # TLS terminates upstream, same as web/backend — no TLS labels.
+          docker stop app-pr-${PR_NUM} 2>/dev/null || true
+          docker rm -f app-pr-${PR_NUM} 2>/dev/null || true
+
+          docker run -d \
+            --name app-pr-${PR_NUM} \
+            --network ${NETWORK} \
+            --label "traefik.enable=true" \
+            --label "traefik.http.routers.app-pr-${PR_NUM}.rule=Host(\`${PR_NUM}.app.boardsesh.com\`)" \
+            --label "traefik.http.services.app-pr-${PR_NUM}.loadbalancer.server.port=80" \
+            --memory=64m \
+            --restart unless-stopped \
+            ghcr.io/boardsesh/boardsesh-app-web:pr-${PR_NUM}
+
+      - name: Wait for app preview to serve
         env:
           PR_NUM: ${{ env.PR_NUMBER }}
-          BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend_changed }}
+          APP_HEALTH_CHECK_ATTEMPTS: '30'
+          APP_HEALTH_POLL_SECONDS: '2'
         run: |
-          echo "Waiting for containers to start..."
-          sleep 10
-          if [ "${BACKEND_CHANGED}" = "true" ]; then
-            docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=backend-pr-${PR_NUM}" --format "table {{.Names}}\t{{.Status}}"
-          else
-            echo "FE-only deploy (using staging backend)"
-            docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=staging-backend" --format "table {{.Names}}\t{{.Status}}"
-          fi
+          set -euo pipefail
+          container="app-pr-${PR_NUM}"
+          attempts="${APP_HEALTH_CHECK_ATTEMPTS:-30}"
+          poll_seconds="${APP_HEALTH_POLL_SECONDS:-2}"
+          deadline=$((SECONDS + 60))
+
+          for (( attempt = 1; attempt <= attempts && SECONDS < deadline; attempt++ )); do
+            if ! state="$(timeout 3 docker inspect --format '{{.State.Status}} {{.State.Restarting}} {{.RestartCount}}' "$container" 2>/dev/null)"; then
+              sleep "$poll_seconds"
+              continue
+            fi
+
+            read -r status restarting restart_count <<< "$state"
+            if [ "$status" = "exited" ] || [ "$status" = "dead" ] || [ "$restarting" = "true" ]; then
+              docker logs "$container" >&2 || true
+              echo "::error::${container} entered ${status} (restarting=${restarting})"
+              exit 1
+            fi
+            if (( restart_count >= 3 )); then
+              timeout 5 docker logs "$container" >&2 || true
+              echo "::error::${container} is restart-looping (restart count ${restart_count})"
+              exit 1
+            fi
+            if [ "$status" = "running" ] && timeout 3 docker exec "$container" wget -q -T 2 -O /dev/null http://127.0.0.1/; then
+              echo "${container} is running and serves HTTP 200 at /"
+              docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=app-pr-${PR_NUM}" --format "table {{.Names}}\t{{.Status}}"
+              exit 0
+            fi
+            sleep "$poll_seconds"
+          done
+
+          timeout 5 docker logs "$container" >&2 || true
+          echo "::error::timed out after 60s waiting for ${container} to serve HTTP 200 at /"
+          exit 1
+
+      - name: Publish preview URLs to job summary
+        env:
+          PR_NUM: ${{ env.PR_NUMBER }}
+        run: |
+          {
+            echo "### Preview URLs for PR #${PR_NUM}"
+            echo ""
+            echo "- Web: https://${PR_NUM}.preview.boardsesh.com"
+            echo "- Backend (WS): https://${PR_NUM}.ws.preview.boardsesh.com"
+            echo "- Standalone app: https://${PR_NUM}.app.boardsesh.com"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Note: deployment tracking only runs for pull_request events.
   # Manual workflow_dispatch deploys skip deployment creation since there's no PR to attach to.
   create-deployment:
-    needs: build-images
+    needs: [build-images, detect-changes]
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ needs.detect-changes.outputs.pr_number }}
+      SOURCE_SHA: ${{ needs.detect-changes.outputs.source_sha }}
     permissions:
       contents: read
       deployments: write
@@ -260,7 +422,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DEPLOYMENT_ID=$(jq -n \
-            --arg ref "${{ github.sha }}" \
+            --arg ref "$SOURCE_SHA" \
             --arg env "preview-pr-${{ env.PR_NUMBER }}" \
             --arg desc "Preview deployment for PR #${{ env.PR_NUMBER }}" \
             '{ref: $ref, environment: $env, description: $desc, auto_merge: false, required_contexts: []}' | \
@@ -282,9 +444,11 @@ jobs:
             --field description="Building and deploying preview..."
 
   deployment-status:
-    needs: [deploy, create-deployment]
+    needs: [deploy, create-deployment, detect-changes]
     if: always() && github.event_name == 'pull_request' && needs.create-deployment.result == 'success' && needs.deploy.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ needs.detect-changes.outputs.pr_number }}
     permissions:
       deployments: write
     steps:
@@ -300,9 +464,11 @@ jobs:
             --field auto_inactive=true
 
   deployment-failure:
-    needs: [deploy, create-deployment]
+    needs: [deploy, create-deployment, detect-changes]
     if: always() && github.event_name == 'pull_request' && needs.create-deployment.result == 'success' && needs.deploy.result != 'success'
     runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ needs.detect-changes.outputs.pr_number }}
     permissions:
       deployments: write
     steps:
