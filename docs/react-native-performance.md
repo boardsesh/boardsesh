@@ -91,16 +91,21 @@ unbounded drain-until-`hasMore` loop quietly fetches and mounts the entire catal
   anywhere. Two things it does that a bare `onEndReached` does not, both measured on an
   iPhone 13 Pro against production (a page of 30 takes about 2.2 s to come back):
   - **It looks ahead by rows, not by half a screen.** The next page is requested once 20 loaded
-    climbs remain below the last row on screen (40 once a second page is loaded). The first page
-    alone does not trigger it, so opening the tab is still one search. With the old
-    `onEndReachedThreshold={0.5}` every scroll past 30 climbs parked on skeleton rows.
+    climbs remain below the last row on screen (40 once a second page is loaded). A climber still
+    at the top of the first page never triggers it, so opening the tab is one search on a phone
+    and on an iPad alike. With the old `onEndReachedThreshold={0.5}` every scroll past 30 climbs
+    parked on skeleton rows.
   - **A dropped end-reached is remembered.** FlashList reports the end once per content size. If
     that call lands while a refetch is running (a sync invalidating the search is enough) it used
     to be discarded, and the list sat at its last row until the climber scrolled away and back —
     80 s in one capture. The request is now kept and honoured when the list is free; an effect
     re-asks on every fetch-state change. The last visible row comes from `onViewableItemsChanged`
     through a store (`createLastVisibleRowStore`), never screen state: one state update per row
-    scrolled would re-render the whole screen.
+    scrolled would re-render the whole screen. Its `viewabilityConfig` sets `minimumViewTime: 0`;
+    FlashList's default of 250 ms reports nothing during a flick.
+  - **The re-ask is fenced, or it is a drain.** An ask the climber did not cause (`settle`) is
+    refused after a failed page and after a page that added no climbs. A scroll may retry a
+    failure, after a 3 s cooldown, so a rate-limited search is not retried once per row.
 - `packages/mobile/src/components/play-drawer/BetaVideosSection.tsx` and queue lists use the Gorhom
   `BottomSheetFlatList` so the virtualization cooperates with the sheet's scroll gesture.
 - `packages/mobile/src/components/play-drawer/LogbookSection.tsx` sits inside the play drawer's plain
@@ -287,11 +292,15 @@ on an iPhone 13 Pro, yet every list row used to show its bare board first and fa
   the viewport: a `prefetch`-rank render, then `warmBoardArtMemory` decodes the PNG into
   expo-image's memory cache. In a 465-row cold scroll 93% of rows found their overlay already
   rendered. `warmBoardArtMemory` is the only caller of `Image.prefetch` the board-art network
-  guard allows, and it drops anything that is not a `file://` URI.
+  guard allows, and it drops anything that is not a `file://` URI. It is iOS-only
+  (`canWarmBoardArtMemory`): expo-image's Android prefetch loads a `GlideUrl`, which never
+  matches the key a view uses for a local file. So on Android an already-rendered overlay still
+  decodes after the board is up, and keeps its cross-fade.
 - **A late overlay holds the photo back.** When the overlay is not ready (a page landed right
   under the finger), `LayeredClimbImage`'s `revealWithOverlay` keeps the stack at opacity 0 behind
   a skeleton-coloured block until the overlay's `onLoad`, with a 600 ms fallback so a failed
-  render still shows a board. `'each-climb'` for list rows; `'first-paint'` for the play board,
+  render still shows a board. Callers leave it unset when the hook reports `overlayUnavailable`
+  (no renderer, no matching holds, no render config, a full disk): nothing is coming to wait for. `'each-climb'` for list rows; `'first-paint'` for the play board,
   where a swipe to the next climb must keep the photo up.
 
 The play board gets the same treatment from the tap: `requestPlayBoardPrewarm`

@@ -57,6 +57,17 @@ export function requestPlayBoardPrewarm(scope: PlayBoardScope, frames: string): 
   for (const listener of listeners) listener();
 }
 
+/**
+ * The play board is up and has asked for its own render: the warm-up has done
+ * its job. Dropping the target unmounts the hidden render, so a later theme or
+ * board-look change is not answered with a play-size render nobody is opening.
+ */
+export function clearPlayBoardPrewarm(): void {
+  if (prewarmTarget === null) return;
+  prewarmTarget = null;
+  for (const listener of listeners) listener();
+}
+
 export function getPlayBoardPrewarmTarget(): PlayBoardPrewarmTarget | null {
   return prewarmTarget;
 }

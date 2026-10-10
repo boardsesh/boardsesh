@@ -39,7 +39,7 @@ import { getTallWideScope } from '@boardsesh/board-constants';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
-import { shouldFetchNextPage } from '../../../src/lib/climb-list-pagination';
+import { shouldFetchNextPage, type NextPageTrigger } from '../../../src/lib/climb-list-pagination';
 import { requestPlayBoardPrewarm } from '../../../src/lib/board-render/play-board-prewarm';
 import { PlayBoardPrewarmHost } from '../../../src/components/play-drawer/PlayBoardPrewarmHost';
 import {
@@ -160,7 +160,9 @@ import { ScreenshotSmokeMarker } from '../../../src/components/ScreenshotSmokeMa
 const PAGE_SIZE = 30;
 // Any part of a row on screen counts: this feeds pagination and thumbnail
 // prewarming, not an impression counter.
-const CLIMB_LIST_VIEWABILITY = { itemVisiblePercentThreshold: 1 };
+// `minimumViewTime: 0`: FlashList's default only reports a row once it has been
+// on screen for 250ms, so mid-flick it reports nothing and both would stall.
+const CLIMB_LIST_VIEWABILITY = { itemVisiblePercentThreshold: 1, minimumViewTime: 0 };
 // Soft character budget for the glass filter-summary title: include whole filter
 // parts up to roughly two wrapped lines before collapsing the rest into "+N more".
 // It only decides *when* to summarise — the title's `numberOfLines={2}` +
@@ -726,6 +728,7 @@ function ClimbListInner() {
     isError: isClimbsError,
     error: climbSearchError,
     isFetchingNextPage,
+    isFetchNextPageError,
     isRefetching,
     fetchNextPage,
     hasNextPage,
@@ -737,6 +740,14 @@ function ClimbListInner() {
   const isLoadingMoreRef = useRef(false);
   // The last row on screen, kept out of this screen's state on purpose.
   const lastVisibleRowStore = useMemo(() => createLastVisibleRowStore(), []);
+  const firstVisibleIndexRef = useRef(0);
+  // An end-reached report that could not be acted on when it arrived; see
+  // `shouldFetchNextPage` for why it has to be remembered.
+  const endReachedPendingRef = useRef(false);
+  // What the last next-page ask started from, and when one last failed: the two
+  // facts that stop a re-ask from becoming a drain.
+  const loadedCountAtLastFetchRef = useRef<number | null>(null);
+  const lastNextPageFailureAtRef = useRef<number | null>(null);
   // Read by the row handlers: a stale row belongs to the previous search, so a
   // tap on it must not open, queue or seed a swipe track from the old results.
   // A ref keeps those handlers (and so renderClimbItem) stable across the flip.
@@ -767,6 +778,10 @@ function ClimbListInner() {
     // Back at the top: the row index from the previous search would otherwise
     // read as "near the end" of the new first page and fetch its second page.
     lastVisibleRowStore.set(0);
+    firstVisibleIndexRef.current = 0;
+    // And an end-reached report from the previous search is not this one's.
+    endReachedPendingRef.current = false;
+    loadedCountAtLastFetchRef.current = null;
   }, [searchScrollKey, lastVisibleRowStore]);
 
   // Dedup across pages: the same climb can repeat when a page boundary shifts
@@ -939,63 +954,89 @@ function ClimbListInner() {
     isLoading: isClimbsLoading,
     isFetchingNextPage,
     isRefetching,
+    lastFetchFailed: isFetchNextPageError,
     loadedCount: visibleClimbs.length,
   };
   const paginationStateRef = useRef(paginationState);
   paginationStateRef.current = paginationState;
-  // An end-reached report that could not be acted on when it arrived; see
-  // `shouldFetchNextPage` for why it has to be remembered.
-  const endReachedPendingRef = useRef(false);
 
   /**
    * Fetch the next page if `shouldFetchNextPage` says so. One page per call,
-   * never a drain: the `isLoadingMoreRef` latch holds until that page settles.
+   * never a drain: the `isLoadingMoreRef` latch holds until that page settles,
+   * and an ask the climber did not cause only goes ahead when the last one made
+   * progress.
    */
-  const maybeFetchNextPage = useCallback(() => {
-    const shouldFetch = shouldFetchNextPage({
-      ...paginationStateRef.current,
-      fetchInFlight: isLoadingMoreRef.current,
-      lastVisibleIndex: lastVisibleRowStore.get(),
-      endReachedPending: endReachedPendingRef.current,
-      pageSize: PAGE_SIZE,
-    });
-    if (!shouldFetch) return;
-    endReachedPendingRef.current = false;
-    isLoadingMoreRef.current = true;
-    void fetchNextPage().finally(() => {
-      isLoadingMoreRef.current = false;
-    });
-  }, [fetchNextPage, lastVisibleRowStore]);
+  const maybeFetchNextPage = useCallback(
+    (trigger: NextPageTrigger) => {
+      const pagination = paginationStateRef.current;
+      const failedAt = lastNextPageFailureAtRef.current;
+      const shouldFetch = shouldFetchNextPage({
+        ...pagination,
+        trigger,
+        fetchInFlight: isLoadingMoreRef.current,
+        msSinceLastFailure: failedAt === null ? null : Date.now() - failedAt,
+        loadedCountAtLastFetch: loadedCountAtLastFetchRef.current,
+        firstVisibleIndex: firstVisibleIndexRef.current,
+        lastVisibleIndex: lastVisibleRowStore.get(),
+        endReachedPending: endReachedPendingRef.current,
+        pageSize: PAGE_SIZE,
+      });
+      if (!shouldFetch) return;
+      endReachedPendingRef.current = false;
+      loadedCountAtLastFetchRef.current = pagination.loadedCount;
+      isLoadingMoreRef.current = true;
+      void fetchNextPage()
+        .then((result) => {
+          lastNextPageFailureAtRef.current = result.isFetchNextPageError ? Date.now() : null;
+        })
+        .finally(() => {
+          isLoadingMoreRef.current = false;
+        });
+    },
+    [fetchNextPage, lastVisibleRowStore],
+  );
 
   const handleEndReached = useCallback(() => {
-    endReachedPendingRef.current = true;
-    maybeFetchNextPage();
+    // FlashList also reports the end of a list too short to scroll. Only keep
+    // the report when there is a page it could ever be spent on, or it would
+    // sit there and fetch the NEXT search's second page the moment its first
+    // one landed.
+    const pagination = paginationStateRef.current;
+    if (pagination.hasNextPage && !pagination.isPlaceholderData) endReachedPendingRef.current = true;
+    maybeFetchNextPage('scroll');
   }, [maybeFetchNextPage]);
 
   const handleViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken<Climb>[] }) => {
+      let firstVisibleIndex = Number.POSITIVE_INFINITY;
       let lastVisibleIndex = -1;
       for (const viewable of viewableItems) {
-        if (viewable.index != null && viewable.index > lastVisibleIndex) lastVisibleIndex = viewable.index;
+        if (viewable.index == null) continue;
+        if (viewable.index < firstVisibleIndex) firstVisibleIndex = viewable.index;
+        if (viewable.index > lastVisibleIndex) lastVisibleIndex = viewable.index;
       }
       if (lastVisibleIndex < 0) return;
+      firstVisibleIndexRef.current = firstVisibleIndex;
       lastVisibleRowStore.set(lastVisibleIndex);
-      maybeFetchNextPage();
+      maybeFetchNextPage('scroll');
     },
     [lastVisibleRowStore, maybeFetchNextPage],
   );
 
   // Ask again whenever the list becomes free: a page landed (there may be more
   // to fetch already — a flick outruns one page), or a refetch finished that was
-  // in the way when the climber reached the end.
+  // in the way when the climber reached the end. This is the `settle` ask, the
+  // one `shouldFetchNextPage` refuses after a failure or a page of duplicates.
   useEffect(() => {
-    maybeFetchNextPage();
+    if (!hasNextPage) endReachedPendingRef.current = false;
+    maybeFetchNextPage('settle');
   }, [
     maybeFetchNextPage,
     hasNextPage,
     isPlaceholderData,
     isClimbsLoading,
     isFetchingNextPage,
+    isFetchNextPageError,
     isRefetching,
     visibleClimbs,
   ]);

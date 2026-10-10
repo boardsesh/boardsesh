@@ -1,4 +1,4 @@
-import React, { useSyncExternalStore } from 'react';
+import React, { useDeferredValue, useSyncExternalStore } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ClimbListThumbnailPrewarm } from './ClimbListThumbnail';
 
@@ -70,13 +70,18 @@ export const ClimbListThumbnailPrewarmWindow = React.memo(function ClimbListThum
   sizeId,
   setIds,
 }: ClimbListThumbnailPrewarmWindowProps) {
-  const windowStart = useSyncExternalStore(
+  const latestWindowStart = useSyncExternalStore(
     store.subscribe,
     () => Math.floor(store.get() / PREWARM_STEP_ROWS) * PREWARM_STEP_ROWS,
   );
+  // Deferred, both of them: a page landing or the window sliding mounts up to a
+  // window's worth of render hooks, and none of it is on screen. Left urgent,
+  // those mounts ride in the same commit as the rows the climber is waiting for.
+  const windowStart = useDeferredValue(latestWindowStart);
+  const loadedClimbs = useDeferredValue(climbs);
   // One step of slack on the end, so the window still reaches a full
   // THUMBNAIL_PREWARM_ROWS past the real last row whatever the coarsening dropped.
-  const ahead = climbs.slice(windowStart + 1, windowStart + 1 + PREWARM_STEP_ROWS + THUMBNAIL_PREWARM_ROWS);
+  const ahead = loadedClimbs.slice(windowStart + 1, windowStart + 1 + PREWARM_STEP_ROWS + THUMBNAIL_PREWARM_ROWS);
   return (
     <>
       {ahead.map((climb) => (

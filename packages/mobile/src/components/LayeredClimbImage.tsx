@@ -254,7 +254,11 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   return (
     <View style={[styles.stack, mirrored && styles.mirrored]}>
       {baseLayerStyle && backgroundPaths.length > 0 && (
-        <View testID="layered-climb-image-base" style={baseLayerStyle} pointerEvents="none" />
+        <View
+          testID="layered-climb-image-base"
+          style={concealed ? [baseLayerStyle, concealed] : baseLayerStyle}
+          pointerEvents="none"
+        />
       )}
       {shouldShowEmptyFallback && (
         <View testID="layered-climb-image-empty-fallback" style={[styles.layer, styles.emptyLayer]} />
@@ -289,7 +293,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
         Array.from({ length: missingBackgroundCount }, (_, layerIndex) => (
           <View
             key={`missing-${layerIndex}`}
-            style={[styles.layer, styles.missingLayer]}
+            style={[styles.layer, styles.missingLayer, concealed]}
             accessibilityLabel="Missing background layer"
           />
         ))}
@@ -326,7 +330,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           cachePolicy="memory"
           // Forced instant while retaining: a hold erased on this tap would
           // otherwise stay visible on the bridge layer for the whole fade.
-          transition={suppressOverlayTransition || retainPreviousOverlayFor != null ? 0 : 150}
+          // ...and instant while the stack is held back: the reveal is the
+          // transition, and a fade starting at `onLoad` would put the bare
+          // board on screen after all.
+          transition={suppressOverlayTransition || retainPreviousOverlayFor != null || awaitingOverlay ? 0 : 150}
           // Overlay PNG is rasterized at the surface size (small for the
           // list/accessory, native for play) so no main-thread downscale
           // is needed — skip expo-image's resample.

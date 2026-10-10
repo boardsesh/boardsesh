@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetPlayBoardPrewarmForTests,
+  clearPlayBoardPrewarm,
   getPlayBoardPrewarmTarget,
   rememberPlayOverlayWidth,
   requestPlayBoardPrewarm,
@@ -64,6 +65,27 @@ describe('play board prewarm', () => {
     rememberPlayOverlayWidth(KILTER, 960);
     requestPlayBoardPrewarm(KILTER, 'p1r12');
     expect(getPlayBoardPrewarmTarget()?.renderWidth).toBe(960);
+  });
+
+  // The hidden render stays mounted for as long as there is a target, and would
+  // answer a later theme change with a play-size render nobody is opening.
+  it('drops the target once the play board has taken over', () => {
+    rememberPlayOverlayWidth(KILTER, 1011);
+    requestPlayBoardPrewarm(KILTER, 'p1r12');
+    const listener = vi.fn();
+    subscribeToPlayBoardPrewarm(listener);
+
+    clearPlayBoardPrewarm();
+    expect(getPlayBoardPrewarmTarget()).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Nothing to clear, nobody to tell.
+    clearPlayBoardPrewarm();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // The width outlives the target: the next tap warms straight away.
+    requestPlayBoardPrewarm(KILTER, 'p3r14');
+    expect(getPlayBoardPrewarmTarget()?.frames).toBe('p3r14');
   });
 
   it('ignores a climb with no holds', () => {

@@ -293,6 +293,13 @@ type NativeClimbRenderResult = {
    * board on screen for 150ms that it never had to be there.
    */
   overlayImmediate: boolean;
+  /**
+   * True when no overlay is coming for this climb at all: the renderer is
+   * missing, the climb names no hold this board has, the board has no render
+   * config, or renders are backed off after a full disk. A surface that holds
+   * its photo back for the holds (`revealWithOverlay`) must not wait on these.
+   */
+  overlayUnavailable: boolean;
   /** Exact-attempt callbacks consumed by LayeredClimbImage's overlay Image. */
   onOverlayLoad: (loadKey: string | null) => void;
   onOverlayError: (event: { error: string }, loadKey: string | null) => void;
@@ -2186,6 +2193,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     loadKey: string;
   } | null>(null);
   const [recoveryRequest, setRecoveryRequest] = useState(0);
+  // The cache key the overlay effect last gave up on; see `overlayUnavailable`
+  // on the result. Keyed, so a recycled row's next climb starts clean.
+  const [unavailableOverlayKey, setUnavailableOverlayKey] = useState<string | null>(null);
   // Mirrors the module-level give-up so it can drive a re-render; see the
   // `!nativeModule` branch in the overlay effect.
   const [rendererGaveUp, setRendererGaveUp] = useState(isNativeRendererUnavailable);
@@ -2442,6 +2452,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           // effect ever runs, so a stale entry is already on screen by now.
           // Dropping it from the index alone would leave it painted.
           setNativeRender((previous) => (previous?.key === currentCacheKey ? null : previous));
+          setUnavailableOverlayKey(currentCacheKey);
           return;
         }
         // A partial match still draws: a climb that legitimately reaches past a
@@ -2555,11 +2566,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       litHoldIds,
       extraHoldStates,
     );
-    if (!boardConfig) return;
+    if (!boardConfig) {
+      setUnavailableOverlayKey(currentCacheKey);
+      return;
+    }
     // Backed off after a full-disk failure: the write cannot succeed, and every
     // recycled row retrying it is what turned one out-of-space device into 50
     // Sentry events in 50 minutes. Overlay stays null; backgrounds still show.
     if (isDiskPressureLatched()) {
+      setUnavailableOverlayKey(currentCacheKey);
       // Come back once when the latch lifts. A list scrolls and remounts rows,
       // so it recovers on its own; a stationary play view never re-runs this
       // effect, and would sit with no overlay for the rest of the mount even
@@ -3103,6 +3118,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     overlayUri,
     overlayLoadKey,
     overlayImmediate: overlayArrivalRef.current?.key === currentCacheKey && overlayArrivalRef.current.immediate,
+    overlayUnavailable:
+      rendererGaveUp ||
+      isNativeRendererUnavailable() ||
+      (flatFrames !== '' && unavailableOverlayKey === currentCacheKey),
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,

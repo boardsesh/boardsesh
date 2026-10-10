@@ -21,7 +21,7 @@ import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
 import { useShowcaseAnchor } from '../../lib/showcase-anchor';
 import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
 import { countLitHolds } from '../../lib/screenshot-smoke';
-import { rememberPlayOverlayWidth } from '../../lib/board-render/play-board-prewarm';
+import { clearPlayBoardPrewarm, rememberPlayOverlayWidth } from '../../lib/board-render/play-board-prewarm';
 
 type BoardRenderData = {
   boardWidth: number;
@@ -273,9 +273,10 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // the tap, before this carousel has mounted and measured again.
   const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
   useEffect(() => {
-    if (measuredOverlayWidth !== null) {
-      rememberPlayOverlayWidth({ boardName, layoutId, sizeId, setIds }, measuredOverlayWidth);
-    }
+    if (measuredOverlayWidth === null) return;
+    rememberPlayOverlayWidth({ boardName, layoutId, sizeId, setIds }, measuredOverlayWidth);
+    // The board below now holds the render the tap started.
+    clearPlayBoardPrewarm();
   }, [measuredOverlayWidth, boardName, layoutId, sizeId, setIds]);
   // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
   const boardSurfaceAnchor = useShowcaseAnchor('board-surface');

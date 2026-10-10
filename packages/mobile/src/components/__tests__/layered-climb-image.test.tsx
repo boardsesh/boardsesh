@@ -370,6 +370,19 @@ describe('LayeredClimbImage', () => {
       expect(container.querySelector(PLACEHOLDER)).toBeNull();
     });
 
+    // The reveal is the transition. A cross-fade starting at onLoad would show
+    // the bare board after all, for the length of the fade.
+    it('does not cross-fade an overlay it is holding the stack back for', () => {
+      const awaited = {
+        revealWithOverlay: 'each-climb',
+        recyclingKey: 'climb-a',
+        overlayUri: 'file:///a.png',
+        overlayLoadKey: 'a',
+      };
+      const { container } = render(stack(awaited));
+      expect(container.querySelector('img[src="file:///a.png"]')!.getAttribute('data-transition')).toBe('0');
+    });
+
     it('covers nothing when the caller does not ask to wait', () => {
       const { container } = render(stack({ recyclingKey: 'climb-a' }));
       expect(container.querySelector(PLACEHOLDER)).toBeNull();

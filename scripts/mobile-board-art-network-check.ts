@@ -109,7 +109,10 @@ const LOCAL_FILE_GUARD_STATEMENT = /^[ \t]*if \(!isLocalFileUri\(photoUri\)\) re
  * - narrow its input with the exact statement
  *   `const localUris = uris.filter(isLocalFileUri);`
  * - define that predicate as exactly `return uri.startsWith('file://');`
- * - hand every `Image.prefetch(` call exactly `localUris`, the filtered list;
+ * - make every `Image.prefetch(` call exactly `Image.prefetch(localUris, 'memory')`:
+ *   the filtered list, decoded into memory, never written to a disk cache;
+ * - never add to `localUris` after the filter (no `push`, `unshift`, `splice`,
+ *   index write or reassignment);
  * - contain no http(s) literal.
  */
 const IMAGE_PREFETCH_LOCAL_FILE_EXEMPTIONS: ReadonlySet<string> = new Set([
@@ -123,8 +126,15 @@ function isExemptLocalImagePrefetchFile(sourceFile: SourceFile): boolean {
   const code = stripComments(sourceFile.text);
   if (!LOCAL_URI_FILTER_STATEMENT.test(code) || !LOCAL_URI_PREDICATE_STATEMENT.test(code)) return false;
   if (/https?:\/\//.test(code)) return false;
-  const prefetchCalls = code.match(/Image\.prefetch\([^,)]*/g) ?? [];
-  return prefetchCalls.length > 0 && prefetchCalls.every((call) => call === 'Image.prefetch(localUris');
+  if (
+    /\blocalUris\s*(\.\s*(push|unshift|splice|fill|copyWithin)\b|\[|=(?!=))/.test(
+      code.replace(LOCAL_URI_FILTER_STATEMENT, ''),
+    )
+  ) {
+    return false;
+  }
+  const prefetchCalls = code.match(/Image\.prefetch\([^)]*\)?/g) ?? [];
+  return prefetchCalls.length > 0 && prefetchCalls.every((call) => call === "Image.prefetch(localUris, 'memory')");
 }
 
 /** Source with block and line comments removed (`://` in a string is kept). */

@@ -110,6 +110,23 @@ describe('mobile board-art network check', () => {
       expect(check(`${PREDICATE}\n${FILTER}\n${PREFETCH}\n${unfiltered}`, WARM_UP)).toContainEqual(IMAGE_PREFETCH);
     });
 
+    it('flags the warm-up when the filtered list is added to afterwards', () => {
+      for (const mutation of [
+        '  localUris.push(...uris);',
+        "  localUris[0] = 'https-less-but-remote';",
+        '  localUris = uris;',
+      ]) {
+        expect(check(`${PREDICATE}\n${FILTER}\n${mutation}\n${PREFETCH}`, WARM_UP)).toContainEqual(IMAGE_PREFETCH);
+      }
+    });
+
+    it('flags the warm-up when the prefetch could write a disk cache', () => {
+      const toDisk = "  void Image.prefetch(localUris, 'memory-disk').catch(() => {});";
+      expect(check(`${PREDICATE}\n${FILTER}\n${toDisk}`, WARM_UP)).toContainEqual(IMAGE_PREFETCH);
+      const defaultPolicy = '  void Image.prefetch(localUris);';
+      expect(check(`${PREDICATE}\n${FILTER}\n${defaultPolicy}`, WARM_UP)).toContainEqual(IMAGE_PREFETCH);
+    });
+
     it('flags the warm-up if any http(s) URL appears in it', () => {
       const remote = "const fallback = 'https://example.com/images/board.png';";
       expect(check(`${PREDICATE}\n${FILTER}\n${PREFETCH}\n${remote}`, WARM_UP)).toContainEqual(IMAGE_PREFETCH);

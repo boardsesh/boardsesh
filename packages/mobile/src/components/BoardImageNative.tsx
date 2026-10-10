@@ -8,6 +8,7 @@ import type { HoldColorOverrides } from '../lib/hold-color-overrides';
 import { LayeredClimbImage } from './LayeredClimbImage';
 import { useBoardAccessibilitySummary } from '../hooks/use-board-accessibility-summary';
 import { overlayRetainIdentity } from '../lib/overlay-retain-identity';
+import { canWarmBoardArtMemory } from '../lib/board-render/warm-board-art-memory';
 
 type BoardImageNativeProps = {
   accessible?: boolean;
@@ -166,6 +167,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     overlayUri,
     overlayLoadKey,
     overlayImmediate,
+    overlayUnavailable,
     onOverlayLoad,
     onOverlayError,
     onOverlayMounted,
@@ -187,6 +189,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
     holdColorOverride,
     maxVeilOpacity,
   });
+
+  // Already rendered when the board took this climb, and (iOS) decoded into
+  // memory by the warm-up, so it is on the layer the frame the board mounts.
+  const overlayPaintsWithBoard = overlayImmediate && canWarmBoardArtMemory;
 
   const containerStyle: ViewStyle = {
     width: '100%',
@@ -214,12 +220,11 @@ const BoardImageNative = React.memo(function BoardImageNative({
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={recyclingKey}
-        // Nothing to wait for when the holds are already rendered, when there are
-        // none to draw, or when the renderer is gone and the fallback draws them.
-        revealWithOverlay={frames && !overlayImmediate && !rendererUnavailable ? revealWithOverlay : undefined}
-        // An overlay that was ready when the board took this climb has nothing to
-        // fade from; see `overlayImmediate`.
-        suppressOverlayTransition={suppressOverlayTransition || overlayImmediate}
+        // Nothing to wait for when the holds are already rendered and decoded,
+        // when there are none to draw, or when no overlay is coming.
+        revealWithOverlay={frames && !overlayPaintsWithBoard && !overlayUnavailable ? revealWithOverlay : undefined}
+        // An overlay that paints with the board has nothing to fade from.
+        suppressOverlayTransition={suppressOverlayTransition || overlayPaintsWithBoard}
         overlayTestID={overlayTestID}
         // A bridge only makes sense while a replacement is on its way. Empty
         // frames render nothing at all — `useNativeClimbRender` returns before

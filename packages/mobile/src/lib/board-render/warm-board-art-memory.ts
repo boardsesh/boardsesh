@@ -9,7 +9,17 @@
  * lets call `Image.prefetch`, and only because of the filter below: anything
  * that is not a `file://` URI is dropped before the call.
  */
+import { Platform } from 'react-native';
 import { Image } from 'expo-image';
+
+/**
+ * iOS only. expo-image's Android prefetch loads every URL as a `GlideUrl`,
+ * which goes to the network stack, while its views load a `file://` source as a
+ * plain model — so on Android a prefetch of a local file warms nothing a view
+ * will ever look up. A surface that skips its cross-fade because "the overlay
+ * will come out of memory" has to check this first.
+ */
+export const canWarmBoardArtMemory = Platform.OS === 'ios';
 
 function isLocalFileUri(uri: string): boolean {
   return uri.startsWith('file://');
@@ -17,6 +27,7 @@ function isLocalFileUri(uri: string): boolean {
 
 /** Best effort: a miss only means the view decodes the file itself. */
 export function warmBoardArtMemory(uris: readonly string[]): void {
+  if (!canWarmBoardArtMemory) return;
   const localUris = uris.filter(isLocalFileUri);
   if (localUris.length === 0) return;
   void Image.prefetch(localUris, 'memory').catch(() => {});
