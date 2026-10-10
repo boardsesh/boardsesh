@@ -14,8 +14,7 @@ import {
 } from '@boardsesh/graphql/operations/spray-training';
 import { getHttpClient } from '../graphql/client';
 
-export const sprayWallTrainingConsentQueryKey = (wallUuid: string | null) =>
-  ['sprayWallTrainingConsent', wallUuid] as const;
+export const sprayWallTrainingConsentQueryKey = (wallUuid: string) => ['sprayWallTrainingConsent', wallUuid] as const;
 
 /** Per wall, so a flip on the wire is counted whichever switch for that wall sent it. */
 const setSprayWallTrainingConsentMutationKey = (wallUuid: string | null) =>
@@ -52,10 +51,10 @@ export function isSprayWallTrainingConsentSaving(queryClient: QueryClient, wallU
  * dropped connection. Turning them off here cost the owner their only opt-out
  * control on one network blip.
  */
-export function useSprayWallTrainingConsent(wallUuid: string | null, enabled: boolean) {
+export function useSprayWallTrainingConsent(wallUuid: string, enabled: boolean) {
   return useQuery({
     queryKey: sprayWallTrainingConsentQueryKey(wallUuid),
-    enabled: enabled && wallUuid != null,
+    enabled,
     queryFn: async (): Promise<boolean | null> => {
       const response = await getHttpClient().request<GetSprayWallTrainingConsentQueryResponse>(
         GET_SPRAY_WALL_TRAINING_CONSENT,
