@@ -544,14 +544,18 @@ export const SPRAY_TRAINING_EXPORTS_KEPT = 2;
 /** The `sync_daemon_leases` row that keeps two export runs apart. */
 export const SPRAY_TRAINING_EXPORT_LEASE = 'spray-training-export';
 /**
- * A run stops writing after this long: three minutes inside the scheduler job's
- * 15-minute timeout, so the job never kills a run mid-manifest.
+ * A run stops writing after this long. Nothing else stops it: the resolver does
+ * not watch its HTTP request, and the scheduler's request ends long before this
+ * (docs/scheduler.md, "Spray wall training export", lists what ends it and
+ * when), so a slow run outlives its caller and is reported as a failed job
+ * while it is still writing. This bound is what keeps such a run inside the
+ * lease's TTL below.
  */
 export const SPRAY_TRAINING_EXPORT_DEADLINE_MS = 12 * 60 * 1000;
 /**
  * The lease outlives the deadline by eight minutes, so a run that crashed
- * without releasing it frees the slot well before the next day's tick, and a
- * live run can never lose it while it is still allowed to write.
+ * without releasing it frees the slot long before the next tick six hours
+ * later, and a live run can never lose it while it is still allowed to write.
  */
 export const SPRAY_TRAINING_EXPORT_LEASE_TTL_MS = 20 * 60 * 1000;
 /** Points in the polygon a circle-only hold is exported as. */
@@ -845,8 +849,9 @@ class ExportDeadlineError extends Error {}
  *
  * Short, separate queries, not one snapshot: the approved set is read once at
  * the start and drives both the retirement and the write. A consent switched
- * off while the run is writing is caught by the next day's run, which retires
- * the export that included it; that is the promise (24 hours), not a gap in it.
+ * off while the run is writing is caught by the next run, six hours later,
+ * which retires the export that included it. The promise is 24 hours, so two
+ * failed runs in a row still land inside it.
  */
 export async function exportSprayTrainingDataset({
   now = new Date(),
@@ -894,7 +899,7 @@ export async function exportSprayTrainingDataset({
     return finished;
   } finally {
     await releaseDaemonLease(db, { daemonName: SPRAY_TRAINING_EXPORT_LEASE, holderId }).catch((error: unknown) => {
-      // The TTL frees it anyway; a failed release only delays tomorrow's run if
+      // The TTL frees it anyway; a failed release only delays the next run if
       // this one somehow ran past it.
       logger.warn('Failed to release the spray training export lease', { holderId }, error);
     });

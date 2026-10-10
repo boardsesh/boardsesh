@@ -83,12 +83,22 @@ const SPRAY_PHOTO_PURGE_TIMEOUT_MS = 600_000;
 const ACTIVE_USERS_TIMEOUT_MS = 600_000;
 
 /**
- * The spray training export copies every approved photo (each at most 10 MB)
- * inside the private bucket and writes a few JSON files, one object at a time.
- * Its database reads are bounded by the approved set, which an admin builds by
- * hand. The backend stops the run itself at 12 minutes, inside this 15-minute
- * timeout; a run that does not finish writes no manifest, so the half-written
- * export is ignored by the ML fetch and deleted by the next run.
+ * The spray training export copies every approved version's `photo_key` inside
+ * the private bucket and writes a few JSON files, one object at a time. That
+ * key is the BASE photo: at most 2048 px on its long side, re-encoded as JPEG
+ * on upload (`handlers/spray-wall-photos.ts` in the backend), never the
+ * full-resolution copy. Its database reads are bounded by the approved set,
+ * which an admin builds by hand.
+ *
+ * Fifteen minutes is the ceiling this job is allowed, not the time a run has.
+ * The request ends sooner. On the default backend URL it passes through the
+ * Cloudflare proxy, whose origin cap is 100 seconds (a 524, which is not
+ * retried); on any URL, Node's own `fetch` gives up after 300 seconds without
+ * response headers. Either way the job reports a failed run while the backend
+ * keeps writing, up to its own 12-minute deadline; a run that passes that
+ * writes no manifest, so the half-written export is ignored by the ML fetch
+ * and deleted by the next run. docs/scheduler.md, "Spray wall training
+ * export", has the table and where the 100 seconds comes from.
  */
 const SPRAY_TRAINING_EXPORT_TIMEOUT_MS = 900_000;
 
@@ -221,18 +231,28 @@ export const JOBS: readonly JobDefinition[] = [
     run: purgeUserActivity,
   },
 
-  // The spray wall training set (SW-20, #5471). Daily, because the promise to a
-  // climber who switches "Help train hold finding" off is that their wall leaves
-  // every stored export within 24 hours, and each run retires before it writes.
+  // The spray wall training set (SW-20, #5471). Every six hours, because the
+  // promise to a climber who switches "Help train hold finding" off is that
+  // their wall leaves every stored export within 24 hours, and each run retires
+  // before it writes. Once a day would leave that promise no slack: a switch
+  // flipped a second after the run read the walls waits the full 24 hours, and
+  // one failed run makes it 48. At six hours it survives two failed runs in a
+  // row.
+  //
+  // Four runs a day cost little. A run that finds nothing stale and nothing
+  // changed reads the approved set and the stored exports' manifests (two
+  // exports are kept), then answers `skipped: true` without downloading a
+  // photo or writing an object.
   //
   // Overlap-safe, which JobDefinition requires: the mutation holds a lease row
   // for the whole run, so a second run meeting a first writes nothing (and this
   // job reports it as a failure, so a stuck run is seen).
   {
     name: 'export-spray-training',
-    // 08:00 UTC — an hour after the 07:00 photo purge, so a wall purged today is
-    // already photo-less (and so ineligible) when the export reads it.
-    schedule: '0 8 * * *',
+    // 02:00, 08:00, 14:00 and 20:00 UTC, clear of every other job's tick. The
+    // 08:00 one is an hour after the 07:00 photo purge, so a wall purged today
+    // is already photo-less (and so ineligible) when that run reads it.
+    schedule: '0 2,8,14,20 * * *',
     // Load-bearing for the same reason as every row above: a container's local
     // zone is not guaranteed to be UTC.
     timezone: 'UTC',

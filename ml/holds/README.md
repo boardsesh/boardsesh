@@ -880,7 +880,7 @@ Label every hold as a box (a mask is a bonus), export COCO, and put it through
 The second private corpus is already labelled: every published spray wall is a
 photo plus the holds its owner placed and checked. The backend exports the walls
 whose owner left "Help train hold finding" on and that a spray admin approved,
-once a day, to the same private bucket:
+every six hours, to the same private bucket:
 
 ```
 spray-training/exports/<exportId>/

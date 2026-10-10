@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { exportSprayTraining, EXPORT_SPRAY_TRAINING_MUTATION, readExportResult } from '../jobs/export-spray-training';
+import { exportSprayTraining, EXPORT_SPRAY_TRAINING_MUTATION } from '../jobs/export-spray-training';
 import { loadSchedulerConfig } from '../config';
 
 /**
@@ -44,26 +44,33 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('readExportResult', () => {
-  it('parses a written export and a skipped run', () => {
-    expect(readExportResult({ data: { exportSprayTrainingDataset: written } })).toEqual(written);
-    expect(readExportResult({ data: { exportSprayTrainingDataset: skipped } })).toEqual(skipped);
+describe('the export result', () => {
+  it.each([
+    ['a written export', written],
+    ['an unchanged run', skipped],
+    ['a run with nothing approved', { ...skipped, skippedReason: 'NOTHING_TO_EXPORT' }],
+  ])('parses %s', async (_label, result) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(success(result));
+    expect(await exportSprayTraining(context)).toEqual(result);
   });
 
-  it('refuses GraphQL errors, a missing count, a non-boolean skipped and a numeric export id', () => {
-    expect(() => readExportResult({ errors: [{ message: 'nope' }], data: null })).toThrow('GraphQL errors');
-    expect(() =>
-      readExportResult({ data: { exportSprayTrainingDataset: { ...written, imagesWritten: undefined } } }),
-    ).toThrow('invalid result');
-    expect(() => readExportResult({ data: { exportSprayTrainingDataset: { ...written, skipped: 'no' } } })).toThrow(
-      'invalid result',
+  it('refuses a 200 that carries GraphQL errors', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ errors: [{ message: 'nope' }], data: null })),
     );
-    expect(() =>
-      readExportResult({ data: { exportSprayTrainingDataset: { ...written, skippedReason: 'BUSY' } } }),
-    ).toThrow('invalid result');
-    expect(() => readExportResult({ data: { exportSprayTrainingDataset: { ...written, exportId: 7 } } })).toThrow(
-      'invalid result',
-    );
+    await expect(exportSprayTraining(context)).rejects.toThrow('GraphQL errors');
+  });
+
+  it.each([
+    ['a missing count', { ...written, imagesWritten: undefined }],
+    ['a negative count', { ...written, exportsRetired: -1 }],
+    ['a non-boolean skipped', { ...written, skipped: 'no' }],
+    ['a skip reason outside the enum', { ...written, skippedReason: 'BUSY' }],
+    ['a missing skip reason', { ...written, skippedReason: undefined }],
+    ['a numeric export id', { ...written, exportId: 7 }],
+  ])('refuses %s', async (_label, result) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(success(result));
+    await expect(exportSprayTraining(context)).rejects.toThrow('invalid result');
   });
 });
 
