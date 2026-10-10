@@ -599,9 +599,12 @@ export function trainingSplitForRoot(rootWallUuid: string): SprayTrainingSplit {
 async function rootWallUuids(executor: Executor, wallIds: readonly number[]): Promise<Map<number, string>> {
   const known = new Map<number, { uuid: string; parentId: number | null }>();
   let pending = [...new Set(wallIds)];
-  // Bounded: a chain is one reset per generation, and every generation is a wall
-  // the owner photographed. Fifty is far past any real wall.
-  for (let depth = 0; pending.length > 0 && depth < 50; depth++) {
+  // No depth cap. A walk cut short would name a wall part-way up as the root,
+  // and a wall whose root changes with the length of its chain can change
+  // split, which is the one thing the split must never do. Each pass asks only
+  // for walls `known` lacks, so the walk ends when the chains do, and it ends
+  // on a cycle too (only a hand-edited row could make one).
+  while (pending.length > 0) {
     const rows = await executor
       .select({
         id: dbSchema.sprayWalls.id,
@@ -611,7 +614,9 @@ async function rootWallUuids(executor: Executor, wallIds: readonly number[]): Pr
       .from(dbSchema.sprayWalls)
       .where(inArray(dbSchema.sprayWalls.id, pending));
     for (const row of rows) known.set(Number(row.id), { uuid: row.uuid, parentId: row.parentId });
-    pending = rows.flatMap((row) => (row.parentId != null && !known.has(row.parentId) ? [row.parentId] : []));
+    pending = [
+      ...new Set(rows.flatMap((row) => (row.parentId != null && !known.has(row.parentId) ? [row.parentId] : []))),
+    ];
   }
 
   const roots = new Map<number, string>();
@@ -759,17 +764,36 @@ async function readObjectBuffer(key: string): Promise<Buffer | null> {
   return Buffer.concat(chunks);
 }
 
+const manifestKeyOf = (exportId: string) => `${SPRAY_TRAINING_EXPORT_PREFIX}${exportId}/manifest.json`;
+
 /**
- * Delete one stored export. `manifest.json` goes FIRST, so a run that dies
- * half-way leaves an export with no manifest — which every later run reads as
- * incomplete and finishes deleting — rather than a manifest pointing at files
- * that are gone.
+ * Delete stored exports: the `manifest.json` of EVERY one first, then the rest
+ * of their objects.
+ *
+ * An export exists for a reader exactly while its manifest does, and the ML
+ * fetch mirrors the newest export that has one. Deleting one export whole
+ * before looking at the next would, when a later delete throws, leave an older
+ * stale export as the newest one with a manifest, which is the one the fetch
+ * then downloads. With every manifest gone before any other object, a run that
+ * dies in the second pass leaves none of these exports readable: only prefixes
+ * with no manifest, which every reader ignores and the next run finishes
+ * deleting.
+ *
+ * In the order given, which every caller passes newest first. If a manifest
+ * delete itself throws, the exports that still have one are then the oldest of
+ * the batch, so the newest readable export moves towards a valid one with each
+ * delete that did succeed.
  */
-async function deleteExport(exportId: string, keys: readonly string[]): Promise<void> {
-  const manifestKey = `${SPRAY_TRAINING_EXPORT_PREFIX}${exportId}/manifest.json`;
-  if (keys.includes(manifestKey)) await deleteFromS3('private', manifestKey);
-  for (const key of keys) {
-    if (key !== manifestKey) await deleteFromS3('private', key);
+async function deleteExports(exports: ReadonlyArray<{ exportId: string; keys: readonly string[] }>): Promise<void> {
+  for (const { exportId, keys } of exports) {
+    const manifestKey = manifestKeyOf(exportId);
+    if (keys.includes(manifestKey)) await deleteFromS3('private', manifestKey);
+  }
+  for (const { exportId, keys } of exports) {
+    const manifestKey = manifestKeyOf(exportId);
+    for (const key of keys) {
+      if (key !== manifestKey) await deleteFromS3('private', key);
+    }
   }
 }
 
@@ -885,22 +909,22 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
 
   // 1. Retire. An export holding ANY version that is no longer eligible and
   //    approved goes whole: a training run must never be able to fetch a photo
-  //    whose owner switched consent off.
-  let exportsRetired = 0;
+  //    whose owner switched consent off. Sorted into two lists first and deleted
+  //    in one call, so every stale manifest is gone before any export's files
+  //    are (see `deleteExports`).
+  const stale: Array<{ exportId: string; keys: string[] }> = [];
   const kept: Array<StoredManifest & { keys: string[] }> = [];
   for (const stored of await listStoredExports()) {
-    const manifestKey = `${SPRAY_TRAINING_EXPORT_PREFIX}${stored.exportId}/manifest.json`;
+    const manifestKey = manifestKeyOf(stored.exportId);
     const manifestBytes = stored.keys.includes(manifestKey) ? await readObjectBuffer(manifestKey) : null;
     const manifest = manifestBytes ? parseManifest(manifestBytes.toString('utf8')) : null;
     // No manifest is a run that died before its last write (the lock rules out
     // one still in flight); its files are an incomplete export nothing reads.
-    if (!manifest || manifest.versionIds.some((versionId) => !approvedIds.has(versionId))) {
-      await deleteExport(stored.exportId, stored.keys);
-      exportsRetired += 1;
-      continue;
-    }
-    kept.push({ ...manifest, keys: stored.keys });
+    if (!manifest || manifest.versionIds.some((versionId) => !approvedIds.has(versionId))) stale.push(stored);
+    else kept.push({ ...manifest, keys: stored.keys });
   }
+  await deleteExports(stale);
+  let exportsRetired = stale.length;
 
   // 2. Skip when nothing changed since the newest export, or nothing is approved.
   const fingerprint = exportFingerprint(approved);
@@ -1120,10 +1144,9 @@ async function runExport(now: Date, checkDeadline: () => void): Promise<Omit<Spr
   });
 
   // Keep the newest few: this one plus the newest still-valid older ones.
-  for (const old of kept.slice(SPRAY_TRAINING_EXPORTS_KEPT - 1)) {
-    await deleteExport(old.exportId, old.keys);
-    exportsRetired += 1;
-  }
+  const surplus = kept.slice(SPRAY_TRAINING_EXPORTS_KEPT - 1);
+  await deleteExports(surplus);
+  exportsRetired += surplus.length;
 
   return {
     exportId,

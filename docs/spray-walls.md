@@ -3417,8 +3417,12 @@ finished. Reads are short separate queries, not one snapshot.
 
 1. **Retire.** Every stored export under `spray-training/exports/` in the
    private bucket whose manifest names a version that is no longer eligible and
-   approved is deleted, manifest first. So is any export with no manifest (a run
-   that died). This is what makes switching consent off, deleting or hiding a
+   approved is deleted. So is any export with no manifest (a run that died).
+   Two passes: the `manifest.json` of every export that has to go, newest
+   first, and only then their other objects. The ML fetch mirrors the newest
+   export that has a manifest, so a delete that fails half-way must not leave
+   an older stale export as that one; after the first pass none of them is
+   readable. This is what makes switching consent off, deleting or hiding a
    wall, or deleting an account reach stored exports within 24 hours.
 2. **Skip** when the approved, eligible set (version ids, review times, consent
    stamps) matches the newest export's fingerprint.
@@ -3435,7 +3439,8 @@ finished. Reads are short separate queries, not one snapshot.
    learned as background.
 
 The split is frozen per physical wall: `sha256('spray-split:' + root wall
-uuid)`, following `reset_from_wall_id` to the root, so reset clones share it;
+uuid)`, following `reset_from_wall_id` to the root however many resets deep
+that is, so reset clones share it;
 under 15 of 100 is `eval`, under 25 `valid`, the rest `train`. Manifests and
 COCO images name walls by 16-hex sha256 refs, never by uuid.
 

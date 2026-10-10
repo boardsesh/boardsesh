@@ -92,6 +92,7 @@ vi.mock('../utils/rate-limiter', () => ({ checkRateLimit: vi.fn(), resetAllRateL
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn().mockResolvedValue(undefined) }));
 
 const { db } = await import('../db/client');
+const { deleteFromS3 } = await import('../storage/s3');
 const { sprayWallQueries, sprayWallMutations } = await import('../graphql/resolvers/board/spray-walls');
 const {
   sprayTrainingQueries,
@@ -910,6 +911,49 @@ describe('the export', () => {
     }
   });
 
+  it('deletes every stale manifest before any other object, so a failed delete leaves no stale export readable', async () => {
+    const leaving = await createPublishedWall();
+    const staying = await createPublishedWall();
+    await review(leaving.versionId, 'APPROVED');
+    await review(staying.versionId, 'APPROVED');
+    const first = await exportSprayTrainingDataset({ now: RUN_1 });
+    // A second stored export that also holds the leaving wall.
+    const later = await createPublishedWall();
+    await review(later.versionId, 'APPROVED');
+    const second = await exportSprayTrainingDataset({ now: runAt(1) });
+    expect(storedExportIds()).toEqual([first.exportId, second.exportId]);
+
+    await setTrainingConsent(leaving.wall, false);
+
+    // Storage starts failing on the first object that is not a manifest.
+    const deleteMock = vi.mocked(deleteFromS3);
+    const workingDelete = deleteMock.getMockImplementation()!;
+    deleteMock.mockImplementation(async (bucketName, key) => {
+      if (!key.endsWith('/manifest.json')) throw new Error('storage unavailable');
+      await workingDelete(bucketName, key);
+    });
+    try {
+      await expect(exportSprayTrainingDataset({ now: runAt(2) })).rejects.toThrow('storage unavailable');
+    } finally {
+      deleteMock.mockImplementation(workingDelete);
+    }
+
+    // Both stale exports still have their photos, and NEITHER has a manifest. The
+    // ML fetch reads the newest export that has one: deleting the newer export
+    // whole first would have left the older one, leaving wall and all, as that.
+    expect(storedExportIds()).toEqual([first.exportId, second.exportId]);
+    expect(exportKeys().filter((key) => key.endsWith('/manifest.json'))).toEqual([]);
+
+    // Storage is back: the next run finishes the job and writes a clean export.
+    const third = await exportSprayTrainingDataset({ now: runAt(3) });
+    expect(third).toMatchObject({ imagesWritten: 2, exportsRetired: 2, skipped: false });
+    expect(storedExportIds()).toEqual([third.exportId]);
+    expect(manifestOf(third.exportId!).images.map((image) => String(image.versionId))).toEqual([
+      staying.versionId,
+      later.versionId,
+    ]);
+  });
+
   it('keeps only the newest two exports', async () => {
     const exportIds: string[] = [];
     for (let day = 0; day < 3; day++) {
@@ -960,6 +1004,42 @@ describe('the export', () => {
     }
     const allRoots = [...rootsBySplit.values()].flatMap((roots) => [...roots]);
     expect(new Set(allRoots).size).toBe(allRoots.length);
+  });
+
+  it('follows a reset chain deeper than fifty walls, to the root for the split and to every wall for a revoke', async () => {
+    // Fifty-five ancestors linked by hand. Each is archived as it is made: a
+    // climber owns at most ten live walls, and a reset archives its source anyway.
+    const ANCESTOR_COUNT = 55;
+    let rootUuid = '';
+    let parentWallId: number | null = null;
+    for (let generation = 0; generation < ANCESTOR_COUNT; generation++) {
+      const ancestor = await createWall();
+      if (generation === 0) rootUuid = ancestor.uuid;
+      await db.execute(sql`
+        UPDATE spray_walls SET archived_at = now(), reset_from_wall_id = ${parentWallId}
+        WHERE board_uuid = ${ancestor.uuid}
+      `);
+      parentWallId = await wallIdOf(ancestor);
+    }
+    const newest = await createPublishedWall();
+    await db.execute(
+      sql`UPDATE spray_walls SET reset_from_wall_id = ${parentWallId} WHERE board_uuid = ${newest.wall.uuid}`,
+    );
+    await review(newest.versionId, 'APPROVED');
+
+    // The split comes from the ROOT, all fifty-five resets up. A walk that gave
+    // up part-way would name some wall in the middle, and hash to its split.
+    const manifest = manifestOf((await exportSprayTrainingDataset({ now: RUN_1 })).exportId!);
+    expect(manifest.images.map((image) => [image.split, image.rootRef])).toEqual([
+      [trainingSplitForRoot(rootUuid), trainingRef('root', rootUuid)],
+    ]);
+
+    // And "no" on the newest wall reaches the oldest.
+    await setTrainingConsent(newest.wall, false);
+    const [stillConsented] = (await db.execute(
+      sql`SELECT count(*)::int AS walls FROM spray_walls WHERE training_consent_at IS NOT NULL`,
+    )) as unknown as Array<{ walls: number }>;
+    expect(stillConsented.walls).toBe(0);
   });
 
   it('answers LOCKED and writes nothing while another run holds the lease', async () => {
