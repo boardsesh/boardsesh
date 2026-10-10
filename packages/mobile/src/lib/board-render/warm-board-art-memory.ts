@@ -34,11 +34,14 @@ function canWarmBoardArtMemory(): boolean {
 
 /**
  * How many files to believe are still decoded. The image memory cache is capped
- * by bytes (256 MB on iOS, see `useImageCacheMemoryManagement`), about 320 list
- * thumbnails; staying under that keeps "in memory" true in practice. A stale
- * yes costs a few frames of bare board; a stale no costs a placeholder.
+ * by bytes (256 MB on iOS, see `useImageCacheMemoryManagement`). A list
+ * thumbnail decodes to about 0.7 MB, so the cache holds a few hundred — fewer
+ * once the play drawer has been open, since each play-size overlay is ~7 MB and
+ * the full board photo ~11 MB. At 240 a long run on an iPhone 13 Pro showed 38
+ * of 1,505 thumbnails believed in memory that were not; 160 leaves that room.
+ * A stale yes costs a few frames of bare board; a stale no costs a placeholder.
  */
-const IN_MEMORY_URIS_MAX = 240;
+const IN_MEMORY_URIS_MAX = 160;
 
 // Insertion order is recency: a re-noted URI moves to the end.
 const inMemoryUris = new Set<string>();

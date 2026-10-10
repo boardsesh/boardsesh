@@ -99,7 +99,7 @@ describe('the in-memory record', () => {
   // show bare boards for the ones it has already evicted.
   it('keeps only the most recent files, and a re-noted file counts as recent', async () => {
     const { isBoardArtInMemory, noteBoardArtInMemory } = await loadModule();
-    for (let index = 0; index < 240; index++) noteBoardArtInMemory(`file:///cache/${index}.png`);
+    for (let index = 0; index < 160; index++) noteBoardArtInMemory(`file:///cache/${index}.png`);
     noteBoardArtInMemory('file:///cache/0.png');
     noteBoardArtInMemory('file:///cache/overflow.png');
 
