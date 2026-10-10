@@ -1,5 +1,5 @@
-import * as Updates from 'expo-updates';
 import { OTA_APP_ID } from './ota-app-id';
+import { setOwnedOtaHeaders } from './qa/qa-surf';
 
 // Switch the active OTA target by overriding the update request headers, keeping the
 // build's update URL (so the embedded code-signing cert still verifies the manifest).
@@ -20,7 +20,8 @@ import { OTA_APP_ID } from './ota-app-id';
 // Used by the separate EAS preview-build branch switcher. Production self-hosted
 // previews use xprem's branch API and override `xprem-branch` instead.
 export function applyChannelOverride(channel: string | null): void {
-  Updates.setUpdateRequestHeadersOverride(
+  setOwnedOtaHeaders(
     channel === null ? null : { 'expo-app-id': OTA_APP_ID, 'expo-channel-name': channel },
+    channel === null ? null : `channel:${channel}`,
   );
 }

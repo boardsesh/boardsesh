@@ -14,7 +14,7 @@
 // catches up with their database, each time for nothing.
 
 import { getSchemaDowngrade, subscribeSchemaDowngrade } from '../db/schema-downgrade';
-import { performOtaRecovery, type OtaRecoveryDeps } from './ota-recovery';
+import type { OtaRecoveryDeps } from './ota-recovery';
 
 /** Tagged on the shared `OTA Recovery Attempted` event so this path is countable apart from the crash screen. */
 export const SCHEMA_DOWNGRADE_RECOVERY_SOURCE = 'schema-downgrade';
@@ -25,7 +25,10 @@ export const SCHEMA_DOWNGRADE_RECOVERY_SOURCE = 'schema-downgrade';
  */
 export type SchemaDowngradeRecoveryResult = 'update-fetched' | 'no-fix-available' | 'failed';
 
-export type SchemaDowngradeRecoveryDeps = Pick<OtaRecoveryDeps, 'checkForUpdate' | 'fetchUpdate'> & {
+export type SchemaDowngradeRecoveryDeps = Pick<
+  OtaRecoveryDeps,
+  'runOperation' | 'waitForIdle' | 'checkForUpdate' | 'fetchUpdate'
+> & {
   /** False in dev and on any build without expo-updates, where the calls above throw. */
   updatesEnabled: boolean;
   track: (event: string, properties: { result: SchemaDowngradeRecoveryResult; source: string }) => void;
@@ -51,22 +54,26 @@ export async function recoverFromSchemaDowngrade(
   hasStarted = true;
   if (!deps.updatesEnabled) return null;
 
-  const { result, error } = await performOtaRecovery(
-    {
-      checkForUpdate: deps.checkForUpdate,
-      fetchUpdate: deps.fetchUpdate,
-      // See the top of the file: the fetched bundle launches on the next cold start.
-      reload: () => Promise.resolve(),
-      // Only matters for a reload, which this path never does.
-      isUpdatePending: () => false,
-    },
-    { timeoutMs: deps.timeoutMs },
-  );
-
-  const outcome: SchemaDowngradeRecoveryResult =
-    result === 'reloaded-update' ? 'update-fetched' : result === 'failed' ? 'failed' : 'no-fix-available';
+  let outcome: SchemaDowngradeRecoveryResult;
+  let failure: unknown;
+  try {
+    outcome = await deps.runOperation(
+      async (lease) => {
+        await deps.waitForIdle?.(lease);
+        const check = await lease.native(deps.checkForUpdate);
+        // Embedded JS is older still: never download a rollback-only response.
+        if (!check.isAvailable) return 'no-fix-available';
+        await lease.native(deps.fetchUpdate);
+        return 'update-fetched';
+      },
+      { timeoutMs: deps.timeoutMs ?? 30_000 },
+    );
+  } catch (error) {
+    outcome = 'failed';
+    failure = error;
+  }
   deps.track('OTA Recovery Attempted', { result: outcome, source: SCHEMA_DOWNGRADE_RECOVERY_SOURCE });
-  if (outcome === 'failed') deps.reportFailure(error);
+  if (outcome === 'failed') deps.reportFailure(failure);
   return outcome;
 }
 

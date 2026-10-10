@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetOtaOperationOwnerForTests, runOtaOperation } from '../ota-operation-owner';
 
 type NativeContext = {
   isStartupProcedureRunning: boolean;
@@ -123,6 +124,53 @@ vi.mock('../connectivity/connectivity-store', () => ({
 vi.mock('../ota-channel-override-cleanup-run', () => ({
   runChannelOverrideCleanupOnce: cleanup.runChannelOverrideCleanupOnce,
 }));
+vi.mock('../qa/qa-surf', async () => {
+  const { readOtaHeaderRevision } = await import('../ota-operation-owner');
+  const capture = () => {
+    const { downloadedManifest, rollback } = updates.latestContext;
+    if (downloadedManifest)
+      return {
+        headerRevision: readOtaHeaderRevision(),
+        pin: null,
+        target: { kind: 'update' as const, id: downloadedManifest.id },
+      };
+    if (rollback)
+      return {
+        headerRevision: readOtaHeaderRevision(),
+        pin: null,
+        target: { kind: 'rollback' as const, commitTime: rollback.commitTime },
+      };
+    return null;
+  };
+  return {
+    waitForOtaUpdatesIdle: async () => {},
+    fetchOwnedOtaUpdate: async () => {
+      const fetched = (await updates.fetchUpdateAsync()) as {
+        isNew: boolean;
+        manifest?: { id: string };
+        isRollBackToEmbedded?: boolean;
+      };
+      if (fetched.isNew && fetched.manifest) {
+        updates.latestContext = {
+          ...updates.latestContext,
+          isUpdatePending: true,
+          downloadedManifest: fetched.manifest,
+        };
+      }
+      if (fetched.isRollBackToEmbedded) {
+        updates.latestContext = {
+          ...updates.latestContext,
+          isUpdatePending: true,
+          rollback: { commitTime: 'rollback-time' },
+        };
+      }
+      return fetched;
+    },
+    captureOtaReloadReceipt: capture,
+    isOtaReloadReceiptCurrent: (receipt: ReturnType<typeof capture>) =>
+      JSON.stringify(receipt) === JSON.stringify(capture()),
+  };
+});
 
 // Imported after the mocks (vi.mock is hoisted above imports).
 import {
@@ -195,6 +243,7 @@ function launchUpdateEvents() {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  resetOtaOperationOwnerForTests();
   resetLaunchUpdateGateForTests();
   calls.log = [];
   updates.latestContext = DOWNLOADING;
@@ -347,6 +396,7 @@ describe('a gated launch', () => {
     await startGate();
 
     emit({ ...PENDING });
+    await advance(0);
     emit({ downloadedManifest: { id: 'even-newer-update' } });
     emit({});
     await advance(20_000);
@@ -1006,6 +1056,7 @@ describe('a launch whose manifest request used a retired override', () => {
     finishCheck({ isAvailable: true, isRollBackToEmbedded: false });
     await advance(0);
 
+    expect(updates.fetchUpdateAsync).not.toHaveBeenCalled();
     expect(updates.reloadAsync).not.toHaveBeenCalled();
     expect(launchUpdateEvents()).toHaveLength(1);
   });
@@ -1021,5 +1072,86 @@ describe('a launch whose manifest request used a retired override', () => {
       tags: { source: 'ota', op: 'launch-update-explicit-check' },
     });
     expect(launchUpdateEvents()[0]).toMatchObject({ outcome: 'failed' });
+  });
+});
+
+describe('owned launch reloads', () => {
+  it('does not invoke reload when its launch cap expires during the analytics flush', async () => {
+    let finishFlush: () => void = () => {};
+    analytics.flush.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishFlush = resolve;
+      }),
+    );
+    updates.latestContext = PENDING;
+    await startGate({ authReady: false });
+    await advance(14_900);
+    notifyLaunchUpdateAuthReady();
+    await advance(150);
+    finishFlush();
+    await advance(0);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+  });
+
+  it('does not reload a replacement pending UUID after waiting for analytics', async () => {
+    let finishFlush: () => void = () => {};
+    analytics.flush.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishFlush = resolve;
+      }),
+    );
+    updates.latestContext = PENDING;
+    await startGate();
+    emit({ downloadedManifest: { id: 'replacement-update' } });
+    finishFlush();
+    await advance(0);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+  });
+
+  it('expires a queued reload without invoking it after the active native call drains', async () => {
+    let finishNative: () => void = () => {};
+    const earlier = runOtaOperation((lease) =>
+      lease.native(
+        () =>
+          new Promise<void>((resolve) => {
+            finishNative = resolve;
+          }),
+      ),
+    );
+    updates.latestContext = PENDING;
+    await startGate();
+    await advance(5_000);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+    finishNative();
+    await earlier;
+    await advance(0);
+    expect(updates.reloadAsync).not.toHaveBeenCalled();
+  });
+
+  it('starts the full reload grace when native reload starts after queue waiting', async () => {
+    let finishNative: () => void = () => {};
+    const earlier = runOtaOperation((lease) =>
+      lease.native(
+        () =>
+          new Promise<void>((resolve) => {
+            finishNative = resolve;
+          }),
+      ),
+    );
+    updates.reloadAsync.mockReturnValue(new Promise<void>(() => {}));
+    updates.latestContext = PENDING;
+    await startGate();
+    await advance(4_900);
+    finishNative();
+    await earlier;
+    await advance(0);
+    expect(updates.reloadAsync).toHaveBeenCalledOnce();
+    await advance(4_999);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(false);
+    await advance(1);
+    expect(getLaunchUpdateGateFlags().resolved).toBe(true);
   });
 });

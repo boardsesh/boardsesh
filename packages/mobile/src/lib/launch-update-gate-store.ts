@@ -25,6 +25,7 @@ import {
   COLD_START_UPDATE_CAP_MS,
   LAUNCH_UPDATE_CHECK_CAP_MS,
   LAUNCH_UPDATE_PLACEHOLDER_DELAY_MS,
+  LAUNCH_UPDATE_RELOAD_GRACE_MS,
   OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY,
   OTA_LAUNCH_UPDATE_LAST_RELOAD_TARGET_KEY,
   decideLaunchUpdateStep,
@@ -43,6 +44,13 @@ import {
 import { runChannelOverrideCleanupOnce } from './ota-channel-override-cleanup-run';
 import { OTA_LAUNCH_UPDATE_EVENT, buildOtaLaunchUpdateProperties } from './ota-telemetry';
 import { getPreference, removePreference, setPreference } from './preference-store';
+import { readOtaHeaderRevision, runOtaOperation } from './ota-operation-owner';
+import {
+  captureOtaReloadReceipt,
+  fetchOwnedOtaUpdate,
+  isOtaReloadReceiptCurrent,
+  waitForOtaUpdatesIdle,
+} from './qa/qa-surf';
 
 export type LaunchUpdateGateFlags = {
   /** The gate is out of the way: nothing to wait for, or it released. Never goes back to false. */
@@ -85,6 +93,7 @@ let capExpired = false;
 let authReady = false;
 let placeholderTookOver = false;
 let newestEventContext: NativeContext | null = null;
+let explicitCheckController: AbortController | null = null;
 let unsubscribeFromUpdates: (() => void) | null = null;
 const timers = new Set<ReturnType<typeof setTimeout>>();
 const listeners = new Set<() => void>();
@@ -144,6 +153,9 @@ function schedule(callback: () => void, delayMs: number): void {
 function resolveGate(): void {
   if (gatePhase === 'resolved') return;
   gatePhase = 'resolved';
+  // The native request itself cannot be cancelled. Abort its JS continuation:
+  // a check arriving after release must not start a new download or reload.
+  explicitCheckController?.abort();
   unsubscribeFromUpdates?.();
   unsubscribeFromUpdates = null;
   for (const timer of timers) clearTimeout(timer);
@@ -203,6 +215,9 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
   // One terminal action per runtime. From here no state change can reload.
   gatePhase = 'settling';
   const generation = runGeneration;
+  const headerRevision = readOtaHeaderRevision();
+  const receipt = decision.step === 'reload' ? captureOtaReloadReceipt() : null;
+  const rollbackCommitTime = readLatestContext().rollback?.commitTime;
   void settleLaunchUpdate(decision, {
     profile: prepared.profile,
     runtimeVersion: Updates.runtimeVersion,
@@ -213,6 +228,34 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
     markRuntimeHandled: (runtimeVersion) => setPreference(OTA_FIRST_LAUNCH_UPDATE_RUNTIME_KEY, runtimeVersion),
     recordReloadTarget: (updateId) => setPreference(OTA_LAUNCH_UPDATE_LAST_RELOAD_TARGET_KEY, updateId),
     reload: () => Updates.reloadAsync(),
+    reloadWithStartSignal: (onStarted) =>
+      runOtaOperation(
+        async (lease) => {
+          lease.assertActive();
+          const current = captureOtaReloadReceipt();
+          const matchesTarget =
+            decision.step === 'reload' &&
+            current !== null &&
+            (decision.targetUpdateId !== null
+              ? current.target.kind === 'update' && current.target.id === decision.targetUpdateId
+              : current.target.kind === 'rollback' && current.target.commitTime === rollbackCommitTime);
+          if (
+            generation !== runGeneration ||
+            gatePhase !== 'settling' ||
+            capExpired ||
+            headerRevision !== readOtaHeaderRevision() ||
+            !matchesTarget ||
+            (receipt !== null && !isOtaReloadReceiptCurrent(receipt))
+          ) {
+            throw new Error('The launch update target changed before restart.');
+          }
+          await lease.reload(() => {
+            onStarted();
+            return Updates.reloadAsync();
+          });
+        },
+        { timeoutMs: Math.max(0, Math.min(LAUNCH_UPDATE_RELOAD_GRACE_MS, prepared.capMs - elapsedMs())) },
+      ),
     onHandledError: reportGateError,
   }).then(
     () => {
@@ -225,19 +268,28 @@ function settle(decision: LaunchUpdateTerminalDecision, prepared: GatePreparatio
 function startExplicitCheck(): void {
   explicitCheck = 'running';
   const generation = runGeneration;
-  void runExplicitUpdateCheck({
-    checkForUpdate: () => Updates.checkForUpdateAsync(),
-    fetchUpdate: () => Updates.fetchUpdateAsync(),
-    isEmbeddedLaunch: Updates.isEmbeddedLaunch,
-  })
+  explicitCheckController = new AbortController();
+  void runOtaOperation(
+    async (lease) => {
+      await waitForOtaUpdatesIdle(lease);
+      return runExplicitUpdateCheck({
+        checkForUpdate: () => lease.native(() => Updates.checkForUpdateAsync()),
+        fetchUpdate: () => lease.native(fetchOwnedOtaUpdate),
+        isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+      });
+    },
+    { signal: explicitCheckController.signal },
+  )
     .then((result) => {
-      if (generation !== runGeneration) return;
+      if (generation !== runGeneration || gatePhase !== 'waiting') return;
       if (result.status === 'failed') reportGateError(result.error, 'explicit-check');
       if (result.status === 'fetched') explicitFetchedUpdateId = result.updateId;
       explicitCheck = result.status;
       evaluate();
     })
-    .catch(failOpen('explicit-check', generation));
+    .catch((error: unknown) => {
+      if (generation === runGeneration && gatePhase === 'waiting') failOpen('explicit-check', generation)(error);
+    });
 }
 
 function evaluate(): void {
@@ -421,6 +473,8 @@ export function getLaunchUpdateProgress(): number | undefined {
 
 /** Test seam: put the module back to its pre-launch state. */
 export function resetLaunchUpdateGateForTests(): void {
+  explicitCheckController?.abort();
+  explicitCheckController = null;
   unsubscribeFromUpdates?.();
   unsubscribeFromUpdates = null;
   for (const timer of timers) clearTimeout(timer);

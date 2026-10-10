@@ -22,6 +22,15 @@ import {
   type TimelineItem,
 } from '../src/lib/changelog';
 import { markChangelogSeen } from '../src/lib/changelog-seen';
+import { performChangelogUpdate } from '../src/lib/changelog-update';
+import { runOtaOperation } from '../src/lib/ota-operation-owner';
+import {
+  captureOtaReloadReceipt,
+  fetchOwnedOtaUpdate,
+  isOtaReloadReceiptCurrent,
+  waitForOtaUpdatesIdle,
+  waitForOtaReloadReceipt,
+} from '../src/lib/qa/qa-surf';
 import { reportError } from '../src/lib/error-reporting';
 import { formatRelativeTime } from '../src/lib/format-relative-time';
 import { hapticError } from '../src/lib/haptics';
@@ -174,28 +183,34 @@ const CheckForUpdatesButton = memo(function CheckForUpdatesButton() {
   const [status, setStatus] = useState<UpdateStatus>('idle');
 
   const handlePress = useCallback(async () => {
-    try {
-      setStatus('checking');
-      const check = await Updates.checkForUpdateAsync();
-      if (!check.isAvailable) {
-        setStatus('idle');
-        Alert.alert(t('mobile.changelog.upToDate.title'), t('mobile.changelog.upToDate.message'));
-        return;
-      }
-      setStatus('downloading');
-      await Updates.fetchUpdateAsync();
-      setStatus('idle');
-      const confirmed = await confirm({
-        title: t('mobile.changelog.updateReady.title'),
-        message: t('mobile.changelog.updateReady.message'),
-        confirmLabel: t('mobile.changelog.updateReady.restart'),
-        cancelLabel: t('mobile.changelog.updateReady.later'),
-      });
-      if (confirmed) await Updates.reloadAsync();
-    } catch (error) {
-      setStatus('idle');
+    setStatus('checking');
+    const { result, error } = await performChangelogUpdate(
+      {
+        runOperation: runOtaOperation,
+        waitForIdle: waitForOtaUpdatesIdle,
+        checkForUpdate: () => Updates.checkForUpdateAsync(),
+        fetchUpdate: fetchOwnedOtaUpdate,
+        captureReloadReceipt: captureOtaReloadReceipt,
+        waitForReloadReceipt: waitForOtaReloadReceipt,
+        isReloadReceiptCurrent: isOtaReloadReceiptCurrent,
+        reload: () => Updates.reloadAsync(),
+        confirm: () =>
+          confirm({
+            title: t('mobile.changelog.updateReady.title'),
+            message: t('mobile.changelog.updateReady.message'),
+            confirmLabel: t('mobile.changelog.updateReady.restart'),
+            cancelLabel: t('mobile.changelog.updateReady.later'),
+          }),
+      },
+      { onPhase: setStatus },
+    );
+    if (result === 'up-to-date') {
+      Alert.alert(t('mobile.changelog.upToDate.title'), t('mobile.changelog.upToDate.message'));
+    } else if (result === 'failed' || result === 'stale') {
       hapticError();
-      reportError(error);
+      if (error) reportError(error);
+      // Reuse translated retry guidance when another operation replaced the
+      // receipt while the restart confirmation was open.
       Alert.alert(t('mobile.changelog.checkError.title'), t('mobile.changelog.checkError.message'));
     }
   }, [confirm, t]);

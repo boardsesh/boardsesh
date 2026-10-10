@@ -49,6 +49,7 @@
 // (`repair`), so an offline phone does not repeat it at every open.
 
 import { track } from '../analytics';
+import type { OtaOperationLease } from '../ota-operation-owner';
 import { EARLY_UPDATES_TOGGLED_EVENT } from '../ota-telemetry';
 import { getSetting, setSetting } from '../../settings';
 import type { EarlyUpdatesFlagState } from '../../providers/feature-flags-provider';
@@ -66,6 +67,7 @@ import {
   readRunningOtaBranch,
   readRunningUpdateId,
   runPinChangeExclusively,
+  waitForOtaUpdatesIdle,
   surfToProduction,
   type OtaBranchKind,
   type QaBranchList,
@@ -195,13 +197,13 @@ function offersEarlyUpdates(list: QaBranchList): boolean {
   return list.earlyUpdates !== null;
 }
 
-async function joinWhenOffered(): Promise<EarlyUpdatesSyncOutcome> {
+async function joinWhenOffered(lease: OtaOperationLease): Promise<EarlyUpdatesSyncOutcome> {
   // Asked first, and never skipped: without the branch the server answers a
   // pinned request with the channel's own update, which is usually already on
   // disk under another stamp and so could not launch.
-  const answer = await fetchQaBranches();
+  const answer = await lease.waitFor(fetchQaBranches(lease.signal));
   if (answer.kind !== 'listed' || !offersEarlyUpdates(answer.list)) return 'waiting';
-  return (await joinEarlyUpdatesTrack()) === 'switched' ? 'joined' : 'waiting';
+  return (await joinEarlyUpdatesTrack(lease)) === 'switched' ? 'joined' : 'waiting';
 }
 
 /**
@@ -212,8 +214,12 @@ async function joinWhenOffered(): Promise<EarlyUpdatesSyncOutcome> {
  * Throws what the branch request and the switch throw (offline, a hung native
  * call). `syncEarlyUpdates`, its only caller, turns that into `deferred`.
  */
-async function leaveVanishedPreview(pinnedBranch: string, member: boolean): Promise<EarlyUpdatesSyncOutcome> {
-  const answer = await fetchQaBranches();
+async function leaveVanishedPreview(
+  pinnedBranch: string,
+  member: boolean,
+  lease: OtaOperationLease,
+): Promise<EarlyUpdatesSyncOutcome> {
+  const answer = await lease.waitFor(fetchQaBranches(lease.signal));
   // Surfing off is handled where it is noticed; an answer that proves nothing
   // changes nothing.
   if (answer.kind !== 'listed') return 'none';
@@ -222,8 +228,8 @@ async function leaveVanishedPreview(pinnedBranch: string, member: boolean): Prom
       ? answer.list.staging !== null
       : answer.list.previews.some((preview) => preview.branch === pinnedBranch);
   if (stillOffered) return 'none';
-  if (member && offersEarlyUpdates(answer.list) && (await joinEarlyUpdatesTrack()) === 'switched') return 'joined';
-  return leaveOutcome(await leaveForProductionTrack());
+  if (member && offersEarlyUpdates(answer.list) && (await joinEarlyUpdatesTrack(lease)) === 'switched') return 'joined';
+  return leaveOutcome(await leaveForProductionTrack(lease));
 }
 
 /**
@@ -234,7 +240,7 @@ async function leaveVanishedPreview(pinnedBranch: string, member: boolean): Prom
 export function syncEarlyUpdates(environment: EarlyUpdatesSyncEnvironment): Promise<EarlyUpdatesSyncOutcome> {
   // Decided INSIDE the turn, from the pin record as it is then: a tester's surf
   // that got in first has already taken the header.
-  return runPinChangeExclusively(async () => {
+  return runPinChangeExclusively(async (lease) => {
     const choice = getSetting('earlyUpdates');
     const pinnedBranch = readOtaPinnedBranch();
     const blockedUpdateId = getSetting('otaLeaveBlockedUpdateId');
@@ -253,27 +259,29 @@ export function syncEarlyUpdates(environment: EarlyUpdatesSyncEnvironment): Prom
       if (action === 'repair') {
         // Marked first: the pin is dropped before anything that can fail, and
         // the rest of this launch must decide as if it were an ordinary one.
+        await waitForOtaUpdatesIdle(lease);
+        lease.assertActive();
         repairedThisLaunch = true;
         // An emergency launch happens to any climber, mostly for reasons that
         // have nothing to do with branches. With no sign of a pin this stops
         // here: no request, and the queue is free again at once.
         if (!dropPinAfterEmergencyLaunch()) return 'none';
-        await fetchRegularUpdateAfterEmergencyLaunch();
+        await fetchRegularUpdateAfterEmergencyLaunch(lease);
         return 'left';
       }
-      if (action === 'join') return await joinWhenOffered();
+      if (action === 'join') return await joinWhenOffered(lease);
       if (action === 'check-preview' && pinnedBranch !== null) {
-        return await leaveVanishedPreview(pinnedBranch, choice && environment.flag !== 'off');
+        return await leaveVanishedPreview(pinnedBranch, choice && environment.flag !== 'off', lease);
       }
       // A leave the flag asked for, as opposed to the climber or the server.
       if (choice && !getSetting('otaLeaveOwed')) flagLeaveTriedThisLaunch = true;
-      return leaveOutcome(await leaveForProductionTrack());
+      return leaveOutcome(await leaveForProductionTrack(lease));
     } catch {
       // Offline is the ordinary reason, at every launch of a phone with no
       // signal. Not worth an error report; the state says "waiting" instead.
       return 'deferred';
     }
-  });
+  }).catch(() => 'deferred');
 }
 
 /**
@@ -303,14 +311,16 @@ export function setEarlyUpdatesChoice(
  * it is on again.
  */
 export function noteBranchSurfingOff(): Promise<void> {
-  return runPinChangeExclusively(async () => {
+  return runPinChangeExclusively(async (lease) => {
     let completed = false;
     try {
-      completed = (await leaveForProductionTrack()) === 'switched';
+      completed = (await leaveForProductionTrack(lease)) === 'switched';
     } catch {
       completed = false;
     }
     if (!completed && !getSetting('otaLeaveOwed')) setSetting('otaLeaveOwed', true);
+  }).catch(() => {
+    if (!getSetting('otaLeaveOwed')) setSetting('otaLeaveOwed', true);
   });
 }
 
