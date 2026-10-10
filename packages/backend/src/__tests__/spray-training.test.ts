@@ -15,6 +15,8 @@ import { mapPoint } from '@boardsesh/spray-wall-geometry';
  *  - a wall whose owner never consented is never exported, approval or not;
  *  - switching consent off retires the stored export that held the wall, and
  *    the next export leaves it out;
+ *  - switching it off covers the whole physical wall: the archived walls it
+ *    was reset from and a reset clone that is not finished yet;
  *  - a wall's split is frozen across runs and shared by its reset clones;
  *  - holds land on the photo through the version's own homography;
  *  - each detector suggestion's fate is read back correctly.
@@ -183,12 +185,44 @@ async function publish(versionId: string) {
   await sprayWallMutations.publishSprayWallVersion({}, { input: { versionId } }, ctxFor(OWNER));
 }
 
-async function createPublishedWall(input: Record<string, unknown> = {}, holds: HoldInput[] = DEFAULT_HOLDS) {
-  const wall = await createWall(input);
+/** Photograph a wall, mark its holds and publish: a new wall's or a reset clone's first version. */
+async function publishFirstVersion(wall: CreatedWall, holds: HoldInput[] = DEFAULT_HOLDS): Promise<string> {
   const versionId = await createDraft(wall);
   await upsertHolds(wall, versionId, holds);
   await publish(versionId);
-  return { wall, versionId };
+  return versionId;
+}
+
+async function createPublishedWall(input: Record<string, unknown> = {}, holds: HoldInput[] = DEFAULT_HOLDS) {
+  const wall = await createWall(input);
+  return { wall, versionId: await publishFirstVersion(wall, holds) };
+}
+
+/** Start a reset: the clone exists, unpublished, and the source is still live. */
+async function startReset(source: CreatedWall): Promise<CreatedWall> {
+  return (await sprayWallMutations.resetSprayWall(
+    {},
+    { input: { wallUuid: source.uuid } },
+    ctxFor(OWNER),
+  )) as CreatedWall;
+}
+
+async function setTrainingConsent(wall: CreatedWall, trainingConsent: boolean) {
+  return (await sprayWallMutations.updateSprayWall(
+    {},
+    { input: { uuid: wall.uuid, trainingConsent } },
+    ctxFor(OWNER),
+  )) as { trainingConsent: boolean | null };
+}
+
+/** The wall's row as the consent write leaves it. Timestamps as text, which keeps `updated_at`'s microseconds. */
+async function wallRowOf(wall: CreatedWall) {
+  const rows = (await db.execute(sql`
+    SELECT training_consent_at::text AS training_consent_at, archived_at::text AS archived_at,
+           updated_at::text AS updated_at
+    FROM spray_walls WHERE board_uuid = ${wall.uuid}
+  `)) as unknown as Array<{ training_consent_at: string | null; archived_at: string | null; updated_at: string }>;
+  return rows[0];
 }
 
 async function wallIdOf(wall: CreatedWall): Promise<number> {
@@ -242,6 +276,11 @@ async function review(versionId: string, status: string, reason?: string) {
 
 function exportKeys(): string[] {
   return [...bucket('private').keys()].filter((key) => key.startsWith(SPRAY_TRAINING_EXPORT_PREFIX)).sort();
+}
+
+/** The ids of the exports that still have any object in the bucket, oldest first. */
+function storedExportIds(): string[] {
+  return [...new Set(exportKeys().map((key) => key.slice(SPRAY_TRAINING_EXPORT_PREFIX.length).split('/')[0]))].sort();
 }
 
 function readJson<T>(key: string): T {
@@ -317,31 +356,72 @@ describe('training consent on the wall', () => {
       sprayWallMutations.updateSprayWall({}, { input: { uuid: wall.uuid, trainingConsent: false } }, ctxFor(ADMIN)),
     ).rejects.toMatchObject({ extensions: { code: 'SPRAY_WALL_VISIBILITY_OWNER_ONLY' } });
 
-    const off = (await sprayWallMutations.updateSprayWall(
-      {},
-      { input: { uuid: wall.uuid, trainingConsent: false } },
-      ctxFor(OWNER),
-    )) as { trainingConsent: boolean | null };
-    expect(off.trainingConsent).toBe(false);
-    const [offRow] = (await db.execute(
-      sql`SELECT training_consent_at FROM spray_walls WHERE board_uuid = ${wall.uuid}`,
-    )) as unknown as Array<{ training_consent_at: Date | null }>;
-    expect(offRow.training_consent_at).toBeNull();
+    expect((await setTrainingConsent(wall, false)).trainingConsent).toBe(false);
+    expect((await wallRowOf(wall)).training_consent_at).toBeNull();
 
-    const on = (await sprayWallMutations.updateSprayWall(
-      {},
-      { input: { uuid: wall.uuid, trainingConsent: true } },
-      ctxFor(OWNER),
-    )) as { trainingConsent: boolean | null };
-    expect(on.trainingConsent).toBe(true);
+    expect((await setTrainingConsent(wall, true)).trainingConsent).toBe(true);
   });
 
   it('starts off when the climber switched it off at creation', async () => {
     const wall = await createWall({ trainingConsent: false });
-    const [row] = (await db.execute(
-      sql`SELECT training_consent_at FROM spray_walls WHERE board_uuid = ${wall.uuid}`,
-    )) as unknown as Array<{ training_consent_at: Date | null }>;
-    expect(row.training_consent_at).toBeNull();
+    expect((await wallRowOf(wall)).training_consent_at).toBeNull();
+  });
+});
+
+/**
+ * A reset clones the wall, so one physical wall is several rows linked by
+ * `reset_from_wall_id`. "No" on any of them is "no" for the wall.
+ */
+describe('training consent across a reset', () => {
+  it('switches the archived source off with its live clone, and leaves its other columns alone', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+    await publishFirstVersion(clone);
+    const archivedSource = await wallRowOf(source.wall);
+    // The clone's publish archived the source, and the source is still consented.
+    expect(archivedSource.archived_at).not.toBeNull();
+    expect(archivedSource.training_consent_at).not.toBeNull();
+    // An unrelated wall of the same owner, which the switch must not reach.
+    const unrelated = await createPublishedWall();
+
+    await setTrainingConsent(clone, false);
+
+    expect((await wallRowOf(clone)).training_consent_at).toBeNull();
+    const revokedSource = await wallRowOf(source.wall);
+    expect(revokedSource.training_consent_at).toBeNull();
+    // Only the stamp moved: `updated_at` is what devices and the photo purge
+    // read, and nothing about the archived wall they read has changed.
+    expect(revokedSource.updated_at).toBe(archivedSource.updated_at);
+    expect((await wallRowOf(unrelated.wall)).training_consent_at).not.toBeNull();
+    expect(await queueVersionIds()).toEqual([unrelated.versionId]);
+  });
+
+  it('switches an unfinished reset clone off with the live wall it was cloned from', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+    // The clone copied the source's "on" when the reset started.
+    expect((await wallRowOf(clone)).training_consent_at).not.toBeNull();
+
+    await setTrainingConsent(source.wall, false);
+
+    expect((await wallRowOf(clone)).training_consent_at).toBeNull();
+    // The reset finishes: the new photo was never consented, so it is not queued.
+    await publishFirstVersion(clone);
+    expect(await queueVersionIds()).toEqual([]);
+  });
+
+  it('switches back on for the one wall it names, never for the archived source', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+    const cloneVersionId = await publishFirstVersion(clone);
+    await setTrainingConsent(clone, false);
+
+    await setTrainingConsent(clone, true);
+
+    expect((await wallRowOf(clone)).training_consent_at).not.toBeNull();
+    expect((await wallRowOf(source.wall)).training_consent_at).toBeNull();
+    // The old photo stays out; only the wall that was switched on comes back.
+    expect(await queueVersionIds()).toEqual([cloneVersionId]);
   });
 });
 
@@ -788,11 +868,7 @@ describe('the export', () => {
     const first = await exportSprayTrainingDataset({ now: RUN_1 });
     expect(first.imagesWritten).toBe(2);
 
-    await sprayWallMutations.updateSprayWall(
-      {},
-      { input: { uuid: leaving.wall.uuid, trainingConsent: false } },
-      ctxFor(OWNER),
-    );
+    await setTrainingConsent(leaving.wall, false);
     // Out of the queue at once, approval or not.
     expect(await queueVersionIds('APPROVED')).toEqual([staying.versionId]);
 
@@ -806,6 +882,34 @@ describe('the export', () => {
     expect(await exportSprayTrainingDataset({ now: runAt(2) })).toMatchObject({ exportId: null, skipped: true });
   });
 
+  it('retires the export holding an archived wall whose owner switched consent off on its reset clone', async () => {
+    const source = await createPublishedWall();
+    const clone = await startReset(source.wall);
+    const cloneVersionId = await publishFirstVersion(clone);
+    const staying = await createPublishedWall();
+    for (const versionId of [source.versionId, cloneVersionId, staying.versionId]) await review(versionId, 'APPROVED');
+
+    const first = await exportSprayTrainingDataset({ now: RUN_1 });
+    // The archived source's old photo is in the stored export, beside the clone's.
+    expect(manifestOf(first.exportId!).images.map((image) => String(image.versionId))).toEqual([
+      source.versionId,
+      cloneVersionId,
+      staying.versionId,
+    ]);
+
+    // The owner says no on the wall they can still see: the live clone.
+    await setTrainingConsent(clone, false);
+    expect(await queueVersionIds('APPROVED')).toEqual([staying.versionId]);
+
+    const second = await exportSprayTrainingDataset({ now: runAt(1) });
+    expect(second).toMatchObject({ imagesWritten: 1, exportsRetired: 1, skipped: false });
+    expect(storedExportIds()).toEqual([second.exportId]);
+    expect(manifestOf(second.exportId!).images.map((image) => String(image.versionId))).toEqual([staying.versionId]);
+    for (const versionId of [source.versionId, cloneVersionId]) {
+      expect(exportKeys().some((key) => key.includes(`/v${versionId}.jpg`))).toBe(false);
+    }
+  });
+
   it('keeps only the newest two exports', async () => {
     const exportIds: string[] = [];
     for (let day = 0; day < 3; day++) {
@@ -813,20 +917,13 @@ describe('the export', () => {
       await review(versionId, 'APPROVED');
       exportIds.push((await exportSprayTrainingDataset({ now: runAt(day) })).exportId!);
     }
-    const stored = new Set(exportKeys().map((key) => key.slice(SPRAY_TRAINING_EXPORT_PREFIX.length).split('/')[0]));
-    expect([...stored].sort()).toEqual(exportIds.slice(1).sort());
+    expect(storedExportIds()).toEqual(exportIds.slice(1).sort());
   });
 
   it('freezes the split across runs and shares it with reset clones', async () => {
     const source = await createPublishedWall();
-    const clone = (await sprayWallMutations.resetSprayWall(
-      {},
-      { input: { wallUuid: source.wall.uuid } },
-      ctxFor(OWNER),
-    )) as CreatedWall;
-    const cloneVersionId = await createDraft(clone);
-    await upsertHolds(clone, cloneVersionId, DEFAULT_HOLDS);
-    await publish(cloneVersionId);
+    const clone = await startReset(source.wall);
+    const cloneVersionId = await publishFirstVersion(clone);
     // The clone's publish archived the source, which stays eligible.
     await review(source.versionId, 'APPROVED');
     await review(cloneVersionId, 'APPROVED');
