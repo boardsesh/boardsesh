@@ -65,8 +65,12 @@ the mobile render registry folds the version into its cache keys instead of into
 
 ## The tables
 
-Four side tables in `packages/db/src/schema/app/spray-walls.ts`, plus one column
-and two sequences.
+Seven tables in `packages/db/src/schema/app/spray-walls.ts`, plus one column
+and two sequences. The four below carry a wall and its holds. The other three
+are described where they are used: `spray_wall_detections` under "Recognition
+service and shared post-processing", `spray_wall_reports` under "Moderation",
+and `spray_wall_training_reviews` under "Training data: consent, vetting,
+export".
 
 | Table | Key | What it holds |
 | --- | --- | --- |
