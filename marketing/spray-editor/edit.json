@@ -1,0 +1,108 @@
+{
+  "capture": "Real current-app iPhone footage for editing and additions. Removal consequences and iPad Pencil guidance are explanatory cards over the owner-supplied wall photo, not captured app UI. See docs/help-clips.md.",
+  "cuts": [
+    {
+      "file": "add-draw-cut.mp4",
+      "segments": [
+        { "file": "editor-take.mp4", "start": 197, "duration": 5.75 },
+        { "file": "reopen.mp4", "start": 6, "duration": 4 }
+      ]
+    },
+    {
+      "file": "add-corners-cut.mp4",
+      "segments": [
+        { "file": "add-corners.mp4", "start": 0, "duration": 13.5, "speed": 1.7 },
+        { "file": "corners-finish.mp4", "start": 0, "duration": 5.1, "speed": 1.7 }
+      ]
+    },
+    {
+      "file": "reopen-cut.mp4",
+      "segments": [
+        { "file": "reopen-sheet.mp4", "start": 0, "duration": 3, "speed": 1.5 },
+        { "file": "reopen.mp4", "start": 0, "duration": 11, "speed": 1.5 }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "select",
+      "file": "select.mp4",
+      "duration": 9,
+      "title": "Check the rings",
+      "body": "Select a dashed ring, then Keep. Resize a selected ring with minus or plus."
+    },
+    {
+      "id": "add-draw",
+      "file": "add-draw-cut.mp4",
+      "duration": 10,
+      "title": "Mark a missed hold",
+      "body": "Choose Add, then Draw. Trace around the hold, or tap for a circle. Use two fingers to pan and zoom."
+    },
+    {
+      "id": "add-corners",
+      "file": "add-corners-cut.mp4",
+      "duration": 11,
+      "title": "Build an outline",
+      "body": "Choose Corners. Tap at least three points around the hold, then Finish. Undo removes the last corner."
+    },
+    {
+      "id": "trace",
+      "file": "trace.mp4",
+      "duration": 7,
+      "title": "Trace the shape",
+      "body": "Select a hold that is on, then Trace to draw a replacement outline around it."
+    },
+    {
+      "id": "refine",
+      "file": "refine.mp4",
+      "duration": 7,
+      "title": "Refine an edge",
+      "body": "Use Refine to adjust an outline. Changing a published outline can mark climbs as missing a hold."
+    },
+    {
+      "id": "join",
+      "file": "join.mp4",
+      "duration": 7,
+      "title": "Join split rings",
+      "body": "Use Join when one hold has several rings. Joining published holds also affects climbs using them."
+    },
+    {
+      "id": "reopen",
+      "file": "reopen-cut.mp4",
+      "duration": 10,
+      "title": "Come back anytime",
+      "body": "Boards → your wall → Climbs. Open the wall name, then Edit holds. Add anything you missed."
+    },
+    {
+      "id": "publish",
+      "file": "publish-circle.mp4",
+      "duration": 6,
+      "title": "Publish the additions",
+      "body": "Tap Publish holds when ready. Adding missed holds leaves existing climbs unchanged."
+    },
+    {
+      "id": "remove-warning",
+      "kind": "explanation",
+      "file": "wall-photo.jpg",
+      "duration": 10,
+      "title": "A hold is used?",
+      "body": "Remove or switch off a hold used by published climbs, then Publish holds. Keep holds cancels the warning; Remove anyway publishes."
+    },
+    {
+      "id": "missing-hold",
+      "kind": "explanation",
+      "file": "wall-photo.jpg",
+      "duration": 8,
+      "title": "Climbs stay available",
+      "body": "Affected climbs show a missing-hold warning. Logged ascents stay. Remix makes an updated climb, leaving the original."
+    },
+    {
+      "id": "ipad",
+      "kind": "explanation",
+      "file": "wall-photo.jpg",
+      "duration": 11,
+      "title": "Apple Pencil on iPad",
+      "body": "Full-width editor: draw, tap for circles or toggle marks. Pencil only turns on unless you changed it. Fingers still select, pan and zoom."
+    }
+  ]
+}

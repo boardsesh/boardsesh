@@ -41,13 +41,23 @@ const chapters = [
     at: 69,
     eyebrow: '03 / HOLDS',
     title: ['Check every', 'ring.'],
-    body: ['Keep maybes and adjust sizes.', 'Add the holds it missed.'],
+    body: [
+      'Use the hold editor to keep maybes,',
+      'adjust rings and add missed holds.',
+      'Watch the editor video below',
+      'for a closer look at its tools.',
+    ],
   },
   {
     at: 109,
     eyebrow: '04 / LATER',
     title: ['Keep the wall', 'current.'],
-    body: ['Switch off, delete, or add.', 'Publish holds when done.'],
+    body: [
+      'Missed one? Reopen Edit holds.',
+      'Add it, then Publish holds.',
+      'The editor video below explains',
+      'what happens to used holds.',
+    ],
   },
   {
     at: 139,

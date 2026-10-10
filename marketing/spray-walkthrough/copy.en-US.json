@@ -62,7 +62,7 @@
       },
       "detect": {
         "title": "Boardsesh finds the holds",
-        "body": "Review the rings it draws over your photo."
+        "body": "Use the hold editor to check its rings and mark anything it missed."
       }
     },
     "review": {
@@ -76,7 +76,7 @@
       },
       "add": {
         "title": "Switch to Add for missed holds",
-        "body": "Tap to drop a circle, or draw around its shape."
+        "body": "Tap for a circle or draw an outline. The editor video below shows both."
       },
       "background": {
         "title": "Check the wall background",
@@ -90,7 +90,7 @@
     "later": {
       "open": {
         "title": "Edit holds after publishing",
-        "body": "On Climbs, open your wall and tap Edit holds."
+        "body": "Missed one? Open your wall on Climbs, then tap Edit holds."
       },
       "switchOff": {
         "title": "Hold came off? Switch it off",
@@ -106,7 +106,7 @@
       },
       "publish": {
         "title": "Publish holds",
-        "body": "Save the changes when the wall is ready."
+        "body": "Publish when ready. The editor video below explains used-hold warnings."
       }
     }
   }

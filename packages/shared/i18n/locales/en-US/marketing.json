@@ -866,7 +866,7 @@
       },
       "photo": {
         "title": "Taking the photo",
-        "p1": "Before you choose or take your wall photo, keep five things in mind:",
+        "p1": "Before you choose or take your wall photo, keep these tips in mind:",
         "square": "Stand square on to the wall, in line with its middle. From off to one side, the far holds shrink and bunch up.",
         "portrait": "Hold the phone in portrait. You climb with the phone upright, and a landscape photo shrinks to a strip where the holds get too small to tap.",
         "tilt": "Tilt the phone to match the wall's angle, so it sits parallel to the wall face. On an overhang, a phone held straight up makes the top of the wall loom and the bottom shrink away.",
@@ -891,19 +891,55 @@
         "maybe": "Dashed rings are uncertain finds. Tap one, then tap Keep.",
         "toggle": "Tap a ring to select it. Tap it again to switch it off; the ghost can be switched back on or deleted.",
         "longPress": "Press and hold a ring to move it. Press and hold bare wall to place a new hold.",
-        "missed": "For several missed holds, choose Add. Draw round each hold, or choose Corners and tap round its outline.",
-        "p2": "Tap Pick a look. Choose an available background, then how your holds light up. Without corner pins, Photo is the only background. Publish the wall."
+        "p2": "Tap Pick a look. Choose an available background, then how your holds light up. Without corner pins, Photo is the only background. Publish the wall.",
+        "select": "Select: tap a hold to pick it, move it, resize it, or switch it on or off.",
+        "add": "Add: mark a missed hold with Draw or Corners.",
+        "trace": "Trace: redraw the selected hold’s outline in one loop.",
+        "refine": "Refine: brush along the outline to make it bigger or smaller.",
+        "join": "Join: select one hold, then tap another to turn both outlines into one hold.",
+        "imageAlt": "Spray-wall editor with a selected hold and the Select, Add, Trace, Refine and Join tools",
+        "imageCaption": "Select a ring to see its controls. Use the five tools to correct the holds on your photo.",
+        "gestures": "Use two fingers to pan or pinch to zoom. Undo and Redo let you step back and forward through your edits."
       },
       "later": {
         "title": "Editing holds later",
         "p1": "On Boards, tap your spray wall to make it active. Tap the magnifying-glass Climbs tab, then the wall name at the top. Tap Edit holds; finish with Publish holds.",
-        "p2": "If the holds have changed across the wall, tap Reset this wall in the same sheet. Add a new photo and mark holds from scratch. Publishing the replacement archives the old wall and keeps its climbs with it."
+        "p2": "If the holds have changed across the wall, tap Reset this wall in the same sheet. Add a new photo and mark holds from scratch. Publishing the replacement archives the old wall and keeps its climbs with it.",
+        "missed": "Missed a few holds on your first pass? Come back here and add them at any time. Adding new holds leaves existing climbs unchanged; publish when you are ready for everyone to use them."
       },
       "next": {
         "title": "Keep going",
         "logbook": "Log your sends",
         "sessions": "Climb it with your crew",
         "hub": "All help topics"
+      },
+      "editor": {
+        "title": "Marking holds the scan missed",
+        "p1": "The scan is a starting point. Use the editor to mark any real holds that have no ring, before publishing or whenever you notice them later.",
+        "videoAlt": "Guide to adding missed holds, correcting outlines, returning to the editor and publishing hold changes",
+        "step1": "Pinch to zoom in until the missed hold is easy to see.",
+        "step2": "Choose Add, then Draw.",
+        "step3": "Draw a closed outline around the hold. For a small round hold, tap to place a circle.",
+        "step4": "Repeat for other missed holds. Pan with two fingers and use Undo if you make a mistake.",
+        "step5": "Finish with Pick a look during setup, or Publish holds when editing an existing wall.",
+        "corners": "Prefer straight edges? Choose Add → Corners. Tap at least three points around a hold, then tap Finish to close its outline. Repeat for the next hold.",
+        "drawAlt": "Add tool in Draw mode with a manually outlined hold on the wall photo",
+        "drawCaption": "Add → Draw: outline one missed hold at a time, or tap for a circle.",
+        "cornersAlt": "Add tool in Corners mode with points around a hold and the Finish control",
+        "cornersCaption": "Add → Corners: place at least three points, then tap Finish."
+      },
+      "used": {
+        "title": "What happens to climbs when you change holds?",
+        "removal": "If you remove or switch off a hold used by a published climb, the climb stays available with a missing-hold warning after you publish. Its logged ascents stay too.",
+        "confirm": "When you tap Publish holds, Boardsesh asks you to confirm if your edits remove holds used by published climbs. Keep holds cancels publishing so you can review the edits. Remove anyway publishes them.",
+        "changes": "Moving, resizing, reshaping or joining a published hold also marks climbs using its old mark as missing a hold after you publish. Their logged ascents remain.",
+        "remix": "Use Remix on an affected climb to set an updated version with the available holds. This creates a new climb; it does not repair the original automatically."
+      },
+      "pencil": {
+        "title": "Using Apple Pencil on iPad",
+        "layout": "These Pencil gestures are available in the full-width iPad editor. A compact window uses the phone layout.",
+        "draw": "With Apple Pencil, draw around an unmarked hold to add its outline, or tap an unmarked spot to add a circle. Tap a marked hold with Pencil to switch it on or off.",
+        "setting": "Pencil only turns on when Apple Pencil first touches or hovers over the editor, unless you have already chosen a setting. Your choice is remembered. With Pencil only on, fingers can still select holds, move a picked hold, and pan or zoom the wall; Pencil handles drawing and hold toggles."
       }
     }
   },

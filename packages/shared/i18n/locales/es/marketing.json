@@ -866,7 +866,7 @@
       },
       "photo": {
         "title": "Cómo hacer la foto",
-        "p1": "Antes de elegir o hacer la foto del muro, ten en cuenta estas cinco cosas:",
+        "p1": "Antes de elegir o hacer la foto del muro, ten en cuenta estos consejos:",
         "square": "Ponte de frente al muro, alineado con su centro. Desde un lado, las presas lejanas encogen y se amontonan.",
         "portrait": "Sujeta el móvil en vertical. Escalas con el móvil en vertical, y una foto en horizontal se queda en una franja donde las presas son demasiado pequeñas para tocarlas.",
         "tilt": "Inclina el móvil según el ángulo del muro, para que quede paralelo a la pared. En un desplome, con el móvil recto la parte de arriba se agiganta y la de abajo se encoge.",
@@ -891,19 +891,55 @@
         "maybe": "Los círculos discontinuos son presas dudosas. Toca uno y luego Conservar.",
         "toggle": "Toca un círculo para seleccionarlo. Tócalo otra vez para desactivarlo; podrás reactivar o eliminar su silueta.",
         "longPress": "Mantén pulsado un círculo para moverlo. Mantén pulsada una zona vacía del muro para colocar una presa.",
-        "missed": "Si faltan varias presas, elige Añadir. Dibuja alrededor de cada una o elige Esquinas y toca los puntos de su contorno.",
-        "p2": "Toca Elegir el aspecto. Elige un fondo disponible y cómo se iluminan las presas. Sin las esquinas marcadas, solo puedes usar la foto. Publica el muro."
+        "p2": "Toca Elegir el aspecto. Elige un fondo disponible y cómo se iluminan las presas. Sin las esquinas marcadas, solo puedes usar la foto. Publica el muro.",
+        "select": "Elegir: toca una presa para seleccionarla, moverla, cambiar su tamaño o activarla y desactivarla.",
+        "add": "Añadir: marca una presa que falte con Dibujar o Esquinas.",
+        "trace": "Trazar: vuelve a dibujar el contorno de la presa elegida de una sola pasada.",
+        "refine": "Retocar: pasa el pincel por el contorno para ampliarlo o recortarlo.",
+        "join": "Unir: elige una presa y toca otra para convertir ambos contornos en una sola presa.",
+        "imageAlt": "Editor del muro de spray con una presa elegida y las herramientas Elegir, Añadir, Trazar, Retocar y Unir",
+        "imageCaption": "Selecciona un círculo para ver sus controles. Corrige las presas de la foto con las cinco herramientas.",
+        "gestures": "Usa dos dedos para desplazar la foto o pellizca para hacer zoom. Deshacer y Rehacer te permiten retroceder y avanzar por tus cambios."
       },
       "later": {
         "title": "Editar presas más adelante",
         "p1": "En Plafones, toca tu muro de spray para activarlo. Toca la pestaña Bloques (la lupa) y luego el nombre del muro arriba. Toca Editar presas y termina con Publicar presas.",
-        "p2": "Si has cambiado las presas de todo el muro, toca Resetear este muro en la misma ficha. Añade una foto nueva y marca las presas desde cero. Al publicar el reemplazo, el muro anterior se archiva y conserva sus bloques."
+        "p2": "Si has cambiado las presas de todo el muro, toca Resetear este muro en la misma ficha. Añade una foto nueva y marca las presas desde cero. Al publicar el reemplazo, el muro anterior se archiva y conserva sus bloques.",
+        "missed": "¿Se te escaparon algunas presas la primera vez? Vuelve aquí y añádelas cuando quieras. Añadir presas nuevas no cambia los bloques existentes; publica cuando quieras que todo el mundo pueda usarlas."
       },
       "next": {
         "title": "Sigue por aquí",
         "logbook": "Registrar tus encadenes",
         "sessions": "Escalarlo con tu grupo",
         "hub": "Todos los temas de ayuda"
+      },
+      "editor": {
+        "title": "Marcar las presas que faltan",
+        "p1": "La detección es un punto de partida. Usa el editor para marcar las presas reales que no tengan círculo, antes de publicar o cuando las descubras más adelante.",
+        "videoAlt": "Guía para añadir presas que faltan, corregir contornos, volver al editor y publicar los cambios",
+        "step1": "Pellizca para acercar la imagen hasta ver bien la presa que falta.",
+        "step2": "Elige Añadir y después Dibujar.",
+        "step3": "Dibuja un contorno cerrado alrededor de la presa. Si es pequeña y redonda, toca para colocar un círculo.",
+        "step4": "Repite con las demás presas que falten. Desplázate con dos dedos y usa Deshacer si te equivocas.",
+        "step5": "Termina con Elegir el aspecto durante la configuración o Publicar presas al editar un muro existente.",
+        "corners": "¿Prefieres bordes rectos? Elige Añadir → Esquinas. Toca al menos tres puntos alrededor de una presa y después Terminar para cerrar el contorno. Repite con la siguiente presa.",
+        "drawAlt": "Herramienta Añadir en modo Dibujar con una presa marcada a mano en la foto del muro",
+        "drawCaption": "Añadir → Dibujar: traza cada presa que falte o toca para colocar un círculo.",
+        "cornersAlt": "Herramienta Añadir en modo Esquinas con puntos alrededor de una presa y el control Terminar",
+        "cornersCaption": "Añadir → Esquinas: coloca al menos tres puntos y toca Terminar."
+      },
+      "used": {
+        "title": "¿Qué pasa con los bloques cuando cambias presas?",
+        "removal": "Si quitas o desactivas una presa usada en un bloque publicado, el bloque sigue disponible con un aviso de presa ausente después de publicar. Sus ascensiones registradas también se conservan.",
+        "confirm": "Al tocar Publicar presas, Boardsesh pide confirmación si tus cambios quitan presas usadas en bloques publicados. Mantener las presas cancela la publicación para que puedas revisar los cambios. Quitar igualmente los publica.",
+        "changes": "Mover, cambiar el tamaño, modificar el contorno o unir una presa publicada también hace que los bloques que usaban su marca anterior muestren un aviso de presa ausente después de publicar. Sus ascensiones registradas se conservan.",
+        "remix": "Usa Remezclar en un bloque afectado para crear una versión actualizada con las presas disponibles. Se crea un bloque nuevo; el original no se repara automáticamente."
+      },
+      "pencil": {
+        "title": "Usar Apple Pencil en iPad",
+        "layout": "Estos gestos del Pencil están disponibles en el editor del iPad a ancho completo. Una ventana compacta usa la distribución del móvil.",
+        "draw": "Con Apple Pencil, dibuja alrededor de una presa sin marcar para añadir su contorno o toca un punto sin marcar para añadir un círculo. Toca una presa marcada con el Pencil para activarla o desactivarla.",
+        "setting": "Solo Pencil se activa cuando Apple Pencil toca el editor por primera vez o se mantiene cerca de él, salvo que ya hayas elegido un ajuste. Tu elección se recuerda. Con Solo Pencil activado, los dedos siguen sirviendo para seleccionar presas, mover la elegida y desplazar o ampliar la foto; el Pencil sirve para dibujar y activar o desactivar presas."
       }
     }
   },

@@ -184,3 +184,46 @@ controls in the final cut, especially Add mode, ghost rings, Reset this wall,
 and the separate background and hold-look steps. The iOS capture used a
 1320 x 2868 simulator; re-measure any fixed taps on another device.
 The over-budget size is deliberate: two minutes of footage does not fit 1.5 MB.
+
+## The hold editor walkthrough
+
+The setup walkthrough now points to the separate editor tutorial below it on
+`/help/spray-walls`. `marketing/spray-editor/edit.json` contains its captions,
+source filenames, trims and playback speeds. The editor tutorial follows the
+same silent, captioned format: portrait on phones and a landscape chapter layout
+on wider screens. The written guide translates the instructions into all four
+supported locales; captions embedded in the video are English.
+
+The editor footage and three stills were captured on 2026-10-10 from the current
+app source at `2f84c1cb27`, using the same iPhone simulator and owner-supplied wall
+photo as the setup walkthrough. They show Select, Add → Draw, Add → Corners,
+Trace, Refine, Join, reopening Edit holds, and publishing added holds. Removal
+consequences and iPad Pencil behavior are explanatory chapter cards over the
+real wall photograph, not recordings of a removal confirmation or an iPad.
+No demonstration climb was saved or used hold removed for those cards.
+
+To reproduce:
+
+1. Use an isolated development wall and confirm the app's backend URL before
+   recording. Screenshot mode stabilizes presentation; it does not isolate
+   server writes. Opening Edit holds can create a draft, and Publish holds can
+   save immediately when no published climb uses the changed holds.
+2. Record the source clips named in `marketing/spray-editor/edit.json` into
+   `.boardsesh/spray-editor/raw/`. Start before each gesture and stop with
+   SIGINT. Capture `select.png`, `draw.png` and `corners.png` at the corresponding
+   tool states. The long Draw take has a trim near its end; update that trim
+   when replacing the recording.
+3. Run `vp run video:spray-editor -- --check` to verify inputs, then
+   `vp run video:spray-editor -- --shots` for the page stills and
+   `vp run video:spray-editor -- --stills` for chapter previews.
+4. Run `vp run video:spray-editor` for both aspect ratios and their posters,
+   then `vp run generate:static-assets`. Review playback and every caption
+   against the actual controls before publishing.
+
+The renderer uses Sharp and ffmpeg, exports silent 15 fps MP4 and WebM versions,
+and enforces the 2 MB limit per video. Outputs are
+`spray-holds-editor{,-landscape}.{mp4,webm}` under `public/videos/help/`,
+matching posters under `public/images/help/clips/`, and three
+`spray-editor-*.webp` stills under `public/images/help/`. Raw takes remain
+untracked, as with the main walkthrough. The guide's existing release gate also
+applies to this tutorial: the demonstrated editor must reach store users first.

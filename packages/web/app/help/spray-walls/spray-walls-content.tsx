@@ -11,6 +11,7 @@ import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
 import { PageShell, PageSection, Prose, ProseList } from '@/app/components/ui/page-shell';
 import HelpBreadcrumb from '../help-breadcrumb';
 import { HelpWalkthrough } from '../help-clip';
+import { HelpScreenshot, HelpShots } from '../help-screenshot';
 import styles from './spray-walls-content.module.css';
 
 /** The mobile wizard links here for photo advice and current editor gestures. */
@@ -67,17 +68,68 @@ export default function SprayWallsContent() {
       <PageSection title={t('help.sprayWalls.fix.title')}>
         <Prose>{t('help.sprayWalls.fix.p1')}</Prose>
         <ProseList>
+          <li>{t('help.sprayWalls.fix.select')}</li>
+          <li>{t('help.sprayWalls.fix.add')}</li>
+          <li>{t('help.sprayWalls.fix.trace')}</li>
+          <li>{t('help.sprayWalls.fix.refine')}</li>
+          <li>{t('help.sprayWalls.fix.join')}</li>
+        </ProseList>
+        <HelpScreenshot
+          shot="spray-editor-select"
+          alt={t('help.sprayWalls.fix.imageAlt')}
+          caption={t('help.sprayWalls.fix.imageCaption')}
+        />
+        <ProseList>
           <li>{t('help.sprayWalls.fix.maybe')}</li>
           <li>{t('help.sprayWalls.fix.toggle')}</li>
           <li>{t('help.sprayWalls.fix.longPress')}</li>
-          <li>{t('help.sprayWalls.fix.missed')}</li>
+          <li>{t('help.sprayWalls.fix.gestures')}</li>
         </ProseList>
+      </PageSection>
+
+      <PageSection title={t('help.sprayWalls.editor.title')}>
+        <Prose>{t('help.sprayWalls.editor.p1')}</Prose>
+        <HelpWalkthrough name="spray-holds-editor" alt={t('help.sprayWalls.editor.videoAlt')} />
+        <ProseList ordered>
+          <li>{t('help.sprayWalls.editor.step1')}</li>
+          <li>{t('help.sprayWalls.editor.step2')}</li>
+          <li>{t('help.sprayWalls.editor.step3')}</li>
+          <li>{t('help.sprayWalls.editor.step4')}</li>
+          <li>{t('help.sprayWalls.editor.step5')}</li>
+        </ProseList>
+        <HelpShots>
+          <HelpScreenshot
+            shot="spray-editor-draw"
+            alt={t('help.sprayWalls.editor.drawAlt')}
+            caption={t('help.sprayWalls.editor.drawCaption')}
+          />
+          <HelpScreenshot
+            shot="spray-editor-corners"
+            alt={t('help.sprayWalls.editor.cornersAlt')}
+            caption={t('help.sprayWalls.editor.cornersCaption')}
+          />
+        </HelpShots>
+        <Prose>{t('help.sprayWalls.editor.corners')}</Prose>
         <Prose>{t('help.sprayWalls.fix.p2')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.sprayWalls.later.title')}>
         <Prose>{t('help.sprayWalls.later.p1')}</Prose>
+        <Prose>{t('help.sprayWalls.later.missed')}</Prose>
         <Prose>{t('help.sprayWalls.later.p2')}</Prose>
+      </PageSection>
+
+      <PageSection title={t('help.sprayWalls.used.title')}>
+        <Prose>{t('help.sprayWalls.used.removal')}</Prose>
+        <Prose>{t('help.sprayWalls.used.confirm')}</Prose>
+        <Prose>{t('help.sprayWalls.used.changes')}</Prose>
+        <Prose>{t('help.sprayWalls.used.remix')}</Prose>
+      </PageSection>
+
+      <PageSection title={t('help.sprayWalls.pencil.title')}>
+        <Prose>{t('help.sprayWalls.pencil.layout')}</Prose>
+        <Prose>{t('help.sprayWalls.pencil.draw')}</Prose>
+        <Prose>{t('help.sprayWalls.pencil.setting')}</Prose>
       </PageSection>
 
       <PageSection title={t('help.sprayWalls.next.title')}>

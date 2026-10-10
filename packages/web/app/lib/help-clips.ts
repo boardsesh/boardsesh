@@ -51,7 +51,7 @@ export function helpClip(name: HelpClipName): HelpClipSources {
 }
 
 /** Longer walkthroughs are cut for both desktop and phone viewing. */
-export type HelpWalkthroughName = 'spray-walls-walkthrough';
+export type HelpWalkthroughName = 'spray-walls-walkthrough' | 'spray-holds-editor';
 
 export type HelpWalkthroughSources = {
   portrait: HelpClipSources;
