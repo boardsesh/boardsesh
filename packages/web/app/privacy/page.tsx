@@ -55,6 +55,7 @@ export default async function PrivacyPolicyPage() {
         <Prose>{t('privacy.sprayPhotos.body2')}</Prose>
         <Prose>{t('privacy.sprayPhotos.body3')}</Prose>
         <Prose>{t('privacy.sprayPhotos.body4')}</Prose>
+        <Prose>{t('privacy.sprayPhotos.body5')}</Prose>
       </PageSection>
 
       <PageSection title={t('privacy.thirdParty.title')}>

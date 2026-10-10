@@ -1041,10 +1041,11 @@
     },
     "sprayPhotos": {
       "title": "Spraywand-Fotos",
-      "body1": "Wenn du eine Spraywand anlegst, speichern wir ihr Foto und die Griffe, die du markierst. Wer das Foto sehen kann, richtet sich nach der Sichtbarkeit der Wand: privat, nur mit Link oder öffentlich. Jemand aus dem Boardsesh-Team darf Foto und Griffe außerdem ansehen, um zu prüfen, ob sie sich zum Lernen eignen.",
-      "body2": "Wir nutzen sie, um den Griff-Finder zu trainieren, also den Teil der App, der Griffe auf dem Foto einer neuen Wand erkennt. Das gilt bei jeder Sichtbarkeit, auch für private Wände. Die Kopie, die wir zum Training nutzen, liegt in einem privaten Speicher und wird nie außerhalb von Boardsesh weitergegeben oder veröffentlicht.",
-      "body3": "Jede Wand hat einen Schalter „Beim Training der Griff-Erkennung helfen“. Er ist standardmäßig an. Du kannst ihn jederzeit in den Einstellungen der Wand ausschalten.",
-      "body4": "Wenn du ihn ausschaltest, die Wand löschst oder dein Konto löschst, ist die Wand innerhalb von 24 Stunden aus unseren Trainingsdaten raus. Modelle, die wir schon trainiert haben, behalten, was sie gelernt haben, speichern aber keine Kopie deines Fotos."
+      "body1": "Wenn du eine Spraywand anlegst, speichern wir ihr Foto und die Griffe, die du markierst. Wer das Foto sehen kann, richtet sich nach der Sichtbarkeit der Wand: privat, nur mit Link oder öffentlich.",
+      "body2": "Jede Wand hat einen Schalter „Hilf beim Training der Grifferkennung“. Solange er an ist, nutzen wir das Foto der Wand und die Griffe, die du markierst, um die Grifferkennung zu trainieren, also den Teil der App, der Griffe auf dem Foto einer neuen Wand findet. Ein*e Boardsesh-Admin darf sie vorher ansehen, um zu prüfen, ob sie sich zum Lernen eignen. Das gilt bei jeder Sichtbarkeit, auch für private Wände. Die Kopie, die wir zum Training nutzen, liegt in einem privaten Speicher und wird nie außerhalb von Boardsesh weitergegeben oder veröffentlicht.",
+      "body3": "Der Schalter ist an, wenn du eine Wand anlegst, und du kannst ihn dabei oder später unter „Board bearbeiten“ ändern. Wände, die es schon vor dem Schalter gab oder die mit einer App-Version ohne den Schalter angelegt wurden, starten mit ausgeschaltetem Schalter.",
+      "body4": "Wenn du ihn ausschaltest, die Wand löschst oder dein Konto löschst, nehmen wir die Wand innerhalb von 24 Stunden aus dem gespeicherten Trainingssatz. Eine Kopie, die schon für ein Training heruntergeladen wurde, kann noch bis zu 7 Tage genutzt werden und wird beim nächsten Abruf des Trainingssatzes gelöscht. Modelle, die wir schon trainiert haben, behalten, was sie gelernt haben, speichern aber keine Kopie deines Fotos.",
+      "body5": "Wird eine Wand gemeldet, kann ein*e Boardsesh-Admin ihr Foto sehen, um die Meldung zu prüfen, egal wie der Schalter steht. Wenn du eine Wand löschst, löschen wir ihr Foto nach 30 Tagen. Wenn du dein Konto löschst, werden die Fotos deiner Wände mit gelöscht."
     },
     "thirdParty": {
       "title": "Dienste von Drittanbietern",
@@ -1070,7 +1071,7 @@
       "title": "Datenweitergabe",
       "body1ProductAnalytics": "Wir verkaufen deine Daten nicht, schalten keine Werbung und teilen keine Informationen mit Werbetreibenden oder Datenhändlern. Die oben genannten Anbieter verarbeiten Daten für Hosting, Speicherung, Dienstzuverlässigkeit und optionale Analysen. Die Synchronisierung mit Aurora Climbing läuft, wenn du sie aktivierst.",
       "body2": "Andere Boardsesh-Nutzer*innen sehen deinen Benutzernamen, dein Profil und deine eingetragenen Boulder, wenn du bei sozialen Funktionen wie dem Party-Modus mitmachst. Das ist in der App sichtbar und gehört dazu.",
-      "body3SprayPhotos": "Spraywand-Fotos und die Griffe, die du markierst, bleiben bei Boardsesh. Wir nutzen sie nur, um unseren eigenen Griff-Finder zu trainieren."
+      "body3SprayPhotos": "Wir geben Spraywand-Fotos und die Griffe, die du markierst, an niemanden zum Trainieren weiter. Das einzige Modell, das damit trainiert wird, ist unsere eigene Grifferkennung. Andere sehen das Foto einer Wand nur so, wie ihre Sichtbarkeit es erlaubt: Das Foto einer öffentlichen Wand steht im offenen Web."
     },
     "retention": {
       "title": "Speicherdauer",
