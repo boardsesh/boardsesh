@@ -180,13 +180,11 @@ export function privateSafeFirstAscentName(
   ) THEN (
     SELECT CASE WHEN ${tickVisible} THEN COALESCE(privacy_fa_profile.display_name, privacy_fa_user.name) ELSE NULL END
     FROM boardsesh_ticks privacy_fa_tick
-    JOIN board_climbs privacy_fa_climb ON privacy_fa_climb.board_type = privacy_fa_tick.board_type AND privacy_fa_climb.uuid = privacy_fa_tick.climb_uuid
     JOIN users privacy_fa_user ON privacy_fa_user.id = privacy_fa_tick.user_id
     LEFT JOIN user_profiles privacy_fa_profile ON privacy_fa_profile.user_id = privacy_fa_tick.user_id
     WHERE privacy_fa_tick.board_type = ${correlated.boardType} AND privacy_fa_tick.climb_uuid = ${correlated.climbUuid}
       AND privacy_fa_tick.angle = ${correlated.angle} AND privacy_fa_tick.status IN ('flash', 'send')
       AND privacy_fa_tick.kilter_detached_at IS NULL
-      AND COALESCE(privacy_fa_tick.climb_revision, 1) >= COALESCE(privacy_fa_climb.holds_revision_number, 1)
     ORDER BY privacy_fa_tick.climbed_at ASC, privacy_fa_tick.id ASC LIMIT 1
   ) ELSE ${correlated.username} END`;
 }

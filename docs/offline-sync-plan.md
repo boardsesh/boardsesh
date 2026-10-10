@@ -432,7 +432,7 @@ The app updates over the air, so a queued write can reach a backend older than t
 - The stored payload is never rewritten. The field is dropped from the variables of that one send only, so a later attempt against a newer backend sends it again.
 - A mutation with no entry in the registry gets no retry.
 
-A field belongs in the registry only when both are true: it is optional in the input type, and the server produces a correct write when it is absent. `climbRevision` qualifies because the server then stores the version that was live when the climb was climbed. A field whose absence changes what is written (a status, an angle, a board id) does not, and must stay a dead letter the climber can see.
+A field belongs in the registry only when both are true: it is optional in the input type, and the server produces a correct write when it is absent. `climbRevision` qualifies because the server ignores it: a tick is stored the same with or without the field. A field whose absence changes what is written (a status, an angle, a board id) does not, and must stay a dead letter the climber can see.
 
 ### Dead letter handling
 

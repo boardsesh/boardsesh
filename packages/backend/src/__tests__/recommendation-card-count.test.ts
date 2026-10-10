@@ -115,26 +115,11 @@ describe('recommendation count SQL', () => {
 
   it('drives the overlap from the viewer ticks and skips the stats join for FRESH', () => {
     const fresh = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_FRESH'), 'user-1'));
-    expect(fresh).toMatch(
-      /SELECT t\.board_type, t\.climb_uuid, MAX\(COALESCE\(t\.climb_revision, 1\)\) AS latest_sent_revision\s+FROM boardsesh_ticks t/,
-    );
+    expect(fresh).toMatch(/SELECT DISTINCT t\.climb_uuid FROM boardsesh_ticks t/);
     expect(fresh).not.toContain('board_climb_stats');
     const crowd = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_CROWD_FAVORITES'), 'user-1'));
     expect(crowd).toContain('JOIN board_climb_stats s');
     expect(crowd).not.toContain('LEFT JOIN board_climb_stats');
-  });
-
-  it('reads only sends on the climb’s current holds, in the exclusion and in the overlap (#6023)', () => {
-    // The two halves must agree or `catalog count - overlap` is not the excluded count.
-    const excluded = render(buildRecommendationCountSql(paramsFor('RECOMMENDED_FRESH')));
-    expect(excluded).toContain('COALESCE(t.climb_revision, 1) >= bc.holds_revision_number');
-    const overlap = render(buildRecommendationSentOverlapSql(paramsFor('RECOMMENDED_FRESH'), 'user-1'));
-    expect(overlap).toContain('COALESCE(sent.latest_sent_revision, 0) >= bc.holds_revision_number');
-    // board_climbs is joined once, for the catalogue filter; the epoch rides on it.
-    expect(overlap).toContain('JOIN board_climbs bc');
-    // Grouped and joined on the board type as well as the uuid.
-    expect(overlap).toContain('GROUP BY t.board_type, t.climb_uuid');
-    expect(overlap).toContain('JOIN board_climbs bc ON bc.board_type = sent.board_type AND bc.uuid = sent.climb_uuid');
   });
 
   it('leaves the ranked page query unchanged in shape', () => {

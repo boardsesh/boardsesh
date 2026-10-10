@@ -150,7 +150,7 @@ The persisted cache adds its own layer on top: the blob carries a `userId` stamp
 
 ### Climb versions are read from the phone, even for a network answer
 
-A tick records which version of the climb it was logged on (#6023, `docs/spray-walls.md` → "Which revision a tick was logged on"). The documents that would carry the numbers (`SearchClimbs`, `GetClimb`, `GetTicks`, the queue documents) are pinned by the App Store screenshot fixtures and cannot select them yet, so the phone's own tables answer instead. Three reads, all in `packages/mobile/src/db/queries/climb-revisions-local.ts`:
+The phone still keeps which version of the climb a tick was logged on (#6023). The server retired both the stamp and the rule that read it (`docs/spray-walls.md` → "Climb revisions (retired)"), and migration 0263 reset any stored holds version to 1, so every holds version the phone is given is 1 and every tick counts; what follows describes the app's own copy. The documents that would carry the numbers (`SearchClimbs`, `GetClimb`, `GetTicks`, the queue documents) are pinned by the App Store screenshot fixtures and cannot select them yet, so the phone's own tables answer instead. Three reads, all in `packages/mobile/src/db/queries/climb-revisions-local.ts`:
 
 | Read | Table | Gate |
 | --- | --- | --- |
@@ -164,7 +164,7 @@ None of the three is a new answer to "what did this climber do": the rows themse
 
 What a missing number means, by reader:
 
-- **Stamping a tick.** The app never sends `climbRevision`; the server stores the version that was live when the climb was climbed. The local `boardsesh_ticks` row is stamped from the phone's `board_climbs.revision_number` (`writeTickLocal`), NULL when the phone has no row or the row has no number.
+- **Stamping a tick.** The app never sends `climbRevision`, and the server stores no version on a new tick. The local `boardsesh_ticks` row is stamped from the phone's `board_climbs.revision_number` (`writeTickLocal`), NULL when the phone has no row or the row has no number.
 - **Counting a tick as sent in local search.** Both columns are on rows the phone holds, so a NULL is "the server delivered this row without one" and reads as version 1 on both sides. Every tick counts on a climb with no holds version, exactly as before the columns existed.
 - **Counting a tick as sent on a list row** (the sent glyph, from the `GetTicks` logbook). Three cases, kept apart:
 

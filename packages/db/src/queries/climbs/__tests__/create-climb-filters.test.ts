@@ -663,10 +663,8 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
     assert.match(minRating, /rating_newer\.angle = rating_below\.angle/);
   });
 
-  void it('reads only ticks on the climb’s current holds in every personal check (#6023)', () => {
-    // One compare against the board_climbs row the subquery is already
-    // correlated to. No lookup in board_climb_revisions.
-    const onCurrentHolds = /COALESCE\(climb_revision, 1\) >= holds_revision_number/;
+  void it('reads no climb or tick revision in any personal check', () => {
+    // The holds-epoch rule (#6023) was removed: every tick counts.
     for (const filter of [
       'hideCompleted',
       'hideAttempted',
@@ -674,17 +672,9 @@ void describe('createClimbFilters: personal progress filters are scoped to the c
       'showOnlyAttempted',
       'onlyRatedByMe',
     ]) {
-      const rendered = progressSql({ [filter]: true });
-      assert.match(rendered, onCurrentHolds, filter);
-      assert.doesNotMatch(rendered, /board_climb_revisions/, filter);
+      assert.doesNotMatch(progressSql({ [filter]: true }), /climb_revision|holds_revision_number/, filter);
     }
-    // The latest-rating anti-join tests the offending rating only. On the
-    // superseding one the epoch is a reference two query levels up, which
-    // stopped Postgres unnesting the inner NOT EXISTS.
-    const minRating = progressSql({ minUserRating: 3 });
-    assert.match(minRating, /COALESCE\(rating_below\.climb_revision, 1\) >= holds_revision_number/);
-    assert.doesNotMatch(minRating, /rating_newer\.climb_revision/);
-    assert.equal(minRating.match(/holds_revision_number/g)?.length, 1);
+    assert.doesNotMatch(progressSql({ minUserRating: 3 }), /climb_revision|holds_revision_number/);
   });
 
   void it('skips personal progress conditions entirely when no userId is supplied', () => {

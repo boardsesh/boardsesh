@@ -62,18 +62,10 @@ void describe('recomputeClimbStatsBulk', () => {
     assert.match(updateSql, /bool_or\(bt\.origin <> 'native' AND bt\.status IN \('flash','send'\)\)/);
     assert.match(updateSql, /has_unabsorbed_native_send AND NOT has_upstream/);
     // Owned-climb averages reject invalid difficulty/quality values.
-    assert.match(
-      updateSql,
-      /AVG\(bt\.quality\) FILTER \(\s*WHERE bt\.quality BETWEEN 1 AND 5\s+AND COALESCE\(bt\.climb_revision, 1\) >= k\.holds_epoch\s*\)/,
-    );
-    // The holds epoch (#6023): one primary-key probe per key in the keys CTE,
-    // and the predicate on the count, the FA and both quality aggregates but not
-    // on the grade average. Behaviour is asserted against real Postgres in the
-    // backend's recompute-climb-stats.test.ts.
-    assert.match(updateSql, /COALESCE\(\(\s*SELECT bc\.holds_revision_number\s+FROM board_climbs bc/);
-    assert.match(updateSql, /bc\.uuid\s+= k\.climb_uuid\s*\), 1\) AS holds_epoch/);
-    assert.equal(updateSql.match(/COALESCE\(bt\.climb_revision, 1\) >= k\.holds_epoch/g)?.length, 5);
-    assert.doesNotMatch(seedSql, /climb_revision|holds_revision_number/);
+    assert.match(updateSql, /AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)/);
+    // The retired holds-epoch rule (#6023) is not read anywhere: no tick is
+    // left out for its revision.
+    assert.doesNotMatch(`${seedSql}\n${updateSql}`, /climb_revision|holds_revision_number/);
     assert.match(updateSql, /AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)/);
     // Kilter-detached (upstream-deleted) rows must be excluded from the count.
     assert.match(updateSql, /kilter_detached_at IS NULL/);
@@ -94,10 +86,7 @@ void describe('recomputeClimbStatsBulk', () => {
     assert.match(updateSql, /bt\.origin = 'native'/);
     assert.match(updateSql, /bt\.quality >= 1/);
     assert.match(updateSql, /bt\.quality <= 5/);
-    assert.match(
-      updateSql,
-      /bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+AND COALESCE\(bt\.climb_revision, 1\) >= k\.holds_epoch\s+ORDER BY/,
-    );
+    assert.match(updateSql, /bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+ORDER BY/);
     assert.match(updateSql, /ORDER BY[\s\S]*bt\.climbed_at DESC, bt\.id DESC/);
     // Grade columns: the climbers'-vote boards (#5971, spray) take their own
     // branch first. Everyone else (#4798): CASE-guarded on `owned OR deriveGradeFromTicks`,

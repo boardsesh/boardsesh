@@ -217,8 +217,9 @@ composite-keyed sync table must keep this true (or version the encoding).
   `is_mirror`, `status`, `attempt_count`, `quality`, `difficulty`, `is_benchmark`, `comment`, `climbed_at`,
   `session_id`, `created_at`, `updated_at`.
   (Skip aurora*\_/kilter\_\_ bookkeeping, `board_id`, `inferred_session_id`.) Index `(climb_uuid, board_type, angle)` for logbook reads.
-- `climb_revision` is a nullable INTEGER: the climb revision the tick was logged against, 1 on a climb nobody has
-  edited (#6023, [spray-walls.md](spray-walls.md#climb-revisions-retired)). NULL means unknown. That is
+- `climb_revision` is a nullable INTEGER: the climb revision the tick was logged against
+  (#6023, [spray-walls.md](spray-walls.md#climb-revisions-retired)). The server no longer stamps it, so it is
+  NULL on every tick saved since. NULL means unknown. That is also
   every import, every tick older than the column, and locally also every tick this phone pulled before schema v11,
   whatever the server holds for it: a tick is only re-delivered when it changes, so those rows stay NULL.
 
@@ -302,16 +303,19 @@ composite-keyed sync table must keep this true (or version the encoding).
 - `revision_number` and `holds_revision_number` are the climb's current revision and the revision at which its
   holds last changed (#6023). On the server both are `NOT NULL DEFAULT 1`; on the device both are nullable
   INTEGERs, because a row pulled before schema v11 has never been told its revision. Since revision history was
-  retired the server no longer moves either number, and `syncClimbs` keeps shipping the stored values.
+  retired the server no longer moves either number, and `syncClimbs` keeps shipping the stored values. Migration
+  0263 set both back to 1 on any climb whose `holds_revision_number` was above 1, so the only value the server
+  holds for the holds revision is 1.
 - They were also added **without** bumping `refreshRevision`. Only an edit (before the retirement) moved either
-  number off 1, and an edit bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor. A row that is
+  number off 1, and an edit bumps the row's `sync_seq`, so every climb whose number is not 1 comes down the ordinary cursor.
+  The 0263 reset bumps `sync_seq` the same way, so a phone that held an epoch above 1 is sent the 1. A row that is
   never re-delivered is a climb nobody has edited. Its local NULL costs nothing: the app never sends a tick's
-  revision, and the server stores 1. A bump would re-crawl every downloaded catalogue to write a 1 beside each
+  revision, and the server stores none. A bump would re-crawl every downloaded catalogue to write a 1 beside each
   climb.
 - A local reader that STAMPS a tick must treat NULL as unknown, not as 1. A climb edited while the phone ran a
   bundle older than v11 was re-delivered to code that dropped the two fields, and it stays NULL until its next
   edit. `writeTickLocal` stamps the local tick row with `revision_number` as it is, NULL included; the app sends
-  no `climbRevision`, so the server's by-date fallback stamps the server's row.
+  no `climbRevision`, and the server's row stores NULL.
 - The local "sent" comparison is the one place NULL reads as 1, on both sides
   (`tickOnCurrentHoldsLocalSql`, `packages/mobile/src/db/queries/climb-revisions-local.ts`). A NULL
   `holds_revision_number` then lets every tick count, which is how the list behaved before the column. The cost is

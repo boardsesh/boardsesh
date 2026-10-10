@@ -118,6 +118,12 @@ recompute that `climb-stats-self-heal` runs as `maintenance-delivery` started
 reading both one PR later, and that role holds column grants. The two columns
 belong in `CLIMB_STATS_SELF_HEAL_GRANTS` from the PR that carries 0252.
 
+The same order applies in reverse. The recompute stopped reading both columns
+when the holds-epoch rule was removed, and the two grants stay in the list: a
+worker image from before the removal still reads them, and the migrator
+re-applies the list on every deploy. They go in the PR that drops the columns,
+after every worker runs the newer code.
+
 A role with a whole-table grant (`batch` on `board_climbs`, the provider roles)
 needs no grant change for a new column, but its jobs still hit the
 missing-column half of this if they select it before `migrate` has run.

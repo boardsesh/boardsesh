@@ -17,8 +17,8 @@ import type { ConnectionContext } from '@boardsesh/shared-schema';
  *  - an edit is made in place: no `board_climb_revisions` row, the revision
  *    numbers do not move, and a holds edit keeps the climb's sends and stars;
  *  - `climbRevisions` answers the empty list;
- *  - the holds epoch a climb was given before the retirement is still READ:
- *    sends on the old holds stay off the counts, search filters and Projects.
+ *  - the holds-epoch rule is gone as well: a climb left with a stored
+ *    `holds_revision_number` above 1 counts every tick, like any other climb.
  *
  * Storage is the only stub, as in spray-wall-api.test.ts.
  */
@@ -354,9 +354,9 @@ async function insertKilterClimb(): Promise<string> {
 const insertKilterSend = (climbUuid: string, climber: string, angle: number, difficulty: number) =>
   db.execute(sql`
     INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, quality, difficulty,
-                                 climb_revision, climbed_at, created_at, updated_at)
+                                 climbed_at, created_at, updated_at)
     VALUES (${uuidv4()}, ${climber}, ${climbUuid}, 'kilter', ${angle}, 'send', 4, ${difficulty},
-            1, now() - interval '10 minutes', now(), now())
+            now() - interval '10 minutes', now(), now())
   `);
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
@@ -510,40 +510,6 @@ describe('a holds edit in the window', () => {
     expect(await revisionColumnsOf(climbUuid)).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
     expect(await statsOf('kilter', climbUuid, 40)).toEqual(before);
   });
-
-  it('leaves saveTick stamping the climb revision, with and without one from the client', async () => {
-    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
-    const climbUuid = await saveSprayClimb(wall, holdIds);
-    await editSpray(climbUuid, { frames: framesFor([holdIds[0], holdIds[2]]) });
-
-    await logTick(climbUuid, STRANGER, 'send');
-    await tickMutations.saveTick(
-      {},
-      {
-        input: {
-          climbUuid,
-          boardType: 'spray',
-          angle: 40,
-          status: 'attempt',
-          attemptCount: 1,
-          isMirror: false,
-          isBenchmark: false,
-          comment: '',
-          climbedAt: new Date().toISOString(),
-          climbRevision: 1,
-        },
-      },
-      ctxFor(SETTER),
-    );
-
-    const ticks = (await db.execute(sql`
-      SELECT user_id, climb_revision FROM boardsesh_ticks WHERE climb_uuid = ${climbUuid} ORDER BY user_id
-    `)) as unknown as Array<{ user_id: string; climb_revision: number | null }>;
-    expect([...ticks]).toEqual([
-      { user_id: SETTER, climb_revision: 1 },
-      { user_id: STRANGER, climb_revision: 1 },
-    ]);
-  });
 });
 
 describe('climbRevisions', () => {
@@ -562,65 +528,41 @@ describe('climbRevisions', () => {
 });
 
 /**
- * What a holds edit made BEFORE revisions were retired left behind: the frames
- * moved, revision rows 1 and 2, the climb on revision 2 with its holds epoch at 2,
- * and the stats recomputed against that epoch. Nothing writes this any more, but
- * climbs that had it keep it, and every reader of the epoch still honours it.
+ * `holds_revision_number` above 1 is what a holds edit left behind while edits
+ * still recorded revisions. The rule that read it (a tick counted only when its
+ * `climb_revision` reached that number) was removed with the rest of #6023, and
+ * the columns are still in the table. A climb in that state must read like any
+ * other: its ticks here carry no revision, which the rule read as revision 1.
  */
-async function moveHoldsTheLegacyWay(climbUuid: string, frames: string): Promise<void> {
-  await editSpray(climbUuid, { frames });
-  await db.execute(sql`
-    INSERT INTO board_climb_revisions (board_type, climb_uuid, revision_number, changes, created_at)
-    VALUES ('spray', ${climbUuid}, 1, '{}'::text[], now() - interval '1 hour'),
-           ('spray', ${climbUuid}, 2, '{holds}'::text[], now() - interval '1 second')
-  `);
-  await db.execute(sql`
-    UPDATE board_climbs SET revision_number = 2, holds_revision_number = 2
-    WHERE uuid = ${climbUuid} AND board_type = 'spray'
-  `);
-  await recomputeClimbStatsBulk(db, [{ boardType: 'spray', climbUuid, angle: 40 }]);
-}
-
-describe('a climb whose holds moved before revisions were retired (#6023)', () => {
-  it('keeps the sends from before the move off its count, first ascent, stars and sent marks', async () => {
+describe('a climb left with a holds epoch above 1', () => {
+  it('counts every tick in its stats, the search filters and Projects', async () => {
     const { wall, holdIds } = await createPublishedWall({ isPublic: true });
     const climbUuid = await saveSprayClimb(wall, holdIds);
     await logTick(climbUuid, OWNER, 'send', 5);
     await logTick(climbUuid, STRANGER, 'send', 3);
     await logTick(climbUuid, SETTER, 'attempt');
+    const storedTickRevisions = (await db.execute(
+      sql`SELECT DISTINCT climb_revision FROM boardsesh_ticks WHERE climb_uuid = ${climbUuid}`,
+    )) as unknown as Array<{ climb_revision: number | null }>;
+    expect([...storedTickRevisions]).toEqual([{ climb_revision: null }]);
 
-    await moveHoldsTheLegacyWay(climbUuid, framesFor([holdIds[0], holdIds[2]]));
+    await db.execute(sql`
+      UPDATE board_climbs SET revision_number = 2, holds_revision_number = 2
+      WHERE uuid = ${climbUuid} AND board_type = 'spray'
+    `);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'spray', climbUuid, angle: 40 }]);
 
     expect(await statsOf('spray', climbUuid)).toMatchObject({
-      ascensionist_count: 0,
-      boardsesh_ascensionist_count: 0,
-      fa_username: null,
-      fa_at: null,
-      quality_average: null,
-      // The setter's grade is not a statistic and stays.
-      display_difficulty: 18,
-    });
-    expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([]);
-    expect(await searchWall(wall, STRANGER, { hideCompleted: true })).toEqual([climbUuid]);
-    expect(await searchWall(wall, STRANGER, { onlyRatedByMe: true })).toEqual([]);
-    expect(await searchWall(wall, SETTER, { showOnlyAttempted: true })).toEqual([]);
-    expect(await searchWall(wall, SETTER, { hideAttempted: true })).toEqual([climbUuid]);
-    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([climbUuid]);
-
-    // A send on the new holds counts, and is the first ascent of them.
-    await logTick(climbUuid, STRANGER, 'send', 2);
-    expect(await statsOf('spray', climbUuid)).toMatchObject({
-      ascensionist_count: 1,
-      fa_username: 'User ' + STRANGER,
-      quality_average: 2,
+      ascensionist_count: 2,
+      fa_username: 'User ' + OWNER,
+      quality_average: 4,
     });
     expect(await searchWall(wall, STRANGER, { showOnlyCompleted: true })).toEqual([climbUuid]);
-    expect(await searchWall(wall, OWNER, { showOnlyCompleted: true })).toEqual([]);
-  });
-
-  it('lists a climb as a project only on tries of its current holds', async () => {
-    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
-    const climbUuid = await saveSprayClimb(wall, holdIds);
+    expect(await searchWall(wall, STRANGER, { hideCompleted: true })).toEqual([]);
+    expect(await searchWall(wall, STRANGER, { onlyRatedByMe: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, SETTER, { showOnlyAttempted: true })).toEqual([climbUuid]);
+    expect(await searchWall(wall, SETTER, { hideAttempted: true })).toEqual([]);
+    expect(await searchWall(wall, STRANGER, { minUserRating: 4 })).toEqual([]);
 
     /** The climber's Projects playlist, its total, and the count on its library card. */
     const projectsOf = async (climber: string) => {
@@ -636,73 +578,59 @@ describe('a climb whose holds moved before revisions were retired (#6023)', () =
         cardCount: cards.find((card) => card.type === 'PROJECTS')?.count,
       };
     };
-    const project = { uuids: [climbUuid], totalCount: 1, cardCount: 1 };
-    const noProject = { uuids: [], totalCount: 0, cardCount: 0 };
-
-    await logTick(climbUuid, SETTER, 'attempt');
-    await logTick(climbUuid, STRANGER, 'send');
-    expect(await projectsOf(SETTER)).toEqual(project);
-    expect(await projectsOf(STRANGER)).toEqual(noProject);
-
-    await moveHoldsTheLegacyWay(climbUuid, framesFor([holdIds[0], holdIds[2]]));
-    // Neither has tried the new holds. The old send does not turn into a
-    // project, and the old attempt is no longer one.
-    expect(await projectsOf(SETTER)).toEqual(noProject);
-    expect(await projectsOf(STRANGER)).toEqual(noProject);
-
-    // Trying the new holds makes it a project again, old send or not.
-    await logTick(climbUuid, STRANGER, 'attempt');
-    expect(await projectsOf(STRANGER)).toEqual(project);
-    await logTick(climbUuid, STRANGER, 'send');
-    expect(await projectsOf(STRANGER)).toEqual(noProject);
+    expect(await projectsOf(SETTER)).toEqual({ uuids: [climbUuid], totalCount: 1, cardCount: 1 });
+    expect(await projectsOf(STRANGER)).toEqual({ uuids: [], totalCount: 0, cardCount: 0 });
   });
 
-  it('finds the edited climbs among the unedited ones in a logbook', async () => {
-    // Projects reads the holds epoch through the index of edited climbs only, so
-    // every other climb must come out at epoch 1 without its row being read.
-    const { wall, holdIds } = await createPublishedWall({ isPublic: true });
-    const [first, second, third] = holdIds;
-    const holdSets = [
-      [first, second, third],
-      [first, second],
-      [first, third],
-      [second, third],
-      [second, first],
-      [third, first],
-    ];
-    const climbUuids: string[] = [];
-    for (const [index, holdSet] of holdSets.entries()) {
-      climbUuids.push(await saveSprayClimb(wall, holdSet, { name: `Climb ${index}` }));
-    }
-    const [sentThenEdited, sentOnly, triedThenEdited, ...triedOnly] = climbUuids;
-    for (const climbUuid of climbUuids) await logTick(climbUuid, STRANGER, 'attempt');
-    await logTick(sentThenEdited, STRANGER, 'send');
-    await logTick(sentOnly, STRANGER, 'send');
+  it('keeps a sent climb out of the recommendations, and the card count subtraction adds up', async () => {
+    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const insertClimb = async (holdsEpoch: number): Promise<string> => {
+      const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+      await db.execute(sql`
+        INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, angle,
+                                  is_draft, is_listed, created_at, published_at, compatible_size_ids,
+                                  revision_number, holds_revision_number)
+        VALUES (${climbUuid}, 'kilter', 1, 'Fresh', '', 'p1117r12p1140r15', 1, 40,
+                false, true, ${publishedAt}, ${publishedAt}, ARRAY[10]::int[],
+                ${holdsEpoch}, ${holdsEpoch})
+      `);
+      return climbUuid;
+    };
+    const insertSend = (climbUuid: string) =>
+      db.execute(sql`
+        INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status,
+                                     climbed_at, created_at, updated_at)
+        VALUES (${uuidv4()}, ${STRANGER}, ${climbUuid}, 'kilter', 40, 'send', now(), now(), now())
+      `);
 
-    /** Page, total and library card, which must always describe the same set. */
-    const projects = async () => {
-      const playlist = (await playlistQueries.smartPlaylist(
-        {},
-        { input: { type: 'PROJECTS', userId: STRANGER, boardName: 'spray' } },
-        ctxFor(STRANGER),
-      )) as { climbs: Array<{ uuid: string }>; totalCount: number };
-      const cards = await playlistQueries.mySmartPlaylistCounts({}, {}, ctxFor(STRANGER));
-      const uuids = playlist.climbs.map((climb) => climb.uuid).sort();
-      expect(playlist.totalCount).toBe(uuids.length);
-      expect(cards.find((card) => card.type === 'PROJECTS')?.count).toBe(uuids.length);
-      return uuids;
+    // Sent, at epoch 1; sent twice, at a stored epoch of 3; never sent.
+    await insertSend(await insertClimb(1));
+    const sentAtStoredEpoch = await insertClimb(3);
+    await insertSend(sentAtStoredEpoch);
+    await insertSend(sentAtStoredEpoch);
+    await insertClimb(1);
+
+    const params = {
+      type: 'RECOMMENDED_FRESH' as const,
+      target: { boardType: 'kilter', layoutId: 1, sizeId: 10, angle: 40, setIds: null },
+      shorterSizeIds: [],
+      narrowerSameHeightSizeIds: [],
+      gradeBand: null,
+      freshWindowDays: 365,
+    };
+    const countOf = async (statement: Parameters<typeof db.execute>[0]) => {
+      const [row] = (await db.execute(statement)) as unknown as Array<{ count: number | string }>;
+      return Number(row.count);
     };
 
-    expect(await projects()).toEqual([triedThenEdited, ...triedOnly].sort());
+    const excluded = await countOf(buildRecommendationCountSql({ ...params, excludeUserId: STRANGER }));
+    const catalog = await countOf(buildRecommendationCountSql({ ...params, excludeUserId: null }));
+    const overlap = await countOf(buildRecommendationSentOverlapSql({ ...params, excludeUserId: null }, STRANGER));
 
-    await moveHoldsTheLegacyWay(sentThenEdited, framesFor([third, second, first]));
-    await moveHoldsTheLegacyWay(triedThenEdited, framesFor([third, second]));
-    // The two edited climbs leave the list until their new holds are tried; the
-    // four nobody edited are untouched.
-    expect(await projects()).toEqual([...triedOnly].sort());
-
-    await logTick(sentThenEdited, STRANGER, 'attempt');
-    expect(await projects()).toEqual([sentThenEdited, ...triedOnly].sort());
+    expect(excluded).toBe(1);
+    expect(catalog).toBe(3);
+    expect(overlap).toBe(2);
+    expect(catalog - overlap).toBe(excluded);
   });
 });
 
@@ -802,6 +730,112 @@ describe('the backfill at the end of migration 0252', () => {
   });
 });
 
+// Migration 0263 sets the retired revision numbers back to 1 on any climb whose
+// holds epoch is above 1, and marks that climb's stats keys for a recompute.
+// The app still compares a tick's revision with the epoch, and a tick saved
+// today has none, so a stored epoch above 1 would cost every new send its sent
+// mark on the phone. Read out of the file and run here, like 0252's backfill.
+describe('migration 0263, the reset of the retired revision numbers', () => {
+  const reset = readFileSync(
+    new URL('../../../db/drizzle/0263_reset_retired_climb_revision_numbers.sql', import.meta.url),
+    'utf8',
+  )
+    .split('\n')
+    .filter((line) => !line.startsWith('--'))
+    .join('\n')
+    .trim();
+  const runReset = () => db.execute(sql.raw(reset));
+
+  async function insertClimb(revisionNumber: number, holdsRevisionNumber: number): Promise<string> {
+    const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
+    await db.execute(sql`
+      INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, is_draft, is_listed, user_id,
+                                revision_number, holds_revision_number)
+      VALUES (${climbUuid}, 'kilter', 1, 'Reset climb', 'p1117r12', false, true, ${SETTER},
+              ${revisionNumber}, ${holdsRevisionNumber})
+    `);
+    return climbUuid;
+  }
+
+  const pendingAnglesOf = async (climbUuid: string): Promise<number[]> => {
+    const rows = (await db.execute(sql`
+      SELECT angle FROM climb_stats_recompute_pending
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} ORDER BY angle
+    `)) as unknown as Array<{ angle: number }>;
+    return [...rows].map((row) => Number(row.angle));
+  };
+
+  it('is one statement that only writes board_climbs and the recompute markers', () => {
+    expect(reset).toMatch(/^WITH reset AS \(\s+UPDATE "board_climbs"/);
+    expect(reset.match(/;/g)).toHaveLength(1);
+    expect(reset).not.toMatch(/board_climb_revisions|boardsesh_ticks/);
+  });
+
+  it('resets a climb whose holds epoch is above 1 and re-delivers it', async () => {
+    const climbUuid = await insertClimb(3, 2);
+    const before = await revisionColumnsOf(climbUuid);
+
+    await runReset();
+
+    const after = await revisionColumnsOf(climbUuid);
+    expect(after).toMatchObject({ revision_number: 1, holds_revision_number: 1 });
+    expect(after.sync_seq).toBeGreaterThan(before.sync_seq);
+  });
+
+  it('leaves a climb at epoch 1 alone, whatever its revision number', async () => {
+    const renamedOnly = await insertClimb(2, 1);
+    const unedited = await insertClimb(1, 1);
+    const renamedOnlyBefore = await revisionColumnsOf(renamedOnly);
+    const uneditedBefore = await revisionColumnsOf(unedited);
+
+    await runReset();
+
+    // Not rewritten at all: `sync_seq` is where it was, so no phone re-pulls them.
+    expect(await revisionColumnsOf(renamedOnly)).toEqual(renamedOnlyBefore);
+    expect(await revisionColumnsOf(unedited)).toEqual(uneditedBefore);
+    expect(await pendingAnglesOf(renamedOnly)).toEqual([]);
+  });
+
+  it('changes nothing on a second run', async () => {
+    const climbUuid = await insertClimb(3, 2);
+
+    await runReset();
+    const afterFirstRun = await revisionColumnsOf(climbUuid);
+    await runReset();
+
+    expect(await revisionColumnsOf(climbUuid)).toEqual(afterFirstRun);
+  });
+
+  it('marks every stats key of a climb it reset, and keeps a marker that was already there', async () => {
+    const climbUuid = await insertClimb(2, 2);
+    const untouched = await insertClimb(1, 1);
+    for (const [uuid, angle] of [
+      [climbUuid, 25],
+      [climbUuid, 40],
+      [untouched, 40],
+    ] as const) {
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count)
+        VALUES ('kilter', ${uuid}, ${angle}, 0)
+      `);
+    }
+    await db.execute(sql`
+      INSERT INTO climb_stats_recompute_pending (board_type, climb_uuid, angle, requested_at)
+      VALUES ('kilter', ${climbUuid}, 40, '2026-01-01T00:00:00Z')
+    `);
+
+    await runReset();
+
+    expect(await pendingAnglesOf(climbUuid)).toEqual([25, 40]);
+    expect(await pendingAnglesOf(untouched)).toEqual([]);
+    const [kept] = (await db.execute(sql`
+      SELECT requested_at < now() - interval '1 day' AS is_original FROM climb_stats_recompute_pending
+      WHERE board_type = 'kilter' AND climb_uuid = ${climbUuid} AND angle = 40
+    `)) as unknown as Array<{ is_original: boolean }>;
+    expect(kept.is_original).toBe(true);
+  });
+});
+
 describe('an edit decided on a climb another edit has since changed', () => {
   it('is refused with CLIMB_EDIT_CONFLICT, and leaves the frames and the hold rows agreeing', async () => {
     // The setter has the climb open on two devices with frames F0. The first
@@ -868,59 +902,5 @@ describe('an edit decided on a climb another edit has since changed', () => {
     await editSpray(climbUuid, { name: 'Renamed' }, SETTER);
     expect((await climbRowOf(climbUuid)).name).toBe('Renamed');
     expect(await revisionsOf(climbUuid)).toEqual([]);
-  });
-});
-
-describe('recommendations and a send from before the holds moved (#6023)', () => {
-  it('offers the climb again, and the card count subtraction still adds up', async () => {
-    const publishedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const insertClimb = async (holdsEpoch: number): Promise<string> => {
-      const climbUuid = uuidv4().replace(/-/g, '').toUpperCase();
-      await db.execute(sql`
-        INSERT INTO board_climbs (uuid, board_type, layout_id, name, description, frames, frames_count, angle,
-                                  is_draft, is_listed, created_at, published_at, compatible_size_ids,
-                                  revision_number, holds_revision_number)
-        VALUES (${climbUuid}, 'kilter', 1, 'Fresh', '', 'p1117r12p1140r15', 1, 40,
-                false, true, ${publishedAt}, ${publishedAt}, ARRAY[10]::int[],
-                ${holdsEpoch}, ${holdsEpoch})
-      `);
-      return climbUuid;
-    };
-    const insertSend = (climbUuid: string, climbRevision: number | null) =>
-      db.execute(sql`
-        INSERT INTO boardsesh_ticks (uuid, user_id, climb_uuid, board_type, angle, status, climb_revision,
-                                     climbed_at, created_at, updated_at)
-        VALUES (${uuidv4()}, ${STRANGER}, ${climbUuid}, 'kilter', 40, 'send', ${climbRevision}, now(), now(), now())
-      `);
-
-    // Sent as it stands; sent before its holds moved (twice, one with no
-    // revision at all); never sent.
-    await insertSend(await insertClimb(1), null);
-    const editedSinceSent = await insertClimb(3);
-    await insertSend(editedSinceSent, 2);
-    await insertSend(editedSinceSent, null);
-    await insertClimb(1);
-
-    const params = {
-      type: 'RECOMMENDED_FRESH' as const,
-      target: { boardType: 'kilter', layoutId: 1, sizeId: 10, angle: 40, setIds: null },
-      shorterSizeIds: [],
-      narrowerSameHeightSizeIds: [],
-      gradeBand: null,
-      freshWindowDays: 365,
-    };
-    const countOf = async (statement: Parameters<typeof db.execute>[0]) => {
-      const [row] = (await db.execute(statement)) as unknown as Array<{ count: number | string }>;
-      return Number(row.count);
-    };
-
-    const excluded = await countOf(buildRecommendationCountSql({ ...params, excludeUserId: STRANGER }));
-    const catalog = await countOf(buildRecommendationCountSql({ ...params, excludeUserId: null }));
-    const overlap = await countOf(buildRecommendationSentOverlapSql({ ...params, excludeUserId: null }, STRANGER));
-
-    expect(excluded).toBe(2);
-    expect(catalog).toBe(3);
-    expect(overlap).toBe(1);
-    expect(catalog - overlap).toBe(excluded);
   });
 });

@@ -255,51 +255,6 @@ describe('saveTick persistence and idempotent replay', () => {
     `);
     expect(rows).toEqual([{ climbed_at: '2026-05-02 08:02:03.123456' }]);
   });
-
-  // #6023. `tick-climb-1` is in no catalogue, so the stored revision is NULL
-  // (unknown) whatever the client says; the stamping rules themselves are in
-  // save-tick-climb-revision.test.ts. What matters here is the round trip a
-  // phone makes: the value saveTick answers with is the value the next
-  // syncTicks pull writes into the local row.
-  it('answers with the stored climb revision, and syncTicks emits the same value', async () => {
-    const { syncQueries } = await import('../graphql/resolvers/sync/queries');
-    const pulledRevisions = async () => {
-      const page = await syncQueries.syncTicks(undefined, { cursor: null, limit: 500 }, ctx());
-      return new Map(
-        (page.documents as Array<Record<string, unknown>>).map((doc) => [doc.uuid, doc.climb_revision ?? null]),
-      );
-    };
-
-    const unknownClimb = (await tickMutations.saveTick(
-      undefined,
-      { input: { ...baseInput, climbRevision: 2 } },
-      ctx(),
-    )) as TickRow & { climbRevision: number | null };
-    expect(unknownClimb.climbRevision).toBeNull();
-
-    await db.execute(sql`
-      INSERT INTO board_climbs (uuid, board_type, layout_id, name, revision_number, holds_revision_number)
-      VALUES ('tick-climb-revised', 'kilter', 1, 'Revised', 3, 2)
-      ON CONFLICT (uuid) DO UPDATE SET revision_number = 3, holds_revision_number = 2
-    `);
-    try {
-      const revisedClimb = (await tickMutations.saveTick(
-        undefined,
-        { input: { ...baseInput, climbUuid: 'tick-climb-revised', climbRevision: 2 } },
-        ctx(),
-      )) as TickRow & { climbRevision: number | null };
-      expect(revisedClimb.climbRevision).toBe(2);
-
-      expect(await pulledRevisions()).toEqual(
-        new Map([
-          [unknownClimb.uuid, null],
-          [revisedClimb.uuid, 2],
-        ]),
-      );
-    } finally {
-      await db.execute(sql`DELETE FROM board_climbs WHERE uuid = 'tick-climb-revised'`);
-    }
-  });
 });
 
 // Regression coverage for #2386: a stale/unknown sessionId must never lose the

@@ -385,11 +385,14 @@ export const boardClimbs = pgTable(
     // The climb's revision (#6023): the highest `revision_number` it had in
     // `board_climb_revisions` when edits still recorded revisions, or 1. Nothing
     // writes it any more (revision history was retired), so it is frozen at its
-    // stored value; a tick is still stamped from this row.
+    // stored value. No server query reads it as a rule; it is still sent to
+    // clients (search rows, `syncClimbs`) until the column is dropped.
     revisionNumber: integer('revision_number').notNull().default(1),
-    // The revision at which the holds last changed (frames or frame count), the
-    // "holds epoch", frozen with `revisionNumber`. Ticks stamped at or after it
-    // were climbed on the holds the climb has now; the epoch reads still use it.
+    // The revision at which the holds last changed (frames or frame count),
+    // frozen with `revisionNumber`. The server rule that compared a tick's
+    // revision with it ("holds epoch") was removed, and migration 0263 set any
+    // value above 1 back to 1 because the app still makes that comparison. The
+    // column is only passed through to clients until it is dropped.
     holdsRevisionNumber: integer('holds_revision_number').notNull().default(1),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
@@ -441,13 +444,9 @@ export const boardClimbs = pgTable(
       .where(sql`${table.userId} IS NOT NULL`),
     // Index for climb name lookups (used by JSON import to resolve names to UUIDs)
     nameIdx: index('board_climbs_name_idx').on(table.boardType, table.name),
-    // The climbs whose holds have ever been moved by an edit (#6023): a tiny set
-    // beside the catalogue. Per-climber reads that need the holds epoch of every
-    // climb in a logbook (the Projects playlist) join this index instead of
-    // probing board_climbs once per climb, so a logbook of unedited climbs never
-    // touches the table. A climb absent from it has epoch 1. The key carries the
-    // epoch itself, so the read can stay inside the index. Queries must repeat
-    // the predicate to use it: `climbHoldsEverMovedSql` in holds-epoch.ts.
+    // The climbs whose holds were ever moved by an edit (#6023). No query reads
+    // this index since the holds-epoch rule was removed; it stays declared so
+    // the schema matches the database, and goes with `holdsRevisionNumber`.
     // Built out-of-band in production (see the migration's header).
     holdsMovedIdx: index('board_climbs_holds_moved_idx')
       .on(table.boardType, table.uuid, table.holdsRevisionNumber)
