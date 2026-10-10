@@ -1,8 +1,7 @@
 /**
  * Spray wall training data (SW-20, #5471): the admin vetting queue over wall
- * versions whose owners switched "Help train hold finding" on, and the
- * scheduler's export of the approved ones. See `docs/spray-walls.md`,
- * "Training data".
+ * versions whose owners have "Help train hold finding" on, and the scheduler's
+ * export of the approved ones. See `docs/spray-walls.md`, "Training data".
  */
 export const sprayTrainingTypeDefs = /* GraphQL */ `
   "An admin's verdict on one wall version as training data. UNREVIEWED is the absence of one."
@@ -181,7 +180,12 @@ export const sprayTrainingTypeDefs = /* GraphQL */ `
     "The export written on this run, or null when nothing changed or nothing is approved."
     exportId: String
     imagesWritten: Int!
-    "Stored exports deleted because a version in them is no longer eligible and approved, or they fell out of the newest two."
+    """
+    Stored exports deleted on this run: any holding a version that is no longer
+    eligible and approved, any whose manifest is missing (a run that died
+    before writing it) or cannot be parsed, and any that fell out of the newest
+    two.
+    """
     exportsRetired: Int!
     "True when nothing was written; skippedReason says why."
     skipped: Boolean!
@@ -193,8 +197,10 @@ export const sprayTrainingTypeDefs = /* GraphQL */ `
 
   extend type Query {
     """
-    Wall versions eligible as training data, by review status, oldest first.
-    Community admins only (\`spray\`-scoped or global). At most 25 per page.
+    Wall versions eligible as training data, by review status. UNREVIEWED
+    lists the oldest version first, so the queue drains in arrival order;
+    APPROVED and REJECTED list the newest verdict first. Community admins only
+    (\`spray\`-scoped or global). At most 25 per page.
     """
     sprayTrainingQueue(status: SprayTrainingReviewStatus!, limit: Int, offset: Int): SprayTrainingQueue!
   }

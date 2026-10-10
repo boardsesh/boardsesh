@@ -68,8 +68,8 @@ const SPRAY_TRAINING_CODES = {
  * Whether a `spray_wall_versions` row may be used as training data. Needs
  * `spray_walls` and `user_boards` joined (see {@link eligibleVersionsFrom}).
  *
- *  - the owner switched "Help train hold finding" on (`training_consent_at`
- *    is set, which only an explicit yes from a client does);
+ *  - the wall has "Help train hold finding" on (`training_consent_at` is set,
+ *    which only a client sending `trainingConsent: true` does);
  *  - the version is not a draft and still has a photo (the retention purge
  *    clears `photo_key`);
  *  - the wall and its board are not deleted, and the wall is not admin-hidden;
