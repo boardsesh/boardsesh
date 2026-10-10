@@ -50,6 +50,9 @@ describe('deferConsentDestination', () => {
     expect(deferConsentDestination('/privacy-consent')).toBe(false);
     expect(deferConsentDestination('/auth/login')).toBe(false);
     expect(deferConsentDestination('com.boardsesh.app://auth/callback?code=1')).toBe(false);
+    // Three slashes is the same route; the check is on the route, not the link.
+    expect(deferConsentDestination('com.boardsesh.app:///auth/callback?code=1')).toBe(false);
+    expect(deferConsentDestination('com.boardsesh.app://privacy-consent')).toBe(false);
     expect(consumeConsentDestination()).toBeNull();
   });
 

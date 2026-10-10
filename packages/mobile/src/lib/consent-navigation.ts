@@ -26,9 +26,13 @@ function destinationOf(path: string): string {
 /** Last incoming OS destination wins; the privacy step must remain the focused route. */
 export function deferConsentDestination(path: string): boolean {
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || getConsentSnapshot().settled) return false;
-  if (path === '/privacy-consent' || path.startsWith('/auth') || path.startsWith('com.boardsesh.app://auth/'))
-    return false;
   const destination = destinationOf(path);
+  // In-app links (a bare path or the app's own scheme) to auth and to the
+  // consent step itself are left alone. Judged on the route, so every spelling
+  // counts — `com.boardsesh.app:///auth/callback` included. A universal link is
+  // deferred as before.
+  const isUniversalLink = /^https?:\/\//.test(path);
+  if (!isUniversalLink && (destination === '/privacy-consent' || destination.startsWith('/auth'))) return false;
   // A plain cold start reports the app's own root URL (`com.boardsesh.app:///`).
   // That is where the app opens anyway, so there is nothing to come back to —
   // and navigating to it later would re-run the root redirect into Home.
