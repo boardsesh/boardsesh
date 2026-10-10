@@ -20,11 +20,12 @@ import { PressableSurface } from '../PressableSurface';
 // them structurally without either importing the other.
 
 import { useCallback, useEffect, useMemo, type ComponentProps } from 'react';
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../providers/theme-provider';
 import { useDeviceLocation, type LocationStatus } from '../../lib/use-device-location';
 import { canOpenAppSettings, openAppSettings } from '../../lib/open-app-settings';
+import { announceQueued } from '../../lib/announce-queued';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -221,6 +222,62 @@ export function SprayWallVisibilityField({
             ? t('mobile.sprayVisibility.unlistedHint')
             : t('mobile.sprayVisibility.privateHint')}
       </Text>
+    </>
+  );
+}
+
+/**
+ * The owner's "Help train hold finding" switch (SW-20, #5471), drawn beside the
+ * control that says who sees the wall because it is the other answer to "who
+ * sees my photo": under the three-way visibility control, or directly above the
+ * audience control where the privacy rollout has replaced it (`BoardForm`).
+ * Owner only: each caller decides that and leaves this out otherwise.
+ *
+ * Controlled, with the error slot inline: the edit screen is a modal route and a
+ * toast would draw behind it (`toast-provider.tsx`).
+ */
+export function SprayTrainingConsentField({
+  value,
+  onValueChange,
+  disabled = false,
+  errorMessage = null,
+}: {
+  value: boolean;
+  onValueChange: (next: boolean) => void;
+  disabled?: boolean;
+  errorMessage?: string | null;
+}) {
+  const styles = useTypographyStyles(createStyles);
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  // `accessibilityLiveRegion` below is Android-only, so VoiceOver is told, and
+  // only VoiceOver: TalkBack reads the live region and would hear it twice (the
+  // toast provider's rule). Keyed on the message, which the caller clears when
+  // the next flip starts, so a second refusal in the same words is said again.
+  useEffect(() => {
+    if (errorMessage && Platform.OS === 'ios') announceQueued(errorMessage);
+  }, [errorMessage]);
+  return (
+    <>
+      <SwitchRow
+        label={t('mobile.sprayTraining.label')}
+        description={t('mobile.sprayTraining.description')}
+        wrapDescription
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+      />
+      {errorMessage ? (
+        <Text
+          variant="footnote"
+          color={systemColors.error}
+          style={styles.visibilityHint}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="polite"
+        >
+          {errorMessage}
+        </Text>
+      ) : null}
     </>
   );
 }

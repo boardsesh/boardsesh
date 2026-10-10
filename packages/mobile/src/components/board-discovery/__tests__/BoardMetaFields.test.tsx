@@ -20,7 +20,11 @@ import { createElement, type ReactNode } from 'react';
 // say something when location is denied or no fix comes back.
 
 type InputMockProps = { accessibilityLabel?: string; autoCorrect?: boolean; spellCheck?: boolean };
+const announceMock = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
 vi.mock('react-native', () => ({
+  AccessibilityInfo: { announceForAccessibility: announceMock },
+  Platform: platform,
   TextInput: ({ accessibilityLabel, autoCorrect, spellCheck }: InputMockProps) =>
     createElement('input', {
       'aria-label': accessibilityLabel,
@@ -48,11 +52,45 @@ vi.mock('../../../theme/tokens', () => ({
   borderRadius: { lg: 12, md: 8 },
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    accessibilityRole,
+    accessibilityLiveRegion,
+  }: {
+    children?: ReactNode;
+    accessibilityRole?: string;
+    accessibilityLiveRegion?: string;
+  }) => createElement('span', { role: accessibilityRole, 'data-live-region': accessibilityLiveRegion }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../SwitchRow', () => ({
-  SwitchRow: ({ label }: { label: string }) => createElement('div', null, label),
+  // A disabled row ignores the press, as every platform's SwitchRow does.
+  SwitchRow: ({
+    label,
+    description,
+    value,
+    onValueChange,
+    disabled,
+  }: {
+    label: string;
+    description?: string;
+    value?: boolean;
+    onValueChange?: (next: boolean) => void;
+    disabled?: boolean;
+  }) =>
+    createElement('div', null, [
+      createElement('span', { key: 'label' }, label),
+      description ? createElement('span', { key: 'description' }, description) : null,
+      createElement('button', {
+        key: 'toggle',
+        'data-testid': `switch-${label}`,
+        'data-value': String(!!value),
+        'data-disabled': String(!!disabled),
+        onClick: () => {
+          if (!disabled) onValueChange?.(!value);
+        },
+      }),
+    ]),
 }));
 vi.mock('../../Button', () => ({
   Button: ({ title, loading }: { title: string; loading?: boolean }) =>
@@ -97,7 +135,12 @@ vi.mock('../../../lib/open-app-settings', () => ({
   openAppSettings: vi.fn(),
 }));
 
-import { BoardIdentityFields, BoardVisibilityFields, SprayWallVisibilityField } from '../BoardMetaFields';
+import {
+  BoardIdentityFields,
+  BoardVisibilityFields,
+  SprayTrainingConsentField,
+  SprayWallVisibilityField,
+} from '../BoardMetaFields';
 
 const visibilityBuilder = {
   isPublic: false,
@@ -115,6 +158,8 @@ const visibilityBuilder = {
 beforeEach(() => {
   location.status = 'idle';
   settings.canOpen = true;
+  announceMock.mockClear();
+  platform.OS = 'ios';
 });
 
 describe('BoardIdentityFields name input', () => {
@@ -194,5 +239,85 @@ describe('BoardVisibilityFields switches', () => {
     const { queryByText } = render(<BoardVisibilityFields builder={visibilityBuilder} hideVisibilitySwitches />);
     expect(queryByText('mobile.create.public')).toBeNull();
     expect(queryByText('mobile.create.unlisted')).toBeNull();
+  });
+});
+
+describe('SprayTrainingConsentField', () => {
+  it('says what the switch does and hands back the flip', () => {
+    const onValueChange = vi.fn();
+    const { getByText, getByTestId, queryByText } = render(
+      <SprayTrainingConsentField value onValueChange={onValueChange} />,
+    );
+    expect(getByText('mobile.sprayTraining.description')).toBeTruthy();
+    const toggle = getByTestId('switch-mobile.sprayTraining.label');
+    expect(toggle.getAttribute('data-value')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onValueChange).toHaveBeenCalledExactlyOnceWith(false);
+    expect(queryByText('mobile.sprayTraining.updateError')).toBeNull();
+  });
+
+  // How the row holds its place while its read is out: the same label and
+  // description, so the same height, with the switch off and unavailable.
+  it('draws a held row in full, off and disabled, and hands back no flip', () => {
+    const onValueChange = vi.fn();
+    const { getByText, getByTestId } = render(
+      <SprayTrainingConsentField value={false} onValueChange={onValueChange} disabled />,
+    );
+    expect(getByText('mobile.sprayTraining.label')).toBeTruthy();
+    expect(getByText('mobile.sprayTraining.description')).toBeTruthy();
+    const toggle = getByTestId('switch-mobile.sprayTraining.label');
+    expect(toggle.getAttribute('data-value')).toBe('false');
+    // `disabled` is what SwitchRow turns into the platform's unavailable state.
+    expect(toggle.getAttribute('data-disabled')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it('says nothing to a screen reader while there is no refusal', () => {
+    render(<SprayTrainingConsentField value onValueChange={() => {}} />);
+    expect(announceMock).not.toHaveBeenCalled();
+  });
+
+  it('shows a refusal inline, as an alert, and tells VoiceOver', () => {
+    const { getByRole } = render(
+      <SprayTrainingConsentField
+        value={false}
+        onValueChange={() => {}}
+        errorMessage="mobile.sprayTraining.updateError"
+      />,
+    );
+    const refusal = getByRole('alert');
+    expect(refusal.textContent).toBe('mobile.sprayTraining.updateError');
+    // TalkBack reads the live region; VoiceOver ignores it and needs the call.
+    expect(refusal.getAttribute('data-live-region')).toBe('polite');
+    expect(announceMock).toHaveBeenCalledExactlyOnceWith('mobile.sprayTraining.updateError');
+  });
+
+  it('leaves TalkBack to the live region, which would otherwise hear the refusal twice', () => {
+    platform.OS = 'android';
+    const { getByRole } = render(
+      <SprayTrainingConsentField
+        value={false}
+        onValueChange={() => {}}
+        errorMessage="mobile.sprayTraining.updateError"
+      />,
+    );
+    expect(getByRole('alert').getAttribute('data-live-region')).toBe('polite');
+    expect(announceMock).not.toHaveBeenCalled();
+  });
+
+  it('tells VoiceOver again when a later flip is refused in the same words', () => {
+    const refused = (
+      <SprayTrainingConsentField
+        value={false}
+        onValueChange={() => {}}
+        errorMessage="mobile.sprayTraining.updateError"
+      />
+    );
+    const { rerender } = render(refused);
+    // The row clears the message when the next flip starts.
+    rerender(<SprayTrainingConsentField value onValueChange={() => {}} />);
+    rerender(refused);
+    expect(announceMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -541,6 +541,16 @@ describe('leaveDecision', () => {
     expect(leaveDecision(atReview(), EDITOR_IDLE)).toBe('confirm');
   });
 
+  it('asks while a request the machine does not run is in flight, where it would otherwise just leave', () => {
+    // A resumed wall on the photo step: nothing uploaded, nothing to keep.
+    const atPhoto = addWallReducer(initialAddWallState(), {
+      type: 'RESUMED_AT_PHOTO',
+      wall: { wallUuid: 'wall-1', layoutId: 9001, viewerCanEdit: true },
+    });
+    expect(leaveDecision(atPhoto, EDITOR_IDLE)).toBe('leave');
+    expect(leaveDecision(atPhoto, EDITOR_IDLE, true)).toBe('confirm');
+  });
+
   it('always lets the climber out of done, whatever stale flags the run left behind', () => {
     const done = run(
       [
@@ -554,6 +564,7 @@ describe('leaveDecision', () => {
     );
     expect(leaveDecision(done, EDITOR_IDLE)).toBe('leave');
     expect(leaveDecision(done, { dirty: true, handingOver: true })).toBe('leave');
+    expect(leaveDecision(done, EDITOR_IDLE, true)).toBe('leave');
     // A detection flag that never cleared would otherwise ask first.
     const detectionStuck = { ...done, detection: { ...done.detection, outcome: 'running' as const } };
     expect(leaveDecision(detectionStuck, EDITOR_IDLE)).toBe('leave');

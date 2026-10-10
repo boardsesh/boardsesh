@@ -186,6 +186,11 @@ export function buildEditorSeed(
         confidence: candidate.confidence,
         review: 'pending',
         dirty: false,
+        // The find's own stamp, never this loop's position: finds below the floor
+        // were skipped above, so a counter here would name the wrong suggestion.
+        ...(candidate.detectionId != null && candidate.index != null
+          ? { origin: { detectionId: candidate.detectionId, candidateIndex: candidate.index } }
+          : {}),
       });
     }
   }

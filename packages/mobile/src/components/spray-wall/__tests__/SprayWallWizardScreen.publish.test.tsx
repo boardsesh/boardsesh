@@ -177,6 +177,16 @@ vi.mock('../../board-discovery/BoardMetaFields', () => ({
   BoardIdentityFields: () => null,
   BoardVisibilityFields: () => null,
   SectionLabel: () => null,
+  SprayWallVisibilityField: () => null,
+  SprayTrainingConsentField: () => null,
+}));
+vi.mock('../SprayWallTrainingConsentRow', () => ({ SprayWallTrainingConsentRow: () => null }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => 'me' }));
+// No training switch flip is ever on the wire here: the hold has its own cases
+// in SprayWallWizardScreen.test.tsx.
+vi.mock('../../../lib/spray/use-spray-wall-training-consent', () => ({
+  useSprayWallTrainingConsentSaving: () => false,
+  isSprayWallTrainingConsentSaving: () => false,
 }));
 // One object for the whole file: the wizard's callbacks list the builder as a
 // dependency, and a fresh one per render would rebuild every one of them.

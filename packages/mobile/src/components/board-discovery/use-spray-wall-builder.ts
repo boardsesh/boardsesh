@@ -81,6 +81,9 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
   const [locationName, setLocationName] = useState(seed?.locationName ?? '');
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [selectedGym, setSelectedGymState] = useState<{ uuid: string; name: string } | null>(null);
+  // "Help train hold finding" (SW-20, #5471). On by default; the switch sits
+  // beside visibility and the photo step says so.
+  const [trainingConsent, setTrainingConsent] = useState(true);
 
   /**
    * Pick (or clear) the wall's gym, back-filling the location name the way
@@ -140,8 +143,11 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
       latitude: coords?.latitude,
       longitude: coords?.longitude,
       gymUuid: selectedGym?.uuid,
+      // Sent whether on or off, never left to the server's default: only a
+      // client that showed the switch can say what its owner answered.
+      trainingConsent,
     };
-  }, [name, angle, isPublic, isUnlisted, hideLocation, locationName, coords, selectedGym]);
+  }, [name, angle, isPublic, isUnlisted, hideLocation, locationName, coords, selectedGym, trainingConsent]);
 
   /**
    * The visibility the climber asked for, to be applied once the wall has
@@ -176,6 +182,8 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
       setCoords,
       selectedGym,
       setSelectedGym,
+      trainingConsent,
+      setTrainingConsent,
       canCreate,
       buildCreateInput,
       pendingVisibility,
@@ -190,6 +198,7 @@ export function useSprayWallBuilder(seed?: SprayWallBuilderSeed | null) {
       coords,
       selectedGym,
       setSelectedGym,
+      trainingConsent,
       canCreate,
       buildCreateInput,
       pendingVisibility,

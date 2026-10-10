@@ -100,7 +100,18 @@ describe('useSprayWallBuilder', () => {
       latitude: undefined,
       longitude: undefined,
       gymUuid: undefined,
+      trainingConsent: true,
     });
+  });
+
+  it("opens with Help train hold finding on, and sends the climber's answer with the create", () => {
+    const { result } = renderHook(() => useSprayWallBuilder());
+    act(() => result.current.setName('Garage wall'));
+    expect(result.current.trainingConsent).toBe(true);
+    // Said out loud both ways: the create never leaves the answer to a default.
+    expect(result.current.buildCreateInput()).toMatchObject({ trainingConsent: true });
+    act(() => result.current.setTrainingConsent(false));
+    expect(result.current.buildCreateInput()).toMatchObject({ trainingConsent: false });
   });
 
   it('sends the chosen visibility with the create, so the server holds it (#5513)', () => {

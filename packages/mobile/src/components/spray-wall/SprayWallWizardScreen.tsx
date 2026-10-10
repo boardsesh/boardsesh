@@ -46,7 +46,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS, sprayHoldsReviewed, sprayWallPhotoPicked, sprayWallUploadFinished } from '@boardsesh/analytics';
 import { trackSprayEvent } from '../../lib/spray/spray-telemetry';
-import type { UserBoard, SprayDetectionCandidate } from '@boardsesh/shared-schema';
+import type { UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -59,10 +59,12 @@ import {
   type SprayEditorNotice,
   type SprayHoldSaveSummary,
 } from '../outline-editor/SprayHoldEditorScreen';
+import type { SprayHoldCandidate } from '../outline-editor/spray-hold-editor-types';
 import {
   BoardIdentityFields,
   BoardVisibilityFields,
   SectionLabel,
+  SprayTrainingConsentField,
   SprayWallVisibilityField,
 } from '../board-discovery/BoardMetaFields';
 import { SPRAY_ANGLE_OPTIONS, useSprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
@@ -113,6 +115,13 @@ import {
   useUpdateSprayWallVisibility,
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
+import {
+  isSprayWallTrainingConsentSaving,
+  useSprayWallTrainingConsentSaving,
+} from '../../lib/spray/use-spray-wall-training-consent';
+import { SprayWallTrainingConsentRow } from './SprayWallTrainingConsentRow';
+import { viewerOwnsSprayWall } from '../board-discovery/spray-detail-rows';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
@@ -253,6 +262,26 @@ export function SprayWallWizardScreen({
 
   const builder = useSprayWallBuilder();
   const [state, dispatch] = useReducer(addWallReducer, undefined, initialAddWallState);
+  /**
+   * A flip of this wall's training switch counts as a request in flight, beside
+   * the machine's own (`isBusy`). The switch saves on the tap, outside the
+   * machine, and moving off its step mid-flip would unmount it: a refusal would
+   * then reach the owner as an alert over some later step, with the wall still
+   * opted in and the switch out of reach to try again (a reset cannot go Back
+   * to it). So the flow holds the step until the flip settles, which is within
+   * the request deadline, and the answer shows inline beside the switch.
+   *
+   * `busy` is what the controls show. A handler asks `consentSavingNow`
+   * instead: `busy` is one render behind the tap that started the flip, and a
+   * press that queued up behind that tap runs before the render.
+   */
+  const wizardWallUuid = state.wall?.wallUuid ?? null;
+  const consentSaving = useSprayWallTrainingConsentSaving(wizardWallUuid);
+  const busy = isBusy(state) || consentSaving;
+  const consentSavingNow = useCallback(
+    () => isSprayWallTrainingConsentSaving(queryClient, wizardWallUuid),
+    [queryClient, wizardWallUuid],
+  );
   // Offline mode, said on the photo step before an upload tries and fails
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
   const connectivityReason = useConnectivityField(selectConnectivityReason);
@@ -296,6 +325,20 @@ export function SprayWallWizardScreen({
    * resume check already fetched.
    */
   const boardRef = useRef<UserBoard | null>(null);
+  /**
+   * Who owns that wall, for the one control that is its owner's alone: the
+   * training switch. State where the board is a ref, because this is rendered
+   * from. A wall this run created and a reset's clone are the viewer's by
+   * construction; a targeted open only promises edit access, so a gym admin
+   * finishing somebody's wall is not shown a switch the server would refuse.
+   */
+  const [wallOwnerId, setWallOwnerId] = useState<string | null>(null);
+  const keepBoard = useCallback((board: UserBoard) => {
+    boardRef.current = board;
+    setWallOwnerId(board.ownerId);
+  }, []);
+  const viewerUserId = useViewerUserId();
+  const viewerOwnsWall = state.wall != null && viewerOwnsSprayWall({ ownerId: wallOwnerId }, viewerUserId);
 
   /**
    * Whether the meta step ran in THIS run — i.e. whether `builder` was ever
@@ -470,7 +513,7 @@ export function SprayWallWizardScreen({
         showTargetUnavailable();
         return;
       }
-      if (full.board) boardRef.current = full.board;
+      if (full.board) keepBoard(full.board);
 
       if (choice === 'startOver') {
         const plan = startOverPlan(resumable, full.versions ?? []);
@@ -498,7 +541,7 @@ export function SprayWallWizardScreen({
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
-    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable],
+    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable, keepBoard],
   );
 
   const [targetAttempt, setTargetAttempt] = useState(0);
@@ -587,7 +630,7 @@ export function SprayWallWizardScreen({
     let fetched: CreatedSprayWall | null;
     try {
       const created = await resetWallAsync(resetOfWallUuid);
-      boardRef.current = created.board;
+      keepBoard(created.board);
       fetched = await fetchSprayWallVersions(created.uuid);
     } catch (error) {
       resetInFlightRef.current = false;
@@ -607,7 +650,7 @@ export function SprayWallWizardScreen({
       return;
     }
     const clone = fetched;
-    if (clone.board) boardRef.current = clone.board;
+    if (clone.board) keepBoard(clone.board);
     const versions = clone.versions ?? [];
     const target = resumeTargetFor(clone, versions);
     if (target.at === 'photo') {
@@ -638,7 +681,7 @@ export function SprayWallWizardScreen({
       { text: t('sprayWizard.resume.startOver'), style: 'destructive', onPress: () => void startOver() },
       { text: t('sprayWizard.resume.pickUp'), onPress: pickUp },
     ]);
-  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, t]);
+  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, t, keepBoard]);
   const startResetRef = useRef(startReset);
   startResetRef.current = startReset;
 
@@ -700,9 +743,11 @@ export function SprayWallWizardScreen({
   const [adjustFailed, setAdjustFailed] = useState(false);
 
   const openAdjust = useCallback(() => {
+    // The crop takes over the photo step's body, the training switch with it.
+    if (consentSavingNow()) return;
     setAdjustFailed(false);
     dispatch({ type: 'ADJUST_OPENED' });
-  }, []);
+  }, [consentSavingNow]);
 
   const applyPhotoEdit = useCallback(
     async (edit: WallPhotoEdit) => {
@@ -739,7 +784,7 @@ export function SprayWallWizardScreen({
   // ============================================
 
   const runDetection = useCallback(() => dispatch({ type: 'DETECTION_STARTED' }), []);
-  const detectionCompleted = useCallback((candidates: SprayDetectionCandidate[]) => {
+  const detectionCompleted = useCallback((candidates: SprayHoldCandidate[]) => {
     dispatch({ type: 'DETECTION_FINISHED', candidates });
   }, []);
   const useManualEditor = useCallback(() => dispatch({ type: 'DETECTION_UNAVAILABLE' }), []);
@@ -794,7 +839,7 @@ export function SprayWallWizardScreen({
         // `input` is non-null here — the guard above returns when both are.
         const created = await createWallAsync(input!);
         wall = { wallUuid: created.uuid, layoutId: created.layoutId, viewerCanEdit: created.viewerCanEdit };
-        boardRef.current = created.board;
+        keepBoard(created.board);
         metaRanHereRef.current = true;
         // Recorded BEFORE the upload, so a failure here still leaves the flow
         // pointing at the wall that exists rather than minting another on retry.
@@ -865,6 +910,7 @@ export function SprayWallWizardScreen({
     capOrServerMessage,
     uploadNoticeMessage,
     t,
+    keepBoard,
   ]);
 
   /**
@@ -1086,7 +1132,7 @@ export function SprayWallWizardScreen({
    */
   const confirmLeave = useCallback(
     (onConfirm: () => void) => {
-      const decision = leaveDecision(state, readEditorLeaveState());
+      const decision = leaveDecision(state, readEditorLeaveState(), consentSavingNow());
       if (decision === 'block') return;
       if (decision === 'leave') {
         onConfirm();
@@ -1113,7 +1159,7 @@ export function SprayWallWizardScreen({
         { text: t('sprayWizard.leave.go'), onPress: confirmed },
       ]);
     },
-    [state, t, readEditorLeaveState],
+    [state, t, readEditorLeaveState, consentSavingNow],
   );
 
   // Native dismissal is held while the existing decision and stale-answer
@@ -1121,7 +1167,7 @@ export function SprayWallWizardScreen({
   useSprayWizardLeaveGuard(confirmLeave);
 
   const goBack = useCallback(() => {
-    if (isBusy(state)) return;
+    if (isBusy(state) || consentSavingNow()) return;
     // `review`, `background` and `publish` have no step behind them — the draft is on
     // the server by then — so back means leaving, which keeps the draft. A
     // reset's photo step has nothing behind it either: the clone's name and
@@ -1131,7 +1177,7 @@ export function SprayWallWizardScreen({
       return;
     }
     dispatch({ type: 'BACK' });
-  }, [state, router, resetOfWallUuid]);
+  }, [state, router, resetOfWallUuid, consentSavingNow]);
 
   const candidateCount = state.detection.candidates.length;
   const onHoldsCommitted = useCallback(
@@ -1168,7 +1214,10 @@ export function SprayWallWizardScreen({
 
   // The X the layout draws, with the same leave guard behind it: it goes back
   // through the history, which `useSprayWizardLeaveGuard` intercepts.
-  const exitFlow = useCallback(() => exitSprayWizard(router, returnTo), [router, returnTo]);
+  const exitFlow = useCallback(() => {
+    if (consentSavingNow()) return;
+    exitSprayWizard(router, returnTo);
+  }, [consentSavingNow, router, returnTo]);
 
   // Editing and look steps draw their own header actions. The crop detour owns its edit, so
   // it sets Cancel and Done itself; the editor and the look step set their own
@@ -1188,12 +1237,15 @@ export function SprayWallWizardScreen({
   // says so. With the chevron leading there is no X: a German "Überspringen"
   // beside it would not fit at 375 pt. Leaving from those steps is a swipe down
   // through the same leave guard, or back to step 1's X.
-  const busy = isBusy(state);
+  //
+  // The X stays live through the machine's own requests: there, leaving is the
+  // guard's question to ask. A training switch flip holds the X as well, since
+  // it is over in seconds and its answer shows on this step.
   const headerLeading: HeaderLeadingAction | null = childOwnsHeader
     ? null
     : backStaysInFlow
       ? { kind: 'back', onPress: goBack, disabled: busy, accessibilityLabel: t('sprayWizard.back') }
-      : { kind: 'close', onPress: exitFlow };
+      : { kind: 'close', onPress: exitFlow, disabled: consentSaving };
 
   const publishRunning = state.publish.running;
   let headerTrailing: HeaderTrailingAction | null = null;
@@ -1201,16 +1253,23 @@ export function SprayWallWizardScreen({
     headerTrailing = {
       kind: 'forward',
       label: t('sprayWizard.meta.next'),
-      onPress: () => dispatch({ type: 'META_DONE' }),
-      disabled: !builder.canCreate,
+      onPress: () => {
+        if (!consentSavingNow()) dispatch({ type: 'META_DONE' });
+      },
+      disabled: !builder.canCreate || busy,
+      // The reason the header is holding still, on the action it is holding.
+      loading: consentSaving,
       prominent: true,
     };
   } else if (state.step === 'photo') {
     headerTrailing = {
       kind: 'forward',
       label: t('sprayWizard.photo.next'),
-      onPress: () => dispatch({ type: 'PHOTO_CONFIRMED' }),
-      disabled: state.photo == null,
+      onPress: () => {
+        if (!consentSavingNow()) dispatch({ type: 'PHOTO_CONFIRMED' });
+      },
+      disabled: state.photo == null || busy,
+      loading: consentSaving,
       prominent: true,
     };
   } else if (state.step === 'anchors' && state.photo) {
@@ -1266,8 +1325,10 @@ export function SprayWallWizardScreen({
   const hardwareBackRef = useRef<() => boolean>(() => false);
   // On the crop detour it is the header's Cancel (the same `goBack` the crop
   // step's Cancel calls), never a way out of the flow. A tap while busy is
-  // swallowed: `goBack` refuses, and the stack must not pop either.
+  // swallowed: `goBack` refuses, and the stack must not pop either. A training
+  // switch flip swallows it on the X's steps too, as it holds the X.
   hardwareBackRef.current = () => {
+    if (consentSavingNow()) return true;
     if (!backStaysInFlow && state.step !== 'adjust') return false;
     goBack();
     return true;
@@ -1381,7 +1442,7 @@ export function SprayWallWizardScreen({
         invalid={state.anchorRejection != null}
         // A new wall's frame IS its first photo (version 1 defines it).
         qualityFrame={state.photo}
-        canClear={state.anchors != null && !isBusy(state)}
+        canClear={state.anchors != null && !busy}
         onClear={() => dispatch({ type: 'ANCHORS_CLEARED' })}
       />
     );
@@ -1466,6 +1527,15 @@ export function SprayWallWizardScreen({
             {/* Same three-way control as Edit board: two switches let "Public"
                 and "Unlisted" both be on, and Unlisted had no hint (#5960). */}
             <SprayWallVisibilityField builder={builder} />
+            {/* Before the wall exists the switch is the builder's, sent with
+                `createSprayWall`. Once it exists (Back after a failed upload, or
+                a resumed wall) nothing re-sends the builder, so the switch reads
+                and writes the server's value instead, for its owner only. */}
+            {state.wall ? (
+              <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner={viewerOwnsWall} />
+            ) : (
+              <SprayTrainingConsentField value={builder.trainingConsent} onValueChange={builder.setTrainingConsent} />
+            )}
             <BoardVisibilityFields builder={builder} hideVisibilitySwitches />
 
             {/* The wall cap said before it bites rather than after: ten is a
@@ -1489,6 +1559,16 @@ export function SprayWallWizardScreen({
             <Text variant="footnote" color={systemColors.secondaryLabel}>
               {t('sprayWizard.photo.tip')}
             </Text>
+            {/* Said where the photo is taken. A new wall's switch is on the
+                step before, so it gets a note, and only while that switch is
+                on. Both are known at the first render, so the note never
+                arrives late. A wall that already exists gets the switch itself,
+                at the end of this step. */}
+            {!state.wall && builder.trainingConsent ? (
+              <Text variant="footnote" color={systemColors.secondaryLabel}>
+                {t('sprayWizard.photo.trainingNote')}
+              </Text>
+            ) : null}
             <PressableSurface
               onPress={openPhotoGuide}
               hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
@@ -1544,9 +1624,23 @@ export function SprayWallWizardScreen({
                   icon="crop.free"
                   variant="text"
                   onPress={openAdjust}
-                  disabled={pickerBusy}
+                  disabled={pickerBusy || busy}
                 />
               </View>
+            ) : null}
+            {/* A wall that already exists gets its training switch here, for
+                its owner: a reset cannot go Back to the name step and its
+                unfinished clone is in no board list, so this is the only place
+                the switch can be reached, and a resumed wall landed here
+                without passing it.
+
+                Last on the step, after everything that can be tapped. On
+                Android a tap anywhere on the row flips the switch and saves at
+                once, so it stays clear of a thumb on its way to the photo
+                buttons. It holds its own place while its read is out, so it
+                moves nothing as the answer lands either. */}
+            {state.wall ? (
+              <SprayWallTrainingConsentRow wallUuid={state.wall.wallUuid} isOwner={viewerOwnsWall} />
             ) : null}
           </>
         ) : null}
