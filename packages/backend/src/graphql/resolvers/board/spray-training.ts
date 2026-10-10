@@ -36,7 +36,8 @@ import { presignVersionPhoto } from './spray-walls';
  * all filter through it, and the export re-reads it on every run, so switching
  * consent off, deleting or hiding the wall, or deleting the account takes a
  * version out of all three at once — an approval row on its own never exports
- * anything.
+ * anything. Switching consent off is written to every wall in the reset family
+ * (`updateSprayWall`), so the predicate stays a per-wall test.
  *
  * ## What the admin sees
  *
@@ -77,8 +78,12 @@ export const SPRAY_TRAINING_CODES = {
  *    of one photo are one training image with two label sets: only the newest
  *    is the one the owner stands behind.
  *
- * Archived walls stay eligible: an archived wall is still a real photo with
- * holds somebody marked, and archiving only means the wall was reset.
+ * Archiving is not a test here: an archived wall is still a real photo with
+ * holds somebody marked, and archiving only means the wall was reset. It stays
+ * eligible for as long as its own `training_consent_at` is set, and switching
+ * consent off on ANY wall of its reset family (the live clone included) nulls
+ * that stamp too, so the owner's "no" on the wall they still see reaches the
+ * older photos of it.
  */
 export function trainingEligibleCondition(): SQL {
   const newerVersion = alias(dbSchema.sprayWallVersions, 'newer_training_version');

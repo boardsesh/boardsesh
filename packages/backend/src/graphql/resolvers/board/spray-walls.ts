@@ -1314,9 +1314,10 @@ const CARRY_OVER_BATCH_SIZE = 1000;
  *
  * The CLONE's lock is already held (the publish took it), and this takes the
  * SOURCE's. New wall first, then old wall, always. A clone is inserted after its
- * source exists, so its `bigserial` id is always the higher of the two, and
- * `deleteAccountSprayWalls` — the only other path that holds two wall locks at
- * once — walks walls by id DESCENDING to take them in the same order.
+ * source exists, so its `bigserial` id is always the higher of the two, and the
+ * only other paths that hold more than one wall lock at once take them by id
+ * DESCENDING, which is the same order: `deleteAccountSprayWalls`, and
+ * `lockResetFamilyForWrite` when an owner switches training consent off.
  * `resetSprayWall` holds the source's lock but never the clone's.
  *
  * ## What carries over
@@ -3592,6 +3593,61 @@ function legacySprayAudience(
   return legacyResourceAudience(audience, requested);
 }
 
+/**
+ * Every wall in `wallId`'s reset family, itself included: the walls it was
+ * cloned from, back to the first one, and every clone made from any of them.
+ * To its owner that is one physical wall, photographed once per reset.
+ *
+ * Walked one generation at a time, both ways along `reset_from_wall_id`, until
+ * a pass finds no wall it has not seen. No depth cap: `family` is what ends the
+ * walk, and it ends it on a cycle too (only a hand-edited row could make one).
+ */
+async function resetFamilyWallIds(tx: SprayWriteTransaction, wallId: number): Promise<number[]> {
+  const family = new Set<number>([wallId]);
+  let frontier = [wallId];
+  while (frontier.length > 0) {
+    const linked = await tx
+      .select({ id: dbSchema.sprayWalls.id, resetFromWallId: dbSchema.sprayWalls.resetFromWallId })
+      .from(dbSchema.sprayWalls)
+      .where(or(inArray(dbSchema.sprayWalls.id, frontier), inArray(dbSchema.sprayWalls.resetFromWallId, frontier)));
+    const discovered: number[] = [];
+    for (const { id, resetFromWallId } of linked) {
+      for (const relatedWallId of [id, resetFromWallId]) {
+        if (relatedWallId != null && !family.has(relatedWallId)) {
+          family.add(relatedWallId);
+          discovered.push(relatedWallId);
+        }
+      }
+    }
+    frontier = discovered;
+  }
+  return [...family];
+}
+
+/**
+ * Take every lock a write across a wall's reset family needs, and return the
+ * family's wall ids ({@link resetFamilyWallIds}).
+ *
+ * The owner's account lock first. `resetSprayWall` holds it for the whole
+ * clone, so a reset either commits before the walk below (and its clone is in
+ * the family) or starts after this transaction (and copies what it wrote): no
+ * wall joins the family unseen.
+ *
+ * Then each wall's lock, highest id first, the order `archiveResetSourceUnderLock`
+ * documents for every path holding more than one. A clone's first publish holds
+ * the clone, writes the clone's row, and then waits for its source's lock.
+ * Writing the clone's row from here while holding only the source's lock would
+ * wait on that publish while it waits on us.
+ */
+async function lockResetFamilyForWrite(tx: SprayWriteTransaction, ownerId: string, wallId: number): Promise<number[]> {
+  await lockSprayWallAccount(tx, ownerId);
+  const familyWallIds = await resetFamilyWallIds(tx, wallId);
+  for (const familyWallId of [...familyWallIds].sort((first, second) => second - first)) {
+    await lockWallForWrite(tx, familyWallId);
+  }
+  return familyWallIds;
+}
+
 async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privacyUpdate?: SprayResourcePrivacyUpdate) {
   requireAuthenticated(ctx);
   await applyRateLimit(ctx, WALL_MUTATION_RATE_LIMIT, 'updateSprayWall');
@@ -3724,9 +3780,16 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
   // never before, or a rolled-back demotion would leave a still-public wall
   // pointing at bytes that are gone.
   const orphanedPublicKeys: string[] = [];
+  // The wall's reset family, when this call switches training consent off for
+  // all of it (see the consent write below). Empty otherwise.
+  let revokedFamilyWallIds: number[] = [];
 
   try {
     await db.transaction(async (tx) => {
+      // Revoking consent writes every wall in the family, so it takes all of
+      // their locks, this wall's included, before anything else is locked.
+      revokedFamilyWallIds =
+        validated.trainingConsent === false ? await lockResetFamilyForWrite(tx, board.ownerId, wall.id) : [];
       await lockWallForWrite(tx, wall.id);
 
       // Re-read the published version under the lock. The check above is a fast
@@ -3899,11 +3962,32 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
         if (wallNow?.publicPhotoKey) orphanedPublicKeys.push(wallNow.publicPhotoKey);
       }
 
-      // Off nulls the stamp; on stamps `now()` only when it was off, so restating
-      // "on" keeps the date the consent was actually given (and leaves the
-      // training export's consent fingerprint alone).
+      // Off covers the whole physical wall, not this one row. A reset clones a
+      // wall, so the walls this one was reset from (archived, their old photos
+      // still stored) and any clone made from it (an unfinished reset, about to
+      // get a new photo) are the same wall to its owner. All of them lose the
+      // stamp here, in this transaction: otherwise an archived source's photo
+      // stays eligible after its owner said no on the live wall, and a clone
+      // started before the switch publishes with consent it copied earlier.
+      // Their `updated_at` is left alone: no document a device pulls carries
+      // this column, and on a deleted wall `updated_at` is the photo purge's
+      // fence against a late upload.
+      //
+      // On is this wall only. It never reaches back to consent an older photo
+      // again on the owner's behalf. It stamps `now()` only when it was off, so
+      // restating "on" keeps the date the consent was actually given (and
+      // leaves the training export's consent fingerprint alone).
       if (validated.trainingConsent === false) {
         wallUpdates.trainingConsentAt = null;
+        const relatedWallIds = revokedFamilyWallIds.filter((familyWallId) => familyWallId !== wall.id);
+        if (relatedWallIds.length > 0) {
+          await tx
+            .update(dbSchema.sprayWalls)
+            .set({ trainingConsentAt: null })
+            .where(
+              and(inArray(dbSchema.sprayWalls.id, relatedWallIds), isNotNull(dbSchema.sprayWalls.trainingConsentAt)),
+            );
+        }
       } else if (validated.trainingConsent === true && wallNow?.trainingConsentAt == null) {
         wallUpdates.trainingConsentAt = new Date();
       }
@@ -3927,6 +4011,8 @@ async function runUpdateSprayWall(input: unknown, ctx: ConnectionContext, privac
     userId: ctx.userId,
     fields: Object.keys(updates),
     ...(validated.trainingConsent === undefined ? {} : { trainingConsent: validated.trainingConsent }),
+    // How many walls the revoke reached: this one plus its reset family.
+    ...(revokedFamilyWallIds.length > 1 ? { trainingConsentFamilyWalls: revokedFamilyWallIds.length } : {}),
   });
 
   const reloaded = await loadWall('uuid', validated.uuid);

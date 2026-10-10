@@ -3348,6 +3348,26 @@ owner can change it, through the same gate and error code as visibility
 owner and is null for everybody else. The user data export lists each owned
 wall with its `trainingConsentAt`.
 
+**Off covers the whole physical wall; on covers one wall.** A reset clones a
+wall, so one physical wall is a family of rows linked by `reset_from_wall_id`:
+the archived walls it was reset from, the live one, and a clone whose reset is
+not finished yet. `trainingConsent: false` on any of them nulls the stamp on
+all of them, in the same transaction: every ancestor up the chain and every
+clone made from any of those, with no depth limit. Without that, the archived
+wall's old photo would stay eligible after its owner said no on the wall they
+can still see, and a clone started before the switch would publish its new
+photo under consent it copied earlier. `trainingConsent: true` stamps only the
+wall it names. It never reaches back to consent an older photo again, so a
+family switched off and on again exports the wall that was switched on and
+nothing older.
+
+That write opens its transaction by taking the owner's account lock and then
+the lock of every wall in the family, highest id first. The account lock is
+the one `resetSprayWall` holds while it clones, so no clone joins the family
+between the walk and the write. The order is the one a clone's first publish
+uses (clone, then source), so the two cannot deadlock. The other family rows
+keep their `updated_at`.
+
 ### Hold provenance
 
 `spray_wall_holds` records what the climber did with each detector suggestion:
@@ -3366,12 +3386,14 @@ candidate that no alive hold points back at was dropped.
 
 ### Eligibility and vetting
 
-`trainingEligibleVersions` (`trainingEligibleCondition()` in
-`resolvers/board/spray-training.ts`) is the one predicate the queue, the review
-mutation and the export share: consent set, version not a draft, photo key
-present, wall and board not deleted, wall not hidden, owner not the system
-owner, and the newest non-draft version for its `(wall, photo_key)` (a hold edit
-reuses its predecessor's photo). Archived walls stay eligible.
+`trainingEligibleCondition()` in `resolvers/board/spray-training.ts` is the one
+predicate the queue, the review mutation and the export share: consent set,
+version not a draft, photo key present, wall and board not deleted, wall not
+hidden, owner not the system owner, and the newest non-draft version for its
+`(wall, photo_key)` (a hold edit reuses its predecessor's photo). Being
+archived is not a test: an archived wall stays eligible while its own stamp is
+set, and it loses the stamp when consent is switched off on any wall of its
+reset family (see "Consent").
 
 Admins (`spray`-scoped or global) read `sprayTrainingQueue(status, limit ≤ 25,
 offset)`: the presigned photo, holds projected into photo pixels through the

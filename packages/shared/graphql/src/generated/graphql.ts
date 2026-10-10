@@ -10915,8 +10915,10 @@ export type UpdateSprayWallInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /**
    * Let this wall's photo and marked holds help train hold finding. Owner only,
-   * like visibility. Switching it off takes the wall out of the next training
-   * export and retires stored exports that held it within a day.
+   * like visibility. false switches it off for the whole physical wall: this
+   * wall, every wall it was reset from and every reset clone made from any of
+   * them. They leave the next training export, and stored exports that held one
+   * of them are retired within 24 hours. true switches it on for this wall only.
    */
   trainingConsent?: InputMaybe<Scalars['Boolean']['input']>;
   uuid: Scalars['ID']['input'];
