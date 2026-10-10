@@ -200,6 +200,12 @@ The `smoke` flow keeps its single Pro Max / English default; pass an explicit
 `--device` to inspect another device. The ad-hoc `mobile:ios-shots` default is
 unchanged.
 
+The iPad flow navigates the native sidebar using accessibility labels from the
+same localized catalogs as the app. UIKit sidebar items do not expose the custom
+React Native sidebar's test IDs. Each navigation retries the tap and requires the
+destination's selected state before continuing; screen-specific content checks
+still gate each capture.
+
 ## The `help` flow — captures for the boardsesh.com help pages
 
 `packages/mobile/.maestro/help.yaml` captures the fourteen screens the `/help` topic

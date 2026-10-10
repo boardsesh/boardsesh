@@ -14,6 +14,7 @@ import {
   assertIosCampaignCaptureReady,
   assertIosCampaignSources,
   buildIosCampaignMaestroEnv,
+  buildIosSidebarMaestroEnv,
   buildBackendArgs,
   buildAndroidMaestroArgs,
   buildScreenshotEnv,
@@ -952,21 +953,54 @@ describe('renderMaestroFlowForIosDevice', () => {
     }
   });
 
-  it('the iPad flow taps sidebar items by testID and verifies the selected state — no coordinate taps', () => {
+  it('drives all six native iPad destinations by localized labels and proves selection', () => {
     const ipadFlow = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
-    // Every destination is tapped via its locale-independent id (IpadSidebar's
-    // `ipad-sidebar-<segment>` testID)...
-    for (const segment of ['home', 'climbs', 'record', 'wall', 'discover', 'profile']) {
-      expect(ipadFlow).toContain(`id: "ipad-sidebar-${segment}"`);
+    const documents = parseAllDocuments(ipadFlow);
+    for (const document of documents) expect(document.errors).toEqual([]);
+    const commands = documents[1].toJS() as Array<{
+      retry?: {
+        commands: Array<{
+          tapOn?: { text: string; index: number };
+          extendedWaitUntil?: { visible: { text: string; selected: boolean } };
+        }>;
+      };
+      takeScreenshot?: string;
+    }>;
+    const navigation = commands.flatMap((command) => (command.retry ? [command.retry.commands] : []));
+    expect(navigation).toHaveLength(6);
+    for (const [index, segment] of ['CLIMBS', 'HOME', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
+      const label = '${SCREENSHOT_SIDEBAR_' + segment + '_LABEL}';
+      expect(navigation[index][0].tapOn).toEqual({ text: label, index: 0 });
+      expect(navigation[index][1].extendedWaitUntil?.visible).toEqual({ text: label, selected: true });
     }
-    // ...and each navigation is verified via the item's selected accessibility
-    // state, so a silently-swallowed tap (the 11" dark-wall failure) re-taps
-    // instead of screenshotting the wrong screen.
-    expect(ipadFlow).toContain('selected: true');
-    expect(ipadFlow).toContain('retry:');
-    // No blind coordinate taps — they carried no proof the navigation happened.
+    expect(commands.flatMap((command) => (command.takeScreenshot ? [command.takeScreenshot] : []))).toEqual([
+      '02-climbs',
+      '01-home',
+      '00-wall',
+      '03-workout-generator',
+      '04-discover',
+      '05-profile',
+    ]);
+    expect(ipadFlow).not.toContain('ipad-sidebar-');
     expect(ipadFlow).not.toContain('point:');
-    expect(ipadFlow).not.toContain('${TAP_');
+    expect(ipadFlow).toContain("id: 'pre-session-footer'");
+    expect(ipadFlow).toContain("id: 'profile-board-overview'");
+  });
+
+  it('provides the current native sidebar labels for every supported locale', () => {
+    const expected = {
+      'en-US': ['Home', 'Climbs', 'On the Wall', 'Session', 'Discover', 'Profile'],
+      es: ['Inicio', 'Bloques', 'En el muro', 'Sesión', 'Descubre', 'Perfil'],
+      fr: ['Accueil', 'Blocs', 'Sur le mur', 'Session', 'Découvrir', 'Profil'],
+      de: ['Start', 'Boulder', 'An der Wand', 'Session', 'Entdecken', 'Profil'],
+    };
+    for (const locale of allAppLocales) {
+      const env = buildIosSidebarMaestroEnv(locale);
+      expect(env).toHaveLength(12);
+      for (const [index, segment] of ['HOME', 'CLIMBS', 'WALL', 'RECORD', 'DISCOVER', 'PROFILE'].entries()) {
+        expect(env).toContain('SCREENSHOT_SIDEBAR_' + segment + '_LABEL=' + expected[locale][index]);
+      }
+    }
   });
 });
 

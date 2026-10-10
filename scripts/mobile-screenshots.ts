@@ -1855,8 +1855,8 @@ export function iosSourceFlowFile(options: ScreenshotOptions, screenshotDevice: 
   return flowFileForPlatform(options, 'ios');
 }
 
-// The iPad flow taps sidebar items by their locale-independent testID
-// (`ipad-sidebar-<segment>`, see IpadSidebar) and verifies each navigation via
+// The iPad flow taps native sidebar items by catalog-derived accessibility labels
+// (see buildIosSidebarMaestroEnv) and verifies each navigation via
 // the item's `selected` accessibility state — no per-device coordinate math.
 // Only the orientation placeholder needs substituting per device.
 export function renderMaestroFlowForIosDevice(flowSource: string, screenshotDevice: IosScreenshotDevice): string {
@@ -2059,6 +2059,9 @@ function captureIosDevice(
         `SCREENSHOT_USER_PASSWORD=${password}`,
         ...(options.flow === 'app-store-campaign'
           ? buildIosCampaignMaestroEnv(localeTarget.appLocale, backendSession?.capture)
+          : []),
+        ...(isIpadScreenshotDevice(screenshotDevice) && ['app-store', 'app-store-campaign'].includes(options.flow)
+          ? buildIosSidebarMaestroEnv(localeTarget.appLocale)
           : []),
       ],
       process.env,
@@ -2309,6 +2312,29 @@ export function assertIosCampaignCaptureReady(
       );
     }
   }
+}
+
+/** Read accessibility labels from the same catalog as the native UI for all four locales. */
+export function buildIosSidebarMaestroEnv(locale: Locale): string[] {
+  const directory = join(ROOT_DIR, 'packages/shared/i18n/locales', locale);
+  const common = JSON.parse(readFileSync(join(directory, 'common.json'), 'utf8')) as {
+    mobile: { nav: { home: string; climbs: string; wall: string; profile: string } };
+  };
+  const session = JSON.parse(readFileSync(join(directory, 'session.json'), 'utf8')) as {
+    mobile: { session: { recordTab: string } };
+  };
+  const playlists = JSON.parse(readFileSync(join(directory, 'playlists.json'), 'utf8')) as {
+    bottomTabBar: { discover: string };
+  };
+  const labels = {
+    SCREENSHOT_SIDEBAR_HOME_LABEL: common.mobile.nav.home,
+    SCREENSHOT_SIDEBAR_CLIMBS_LABEL: common.mobile.nav.climbs,
+    SCREENSHOT_SIDEBAR_WALL_LABEL: common.mobile.nav.wall,
+    SCREENSHOT_SIDEBAR_RECORD_LABEL: session.mobile.session.recordTab,
+    SCREENSHOT_SIDEBAR_DISCOVER_LABEL: playlists.bottomTabBar.discover,
+    SCREENSHOT_SIDEBAR_PROFILE_LABEL: common.mobile.nav.profile,
+  };
+  return Object.entries(labels).flatMap(([name, label]) => ['-e', `${name}=${label}`]);
 }
 
 /** Read accessibility labels from the same catalog as the native UI for all four locales. */

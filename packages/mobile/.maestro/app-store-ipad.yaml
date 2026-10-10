@@ -9,15 +9,12 @@ name: app-store screenshots (iPad)
 # app's router — navigation just never happens. iPhone remembers the confirm after
 # the first prime; iPad does not.
 #
-# So the iPad navigates via the persistent left SIDEBAR. Each item is a real
-# accessibility element (IpadSidebar sets accessibilityLabel, a locale-independent
-# `testID` of ipad-sidebar-<segment>, and accessibilityState.selected on the active
-# item), so every step taps by id and then waits for `selected: true` — PROOF the
-# navigation took effect, wrapped in a retry that re-taps if it didn't. The previous
-# coordinate-tap flow had no such proof: on the 11" iPad the first tap after the
-# rotation relayout was silently swallowed, and 02-climbs shipped byte-identical to
-# 01-home with a dark wall hero (the orchestrator now also fails the run on
-# byte-identical captures).
+# The native iPad sidebar exposes localized accessibility labels and selected
+# state. Its UIKit items do not carry the custom React Native sidebar's testIDs.
+# Tap the first matching label (the sidebar parent precedes its duplicate text
+# child and page headings), then require selected: true on that destination.
+# Retry swallowed taps after rotation; keep content readiness gates below.
+# The orchestrator also rejects byte-identical captures of different scenes.
 #
 # The wall kiosk seed (the active board's real climbs) is published at the root by
 # ScreenshotBoardAutoActivator as soon as the board activates, so the wall shot no
@@ -31,7 +28,7 @@ name: app-store screenshots (iPad)
 # after the rotation relayout is the one that got swallowed in CI.
 - extendedWaitUntil:
     visible:
-      id: "ipad-sidebar-climbs"
+      text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
     timeout: 15000
 
 # Climbs — the browse list.
@@ -39,10 +36,11 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-climbs"
+          text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
+          index: 0
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-climbs"
+            text: ${SCREENSHOT_SIDEBAR_CLIMBS_LABEL}
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -54,10 +52,11 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-home"
+          text: ${SCREENSHOT_SIDEBAR_HOME_LABEL}
+          index: 0
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-home"
+            text: ${SCREENSHOT_SIDEBAR_HOME_LABEL}
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -78,10 +77,11 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-wall"
+          text: ${SCREENSHOT_SIDEBAR_WALL_LABEL}
+          index: 0
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-wall"
+            text: ${SCREENSHOT_SIDEBAR_WALL_LABEL}
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -94,10 +94,11 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-record"
+          text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}
+          index: 0
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-record"
+            text: ${SCREENSHOT_SIDEBAR_RECORD_LABEL}
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -115,10 +116,11 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-discover"
+          text: ${SCREENSHOT_SIDEBAR_DISCOVER_LABEL}
+          index: 0
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-discover"
+            text: ${SCREENSHOT_SIDEBAR_DISCOVER_LABEL}
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
@@ -129,10 +131,11 @@ name: app-store screenshots (iPad)
     maxRetries: 2
     commands:
       - tapOn:
-          id: "ipad-sidebar-profile"
+          text: ${SCREENSHOT_SIDEBAR_PROFILE_LABEL}
+          index: 0
       - extendedWaitUntil:
           visible:
-            id: "ipad-sidebar-profile"
+            text: ${SCREENSHOT_SIDEBAR_PROFILE_LABEL}
             selected: true
           timeout: 5000
 - waitForAnimationToEnd
