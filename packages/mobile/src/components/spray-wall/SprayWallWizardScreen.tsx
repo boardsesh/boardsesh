@@ -111,8 +111,9 @@ import {
   useUpdateSprayWallVisibility,
   type CreatedSprayWall,
 } from '../../lib/spray/use-create-spray-wall';
-import { useSprayWallTrainingConsent } from '../../lib/spray/use-spray-wall-training-consent';
 import { SprayWallTrainingConsentRow } from './SprayWallTrainingConsentRow';
+import { viewerOwnsSprayWall } from '../board-discovery/spray-detail-rows';
+import { useViewerUserId } from '../../hooks/use-viewer-user-id';
 import { uploadSprayWallPhoto } from '../../lib/spray/spray-wall-photo-upload';
 import { wallCreatedEventProperties, type WallCreatedMeta } from './wall-created-event';
 import { SprayDetectionStep } from './SprayDetectionStep';
@@ -297,9 +298,6 @@ export function SprayWallWizardScreen({
   );
   // Offline mode, said on the photo step before an upload tries and fails
   // (#5960). Only `reason` is subscribed, not the whole connectivity snapshot.
-  const consentWallUuid = state.step === 'photo' ? (state.wall?.wallUuid ?? null) : null;
-  const storedTrainingConsent = useSprayWallTrainingConsent(consentWallUuid, consentWallUuid != null);
-  const photoTrainsHoldFinding = state.wall ? storedTrainingConsent.data === true : builder.trainingConsent;
   const connectivityReason = useConnectivityField(selectConnectivityReason);
   const offlineModeOn = sprayUploadNotice(connectivityReason) === 'offlineMode';
   // Read at the moment a late answer lands (the resume prompt, a leave dialog).
@@ -349,6 +347,20 @@ export function SprayWallWizardScreen({
    * resume check already fetched.
    */
   const boardRef = useRef<UserBoard | null>(null);
+  /**
+   * Who owns that wall, for the one control that is its owner's alone: the
+   * training switch. State where the board is a ref, because this is rendered
+   * from. A wall this run created and a reset's clone are the viewer's by
+   * construction; a targeted open only promises edit access, so a gym admin
+   * finishing somebody's wall is not shown a switch the server would refuse.
+   */
+  const [wallOwnerId, setWallOwnerId] = useState<string | null>(null);
+  const keepBoard = useCallback((board: UserBoard) => {
+    boardRef.current = board;
+    setWallOwnerId(board.ownerId);
+  }, []);
+  const viewerUserId = useViewerUserId();
+  const viewerOwnsWall = state.wall != null && viewerOwnsSprayWall({ ownerId: wallOwnerId }, viewerUserId);
 
   /**
    * The details step's answers, read when the climber pressed Save — or null
@@ -540,7 +552,7 @@ export function SprayWallWizardScreen({
         showTargetUnavailable();
         return;
       }
-      if (full.board) boardRef.current = full.board;
+      if (full.board) keepBoard(full.board);
 
       if (choice === 'startOver') {
         const plan = startOverPlan(resumable, full.versions ?? []);
@@ -576,7 +588,7 @@ export function SprayWallWizardScreen({
         dispatch({ type: 'RESUMED_AT_PHOTO', wall: target.wall });
       }
     },
-    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable, hydrateDetails],
+    [discardDraftAsync, t, wallUuid, versionId, finish, showTargetUnavailable, hydrateDetails, keepBoard],
   );
 
   /** The prompt's answer, with the photo controls held until it has been acted on. */
@@ -708,7 +720,7 @@ export function SprayWallWizardScreen({
     let fetched: CreatedSprayWall | null;
     try {
       const created = await resetWallAsync(resetOfWallUuid);
-      boardRef.current = created.board;
+      keepBoard(created.board);
       fetched = await fetchSprayWallVersions(created.uuid);
     } catch (error) {
       resetInFlightRef.current = false;
@@ -728,7 +740,7 @@ export function SprayWallWizardScreen({
       return;
     }
     const clone = fetched;
-    if (clone.board) boardRef.current = clone.board;
+    if (clone.board) keepBoard(clone.board);
     const versions = clone.versions ?? [];
     const target = resumeTargetFor(clone, versions);
     if (target.at === 'photo') {
@@ -761,7 +773,7 @@ export function SprayWallWizardScreen({
       { text: t('sprayWizard.resume.startOver'), style: 'destructive', onPress: () => void startOver() },
       { text: t('sprayWizard.resume.pickUp'), onPress: pickUp },
     ]);
-  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, t]);
+  }, [resetOfWallUuid, resetWallAsync, discardDraftAsync, t, keepBoard]);
   const startResetRef = useRef(startReset);
   startResetRef.current = startReset;
 
@@ -923,7 +935,7 @@ export function SprayWallWizardScreen({
         // `input` is non-null here — the guard above returns when both are.
         const created = await createWallAsync(input!);
         wall = { wallUuid: created.uuid, layoutId: created.layoutId, viewerCanEdit: created.viewerCanEdit };
-        boardRef.current = created.board;
+        keepBoard(created.board);
         // Recorded BEFORE the upload, so a failure here still leaves the flow
         // pointing at the wall that exists rather than minting another on retry.
         dispatch({ type: 'WALL_CREATED', wall });
@@ -1000,6 +1012,7 @@ export function SprayWallWizardScreen({
     uploadNoticeMessage,
     hydrateDetails,
     t,
+    keepBoard,
   ]);
 
   /**
@@ -1856,7 +1869,7 @@ export function SprayWallWizardScreen({
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.centered}>
                 {t('sprayWizard.photo.tip')}
               </Text>
-              {photoTrainsHoldFinding ? (
+              {!state.wall && builder.trainingConsent ? (
                 <Text variant="footnote" color={systemColors.secondaryLabel}>
                   {t('sprayWizard.photo.trainingNote')}
                 </Text>

@@ -350,6 +350,9 @@ vi.mock('../SprayScanPhoto', () => ({
   SprayScanPhoto: ({ message, resumeHint }: { message: string; resumeHint?: string }) =>
     createElement('div', { 'data-testid': 'scan-photo' }, message, resumeHint ? ` ${resumeHint}` : null),
 }));
+/** Who is driving the flow. The fixtures' walls belong to `me`. */
+const viewer = vi.hoisted(() => ({ userId: 'me' as string | null }));
+vi.mock('../../../hooks/use-viewer-user-id', () => ({ useViewerUserId: () => viewer.userId }));
 // Online throughout: the upload-notice wording has its own suite (#5960).
 vi.mock('../../../lib/connectivity/use-connectivity', () => ({ useConnectivityField: () => connectivity.reason }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({ getConnectivitySnapshot: () => ({ reason: null }) }));
@@ -392,7 +395,7 @@ const UNFINISHED_WALL = {
   uuid: 'wall-1',
   layoutId: 7,
   viewerCanEdit: true,
-  board: { name: 'Garage wall' },
+  board: { name: 'Garage wall', ownerId: 'me' },
   currentVersion: null,
 };
 
@@ -456,6 +459,7 @@ beforeEach(() => {
   resetWallMock.mockReset();
   fetchVersionsMock.mockReset();
   guard.confirmLeave = null;
+  viewer.userId = 'me';
   editorProps.last = null;
   lookProps.last = null;
   nameSheet.last = null;
@@ -570,6 +574,76 @@ describe('resume freshness', () => {
   });
 });
 
+describe('the photo step and Help train hold finding', () => {
+  function mountAtNewWallForm() {
+    setWalls({ data: [], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    return mountWizard();
+  }
+
+  it('says so in a note on a new wall, whose switch is on the step before', () => {
+    const { getByText, queryByTestId } = mountAtNewWallForm();
+    act(() => header.trailing?.onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(getByText('sprayWizard.photo.trainingNote')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+  });
+
+  it('leaves the note out once that switch has been turned off', () => {
+    const { getByText, getByTestId, queryByText } = mountAtNewWallForm();
+    act(() => getByTestId('builder-consent').click());
+    act(() => header.trailing?.onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+
+  it("puts a resumed wall's own switch there, in place of the note", async () => {
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const { getByText, getByTestId, queryByText } = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(getByTestId('server-consent').textContent).toBe('wall-1');
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+
+  it('shows neither to somebody finishing a wall they can edit but do not own', async () => {
+    fetchVersionsMock.mockResolvedValue({
+      ...UNFINISHED_WALL,
+      board: { name: 'Garage wall', ownerId: 'the-owner' },
+      versions: [],
+    });
+    const { getByText, queryByText, queryByTestId } = render(
+      <SprayWallWizardScreen returnTo="/(tabs)/climbs" wallUuid="wall-1" />,
+    );
+    await act(async () => {});
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+
+    // Nor on the name step Back leads to.
+    act(() => header.leading?.onPress());
+    expect(queryByTestId('identity')).not.toBeNull();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByTestId('builder-consent')).toBeNull();
+  });
+
+  it('shows neither while it is not yet known who is signed in', async () => {
+    viewer.userId = null;
+    fetchVersionsMock.mockResolvedValue({ ...UNFINISHED_WALL, versions: [] });
+    setWalls({ data: [UNFINISHED_WALL], isFetching: false, dataUpdatedAt: AFTER_MOUNT() });
+    const { getByText, queryByText, queryByTestId } = mountWizard();
+    await act(async () => lastAlertButton('sprayWizard.resume.pickUp').onPress());
+
+    expect(getByText('sprayWizard.photo.title')).toBeTruthy();
+    expect(queryByTestId('server-consent')).toBeNull();
+    expect(queryByText('sprayWizard.photo.trainingNote')).toBeNull();
+  });
+});
+
 describe('native back guard', () => {
   async function resumeIntoEditor() {
     fetchVersionsMock.mockResolvedValue(WALL_WITH_SAVED_DRAFT);
@@ -664,7 +738,7 @@ describe('a reset (`resetOf`)', () => {
     viewerCanEdit: true,
     currentVersion: null,
     resetOfWallUuid: 'old-wall',
-    board: { name: 'Garage wall' },
+    board: { name: 'Garage wall', ownerId: 'me' },
   };
   const CLONE_WITH_PHOTO = {
     ...CLONE,
